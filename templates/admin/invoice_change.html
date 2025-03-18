@@ -1,0 +1,431 @@
+{% extends "admin/change_form.html" %}
+{% load static i18n admin_urls %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <script src="{% static 'htmx.js' %}"></script>
+    <style>
+        .car-selection {
+            display: flex;
+            align-items: stretch;
+            gap: 40px;
+            margin: 20px 0;
+            max-width: 1400px;
+            border: 1px solid #e0e0e0;
+            padding: 15px;
+            border-radius: 5px;
+            background-color: #fafafa;
+        }
+        .car-selection .field-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-width: 0;
+        }
+        .car-selection .field-container.available-cars {
+            flex: 0 0 640px;
+        }
+        .car-selection .field-container.selected-cars {
+            flex: 0 0 800px;
+        }
+        .car-selection select, .car-selection .selected-cars-list {
+            width: 100%;
+            height: 200px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 10px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            font-size: 14px;
+        }
+        .car-selection .selected-cars-list {
+            background-color: #f9f9f9;
+        }
+        .car-selection .selected-cars-list div {
+            cursor: pointer;
+            padding: 2px 5px;
+        }
+        .car-selection .selected-cars-list div.selected {
+            background-color: #d3e0ea;
+        }
+        .car-selection button {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100px;
+        }
+        .car-selection button:hover {
+            opacity: 0.9;
+        }
+        .car-selection button.add-btn {
+            background-color: #007bff;
+            color: white;
+        }
+        .car-selection button.remove-btn {
+            background-color: #007bff;
+            color: white;
+        }
+        .selected-cars-container {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            width: 100%;
+            height: 100%;
+        }
+        .button-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            align-self: flex-start;
+        }
+        .no-results {
+            color: #888;
+            text-align: center;
+            padding: 10px;
+        }
+
+        /* Стили для компактного расположения */
+        .compact-form-row {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+            margin-bottom: 15px;
+            width: 100%;
+            max-width: 1400px;
+        }
+        .compact-form-row .fieldBox {
+            flex: 0 0 300px;
+            min-width: 300px;
+        }
+        .compact-form-row .fieldBox label {
+            display: block !important;
+            margin-bottom: 5px;
+        }
+        .compact-form-row .fieldBox input,
+        .compact-form-row .fieldBox select {
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .checkbox-row {
+            display: flex;
+            align-items: flex-start; /* Выравнивание по верхнему краю для всей строки */
+            gap: 60px; /* Расстояние между первым названием и следующим чекбоксом */
+            margin-bottom: 15px;
+            margin-top: 0; /* Убираем лишний верхний отступ */
+        }
+        .checkbox-row .fieldBox {
+            display: flex;
+            align-items: center; /* Центрируем метку по вертикали относительно чекбокса */
+        }
+        .checkbox-row .fieldBox:nth-child(1) {
+            padding-left: 7px; /* Фиксируем выравнивание "Оплачен" с "Номер инвойса" на 7px */
+        }
+        .checkbox-row input[type="checkbox"] {
+            transform: scale(2) !important;
+            margin-right: 8px !important; /* Расстояние от чекбокса до названия */
+        }
+        .checkbox-row label {
+            color: inherit !important; /* Убираем красный цвет */
+            margin-bottom: 0;
+        }
+        /* Скрываем иконки для полей "Клиент" и "Склад" */
+        .field-client .related-widget-wrapper a,
+        .field-warehouse .related-widget-wrapper a {
+            display: none !important;
+        }
+        .form-row {
+            margin-bottom: 15px;
+        }
+        .submit-row {
+            margin-top: 20px;
+        }
+        .submit-row input[type="submit"] {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100px;
+            background-color: #28a745;
+            color: white;
+        }
+        .submit-row input[type="submit"]:hover {
+            background-color: #218838;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+    <form id="invoice_form" method="post" action="">
+        {% csrf_token %}
+        {{ adminform.form.non_field_errors }}
+        {% if adminform.form.errors %}
+            <div>Form errors: {{ adminform.form.errors }}</div>
+        {% endif %}
+        <div class="compact-form-row">
+            <div class="fieldBox field-number{% if adminform.form.number.errors %} errors{% endif %}">
+                {{ adminform.form.number.label_tag }}
+                {{ adminform.form.number }}
+                {% if adminform.form.number.help_text %}
+                    <div class="help">{{ adminform.form.number.help_text|safe }}</div>
+                {% endif %}
+            </div>
+            <div class="fieldBox field-client{% if adminform.form.client.errors %} errors{% endif %}">
+                {{ adminform.form.client.label_tag }}
+                {{ adminform.form.client }}
+                {% if adminform.form.client.help_text %}
+                    <div class="help">{{ adminform.form.client.help_text|safe }}</div>
+                {% endif %}
+            </div>
+            <div class="fieldBox field-warehouse{% if adminform.form.warehouse.errors %} errors{% endif %}">
+                {{ adminform.form.warehouse.label_tag }}
+                {{ adminform.form.warehouse }}
+                {% if adminform.form.warehouse.help_text %}
+                    <div class="help">{{ adminform.form.warehouse.help_text|safe }}</div>
+                {% endif %}
+            </div>
+        </div>
+        <div class="checkbox-row">
+            <div class="fieldBox field-paid{% if adminform.form.paid.errors %} errors{% endif %}">
+                {{ adminform.form.paid }}{{ adminform.form.paid.label_tag|cut:":" }}
+            </div>
+            <div class="fieldBox field-is_outgoing{% if adminform.form.is_outgoing.errors %} errors{% endif %}">
+                {{ adminform.form.is_outgoing }}{{ adminform.form.is_outgoing.label_tag|cut:":" }}
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="fieldBox field-total_amount">
+                <label for="id_total_amount">Сумма:</label>
+                <div class="readonly" id="total_amount_display">{{ adminform.form.total_amount.value|default:"0.00" }}</div>
+            </div>
+        </div>
+        <fieldset class="module aligned">
+            <div class="form-row car-selection">
+                <div class="field-container available-cars">
+                    <label for="id_available_cars">Available Cars:</label>
+                    <select id="id_available_cars" multiple name="available_cars">
+                        {% if adminform.form.instance.client or adminform.form.client.value %}
+                            {% with client_id=adminform.form.instance.client_id|default:adminform.form.client.value %}
+                                {% if client_id %}
+                                    <option class="no-results">Loading...</option>
+                                {% else %}
+                                    <option class="no-results">No client selected</option>
+                                {% endif %}
+                            {% endwith %}
+                        {% else %}
+                            <option class="no-results">No client selected</option>
+                        {% endif %}
+                    </select>
+                    <button type="button" class="add-btn" onclick="addCar()">Add ></button>
+                </div>
+                <div class="field-container selected-cars">
+                    <label for="id_cars">Selected Cars:</label>
+                    <div class="selected-cars-container">
+                        <div class="selected-cars-list" id="id_cars">
+                            {% if adminform.form.instance.pk and adminform.form.instance.cars.exists %}
+                                {% for car in adminform.form.instance.cars.all %}
+                                    <div data-car-id="{{ car.id }}">{{ car }}</div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                        <div class="button-group">
+                            <button type="button" class="remove-btn" onclick="removeCar()">Remove</button>
+                            <button type="button" class="remove-btn" onclick="removeAllCars()">Remove All</button>
+                        </div>
+                    </div>
+                    <input type="hidden" name="cars" id="id_cars_hidden" value="{% if adminform.form.instance.pk %}{% for car in adminform.form.instance.cars.all %}{{ car.id }},{% endfor %}{% endif %}">
+                </div>
+            </div>
+        </fieldset>
+        <div class="submit-row">
+            <input type="submit" value="Save" class="default" name="_save">
+        </div>
+    </form>
+{% endblock %}
+
+{% block footer %}
+    {{ block.super }}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM fully loaded');
+            if (typeof htmx === 'undefined') {
+                console.error('HTMX is not defined - check static file loading');
+            } else {
+                console.log('HTMX is defined');
+                const clientSelect = document.querySelector('#id_client');
+                if (clientSelect) {
+                    console.log('Client select found:', clientSelect);
+
+                    const $clientSelect = jQuery('#id_client');
+                    $clientSelect.on('select2:select', function(e) {
+                        const clientId = e.target.value;
+                        console.log('Select2 change event triggered, clientId:', clientId);
+                        if (clientId) {
+                            console.log('Sending HTMX request to /api/cars/?client_id=' + clientId);
+                            htmx.ajax('GET', '/api/cars/?client_id=' + clientId, {
+                                target: '#id_available_cars',
+                                swap: 'innerHTML',
+                                indicators: false
+                            }).then(() => {
+                                console.log('HTMX request completed');
+                                updateHiddenField();
+                            }).catch((error) => {
+                                console.error('HTMX request failed:', error);
+                                document.getElementById('id_available_cars').innerHTML = '<option class="no-results">Error loading cars</option>';
+                            });
+                        } else {
+                            console.log('No client selected, clearing available cars');
+                            document.getElementById('id_available_cars').innerHTML = '<option class="no-results">No client selected</option>';
+                            updateHiddenField();
+                        }
+                    });
+
+                    clientSelect.addEventListener('change', function() {
+                        console.log('Native change event triggered, clientId:', this.value);
+                    });
+
+                    updateHiddenField();
+                    const initialClientId = clientSelect.value;
+                    console.log('Initial clientId:', initialClientId);
+                    if (initialClientId) {
+                        console.log('Sending initial HTMX request to /api/cars/?client_id=' + initialClientId);
+                        htmx.ajax('GET', '/api/cars/?client_id=' + initialClientId, {
+                            target: '#id_available_cars',
+                            swap: 'innerHTML',
+                            indicators: false
+                        });
+                    } else {
+                        document.getElementById('id_available_cars').innerHTML = '<option class="no-results">No client selected</option>';
+                    }
+                } else {
+                    console.error('Client select element not found');
+                }
+
+                const form = document.querySelector('#invoice_form');
+                if (form) {
+                    form.addEventListener('submit', function(e) {
+                        console.log('Form submitting');
+                        updateHiddenField();
+                        const hiddenField = document.getElementById('id_cars_hidden');
+                        console.log('Cars value before submit:', hiddenField.value);
+                        const selectedCars = document.getElementById('id_cars');
+                        console.log('Selected cars content:', selectedCars.innerHTML);
+                        const clientSelect = document.querySelector('#id_client');
+                        console.log('Client select value before submit:', clientSelect ? clientSelect.value : 'Not found');
+                    });
+                } else {
+                    console.error('Form element not found');
+                }
+            }
+
+            const selectedCars = document.getElementById('id_cars');
+            if (selectedCars) {
+                selectedCars.addEventListener('click', function(e) {
+                    if (e.target.tagName === 'DIV') {
+                        e.target.classList.toggle('selected');
+                    }
+                });
+            } else {
+                console.error('Selected cars element not found');
+            }
+        });
+
+        function addCar() {
+            const availableCars = document.getElementById('id_available_cars');
+            const selectedCars = document.getElementById('id_cars');
+            const selectedOptions = Array.from(availableCars.selectedOptions);
+            console.log('Adding cars:', selectedOptions.length, 'Options:', selectedOptions.map(opt => opt.value));
+            selectedOptions.forEach(option => {
+                const carDiv = document.createElement('div');
+                carDiv.setAttribute('data-car-id', option.value);
+                carDiv.textContent = option.text;
+                selectedCars.appendChild(carDiv);
+                availableCars.removeChild(option);
+            });
+            updateHiddenField();
+            updateTotalAmount(); // Обновляем сумму после добавления
+        }
+
+        function removeCar() {
+            const availableCars = document.getElementById('id_available_cars');
+            const selectedCars = document.getElementById('id_cars');
+            const selectedItems = selectedCars.querySelectorAll('.selected');
+            console.log('Removing cars:', selectedItems.length);
+            selectedItems.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.getAttribute('data-car-id');
+                option.text = item.textContent;
+                availableCars.appendChild(option);
+                selectedCars.removeChild(item);
+            });
+            updateHiddenField();
+            updateTotalAmount(); // Обновляем сумму после удаления
+        }
+
+        function removeAllCars() {
+            const availableCars = document.getElementById('id_available_cars');
+            const selectedCars = document.getElementById('id_cars');
+            const allItems = selectedCars.querySelectorAll('div');
+            console.log('Removing all cars:', allItems.length);
+            allItems.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.getAttribute('data-car-id');
+                option.text = item.textContent;
+                availableCars.appendChild(option);
+                selectedCars.removeChild(item);
+            });
+            updateHiddenField();
+            updateTotalAmount(); // Обновляем сумму после удаления всех
+        }
+
+        function updateHiddenField() {
+            const selectedCars = document.getElementById('id_cars');
+            const hiddenField = document.getElementById('id_cars_hidden');
+            if (selectedCars && hiddenField) {
+                const carIds = Array.from(selectedCars.querySelectorAll('div')).map(div => div.getAttribute('data-car-id'));
+                hiddenField.value = carIds.join(',');
+                console.log('Updated hidden field with car IDs:', hiddenField.value);
+            } else {
+                console.error('Selected cars or hidden field not found');
+            }
+        }
+
+        function updateTotalAmount() {
+            const selectedCars = document.getElementById('id_cars');
+            const carIds = Array.from(selectedCars.querySelectorAll('div')).map(div => div.getAttribute('data-car-id'));
+            const carIdsStr = carIds.join(',');
+            console.log('Sending request to update total amount with car IDs:', carIdsStr);
+
+            fetch(`/api/invoice-total/?car_ids=${carIdsStr}`, {
+                method: 'GET',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => {
+                console.log('Response status:', response.status);
+                if (!response.ok) {
+                    throw new Error('Network response was not ok ' + response.statusText);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Received total amount:', data);
+                const totalAmountDisplay = document.getElementById('total_amount_display');
+                if (totalAmountDisplay) {
+                    totalAmountDisplay.textContent = data.total_amount || '0.00';
+                    console.log('Updated total amount display to:', totalAmountDisplay.textContent);
+                } else {
+                    console.error('Total amount display element not found');
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching total amount:', error);
+                const totalAmountDisplay = document.getElementById('total_amount_display');
+                if (totalAmountDisplay) {
+                    totalAmountDisplay.textContent = 'Error';
+                }
+            });
+        }
+    </script>
+{% endblock %}

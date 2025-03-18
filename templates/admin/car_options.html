@@ -1,0 +1,7 @@
+{% if cars %}
+    {% for car in cars %}
+        <option value="{{ car.id }}">{{ car }}</option>
+    {% endfor %}
+{% else %}
+    <span>No cars found</span>
+{% endif %}
