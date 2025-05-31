@@ -1,0 +1,13 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+    <h1>Admin Dashboard</h1>
+    {% for app in app_list %}
+        <h2>{{ app.name|default:"Unknown App" }}</h2>
+        <ul>
+        {% for model in app.models %}
+            <li><a href="{{ model.admin_url }}">{{ model.name|default:"Unknown Model" }}</a></li>
+        {% endfor %}
+        </ul>
+    {% endfor %}
+{% endblock %}

@@ -1,0 +1,102 @@
+{% extends "admin/change_form.html" %}
+{% load static i18n admin_urls %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <script src="{% static 'js/htmx.min.js' %}"></script>
+    <style>
+        .balance-details {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 5px;
+            background-color: #fafafa;
+        }
+        .balance-details h3 {
+            margin-top: 0;
+        }
+        .balance-details table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .balance-details th, .balance-details td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .balance-details th {
+            background-color: #f2f2f2;
+        }
+        .error-message {
+            color: #dc3545;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+    {{ block.super }}
+    {% if balance_details_error %}
+        <div class="error-message">{{ balance_details_error }}</div>
+    {% elif balance_details %}
+        <div class="balance-details">
+            <h3>Детали баланса</h3>
+            <p>Общий баланс: {{ original.balance }}</p>
+            <p>Наличный баланс: {{ original.cash_balance }}</p>
+            <p>Безналичный баланс: {{ original.card_balance }}</p>
+            <h4>Инвойсы</h4>
+            <table>
+                <tr>
+                    <th>Номер инвойса</th>
+                    <th>Сумма</th>
+                    <th>Оплачено</th>
+                    <th>Баланс</th>
+                    <th>Статус</th>
+                </tr>
+                {% for invoice in original.balance_details.invoices %}
+                    <tr>
+                        <td>{{ invoice.invoice_number }}</td>
+                        <td>{{ invoice.total_amount }}</td>
+                        <td>{{ invoice.total_paid }}</td>
+                        <td>{{ invoice.balance }}</td>
+                        <td>{{ invoice.status }}</td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="5">Нет инвойсов</td>
+                    </tr>
+                {% endfor %}
+            </table>
+            <h4>Платежи</h4>
+            <table>
+                <tr>
+                    <th>ID платежа</th>
+                    <th>Сумма</th>
+                    <th>Тип</th>
+                    <th>С баланса</th>
+                    <th>С наличного</th>
+                    <th>Инвойс</th>
+                    <th>Дата</th>
+                    <th>Описание</th>
+                </tr>
+                {% for payment in original.balance_details.payments %}
+                    <tr>
+                        <td>{{ payment.payment_id }}</td>
+                        <td>{{ payment.amount }}</td>
+                        <td>{{ payment.payment_type }}</td>
+                        <td>{{ payment.from_balance|yesno:"Да,Нет" }}</td>
+                        <td>{{ payment.from_cash_balance|yesno:"Да,Нет" }}</td>
+                        <td>{{ payment.invoice_number }}</td>
+                        <td>{{ payment.date }}</td>
+                        <td>{{ payment.description|default:"-" }}</td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="8">Нет платежей</td>
+                    </tr>
+                {% endfor %}
+            </table>
+        </div>
+    {% endif %}
+{% endblock %}

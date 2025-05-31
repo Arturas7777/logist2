@@ -5,20 +5,87 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="50d7b0a4-83f9-4fe6-bb54-a494d7749f0e" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/logist2.iml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/api.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/consumers.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/routing.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/serializers.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/signals.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/core/static/js/invoice_admin.js" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/static/htmx.js" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/templates/admin/car_options.html" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/templates/admin/invoice_change.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/logist2.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/logist2.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/admin.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/admin.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/apps.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/apps.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/models.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/signals.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/signals.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/static/artf_css/custom_admin.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/static/artf_css/custom_admin.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/static/js/invoice_admin.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/static/js/invoice_admin.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/views.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/views.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/dump.rdb" beforeDir="false" afterPath="$PROJECT_DIR$/dump.rdb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/logist2/settings.py" beforeDir="false" afterPath="$PROJECT_DIR$/logist2/settings.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/logist2/urls.py" beforeDir="false" afterPath="$PROJECT_DIR$/logist2/urls.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/static/htmx.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/admin/js/cancel.js" beforeDir="false" afterPath="$PROJECT_DIR$/staticfiles/admin/js/cancel.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/admin/js/popup_response.js" beforeDir="false" afterPath="$PROJECT_DIR$/staticfiles/admin/js/popup_response.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/artf_css/custom_admin.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/artf_css/custom_admin.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/htmx.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/jazzmin/css/main.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/jazzmin/img/calendar-icons.svg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/jazzmin/img/default-log.svg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/jazzmin/img/default.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/jazzmin/img/icon-calendar.svg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/jazzmin/img/icon-changelink.svg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/jazzmin/img/selector-icons.svg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/jazzmin/js/change_form.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/jazzmin/js/change_list.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/jazzmin/js/main.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/jazzmin/js/related-modal.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/jazzmin/js/ui-builder.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/jazzmin/plugins/bootstrap-show-modal/bootstrap-show-modal.min.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/js/invoice_admin.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/js/invoice_admin.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/adminlte/css/adminlte.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/adminlte/css/adminlte.min.css.map" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/adminlte/img/AdminLTELogo.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/adminlte/img/icons.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/adminlte/img/user2-160x160.jpg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/adminlte/js/adminlte.min.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/adminlte/js/adminlte.min.js.map" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootstrap/js/bootstrap.min.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootstrap/js/bootstrap.min.js.map" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/cerulean/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/cosmo/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/cyborg/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/darkly/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/default/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/flatly/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/journal/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/litera/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/lumen/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/lux/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/materia/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/minty/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/pulse/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/sandstone/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/simplex/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/sketchy/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/slate/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/solar/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/spacelab/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/superhero/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/united/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/bootswatch/yeti/bootstrap.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/fontawesome-free/css/all.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/fontawesome-free/webfonts/fa-brands-400.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/fontawesome-free/webfonts/fa-brands-400.woff2" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/fontawesome-free/webfonts/fa-regular-400.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/fontawesome-free/webfonts/fa-regular-400.woff2" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/fontawesome-free/webfonts/fa-solid-900.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/fontawesome-free/webfonts/fa-solid-900.woff2" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/fontawesome-free/webfonts/fa-v4compatibility.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/fontawesome-free/webfonts/fa-v4compatibility.woff2" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/select2/css/select2.min.css" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/staticfiles/vendor/select2/js/select2.min.js" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/templates/admin/car_options.html" beforeDir="false" afterPath="$PROJECT_DIR$/templates/admin/car_options.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/templates/admin/invoice_change.html" beforeDir="false" afterPath="$PROJECT_DIR$/templates/admin/invoice_change.html" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -36,6 +103,9 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
+  <component name="ProblemsViewState">
+    <option name="selectedTabId" value="CurrentFile" />
+  </component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 2
 }</component>
@@ -45,17 +115,25 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;DefaultHtmlFileTemplate&quot;: &quot;HTML File&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "DefaultHtmlFileTemplate": "HTML File",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "git-widget-placeholder": "master",
+    "last_opened_file_path": "C:/Users/art-f/PycharmProjects/logist2/core/static/artf_css",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\art-f\PycharmProjects\logist2\core\static\artf_css" />
+      <recent name="C:\Users\art-f\PycharmProjects\logist2\static\css" />
+    </key>
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\art-f\PycharmProjects\logist2\core\static\js" />
+      <recent name="C:\Users\art-f\PycharmProjects\logist2\core\static\css" />
+      <recent name="C:\Users\art-f\PycharmProjects\logist2\templates\admin\core\container" />
     </key>
   </component>
   <component name="SharedIndexes">

@@ -1,0 +1,116 @@
+/* Общие стили для формы */
+#container_form {
+    max-width: 95%;
+    width: 100%;
+    margin: 0 auto;
+    padding: 0 20px;
+    box-sizing: border-box;
+}
+
+/* Скрытие иконок ForeignKey */
+#container_form .related-widget-wrapper-link,
+#container_form .inline-group .inline-related .related-widget-wrapper-link,
+#container_form .inline-group .inline-related .related-widget-wrapper .related-widget-wrapper-link {
+    display: none !important;
+}
+
+/* Стили для полей формы редактирования (кроме CarInline) */
+#container_form .form-row .fieldBox {
+    display: inline-block;
+    width: 300px;
+    margin-right: 20px;
+    margin-bottom: 15px;
+    vertical-align: top;
+}
+
+#container_form .form-row .fieldBox label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+
+#container_form .form-row .fieldBox input,
+#container_form .form-row .fieldBox select,
+#container_form .form-row .fieldBox .readonly {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Стили для CarInline (не трогаем ширину полей) */
+.inline-group {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.inline-group table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: auto;
+}
+
+.inline-group th, .inline-group td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.inline-group th {
+    background-color: #f2f2f2;
+    font-weight: bold;
+}
+
+/* Стили для контейнера деталей (для контейнера и автомобиля) */
+.container-details,
+.car-details {
+    margin: 20px 0;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    background-color: #f9f9f9;
+    width: 100%;
+    box-sizing: border-box;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Стили для полей внутри контейнера деталей */
+.container-details .field-container,
+.car-details .field-container {
+    width: 300px;
+    display: inline-block;
+    margin-bottom: 10px;
+}
+
+.container-details .field-container p,
+.car-details .field-container p {
+    margin: 0;
+}
+
+/* Стили для выделения статуса */
+.status-highlight {
+    padding: 5px 10px;
+    border-radius: 3px;
+    color: white;
+    font-size: 0.9em;
+}
+
+.status-floating { background-color: #007bff; }
+.status-in_port { background-color: #ffc107;}
+.status-unloaded { background-color: #28a745; }
+.status-transferred { background-color: #6c757d; }
+
+/* Скрываем ссылку History из object-tools */
+.object-tools a[href$="/history/"] {
+    display: none !important;
+}
+
+/* Стили для ссылки History в футере */
+.history-link a {
+    color: #007bff;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+.history-link a:hover {
+    text-decoration: underline;
+}
