@@ -1,3 +1,5 @@
+*.zip
+*.sql
 .env
 .venv/
 __pycache__/
