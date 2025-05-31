@@ -1,0 +1,23 @@
+{% extends "admin/change_form.html" %}
+{% load static %}
+
+{% block content %}
+    <form method="post" action="">
+        {% csrf_token %}
+        {{ adminform.form.as_p }}
+        <h2>Баланс склада</h2>
+        <p>Текущий баланс: {{ original.balance|floatformat:2 }} 
+            {% if original.balance > 0 %} (Переплата) {% elif original.balance < 0 %} (Задолженность) {% endif %}</p>
+        {% if original.balance_details %}
+            <h3>Детализация:</h3>
+            <ul>
+                {% for detail in original.balance_details %}
+                    <li>Инвойс {{ detail.invoice_number }}: {{ detail.balance|floatformat:2 }} ({{ detail.status }})</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+        <div class="submit-row">
+            <input type="submit" value="Save" class="default" name="_save">
+        </div>
+    </form>
+{% endblock %}

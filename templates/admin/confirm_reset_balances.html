@@ -1,0 +1,23 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+    <h1>Подтверждение действия: {{ action_name }}</h1>
+    <p>Вы уверены, что хотите обнулить балансы для следующих клиентов?</p>
+    <ul>
+        {% for client in clients %}
+            <li>{{ client.name }} (Общий: {{ client.balance }}, Наличные: {{ client.cash_balance }}, Безналичные: {{ client.card_balance }})</li>
+        {% endfor %}
+    </ul>
+    <p>Это действие создаст корректирующие платежи для обнуления балансов, сохраняя историю транзакций.</p>
+    <form method="post" action="">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="{{ action }}">
+        {% for client in clients %}
+            <input type="hidden" name="_selected_action" value="{{ client.id }}">
+        {% endfor %}
+        <input type="hidden" name="confirm" value="yes">
+        <input type="submit" value="Подтвердить">
+        <a href="{{ request.get_full_path }}" class="button cancel-link">Отмена</a>
+    </form>
+{% endblock %}

@@ -1,0 +1,162 @@
+{% extends "admin/base_site.html" %}
+{% load static i18n %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <style>
+        .payment-form { max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px; background-color: #fafafa; }
+        .payment-form label { display: block; margin-bottom: 5px; font-weight: bold; }
+        .payment-form input, .payment-form select, .payment-form textarea { width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        .payment-form input[type="checkbox"] { width: auto; margin-right: 10px; }
+        .payment-form button { padding: 10px 20px; border: none; border-radius: 4px; background-color: #28a745; color: white; cursor: pointer; }
+        .payment-form button:hover { background-color: #218838; }
+        .error { color: #dc3545; font-size: 12px; margin-top: 5px; }
+        #balance_info { margin-top: 10px; font-style: italic; }
+    </style>
+{% endblock %}
+
+{% block content %}
+    <div class="payment-form">
+        <h2>Зарегистрировать платеж</h2>
+        <form id="payment_form" method="post" action="{% url 'register_payment' %}">
+            {% csrf_token %}
+            <div>
+                <label for="payer_id">Плательщик:</label>
+                <select id="payer_id" name="payer_id" required>
+                    <option value="">Выберите клиента</option>
+                    {% for client in clients %}
+                        <option value="{{ client.id }}">{{ client.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="invoice_id">Инвойс:</label>
+                <select id="invoice_id" name="invoice_id">
+                    <option value="">Без инвойса</option>
+                    {% for invoice in invoices %}
+                        <option value="{{ invoice.id }}">{{ invoice.number }} ({{ invoice.total_amount|floatformat:2 }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="amount">Сумма:</label>
+                <input type="number" id="amount" name="amount" step="0.01" min="0.01" required>
+            </div>
+            <div>
+                <label for="payment_type">Тип платежа:</label>
+                <select id="payment_type" name="payment_type" required>
+                    <option value="CASH">Наличные</option>
+                    <option value="CARD">Безналичные</option>
+                    <option value="BALANCE">С баланса</option>
+                </select>
+            </div>
+            <div>
+                <label for="from_balance">Оплачено с баланса:</label>
+                <input type="checkbox" id="from_balance" name="from_balance">
+            </div>
+            <div>
+                <label for="from_cash_balance">Оплачено с наличного баланса:</label>
+                <input type="checkbox" id="from_cash_balance" name="from_cash_balance">
+            </div>
+            <div>
+                <label for="recipient">Получатель:</label>
+                <input type="text" id="recipient" name="recipient" required>
+            </div>
+            <div>
+                <label for="description">Описание:</label>
+                <textarea id="description" name="description"></textarea>
+            </div>
+            <button type="submit">Зарегистрировать</button>
+        </form>
+        <div id="balance_info"></div>
+        <div id="form_errors" class="error"></div>
+    </div>
+{% endblock %}
+
+{% block footer %}
+    {{ block.super }}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('payment_form');
+            const payerSelect = document.getElementById('payer_id');
+            const balanceInfo = document.getElementById('balance_info');
+            const errorDiv = document.getElementById('form_errors');
+            const paymentTypeSelect = document.getElementById('payment_type');
+            const fromBalanceCheckbox = document.getElementById('from_balance');
+            const fromCashBalanceCheckbox = document.getElementById('from_cash_balance');
+
+            // Обновление информации о балансе при выборе клиента
+            payerSelect.addEventListener('change', function() {
+                const clientId = this.value;
+                if (clientId) {
+                    fetch(`/api/client-balance/?client_id=${clientId}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.error) {
+                                balanceInfo.textContent = `Ошибка: ${data.error}`;
+                            } else {
+                                balanceInfo.textContent = `Общий баланс: ${data.total_balance}, Наличные: ${data.cash_balance}, Безналичные: ${data.card_balance}`;
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error fetching balance:', error);
+                            balanceInfo.textContent = 'Ошибка загрузки баланса';
+                        });
+                } else {
+                    balanceInfo.textContent = '';
+                }
+            });
+
+            // Валидация формы перед отправкой
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const amount = parseFloat(document.getElementById('amount').value);
+                if (amount <= 0) {
+                    errorDiv.textContent = 'Сумма должна быть больше 0';
+                    return;
+                }
+                if (fromBalanceCheckbox.checked && !payerSelect.value) {
+                    errorDiv.textContent = 'Выберите плательщика для оплаты с баланса';
+                    return;
+                }
+                const formData = new FormData(form);
+                fetch(form.action, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-CSRFToken': document.cookie.match(/csrftoken=([^;]+)/)?.[1] || ''
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert(data.message);
+                        form.reset();
+                        balanceInfo.textContent = '';
+                        errorDiv.textContent = '';
+                        window.location.href = '/admin/core/payment/';
+                    } else {
+                        errorDiv.textContent = data.message;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error submitting payment:', error);
+                    errorDiv.textContent = 'Ошибка при регистрации платежа';
+                });
+            });
+
+            // Управление видимостью чекбоксов в зависимости от типа платежа
+            paymentTypeSelect.addEventListener('change', function() {
+                if (this.value === 'BALANCE') {
+                    fromBalanceCheckbox.disabled = false;
+                    fromCashBalanceCheckbox.disabled = false;
+                } else {
+                    fromBalanceCheckbox.disabled = true;
+                    fromCashBalanceCheckbox.disabled = true;
+                    fromBalanceCheckbox.checked = false;
+                    fromCashBalanceCheckbox.checked = false;
+                }
+            });
+        });
+    </script>
+{% endblock %}

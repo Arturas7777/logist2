@@ -1,7 +1,9 @@
 {% if cars %}
     {% for car in cars %}
-        <option value="{{ car.id }}">{{ car }}</option>
+        <option value="{{ car.id }}" data-status="{{ car.status }}">
+            {{ car.brand }} {{ car.vin }} ({{ car.status }}{% if car.status == 'TRANSFERRED' and car.transfer_date %}, {{ car.transfer_date|date:"Y-m-d" }}{% endif %})
+        </option>
     {% endfor %}
 {% else %}
-    <span>No cars found</span>
+    <option class="no-results">No available cars</option>
 {% endif %}
