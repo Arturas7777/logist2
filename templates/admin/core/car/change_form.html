@@ -2,24 +2,35 @@
 {% load static i18n %}
 
 {% block extrastyle %}
-    {{ block.super }}
-    <link rel="stylesheet" type="text/css" href="{% static 'css/logist2_custom_admin.css' %}">
+  {{ block.super }}
+  <link rel="stylesheet" type="text/css" href="{% static 'css/logist2_custom_admin.css' %}">
 {% endblock %}
 
 {% block content %}
-    <div id="container_form">
-        <div class="car-details">
-            <div class="field-container">
-                <p><span class="status-highlight status-{{ original.status|lower }}">{{ original.get_status_display }}</span></p>
-            </div>
+  <div id="container_form">
+    <div class="car-details">
+      <div class="field-container">
+        <p>
+          <span class="status-highlight status-{{ original.status|lower }}">
+            {{ original.get_status_display }}
+          </span>
+          {% if original.container %}
+            <a href="{% url 'admin:core_container_change' original.container.pk %}"
+               class="status-highlight status-{{ original.container.status|lower }}"
+               style="margin-left: 10px; vertical-align: middle;">
+              Контейнер {{ original.container.name }}
+            </a>
+          {% endif %}
+        </p>
+        <div style="margin-top: 10px;">
+          <input type="checkbox" name="title" id="id_title" {% if original.title %}checked{% endif %}>
+          <label for="id_title" style="margin-left: 5px;">Тайтл</label>
         </div>
-        {{ block.super }}
+        {% if original.title_notes %}
+          <textarea readonly rows="2" style="width: 100%; margin-top: 5px;">{{ original.title_notes }}</textarea>
+        {% endif %}
+      </div>
     </div>
-{% endblock %}
-
-{% block footer %}
     {{ block.super }}
-    <div class="history-link" style="margin-top: 10px;">
-        <a href="{% url 'admin:core_car_history' original.pk %}">History</a>
-    </div>
+  </div>
 {% endblock %}

@@ -1,20 +1,27 @@
 from django.contrib import admin
 from django.urls import reverse
+from django.utils.html import format_html
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
+from django import forms
 from .models import Client, Warehouse, Car, Invoice, Payment, Container, Declaration, Accounting, Line
 import json
 import logging
+
 logger = logging.getLogger('django')
 
-# Фрагмент admin.py для CarInline
+CONTAINER_STATUS_COLORS = {
+    'В пути': '#2772a8',  # Темнее синего
+    'В порту': '#8B0000',  # Тёмно-красный
+    'Разгружен': '#239f58',  # Темнее зелёного
+    'Передан': '#78458c',  # Темнее фиолетового
+}
 
-# Фрагмент admin.py для CarInline
 class CarInline(admin.TabularInline):
     model = Car
     extra = 1
     can_delete = True
-    fields = ('year', 'brand', 'vin', 'client', 'status', 'total_price')  # Убрали storage_cost для компактности
+    fields = ('year', 'brand', 'vin', 'client', 'status', 'total_price')
     readonly_fields = ('total_price',)
 
     def get_formset(self, request, obj=None, **kwargs):
@@ -23,18 +30,17 @@ class CarInline(admin.TabularInline):
         for field in formset.form.base_fields.values():
             field.help_text = ''
         return formset
-# Фрагмент admin.py для CarInline и ContainerAdmin
+
 class ContainerAdmin(admin.ModelAdmin):
     change_form_template = 'admin/core/container/change_form.html'
-    list_display = ('number', 'status', 'line', 'eta', 'client', 'warehouse', 'unload_date', 'notes')
+    list_display = ('number', 'colored_status', 'line', 'eta', 'client', 'warehouse', 'unload_date',)
     list_filter = ('status', 'line', 'client')
     search_fields = ('number',)
     inlines = [CarInline]
     fieldsets = (
         (None, {
             'fields': (
-                ('number', 'status', 'warehouse', 'client', 'line'),
-                ('eta', 'unload_date', 'notes'),
+                ('number', 'status','line', 'warehouse', 'eta', 'unload_date'),
 
             )
         }),
@@ -48,6 +54,7 @@ class ContainerAdmin(admin.ModelAdmin):
         }),
     )
     readonly_fields = ('days', 'storage_cost')
+    actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred']  # Добавляем новые действия
 
     class Media:
         css = {'all': ('css/logist2_custom_admin.css',)}
@@ -78,27 +85,79 @@ class ContainerAdmin(admin.ModelAdmin):
             field.help_text = ''
         return form
 
+    def colored_status(self, obj):
+        color = obj.get_status_color()
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 4px 8px; border-radius: 4px;">{}</span>',
+            color,
+            obj.get_status_display()
+        )
+
+    colored_status.short_description = 'Статус'
+
+    # Кастомные действия для изменения статуса
+    def set_status_floating(self, request, queryset):
+        updated = queryset.update(status='FLOATING')
+        for obj in queryset:
+            obj.update_days_and_storage()
+            obj.sync_cars()
+            obj.save(update_fields=['days', 'storage_cost'])
+        self.message_user(request, f"Статус изменён на 'В пути' для {updated} контейнеров.")
+    set_status_floating.short_description = "Изменить статус на В пути"
+
+    def set_status_in_port(self, request, queryset):
+        updated = queryset.update(status='IN_PORT')
+        for obj in queryset:
+            obj.update_days_and_storage()
+            obj.sync_cars()
+            obj.save(update_fields=['days', 'storage_cost'])
+        self.message_user(request, f"Статус изменён на 'В порту' для {updated} контейнеров.")
+    set_status_in_port.short_description = "Изменить статус на В порту"
+
+    def set_status_unloaded(self, request, queryset):
+        updated = 0
+        for obj in queryset:
+            if obj.warehouse and obj.unload_date:
+                obj.status = 'UNLOADED'
+                obj.update_days_and_storage()
+                obj.sync_cars()
+                obj.save(update_fields=['status', 'days', 'storage_cost'])
+                updated += 1
+            else:
+                self.message_user(request, f"Контейнер {obj.number} не обновлён: требуются поля 'Склад' и 'Дата разгрузки'.", level='warning')
+        self.message_user(request, f"Статус изменён на 'Разгружен' для {updated} контейнеров.")
+    set_status_unloaded.short_description = "Изменить статус на Разгружен"
+
+    def set_status_transferred(self, request, queryset):
+        updated = queryset.update(status='TRANSFERRED')
+        for obj in queryset:
+            obj.update_days_and_storage()
+            obj.sync_cars()
+            obj.save(update_fields=['days', 'storage_cost'])
+        self.message_user(request, f"Статус изменён на 'Передан' для {updated} контейнеров.")
+    set_status_transferred.short_description = "Изменить статус на Передан"
+
 @admin.register(Car)
 class CarAdmin(admin.ModelAdmin):
     change_form_template = 'admin/core/car/change_form.html'
     list_display = (
-        'vin', 'brand', 'year_display', 'client', 'status', 'warehouse',
-        'unload_date_display', 'transfer_date_display', 'warehouse_days_display',
-        'final_storage_cost_display', 'total_price_display', 'ths', 'sklad',
-        'dekl', 'proft', 'free_days_display', 'days', 'rate', 'storage_cost'
+        'vin', 'brand', 'year_display', 'client', 'colored_status', 'warehouse',
+        'unload_date_display', 'proft', 'total_price_display', 'final_storage_cost_display',
+        'has_title_display'  # Добавляем has_title в список
     )
-    list_filter = ('status', 'warehouse', 'client')
+    list_filter = ('status', 'warehouse', 'client', 'has_title')
     search_fields = ('vin', 'brand')
     fieldsets = (
         ('Основные данные', {
             'fields': (
-                ('year', 'brand', 'vin', 'client', 'container'),
+                ('year', 'brand', 'vin', 'client', 'status'),
+
             )
         }),
         ('Склад', {
             'fields': (
                 ('unload_date', 'transfer_date'),
-                ('warehouse','free_days', 'rate', 'days'),
+                ('warehouse', 'free_days', 'rate', 'days'),
             )
         }),
         ('Финансы', {
@@ -110,7 +169,18 @@ class CarAdmin(admin.ModelAdmin):
             )
         }),
     )
-    readonly_fields = ('total_price', 'storage_cost', 'warehouse_days', 'days')
+    readonly_fields = ('total_price', 'storage_cost', 'warehouse_days', 'days',)
+    actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'set_title_with_us']  # Добавляем новые действия
+
+    def colored_status(self, obj):
+        color = obj.get_status_color()
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 4px 8px; border-radius: 4px;">{}</span>',
+            color,
+            obj.get_status_display()
+        )
+
+    colored_status.short_description = 'Статус'
 
     class Media:
         css = {'all': ('css/logist2_custom_admin.css',)}
@@ -137,18 +207,97 @@ class CarAdmin(admin.ModelAdmin):
 
     def final_storage_cost_display(self, obj):
         return obj.final_storage_cost
-    final_storage_cost_display.short_description = 'Итоговая цена'  # Изменено
+    final_storage_cost_display.short_description = 'Итоговая'
     final_storage_cost_display.admin_order_field = 'final_storage_cost'
+
+    def formfield_for_dbfield(self, db_field, **kwargs):
+        if db_field.name == 'has_title':
+            kwargs['label'] = 'ТАЙТЛ'  # Убираем label
+        if db_field.name == 'title_notes':
+            kwargs['widget'] = forms.TextInput(attrs={'class': 'vTextField'})
+        return super().formfield_for_dbfield(db_field, **kwargs)
+
+    def set_title_with_us(self, request, queryset):
+        logger.info(f"Setting has_title=True for {queryset.count()} cars")
+        updated = queryset.update(has_title=True)
+        for obj in queryset:
+            logger.debug(f"Updating car {obj.vin} with has_title=True")
+            obj.save()
+        self.message_user(request, f"Тайтл установлен как 'У нас' для {updated} автомобилей.")
+    set_title_with_us.short_description = "Тайтл у нас"
+
+    def has_title_display(self, obj):
+        return obj.has_title
+
+    has_title_display.short_description = 'Тайтл'  # Переименовываем "Тайтл у нас" в "Тайтл"
+    has_title_display.boolean = True  # Для отображения как чекбокс
+    has_title_display.admin_order_field = 'has_title'
 
     def total_price_display(self, obj):
         return obj.total_price
-    total_price_display.short_description = 'Текущая цена'  # Изменено
+    total_price_display.short_description = 'Текущая'
     total_price_display.admin_order_field = 'total_price'
 
     def free_days_display(self, obj):
         return obj.free_days
     free_days_display.short_description = 'FREE'
     free_days_display.admin_order_field = 'free_days'
+
+    def container_link(self, obj):
+        if obj.container:
+            color = obj.container.get_status_color()
+            url = reverse('admin:core_container_change', args=[obj.container.id])
+            return format_html(
+                '<a href="{}" target="_blank" class="container-link" style="background-color: {}; color: white; font-size: 16px; font-weight: bold; padding: 8px 16px; border-radius: 8px; text-decoration: none; display: inline-block; font-family: sans-serif;">'
+                '{} ({})</a>',
+                url,
+                color,
+                obj.container.number,
+                obj.container.get_status_display()
+            )
+        return "-"
+
+    container_link.short_description = 'Контейнер'
+
+    # Кастомные действия для изменения статуса
+    def set_status_floating(self, request, queryset):
+        updated = queryset.update(status='FLOATING')
+        for obj in queryset:
+            obj.update_days_and_storage()
+            obj.save(update_fields=['days', 'storage_cost'])
+        self.message_user(request, f"Статус изменён на 'В пути' для {updated} автомобилей.")
+    set_status_floating.short_description = "Изменить статус на В пути"
+
+    def set_status_in_port(self, request, queryset):
+        updated = queryset.update(status='IN_PORT')
+        for obj in queryset:
+            obj.update_days_and_storage()
+            obj.save(update_fields=['days', 'storage_cost'])
+        self.message_user(request, f"Статус изменён на 'В порту' для {updated} автомобилей.")
+    set_status_in_port.short_description = "Изменить статус на В порту"
+
+    def set_status_unloaded(self, request, queryset):
+        updated = 0
+        for obj in queryset:
+            if obj.warehouse and obj.unload_date:
+                obj.status = 'UNLOADED'
+                obj.update_days_and_storage()
+                obj.save(update_fields=['status', 'days', 'storage_cost'])
+                updated += 1
+            else:
+                self.message_user(request, f"Автомобиль {obj.vin} не обновлён: требуются поля 'Склад' и 'Дата разгрузки'.", level='warning')
+        self.message_user(request, f"Статус изменён на 'Разгружен' для {updated} автомобилей.")
+    set_status_unloaded.short_description = "Изменить статус на Разгружен"
+
+    def set_status_transferred(self, request, queryset):
+        updated = queryset.update(status='TRANSFERRED')
+        for obj in queryset:
+            if obj.status == 'TRANSFERRED' and not obj.transfer_date:
+                obj.transfer_date = timezone.now().date()
+            obj.update_days_and_storage()
+            obj.save(update_fields=['transfer_date', 'days', 'storage_cost'])
+        self.message_user(request, f"Статус изменён на 'Передан' для {updated} автомобилей.")
+    set_status_transferred.short_description = "Изменить статус на Передан"
 
 @admin.register(Invoice)
 class InvoiceAdmin(admin.ModelAdmin):
@@ -220,17 +369,12 @@ class InvoiceAdmin(admin.ModelAdmin):
         else:
             obj.client = None
             logger.debug("Client set to None for outgoing invoice")
-
-        # Устанавливаем cars до сохранения объекта
         car_ids_str = request.POST.get('cars', '')
         car_ids = []
         if car_ids_str:
             car_ids = [int(cid) for cid in car_ids_str.split(',') if cid.strip().isdigit()]
             logger.debug(f"Parsed car_ids: {car_ids}")
-
         super().save_model(request, obj, form, change)
-
-        # Привязываем автомобили после сохранения объекта
         if car_ids:
             obj.cars.set(car_ids)
             logger.debug(f"Set cars: {car_ids}")
@@ -289,7 +433,6 @@ class ClientAdmin(admin.ModelAdmin):
 
     def balance_details_display(self, obj):
         details = obj.balance_details()
-        # Инвертируем total_debt для отображения
         return f"Долг: {-float(details['total_debt']):.2f}, Наличные: {details['cash_balance']}, Безналичные: {details['card_balance']}"
     balance_details_display.short_description = 'Детали баланса'
     display_debt.admin_order_field = 'debt'
@@ -300,7 +443,6 @@ class ClientAdmin(admin.ModelAdmin):
         if client:
             try:
                 details = client.balance_details()
-                # Инвертируем total_debt для отображения в JSON
                 details['total_debt'] = str(-float(details['total_debt']))
                 extra_context['balance_details'] = json.dumps(details, indent=2)
             except Exception as e:
@@ -332,10 +474,8 @@ class ClientAdmin(admin.ModelAdmin):
         })
     reset_balances.short_description = "Обнулить балансы клиентов"
 
-
 admin.site.register(Warehouse)
 admin.site.register(Declaration)
 admin.site.register(Container, ContainerAdmin)
 admin.site.register(Accounting)
 admin.site.register(Line)
-# В конец admin.py

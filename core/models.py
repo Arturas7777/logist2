@@ -66,7 +66,8 @@ class Client(models.Model):
         return details
 
     def can_pay_from_balance(self, amount, payment_type, from_cash_balance):
-        logger.info(f"Checking can_pay_from_balance for client {self.name}: amount={amount}, payment_type={payment_type}, from_cash_balance={from_cash_balance}")
+        logger.info(
+            f"Checking can_pay_from_balance for client {self.name}: amount={amount}, payment_type={payment_type}, from_cash_balance={from_cash_balance}")
         if from_cash_balance:
             can_pay = self.cash_balance >= amount
         else:
@@ -119,12 +120,21 @@ class ContainerManager(BaseManager):
             car.save()
 
 class Container(models.Model):
-    STATUS_CHOICES = (
-        ('FLOATING', 'Плывет'),
+    STATUS_CHOICES = [
+        ('FLOATING', 'В пути'),
         ('IN_PORT', 'В порту'),
         ('UNLOADED', 'Разгружен'),
         ('TRANSFERRED', 'Передан'),
-    )
+    ]
+
+    def get_status_color(self):
+        return {
+            'FLOATING': '#2772a8',  # Темнее синего
+            'IN_PORT': '#8B0000',   # Тёмно-красный
+            'UNLOADED': '#239f58',  # Темнее зелёного
+            'TRANSFERRED': '#78458c',  # Темнее фиолетового
+        }.get(self.status, '#3a8c3d')  # Темнее зелёного по умолчанию
+
     CUSTOMS_PROCEDURE_CHOICES = (
         ('TRANSIT', 'Транзит'),
         ('IMPORT', 'Импорт'),
@@ -132,8 +142,8 @@ class Container(models.Model):
         ('EXPORT', 'Экспорт'),
     )
 
-    number = models.CharField(max_length=20, verbose_name="Номер контейнера", unique=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='FLOATING', verbose_name="Статус")
+    number = models.CharField(max_length=100, unique=True, verbose_name="Номер контейнера")
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='FLOATING', verbose_name="Статус")
     line = models.ForeignKey('Line', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Морская линия")
     eta = models.DateField(null=True, blank=True, verbose_name="ETA")
     client = models.ForeignKey('Client', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Клиент")
@@ -175,6 +185,7 @@ class Container(models.Model):
         if self.status == 'UNLOADED' and (not self.warehouse or not self.unload_date):
             raise ValueError("Для статуса 'Разгружен' обязательны поля 'Склад' и 'Дата разгрузки'")
         super().save(*args, **kwargs)
+        logger.debug(f"Syncing cars for container {self.number}")
         self.sync_cars()
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
@@ -190,7 +201,7 @@ class Container(models.Model):
 
     class Meta:
         verbose_name = "Контейнер"
-        verbose_name_plural = "Контейнеры"  # Добавлено
+        verbose_name_plural = "Контейнеры"
 
 # Автомобили
 class CarManager(BaseManager):
@@ -209,6 +220,8 @@ class Car(models.Model):
     unload_date = models.DateField(null=True, blank=True, verbose_name="Дата разгрузки")
     transfer_date = models.DateField(null=True, blank=True, verbose_name="Дата передачи")
     warehouse_days = models.PositiveIntegerField(null=True, blank=True, verbose_name="Дней на складе")
+    has_title = models.BooleanField(default=False, verbose_name="Тайтл у нас")
+    title_notes = models.CharField(max_length=200, blank=True, verbose_name="Примечания к тайтлу")
     final_storage_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True,
                                              verbose_name="Итоговая цена")
     container = models.ForeignKey('Container', on_delete=models.CASCADE, related_name="cars", verbose_name="Контейнер")
@@ -229,6 +242,14 @@ class Car(models.Model):
     storage_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Складирование")
 
     objects = CarManager()
+
+    def get_status_color(self):
+        return {
+            'FLOATING': '#2772a8',
+            'IN_PORT': '#8B0000',
+            'UNLOADED': '#239f58',
+            'TRANSFERRED': '#78458c',
+        }.get(self.status, '#3a8c3d')
 
     def calculate_total_price(self):
         ths = self.ths or 0
@@ -260,7 +281,7 @@ class Car(models.Model):
 
     def sync_with_container(self, container, ths_per_car):
         self.status = container.status
-        self.warehouse = container.warehouse  # Связывает автомобиль со складом контейнера
+        self.warehouse = container.warehouse
         self.unload_date = container.unload_date
         self.transfer_date = timezone.now().date() if container.status == 'TRANSFERRED' else None
         self.ths = ths_per_car
@@ -308,7 +329,6 @@ class Invoice(models.Model):
             total = Decimal('0.00')
             if self.cars.exists():
                 for car in self.cars.all():
-                    # Пересчитываем total_price без сохранения в базе
                     car.update_days_and_storage()
                     price = car.calculate_total_price()
                     logger.debug(f"Car {car.vin} calculated price: {price}")
@@ -321,7 +341,7 @@ class Invoice(models.Model):
             logger.info(f"Updated total_amount for invoice {self.number}: {self.total_amount}")
         except Exception as e:
             logger.error(f"Error calculating total_amount for invoice {self.number}: {e}")
-            raise  # Передаем исключение для отката транзакции
+            raise
 
     @property
     def paid_amount(self):
@@ -332,42 +352,33 @@ class Invoice(models.Model):
         return self.paid_amount - self.total_amount
 
     def save(self, *args, **kwargs):
-        logger.info(f"Saving invoice {self.number}, total_amount={self.total_amount}, client={self.client.name if self.client else 'None'}")
-
+        logger.info(
+            f"Saving invoice {self.number}, total_amount={self.total_amount}, client={self.client.name if self.client else 'None'}")
         with transaction.atomic():
             old_invoice = None
             if self.pk:
                 try:
                     old_invoice = Invoice.objects.get(pk=self.pk)
-                    logger.info(f"Old invoice found: total_amount={old_invoice.total_amount}, client={old_invoice.client.name if old_invoice.client else 'None'}")
+                    logger.info(
+                        f"Old invoice found: total_amount={old_invoice.total_amount}, client={old_invoice.client.name if old_invoice.client else 'None'}")
                 except Invoice.DoesNotExist:
                     logger.warning(f"No old invoice found for id={self.pk}")
-
             if self.is_outgoing:
                 self.client = None
-
-            # Сохраняем объект, чтобы получить id
             super().save(*args, **kwargs)
-
-            # Теперь можно безопасно обновить total_amount, так как id существует
             self.update_total_amount()
-
-            # Обновляем долг клиента только если инвойс не исходящий
             if self.client and not self.is_outgoing:
-                if not old_invoice:  # Новый инвойс
+                if not old_invoice:
                     logger.info(f"Applying new invoice {self.number} for client {self.client.name}")
-                    self.client.debt += self.total_amount  # Увеличиваем долг
-                elif old_invoice.total_amount != self.total_amount:  # Изменение суммы
+                    self.client.debt += self.total_amount
+                elif old_invoice.total_amount != self.total_amount:
                     logger.info(f"Adjusting debt for client {self.client.name} due to total_amount change")
                     delta = self.total_amount - old_invoice.total_amount
-                    self.client.debt += delta  # Корректируем долг
+                    self.client.debt += delta
                 self.client.save()
                 logger.info(f"Client {self.client.name} updated: debt={self.client.debt}")
-
-            # Сохраняем обновленный total_amount и paid
             self.paid = self.paid_amount >= self.total_amount
             super().save(update_fields=['total_amount', 'paid'])
-
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
             "updates",
@@ -408,17 +419,16 @@ class Payment(models.Model):
     description = models.TextField(blank=True, verbose_name="Описание")
 
     def save(self, *args, **kwargs):
-        logger.info(f"Saving payment id={self.pk or 'new'}, amount={self.amount}, payment_type={self.payment_type}, from_balance={self.from_balance}, from_cash_balance={self.from_cash_balance}, payer={self.payer.name if self.payer else 'None'}, invoice={self.invoice.number if self.invoice else 'None'}")
-
+        logger.info(
+            f"Saving payment id={self.pk or 'new'}, amount={self.amount}, payment_type={self.payment_type}, from_balance={self.from_balance}, from_cash_balance={self.from_cash_balance}, payer={self.payer.name if self.payer else 'None'}, invoice={self.invoice.number if self.invoice else 'None'}")
         old_payment = None
         if self.pk:
             try:
                 old_payment = Payment.objects.get(pk=self.pk)
-                logger.info(f"Old payment found: amount={old_payment.amount}, payment_type={old_payment.payment_type}, from_balance={old_payment.from_balance}, from_cash_balance={old_payment.from_cash_balance}, payer={old_payment.payer.name if old_payment.payer else 'None'}")
+                logger.info(
+                    f"Old payment found: amount={old_payment.amount}, payment_type={old_payment.payment_type}, from_balance={old_payment.from_balance}, from_cash_balance={old_payment.from_cash_balance}, payer={old_payment.payer.name if old_payment.payer else 'None'}")
             except Payment.DoesNotExist:
                 logger.warning(f"No old payment found for id={self.pk}")
-
-        # Откат старого платежа
         if old_payment and old_payment.payer:
             logger.info(f"Reverting old payment for client {old_payment.payer.name}")
             old_amount = Decimal(str(old_payment.amount))
@@ -428,67 +438,70 @@ class Payment(models.Model):
                 else:
                     old_payment.payer.card_balance += old_amount
             else:
-                if old_payment.invoice:  # Откат платежа по инвойсу
-                    old_payment.payer.debt += old_amount  # Увеличиваем долг
-                    # Откат переплаты, если была
+                if old_payment.invoice:
+                    old_payment.payer.debt += old_amount
                     excess = old_payment.invoice.balance if old_payment.invoice else 0
                     if excess > 0:
-                        if old_payment.payment_type == 'CASH' or (old_payment.payment_type == 'BALANCE' and old_payment.from_cash_balance):
+                        if old_payment.payment_type == 'CASH' or (
+                                old_payment.payment_type == 'BALANCE' and old_payment.from_cash_balance):
                             old_payment.payer.cash_balance -= excess
-                        elif old_payment.payment_type == 'CARD' or (old_payment.payment_type == 'BALANCE' and not old_payment.from_cash_balance):
+                        elif old_payment.payment_type == 'CARD' or (
+                                old_payment.payment_type == 'BALANCE' and not old_payment.from_cash_balance):
                             old_payment.payer.card_balance -= excess
-                else:  # Откат платежа без инвойса
-                    if old_payment.payment_type == 'CASH' or (old_payment.payment_type == 'BALANCE' and old_payment.from_cash_balance):
+                else:
+                    if old_payment.payment_type == 'CASH' or (
+                            old_payment.payment_type == 'BALANCE' and old_payment.from_cash_balance):
                         old_payment.payer.cash_balance -= old_amount
-                    elif old_payment.payment_type == 'CARD' or (old_payment.payment_type == 'BALANCE' and not old_payment.from_cash_balance):
+                    elif old_payment.payment_type == 'CARD' or (
+                            old_payment.payment_type == 'BALANCE' and not old_payment.from_cash_balance):
                         old_payment.payer.card_balance -= old_amount
             old_payment.payer.save()
-            logger.info(f"Client {old_payment.payer.name} updated after revert: debt={old_payment.payer.debt}, cash_balance={old_payment.payer.cash_balance}, card_balance={old_payment.payer.card_balance}")
-
-        # Применение нового платежа
+            logger.info(
+                f"Client {old_payment.payer.name} updated after revert: debt={old_payment.payer.debt}, cash_balance={old_payment.payer.cash_balance}, card_balance={old_payment.payer.card_balance}")
         if self.payer:
             amount = Decimal(str(self.amount))
             if self.from_balance:
-                # Проверяем, достаточно ли средств для списания с баланса
-                if 'Correction' not in self.description:  # Пропускаем для корректирующих платежей
+                if 'Correction' not in self.description:
                     can_pay = self.payer.can_pay_from_balance(amount, self.payment_type, self.from_cash_balance)
-                    logger.info(f"Checking balance for client {self.payer.name}: can_pay={can_pay}, amount={amount}, payment_type={self.payment_type}, from_cash_balance={self.from_cash_balance}")
+                    logger.info(
+                        f"Checking balance for client {self.payer.name}: can_pay={can_pay}, amount={amount}, payment_type={self.payment_type}, from_cash_balance={self.from_cash_balance}")
                     if not can_pay:
-                        logger.error(f"Insufficient funds for client {self.payer.name}: amount={amount}, from_cash_balance={self.from_cash_balance}")
-                        raise ValueError(f"Недостаточно средств на {'наличном' if self.from_cash_balance else 'безналичном'} балансе клиента")
+                        logger.error(
+                            f"Insufficient funds for client {self.payer.name}: amount={amount}, from_cash_balance={self.from_cash_balance}")
+                        raise ValueError(
+                            f"Недостаточно средств на {'наличном' if self.from_cash_balance else 'безналичном'} балансе клиента")
                 if self.from_cash_balance:
                     self.payer.cash_balance -= amount
                 else:
                     self.payer.card_balance -= amount
             else:
-                if self.invoice:  # Платеж по инвойсу
-                    # Если старый платеж был без инвойса, списываем сумму с баланса
+                if self.invoice:
                     if old_payment and not old_payment.invoice:
                         if self.payment_type == 'CASH' or (self.payment_type == 'BALANCE' and self.from_cash_balance):
                             if self.payer.cash_balance >= amount:
                                 self.payer.cash_balance -= amount
                             else:
-                                logger.error(f"Insufficient cash_balance for client {self.payer.name}: amount={amount}, cash_balance={self.payer.cash_balance}")
+                                logger.error(
+                                    f"Insufficient cash_balance for client {self.payer.name}: amount={amount}, cash_balance={self.payer.cash_balance}")
                                 raise ValueError(f"Недостаточно средств на наличном балансе клиента")
-                        elif self.payment_type == 'CARD' or (self.payment_type == 'BALANCE' and not self.from_cash_balance):
+                        elif self.payment_type == 'CARD' or (
+                                self.payment_type == 'BALANCE' and not self.from_cash_balance):
                             if self.payer.card_balance >= amount:
                                 self.payer.card_balance -= amount
                             else:
-                                logger.error(f"Insufficient card_balance for client {self.payer.name}: amount={amount}, card_balance={self.payer.card_balance}")
+                                logger.error(
+                                    f"Insufficient card_balance for client {self.payer.name}: amount={amount}, card_balance={self.payer.card_balance}")
                                 raise ValueError(f"Недостаточно средств на безналичном балансе клиента")
-                    self.payer.debt -= amount  # Уменьшаем долг на сумму платежа
-                else:  # Платеж без инвойса увеличивает наличные или безналичные
+                    self.payer.debt -= amount
+                else:
                     if self.payment_type == 'CASH' or (self.payment_type == 'BALANCE' and self.from_cash_balance):
                         self.payer.cash_balance += amount
                     elif self.payment_type == 'CARD' or (self.payment_type == 'BALANCE' and not self.from_cash_balance):
                         self.payer.card_balance += amount
-
             self.payer.save()
-            logger.info(f"Client {self.payer.name} updated after new payment: debt={self.payer.debt}, cash_balance={self.payer.cash_balance}, card_balance={self.payer.card_balance}")
-
+            logger.info(
+                f"Client {self.payer.name} updated after new payment: debt={self.payer.debt}, cash_balance={self.payer.cash_balance}, card_balance={self.payer.card_balance}")
         super().save(*args, **kwargs)
-
-        # Обработка инвойса и переплаты
         if self.invoice and not self.from_balance:
             invoice = self.invoice
             invoice.paid = invoice.paid_amount >= invoice.total_amount
@@ -501,7 +514,8 @@ class Payment(models.Model):
                     elif self.payment_type == 'CARD' or (self.payment_type == 'BALANCE' and not self.from_cash_balance):
                         self.payer.card_balance += excess
                     self.payer.save()
-                    logger.info(f"Client {self.payer.name} updated after overpayment: debt={self.payer.debt}, cash_balance={self.payer.cash_balance}, card_balance={self.payer.card_balance}")
+                    logger.info(
+                        f"Client {self.payer.name} updated after overpayment: debt={self.payer.debt}, cash_balance={self.payer.cash_balance}, card_balance={self.payer.card_balance}")
             invoice.save()
             logger.info(f"Invoice {invoice.number} updated: paid={invoice.paid}, balance={invoice.balance}")
 
