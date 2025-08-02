@@ -5,8 +5,19 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="50d7b0a4-83f9-4fe6-bb54-a494d7749f0e" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/admin.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/admin.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/models.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/static/css/logist2_custom_admin.css" beforeDir="false" afterPath="$PROJECT_DIR$/core/static/css/logist2_custom_admin.css" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/static/css/logist2_custom_admin.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/static/js/htmx.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/static/js/logist2_invoice_admin.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/templates/admin/core/car/change_form.html" beforeDir="false" afterPath="$PROJECT_DIR$/templates/admin/core/car/change_form.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/templates/admin/core/car/change_form.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/templates/admin/core/container/change_form.html" beforeDir="false" afterPath="$PROJECT_DIR$/templates/admin/core/container/change_form.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/templates/admin/core/container/change_form.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/templates/index.html" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/templates/index.txt" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

@@ -114,3 +114,10 @@
 .history-link a:hover {
     text-decoration: underline;
 }
+/* Общая ширина формы и шапки */
+#container_form {
+    max-width: 1600px;
+    margin: 0 auto;
+}
+
+
