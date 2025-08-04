@@ -10,25 +10,23 @@
   <div id="container_form">
     <div class="car-details">
       <div class="field-container">
-        <p>
-          <span class="status-highlight status-{{ original.status|lower }}">
+        <p style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap; margin-bottom: 1px;">
+          <!-- Статус авто -->
+          <span class="status-highlight"
+                style="background-color: {{ original.get_status_color }}; color: white; padding: 4px 12px; border-radius: 6px;">
             {{ original.get_status_display }}
           </span>
+
+          <!-- Контейнер -->
           {% if original.container %}
             <a href="{% url 'admin:core_container_change' original.container.pk %}"
-               class="status-highlight status-{{ original.container.status|lower }}"
-               style="margin-left: 10px; vertical-align: middle;">
-              Контейнер {{ original.container.name }}
+               class="status-highlight"
+               style="background-color: {{ original.container.get_status_color }}; color: white;
+                      padding: 4px 12px; border-radius: 6px; text-decoration: none;">
+              {{ original.container.number }}
             </a>
           {% endif %}
-        </p>
-        <div style="margin-top: 10px;">
-          <input type="checkbox" name="title" id="id_title" {% if original.title %}checked{% endif %}>
-          <label for="id_title" style="margin-left: 5px;">Тайтл</label>
-        </div>
-        {% if original.title_notes %}
-          <textarea readonly rows="2" style="width: 100%; margin-top: 5px;">{{ original.title_notes }}</textarea>
-        {% endif %}
+
       </div>
     </div>
     {{ block.super }}
