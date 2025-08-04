@@ -38,13 +38,15 @@ class ContainerAdmin(admin.ModelAdmin):
     search_fields = ('number',)
     inlines = [CarInline]
     fieldsets = (
-        (None, {
+        ('Основные данные', {
+            'classes': ('collapse',),
             'fields': (
-                ('number', 'status','line', 'warehouse', 'eta', 'unload_date'),
+                ('number', 'status','line', 'warehouse'),
+                ('eta', 'unload_date'),
 
             )
         }),
-        ('Дополнительные расходы', {
+        ('Расходы', {
             'classes': ('collapse',),
             'fields': (
                 ('free_days', 'rate'),
@@ -143,18 +145,21 @@ class CarAdmin(admin.ModelAdmin):
     list_display = (
         'vin', 'brand', 'year_display', 'client', 'colored_status', 'warehouse',
         'unload_date_display', 'proft', 'total_price_display', 'final_storage_cost_display',
-        'has_title_display'  # Добавляем has_title в список
+        'has_title'
     )
+    list_editable = ('has_title',)
     list_filter = ('status', 'warehouse', 'client', 'has_title')
     search_fields = ('vin', 'brand')
     fieldsets = (
         ('Основные данные', {
+            'classes': ('collapse',),
             'fields': (
-                ('year', 'brand', 'vin', 'client', 'status'),
+                ('year', 'brand', 'vin', 'client', 'status', 'has_title'),
 
             )
         }),
         ('Склад', {
+            'classes': ('collapse',),
             'fields': (
                 ('unload_date', 'transfer_date'),
                 ('warehouse', 'free_days', 'rate', 'days'),
@@ -212,7 +217,7 @@ class CarAdmin(admin.ModelAdmin):
 
     def formfield_for_dbfield(self, db_field, **kwargs):
         if db_field.name == 'has_title':
-            kwargs['label'] = 'ТАЙТЛ'  # Убираем label
+            kwargs['label'] = 'ТАЙТЛ У НАС'  # Убираем label
         if db_field.name == 'title_notes':
             kwargs['widget'] = forms.TextInput(attrs={'class': 'vTextField'})
         return super().formfield_for_dbfield(db_field, **kwargs)

@@ -10,9 +10,10 @@
   <div id="container_form">
     <div class="container-details">
       <p>
-        <span class="status-highlight status-{{ original.status|lower }}">
-          {{ original.get_status_display }}
-        </span>
+        <span class="status-highlight"
+      style="background-color: {{ original.get_status_color }}; color: white; padding: 4px 8px; border-radius: 5px;">
+  {{ original.get_status_display }}
+</span>
         {% if original.notes %}
           <span style="margin-left: 20px; width: 1000px; display: inline-block;">
             {{ original.notes }}

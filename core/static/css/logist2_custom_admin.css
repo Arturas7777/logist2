@@ -17,7 +17,7 @@
 /* Стили для полей формы редактирования (кроме CarInline) */
 #container_form .form-row .fieldBox {
     display: inline-block;
-    width: 300px;
+    width: 280px;
     margin-right: 20px;
     margin-bottom: 15px;
     vertical-align: top;
@@ -118,6 +118,12 @@
 #container_form {
     max-width: 1600px;
     margin: 0 auto;
+}
+
+#container_form input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+    cursor: pointer;
 }
 
 

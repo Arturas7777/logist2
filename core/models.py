@@ -1,5 +1,6 @@
 from django.db import models
 from django.core.validators import MinValueValidator
+from .constants import STATUS_COLORS
 from django.utils import timezone
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
@@ -128,12 +129,7 @@ class Container(models.Model):
     ]
 
     def get_status_color(self):
-        return {
-            'FLOATING': '#2772a8',  # Темнее синего
-            'IN_PORT': '#8B0000',   # Тёмно-красный
-            'UNLOADED': '#239f58',  # Темнее зелёного
-            'TRANSFERRED': '#78458c',  # Темнее фиолетового
-        }.get(self.status, '#3a8c3d')  # Темнее зелёного по умолчанию
+        return STATUS_COLORS.get(self.status, '#3a8c3d')  # Темнее зелёного по умолчанию
 
     CUSTOMS_PROCEDURE_CHOICES = (
         ('TRANSIT', 'Транзит'),
@@ -220,7 +216,7 @@ class Car(models.Model):
     unload_date = models.DateField(null=True, blank=True, verbose_name="Дата разгрузки")
     transfer_date = models.DateField(null=True, blank=True, verbose_name="Дата передачи")
     warehouse_days = models.PositiveIntegerField(null=True, blank=True, verbose_name="Дней на складе")
-    has_title = models.BooleanField(default=False, verbose_name="Тайтл у нас")
+    has_title = models.BooleanField(default=False, verbose_name="")
     title_notes = models.CharField(max_length=200, blank=True, verbose_name="Примечания к тайтлу")
     final_storage_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True,
                                              verbose_name="Итоговая цена")
@@ -237,19 +233,14 @@ class Car(models.Model):
                                 validators=[MinValueValidator(0)])
     free_days = models.PositiveIntegerField(default=0, verbose_name="Бесплатные дни")
     days = models.PositiveIntegerField(default=0, verbose_name="Платные дни")
-    rate = models.DecimalField(max_digits=10, decimal_places=2, default=5, verbose_name="Ставка",
+    rate = models.DecimalField(max_digits=10, decimal_places=2, default=5, verbose_name="Ставка за сутки",
                                validators=[MinValueValidator(0)])
     storage_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Складирование")
 
     objects = CarManager()
 
     def get_status_color(self):
-        return {
-            'FLOATING': '#2772a8',
-            'IN_PORT': '#8B0000',
-            'UNLOADED': '#239f58',
-            'TRANSFERRED': '#78458c',
-        }.get(self.status, '#3a8c3d')
+        return STATUS_COLORS.get(self.status, '#3a8c3d')
 
     def calculate_total_price(self):
         ths = self.ths or 0

@@ -1,12 +1,16 @@
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
-from .models import Car, Payment, Invoice
+from .models import Car, Payment, Invoice, Container
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from decimal import Decimal
 import logging
 
 logger = logging.getLogger('django')
+@receiver(post_save, sender=Container)
+def update_related_on_container_save(sender, instance, **kwargs):
+    # При изменении контейнера — все машины внутри получают такой же статус
+    instance.cars.update(status=instance.status)
 
 @receiver(post_save, sender=Car)
 def update_related_on_car_save(sender, instance, **kwargs):
