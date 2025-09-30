@@ -1,0 +1,169 @@
+/* ============================================
+   ПРОСТОЙ ДИЗАЙН КАК НА РИСУНКЕ
+   ============================================ */
+
+/* Скрываем иконки около полей (плюс, глаз, карандаш, крестик) */
+.related-widget-wrapper-link {
+    display: none !important;
+}
+
+/* Поля выставителя и получателя в одну строку с переносом */
+.issuer-fields .form-row,
+.recipient-fields .form-row {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 15px !important;
+}
+
+.issuer-fields .form-row > div,
+.recipient-fields .form-row > div {
+    flex: 1 1 200px !important;
+    min-width: 200px !important;
+}
+
+.selector {
+    display: flex !important;
+    align-items: center !important;
+    gap: 20px !important;
+}
+
+.selector .selector-chooser {
+    width: 100px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 20px !important;
+    padding: 40px 10px !important;
+}
+
+/* Простые квадратные кнопки */
+.selector .selector-chooser a {
+    width: 80px !important;
+    height: 80px !important;
+    margin: 0 auto !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    
+    background: #6c757d !important;
+    color: white !important;
+    border-radius: 8px !important;
+    border: none !important;
+    text-decoration: none !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+    transition: all 0.2s ease !important;
+    position: relative !important;
+    
+    /* Скрываем оригинальный текст */
+    text-indent: -9999px !important;
+    overflow: visible !important;
+}
+
+/* SVG стрелка по умолчанию (будет перезаписана для конкретных кнопок) */
+.selector .selector-chooser a::before {
+    content: '' !important;
+    position: absolute !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    width: 45px !important;
+    height: 45px !important;
+    background-size: contain !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+    transition: transform 0.2s ease !important;
+}
+
+/* Эффект при наведении */
+.selector .selector-chooser a:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2) !important;
+    opacity: 0.9 !important;
+}
+
+/* Эффект при клике */
+.selector .selector-chooser a:active {
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1) !important;
+    opacity: 0.8 !important;
+}
+
+/* ЗЕЛЕНАЯ кнопка "Добавить" с SVG стрелкой вправо → */
+.selector .selector-chooser a.selector-add {
+    background: #5cb85c !important;
+}
+
+.selector .selector-chooser a.selector-add::before {
+    /* Красивая SVG стрелка вправо */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M5 12h14M12 5l7 7-7 7' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E") !important;
+}
+
+.selector .selector-chooser a.selector-add:hover {
+    background: #4cae4c !important;
+}
+
+.selector .selector-chooser a.selector-add:hover::before {
+    transform: translate(-50%, -50%) scale(1.15) !important;
+}
+
+/* КРАСНАЯ кнопка "Удалить" с SVG стрелкой влево ← */
+.selector .selector-chooser a.selector-remove {
+    background: #d9534f !important;
+}
+
+.selector .selector-chooser a.selector-remove::before {
+    /* Красивая SVG стрелка влево */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M19 12H5M12 19l-7-7 7-7' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E") !important;
+}
+
+.selector .selector-chooser a.selector-remove:hover {
+    background: #c9302c !important;
+}
+
+.selector .selector-chooser a.selector-remove:hover::before {
+    transform: translate(-50%, -50%) scale(1.15) !important;
+}
+
+/* Скрываем кнопки "Все" */
+.selector .selector-chooser a.selector-chooseall,
+.selector .selector-chooser a.selector-clearall {
+    display: none !important;
+}
+
+/* Заголовки списков */
+.selector .selector-available h2,
+.selector .selector-chosen h2 {
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    padding: 12px 16px !important;
+    background: #f5f5f5 !important;
+    border-bottom: 2px solid #ddd !important;
+    color: #333 !important;
+}
+
+/* Списки автомобилей */
+.selector select {
+    min-height: 400px !important;
+    font-size: 13px !important;
+    border: 1px solid #ddd !important;
+    border-radius: 4px !important;
+    padding: 10px !important;
+    background: white !important;
+}
+
+.selector select:focus {
+    border-color: #5cb85c !important;
+    outline: none !important;
+}
+
+/* Контейнеры */
+.selector .selector-available,
+.selector .selector-chosen {
+    flex: 1 !important;
+    background: white !important;
+    border: 1px solid #ddd !important;
+    border-radius: 4px !important;
+}
+
+/* Выбранные элементы */
+.selector select option:checked {
+    background: #5cb85c !important;
+    color: white !important;
+}

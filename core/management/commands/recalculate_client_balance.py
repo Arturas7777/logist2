@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 from django.db.models import Sum
 from decimal import Decimal
-from core.models import Client, Invoice, Payment
+from core.models import Client, InvoiceOLD as Invoice, PaymentOLD as Payment
 import logging
 
 logger = logging.getLogger('django')

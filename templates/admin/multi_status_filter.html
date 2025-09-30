@@ -1,0 +1,55 @@
+{% load i18n %}
+<h3>{% blocktrans with filter_title=title %} By {{ filter_title }} {% endblocktrans %}</h3>
+<div style="max-height: 200px; overflow-y: auto;">
+    <ul style="list-style: none; padding: 0;">
+        {% for choice in choices %}
+            <li style="margin: 5px 0;">
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" 
+                           name="{{ spec.parameter_name }}" 
+                           value="{{ choice.value }}"
+                           {% if choice.selected %}checked{% endif %}
+                           style="margin-right: 8px;"
+                           id="status_{{ choice.value }}">
+                    <span>{{ choice.display }}</span>
+                </label>
+            </li>
+        {% endfor %}
+    </ul>
+    <div style="margin-top: 10px;">
+        <button type="button" onclick="applyFilter()" style="background: #417690; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">
+            Применить фильтр
+        </button>
+        <button type="button" onclick="clearFilter()" style="background: #ba2121; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; margin-left: 5px;">
+            Очистить
+        </button>
+    </div>
+</div>
+
+<script>
+function applyFilter() {
+    // Собираем все выбранные чекбоксы
+    const checkboxes = document.querySelectorAll('input[name="{{ spec.parameter_name }}"]:checked');
+    const values = Array.from(checkboxes).map(cb => cb.value);
+    
+    // Создаем новый URL с выбранными значениями
+    const url = new URL(window.location);
+    url.searchParams.delete('{{ spec.parameter_name }}');
+    
+    values.forEach(value => {
+        url.searchParams.append('{{ spec.parameter_name }}', value);
+    });
+    
+    // Переходим на новый URL
+    window.location.href = url.toString();
+}
+
+function clearFilter() {
+    // Создаем новый URL без параметров фильтра
+    const url = new URL(window.location);
+    url.searchParams.delete('{{ spec.parameter_name }}');
+    
+    // Переходим на новый URL
+    window.location.href = url.toString();
+}
+</script>

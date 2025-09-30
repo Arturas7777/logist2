@@ -76,7 +76,7 @@
 /* Стили для полей внутри контейнера деталей */
 .container-details .field-container,
 .car-details .field-container {
-    width: 300px;
+    width: 280px;
     display: inline-block;
     margin-bottom: 10px;
 }

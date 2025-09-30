@@ -1,0 +1,19 @@
+{% load i18n %}
+<h3>{% blocktrans with filter_title=title %} By {{ filter_title }} {% endblocktrans %}</h3>
+<ul>
+    {% for choice in choices %}
+        <li>
+            <label>
+                <input type="checkbox" 
+                       name="{{ spec.parameter_name }}" 
+                       value="{{ choice.value }}"
+                       {% if choice.selected %}checked{% endif %}
+                       onchange="this.form.submit();">
+                {{ choice.display }}
+            </label>
+        </li>
+    {% endfor %}
+</ul>
+
+
+

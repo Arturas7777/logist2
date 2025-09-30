@@ -1,0 +1,19 @@
+{% for car in cars %}
+<div class="warehouse-car-item" data-car-id="{{ car.id }}">
+    <div class="warehouse-car-info">
+        <div class="warehouse-car-vin">{{ car.vin }}</div>
+        <div>{{ car.brand }} {{ car.year }} ({{ car.status }})</div>
+        <div class="warehouse-car-client">Клиент: {{ car.client.name|default:"Не указан" }}</div>
+        <div>Разгрузка: {{ car.unload_date|date:"d.m.Y"|default:"Не указана" }} | Передача: {{ car.transfer_date|date:"d.m.Y"|default:"Не указана" }}</div>
+    </div>
+    <div class="warehouse-car-costs">
+        <div>Услуги: {{ car.warehouse_services_cost }} €</div>
+        <div>Хранение: {{ car.storage_cost }} €</div>
+        <div><strong>Итого: {{ car.total_warehouse_cost }} €</strong></div>
+    </div>
+</div>
+{% empty %}
+<div>Нет доступных автомобилей за последний месяц</div>
+{% endfor %}
+
+

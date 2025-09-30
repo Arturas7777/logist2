@@ -1,0 +1,284 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+{% load admin_extras %}
+
+{% block title %}Дашборд сравнения сумм - {{ site_title|default:"Django site admin" }}{% endblock %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <style>
+        .comparison-dashboard {
+            margin: 20px;
+        }
+        .dashboard-header {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-left: 4px solid #007cba;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #007cba;
+        }
+        .stat-label {
+            color: #666;
+            margin-top: 5px;
+        }
+        .discrepancies-table {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .table-header {
+            background: #007cba;
+            color: white;
+            padding: 15px;
+            font-weight: bold;
+        }
+        .discrepancy-row {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .discrepancy-row:nth-child(even) {
+            background: #f8f9fa;
+        }
+        .status-match { color: #28a745; }
+        .status-mismatch { color: #dc3545; }
+        .status-warning { color: #ffc107; }
+        .filter-form {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .form-row {
+            display: flex;
+            gap: 15px;
+            align-items: end;
+        }
+        .form-group {
+            flex: 1;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .btn {
+            padding: 10px 20px;
+            background: #007cba;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .btn:hover {
+            background: #005a87;
+        }
+        .comparison-section {
+            margin-bottom: 30px;
+        }
+        .section-title {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #333;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="comparison-dashboard">
+    <div class="dashboard-header">
+        <h1>🔍 Дашборд сравнения сумм</h1>
+        <p>Автоматическое сравнение расчетных сумм с инвойсами склада</p>
+    </div>
+
+    <!-- Форма фильтрации -->
+    <div class="filter-form">
+        <form method="get">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="start_date">Дата от:</label>
+                    <input type="date" id="start_date" name="start_date" value="{{ start_date|date:'Y-m-d' }}">
+                </div>
+                <div class="form-group">
+                    <label for="end_date">Дата до:</label>
+                    <input type="date" id="end_date" name="end_date" value="{{ end_date|date:'Y-m-d' }}">
+                </div>
+                <div class="form-group">
+                    <button type="submit" class="btn">Применить фильтр</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- Общая статистика -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ report.summary.cars_count }}</div>
+            <div class="stat-label">Автомобилей обработано</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ report.summary.cars_total|floatformat:2 }}€</div>
+            <div class="stat-label">Общая стоимость автомобилей</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ report.summary.invoices_total|floatformat:2 }}€</div>
+            <div class="stat-label">Общая сумма инвойсов</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value {% if report.summary.cars_vs_invoices_difference > 0 %}status-warning{% elif report.summary.cars_vs_invoices_difference < 0 %}status-mismatch{% else %}status-match{% endif %}">
+                {{ report.summary.cars_vs_invoices_difference|floatformat:2 }}€
+            </div>
+            <div class="stat-label">Разница (автомобили - инвойсы)</div>
+        </div>
+    </div>
+
+    <!-- Расхождения -->
+    {% if discrepancies %}
+    <div class="comparison-section">
+        <div class="section-title">🚨 Обнаруженные расхождения</div>
+        <div class="discrepancies-table">
+            <div class="table-header">
+                Расхождения в суммах
+            </div>
+            {% for discrepancy in discrepancies %}
+            <div class="discrepancy-row">
+                <strong>{{ discrepancy.type|title }}:</strong> {{ discrepancy.entity }}
+                <br>
+                <span class="status-mismatch">{{ discrepancy.comparison.message }}</span>
+                <br>
+                <small>
+                    {% if discrepancy.type == 'client_comparison' %}
+                        Автомобилей: {{ discrepancy.comparison.cars_count }} | 
+                        Стоимость: {{ discrepancy.comparison.cars_total_cost|floatformat:2 }}€ | 
+                        Инвойсы: {{ discrepancy.comparison.warehouse_invoices_total|floatformat:2 }}€
+                    {% elif discrepancy.type == 'warehouse_comparison' %}
+                        Инвойсов: {{ discrepancy.comparison.invoices_count }} | 
+                        Сумма инвойсов: {{ discrepancy.comparison.invoices_total|floatformat:2 }}€ | 
+                        Платежей: {{ discrepancy.comparison.payments_total|floatformat:2 }}€
+                    {% endif %}
+                </small>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Сравнения по клиентам -->
+    {% if client_comparisons %}
+    <div class="comparison-section">
+        <div class="section-title">👥 Сравнения по клиентам</div>
+        <div class="discrepancies-table">
+            <div class="table-header">
+                Анализ по клиентам
+            </div>
+            {% for comparison in client_comparisons %}
+            <div class="discrepancy-row">
+                <strong>{{ comparison.client_name }}</strong>
+                <span class="{% if comparison.status == 'match' %}status-match{% else %}status-warning{% endif %}">
+                    ({{ comparison.status }})
+                </span>
+                <br>
+                {{ comparison.message }}
+                <br>
+                <small>
+                    Автомобилей: {{ comparison.cars_count }} | 
+                    Стоимость автомобилей: {{ comparison.cars_total_cost|floatformat:2 }}€ | 
+                    Сумма инвойсов склада: {{ comparison.warehouse_invoices_total|floatformat:2 }}€ |
+                    Разница: {{ comparison.difference|floatformat:2 }}€
+                </small>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Сравнения по складам -->
+    {% if warehouse_comparisons %}
+    <div class="comparison-section">
+        <div class="section-title">🏢 Сравнения по складам</div>
+        <div class="discrepancies-table">
+            <div class="table-header">
+                Анализ по складам
+            </div>
+            {% for comparison in warehouse_comparisons %}
+            <div class="discrepancy-row">
+                <strong>{{ comparison.warehouse_name }}</strong>
+                <span class="{% if comparison.status == 'match' %}status-match{% else %}status-warning{% endif %}">
+                    ({{ comparison.status }})
+                </span>
+                <br>
+                {{ comparison.message }}
+                <br>
+                <small>
+                    Инвойсов: {{ comparison.invoices_count }} | 
+                    Сумма инвойсов: {{ comparison.invoices_total|floatformat:2 }}€ | 
+                    Сумма платежей: {{ comparison.payments_total|floatformat:2 }}€ |
+                    Разница: {{ comparison.difference|floatformat:2 }}€
+                </small>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Быстрые действия -->
+    <div class="comparison-section">
+        <div class="section-title">⚡ Быстрые действия</div>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <a href="{% url 'admin:core_car_changelist' %}" class="btn" style="text-decoration: none; display: inline-block;">
+                    Управление автомобилями
+                </a>
+            </div>
+            <div class="stat-card">
+                <a href="{% url 'admin:core_invoice_changelist' %}" class="btn" style="text-decoration: none; display: inline-block;">
+                    Управление инвойсами
+                </a>
+            </div>
+            <div class="stat-card">
+                <a href="{% url 'admin:core_payment_changelist' %}" class="btn" style="text-decoration: none; display: inline-block;">
+                    Управление платежами
+                </a>
+            </div>
+            <div class="stat-card">
+                <a href="{% url 'company_dashboard' %}" class="btn" style="text-decoration: none; display: inline-block;">
+                    Дашборд компании
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Автоматическое обновление каждые 5 минут
+setTimeout(function() {
+    location.reload();
+}, 300000);
+</script>
+{% endblock %}
+

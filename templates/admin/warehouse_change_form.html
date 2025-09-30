@@ -1,0 +1,70 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls static admin_modify %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+.dynamic-services {
+    margin-top: 20px;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 5px;
+}
+
+.dynamic-services h3 {
+    margin-top: 0;
+    color: #495057;
+}
+
+.dynamic-service-field {
+    margin-bottom: 15px;
+}
+
+.dynamic-service-field label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 5px;
+    color: #495057;
+}
+
+.dynamic-service-field input {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+}
+
+.dynamic-service-field .help-text {
+    font-size: 12px;
+    color: #6c757d;
+    margin-top: 3px;
+}
+</style>
+{% endblock %}
+
+{% block field_sets %}
+{{ block.super }}
+
+{% if original.pk %}
+<div class="dynamic-services">
+    <h3>Дополнительные услуги</h3>
+    {% for service in original.services.all %}
+    <div class="dynamic-service-field">
+        <label for="id_service_{{ service.id }}">{{ service.name }}</label>
+        <input type="number" 
+               name="service_{{ service.id }}" 
+               id="id_service_{{ service.id }}" 
+               value="{{ service.default_price }}" 
+               step="0.01" 
+               min="0"
+               class="form-control">
+        <div class="help-text">Тип: {{ service.service_type.name }}</div>
+    </div>
+    {% empty %}
+    <p style="color: #6c757d;">Нет дополнительных услуг</p>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+

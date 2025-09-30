@@ -1,5 +1,5 @@
 {% extends "admin/change_form.html" %}
-{% load static i18n admin_urls %}
+{% load static i18n admin_urls admin_extras %}
 
 {% block extrastyle %}
     {{ block.super }}
@@ -32,39 +32,98 @@
             font-size: 14px;
             margin-top: 10px;
         }
+        /* Убираем розовую линию над разделами */
+        .module h2, .module h3 {
+            border-bottom: none !important;
+        }
+        .balance-summary {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #b3d9ff;
+            margin-bottom: 20px;
+        }
+        .balance-summary h4 {
+            margin-top: 0;
+            color: #0056b3;
+        }
+        .balance-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .balance-item {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+            text-align: center;
+        }
+        .balance-item .amount {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .balance-item .label {
+            color: #6c757d;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .positive { color: #28a745; }
+        .negative { color: #dc3545; }
+        .neutral { color: #6c757d; }
     </style>
 {% endblock %}
 
 {% block content %}
     {{ block.super }}
+    
+    <!-- Сводка по балансу уже есть в админке выше -->
+
+
+
+    <!-- Детали баланса (если есть) -->
     {% if balance_details_error %}
         <div class="error-message">{{ balance_details_error }}</div>
     {% elif balance_details %}
         <div class="balance-details">
             <h3>Детали баланса</h3>
-            <p>Общий баланс: {{ original.balance }}</p>
-            <p>Наличный баланс: {{ original.cash_balance }}</p>
-            <p>Безналичный баланс: {{ original.card_balance }}</p>
+            <p>Инвойс-баланс:
+                {% if balance_is_debt %}-{{ balance_total_debt }}{% elif balance_is_overpayment %}{{ balance_abs_overpayment }}{% else %}0.00{% endif %}
+            </p>
+            <p>Наличный баланс: {{ balance_details.cash_balance }}</p>
+            <p>Безналичный баланс: {{ balance_details.card_balance }}</p>
             <h4>Инвойсы</h4>
             <table>
                 <tr>
                     <th>Номер инвойса</th>
+                    <th>Дата</th>
+                    <th>Срок оплаты</th>
                     <th>Сумма</th>
                     <th>Оплачено</th>
                     <th>Баланс</th>
                     <th>Статус</th>
                 </tr>
-                {% for invoice in original.balance_details.invoices %}
+                {% for invoice in balance_details.invoices %}
                     <tr>
                         <td>{{ invoice.invoice_number }}</td>
+                        <td>{{ invoice.issue_date }}</td>
+                        <td>{% if invoice.due_date %}{{ invoice.due_date }}{% else %}-{% endif %}</td>
                         <td>{{ invoice.total_amount }}</td>
                         <td>{{ invoice.total_paid }}</td>
                         <td>{{ invoice.balance }}</td>
-                        <td>{{ invoice.status }}</td>
+                        <td>
+                            {{ invoice.status }}
+                            {% if invoice.is_overdue %}
+                                (Просрочен)
+                            {% endif %}
+                        </td>
                     </tr>
                 {% empty %}
                     <tr>
-                        <td colspan="5">Нет инвойсов</td>
+                        <td colspan="7">Нет инвойсов</td>
                     </tr>
                 {% endfor %}
             </table>
@@ -80,7 +139,7 @@
                     <th>Дата</th>
                     <th>Описание</th>
                 </tr>
-                {% for payment in original.balance_details.payments %}
+                {% for payment in balance_details.payments %}
                     <tr>
                         <td>{{ payment.payment_id }}</td>
                         <td>{{ payment.amount }}</td>
@@ -100,3 +159,4 @@
         </div>
     {% endif %}
 {% endblock %}
+

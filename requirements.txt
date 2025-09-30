@@ -1,61 +1,23 @@
+# Django Logistics System Requirements
+# Optimized version - removed unused packages
+
+# Core Django
 django==5.1.7
+
+# Database
 psycopg2-binary==2.9.10
-django-admin-interface==0.29.4
-django-colorfield==0.12.0
-daphne==4.1.2
+
+# WebSocket support (using InMemoryChannelLayer)
 channels==4.2.0
-channels-redis==4.2.1
+
+# Static files
 whitenoise==6.9.0
+
+# Production server
 gunicorn==23.0.0
+
+# Environment variables
 python-dotenv==1.0.1
+
+# REST API
 djangorestframework==3.15.2
-
-ROOT PASSWORD - lOaKcFF100O26nm3oC
-
-
-
-
-ISPmanager
-
- server {
-	server_name 176.118.198.78 ;
-	charset off;
-	index index.php index.html;
-	disable_symlinks if_not_owner from=$root_path;
-	include /etc/nginx/vhosts-includes/*.conf;
-	include /etc/nginx/vhosts-resources/176.118.198.78/*.conf;
-	access_log /var/www/httpd-logs/176.118.198.78.access.log;
-	error_log /var/www/httpd-logs/176.118.198.78.error.log notice;
-	set $root_path /var/www/www-root/data/www/logist2;
-	root $root_path;
-	location / {
-		error_page 403 /disabled/index.html;
-		deny all;
-	}
-	include /etc/nginx/users-resources/www-root/*.conf;
-	listen 176.118.198.78:80 default_server;
-}
-server {
-	server_name 176.118.198.78 ;
-	ssl_certificate "/var/www/httpd-cert/www-root/176.118.198.78_le1.crt";
-	ssl_certificate_key "/var/www/httpd-cert/www-root/176.118.198.78_le1.key";
-	ssl_ciphers EECDH:+AES256:-3DES:RSA+AES:!NULL:!RC4;
-	ssl_prefer_server_ciphers on;
-	ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3;
-	charset off;
-	index index.php index.html;
-	disable_symlinks if_not_owner from=$root_path;
-	include /etc/nginx/vhosts-includes/*.conf;
-	include /etc/nginx/vhosts-resources/176.118.198.78/*.conf;
-	access_log /var/www/httpd-logs/176.118.198.78.access.log;
-	error_log /var/www/httpd-logs/176.118.198.78.error.log notice;
-	set $root_path /var/www/www-root/data/www/logist2;
-	root $root_path;
-	location / {
-		error_page 403 /disabled/index.html;
-		deny all;
-	}
-	ssl_dhparam /etc/ssl/certs/dhparam4096.pem;
-	include /etc/nginx/users-resources/www-root/*.conf;
-	listen 176.118.198.78:443 ssl default_server;
-}

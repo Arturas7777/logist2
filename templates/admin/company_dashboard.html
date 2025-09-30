@@ -1,0 +1,500 @@
+{% extends "admin/base_site.html" %}
+{% load static i18n admin_extras %}
+
+{% block title %}Дашборд Caromoto Lithuania{% endblock %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <style>
+        .dashboard-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .dashboard-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        .dashboard-header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        
+        .dashboard-header p {
+            margin: 10px 0 0 0;
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            border-left: 5px solid #667eea;
+        }
+        
+        .stat-card h3 {
+            margin: 0 0 15px 0;
+            color: #333;
+            font-size: 1.1em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin: 0;
+        }
+        
+        .stat-positive { color: #28a745; }
+        .stat-negative { color: #dc3545; }
+        .stat-neutral { color: #6c757d; }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .content-section {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .content-section h2 {
+            margin: 0 0 20px 0;
+            color: #333;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        
+        .transaction-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        
+        .transaction-table th,
+        .transaction-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .transaction-table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #495057;
+        }
+        
+        .transaction-table tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .amount-positive { color: #28a745; font-weight: bold; }
+        .amount-negative { color: #dc3545; font-weight: bold; }
+        
+        .quick-actions {
+            display: grid;
+            gap: 15px;
+        }
+        
+        .action-btn {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+        
+        .action-btn:hover {
+            background: #5a6fd8;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .action-btn.success { 
+            background: #28a745; 
+            color: white;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+        .action-btn.success:hover { 
+            background: #218838; 
+            color: white;
+        }
+        
+        .action-btn.warning { 
+            background: #ffc107; 
+            color: #212529; 
+            text-shadow: 0 1px 2px rgba(255, 255, 255, 0.5);
+        }
+        .action-btn.warning:hover { 
+            background: #e0a800; 
+            color: #212529;
+        }
+        
+        .action-btn.danger { 
+            background: #dc3545; 
+            color: white;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+        .action-btn.danger:hover { 
+            background: #c82333; 
+            color: white;
+        }
+        
+        /* Дополнительные стили для кнопок */
+        .action-btn.info { 
+            background: #17a2b8; 
+            color: white;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+        .action-btn.info:hover { 
+            background: #138496; 
+            color: white;
+        }
+        
+        .action-btn.secondary { 
+            background: #6c757d; 
+            color: white;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+        .action-btn.secondary:hover { 
+            background: #5a6268; 
+            color: white;
+        }
+        
+        /* Улучшенная типографика для кнопок */
+        .action-btn {
+            font-size: 14px;
+            letter-spacing: 0.5px;
+            line-height: 1.4;
+        }
+        
+        .balance-summary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .balance-summary h3 {
+            margin: 0 0 15px 0;
+            text-align: center;
+        }
+        
+        .balance-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+        }
+        
+        .balance-item {
+            text-align: center;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+        }
+        
+        .balance-item .amount {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+        
+        .balance-item .label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+        
+        .chart-container {
+            height: 300px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #6c757d;
+            font-style: italic;
+        }
+        
+        .recent-activity {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .activity-item {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            align-items: center;
+        }
+        
+        .activity-item:last-child {
+            border-bottom: none;
+        }
+        
+        .activity-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #667eea;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            font-size: 1.2em;
+        }
+        
+        .activity-content h4 {
+            margin: 0 0 5px 0;
+            font-size: 1em;
+        }
+        
+        .activity-content p {
+            margin: 0;
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+        
+        .activity-time {
+            margin-left: auto;
+            color: #999;
+            font-size: 0.8em;
+        }
+        
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .balance-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Заголовок дашборда -->
+    <div class="dashboard-header">
+        <h1>🏢 Caromoto Lithuania</h1>
+        <p>Дашборд управления компанией</p>
+    </div>
+    
+    <!-- Основная статистика -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <h3>Общий баланс</h3>
+            <p class="stat-value {% if company_total_balance >= 0 %}stat-positive{% else %}stat-negative{% endif %}">
+                {% if company_total_balance >= 0 %}+{% endif %}{{ company_total_balance|floatformat:2 }} €
+            </p>
+        </div>
+        
+        <div class="stat-card">
+            <h3>Прибыль за месяц</h3>
+            <p class="stat-value {% if monthly_profit >= 0 %}stat-positive{% else %}stat-negative{% endif %}">
+                {% if monthly_profit >= 0 %}+{% endif %}{{ monthly_profit|floatformat:2 }} €
+            </p>
+        </div>
+        
+        <div class="stat-card">
+            <h3>Расходы за месяц</h3>
+            <p class="stat-value stat-negative">
+                {{ monthly_expenses|floatformat:2 }} €
+            </p>
+        </div>
+        
+        <div class="stat-card">
+            <h3>Активные инвойсы</h3>
+            <p class="stat-value stat-neutral">
+                {{ active_invoices_count }}
+            </p>
+        </div>
+    </div>
+    
+    <!-- Основной контент -->
+    <div class="main-content">
+        <!-- Левая колонка -->
+        <div class="content-section">
+            <h2>📊 Сводка по балансам</h2>
+            <div class="balance-summary">
+                <h3>Текущие балансы</h3>
+                <div class="balance-grid">
+                    <div class="balance-item">
+                        <div class="amount {% if company.invoice_balance >= 0 %}stat-positive{% else %}stat-negative{% endif %}">
+                            {% if company.invoice_balance >= 0 %}+{% endif %}{{ company.invoice_balance|floatformat:2 }}
+                        </div>
+                        <div class="label">Инвойс-баланс</div>
+                    </div>
+                    <div class="balance-item">
+                        <div class="amount {% if company.cash_balance >= 0 %}stat-positive{% else %}stat-negative{% endif %}">
+                            {% if company.cash_balance >= 0 %}+{% endif %}{{ company.cash_balance|floatformat:2 }}
+                        </div>
+                        <div class="label">Наличные</div>
+                    </div>
+                    <div class="balance-item">
+                        <div class="amount {% if company.card_balance >= 0 %}stat-positive{% else %}stat-negative{% endif %}">
+                            {% if company.card_balance >= 0 %}+{% endif %}{{ company.card_balance|floatformat:2 }}
+                        </div>
+                        <div class="label">Безнал</div>
+                    </div>
+                </div>
+            </div>
+            
+            <h2>📈 График доходов и расходов</h2>
+            <div class="chart-container">
+                График будет добавлен в следующем обновлении
+            </div>
+            
+            <h2>💳 Последние транзакции</h2>
+            <div class="recent-activity">
+                {% if recent_transactions %}
+                    <table class="transaction-table">
+                        <thead>
+                            <tr>
+                                <th>Дата</th>
+                                <th>Тип</th>
+                                <th>Сумма</th>
+                                <th>От кого</th>
+                                <th>Кому</th>
+                                <th>Описание</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for transaction in recent_transactions %}
+                            <tr>
+                                <td>{{ transaction.created_at|date:"d.m.Y" }}</td>
+                                <td>{{ transaction.get_transaction_type_display }}</td>
+                                <td class="{% if transaction.amount > 0 %}amount-positive{% else %}amount-negative{% endif %}">
+                                    {% if transaction.amount > 0 %}+{% endif %}{{ transaction.amount|floatformat:2 }}
+                                </td>
+                                <td>{{ transaction.sender }}</td>
+                                <td>{{ transaction.recipient }}</td>
+                                <td>{{ transaction.description|default:"-" }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p style="text-align: center; color: #6c757d; padding: 20px;">
+                        Пока нет транзакций
+                    </p>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Правая колонка -->
+        <div class="content-section">
+            <h2>⚡ Быстрые действия</h2>
+            <div class="quick-actions">
+                <a href="{% url 'admin:core_payment_add' %}?sender_content_type={{ company_content_type_id }}&sender_object_id={{ company.id }}" class="action-btn success">
+                    💰 Создать платеж
+                </a>
+                
+                <a href="{% url 'admin:core_invoice_add' %}" class="action-btn info">
+                    📄 Создать инвойс
+                </a>
+                
+                <a href="{% url 'admin:core_company_change' company.id %}" class="action-btn warning">
+                    ⚙️ Редактировать компанию
+                </a>
+                
+                <a href="{% url 'admin:core_payment_changelist' %}" class="action-btn secondary">
+                    📋 Все платежи
+                </a>
+                
+                <a href="{% url 'admin:core_invoice_changelist' %}" class="action-btn secondary">
+                    📊 Все инвойсы
+                </a>
+                
+                <a href="{% url 'admin:core_payment_changelist' %}" class="action-btn secondary">
+                    💳 Все платежи
+                </a>
+                
+                <a href="{% url 'comparison_dashboard' %}" class="action-btn primary">
+                    🔍 Сравнение сумм
+                </a>
+            </div>
+            
+                                    <h2 style="margin-top: 30px;">📋 Активные инвойсы</h2>
+                        <div class="recent-activity">
+                            {% if active_invoices %}
+                                {% for invoice in active_invoices %}
+                                <div class="activity-item">
+                                    <div class="activity-icon">📄</div>
+                                    <div class="activity-content">
+                                        <h4>{{ invoice.number }}</h4>
+                                        <p>{% if invoice.client %}{{ invoice.client.name }}{% else %}Склад{% endif %} - {{ invoice.total_amount|floatformat:2 }} €</p>
+                                    </div>
+                                    <div class="activity-time">
+                                        {{ invoice.issue_date|date:"d.m" }}
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                <p style="text-align: center; color: #6c757d; padding: 20px;">
+                                    Нет активных инвойсов
+                                </p>
+                            {% endif %}
+                        </div>
+            
+            <h2 style="margin-top: 30px;">🔔 Последние действия</h2>
+            <div class="recent-activity">
+                {% if recent_activities %}
+                    {% for activity in recent_activities %}
+                    <div class="activity-item">
+                        <div class="activity-icon">{{ activity.icon }}</div>
+                        <div class="activity-content">
+                            <h4>{{ activity.title }}</h4>
+                            <p>{{ activity.description }}</p>
+                        </div>
+                        <div class="activity-time">
+                            {{ activity.time|date:"H:i" }}
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p style="text-align: center; color: #6c757d; padding: 20px;">
+                        Нет последних действий
+                    </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

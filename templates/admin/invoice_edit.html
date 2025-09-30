@@ -1,0 +1,288 @@
+{% extends "admin/change_form.html" %}
+{% load static i18n admin_urls %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <script src="{% static 'js/htmx.min.js' %}"></script>
+    <style>
+        .invoice-viewer { max-width: 1200px; margin: 0 auto; }
+        
+        .info-section { 
+            background: #f8f9fa; 
+            border: 2px solid #e9ecef; 
+            border-radius: 8px; 
+            padding: 20px; 
+            margin-bottom: 20px; 
+        }
+        
+        .section-header { 
+            font-size: 18px; 
+            font-weight: bold; 
+            color: #495057; 
+            margin-bottom: 15px; 
+            display: flex; 
+            align-items: center; 
+            gap: 10px; 
+        }
+        
+        .section-icon { 
+            background: #007bff; 
+            color: white; 
+            width: 30px; 
+            height: 30px; 
+            border-radius: 50%; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-size: 16px; 
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .info-item {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+        }
+        
+        .info-label {
+            font-weight: bold;
+            color: #6c757d;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+        
+        .info-value {
+            font-size: 16px;
+            color: #495057;
+        }
+        
+        .cars-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .car-card {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            transition: all 0.3s ease;
+        }
+        
+        .car-card:hover {
+            border-color: #007bff;
+            box-shadow: 0 4px 8px rgba(0,123,255,0.1);
+        }
+        
+        .car-vin {
+            font-family: monospace;
+            font-weight: bold;
+            color: #495057;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+        
+        .car-info {
+            color: #6c757d;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+        
+        .car-cost {
+            font-weight: bold;
+            color: #28a745;
+            font-size: 16px;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        .status-paid {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-unpaid {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status-outgoing {
+            background: #cce5ff;
+            color: #004085;
+        }
+        
+        .status-incoming {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .actions-section {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            text-decoration: none;
+            display: inline-block;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-warning {
+            background: #ffc107;
+            color: #212529;
+        }
+        
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .btn:hover {
+            opacity: 0.9;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+    <div class="invoice-viewer">
+        <h1 style="text-align: center; margin-bottom: 30px; color: #495057;">
+            Инвойс #{{ original.number }}
+        </h1>
+        
+        <!-- Основная информация -->
+        <div class="info-section">
+            <div class="section-header">
+                <div class="section-icon">📄</div>
+                <span>Основная информация</span>
+            </div>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">Номер инвойса</div>
+                    <div class="info-value">{{ original.number }}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Дата выписки</div>
+                    <div class="info-value">{{ original.issue_date|date:"d.m.Y" }}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Общая сумма</div>
+                    <div class="info-value">{{ original.total_amount|floatformat:2 }} €</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Статус оплаты</div>
+                    <div class="info-value">
+                        <span class="status-badge {% if original.paid %}status-paid{% else %}status-unpaid{% endif %}">
+                            {% if original.paid %}Оплачен{% else %}Не оплачен{% endif %}
+                        </span>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Направление</div>
+                    <div class="info-value">
+                        <span class="status-badge {% if original.is_outgoing %}status-outgoing{% else %}status-incoming{% endif %}">
+                            {% if original.is_outgoing %}Исходящий{% else %}Входящий{% endif %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Отправитель и получатель -->
+        <div class="info-section">
+            <div class="section-header">
+                <div class="section-icon">👥</div>
+                <span>Отправитель и получатель</span>
+            </div>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">Отправитель</div>
+                    <div class="info-value">
+                        <strong>{{ original.from_entity_display }}</strong><br>
+                        <small>{{ original.get_from_entity_type_display }}</small>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Получатель</div>
+                    <div class="info-value">
+                        <strong>{{ original.to_entity_display }}</strong><br>
+                        <small>{{ original.get_to_entity_type_display }}</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Автомобили -->
+        <div class="info-section">
+            <div class="section-header">
+                <div class="section-icon">🚗</div>
+                <span>Автомобили в инвойсе ({{ original.cars.count }})</span>
+            </div>
+            {% if original.cars.all %}
+                <div class="cars-grid">
+                    {% for car in original.cars.all %}
+                        <div class="car-card">
+                            <div class="car-vin">{{ car.vin }}</div>
+                            <div class="car-info">{{ car.brand }} {{ car.year }}</div>
+                            <div class="car-cost">{{ car.total_price|floatformat:2 }} €</div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div style="text-align: center; color: #6c757d; padding: 40px;">
+                    В этом инвойсе нет автомобилей
+                </div>
+            {% endif %}
+        </div>
+        
+        <!-- Действия -->
+        <div class="actions-section">
+            <h3 style="margin-top: 0; color: #495057;">Действия</h3>
+            <a href="{% url 'admin:core_invoice_change' original.pk %}" class="btn btn-primary">Редактировать</a>
+            <a href="{% url 'admin:core_invoice_changelist' %}" class="btn btn-success">Вернуться к списку</a>
+            {% if not original.paid %}
+                <a href="#" class="btn btn-warning" onclick="alert('Функция оплаты будет добавлена позже')">Отметить как оплаченный</a>
+            {% endif %}
+            <a href="#" class="btn btn-danger" onclick="if(confirm('Вы уверены, что хотите удалить этот инвойс?')) { window.location.href='{% url 'admin:core_invoice_delete' original.pk %}'; }">Удалить</a>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extrajs %}
+    {{ block.super }}
+{% endblock %}
+
