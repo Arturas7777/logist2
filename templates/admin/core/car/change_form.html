@@ -4,6 +4,92 @@
 {% block extrastyle %}
   {{ block.super }}
   <link rel="stylesheet" type="text/css" href="{% static 'css/logist2_custom_admin.css' %}">
+  <style>
+    .add-service-btn {
+      background: #28a745;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      margin-left: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: background-color 0.3s;
+    }
+    .add-service-btn:hover {
+      background: #218838;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.5);
+    }
+    .modal-content {
+      background-color: #fefefe;
+      margin: 5% auto;
+      padding: 20px;
+      border: 1px solid #888;
+      width: 80%;
+      max-width: 600px;
+      border-radius: 8px;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    .close {
+      color: #aaa;
+      float: right;
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .close:hover {
+      color: black;
+    }
+    .service-item {
+      display: flex;
+      align-items: center;
+      padding: 10px;
+      border-bottom: 1px solid #eee;
+    }
+    .service-item:last-child {
+      border-bottom: none;
+    }
+    .service-checkbox {
+      margin-right: 10px;
+    }
+    .service-name {
+      flex-grow: 1;
+    }
+    .service-price {
+      font-weight: bold;
+      color: #28a745;
+    }
+    .modal-footer {
+      margin-top: 20px;
+      text-align: right;
+    }
+    .btn-primary {
+      background-color: #007cba;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .btn-primary:hover {
+      background-color: #005a87;
+    }
+  </style>
 {% endblock %}
 
 {% block content %}
@@ -20,6 +106,7 @@
           <!-- Контейнер -->
           {% if original.container %}
             <a href="{% url 'admin:core_container_change' original.container.pk %}"
+               target="_blank"
                class="status-highlight"
                style="background-color: {{ original.container.get_status_color }}; color: white;
                       padding: 4px 12px; border-radius: 6px; text-decoration: none;">
@@ -31,4 +118,142 @@
     </div>
     {{ block.super }}
   </div>
+
+  <!-- Модальные окна для добавления услуг -->
+  <div id="warehouseServicesModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeModal('warehouseServicesModal')">&times;</span>
+      <h2>Добавить услуги склада</h2>
+      <div id="warehouseServicesList"></div>
+      <div class="modal-footer">
+        <button class="btn-primary" onclick="addSelectedServices('warehouse')">Добавить выбранные</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="lineServicesModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeModal('lineServicesModal')">&times;</span>
+      <h2>Добавить услуги линии</h2>
+      <div id="lineServicesList"></div>
+      <div class="modal-footer">
+        <button class="btn-primary" onclick="addSelectedServices('line')">Добавить выбранные</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="carrierServicesModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeModal('carrierServicesModal')">&times;</span>
+      <h2>Добавить услуги перевозчика</h2>
+      <div id="carrierServicesList"></div>
+      <div class="modal-footer">
+        <button class="btn-primary" onclick="addSelectedServices('carrier')">Добавить выбранные</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function openModal(modalId, serviceType) {
+      const modal = document.getElementById(modalId);
+      modal.style.display = "block";
+      
+      // Загружаем доступные услуги
+      loadAvailableServices(serviceType);
+    }
+
+    function closeModal(modalId) {
+      document.getElementById(modalId).style.display = "none";
+    }
+
+    function loadAvailableServices(serviceType) {
+      const carId = {{ original.id }};
+      const listId = serviceType + 'ServicesList';
+      const url = `/api/car/${carId}/get_available_services/?type=${serviceType}`;
+      
+      console.log('Loading services from URL:', url);
+      
+      fetch(url)
+        .then(response => {
+          console.log('Response status:', response.status);
+          console.log('Response headers:', response.headers);
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          return response.json();
+        })
+        .then(data => {
+          console.log('Received data:', data);
+          const listElement = document.getElementById(listId);
+          listElement.innerHTML = '';
+          
+          if (data.services && data.services.length > 0) {
+            data.services.forEach(service => {
+              const serviceItem = document.createElement('div');
+              serviceItem.className = 'service-item';
+              serviceItem.innerHTML = `
+                <input type="checkbox" class="service-checkbox" value="${service.id}" id="service_${service.id}">
+                <label for="service_${service.id}" class="service-name">${service.name}</label>
+                <span class="service-price">$${service.price}</span>
+              `;
+              listElement.appendChild(serviceItem);
+            });
+          } else {
+            listElement.innerHTML = '<p>Нет доступных услуг для добавления.</p>';
+          }
+        })
+        .catch(error => {
+          console.error('Error loading services:', error);
+          const listElement = document.getElementById(listId);
+          listElement.innerHTML = `<p>Ошибка загрузки услуг: ${error.message}</p>`;
+        });
+    }
+
+    function addSelectedServices(serviceType) {
+      const carId = {{ original.id }};
+      const checkboxes = document.querySelectorAll(`#${serviceType}ServicesList input[type="checkbox"]:checked`);
+      const serviceIds = Array.from(checkboxes).map(cb => cb.value);
+      
+      if (serviceIds.length === 0) {
+        alert('Выберите хотя бы одну услугу');
+        return;
+      }
+
+      fetch(`/api/car/${carId}/add_services/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify({
+          service_type: serviceType,
+          service_ids: serviceIds
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          alert('Услуги успешно добавлены!');
+          closeModal(serviceType + 'ServicesModal');
+          location.reload(); // Перезагружаем страницу для обновления данных
+        } else {
+          alert('Ошибка при добавлении услуг: ' + (data.error || 'Неизвестная ошибка'));
+        }
+      })
+      .catch(error => {
+        console.error('Error adding services:', error);
+        alert('Ошибка при добавлении услуг');
+      });
+    }
+
+    // Закрытие модального окна при клике вне его
+    window.onclick = function(event) {
+      const modals = document.querySelectorAll('.modal');
+      modals.forEach(modal => {
+        if (event.target === modal) {
+          modal.style.display = "none";
+        }
+      });
+    }
+  </script>
 {% endblock %}

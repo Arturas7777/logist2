@@ -1,21 +1,20 @@
-from django.http import HttpResponse
-from django.template.loader import render_to_string
-from django.template import RequestContext
-from .models import Car
+from rest_framework import viewsets, permissions
+from .models import Car, InvoiceOLD as Invoice
+from .serializers import CarSerializer, InvoiceSerializer
 
-def car_list_api(request):
-    client_id = request.GET.get('client_id')
-    print(f"API called with GET: {request.GET}")
-    print(f"Extracted client_id: {client_id}")
-    if client_id and client_id != 'undefined' and client_id.isdigit():
-        all_cars = Car.objects.filter(client_id=client_id)
-        print(f"All cars for client {client_id}: {all_cars.count()}")
-        unloaded_cars = all_cars.filter(status='UNLOADED')
-        print(f"Unloaded cars for client {client_id}: {unloaded_cars.count()}")
-        for car in unloaded_cars:
-            print(f"Car {car.id}: {car} - Status: {car.status}")
-        html = render_to_string('admin/car_options.html', {'cars': unloaded_cars}, request=request)
-        print(f"Returning HTML: {html}")
-        return HttpResponse(html, content_type='text/html')
-    print("No valid client_id, returning empty response")
-    return HttpResponse('<span>No cars found</span>', content_type='text/html')
+
+class ReadOnlyForStaff(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_staff)
+
+
+class CarViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Car.objects.select_related('client', 'warehouse', 'container').all()
+    serializer_class = CarSerializer
+    permission_classes = [ReadOnlyForStaff]
+
+
+class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Invoice.objects.select_related('client', 'warehouse').prefetch_related('cars').all()  # cars здесь - это ManyToMany в Invoice
+    serializer_class = InvoiceSerializer
+    permission_classes = [ReadOnlyForStaff]

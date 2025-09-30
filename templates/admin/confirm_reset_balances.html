@@ -1,23 +1,125 @@
 {% extends "admin/base_site.html" %}
-{% load i18n %}
+{% load i18n admin_urls static admin_modify %}
+
+{% block extrahead %}{{ block.super }}
+<script type="text/javascript" src="{% url 'admin:jsi18n' %}"></script>
+{{ form.media }}
+{% endblock %}
+
+{% block extrastyle %}{{ block.super }}
+<link rel="stylesheet" type="text/css" href="{% static "admin/css/forms.css" %}" />
+<style>
+    .warning-box {
+        background-color: #fff3cd;
+        border: 1px solid #ffeaa7;
+        border-radius: 4px;
+        padding: 15px;
+        margin: 20px 0;
+    }
+    .warning-box h3 {
+        color: #856404;
+        margin-top: 0;
+    }
+    .warning-box p {
+        color: #856404;
+        margin-bottom: 10px;
+    }
+    .danger-box {
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        border-radius: 4px;
+        padding: 15px;
+        margin: 20px 0;
+    }
+    .danger-box h3 {
+        color: #721c24;
+        margin-top: 0;
+    }
+    .danger-box p {
+        color: #721c24;
+        margin-bottom: 10px;
+    }
+    .action-buttons {
+        margin-top: 20px;
+        text-align: center;
+    }
+    .btn {
+        display: inline-block;
+        padding: 10px 20px;
+        margin: 0 10px;
+        border: none;
+        border-radius: 4px;
+        text-decoration: none;
+        font-size: 14px;
+        cursor: pointer;
+    }
+    .btn-danger {
+        background-color: #dc3545;
+        color: white;
+    }
+    .btn-secondary {
+        background-color: #6c757d;
+        color: white;
+    }
+    .btn:hover {
+        opacity: 0.8;
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; <a href="{% url 'admin:core_payment_changelist' %}">Платежи</a>
+&rsaquo; Обнуление балансов
+</div>
+{% endblock %}
 
 {% block content %}
-    <h1>Подтверждение действия: {{ action_name }}</h1>
-    <p>Вы уверены, что хотите обнулить балансы для следующих клиентов?</p>
-    <ul>
-        {% for client in clients %}
-            <li>{{ client.name }} (Общий: {{ client.balance }}, Наличные: {{ client.cash_balance }}, Безналичные: {{ client.card_balance }})</li>
-        {% endfor %}
-    </ul>
-    <p>Это действие создаст корректирующие платежи для обнуления балансов, сохраняя историю транзакций.</p>
-    <form method="post" action="">
-        {% csrf_token %}
-        <input type="hidden" name="action" value="{{ action }}">
-        {% for client in clients %}
-            <input type="hidden" name="_selected_action" value="{{ client.id }}">
-        {% endfor %}
-        <input type="hidden" name="confirm" value="yes">
-        <input type="submit" value="Подтвердить">
-        <a href="{{ request.get_full_path }}" class="button cancel-link">Отмена</a>
-    </form>
+<div id="content-main">
+    <div class="warning-box">
+        <h3>⚠️ Внимание!</h3>
+        <p><strong>Вы собираетесь обнулить ВСЕ балансы всех партнеров и компаний в системе.</strong></p>
+        <p>Это действие:</p>
+        <ul>
+            <li>Обнулит наличные балансы (cash_balance)</li>
+            <li>Обнулит безналичные балансы (card_balance)</li>
+            <li>Обнулит инвойс-балансы (invoice_balance)</li>
+            <li>Обнулит устаревшие поля (debt, cash_balance_old, card_balance_old)</li>
+        </ul>
+    </div>
+
+    <div class="danger-box">
+        <h3>🚨 Критическое действие!</h3>
+        <p><strong>Это действие НЕОБРАТИМО!</strong></p>
+        <p>После обнуления балансов:</p>
+        <ul>
+            <li>Все текущие балансы будут потеряны</li>
+            <li>История платежей останется, но балансы будут нулевыми</li>
+            <li>Потребуется ручное восстановление корректных балансов</li>
+        </ul>
+    </div>
+
+    <div class="action-buttons">
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="reset_all_balances" />
+            <input type="hidden" name="apply" value="yes" />
+            {% for obj in queryset %}
+            <input type="hidden" name="_selected_action" value="{{ obj.pk }}" />
+            {% endfor %}
+            <button type="submit" class="btn btn-danger">
+                🗑️ Да, обнулить все балансы
+            </button>
+            <a href="{% url 'admin:core_payment_changelist' %}" class="btn btn-secondary">
+                ❌ Отмена
+            </a>
+        </form>
+    </div>
+
+    <div style="margin-top: 30px; text-align: center;">
+        <p><em>Если вы не уверены, нажмите "Отмена" и вернитесь к списку платежей.</em></p>
+    </div>
+</div>
 {% endblock %}

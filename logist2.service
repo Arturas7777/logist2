@@ -1,0 +1,28 @@
+[Unit]
+Description=Logist2 Django Application
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=notify
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/logist2
+Environment="DJANGO_SETTINGS_MODULE=logist2.settings_prod"
+Environment="PATH=/var/www/logist2/venv/bin"
+
+ExecStart=/var/www/logist2/venv/bin/gunicorn \
+          --config /var/www/logist2/gunicorn_config.py \
+          logist2.wsgi:application
+
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target
+

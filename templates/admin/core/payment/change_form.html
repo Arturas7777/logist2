@@ -1,0 +1,71 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls static admin_modify %}
+
+{% block extrahead %}
+{{ block.super }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const senderTypeField = document.getElementById('id_sender_type');
+    const senderObjectField = document.getElementById('id_sender_object');
+    const recipientTypeField = document.getElementById('id_recipient_type');
+    const recipientObjectField = document.getElementById('id_recipient_object');
+    
+    // Инициализируем списки объектов
+    initializeObjectChoices();
+    
+    function initializeObjectChoices() {
+        // Добавляем обработчики событий для полей типа
+        if (senderTypeField) {
+            senderTypeField.addEventListener('change', function() {
+                console.log('Sender type changed to:', this.value);
+                updateObjectChoices('sender', this.value, senderObjectField);
+            });
+        }
+        
+        if (recipientTypeField) {
+            recipientTypeField.addEventListener('change', function() {
+                console.log('Recipient type changed to:', this.value);
+                updateObjectChoices('recipient', this.value, recipientObjectField);
+            });
+        }
+    }
+    
+    function updateObjectChoices(prefix, type, objectField) {
+        if (!type || !objectField) return;
+        
+        console.log(`Updating choices for ${prefix}, type: ${type}`);
+        
+        // Получаем список объектов через AJAX
+        fetch(`/api/payment-objects/?type=${type}`)
+            .then(response => response.json())
+            .then(data => {
+                console.log(`Received data for ${type}:`, data);
+                objectField.innerHTML = '<option value="">Выберите ' + type + '</option>';
+                data.objects.forEach(obj => {
+                    const option = document.createElement('option');
+                    option.value = obj.id;
+                    option.textContent = obj.name;
+                    objectField.appendChild(option);
+                });
+                console.log(`Updated ${objectField.options.length} options for ${type}`);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                objectField.innerHTML = '<option value="">Ошибка загрузки</option>';
+            });
+    }
+    
+    // Добавляем отладку при отправке формы
+    const form = document.querySelector('form');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            console.log('Form submitted');
+            console.log('Sender type value:', senderTypeField ? senderTypeField.value : 'N/A');
+            console.log('Sender object value:', senderObjectField ? senderObjectField.value : 'N/A');
+            console.log('Recipient type value:', recipientTypeField ? recipientTypeField.value : 'N/A');
+            console.log('Recipient object value:', recipientObjectField ? recipientObjectField.value : 'N/A');
+        });
+    }
+});
+</script>
+{% endblock %}

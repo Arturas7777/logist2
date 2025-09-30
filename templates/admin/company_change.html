@@ -1,0 +1,86 @@
+{% extends "admin/change_form.html" %}
+{% load static i18n admin_urls admin_extras %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <script src="{% static 'js/htmx.min.js' %}"></script>
+    <style>
+        .balance-details {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 5px;
+            background-color: #fafafa;
+        }
+        .balance-details h3 {
+            margin-top: 0;
+        }
+        .balance-details table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .balance-details th, .balance-details td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .balance-details th {
+            background-color: #f2f2f2;
+        }
+        .error-message {
+            color: #dc3545;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        /* Убираем розовую линию над разделами */
+        .module h2, .module h3 {
+            border-bottom: none !important;
+        }
+        .balance-summary {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #b3d9ff;
+            margin-bottom: 20px;
+        }
+        .balance-summary h4 {
+            margin-top: 0;
+            color: #0056b3;
+        }
+        .balance-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .balance-item {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+            text-align: center;
+        }
+        .balance-item .amount {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .balance-item .label {
+            color: #6c757d;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .positive { color: #28a745; }
+        .negative { color: #dc3545; }
+        .neutral { color: #6c757d; }
+    </style>
+{% endblock %}
+
+{% block content %}
+    {{ block.super }}
+    
+    <!-- Сводка по балансу уже есть в админке выше -->
+
+
+{% endblock %}

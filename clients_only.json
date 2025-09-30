@@ -1,0 +1,158 @@
+[
+{
+  "model": "core.client",
+  "pk": 2,
+  "fields": {
+    "name": "EnergyHub",
+    "balance": "0.00",
+    "balance_updated_at": "2025-09-30T12:58:51.860Z",
+    "invoice_balance": "0.00",
+    "cash_balance": "0.00",
+    "card_balance": "0.00",
+    "debt": "0.00"
+  }
+},
+{
+  "model": "core.client",
+  "pk": 3,
+  "fields": {
+    "name": "ANDR SAV",
+    "balance": "0.00",
+    "balance_updated_at": "2025-09-30T12:58:51.860Z",
+    "invoice_balance": "0.00",
+    "cash_balance": "0.00",
+    "card_balance": "0.00",
+    "debt": "0.00"
+  }
+},
+{
+  "model": "core.client",
+  "pk": 4,
+  "fields": {
+    "name": "BLR OFFICE",
+    "balance": "0.00",
+    "balance_updated_at": "2025-09-30T12:58:51.860Z",
+    "invoice_balance": "0.00",
+    "cash_balance": "0.00",
+    "card_balance": "0.00",
+    "debt": "0.00"
+  }
+},
+{
+  "model": "core.client",
+  "pk": 5,
+  "fields": {
+    "name": "RUS OFFICE",
+    "balance": "0.00",
+    "balance_updated_at": "2025-09-30T12:58:51.860Z",
+    "invoice_balance": "0.00",
+    "cash_balance": "0.00",
+    "card_balance": "0.00",
+    "debt": "0.00"
+  }
+},
+{
+  "model": "core.client",
+  "pk": 6,
+  "fields": {
+    "name": "Неизвестный",
+    "balance": "0.00",
+    "balance_updated_at": "2025-09-30T12:58:51.860Z",
+    "invoice_balance": "0.00",
+    "cash_balance": "0.00",
+    "card_balance": "0.00",
+    "debt": "0.00"
+  }
+},
+{
+  "model": "core.client",
+  "pk": 7,
+  "fields": {
+    "name": "LTU OFFICE",
+    "balance": "0.00",
+    "balance_updated_at": "2025-09-30T12:58:51.860Z",
+    "invoice_balance": "0.00",
+    "cash_balance": "0.00",
+    "card_balance": "0.00",
+    "debt": "0.00"
+  }
+},
+{
+  "model": "core.client",
+  "pk": 8,
+  "fields": {
+    "name": "ТЕСТОВЫЙ",
+    "balance": "0.00",
+    "balance_updated_at": "2025-09-30T12:58:51.860Z",
+    "invoice_balance": "0.00",
+    "cash_balance": "0.00",
+    "card_balance": "0.00",
+    "debt": "0.00"
+  }
+},
+{
+  "model": "core.client",
+  "pk": 12,
+  "fields": {
+    "name": "MDV OFFICE",
+    "balance": "0.00",
+    "balance_updated_at": "2025-09-30T12:58:51.860Z",
+    "invoice_balance": "0.00",
+    "cash_balance": "0.00",
+    "card_balance": "0.00",
+    "debt": "0.00"
+  }
+},
+{
+  "model": "core.client",
+  "pk": 17,
+  "fields": {
+    "name": "IVAN KOVALSKIY (63570)",
+    "balance": "0.00",
+    "balance_updated_at": "2025-09-30T12:58:51.860Z",
+    "invoice_balance": "0.00",
+    "cash_balance": "0.00",
+    "card_balance": "0.00",
+    "debt": "0.00"
+  }
+},
+{
+  "model": "core.client",
+  "pk": 18,
+  "fields": {
+    "name": "OLD GEO OFFICE",
+    "balance": "0.00",
+    "balance_updated_at": "2025-09-30T12:58:51.860Z",
+    "invoice_balance": "0.00",
+    "cash_balance": "0.00",
+    "card_balance": "0.00",
+    "debt": "0.00"
+  }
+},
+{
+  "model": "core.client",
+  "pk": 19,
+  "fields": {
+    "name": "DZIMITRY BIASKOSTY (64186)",
+    "balance": "0.00",
+    "balance_updated_at": "2025-09-30T12:58:51.860Z",
+    "invoice_balance": "0.00",
+    "cash_balance": "0.00",
+    "card_balance": "0.00",
+    "debt": "0.00"
+  }
+},
+{
+  "model": "core.client",
+  "pk": 33,
+  "fields": {
+    "name": "Евгений Смердов (70784)",
+    "balance": "0.00",
+    "balance_updated_at": "2025-09-30T12:58:51.860Z",
+    "invoice_balance": "0.00",
+    "cash_balance": "0.00",
+    "card_balance": "0.00",
+    "debt": "0.00"
+  }
+}
+]
