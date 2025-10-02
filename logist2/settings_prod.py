@@ -9,18 +9,18 @@ LOGGING['loggers']['django']['level'] = 'INFO'
 # SECURITY SETTINGS
 # ===================================
 
-# HTTPS/SSL Security (ВРЕМЕННО ОТКЛЮЧЕНО до настройки домена)
-SECURE_SSL_REDIRECT = False  # Redirect all HTTP to HTTPS
-SESSION_COOKIE_SECURE = False  # Only send session cookie over HTTPS
-CSRF_COOKIE_SECURE = False  # Only send CSRF cookie over HTTPS
+# HTTPS/SSL Security
+SECURE_SSL_REDIRECT = True  # Redirect all HTTP to HTTPS
+SESSION_COOKIE_SECURE = True  # Only send session cookie over HTTPS
+CSRF_COOKIE_SECURE = True  # Only send CSRF cookie over HTTPS
 SECURE_BROWSER_XSS_FILTER = True  # Enable XSS filter in browser
 SECURE_CONTENT_TYPE_NOSNIFF = True  # Prevent MIME type sniffing
 X_FRAME_OPTIONS = 'DENY'  # Prevent clickjacking
 
-# HTTP Strict Transport Security (HSTS) - ВРЕМЕННО ОТКЛЮЧЕНО
-SECURE_HSTS_SECONDS = 0  # 1 year
-SECURE_HSTS_INCLUDE_SUBDOMAINS = False
-SECURE_HSTS_PRELOAD = False
+# HTTP Strict Transport Security (HSTS)
+SECURE_HSTS_SECONDS = 31536000  # 1 year
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
 
 # Additional Security Headers
 SECURE_REFERRER_POLICY = 'same-origin'
