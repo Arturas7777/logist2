@@ -108,7 +108,6 @@ USE_I18N = True
 USE_L10N = True
 USE_TZ = True
 
-# Languages
 LANGUAGES = [
     ('lt', 'Lietuvių'),
     ('en', 'English'),
