@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+{% load static %}
+{% load i18n %}
+<html lang="{{ LANGUAGE_CODE|default:'lt' }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Caromoto Lithuania - профессиональная доставка автомобилей из США в Казахстан и страны СНГ">
+    <meta name="keywords" content="доставка авто из США, логистика, контейнерные перевозки, Caromoto">
+    <title>{% block title %}Caromoto Lithuania - Логистика автомобилей{% endblock %}</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="{% static 'website/img/favicon.png' %}">
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <!-- CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{% static 'website/css/style.css' %}">
+    
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Навигационное меню -->
+    <nav class="navbar navbar-expand-lg navbar-dark sticky-top" style="background: var(--primary-color) !important;">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center" href="{% url 'website:home' %}">
+                <img src="{% static 'website/images/caromoto_logo.png' %}" alt="Caromoto Lithuania" class="navbar-logo">
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'website:home' %}">{% trans "Главная" %}</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'website:about' %}">{% trans "О компании" %}</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'website:services' %}">{% trans "Услуги" %}</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'website:news_list' %}">{% trans "Новости" %}</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'website:contact' %}">{% trans "Контакты" %}</a>
+                    </li>
+                    <!-- Переключатель языков для всех пользователей -->
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="languageDropdown" role="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-globe"></i> 
+                            {% get_current_language as LANGUAGE_CODE %}
+                            {% if LANGUAGE_CODE == 'lt' %}LT{% elif LANGUAGE_CODE == 'ru' %}RU{% else %}EN{% endif %}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li>
+                                <form action="/i18n/setlang/" method="post" class="d-inline">
+                                    {% csrf_token %}
+                                    <input name="next" type="hidden" value="/">
+                                    <input type="hidden" name="language" value="lt">
+                                    <button type="submit" class="dropdown-item {% if LANGUAGE_CODE == 'lt' %}active{% endif %}">
+                                        🇱🇹 Lietuvių
+                                    </button>
+                                </form>
+                            </li>
+                            <li>
+                                <form action="/i18n/setlang/" method="post" class="d-inline">
+                                    {% csrf_token %}
+                                    <input name="next" type="hidden" value="/">
+                                    <input type="hidden" name="language" value="en">
+                                    <button type="submit" class="dropdown-item {% if LANGUAGE_CODE == 'en' %}active{% endif %}">
+                                        🇬🇧 English
+                                    </button>
+                                </form>
+                            </li>
+                            <li>
+                                <form action="/i18n/setlang/" method="post" class="d-inline">
+                                    {% csrf_token %}
+                                    <input name="next" type="hidden" value="/">
+                                    <input type="hidden" name="language" value="ru">
+                                    <button type="submit" class="dropdown-item {% if LANGUAGE_CODE == 'ru' %}active{% endif %}">
+                                        🇷🇺 Русский
+                                    </button>
+                                </form>
+                            </li>
+                        </ul>
+                    </li>
+                    
+                    {% if user.is_authenticated %}
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
+                                <i class="bi bi-person-circle"></i> {{ user.username }}
+                            </a>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="{% url 'website:dashboard' %}">
+                                    <i class="bi bi-speedometer2"></i> Личный кабинет
+                                </a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="/admin/logout/">
+                                    <i class="bi bi-box-arrow-right"></i> Выйти
+                                </a></li>
+                            </ul>
+                        </li>
+                    {% else %}
+                        <li class="nav-item">
+                            <a class="nav-link btn btn-outline-light ms-2" href="/admin/login/">
+                                <i class="bi bi-box-arrow-in-right"></i> Вход
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Основной контент -->
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- ИИ-помощник (чат-кнопка) -->
+    <div id="ai-chat-widget">
+        <button class="ai-chat-button" id="ai-chat-toggle" title="{% trans 'Задать вопрос ИИ-помощнику' %}">
+            <i class="bi bi-chat-dots fs-3"></i>
+        </button>
+        
+        <!-- Окно чата -->
+        <div class="ai-chat-window" id="ai-chat-window" style="display: none;">
+            <div class="ai-chat-header">
+                <h6 class="mb-0">
+                    <i class="bi bi-robot"></i> {% trans "ИИ-помощник" %}
+                </h6>
+                <button class="btn-close btn-close-white" id="ai-chat-close"></button>
+            </div>
+            <div class="ai-chat-messages" id="ai-chat-messages">
+                <div class="ai-message">
+                    <div class="message-content">
+                        {% trans "Здравствуйте! Я ИИ-помощник Caromoto Lithuania. Чем могу помочь?" %}
+                    </div>
+                </div>
+            </div>
+            <div class="ai-chat-input">
+                <input type="text" class="form-control" id="ai-chat-input" placeholder="{% trans 'Введите ваш вопрос...' %}">
+                <button class="btn btn-primary" id="ai-chat-send">
+                    <i class="bi bi-send"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Футер -->
+    <footer class="text-white py-5 mt-5" style="background: var(--primary-color) !important;">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-4 mb-4">
+                    <h5 class="mb-3">
+                        <i class="bi bi-truck"></i> Caromoto Lithuania
+                    </h5>
+                    <p class="text-white-50">
+                        {% trans "Профессиональная доставка автомобилей из США в Казахстан и страны СНГ." %}
+                        {% trans "Надежно, быстро, выгодно." %}
+                    </p>
+                </div>
+                <div class="col-md-4 mb-4">
+                    <h5 class="mb-3">{% trans "Контакты" %}</h5>
+                    <ul class="list-unstyled text-white-50">
+                        <li class="mb-2">
+                            <i class="bi bi-geo-alt"></i> {% trans "Вильнюс, Литва" %}
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-telephone"></i> +370 XXX XXXXX
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-envelope"></i> info@caromoto-lt.com
+                        </li>
+                    </ul>
+                </div>
+                <div class="col-md-4 mb-4">
+                    <h5 class="mb-3">{% trans "Навигация" %}</h5>
+                    <ul class="list-unstyled">
+                        <li class="mb-2"><a href="{% url 'website:about' %}" class="text-white-50 text-decoration-none">{% trans "О компании" %}</a></li>
+                        <li class="mb-2"><a href="{% url 'website:services' %}" class="text-white-50 text-decoration-none">{% trans "Услуги" %}</a></li>
+                        <li class="mb-2"><a href="{% url 'website:news_list' %}" class="text-white-50 text-decoration-none">{% trans "Новости" %}</a></li>
+                        <li class="mb-2"><a href="{% url 'website:contact' %}" class="text-white-50 text-decoration-none">{% trans "Контакты" %}</a></li>
+                    </ul>
+                </div>
+            </div>
+            <hr class="my-4 bg-white">
+            <div class="text-center text-white-50">
+                <p class="mb-0">&copy; 2024 Caromoto Lithuania. {% trans "Все права защищены." %}</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{% static 'website/js/ai-chat.js' %}"></script>
+    <script src="{% static 'website/js/main.js' %}"></script>
+    
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
+

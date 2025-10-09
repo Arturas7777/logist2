@@ -1,0 +1,778 @@
+{% extends "website/base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Caromoto Lithuania - Доставка автомобилей из США" %}{% endblock %}
+
+{% block content %}
+<!-- Hero секция -->
+<section class="hero-section text-white py-4">
+    <div class="container position-relative" style="z-index: 1;">
+        <div class="row align-items-center">
+            <div class="col-lg-6 mb-3 mb-lg-0">
+                <div class="mb-3">
+                    <span class="badge px-3 py-2" style="background: var(--accent-red); font-size: 0.9rem; font-weight: 600;">
+                        🚗 {% trans "ПРОФЕССИОНАЛЬНАЯ ЛОГИСТИКА" %}
+                    </span>
+                </div>
+                <h1 class="display-4 fw-bold mb-3" style="line-height: 1.2;">
+                    {% trans "Доставка автомобилей" %}<br>
+                    <span style="color: var(--accent-red);">{% trans "из США" %}</span>
+                </h1>
+                <p class="lead mb-3" style="font-size: 1.1rem; opacity: 0.9;">
+                    {% trans "Контейнерные перевозки и таможенное оформление." %}<br>
+                    {% trans "Более 10 лет опыта на международном рынке." %}
+                </p>
+                <div class="d-flex gap-3 flex-wrap">
+                    <a href="{% url 'website:services' %}" class="btn btn-lg px-4 py-3" style="background: var(--accent-red); border: none; font-weight: 600; letter-spacing: 0.5px;">
+                        <i class="bi bi-box-seam"></i> {% trans "НАШИ УСЛУГИ" %}
+                    </a>
+                    <a href="{% url 'website:contact' %}" class="btn btn-outline-light btn-lg px-4 py-3" style="font-weight: 600; letter-spacing: 0.5px;">
+                        <i class="bi bi-envelope"></i> {% trans "СВЯЗАТЬСЯ" %}
+                    </a>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="tracking-card bg-white text-dark rounded shadow-lg p-4">
+                    <h4 class="mb-3">
+                        <i class="bi bi-search text-primary"></i> {% trans "Отследить груз" %}
+                    </h4>
+                    <form id="tracking-form">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label for="tracking_number" class="form-label">{% trans "VIN автомобиля или номер контейнера" %}</label>
+                            <input type="text" class="form-control form-control-lg" id="tracking_number" 
+                                   placeholder="{% trans 'Например: 1HGCM82633A123456' %}" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-lg w-100">
+                            <i class="bi bi-search"></i> {% trans "Отследить" %}
+                        </button>
+                    </form>
+                    <div id="tracking-result" class="mt-3"></div>
+                    <div id="photos-section" class="mt-3" style="display: none;">
+                        <button id="show-photos-btn" class="btn btn-success w-100" style="display: none;">
+                            <i class="bi bi-camera"></i> {% trans "Показать фотографии" %}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Преимущества -->
+<section class="py-4 bg-light workflow-section">
+    <div class="container">
+        <h2 class="text-center mb-3">{% trans "Почему выбирают нас" %}</h2>
+        <div class="row g-3">
+            <div class="col-md-3 col-sm-6">
+                <div class="feature-card text-center p-4 h-100 bg-white rounded shadow-sm card-caromoto">
+                    <div class="icon-box mb-3">
+                        <i class="bi bi-shield-check text-caromoto-red" style="font-size: 3rem;"></i>
+                    </div>
+                    <h5>{% trans "Надежность" %}</h5>
+                    <p class="text-muted mb-0">{% trans "Полное страхование грузов и гарантия сохранности" %}</p>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="feature-card text-center p-4 h-100 bg-white rounded shadow-sm card-caromoto">
+                    <div class="icon-box mb-3">
+                        <i class="bi bi-clock-history text-caromoto-green" style="font-size: 3rem;"></i>
+                    </div>
+                    <h5>{% trans "Скорость" %}</h5>
+                    <p class="text-muted mb-0">{% trans "Оптимальные сроки доставки 30-45 дней" %}</p>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="feature-card text-center p-4 h-100 bg-white rounded shadow-sm card-caromoto">
+                    <div class="icon-box mb-3">
+                        <i class="bi bi-currency-dollar text-caromoto-yellow" style="font-size: 3rem;"></i>
+                    </div>
+                    <h5>{% trans "Выгодные цены" %}</h5>
+                    <p class="text-muted mb-0">{% trans "Конкурентные тарифы и прозрачное ценообразование" %}</p>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="feature-card text-center p-4 h-100 bg-white rounded shadow-sm card-caromoto">
+                    <div class="icon-box mb-3">
+                        <i class="bi bi-headset text-caromoto-red" style="font-size: 3rem;"></i>
+                    </div>
+                    <h5>{% trans "Поддержка 24/7" %}</h5>
+                    <p class="text-muted mb-0">{% trans "Наши специалисты всегда на связи" %}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Как это работает -->
+<section class="py-4">
+    <div class="container">
+        <h2 class="text-center mb-3">{% trans "Как это работает" %}</h2>
+        <div class="row g-3">
+            <div class="col-md-3">
+                <div class="step-card text-center">
+                    <div class="step-number bg-primary text-white rounded-circle mx-auto mb-2 d-flex align-items-center justify-content-center" 
+                         style="width: 50px; height: 50px;">
+                        <span class="fs-5 fw-bold">1</span>
+                    </div>
+                    <h6 class="mb-2">{% trans "Заявка" %}</h6>
+                    <p class="text-muted small mb-0">{% trans "Оставьте заявку на сайте или свяжитесь с менеджером" %}</p>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="step-card text-center">
+                    <div class="step-number bg-primary text-white rounded-circle mx-auto mb-2 d-flex align-items-center justify-content-center" 
+                         style="width: 50px; height: 50px;">
+                        <span class="fs-5 fw-bold">2</span>
+                    </div>
+                    <h6 class="mb-2">{% trans "Расчет" %}</h6>
+                    <p class="text-muted small mb-0">{% trans "Получите точный расчет стоимости доставки" %}</p>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="step-card text-center">
+                    <div class="step-number bg-primary text-white rounded-circle mx-auto mb-2 d-flex align-items-center justify-content-center" 
+                         style="width: 50px; height: 50px;">
+                        <span class="fs-5 fw-bold">3</span>
+                    </div>
+                    <h6 class="mb-2">{% trans "Доставка" %}</h6>
+                    <p class="text-muted small mb-0">{% trans "Отслеживайте статус груза в режиме реального времени" %}</p>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="step-card text-center">
+                    <div class="step-number bg-primary text-white rounded-circle mx-auto mb-2 d-flex align-items-center justify-content-center" 
+                         style="width: 50px; height: 50px;">
+                        <span class="fs-5 fw-bold">4</span>
+                    </div>
+                    <h6 class="mb-2">{% trans "Получение" %}</h6>
+                    <p class="text-muted small mb-0">{% trans "Получите ваш автомобиль со всеми документами" %}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Новости -->
+{% if latest_news %}
+<section class="py-4 bg-light">
+    <div class="container">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="mb-0">{% trans "Последние новости" %}</h2>
+            <a href="{% url 'website:news_list' %}" class="btn btn-outline-primary">
+                {% trans "Все новости" %} <i class="bi bi-arrow-right"></i>
+            </a>
+        </div>
+        <div class="row g-4">
+            {% for post in latest_news %}
+            <div class="col-md-4">
+                <div class="card h-100 shadow-sm">
+                    {% if post.image %}
+                    <img src="{{ post.image.url }}" class="card-img-top" alt="{{ post.title }}" style="height: 200px; object-fit: cover;">
+                    {% else %}
+                    <div class="card-img-top bg-primary d-flex align-items-center justify-content-center" style="height: 200px;">
+                        <i class="bi bi-newspaper text-white" style="font-size: 4rem;"></i>
+                    </div>
+                    {% endif %}
+                    <div class="card-body">
+                        <h5 class="card-title">{{ post.title }}</h5>
+                        <p class="card-text text-muted">{{ post.excerpt|truncatewords:20 }}</p>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <small class="text-muted">
+                                <i class="bi bi-calendar"></i> {{ post.published_at|date:"d.m.Y" }}
+                            </small>
+                            <a href="{% url 'website:news_detail' post.slug %}" class="btn btn-sm btn-primary">
+                                {% trans "Читать" %}
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- CTA секция -->
+<section class="py-4 text-white cta-section">
+    <div class="container text-center">
+        <h2 class="mb-3 fw-bold">Готовы начать?</h2>
+        <p class="lead mb-3">Получите бесплатную консультацию и расчет стоимости доставки</p>
+        <a href="{% url 'website:contact' %}" class="btn btn-lg px-5 py-3" style="background: var(--accent-red); border: none; font-weight: 600; letter-spacing: 0.5px;">
+            <i class="bi bi-envelope"></i> СВЯЗАТЬСЯ С НАМИ
+        </a>
+    </div>
+</section>
+
+
+<!-- Модальное окно для фотографий контейнера -->
+<div class="modal fade" id="photosModal" tabindex="-1" aria-labelledby="photosModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="photosModalLabel">
+                    <i class="bi bi-camera"></i> Фотографии контейнера
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="photos-loading" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Загрузка...</span>
+                    </div>
+                    <p class="mt-2">Загружаем фотографии...</p>
+                </div>
+                <div id="photos-content" style="display: none;">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="selectAllPhotos">
+                                <label class="form-check-label" for="selectAllPhotos">
+                                    Выбрать все
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-6 text-end">
+                            <button id="downloadSelectedBtn" class="btn btn-primary" disabled>
+                                <i class="bi bi-download"></i> Скачать выбранные
+                            </button>
+                        </div>
+                    </div>
+                    <div id="photos-grid" class="row g-3">
+                        <!-- Фотографии будут загружены здесь -->
+                    </div>
+                </div>
+                <div id="photos-error" class="alert alert-danger" style="display: none;">
+                    <i class="bi bi-exclamation-triangle"></i> Ошибка загрузки фотографий
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const trackingForm = document.getElementById('tracking-form');
+    const trackingResult = document.getElementById('tracking-result');
+    const photosSection = document.getElementById('photos-section');
+    const showPhotosBtn = document.getElementById('show-photos-btn');
+    const photosModal = new bootstrap.Modal(document.getElementById('photosModal'));
+    
+    let currentContainerNumber = null;
+    
+    // Обновляем обработчик формы отслеживания
+    trackingForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const trackingNumber = document.getElementById('tracking_number').value.trim();
+        
+        if (!trackingNumber) {
+            showResult('Пожалуйста, введите номер для отслеживания', 'danger');
+            return;
+        }
+        
+        // Показываем загрузку
+        showResult('<div class="spinner-border spinner-border-sm me-2"></div>Поиск...', 'info');
+        
+        fetch('{% url "website:track_shipment" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({
+                tracking_number: trackingNumber,
+                email: ''
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.type) {
+                let resultHtml = '<div class="alert alert-success"><h6><i class="bi bi-check-circle"></i> Груз найден!</h6>';
+                
+                if (data.type === 'car') {
+                    const car = data.data;
+                    resultHtml += `<p><strong>Автомобиль:</strong> ${car.vin}</p>`;
+                    resultHtml += `<p><strong>Марка:</strong> ${car.brand || 'N/A'}</p>`;
+                    resultHtml += `<p><strong>Статус:</strong> ${car.status_display || car.status}</p>`;
+                    
+                    // Дата разгрузки контейнера
+                    if (car.container_unload_date) {
+                        const unloadDate = new Date(car.container_unload_date);
+                        resultHtml += `<p><strong>Дата разгрузки:</strong> ${unloadDate.toLocaleDateString('ru-RU')}</p>`;
+                    }
+                    
+                    // Адрес склада (только адрес, без названия)
+                    if (car.warehouse_address) {
+                        resultHtml += `<p><strong>Склад:</strong> ${car.warehouse_address}</p>`;
+                    }
+                    
+                    // Контейнер (если есть)
+                    if (car.container_number) {
+                        resultHtml += `<p><strong>Контейнер:</strong> ${car.container_number}</p>`;
+                    }
+                    
+                    // Если у автомобиля есть контейнер с фотографиями - показываем кнопку
+                    if (car.container_number && car.container_photos_count > 0) {
+                        currentContainerNumber = car.container_number;
+                        photosSection.style.display = 'block';
+                        showPhotosBtn.style.display = 'block';
+                    } else {
+                        photosSection.style.display = 'none';
+                    }
+                } else if (data.type === 'container') {
+                    const container = data.data;
+                    resultHtml += `<p><strong>Контейнер:</strong> ${container.number}</p>`;
+                    resultHtml += `<p><strong>Статус:</strong> ${container.status_display || container.status}</p>`;
+                    
+                    // Дата разгрузки
+                    if (container.unload_date) {
+                        const unloadDate = new Date(container.unload_date);
+                        resultHtml += `<p><strong>Дата разгрузки:</strong> ${unloadDate.toLocaleDateString('ru-RU')}</p>`;
+                    }
+                    
+                    if (container.line_name) {
+                        resultHtml += `<p><strong>Линия:</strong> ${container.line_name}</p>`;
+                    }
+                    
+                    // Адрес склада (только адрес, без названия)
+                    if (container.warehouse_address) {
+                        resultHtml += `<p><strong>Склад:</strong> ${container.warehouse_address}</p>`;
+                    }
+                    
+                    if (container.cars_count) {
+                        resultHtml += `<p><strong>Автомобилей:</strong> ${container.cars_count}</p>`;
+                    }
+                    
+                    // Показываем кнопку фотографий для контейнера
+                    currentContainerNumber = container.number;
+                    photosSection.style.display = 'block';
+                    showPhotosBtn.style.display = 'block';
+                }
+                
+                resultHtml += '</div>';
+                showResult(resultHtml, 'success');
+            } else if (data.error) {
+                showResult(`<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> ${data.error}</div>`, 'warning');
+                photosSection.style.display = 'none';
+            } else {
+                showResult('<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Неизвестная ошибка</div>', 'danger');
+                photosSection.style.display = 'none';
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showResult('<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка при поиске груза</div>', 'danger');
+            photosSection.style.display = 'none';
+        });
+    });
+    
+    showPhotosBtn.addEventListener('click', function() {
+        if (currentContainerNumber) {
+            loadContainerPhotos(currentContainerNumber);
+            photosModal.show();
+        }
+    });
+    
+    function showResult(message, type) {
+        trackingResult.innerHTML = message;
+    }
+    
+    function loadContainerPhotos(containerNumber) {
+        const photosLoading = document.getElementById('photos-loading');
+        const photosContent = document.getElementById('photos-content');
+        const photosError = document.getElementById('photos-error');
+        const photosGrid = document.getElementById('photos-grid');
+        
+        // Показываем загрузку
+        photosLoading.style.display = 'block';
+        photosContent.style.display = 'none';
+        photosError.style.display = 'none';
+        
+        fetch(`/api/container-photos/${containerNumber}/`)
+        .then(response => response.json())
+        .then(data => {
+            photosLoading.style.display = 'none';
+            
+            if (data.success && data.photos.length > 0) {
+                photosGrid.innerHTML = '';
+                
+                data.photos.forEach(photo => {
+                    const photoCard = document.createElement('div');
+                    photoCard.className = 'col-md-4 col-sm-6';
+                    photoCard.innerHTML = `
+                        <div class="card h-100">
+                            <div class="card-img-top-container" style="height: 200px; overflow: hidden; cursor: pointer; position: relative;">
+                                <img src="${photo.thumbnail_url}" class="card-img-top photo-preview" style="width: 100%; height: 100%; object-fit: cover;" alt="${photo.description}" data-full-url="${photo.url}" loading="lazy">
+                                <div class="photo-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0); transition: all 0.3s; display: flex; align-items: center; justify-content: center;">
+                                    <i class="bi bi-zoom-in" style="color: white; font-size: 2rem; opacity: 0; transition: opacity 0.3s;"></i>
+                                </div>
+                            </div>
+                            <div class="card-body p-2">
+                                <div class="form-check">
+                                    <input class="form-check-input photo-checkbox" type="checkbox" value="${photo.id}" id="photo_${photo.id}">
+                                    <label class="form-check-label" for="photo_${photo.id}">
+                                        <small class="text-muted">${photo.photo_type}</small>
+                                    </label>
+                                </div>
+                                <small class="text-muted d-block">${photo.uploaded_at}</small>
+                            </div>
+                        </div>
+                    `;
+                    photosGrid.appendChild(photoCard);
+                });
+                
+                photosContent.style.display = 'block';
+                setupPhotoSelection();
+                setupPhotoZoom();
+            } else {
+                photosError.innerHTML = '<i class="bi bi-exclamation-triangle"></i> Фотографии не найдены';
+                photosError.style.display = 'block';
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            photosLoading.style.display = 'none';
+            photosError.style.display = 'block';
+        });
+    }
+    
+    function setupPhotoSelection() {
+        const selectAllCheckbox = document.getElementById('selectAllPhotos');
+        const photoCheckboxes = document.querySelectorAll('.photo-checkbox');
+        const downloadBtn = document.getElementById('downloadSelectedBtn');
+        
+        selectAllCheckbox.addEventListener('change', function() {
+            photoCheckboxes.forEach(checkbox => {
+                checkbox.checked = this.checked;
+            });
+            updateDownloadButton();
+        });
+        
+        photoCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                updateDownloadButton();
+                
+                // Проверяем, все ли выбраны
+                const allChecked = Array.from(photoCheckboxes).every(cb => cb.checked);
+                const noneChecked = Array.from(photoCheckboxes).every(cb => !cb.checked);
+                
+                selectAllCheckbox.checked = allChecked;
+                selectAllCheckbox.indeterminate = !allChecked && !noneChecked;
+            });
+        });
+        
+        downloadBtn.addEventListener('click', function() {
+            const selectedPhotos = Array.from(photoCheckboxes)
+                .filter(cb => cb.checked)
+                .map(cb => cb.value);
+            
+            if (selectedPhotos.length > 0) {
+                downloadPhotosArchive(selectedPhotos);
+            }
+        });
+        
+        function updateDownloadButton() {
+            const selectedCount = Array.from(photoCheckboxes).filter(cb => cb.checked).length;
+            downloadBtn.disabled = selectedCount === 0;
+            downloadBtn.innerHTML = `<i class="bi bi-download"></i> Скачать выбранные (${selectedCount})`;
+        }
+    }
+    
+    function downloadPhotosArchive(photoIds) {
+        fetch('/api/download-photos-archive/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            },
+            body: JSON.stringify({
+                photo_ids: photoIds
+            })
+        })
+        .then(response => {
+            if (response.ok) {
+                return response.blob();
+            } else {
+                throw new Error('Ошибка при скачивании архива');
+            }
+        })
+        .then(blob => {
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `container_photos_${currentContainerNumber}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Ошибка при скачивании архива');
+        });
+    }
+    
+    let currentPhotoIndex = 0;
+    let allPhotosUrls = [];
+    
+    function setupPhotoZoom() {
+        // Собираем все URL фотографий
+        const containers = document.querySelectorAll('.card-img-top-container');
+        allPhotosUrls = [];
+        
+        containers.forEach((container, index) => {
+            const overlay = container.querySelector('.photo-overlay');
+            const icon = overlay.querySelector('i');
+            const img = container.querySelector('.photo-preview');
+            
+            allPhotosUrls.push(img.getAttribute('data-full-url'));
+            
+            container.addEventListener('mouseenter', function() {
+                overlay.style.background = 'rgba(0,0,0,0.5)';
+                icon.style.opacity = '1';
+            });
+            
+            container.addEventListener('mouseleave', function() {
+                overlay.style.background = 'rgba(0,0,0,0)';
+                icon.style.opacity = '0';
+            });
+            
+            // Открываем фото по клику
+            container.addEventListener('click', function() {
+                currentPhotoIndex = index;
+                openPhotoViewer(allPhotosUrls[currentPhotoIndex]);
+            });
+        });
+    }
+    
+    function openPhotoViewer(imageUrl) {
+        // Создаем модальное окно для просмотра фото
+        const viewer = document.createElement('div');
+        viewer.id = 'photo-viewer';
+        viewer.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        `;
+        
+        viewer.innerHTML = `
+            <div style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
+                <div id="image-container" style="width: 90%; height: 90%; display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: grab;">
+                    <img id="viewer-image" src="${imageUrl}" style="max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px;">
+                </div>
+                
+                <!-- Навигация -->
+                ${currentPhotoIndex > 0 ? `
+                <button id="prev-photo" style="position: absolute; left: 20px; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.9); border: none; color: black; padding: 15px 20px; border-radius: 50%; cursor: pointer; font-size: 1.5rem; z-index: 10000;">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                ` : ''}
+                
+                ${currentPhotoIndex < allPhotosUrls.length - 1 ? `
+                <button id="next-photo" style="position: absolute; right: 20px; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.9); border: none; color: black; padding: 15px 20px; border-radius: 50%; cursor: pointer; font-size: 1.5rem; z-index: 10000;">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+                ` : ''}
+                
+                <!-- Верхняя панель -->
+                <div style="position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); padding: 10px 20px; border-radius: 25px; color: white; z-index: 10000;">
+                    <span>${currentPhotoIndex + 1} / ${allPhotosUrls.length}</span>
+                </div>
+                
+                <!-- Кнопки управления -->
+                <div style="position: absolute; top: 20px; right: 20px; display: flex; gap: 10px; z-index: 10000;">
+                    <button id="zoom-in" style="background: rgba(255,255,255,0.9); border: none; color: black; padding: 10px 15px; border-radius: 5px; cursor: pointer;">
+                        <i class="bi bi-zoom-in"></i>
+                    </button>
+                    <button id="zoom-out" style="background: rgba(255,255,255,0.9); border: none; color: black; padding: 10px 15px; border-radius: 5px; cursor: pointer;">
+                        <i class="bi bi-zoom-out"></i>
+                    </button>
+                    <button id="zoom-reset" style="background: rgba(255,255,255,0.9); border: none; color: black; padding: 10px 15px; border-radius: 5px; cursor: pointer;">
+                        <i class="bi bi-arrows-angle-contract"></i>
+                    </button>
+                    <button id="download-single" style="background: var(--accent-green); border: none; color: white; padding: 10px 15px; border-radius: 5px; cursor: pointer;">
+                        <i class="bi bi-download"></i>
+                    </button>
+                    <button id="close-viewer" style="background: var(--accent-red); border: none; color: white; padding: 10px 15px; border-radius: 5px; cursor: pointer;">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(viewer);
+        document.body.style.overflow = 'hidden';
+        
+        // Переменные для зума и перемещения
+        let scale = 1;
+        let translateX = 0;
+        let translateY = 0;
+        let isDragging = false;
+        let startX, startY;
+        
+        const img = document.getElementById('viewer-image');
+        const container = document.getElementById('image-container');
+        
+        // Функция обновления трансформации
+        function updateTransform(withTransition = false) {
+            if (withTransition) {
+                img.style.transition = 'transform 0.3s ease';
+            } else {
+                img.style.transition = 'none';
+            }
+            img.style.transform = `scale(${scale}) translate(${translateX}px, ${translateY}px)`;
+            container.style.cursor = scale > 1 ? 'grab' : 'default';
+        }
+        
+        // Зум кнопками (с плавностью)
+        document.getElementById('zoom-in')?.addEventListener('click', function(e) {
+            e.stopPropagation();
+            scale = Math.min(scale + 0.5, 5);
+            updateTransform(true);
+        });
+        
+        document.getElementById('zoom-out')?.addEventListener('click', function(e) {
+            e.stopPropagation();
+            scale = Math.max(scale - 0.5, 1);
+            if (scale === 1) {
+                translateX = 0;
+                translateY = 0;
+            }
+            updateTransform(true);
+        });
+        
+        document.getElementById('zoom-reset')?.addEventListener('click', function(e) {
+            e.stopPropagation();
+            scale = 1;
+            translateX = 0;
+            translateY = 0;
+            updateTransform(true);
+        });
+        
+        // Зум колесиком мыши (с плавностью)
+        container.addEventListener('wheel', function(e) {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? -0.1 : 0.1;
+            scale = Math.min(Math.max(scale + delta, 1), 5);
+            if (scale === 1) {
+                translateX = 0;
+                translateY = 0;
+            }
+            updateTransform(true);
+        });
+        
+        // Перемещение изображения при зуме (БЕЗ плавности - без инерции)
+        container.addEventListener('mousedown', function(e) {
+            if (scale > 1) {
+                isDragging = true;
+                container.style.cursor = 'grabbing';
+                startX = e.clientX - translateX;
+                startY = e.clientY - translateY;
+            }
+        });
+        
+        container.addEventListener('mousemove', function(e) {
+            if (isDragging) {
+                translateX = e.clientX - startX;
+                translateY = e.clientY - startY;
+                updateTransform(false); // БЕЗ transition - мгновенное перемещение
+            }
+        });
+        
+        container.addEventListener('mouseup', function() {
+            isDragging = false;
+            if (scale > 1) {
+                container.style.cursor = 'grab';
+            }
+        });
+        
+        container.addEventListener('mouseleave', function() {
+            isDragging = false;
+            if (scale > 1) {
+                container.style.cursor = 'grab';
+            }
+        });
+        
+        // Навигация между фото
+        document.getElementById('prev-photo')?.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (currentPhotoIndex > 0) {
+                currentPhotoIndex--;
+                updateViewerImage();
+            }
+        });
+        
+        document.getElementById('next-photo')?.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (currentPhotoIndex < allPhotosUrls.length - 1) {
+                currentPhotoIndex++;
+                updateViewerImage();
+            }
+        });
+        
+        // Навигация стрелками клавиатуры
+        function handlePhotoNavigation(e) {
+            if (e.key === 'ArrowLeft' && currentPhotoIndex > 0) {
+                currentPhotoIndex--;
+                updateViewerImage();
+            } else if (e.key === 'ArrowRight' && currentPhotoIndex < allPhotosUrls.length - 1) {
+                currentPhotoIndex++;
+                updateViewerImage();
+            }
+        }
+        document.addEventListener('keydown', handlePhotoNavigation);
+        
+        function updateViewerImage() {
+            scale = 1;
+            translateX = 0;
+            translateY = 0;
+            closePhotoViewer();
+            openPhotoViewer(allPhotosUrls[currentPhotoIndex]);
+        }
+        
+        // Закрытие по кнопке
+        document.getElementById('close-viewer').addEventListener('click', function(e) {
+            e.stopPropagation();
+            closePhotoViewer();
+        });
+        
+        // Скачивание отдельного фото
+        document.getElementById('download-single').addEventListener('click', function(e) {
+            e.stopPropagation();
+            const link = document.createElement('a');
+            link.href = allPhotosUrls[currentPhotoIndex];
+            link.download = allPhotosUrls[currentPhotoIndex].split('/').pop();
+            link.click();
+        });
+        
+        // Закрытие по ESC
+        document.addEventListener('keydown', handleEscKey);
+    }
+    
+    function handleEscKey(e) {
+        if (e.key === 'Escape') {
+            closePhotoViewer();
+        }
+    }
+    
+    function closePhotoViewer() {
+        const viewer = document.getElementById('photo-viewer');
+        if (viewer) {
+            viewer.remove();
+            document.body.style.overflow = '';
+            document.removeEventListener('keydown', handleEscKey);
+        }
+    }
+});
+</script>
+{% endblock %}
+

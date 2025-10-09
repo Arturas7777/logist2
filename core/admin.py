@@ -1,4 +1,10 @@
 from django.contrib import admin
+
+# Импортируем админку для клиентского сайта
+from .admin_website import (
+    ClientUserAdmin, CarPhotoAdmin, ContainerPhotoAdmin, ContainerPhotoArchiveAdmin,
+    AIChatAdmin, NewsPostAdmin, ContactMessageAdmin, TrackingRequestAdmin
+)
 from django.utils import timezone
 from django.urls import reverse
 from django.utils.html import format_html
@@ -1110,9 +1116,9 @@ class CarAdmin(admin.ModelAdmin):
 @admin.register(Warehouse)
 class WarehouseAdmin(admin.ModelAdmin):
     list_display = (
-        'name', 'free_days', 'rate', 'balance_display', 'cash_balance_display', 'card_balance_display'
+        'name', 'address', 'free_days', 'rate', 'balance_display', 'cash_balance_display', 'card_balance_display'
     )
-    search_fields = ('name',)
+    search_fields = ('name', 'address')
     readonly_fields = ('balance_summary_display', 'balance_transactions_display')
     exclude = (
         'default_unloading_fee', 'delivery_to_warehouse', 'loading_on_trawl',
@@ -1122,7 +1128,7 @@ class WarehouseAdmin(admin.ModelAdmin):
     inlines = [WarehouseServiceInline]
     fieldsets = (
         ('Основные данные', {
-            'fields': ('name',)
+            'fields': ('name', 'address')
         }),
         ('Ставки хранения', {
             'fields': ('free_days', 'rate'),

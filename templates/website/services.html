@@ -1,0 +1,232 @@
+{% extends "website/base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Услуги - Caromoto Lithuania" %}{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<section class="bg-primary text-white py-5">
+    <div class="container">
+        <h1 class="display-4 fw-bold">{% trans "Наши услуги" %}</h1>
+        <p class="lead">{% trans "Полный спектр логистических услуг для доставки автомобилей" %}</p>
+    </div>
+</section>
+
+<!-- Услуги -->
+<section class="py-5">
+    <div class="container">
+        <div class="row g-4 mb-5">
+            <div class="col-md-6">
+                <div class="card h-100 shadow-sm border-0">
+                    <div class="card-body p-4">
+                        <div class="mb-3">
+                            <i class="bi bi-ship text-primary" style="font-size: 3rem;"></i>
+                        </div>
+                        <h3>{% trans "Морские перевозки" %}</h3>
+                        <p class="text-muted">
+                            {% trans "Контейнерная доставка автомобилей из портов США в порты Европы и СНГ. Работаем с ведущими морскими линиями." %}
+                        </p>
+                        <ul class="list-unstyled">
+                            <li><i class="bi bi-check-circle text-success"></i> {% trans "Полное страхование груза" %}</li>
+                            <li><i class="bi bi-check-circle text-success"></i> {% trans "Отслеживание контейнера" %}</li>
+                            <li><i class="bi bi-check-circle text-success"></i> {% trans "Оптимальные сроки доставки" %}</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card h-100 shadow-sm border-0">
+                    <div class="card-body p-4">
+                        <div class="mb-3">
+                            <i class="bi bi-file-earmark-text text-primary" style="font-size: 3rem;"></i>
+                        </div>
+                        <h3>{% trans "Таможенное оформление" %}</h3>
+                        <p class="text-muted">
+                            {% trans "Полное сопровождение таможенных процедур. Подготовка и оформление всех необходимых документов." %}
+                        </p>
+                        <ul class="list-unstyled">
+                            <li><i class="bi bi-check-circle text-success"></i> {% trans "Транзитные декларации" %}</li>
+                            <li><i class="bi bi-check-circle text-success"></i> {% trans "Экспортные декларации" %}</li>
+                            <li><i class="bi bi-check-circle text-success"></i> {% trans "Консультация по таможенным вопросам" %}</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card h-100 shadow-sm border-0">
+                    <div class="card-body p-4">
+                        <div class="mb-3">
+                            <i class="bi bi-building text-primary" style="font-size: 3rem;"></i>
+                        </div>
+                        <h3>{% trans "Складское хранение" %}</h3>
+                        <p class="text-muted">
+                            {% trans "Охраняемые склады в Литве и Казахстане. Первые дни хранения бесплатно." %}
+                        </p>
+                        <ul class="list-unstyled">
+                            <li><i class="bi bi-check-circle text-success"></i> {% trans "Видеонаблюдение 24/7" %}</li>
+                            <li><i class="bi bi-check-circle text-success"></i> {% trans "Крытые склады" %}</li>
+                            <li><i class="bi bi-check-circle text-success"></i> {% trans "Фотоотчет о состоянии авто" %}</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card h-100 shadow-sm border-0">
+                    <div class="card-body p-4">
+                        <div class="mb-3">
+                            <i class="bi bi-truck text-primary" style="font-size: 3rem;"></i>
+                        </div>
+                        <h3>{% trans "Наземная доставка" %}</h3>
+                        <p class="text-muted">
+                            {% trans "Перевозка автомобилей автовозами по территории Казахстана и СНГ в ваш город." %}
+                        </p>
+                        <ul class="list-unstyled">
+                            <li><i class="bi bi-check-circle text-success"></i> {% trans "Доставка в любой город" %}</li>
+                            <li><i class="bi bi-check-circle text-success"></i> {% trans "Надежные перевозчики" %}</li>
+                            <li><i class="bi bi-check-circle text-success"></i> {% trans "Страхование в пути" %}</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card h-100 shadow-sm border-0">
+                    <div class="card-body p-4">
+                        <div class="mb-3">
+                            <i class="bi bi-cart text-primary" style="font-size: 3rem;"></i>
+                        </div>
+                        <h3>{% trans "Выкуп на аукционах" %}</h3>
+                        <p class="text-muted">
+                            {% trans "Выкуп автомобилей на крупнейших аукционах США: Copart, IAAI и других." %}
+                        </p>
+                        <ul class="list-unstyled">
+                            <li><i class="bi bi-check-circle text-success"></i> {% trans "Проверка истории авто" %}</li>
+                            <li><i class="bi bi-check-circle text-success"></i> {% trans "Помощь в выборе" %}</li>
+                            <li><i class="bi bi-check-circle text-success"></i> {% trans "Участие в торгах" %}</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card h-100 shadow-sm border-0">
+                    <div class="card-body p-4">
+                        <div class="mb-3">
+                            <i class="bi bi-headset text-primary" style="font-size: 3rem;"></i>
+                        </div>
+                        <h3>{% trans "Поддержка клиентов" %}</h3>
+                        <p class="text-muted">
+                            {% trans "Персональный менеджер для каждого клиента. Информирование на всех этапах доставки." %}
+                        </p>
+                        <ul class="list-unstyled">
+                            <li><i class="bi bi-check-circle text-success"></i> {% trans "Онлайн-отслеживание" %}</li>
+                            <li><i class="bi bi-check-circle text-success"></i> {% trans "Личный кабинет" %}</li>
+                            <li><i class="bi bi-check-circle text-success"></i> {% trans "Круглосуточная поддержка" %}</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Тарифы -->
+        <div class="row mt-5">
+            <div class="col-12">
+                <h2 class="text-center mb-5">{% trans "Примерные тарифы" %}</h2>
+            </div>
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 shadow border-0">
+                    <div class="card-header bg-light text-center py-3">
+                        <h4 class="mb-0">{% trans "Базовый" %}</h4>
+                    </div>
+                    <div class="card-body text-center p-4">
+                        <div class="mb-3">
+                            <h2 class="display-4 fw-bold text-primary">$800</h2>
+                            <p class="text-muted">{% trans "за автомобиль" %}</p>
+                        </div>
+                        <ul class="list-unstyled text-start">
+                            <li class="mb-2"><i class="bi bi-check text-success"></i> {% trans "Морская перевозка" %}</li>
+                            <li class="mb-2"><i class="bi bi-check text-success"></i> {% trans "Страхование" %}</li>
+                            <li class="mb-2"><i class="bi bi-check text-success"></i> {% trans "3 дня бесплатного хранения" %}</li>
+                            <li class="mb-2 text-muted"><i class="bi bi-x"></i> {% trans "Таможенное оформление" %}</li>
+                            <li class="mb-2 text-muted"><i class="bi bi-x"></i> {% trans "Доставка до города" %}</li>
+                        </ul>
+                        <a href="{% url 'website:contact' %}" class="btn btn-outline-primary w-100 mt-3">
+                            {% trans "Заказать" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 shadow border-primary" style="transform: scale(1.05);">
+                    <div class="card-header bg-primary text-white text-center py-3">
+                        <h4 class="mb-0">{% trans "Стандарт" %}</h4>
+                        <small>{% trans "Популярный" %}</small>
+                    </div>
+                    <div class="card-body text-center p-4">
+                        <div class="mb-3">
+                            <h2 class="display-4 fw-bold text-primary">$1200</h2>
+                            <p class="text-muted">{% trans "за автомобиль" %}</p>
+                        </div>
+                        <ul class="list-unstyled text-start">
+                            <li class="mb-2"><i class="bi bi-check text-success"></i> {% trans "Морская перевозка" %}</li>
+                            <li class="mb-2"><i class="bi bi-check text-success"></i> {% trans "Страхование" %}</li>
+                            <li class="mb-2"><i class="bi bi-check text-success"></i> {% trans "7 дней бесплатного хранения" %}</li>
+                            <li class="mb-2"><i class="bi bi-check text-success"></i> {% trans "Таможенное оформление" %}</li>
+                            <li class="mb-2 text-muted"><i class="bi bi-x"></i> {% trans "Доставка до города" %}</li>
+                        </ul>
+                        <a href="{% url 'website:contact' %}" class="btn btn-primary w-100 mt-3">
+                            {% trans "Заказать" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 shadow border-0">
+                    <div class="card-header bg-light text-center py-3">
+                        <h4 class="mb-0">{% trans "Премиум" %}</h4>
+                    </div>
+                    <div class="card-body text-center p-4">
+                        <div class="mb-3">
+                            <h2 class="display-4 fw-bold text-primary">$1600</h2>
+                            <p class="text-muted">{% trans "за автомобиль" %}</p>
+                        </div>
+                        <ul class="list-unstyled text-start">
+                            <li class="mb-2"><i class="bi bi-check text-success"></i> {% trans "Морская перевозка" %}</li>
+                            <li class="mb-2"><i class="bi bi-check text-success"></i> {% trans "Страхование" %}</li>
+                            <li class="mb-2"><i class="bi bi-check text-success"></i> {% trans "14 дней бесплатного хранения" %}</li>
+                            <li class="mb-2"><i class="bi bi-check text-success"></i> {% trans "Таможенное оформление" %}</li>
+                            <li class="mb-2"><i class="bi bi-check text-success"></i> {% trans "Доставка до вашего города" %}</li>
+                        </ul>
+                        <a href="{% url 'website:contact' %}" class="btn btn-outline-primary w-100 mt-3">
+                            {% trans "Заказать" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="alert alert-info mt-4">
+            <i class="bi bi-info-circle"></i> 
+            {% trans "Цены являются примерными и могут отличаться в зависимости от типа автомобиля, маршрута и дополнительных услуг. Для точного расчета свяжитесь с нашим менеджером." %}
+        </div>
+    </div>
+</section>
+
+<!-- CTA -->
+<section class="py-5 bg-light">
+    <div class="container text-center">
+        <h2 class="mb-4">{% trans "Нужна консультация?" %}</h2>
+        <p class="lead mb-4">{% trans "Наши специалисты помогут выбрать оптимальный пакет услуг" %}</p>
+        <a href="{% url 'website:contact' %}" class="btn btn-primary btn-lg">
+            <i class="bi bi-envelope"></i> {% trans "Связаться с нами" %}
+        </a>
+    </div>
+</section>
+{% endblock %}
+
+
