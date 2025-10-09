@@ -15,12 +15,12 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
         # Content-Security-Policy (basic, allow self & data:)
         if not settings.DEBUG:
             csp = (
-                "default-src 'self'; "
-                "img-src 'self' data:; "
-                "style-src 'self' 'unsafe-inline'; "
-                "script-src 'self' 'unsafe-inline'; "
-                "connect-src 'self' ws: wss:; "
-                "font-src 'self' data:;"
+                "default-src 'self' https:; "
+                "img-src 'self' data: https:; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+                "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+                "connect-src 'self' ws: wss: https:; "
+                "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net;"
             )
             response.setdefault('Content-Security-Policy', csp)
         return response
