@@ -1,0 +1,165 @@
+{% extends "website/base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Контакты - Caromoto Lithuania" %}{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<section class="bg-primary text-white py-5">
+    <div class="container">
+        <h1 class="display-4 fw-bold">{% trans "Контакты" %}</h1>
+        <p class="lead">{% trans "Свяжитесь с нами любым удобным способом" %}</p>
+    </div>
+</section>
+
+<!-- Контакты -->
+<section class="py-5">
+    <div class="container">
+        <div class="row g-4">
+            <!-- Форма обратной связи -->
+            <div class="col-lg-7">
+                <div class="card shadow-sm border-0">
+                    <div class="card-body p-4">
+                        <h3 class="mb-4">
+                            <i class="bi bi-envelope text-primary"></i> {% trans "Отправить сообщение" %}
+                        </h3>
+                        <form id="contact-form">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label for="name" class="form-label">{% trans "Ваше имя" %} *</label>
+                                    <input type="text" class="form-control" id="name" required>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="email" class="form-label">Email *</label>
+                                    <input type="email" class="form-control" id="email" required>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="phone" class="form-label">{% trans "Телефон" %}</label>
+                                    <input type="tel" class="form-control" id="phone">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="subject" class="form-label">{% trans "Тема" %} *</label>
+                                    <select class="form-select" id="subject" required>
+                                        <option value="">{% trans "Выберите тему..." %}</option>
+                                        <option value="Расчет стоимости">{% trans "Расчет стоимости" %}</option>
+                                        <option value="Отслеживание груза">{% trans "Отслеживание груза" %}</option>
+                                        <option value="Общий вопрос">{% trans "Общий вопрос" %}</option>
+                                        <option value="Жалоба">{% trans "Жалоба" %}</option>
+                                        <option value="Предложение">{% trans "Предложение" %}</option>
+                                    </select>
+                                </div>
+                                <div class="col-12">
+                                    <label for="message" class="form-label">{% trans "Сообщение" %} *</label>
+                                    <textarea class="form-control" id="message" rows="5" required></textarea>
+                                </div>
+                                <div class="col-12">
+                                    <button type="submit" class="btn btn-primary btn-lg">
+                                        <i class="bi bi-send"></i> {% trans "Отправить сообщение" %}
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                        <div id="contact-result" class="mt-3"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Контактная информация -->
+            <div class="col-lg-5">
+                <div class="card shadow-sm border-0 mb-4">
+                    <div class="card-body p-4">
+                        <h4 class="mb-4">
+                            <i class="bi bi-info-circle text-primary"></i> {% trans "Контактная информация" %}
+                        </h4>
+                        <div class="mb-3">
+                            <h6 class="text-muted mb-2">{% trans "Адрес офиса:" %}</h6>
+                            <p class="mb-0">
+                                <i class="bi bi-geo-alt text-primary"></i> {% trans "Вильнюс, Литва" %}
+                            </p>
+                        </div>
+                        <div class="mb-3">
+                            <h6 class="text-muted mb-2">{% trans "Телефон:" %}</h6>
+                            <p class="mb-0">
+                                <i class="bi bi-telephone text-primary"></i> +370 XXX XXXXX
+                            </p>
+                        </div>
+                        <div class="mb-3">
+                            <h6 class="text-muted mb-2">Email:</h6>
+                            <p class="mb-0">
+                                <i class="bi bi-envelope text-primary"></i> 
+                                <a href="mailto:info@caromoto-lt.com">info@caromoto-lt.com</a>
+                            </p>
+                        </div>
+                        <div class="mb-3">
+                            <h6 class="text-muted mb-2">{% trans "Часы работы:" %}</h6>
+                            <p class="mb-0">
+                                <i class="bi bi-clock text-primary"></i> {% trans "Пн-Пт: 9:00 - 18:00" %}<br>
+                                <i class="bi bi-clock text-primary"></i> {% trans "Сб-Вс: 10:00 - 15:00" %}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card shadow-sm border-0 bg-light">
+                    <div class="card-body p-4">
+                        <h5 class="mb-3">
+                            <i class="bi bi-chat-dots text-primary"></i> {% trans "Нужна помощь?" %}
+                        </h5>
+                        <p>{% trans "Попробуйте наш ИИ-помощник для быстрых ответов на популярные вопросы!" %}</p>
+                        <button class="btn btn-primary w-100" onclick="document.getElementById('ai-chat-toggle').click()">
+                            <i class="bi bi-robot"></i> {% trans "Открыть чат с ИИ" %}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Скрипт для формы -->
+<script>
+document.getElementById('contact-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const formData = {
+        name: document.getElementById('name').value,
+        email: document.getElementById('email').value,
+        phone: document.getElementById('phone').value,
+        subject: document.getElementById('subject').value,
+        message: document.getElementById('message').value
+    };
+    
+    const resultDiv = document.getElementById('contact-result');
+    resultDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Отправка...</div>';
+    
+    try {
+        const response = await fetch('/api/contact/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(formData)
+        });
+        
+        if (response.ok) {
+            resultDiv.innerHTML = `
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle"></i> Спасибо! Ваше сообщение отправлено. Мы свяжемся с вами в ближайшее время.
+                </div>
+            `;
+            document.getElementById('contact-form').reset();
+        } else {
+            throw new Error('Ошибка отправки');
+        }
+    } catch (error) {
+        resultDiv.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-x-circle"></i> Ошибка при отправке сообщения. Попробуйте позже или свяжитесь с нами по телефону.
+            </div>
+        `;
+    }
+});
+</script>
+{% endblock %}
+
+

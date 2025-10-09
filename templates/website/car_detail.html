@@ -1,0 +1,241 @@
+{% extends "website/base.html" %}
+
+{% block title %}{{ car.brand }} {{ car.year }} - {{ car.vin }}{% endblock %}
+
+{% block content %}
+<div class="container my-5">
+    <!-- Навигация -->
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'website:dashboard' %}">Личный кабинет</a></li>
+            <li class="breadcrumb-item active">{{ car.vin }}</li>
+        </ol>
+    </nav>
+
+    <!-- Заголовок -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h1 class="mb-2">
+                <i class="bi bi-car-front text-primary"></i> {{ car.brand }} {{ car.year }}
+            </h1>
+            <p class="text-muted mb-0">VIN: {{ car.vin }}</p>
+        </div>
+        <div class="col-md-4 text-md-end">
+            <span class="badge {% if car.status == 'TRANSFERRED' %}bg-success{% elif car.status == 'FLOATING' %}bg-info{% elif car.status == 'IN_PORT' %}bg-warning{% else %}bg-primary{% endif %} fs-5">
+                {{ car.get_status_display }}
+            </span>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Основная информация -->
+        <div class="col-lg-8 mb-4">
+            <!-- Галерея фотографий -->
+            {% if car.photos.all %}
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-images"></i> Фотографии
+                    </h5>
+                    <a href="{% url 'website:download_all_car_photos' car.id %}" class="btn btn-sm btn-success">
+                        <i class="bi bi-download"></i> Скачать все
+                    </a>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        {% for photo in car.photos.all %}
+                        <div class="col-md-4 col-sm-6">
+                            <div class="photo-item position-relative">
+                                <img src="{{ photo.photo.url }}" class="img-fluid rounded" 
+                                     alt="{{ photo.get_photo_type_display }}"
+                                     data-bs-toggle="modal" data-bs-target="#photoModal{{ photo.id }}"
+                                     style="cursor: pointer; width: 100%; height: 200px; object-fit: cover;">
+                                <div class="photo-overlay">
+                                    <span class="badge bg-dark">{{ photo.get_photo_type_display }}</span>
+                                </div>
+                                <a href="{% url 'website:download_car_photo' photo.id %}" 
+                                   class="btn btn-sm btn-light position-absolute bottom-0 end-0 m-2" 
+                                   download>
+                                    <i class="bi bi-download"></i>
+                                </a>
+                            </div>
+
+                            <!-- Modal для просмотра фото -->
+                            <div class="modal fade" id="photoModal{{ photo.id }}" tabindex="-1">
+                                <div class="modal-dialog modal-lg modal-dialog-centered">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title">{{ photo.get_photo_type_display }}</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <img src="{{ photo.photo.url }}" class="img-fluid" alt="{{ photo.get_photo_type_display }}">
+                                            {% if photo.description %}
+                                            <p class="mt-3 text-muted">{{ photo.description }}</p>
+                                            {% endif %}
+                                        </div>
+                                        <div class="modal-footer">
+                                            <a href="{% url 'website:download_car_photo' photo.id %}" 
+                                               class="btn btn-success" download>
+                                                <i class="bi bi-download"></i> Скачать
+                                            </a>
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Детальная информация -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-info-circle"></i> Детальная информация
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-borderless">
+                        <tbody>
+                            <tr>
+                                <th width="40%">Марка и модель:</th>
+                                <td>{{ car.brand }}</td>
+                            </tr>
+                            <tr>
+                                <th>Год выпуска:</th>
+                                <td>{{ car.year }}</td>
+                            </tr>
+                            <tr>
+                                <th>VIN:</th>
+                                <td><code>{{ car.vin }}</code></td>
+                            </tr>
+                            <tr>
+                                <th>Статус:</th>
+                                <td>
+                                    <span class="badge {% if car.status == 'TRANSFERRED' %}bg-success{% elif car.status == 'FLOATING' %}bg-info{% elif car.status == 'IN_PORT' %}bg-warning{% else %}bg-primary{% endif %}">
+                                        {{ car.get_status_display }}
+                                    </span>
+                                </td>
+                            </tr>
+                            {% if car.container %}
+                            <tr>
+                                <th>Контейнер:</th>
+                                <td>
+                                    <a href="{% url 'website:container_detail' car.container.id %}">
+                                        {{ car.container.number }}
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endif %}
+                            {% if car.warehouse %}
+                            <tr>
+                                <th>Склад:</th>
+                                <td>{{ car.warehouse.name }}</td>
+                            </tr>
+                            {% endif %}
+                            {% if car.line %}
+                            <tr>
+                                <th>Морская линия:</th>
+                                <td>{{ car.line.name }}</td>
+                            </tr>
+                            {% endif %}
+                            {% if car.unload_date %}
+                            <tr>
+                                <th>Дата разгрузки:</th>
+                                <td>{{ car.unload_date|date:"d.m.Y" }}</td>
+                            </tr>
+                            {% endif %}
+                            {% if car.transfer_date %}
+                            <tr>
+                                <th>Дата передачи:</th>
+                                <td>{{ car.transfer_date|date:"d.m.Y" }}</td>
+                            </tr>
+                            {% endif %}
+                            <tr>
+                                <th>Дней на складе:</th>
+                                <td>{{ car.days }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Боковая панель -->
+        <div class="col-lg-4">
+            <!-- Стоимость -->
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        <i class="bi bi-currency-dollar"></i> Стоимость
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="text-muted">Текущая стоимость:</span>
+                        <h4 class="mb-0 text-primary">${{ car.current_price|floatformat:2 }}</h4>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="text-muted">Хранение:</span>
+                        <span class="fw-bold">${{ car.storage_cost|floatformat:2 }}</span>
+                    </div>
+                    {% if car.total_price > 0 %}
+                    <hr>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-muted">Итоговая стоимость:</span>
+                        <h4 class="mb-0 text-success">${{ car.total_price|floatformat:2 }}</h4>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Действия -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-gear"></i> Действия
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        {% if car.photos.count > 0 %}
+                        <a href="{% url 'website:download_all_car_photos' car.id %}" 
+                           class="btn btn-success">
+                            <i class="bi bi-download"></i> Скачать все фото
+                        </a>
+                        {% endif %}
+                        <a href="{% url 'website:contact' %}" class="btn btn-primary">
+                            <i class="bi bi-envelope"></i> Связаться с менеджером
+                        </a>
+                        <a href="{% url 'website:dashboard' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left"></i> Назад в кабинет
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.photo-item {
+    overflow: hidden;
+    border-radius: 0.5rem;
+}
+.photo-item:hover img {
+    transform: scale(1.05);
+    transition: transform 0.3s ease;
+}
+.photo-overlay {
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+}
+</style>
+{% endblock %}
+
+

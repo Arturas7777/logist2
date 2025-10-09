@@ -1,0 +1,667 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-10-09 13:37+0300\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: .\core\admin_filters.py:10
+msgid "Статус"
+msgstr ""
+
+#: .\core\admin_filters.py:78
+msgid "Склад"
+msgstr ""
+
+#: .\templates\admin\confirm_reset_balances.html:72
+msgid "Home"
+msgstr ""
+
+#: .\templates\admin\multi_status_filter.html:2
+#: .\templates\admin\multi_warehouse_filter.html:2
+#, python-format
+msgid " By %(filter_title)s "
+msgstr ""
+
+#: .\templates\website\about.html:4
+#| msgid "О компании"
+msgid "О компании - Caromoto Lithuania"
+msgstr "About"
+
+#: .\templates\website\about.html:10 .\templates\website\base.html:43
+#: .\templates\website\base.html:187
+msgid "О компании"
+msgstr "About"
+
+#: .\templates\website\about.html:11
+#| msgid "Caromoto Lithuania - Доставка автомобилей из США"
+msgid "Профессиональная логистика автомобилей из США"
+msgstr "Caromoto Lithuania - Car Delivery from USA"
+
+#: .\templates\website\about.html:22
+msgid ""
+"Мы специализируемся на доставке автомобилей из США в Казахстан и страны СНГ "
+"с 2013 года."
+msgstr ""
+
+#: .\templates\website\about.html:25
+msgid ""
+"За годы работы мы доставили тысячи автомобилей и заслужили доверие клиентов "
+"благодаря профессионализму, надежности и индивидуальному подходу к каждому "
+"заказу."
+msgstr ""
+
+#: .\templates\website\about.html:28
+msgid ""
+"Наша команда обеспечивает полный цикл логистических услуг: от выкупа "
+"автомобиля на аукционе до доставки в ваш город с полным пакетом документов."
+msgstr ""
+
+#: .\templates\website\about.html:36
+msgid "лет на рынке"
+msgstr "years on the market"
+
+#: .\templates\website\about.html:42
+#| msgid "Доставка автомобилей"
+msgid "доставленных авто"
+msgstr "Car Delivery"
+
+#: .\templates\website\about.html:48
+msgid "страхование"
+msgstr "insurance"
+
+#: .\templates\website\about.html:54
+msgid "поддержка"
+msgstr "support"
+
+#: .\templates\website\about.html:64
+msgid "Почему мы?"
+msgstr "Why Us?"
+
+#: .\templates\website\about.html:72 .\templates\website\home.html:72
+msgid "Надежность"
+msgstr "Reliability"
+
+#: .\templates\website\about.html:74
+msgid ""
+"Полное страхование груза на всех этапах доставки. Гарантия сохранности "
+"вашего автомобиля."
+msgstr ""
+
+#: .\templates\website\about.html:85
+msgid "Опыт"
+msgstr "Experience"
+
+#: .\templates\website\about.html:87
+msgid ""
+"Более 10 лет успешной работы на рынке международной логистики. Проверенные "
+"маршруты и партнеры."
+msgstr ""
+
+#: .\templates\website\about.html:98
+msgid "Прозрачность"
+msgstr "Transparency"
+
+#: .\templates\website\about.html:100
+msgid ""
+"Честное ценообразование без скрытых комиссий. Отслеживание груза в режиме "
+"реального времени."
+msgstr ""
+
+#: .\templates\website\about.html:110
+msgid "Как мы работаем"
+msgstr "How We Work"
+
+#: .\templates\website\about.html:121
+msgid "Консультация и расчет"
+msgstr "Consultation and Calculation"
+
+#: .\templates\website\about.html:123
+msgid ""
+"Наш менеджер проконсультирует вас, рассчитает стоимость доставки и ответит "
+"на все вопросы."
+msgstr ""
+
+#: .\templates\website\about.html:137
+msgid "Выкуп и отправка"
+msgstr "Purchase and Shipping"
+
+#: .\templates\website\about.html:139
+msgid ""
+"Выкупаем автомобиль на аукционе, оформляем документы и организуем доставку "
+"до порта."
+msgstr ""
+
+#: .\templates\website\about.html:153 .\templates\website\services.html:150
+#: .\templates\website\services.html:175 .\templates\website\services.html:199
+msgid "Морская перевозка"
+msgstr "Ocean Shipping"
+
+#: .\templates\website\about.html:155
+msgid ""
+"Безопасная перевозка в контейнере с полным страхованием. Отслеживание в "
+"реальном времени."
+msgstr ""
+
+#: .\templates\website\about.html:169
+msgid "Таможня и доставка"
+msgstr "Customs and Delivery"
+
+#: .\templates\website\about.html:171
+msgid ""
+"Таможенное оформление, доставка на склад и передача вам с полным пакетом "
+"документов."
+msgstr ""
+
+#: .\templates\website\about.html:183
+msgid "Готовы начать?"
+msgstr "Ready to Start?"
+
+#: .\templates\website\about.html:184
+msgid "Получите бесплатную консультацию и расчет стоимости"
+msgstr "Get a free consultation and cost estimate"
+
+#: .\templates\website\about.html:186 .\templates\website\services.html:226
+msgid "Связаться с нами"
+msgstr "Contact Us"
+
+#: .\templates\website\base.html:40
+msgid "Главная"
+msgstr "Home"
+
+#: .\templates\website\base.html:46 .\templates\website\base.html:188
+msgid "Услуги"
+msgstr "Services"
+
+#: .\templates\website\base.html:49 .\templates\website\base.html:189
+msgid "Новости"
+msgstr "News"
+
+#: .\templates\website\base.html:52 .\templates\website\base.html:171
+#: .\templates\website\base.html:190 .\templates\website\contact.html:10
+msgid "Контакты"
+msgstr "Contact"
+
+#: .\templates\website\base.html:129
+msgid "Задать вопрос ИИ-помощнику"
+msgstr "Ask the AI assistant"
+
+#: .\templates\website\base.html:137
+msgid "ИИ-помощник"
+msgstr "AI Assistant"
+
+#: .\templates\website\base.html:144
+msgid "Здравствуйте! Я ИИ-помощник Caromoto Lithuania. Чем могу помочь?"
+msgstr "Hello! I am Caromoto Lithuania AI assistant. How can I help you?"
+
+#: .\templates\website\base.html:149
+msgid "Введите ваш вопрос..."
+msgstr "Enter your question..."
+
+#: .\templates\website\base.html:166
+msgid "Профессиональная доставка автомобилей из США в Казахстан и страны СНГ."
+msgstr "Professional car delivery from the USA to Kazakhstan and CIS countries."
+
+#: .\templates\website\base.html:167
+msgid "Надежно, быстро, выгодно."
+msgstr "Reliable, fast, profitable."
+
+#: .\templates\website\base.html:174 .\templates\website\contact.html:77
+msgid "Вильнюс, Литва"
+msgstr "Vilnius, Lithuania"
+
+#: .\templates\website\base.html:185
+msgid "Навигация"
+msgstr "Navigation"
+
+#: .\templates\website\base.html:196
+msgid "Все права защищены."
+msgstr "All rights reserved."
+
+#: .\templates\website\contact.html:4
+#| msgid "Контакты"
+msgid "Контакты - Caromoto Lithuania"
+msgstr "Contact"
+
+#: .\templates\website\contact.html:11
+msgid "Свяжитесь с нами любым удобным способом"
+msgstr "Contact us in any convenient way"
+
+#: .\templates\website\contact.html:24 .\templates\website\contact.html:57
+msgid "Отправить сообщение"
+msgstr "Send Message"
+
+#: .\templates\website\contact.html:29
+msgid "Ваше имя"
+msgstr "Your Name"
+
+#: .\templates\website\contact.html:37
+msgid "Телефон"
+msgstr "Phone"
+
+#: .\templates\website\contact.html:41
+msgid "Тема"
+msgstr "Subject"
+
+#: .\templates\website\contact.html:43
+msgid "Выберите тему..."
+msgstr "Select subject..."
+
+#: .\templates\website\contact.html:44
+msgid "Расчет стоимости"
+msgstr "Cost Calculation"
+
+#: .\templates\website\contact.html:45
+msgid "Отслеживание груза"
+msgstr "Shipment Tracking"
+
+#: .\templates\website\contact.html:46
+msgid "Общий вопрос"
+msgstr "General Question"
+
+#: .\templates\website\contact.html:47
+msgid "Жалоба"
+msgstr "Complaint"
+
+#: .\templates\website\contact.html:48
+msgid "Предложение"
+msgstr "Suggestion"
+
+#: .\templates\website\contact.html:52
+msgid "Сообщение"
+msgstr "Message"
+
+#: .\templates\website\contact.html:72
+msgid "Контактная информация"
+msgstr "Contact Information"
+
+#: .\templates\website\contact.html:75
+msgid "Адрес офиса:"
+msgstr "Office Address:"
+
+#: .\templates\website\contact.html:81
+msgid "Телефон:"
+msgstr "Phone:"
+
+#: .\templates\website\contact.html:94
+msgid "Часы работы:"
+msgstr "Working Hours:"
+
+#: .\templates\website\contact.html:96
+msgid "Пн-Пт: 9:00 - 18:00"
+msgstr "Mon-Fri: 9:00 - 18:00"
+
+#: .\templates\website\contact.html:97
+msgid "Сб-Вс: 10:00 - 15:00"
+msgstr "Sat-Sun: 10:00 - 15:00"
+
+#: .\templates\website\contact.html:106
+msgid "Нужна помощь?"
+msgstr "Need Help?"
+
+#: .\templates\website\contact.html:108
+msgid "Попробуйте наш ИИ-помощник для быстрых ответов на популярные вопросы!"
+msgstr "Try our AI assistant for quick answers to popular questions!"
+
+#: .\templates\website\contact.html:110
+msgid "Открыть чат с ИИ"
+msgstr "Open AI Chat"
+
+#: .\templates\website\home.html:4
+msgid "Caromoto Lithuania - Доставка автомобилей из США"
+msgstr "Caromoto Lithuania - Car Delivery from USA"
+
+#: .\templates\website\home.html:14
+msgid "ПРОФЕССИОНАЛЬНАЯ ЛОГИСТИКА"
+msgstr "PROFESSIONAL LOGISTICS"
+
+#: .\templates\website\home.html:18
+msgid "Доставка автомобилей"
+msgstr "Car Delivery"
+
+#: .\templates\website\home.html:19
+msgid "из США"
+msgstr "from USA"
+
+#: .\templates\website\home.html:22
+msgid "Контейнерные перевозки и таможенное оформление."
+msgstr "Container shipping and customs clearance."
+
+#: .\templates\website\home.html:23
+msgid "Более 10 лет опыта на международном рынке."
+msgstr "Over 10 years of experience in the international market."
+
+#: .\templates\website\home.html:27
+msgid "НАШИ УСЛУГИ"
+msgstr "OUR SERVICES"
+
+#: .\templates\website\home.html:30
+msgid "СВЯЗАТЬСЯ"
+msgstr "CONTACT US"
+
+#: .\templates\website\home.html:37
+msgid "Отследить груз"
+msgstr "Track Shipment"
+
+#: .\templates\website\home.html:42
+msgid "VIN автомобиля или номер контейнера"
+msgstr "Vehicle VIN or Container Number"
+
+#: .\templates\website\home.html:44
+msgid "Например: 1HGCM82633A123456"
+msgstr "For example: 1HGCM82633A123456"
+
+#: .\templates\website\home.html:47
+msgid "Отследить"
+msgstr "Track"
+
+#: .\templates\website\home.html:53
+msgid "Показать фотографии"
+msgstr "Show Photos"
+
+#: .\templates\website\home.html:65
+msgid "Почему выбирают нас"
+msgstr "Why Choose Us"
+
+#: .\templates\website\home.html:73
+msgid "Полное страхование грузов и гарантия сохранности"
+msgstr "Full cargo insurance and safety guarantee"
+
+#: .\templates\website\home.html:81
+msgid "Скорость"
+msgstr "Speed"
+
+#: .\templates\website\home.html:82
+msgid "Оптимальные сроки доставки 30-45 дней"
+msgstr "Optimal delivery time 30-45 days"
+
+#: .\templates\website\home.html:90
+msgid "Выгодные цены"
+msgstr "Competitive Prices"
+
+#: .\templates\website\home.html:91
+msgid "Конкурентные тарифы и прозрачное ценообразование"
+msgstr "Competitive rates and transparent pricing"
+
+#: .\templates\website\home.html:99
+msgid "Поддержка 24/7"
+msgstr "24/7 Support"
+
+#: .\templates\website\home.html:100
+msgid "Наши специалисты всегда на связи"
+msgstr "Our specialists are always available"
+
+#: .\templates\website\home.html:110
+msgid "Как это работает"
+msgstr "How It Works"
+
+#: .\templates\website\home.html:118
+msgid "Заявка"
+msgstr "Request"
+
+#: .\templates\website\home.html:119
+msgid "Оставьте заявку на сайте или свяжитесь с менеджером"
+msgstr "Submit a request on the website or contact a manager"
+
+#: .\templates\website\home.html:128
+msgid "Расчет"
+msgstr "Calculation"
+
+#: .\templates\website\home.html:129
+msgid "Получите точный расчет стоимости доставки"
+msgstr "Get an accurate delivery cost estimate"
+
+#: .\templates\website\home.html:138
+msgid "Доставка"
+msgstr "Delivery"
+
+#: .\templates\website\home.html:139
+msgid "Отслеживайте статус груза в режиме реального времени"
+msgstr "Track your shipment status in real time"
+
+#: .\templates\website\home.html:148
+msgid "Получение"
+msgstr "Receipt"
+
+#: .\templates\website\home.html:149
+msgid "Получите ваш автомобиль со всеми документами"
+msgstr "Receive your vehicle with all documents"
+
+#: .\templates\website\home.html:161
+msgid "Последние новости"
+msgstr "Latest News"
+
+#: .\templates\website\home.html:163
+#| msgid "Новости"
+msgid "Все новости"
+msgstr "News"
+
+#: .\templates\website\home.html:185
+msgid "Читать"
+msgstr "Read"
+
+#: .\templates\website\services.html:4
+msgid "Услуги - Caromoto Lithuania"
+msgstr "Services - Caromoto Lithuania"
+
+#: .\templates\website\services.html:10
+#| msgid "Услуги"
+msgid "Наши услуги"
+msgstr "Services"
+
+#: .\templates\website\services.html:11
+msgid "Полный спектр логистических услуг для доставки автомобилей"
+msgstr "Full range of logistics services for car delivery"
+
+#: .\templates\website\services.html:25
+msgid "Морские перевозки"
+msgstr "Ocean Shipping"
+
+#: .\templates\website\services.html:27
+msgid ""
+"Контейнерная доставка автомобилей из портов США в порты Европы и СНГ. "
+"Работаем с ведущими морскими линиями."
+msgstr ""
+
+#: .\templates\website\services.html:30
+msgid "Полное страхование груза"
+msgstr "Full cargo insurance"
+
+#: .\templates\website\services.html:31
+msgid "Отслеживание контейнера"
+msgstr "Container tracking"
+
+#: .\templates\website\services.html:32
+msgid "Оптимальные сроки доставки"
+msgstr "Optimal delivery time"
+
+#: .\templates\website\services.html:44 .\templates\website\services.html:153
+#: .\templates\website\services.html:178 .\templates\website\services.html:202
+msgid "Таможенное оформление"
+msgstr "Customs Clearance"
+
+#: .\templates\website\services.html:46
+msgid ""
+"Полное сопровождение таможенных процедур. Подготовка и оформление всех "
+"необходимых документов."
+msgstr ""
+
+#: .\templates\website\services.html:49
+msgid "Транзитные декларации"
+msgstr "Transit declarations"
+
+#: .\templates\website\services.html:50
+msgid "Экспортные декларации"
+msgstr "Export declarations"
+
+#: .\templates\website\services.html:51
+msgid "Консультация по таможенным вопросам"
+msgstr "Customs consultation"
+
+#: .\templates\website\services.html:63
+msgid "Складское хранение"
+msgstr "Warehouse Storage"
+
+#: .\templates\website\services.html:65
+msgid "Охраняемые склады в Литве и Казахстане. Первые дни хранения бесплатно."
+msgstr "Secure warehouses in Lithuania and Kazakhstan. First days of storage free."
+
+#: .\templates\website\services.html:68
+msgid "Видеонаблюдение 24/7"
+msgstr "24/7 video surveillance"
+
+#: .\templates\website\services.html:69
+msgid "Крытые склады"
+msgstr "Covered warehouses"
+
+#: .\templates\website\services.html:70
+msgid "Фотоотчет о состоянии авто"
+msgstr "Photo report of car condition"
+
+#: .\templates\website\services.html:82
+msgid "Наземная доставка"
+msgstr "Ground Delivery"
+
+#: .\templates\website\services.html:84
+msgid ""
+"Перевозка автомобилей автовозами по территории Казахстана и СНГ в ваш город."
+msgstr ""
+
+#: .\templates\website\services.html:87
+#| msgid "Доставка автомобилей"
+msgid "Доставка в любой город"
+msgstr "Car Delivery"
+
+#: .\templates\website\services.html:88
+msgid "Надежные перевозчики"
+msgstr "Reliable carriers"
+
+#: .\templates\website\services.html:89
+msgid "Страхование в пути"
+msgstr "Insurance in transit"
+
+#: .\templates\website\services.html:101
+msgid "Выкуп на аукционах"
+msgstr "Auction Purchase"
+
+#: .\templates\website\services.html:103
+msgid "Выкуп автомобилей на крупнейших аукционах США: Copart, IAAI и других."
+msgstr "Purchase of cars at the largest US auctions: Copart, IAAI and others."
+
+#: .\templates\website\services.html:106
+msgid "Проверка истории авто"
+msgstr "Car history check"
+
+#: .\templates\website\services.html:107
+msgid "Помощь в выборе"
+msgstr "Selection assistance"
+
+#: .\templates\website\services.html:108
+msgid "Участие в торгах"
+msgstr "Participation in bidding"
+
+#: .\templates\website\services.html:120
+msgid "Поддержка клиентов"
+msgstr "Customer Support"
+
+#: .\templates\website\services.html:122
+msgid ""
+"Персональный менеджер для каждого клиента. Информирование на всех этапах "
+"доставки."
+msgstr ""
+
+#: .\templates\website\services.html:125
+msgid "Онлайн-отслеживание"
+msgstr "Online tracking"
+
+#: .\templates\website\services.html:126
+msgid "Личный кабинет"
+msgstr "Personal account"
+
+#: .\templates\website\services.html:127
+msgid "Круглосуточная поддержка"
+msgstr "24/7 support"
+
+#: .\templates\website\services.html:137
+msgid "Примерные тарифы"
+msgstr "Sample Rates"
+
+#: .\templates\website\services.html:142
+msgid "Базовый"
+msgstr "Basic"
+
+#: .\templates\website\services.html:147 .\templates\website\services.html:172
+#: .\templates\website\services.html:196
+#| msgid "Доставка автомобилей"
+msgid "за автомобиль"
+msgstr "Car Delivery"
+
+#: .\templates\website\services.html:151 .\templates\website\services.html:176
+#: .\templates\website\services.html:200
+msgid "Страхование"
+msgstr "Insurance"
+
+#: .\templates\website\services.html:152
+msgid "3 дня бесплатного хранения"
+msgstr "3 days free storage"
+
+#: .\templates\website\services.html:154 .\templates\website\services.html:179
+#| msgid "Доставка автомобилей"
+msgid "Доставка до города"
+msgstr "Car Delivery"
+
+#: .\templates\website\services.html:157 .\templates\website\services.html:182
+#: .\templates\website\services.html:206
+msgid "Заказать"
+msgstr "Order"
+
+#: .\templates\website\services.html:166
+msgid "Стандарт"
+msgstr "Standard"
+
+#: .\templates\website\services.html:167
+msgid "Популярный"
+msgstr "Popular"
+
+#: .\templates\website\services.html:177
+msgid "7 дней бесплатного хранения"
+msgstr "7 days free storage"
+
+#: .\templates\website\services.html:191
+msgid "Премиум"
+msgstr "Premium"
+
+#: .\templates\website\services.html:201
+msgid "14 дней бесплатного хранения"
+msgstr "14 days free storage"
+
+#: .\templates\website\services.html:203
+#| msgid "Доставка автомобилей"
+msgid "Доставка до вашего города"
+msgstr "Car Delivery"
+
+#: .\templates\website\services.html:215
+msgid ""
+"Цены являются примерными и могут отличаться в зависимости от типа "
+"автомобиля, маршрута и дополнительных услуг. Для точного расчета свяжитесь с "
+"нашим менеджером."
+msgstr ""
+
+#: .\templates\website\services.html:223
+msgid "Нужна консультация?"
+msgstr "Need a Consultation?"
+
+#: .\templates\website\services.html:224
+msgid "Наши специалисты помогут выбрать оптимальный пакет услуг"
+msgstr "Our specialists will help you choose the optimal service package"

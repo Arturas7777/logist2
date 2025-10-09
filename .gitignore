@@ -1,27 +1,63 @@
 # Python
 *.pyc
 __pycache__/
+*.py[cod]
+*$py.class
 
 # Virtualenv
 .venv/
+venv/
+env/
 
 # Django
 *.sqlite3
 *.log
+*.pot
+db.sqlite3
+db.sqlite3-journal
+local_settings.py
 
 # Static files (collected)
 staticfiles/
+static_root/
+
+# Media files (опционально, зависит от стратегии)
+# media/
 
 # Env
 .env
+.env.local
+.env.production
 
 # Backup files
 *.zip
 *.sql
+*.sql.gz
+*.tar.gz
+backups/
 
 # System files
 .DS_Store
+Thumbs.db
 
 # PyCharm / VSCode / IDE files
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
+
+# Compiled translations
+*.mo
+
+# Coverage
+.coverage
+htmlcov/
+
+# Pytest
+.pytest_cache/
+
+# Node (если используется для frontend)
+node_modules/
+npm-debug.log
+yarn-error.log

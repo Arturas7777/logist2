@@ -405,6 +405,7 @@ class Client(models.Model):
 
 class Warehouse(models.Model):
     name = models.CharField(max_length=100, verbose_name="Название склада")
+    address = models.CharField(max_length=300, blank=True, verbose_name="Адрес склада")
     
     # Балансы склада
     invoice_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Инвойс-баланс")
@@ -1957,4 +1958,19 @@ from .models_billing import (
     InvoiceItem,
     Transaction,
     SimpleBalanceMixin
+)
+
+# ==============================================================================
+# 🌐 МОДЕЛИ ДЛЯ КЛИЕНТСКОГО САЙТА
+# ==============================================================================
+# Импортируем модели для клиентского портала
+
+from .models_website import (
+    ClientUser,
+    CarPhoto,
+    ContainerPhoto,
+    AIChat,
+    NewsPost,
+    ContactMessage,
+    TrackingRequest
 )

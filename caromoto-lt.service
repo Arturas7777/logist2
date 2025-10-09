@@ -1,0 +1,35 @@
+[Unit]
+Description=Caromoto Lithuania Django Application
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=notify
+User=www-data
+Group=www-data
+RuntimeDirectory=caromoto-lt
+WorkingDirectory=/var/www/caromoto-lt
+Environment="PATH=/var/www/caromoto-lt/venv/bin"
+EnvironmentFile=/var/www/caromoto-lt/.env
+
+# Gunicorn command
+ExecStart=/var/www/caromoto-lt/venv/bin/gunicorn \
+    --config /var/www/caromoto-lt/gunicorn_config.py \
+    logist2.wsgi:application
+
+# Restart policy
+Restart=on-failure
+RestartSec=5s
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=caromoto-lt
+
+[Install]
+WantedBy=multi-user.target
+
