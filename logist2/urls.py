@@ -1,7 +1,5 @@
 from django.contrib import admin
 from django.urls import path, include
-from django.conf.urls.i18n import i18n_patterns
-from django.views.generic import RedirectView
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
@@ -39,15 +37,14 @@ urlpatterns = [
     path('ws/', include(websocket_urlpatterns)),
 ]
 
-# Добавляем интернационализированные URL паттерны
-urlpatterns += i18n_patterns(
+# Добавляем URL без языковых префиксов (язык определяется через cookie)
+urlpatterns += [
     # ========== КЛИЕНТСКИЙ САЙТ (главная страница) ==========
     path('', include('core.urls_website')),
     
     # ========== АДМИН ПАНЕЛЬ ==========
     path('admin/', admin.site.urls),
-    prefix_default_language=False,
-)
+]
 
 # Добавляем поддержку медиа файлов в режиме разработки
 if settings.DEBUG:
