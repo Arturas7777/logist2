@@ -2,16 +2,17 @@
 chcp 65001 >nul
 echo.
 echo ========================================
-echo 🚀 ЗАПУСК ПРОЕКТА LOGIST2
+echo LOGIST2 - Django Development Server
 echo ========================================
 echo.
 
-echo 🔧 Активация виртуального окружения...
+echo Activating virtual environment...
 call .venv\Scripts\activate.bat
 
 echo.
-echo 🚀 Запуск проекта с PostgreSQL...
-python start_simple.py
+echo Starting Django server on http://localhost:8000
+echo.
+python manage.py runserver 0.0.0.0:8000
 
 echo.
 pause
