@@ -30,6 +30,7 @@ MIDDLEWARE = [
     'logist2.settings_security.SecurityHeadersMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.locale.LocaleMiddleware',
+    'core.middleware_admin_language.AdminRussianLanguageMiddleware',  # Принудительно русский для админки
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
