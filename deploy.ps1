@@ -36,6 +36,6 @@ if ($gunicorn -eq "active" -and $daphne -eq "active") {
 
 Write-Host ""
 Write-Host "=== DEPLOY COMPLETE ===" -ForegroundColor Cyan
-Write-Host "Site: http://176.118.198.78" -ForegroundColor Gray
+Write-Host "Site: https://caromoto-lt.com" -ForegroundColor Gray
 Write-Host ""
 
