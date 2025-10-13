@@ -60,6 +60,10 @@ class Line(models.Model):
     ths_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="THS сбор (оплата линиям)")
     additional_fees = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Дополнительные сборы")
 
+    class Meta:
+        verbose_name = "Линия"
+        verbose_name_plural = "Линии"
+
     def __str__(self):
         return self.name
     
@@ -424,6 +428,10 @@ class Warehouse(models.Model):
     transit_declaration = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Транзитная декл.")
     export_declaration = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Экспортная декл.")
     additional_expenses = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Доп.расходы")
+
+    class Meta:
+        verbose_name = "Склад"
+        verbose_name_plural = "Склады"
 
     def __str__(self):
         return self.name
@@ -1732,6 +1740,10 @@ class Declaration(models.Model):
                                          verbose_name="Таможенная процедура")
     date = models.DateField(verbose_name="Дата оформления")
 
+    class Meta:
+        verbose_name = "Декларация"
+        verbose_name_plural = "Декларации"
+
     def __str__(self):
         return self.number
 
@@ -1741,6 +1753,10 @@ class Accounting(models.Model):
     payment = models.ForeignKey(PaymentOLD, on_delete=models.CASCADE, null=True, blank=True, verbose_name="Платеж")
     sync_status = models.CharField(max_length=20, default="PENDING", verbose_name="Статус синхронизации")
     sync_date = models.DateTimeField(null=True, blank=True, verbose_name="Дата синхронизации")
+
+    class Meta:
+        verbose_name = "Бухгалтерская запись"
+        verbose_name_plural = "Бухгалтерия"
 
     def __str__(self):
         return f"{self.invoice} - {self.sync_status}"
