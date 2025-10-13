@@ -51,46 +51,6 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'website:contact' %}">{% trans "Контакты" %}</a>
                     </li>
-                    <!-- Переключатель языков для всех пользователей -->
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" id="languageDropdown" role="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-globe"></i> 
-                            {% get_current_language as LANGUAGE_CODE %}
-                            {% if LANGUAGE_CODE == 'lt' %}LT{% elif LANGUAGE_CODE == 'ru' %}RU{% else %}EN{% endif %}
-                        </a>
-                        <ul class="dropdown-menu dropdown-menu-end">
-                            <li>
-                                <form action="/i18n/setlang/" method="post" class="d-inline">
-                                    {% csrf_token %}
-                                    <input name="next" type="hidden" value="/">
-                                    <input type="hidden" name="language" value="lt">
-                                    <button type="submit" class="dropdown-item {% if LANGUAGE_CODE == 'lt' %}active{% endif %}">
-                                        🇱🇹 Lietuvių
-                                    </button>
-                                </form>
-                            </li>
-                            <li>
-                                <form action="/i18n/setlang/" method="post" class="d-inline">
-                                    {% csrf_token %}
-                                    <input name="next" type="hidden" value="/">
-                                    <input type="hidden" name="language" value="en">
-                                    <button type="submit" class="dropdown-item {% if LANGUAGE_CODE == 'en' %}active{% endif %}">
-                                        🇬🇧 English
-                                    </button>
-                                </form>
-                            </li>
-                            <li>
-                                <form action="/i18n/setlang/" method="post" class="d-inline">
-                                    {% csrf_token %}
-                                    <input name="next" type="hidden" value="/">
-                                    <input type="hidden" name="language" value="ru">
-                                    <button type="submit" class="dropdown-item {% if LANGUAGE_CODE == 'ru' %}active{% endif %}">
-                                        🇷🇺 Русский
-                                    </button>
-                                </form>
-                            </li>
-                        </ul>
-                    </li>
                     
                     {% if user.is_authenticated %}
                         <li class="nav-item dropdown">
