@@ -38,7 +38,7 @@
         btn.textContent = '⏳ Загрузка...';
         status.textContent = '';
         
-        fetch('/core/container/{{ original.pk }}/sync-gdrive-photos/', {
+        fetch('{% url "core:sync_container_photos_gdrive" original.pk %}', {
           method: 'POST',
           headers: {
             'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
