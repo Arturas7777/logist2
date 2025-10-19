@@ -1,12 +1,10 @@
 """
 Модуль для синхронизации фотографий контейнеров с Google Drive
 """
-import gdown
 import requests
 import re
 import logging
 import os
-import tempfile
 from django.core.files.base import ContentFile
 from .models import Container
 from .models_website import ContainerPhoto
@@ -25,6 +23,125 @@ class GoogleDriveSync:
     """Класс для работы с Google Drive"""
     
     @staticmethod
+    def extract_folder_id(url):
+        """Извлекает ID папки из URL Google Drive"""
+        patterns = [
+            r'/folders/([a-zA-Z0-9_-]+)',
+            r'id=([a-zA-Z0-9_-]+)',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                return match.group(1)
+        
+        return None
+    
+    @staticmethod
+    def get_folder_files_api(folder_id):
+        """
+        Получает список файлов из публичной папки через Google Drive API v3
+        Без авторизации - только для публичных папок
+        """
+        try:
+            # API endpoint для публичных файлов
+            api_url = f"https://www.googleapis.com/drive/v3/files"
+            
+            params = {
+                'q': f"'{folder_id}' in parents and trashed=false",
+                'fields': 'files(id,name,mimeType)',
+                'key': 'AIzaSyDummyForPublic'  # Для публичных папок можно без ключа
+            }
+            
+            # Пробуем без API ключа - для публичных папок
+            response = requests.get(api_url, params={'q': f"'{folder_id}' in parents"}, timeout=30)
+            
+            if response.status_code == 401:
+                # Нужен API ключ, используем альтернативный метод
+                return GoogleDriveSync.get_folder_files_web(folder_id)
+            
+            if response.status_code == 200:
+                data = response.json()
+                return data.get('files', [])
+            
+            logger.warning(f"API вернул код {response.status_code}, используем веб-метод")
+            return GoogleDriveSync.get_folder_files_web(folder_id)
+            
+        except Exception as e:
+            logger.error(f"Ошибка Google Drive API: {e}")
+            return GoogleDriveSync.get_folder_files_web(folder_id)
+    
+    @staticmethod
+    def get_folder_files_web(folder_id):
+        """
+        Получает список файлов через веб-интерфейс Google Drive
+        Работает для публичных папок
+        """
+        try:
+            # Прямая ссылка на просмотр папки
+            url = f"https://drive.google.com/embeddedfolderview?id={folder_id}"
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            
+            response = requests.get(url, headers=headers, timeout=30)
+            
+            if response.status_code != 200:
+                logger.error(f"Не удалось получить доступ к папке {folder_id}: HTTP {response.status_code}")
+                return []
+            
+            # Парсим HTML для извлечения ссылок на файлы
+            content = response.text
+            
+            # Паттерн для поиска файлов в iframe просмотре
+            file_pattern = r'href="https://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)/[^"]*"[^>]*>([^<]+)<'
+            matches = re.findall(file_pattern, content)
+            
+            files = []
+            for file_id, filename in matches:
+                if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp')):
+                    files.append({
+                        'id': file_id,
+                        'name': filename,
+                        'mimeType': 'image/jpeg'
+                    })
+            
+            logger.info(f"Найдено {len(files)} файлов в папке {folder_id}")
+            return files
+            
+        except Exception as e:
+            logger.error(f"Ошибка веб-метода: {e}", exc_info=True)
+            return []
+    
+    @staticmethod
+    def download_file(file_id):
+        """Скачивает файл с Google Drive"""
+        try:
+            download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+            
+            session = requests.Session()
+            response = session.get(download_url, stream=True, timeout=60)
+            
+            # Обработка больших файлов с подтверждением
+            if 'download_warning' in response.text or 'virus' in response.text:
+                for key, value in response.cookies.items():
+                    if key.startswith('download_warning'):
+                        confirm_url = download_url + f"&confirm={value}"
+                        response = session.get(confirm_url, stream=True, timeout=60)
+                        break
+            
+            if response.status_code == 200:
+                return response.content
+            
+            logger.warning(f"Не удалось скачать файл {file_id}: HTTP {response.status_code}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Ошибка при скачивании файла {file_id}: {e}")
+            return None
+    
+    @staticmethod
     def download_folder_photos(folder_url, container):
         """
         Скачивает все фотографии из папки Google Drive для контейнера
@@ -40,64 +157,71 @@ class GoogleDriveSync:
             logger.info(f"Скачивание фотографий из Google Drive для контейнера {container.number}")
             logger.info(f"URL: {folder_url}")
             
-            # Создаем временную папку
-            with tempfile.TemporaryDirectory() as temp_dir:
-                logger.info(f"Временная папка: {temp_dir}")
+            # Извлекаем ID папки из URL
+            folder_id = GoogleDriveSync.extract_folder_id(folder_url)
+            
+            if not folder_id:
+                logger.error(f"Не удалось извлечь ID папки из URL: {folder_url}")
+                return 0
+            
+            logger.info(f"ID папки: {folder_id}")
+            
+            # Получаем список файлов
+            files = GoogleDriveSync.get_folder_files_web(folder_id)
+            
+            if not files:
+                logger.warning(f"Нет файлов в папке {folder_id}")
+                return 0
+            
+            logger.info(f"Найдено {len(files)} изображений")
+            
+            photos_added = 0
+            
+            for file_info in files:
+                filename = file_info['name']
+                file_id = file_info['id']
                 
-                # Скачиваем всю папку с фотографиями
+                # Проверяем, не добавляли ли уже это фото
+                exists = ContainerPhoto.objects.filter(
+                    container=container,
+                    description__contains=filename
+                ).exists()
+                
+                if exists:
+                    logger.debug(f"Фото {filename} уже существует, пропускаем")
+                    continue
+                
                 try:
-                    gdown.download_folder(url=folder_url, output=temp_dir, quiet=False, use_cookies=False)
+                    logger.info(f"Загружаем {filename}...")
+                    
+                    # Скачиваем файл
+                    file_content = GoogleDriveSync.download_file(file_id)
+                    
+                    if not file_content:
+                        logger.warning(f"Не удалось скачать {filename}")
+                        continue
+                    
+                    # Создаем запись фотографии
+                    photo = ContainerPhoto(
+                        container=container,
+                        photo_type='GENERAL',
+                        description=f"Google Drive: {filename}",
+                        is_public=True
+                    )
+                    
+                    # Сохраняем файл
+                    photo.photo.save(filename, ContentFile(file_content), save=False)
+                    photo.save()  # Автоматически создаст миниатюру
+                    
+                    photos_added += 1
+                    logger.info(f"✓ Добавлено фото: {filename}")
+                    
                 except Exception as e:
-                    logger.error(f"Ошибка gdown.download_folder: {e}")
-                    return 0
-                
-                # Обрабатываем скачанные файлы
-                photos_added = 0
-                
-                for root, dirs, filenames in os.walk(temp_dir):
-                    for filename in filenames:
-                        # Проверяем, что это изображение
-                        if not filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp')):
-                            continue
-                        
-                        # Проверяем, не добавляли ли уже это фото
-                        exists = ContainerPhoto.objects.filter(
-                            container=container,
-                            description__contains=filename
-                        ).exists()
-                        
-                        if exists:
-                            logger.debug(f"Фото {filename} уже существует, пропускаем")
-                            continue
-                        
-                        try:
-                            file_path = os.path.join(root, filename)
-                            
-                            # Читаем файл
-                            with open(file_path, 'rb') as f:
-                                file_content = f.read()
-                            
-                            # Создаем запись фотографии
-                            photo = ContainerPhoto(
-                                container=container,
-                                photo_type='GENERAL',
-                                description=f"Google Drive: {filename}",
-                                is_public=True
-                            )
-                            
-                            # Сохраняем файл
-                            photo.photo.save(filename, ContentFile(file_content), save=False)
-                            photo.save()  # Автоматически создаст миниатюру
-                            
-                            photos_added += 1
-                            logger.info(f"✓ Добавлено фото: {filename}")
-                            
-                        except Exception as e:
-                            logger.error(f"Ошибка при обработке фото {filename}: {e}")
-                            continue
-                
-                logger.info(f"Всего добавлено {photos_added} фотографий для контейнера {container.number}")
-                return photos_added
+                    logger.error(f"Ошибка при обработке фото {filename}: {e}")
+                    continue
+            
+            logger.info(f"Всего добавлено {photos_added} фотографий для контейнера {container.number}")
+            return photos_added
                 
         except Exception as e:
             logger.error(f"Ошибка при скачивании папки: {e}", exc_info=True)
