@@ -108,6 +108,7 @@ class ContainerAdmin(admin.ModelAdmin):
             'fields': (
                 ('number', 'status', 'line', 'warehouse', 'ths'),
                 ('eta', 'unload_date'),
+                'google_drive_folder_url',
             )
         }),
     )

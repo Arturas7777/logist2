@@ -561,6 +561,10 @@ class Container(models.Model):
                                validators=[MinValueValidator(0)])
     storage_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Складирование")
     notes = models.CharField(max_length=200, blank=True, verbose_name="Примечания")
+    
+    # Google Drive integration
+    google_drive_folder_url = models.URLField(max_length=500, blank=True, verbose_name="Google Drive папка", 
+                                               help_text="Прямая ссылка на папку с фотографиями контейнера в Google Drive")
 
     objects = OptimizedContainerManager()
     # Сохраняем старый менеджер для совместимости
