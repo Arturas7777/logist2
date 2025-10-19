@@ -62,29 +62,84 @@ class CarPhotoAdmin(admin.ModelAdmin):
 @admin.register(ContainerPhoto)
 class ContainerPhotoAdmin(admin.ModelAdmin):
     """Управление фотографиями контейнеров"""
-    list_display = ['container', 'photo_type', 'photo_preview', 'uploaded_at', 'is_public']
-    list_filter = ['photo_type', 'is_public', 'uploaded_at']
+    list_display = ['thumbnail_preview', 'container_link', 'photo_type', 'filename_display', 'uploaded_at', 'is_public']
+    list_filter = ['photo_type', 'is_public', 'uploaded_at', 'container']
     search_fields = ['container__number', 'description']
-    readonly_fields = ['uploaded_at', 'photo_preview']
+    readonly_fields = ['uploaded_at', 'photo_preview', 'thumbnail_preview_large']
     list_editable = ['is_public']
+    list_per_page = 50
+    
+    # Добавляем фильтр по контейнеру по умолчанию
+    def changelist_view(self, request, extra_context=None):
+        # Если не указан фильтр по контейнеру и есть GET параметр
+        if 'container__id__exact' not in request.GET and not request.GET.get('q'):
+            # Показываем сообщение
+            extra_context = extra_context or {}
+            extra_context['subtitle'] = 'Используйте фильтр "Контейнер" справа для выбора нужного контейнера'
+        return super().changelist_view(request, extra_context=extra_context)
     
     fieldsets = (
         ('Фотография', {
-            'fields': ('container', 'photo', 'photo_preview', 'photo_type', 'description')
+            'fields': ('container', 'photo', 'thumbnail_preview_large', 'photo_type', 'description')
         }),
         ('Настройки', {
             'fields': ('is_public', 'uploaded_by', 'uploaded_at')
         }),
     )
     
+    def thumbnail_preview(self, obj):
+        """Миниатюра для списка"""
+        if obj.thumbnail:
+            return format_html(
+                '<img src="{}" style="max-width: 50px; max-height: 50px; border-radius: 4px;" />',
+                obj.thumbnail.url
+            )
+        elif obj.photo:
+            return format_html(
+                '<img src="{}" style="max-width: 50px; max-height: 50px; border-radius: 4px;" />',
+                obj.photo.url
+            )
+        return '-'
+    thumbnail_preview.short_description = '🖼'
+    
+    def thumbnail_preview_large(self, obj):
+        """Большая миниатюра для формы"""
+        if obj.thumbnail:
+            return format_html(
+                '<img src="{}" style="max-width: 400px; border-radius: 8px;" />',
+                obj.thumbnail.url
+            )
+        elif obj.photo:
+            return format_html(
+                '<img src="{}" style="max-width: 400px; border-radius: 8px;" />',
+                obj.photo.url
+            )
+        return '-'
+    thumbnail_preview_large.short_description = 'Предпросмотр'
+    
     def photo_preview(self, obj):
+        """Полное фото"""
         if obj.photo:
             return format_html(
                 '<img src="{}" style="max-width: 200px; max-height: 200px;" />',
                 obj.photo.url
             )
         return '-'
-    photo_preview.short_description = 'Предпросмотр'
+    photo_preview.short_description = 'Фото'
+    
+    def container_link(self, obj):
+        """Ссылка на контейнер"""
+        from django.urls import reverse
+        from django.utils.html import format_html
+        url = reverse('admin:core_container_change', args=[obj.container.id])
+        return format_html('<a href="{}">{}</a>', url, obj.container.number)
+    container_link.short_description = 'Контейнер'
+    container_link.admin_order_field = 'container__number'
+    
+    def filename_display(self, obj):
+        """Отображение имени файла"""
+        return obj.filename if obj.photo else '-'
+    filename_display.short_description = 'Файл'
 
 
 @admin.register(AIChat)
