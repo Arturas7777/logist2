@@ -1,9 +1,12 @@
 """
 Модуль для синхронизации фотографий контейнеров с Google Drive
 """
+import gdown
 import requests
 import re
 import logging
+import os
+import tempfile
 from django.core.files.base import ContentFile
 from .models import Container
 from .models_website import ContainerPhoto
@@ -22,55 +25,83 @@ class GoogleDriveSync:
     """Класс для работы с Google Drive"""
     
     @staticmethod
-    def get_public_folder_files(folder_id):
+    def download_folder_photos(folder_url, container):
         """
-        Получает список файлов из публичной папки Google Drive
-        Использует прямую ссылку для скачивания
+        Скачивает все фотографии из папки Google Drive для контейнера
+        
+        Args:
+            folder_url: прямая ссылка на папку с фотографиями
+            container: объект Container
+        
+        Returns:
+            количество загруженных фотографий
         """
         try:
-            url = f"https://drive.google.com/drive/folders/{folder_id}"
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
+            logger.info(f"Скачивание фотографий из Google Drive для контейнера {container.number}")
+            logger.info(f"URL: {folder_url}")
             
-            response = requests.get(url, headers=headers, timeout=30)
-            
-            if response.status_code != 200:
-                logger.error(f"Ошибка доступа к папке {folder_id}: HTTP {response.status_code}")
-                return []
-            
-            # Извлекаем ID файлов и имена из HTML
-            # Google Drive использует определенную структуру данных
-            content = response.text
-            
-            # Паттерн для поиска файлов
-            file_pattern = r'"([\w-]{28,33})","([^"]{2,})"'
-            matches = re.findall(file_pattern, content)
-            
-            files = []
-            seen = set()
-            
-            for file_id, name in matches:
-                # Фильтруем служебные имена
-                if (name and 
-                    not name.startswith('_') and 
-                    not name in ['null', 'undefined'] and
-                    file_id not in seen and
-                    len(name) > 2):
-                    
-                    files.append({
-                        'id': file_id,
-                        'name': name,
-                        'is_folder': not any(ext in name.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif'])
-                    })
-                    seen.add(file_id)
-            
-            logger.info(f"Найдено {len(files)} элементов в папке {folder_id}")
-            return files
-            
+            # Создаем временную папку
+            with tempfile.TemporaryDirectory() as temp_dir:
+                logger.info(f"Временная папка: {temp_dir}")
+                
+                # Скачиваем всю папку с фотографиями
+                try:
+                    gdown.download_folder(url=folder_url, output=temp_dir, quiet=False, use_cookies=False)
+                except Exception as e:
+                    logger.error(f"Ошибка gdown.download_folder: {e}")
+                    return 0
+                
+                # Обрабатываем скачанные файлы
+                photos_added = 0
+                
+                for root, dirs, filenames in os.walk(temp_dir):
+                    for filename in filenames:
+                        # Проверяем, что это изображение
+                        if not filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp')):
+                            continue
+                        
+                        # Проверяем, не добавляли ли уже это фото
+                        exists = ContainerPhoto.objects.filter(
+                            container=container,
+                            description__contains=filename
+                        ).exists()
+                        
+                        if exists:
+                            logger.debug(f"Фото {filename} уже существует, пропускаем")
+                            continue
+                        
+                        try:
+                            file_path = os.path.join(root, filename)
+                            
+                            # Читаем файл
+                            with open(file_path, 'rb') as f:
+                                file_content = f.read()
+                            
+                            # Создаем запись фотографии
+                            photo = ContainerPhoto(
+                                container=container,
+                                photo_type='GENERAL',
+                                description=f"Google Drive: {filename}",
+                                is_public=True
+                            )
+                            
+                            # Сохраняем файл
+                            photo.photo.save(filename, ContentFile(file_content), save=False)
+                            photo.save()  # Автоматически создаст миниатюру
+                            
+                            photos_added += 1
+                            logger.info(f"✓ Добавлено фото: {filename}")
+                            
+                        except Exception as e:
+                            logger.error(f"Ошибка при обработке фото {filename}: {e}")
+                            continue
+                
+                logger.info(f"Всего добавлено {photos_added} фотографий для контейнера {container.number}")
+                return photos_added
+                
         except Exception as e:
-            logger.error(f"Ошибка при получении содержимого папки {folder_id}: {e}", exc_info=True)
-            return []
+            logger.error(f"Ошибка при скачивании папки: {e}", exc_info=True)
+            return 0
     
     @staticmethod
     def download_file(file_id):

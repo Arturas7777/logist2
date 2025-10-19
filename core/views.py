@@ -917,44 +917,34 @@ def sync_container_photos_from_gdrive(request, container_id):
         from .models import Container
         
         container = Container.objects.get(id=container_id)
-        container_number = container.number
         
-        total_photos = 0
+        # Проверяем, есть ли ссылка на Google Drive
+        if not container.google_drive_folder_url:
+            return JsonResponse({
+                'success': False,
+                'error': 'Не указана ссылка на папку Google Drive. Добавьте ссылку в поле "Google Drive папка"'
+            }, status=400)
         
-        # Проверяем обе папки (выгруженные и в контейнере)
-        for folder_type, folder_id in [
-            ('unloaded', '1711SSTZ3_YgUcZfNrgNzhscbmlHXlsKb'),
-            ('in_container', '11poTWYYG3uKTuGTYDWS2m8uA52mlzP6f')
-        ]:
-            # Получаем папки месяцев
-            month_folders = GoogleDriveSync.get_public_folder_files(folder_id)
-            
-            for month_folder in month_folders:
-                if not month_folder.get('is_folder'):
-                    continue
-                
-                # Получаем папки контейнеров в этом месяце
-                container_folders = GoogleDriveSync.get_public_folder_files(month_folder['id'])
-                
-                for container_folder in container_folders:
-                    if container_folder['name'] == container_number:
-                        # Нашли папку контейнера!
-                        photo_type = 'UNLOADING' if folder_type == 'unloaded' else 'GENERAL'
-                        count = GoogleDriveSync.sync_container_folder(
-                            container_number,
-                            container_folder['id'],
-                            photo_type
-                        )
-                        total_photos += count
+        # Скачиваем фотографии из указанной папки
+        photos_count = GoogleDriveSync.download_folder_photos(
+            container.google_drive_folder_url,
+            container
+        )
         
-        return JsonResponse({
-            'success': True,
-            'message': f'Загружено {total_photos} новых фотографий',
-            'photos_count': total_photos
-        })
+        if photos_count > 0:
+            return JsonResponse({
+                'success': True,
+                'message': f'Загружено {photos_count} новых фотографий',
+                'photos_count': photos_count
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'error': 'Не найдено новых фотографий для загрузки'
+            })
         
     except Container.DoesNotExist:
         return JsonResponse({'error': 'Контейнер не найден'}, status=404)
     except Exception as e:
-        logger.error(f"Error syncing Google Drive photos: {e}")
+        logger.error(f"Error syncing Google Drive photos: {e}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
