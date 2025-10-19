@@ -103,10 +103,19 @@ class ContainerPhoto(models.Model):
     
     def create_thumbnail(self):
         """Создает миниатюру изображения для быстрой загрузки"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         if not self.photo:
-            return
+            logger.warning(f"ContainerPhoto {self.id}: нет оригинального фото для создания миниатюры")
+            return False
         
         try:
+            # Проверяем существование файла
+            if not os.path.exists(self.photo.path):
+                logger.error(f"ContainerPhoto {self.id}: файл не найден: {self.photo.path}")
+                return False
+            
             # Открываем оригинальное изображение
             img = Image.open(self.photo)
             
@@ -127,20 +136,30 @@ class ContainerPhoto(models.Model):
             
             # Сохраняем миниатюру
             self.thumbnail.save(thumb_name, ContentFile(thumb_io.read()), save=False)
+            logger.info(f"ContainerPhoto {self.id}: миниатюра успешно создана: {thumb_name}")
+            return True
         except Exception as e:
-            print(f"Ошибка создания миниатюры: {e}")
+            logger.error(f"ContainerPhoto {self.id}: ошибка создания миниатюры: {e}", exc_info=True)
+            return False
     
     def save(self, *args, **kwargs):
-        # Если это новое фото или фото изменилось
-        if not self.pk or self.photo:
-            # Сначала сохраняем, чтобы файл был записан
-            super().save(*args, **kwargs)
-            # Затем создаем миниатюру если её нет
-            if not self.thumbnail:
-                self.create_thumbnail()
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Определяем, новый ли это объект
+        is_new = self.pk is None
+        
+        # Сохраняем объект первый раз
+        super().save(*args, **kwargs)
+        
+        # Создаем миниатюру только если её нет и есть оригинальное фото
+        if self.photo and not self.thumbnail:
+            logger.info(f"ContainerPhoto {self.id}: попытка создания миниатюры (is_new={is_new})")
+            if self.create_thumbnail():
+                # Сохраняем только поле thumbnail, чтобы избежать рекурсии
                 super().save(update_fields=['thumbnail'])
-        else:
-            super().save(*args, **kwargs)
+            else:
+                logger.warning(f"ContainerPhoto {self.id}: не удалось создать миниатюру")
     
     class Meta:
         verbose_name = "Фотография контейнера"
@@ -167,38 +186,76 @@ class ContainerPhotoArchive(models.Model):
     
     def extract_photos(self):
         """Извлекает фотографии из архива и создает ContainerPhoto объекты"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         if not self.archive_file:
+            logger.warning(f"ContainerPhotoArchive {self.id}: нет архивного файла")
             return []
         
         photos = []
+        errors = []
+        
         try:
+            logger.info(f"ContainerPhotoArchive {self.id}: начало извлечения из {self.archive_file.path}")
+            
             with zipfile.ZipFile(self.archive_file.path, 'r') as zip_file:
-                for file_info in zip_file.filelist:
-                    if file_info.filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp')):
+                # Фильтруем файлы изображений
+                image_files = [f for f in zip_file.filelist 
+                              if f.filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp'))
+                              and not f.filename.startswith('__MACOSX')  # Игнорируем служебные файлы Mac
+                              and not os.path.basename(f.filename).startswith('.')]  # Игнорируем скрытые файлы
+                
+                logger.info(f"ContainerPhotoArchive {self.id}: найдено {len(image_files)} изображений")
+                
+                for file_info in image_files:
+                    try:
                         # Извлекаем файл
                         file_data = zip_file.read(file_info.filename)
                         
-                        # Создаем ContainerPhoto объект
-                        photo = ContainerPhoto.objects.create(
+                        # Получаем только имя файла без пути
+                        filename = os.path.basename(file_info.filename)
+                        
+                        # Создаем ContainerPhoto объект БЕЗ автоматического сохранения фото
+                        photo = ContainerPhoto(
                             container=self.container,
-                            description=f"Из архива: {file_info.filename}",
+                            description=f"Из архива: {filename}",
                             uploaded_by=self.uploaded_by
                         )
                         
-                        # Сохраняем изображение
+                        # Сохраняем изображение (save=False чтобы не вызывать model.save() дважды)
                         photo.photo.save(
-                            file_info.filename,
+                            filename,
                             ContentFile(file_data),
-                            save=True
+                            save=False
                         )
+                        
+                        # Теперь сохраняем модель - это вызовет создание миниатюры
+                        photo.save()
+                        
                         photos.append(photo)
+                        logger.debug(f"ContainerPhoto: успешно обработано {filename}")
+                        
+                    except Exception as e:
+                        error_msg = f"Ошибка при обработке {file_info.filename}: {e}"
+                        logger.error(error_msg, exc_info=True)
+                        errors.append(error_msg)
+                        continue
                         
         except Exception as e:
-            print(f"Ошибка при извлечении архива: {e}")
+            error_msg = f"Ошибка при открытии архива: {e}"
+            logger.error(error_msg, exc_info=True)
+            errors.append(error_msg)
             
         self.is_processed = True
         self.photos_count = len(photos)
         self.save()
+        
+        logger.info(f"ContainerPhotoArchive {self.id}: обработка завершена. Успешно: {len(photos)}, ошибок: {len(errors)}")
+        
+        if errors:
+            logger.warning(f"ContainerPhotoArchive {self.id}: ошибки при обработке:\n" + "\n".join(errors))
+        
         return photos
     
     class Meta:
