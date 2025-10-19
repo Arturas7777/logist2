@@ -915,6 +915,7 @@ def sync_container_photos_from_gdrive(request, container_id):
         
         from .google_drive_sync import GoogleDriveSync
         from .models import Container
+        import threading
         
         container = Container.objects.get(id=container_id)
         
@@ -925,30 +926,25 @@ def sync_container_photos_from_gdrive(request, container_id):
                 'error': 'Не указана ссылка на папку Google Drive. Добавьте ссылку в поле "Google Drive папка"'
             })
         
-        # Скачиваем фотографии из указанной папки
-        try:
-            photos_count = GoogleDriveSync.download_folder_photos(
-                container.google_drive_folder_url,
-                container
-            )
-            
-            if photos_count > 0:
-                return JsonResponse({
-                    'success': True,
-                    'message': f'Загружено {photos_count} новых фотографий',
-                    'photos_count': photos_count
-                })
-            else:
-                return JsonResponse({
-                    'success': False,
-                    'error': 'Не найдено новых фотографий для загрузки'
-                })
-        except Exception as download_error:
-            logger.error(f"Download error for container {container_id}: {download_error}", exc_info=True)
-            return JsonResponse({
-                'success': False,
-                'error': f'Ошибка загрузки: {str(download_error)}'
-            })
+        # Запускаем загрузку в отдельном потоке чтобы не блокировать worker
+        def download_in_background():
+            try:
+                GoogleDriveSync.download_folder_photos(
+                    container.google_drive_folder_url,
+                    container
+                )
+            except Exception as e:
+                logger.error(f"Background download error: {e}", exc_info=True)
+        
+        thread = threading.Thread(target=download_in_background, daemon=True)
+        thread.start()
+        
+        # Сразу возвращаем ответ - загрузка продолжится в фоне
+        return JsonResponse({
+            'success': True,
+            'message': 'Загрузка фотографий начата. Обновите страницу через 1-2 минуты чтобы увидеть результат.',
+            'photos_count': 0
+        })
         
     except Container.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Контейнер не найден'}, status=404)
