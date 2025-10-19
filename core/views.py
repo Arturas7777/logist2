@@ -915,7 +915,7 @@ def sync_container_photos_from_gdrive(request, container_id):
         
         from .google_drive_sync import GoogleDriveSync
         from .models import Container
-        import threading
+        from django.db import connection
         
         container = Container.objects.get(id=container_id)
         
@@ -926,20 +926,27 @@ def sync_container_photos_from_gdrive(request, container_id):
                 'error': 'Не указана ссылка на папку Google Drive. Добавьте ссылку в поле "Google Drive папка"'
             })
         
-        # Запускаем загрузку в отдельном потоке чтобы не блокировать worker
+        # Закрываем соединение с БД перед запуском в фоне
+        connection.close()
+        
+        # Запускаем загрузку в отдельном потоке
+        import threading
         def download_in_background():
             try:
+                # Django пересоздаст соединение автоматически в новом потоке
+                from django.db import connection as thread_connection
                 GoogleDriveSync.download_folder_photos(
                     container.google_drive_folder_url,
                     container
                 )
+                thread_connection.close()
             except Exception as e:
                 logger.error(f"Background download error: {e}", exc_info=True)
         
         thread = threading.Thread(target=download_in_background, daemon=True)
         thread.start()
         
-        # Сразу возвращаем ответ - загрузка продолжится в фоне
+        # Сразу возвращаем ответ
         return JsonResponse({
             'success': True,
             'message': 'Загрузка фотографий начата. Обновите страницу через 1-2 минуты чтобы увидеть результат.',
