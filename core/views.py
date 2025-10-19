@@ -909,10 +909,10 @@ def add_services(request, car_id):
 @csrf_exempt
 def sync_container_photos_from_gdrive(request, container_id):
     """Синхронизирует фотографии контейнера с Google Drive"""
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Only POST method allowed'}, status=405)
-    
     try:
+        if request.method != 'POST':
+            return JsonResponse({'success': False, 'error': 'Only POST method allowed'}, status=405)
+        
         from .google_drive_sync import GoogleDriveSync
         from .models import Container
         
@@ -923,28 +923,35 @@ def sync_container_photos_from_gdrive(request, container_id):
             return JsonResponse({
                 'success': False,
                 'error': 'Не указана ссылка на папку Google Drive. Добавьте ссылку в поле "Google Drive папка"'
-            }, status=400)
+            })
         
         # Скачиваем фотографии из указанной папки
-        photos_count = GoogleDriveSync.download_folder_photos(
-            container.google_drive_folder_url,
-            container
-        )
-        
-        if photos_count > 0:
-            return JsonResponse({
-                'success': True,
-                'message': f'Загружено {photos_count} новых фотографий',
-                'photos_count': photos_count
-            })
-        else:
+        try:
+            photos_count = GoogleDriveSync.download_folder_photos(
+                container.google_drive_folder_url,
+                container
+            )
+            
+            if photos_count > 0:
+                return JsonResponse({
+                    'success': True,
+                    'message': f'Загружено {photos_count} новых фотографий',
+                    'photos_count': photos_count
+                })
+            else:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Не найдено новых фотографий для загрузки'
+                })
+        except Exception as download_error:
+            logger.error(f"Download error for container {container_id}: {download_error}", exc_info=True)
             return JsonResponse({
                 'success': False,
-                'error': 'Не найдено новых фотографий для загрузки'
+                'error': f'Ошибка загрузки: {str(download_error)}'
             })
         
     except Container.DoesNotExist:
-        return JsonResponse({'error': 'Контейнер не найден'}, status=404)
+        return JsonResponse({'success': False, 'error': 'Контейнер не найден'}, status=404)
     except Exception as e:
         logger.error(f"Error syncing Google Drive photos: {e}", exc_info=True)
-        return JsonResponse({'error': str(e)}, status=500)
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
