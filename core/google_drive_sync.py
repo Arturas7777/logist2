@@ -78,7 +78,7 @@ class GoogleDriveSync:
         Работает для публичных папок
         """
         try:
-            # Прямая ссылка на просмотр папки
+            # Прямая ссылка на просмотр папки (embeddedfolderview)
             url = f"https://drive.google.com/embeddedfolderview?id={folder_id}"
             
             headers = {
@@ -91,23 +91,33 @@ class GoogleDriveSync:
                 logger.error(f"Не удалось получить доступ к папке {folder_id}: HTTP {response.status_code}")
                 return []
             
-            # Парсим HTML для извлечения ссылок на файлы
             content = response.text
             
-            # Паттерн для поиска файлов в iframe просмотре
-            file_pattern = r'href="https://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)/[^"]*"[^>]*>([^<]+)<'
-            matches = re.findall(file_pattern, content)
+            # Парсим HTML для извлечения ID файлов и их имен
+            # Ищем ссылки на файлы
+            file_id_pattern = r'href="https://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)/view'
+            file_ids = re.findall(file_id_pattern, content)
             
+            # Ищем имена файлов
+            filename_pattern = r'<div class="flip-entry-title">([^<]+)</div>'
+            filenames = re.findall(filename_pattern, content)
+            
+            logger.info(f"Найдено ID: {len(file_ids)}, имен: {len(filenames)}")
+            
+            # Объединяем ID и имена (они должны идти в том же порядке)
             files = []
-            for file_id, filename in matches:
-                if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp')):
-                    files.append({
-                        'id': file_id,
-                        'name': filename,
-                        'mimeType': 'image/jpeg'
-                    })
+            for i, file_id in enumerate(file_ids):
+                if i < len(filenames):
+                    filename = filenames[i]
+                    # Фильтруем только изображения
+                    if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp')):
+                        files.append({
+                            'id': file_id,
+                            'name': filename,
+                            'mimeType': 'image/jpeg'
+                        })
             
-            logger.info(f"Найдено {len(files)} файлов в папке {folder_id}")
+            logger.info(f"Найдено {len(files)} изображений в папке {folder_id}")
             return files
             
         except Exception as e:
