@@ -42,6 +42,9 @@ urlpatterns += [
     # ========== КЛИЕНТСКИЙ САЙТ (главная страница) ==========
     path('', include('core.urls_website')),
     
+    # ========== CORE APP URLS ==========
+    path('core/', include('core.urls')),
+    
     # ========== АДМИН ПАНЕЛЬ ==========
     path('admin/', admin.site.urls),
 ]
