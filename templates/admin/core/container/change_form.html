@@ -20,6 +20,49 @@
           </span>
         {% endif %}
       </p>
+      
+      {% if original.pk %}
+      <div style="margin-top: 10px;">
+        <button type="button" id="sync-gdrive-btn" class="button" style="background-color: #4285f4; color: white;">
+          📥 Загрузить фото с Google Drive
+        </button>
+        <span id="sync-status" style="margin-left: 10px;"></span>
+      </div>
+      
+      <script>
+      document.getElementById('sync-gdrive-btn').addEventListener('click', function() {
+        const btn = this;
+        const status = document.getElementById('sync-status');
+        
+        btn.disabled = true;
+        btn.textContent = '⏳ Загрузка...';
+        status.textContent = '';
+        
+        fetch('/core/container/{{ original.pk }}/sync-gdrive-photos/', {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+          }
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            status.innerHTML = '<span style="color: green;">✓ ' + data.message + '</span>';
+            setTimeout(() => location.reload(), 1500);
+          } else {
+            status.innerHTML = '<span style="color: red;">✗ ' + data.error + '</span>';
+          }
+          btn.disabled = false;
+          btn.textContent = '📥 Загрузить фото с Google Drive';
+        })
+        .catch(error => {
+          status.innerHTML = '<span style="color: red;">✗ Ошибка: ' + error + '</span>';
+          btn.disabled = false;
+          btn.textContent = '📥 Загрузить фото с Google Drive';
+        });
+      });
+      </script>
+      {% endif %}
     </div>
     {{ block.super }}
   </div>

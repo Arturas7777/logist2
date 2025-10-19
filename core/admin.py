@@ -112,7 +112,7 @@ class ContainerAdmin(admin.ModelAdmin):
         }),
     )
     readonly_fields = ('days', 'storage_cost')
-    actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'check_container_status', 'bulk_update_container_statuses']
+    actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'check_container_status', 'bulk_update_container_statuses', 'sync_photos_from_gdrive']
 
     class Media:
         css = {'all': ('css/logist2_custom_admin.css',)}
@@ -350,6 +350,73 @@ class ContainerAdmin(admin.ModelAdmin):
         else:
             self.message_user(request, "Нет контейнеров для обновления.")
     bulk_update_container_statuses.short_description = "Массовое обновление статусов контейнеров"
+    
+    def sync_photos_from_gdrive(self, request, queryset):
+        """Синхронизирует фотографии с Google Drive для выбранных контейнеров"""
+        from .google_drive_sync import GoogleDriveSync
+        
+        total_photos = 0
+        success_count = 0
+        error_count = 0
+        
+        for container in queryset:
+            try:
+                # Пробуем найти папку контейнера в обеих основных папках
+                container_number = container.number
+                photos_added = 0
+                
+                # Проверяем обе папки (выгруженные и в контейнере)
+                for folder_type, folder_id in [
+                    ('unloaded', '1711SSTZ3_YgUcZfNrgNzhscbmlHXlsKb'),
+                    ('in_container', '11poTWYYG3uKTuGTYDWS2m8uA52mlzP6f')
+                ]:
+                    # Получаем папки месяцев
+                    month_folders = GoogleDriveSync.get_public_folder_files(folder_id)
+                    
+                    for month_folder in month_folders:
+                        if not month_folder.get('is_folder'):
+                            continue
+                        
+                        # Получаем папки контейнеров в этом месяце
+                        container_folders = GoogleDriveSync.get_public_folder_files(month_folder['id'])
+                        
+                        for container_folder in container_folders:
+                            if container_folder['name'] == container_number:
+                                # Нашли папку контейнера!
+                                photo_type = 'UNLOADING' if folder_type == 'unloaded' else 'GENERAL'
+                                count = GoogleDriveSync.sync_container_folder(
+                                    container_number,
+                                    container_folder['id'],
+                                    photo_type
+                                )
+                                photos_added += count
+                
+                if photos_added > 0:
+                    success_count += 1
+                    total_photos += photos_added
+                    logger.info(f"Контейнер {container_number}: добавлено {photos_added} фото")
+                else:
+                    logger.warning(f"Контейнер {container_number}: папка не найдена на Google Drive")
+                    
+            except Exception as e:
+                error_count += 1
+                logger.error(f"Ошибка синхронизации контейнера {container.number}: {e}")
+        
+        # Сообщение пользователю
+        if total_photos > 0:
+            self.message_user(
+                request,
+                f"Синхронизация завершена! Добавлено {total_photos} фото для {success_count} контейнеров. Ошибок: {error_count}",
+                level='SUCCESS'
+            )
+        else:
+            self.message_user(
+                request,
+                f"Фотографии не найдены. Проверьте наличие папок контейнеров на Google Drive. Ошибок: {error_count}",
+                level='WARNING'
+            )
+    
+    sync_photos_from_gdrive.short_description = "📥 Загрузить фото с Google Drive"
 
     def get_changelist(self, request, **kwargs):
         """Добавляет фильтрацию по умолчанию для статусов 'В порту' и 'Разгружен'"""
