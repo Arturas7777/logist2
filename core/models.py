@@ -709,7 +709,7 @@ class Car(models.Model):
     current_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Текущая цена")
     storage_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Складирование")
     days = models.PositiveIntegerField(default=0, verbose_name="Платные дни")
-    container = models.ForeignKey('Container', on_delete=models.CASCADE, related_name="container_cars", verbose_name="Контейнер")  # Временно изменено для диагностики
+    container = models.ForeignKey('Container', on_delete=models.CASCADE, related_name="container_cars", null=True, blank=True, verbose_name="Контейнер")
 
     # Расходы
     ths = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Оплата линиям", validators=[MinValueValidator(0)])
