@@ -957,12 +957,11 @@ class Car(models.Model):
         return self.car_services.filter(service_type='CARRIER', service_id__in=carrier_service_ids)
     
     def get_warehouse_services(self):
-        """Получает услуги склада для этого автомобиля"""
-        if not self.warehouse or not self.pk:
+        """Получает все услуги складов для этого автомобиля (включая услуги от других складов)"""
+        if not self.pk:
             return self.car_services.none()
-        # Получаем ID услуг склада
-        warehouse_service_ids = WarehouseService.objects.only('id').filter(warehouse=self.warehouse).values_list('id', flat=True)
-        return self.car_services.filter(service_type='WAREHOUSE', service_id__in=warehouse_service_ids)
+        # Получаем ВСЕ услуги складов, привязанные к этому автомобилю
+        return self.car_services.filter(service_type='WAREHOUSE')
     
     def get_services_total_by_provider(self, provider_type):
         """Получает общую стоимость услуг по типу поставщика"""

@@ -61,7 +61,126 @@ class CarrierServiceInline(admin.TabularInline):
         return formset
 
 
-# CarServiceInline удален - услуги отображаются в разделах контрагентов
+# Форма для CarServiceInline
+class CarServiceInlineForm(forms.ModelForm):
+    # Добавляем поле для выбора услуги
+    warehouse_service = forms.ModelChoiceField(
+        queryset=WarehouseService.objects.select_related('warehouse').filter(is_active=True),
+        required=False,
+        label="Услуга склада",
+        help_text="Выберите услугу склада"
+    )
+    line_service = forms.ModelChoiceField(
+        queryset=LineService.objects.select_related('line').filter(is_active=True),
+        required=False,
+        label="Услуга линии",
+        help_text="Выберите услугу линии"
+    )
+    carrier_service = forms.ModelChoiceField(
+        queryset=CarrierService.objects.select_related('carrier').filter(is_active=True),
+        required=False,
+        label="Услуга перевозчика",
+        help_text="Выберите услугу перевозчика"
+    )
+    
+    class Meta:
+        model = CarService
+        fields = '__all__'
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Если редактируем существующую запись, устанавливаем значения
+        if self.instance and self.instance.pk:
+            if self.instance.service_type == 'WAREHOUSE':
+                try:
+                    self.fields['warehouse_service'].initial = self.instance.service_id
+                except:
+                    pass
+            elif self.instance.service_type == 'LINE':
+                try:
+                    self.fields['line_service'].initial = self.instance.service_id
+                except:
+                    pass
+            elif self.instance.service_type == 'CARRIER':
+                try:
+                    self.fields['carrier_service'].initial = self.instance.service_id
+                except:
+                    pass
+    
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        
+        # Устанавливаем service_id в зависимости от выбранного типа
+        if instance.service_type == 'WAREHOUSE' and self.cleaned_data.get('warehouse_service'):
+            instance.service_id = self.cleaned_data['warehouse_service'].id
+        elif instance.service_type == 'LINE' and self.cleaned_data.get('line_service'):
+            instance.service_id = self.cleaned_data['line_service'].id
+        elif instance.service_type == 'CARRIER' and self.cleaned_data.get('carrier_service'):
+            instance.service_id = self.cleaned_data['carrier_service'].id
+        
+        if commit:
+            instance.save()
+        return instance
+
+
+# Inline для управления дополнительными услугами автомобиля
+class CarServiceInline(admin.TabularInline):
+    model = CarService
+    form = CarServiceInlineForm
+    extra = 1
+    can_delete = True
+    fields = ('service_type', 'warehouse_service', 'line_service', 'carrier_service', 'service_display', 'warehouse_display', 'custom_price', 'quantity', 'final_price_display', 'notes')
+    readonly_fields = ('service_display', 'warehouse_display', 'final_price_display')
+    verbose_name = "Дополнительная услуга"
+    verbose_name_plural = "Дополнительные услуги (от других складов/компаний)"
+    
+    def service_display(self, obj):
+        """Отображает название услуги"""
+        if obj and obj.pk:
+            return obj.get_service_name()
+        return "-"
+    service_display.short_description = "Услуга"
+    
+    def warehouse_display(self, obj):
+        """Отображает склад/компанию для услуги"""
+        if not obj or not obj.pk:
+            return "-"
+        
+        if obj.service_type == 'WAREHOUSE':
+            try:
+                service = WarehouseService.objects.select_related('warehouse').get(id=obj.service_id)
+                return service.warehouse.name
+            except WarehouseService.DoesNotExist:
+                return "Склад не найден"
+        elif obj.service_type == 'LINE':
+            try:
+                service = LineService.objects.select_related('line').get(id=obj.service_id)
+                return service.line.name
+            except LineService.DoesNotExist:
+                return "Линия не найдена"
+        elif obj.service_type == 'CARRIER':
+            try:
+                service = CarrierService.objects.select_related('carrier').get(id=obj.service_id)
+                return service.carrier.name
+            except CarrierService.DoesNotExist:
+                return "Перевозчик не найден"
+        return "-"
+    warehouse_display.short_description = "Компания/Склад"
+    
+    def final_price_display(self, obj):
+        """Отображает итоговую цену"""
+        if obj and obj.pk:
+            return f"{obj.final_price:.2f}"
+        return "0.00"
+    final_price_display.short_description = "Итого"
+    
+    def get_formset(self, request, obj=None, **kwargs):
+        formset = super().get_formset(request, obj, **kwargs)
+        # Добавляем пояснения
+        formset.form.base_fields['service_type'].help_text = 'Выберите тип поставщика'
+        formset.form.base_fields['custom_price'].help_text = 'Оставьте пустым для использования цены по умолчанию'
+        formset.form.base_fields['quantity'].help_text = 'Количество услуг'
+        return formset
 
 
 import json
@@ -447,7 +566,7 @@ class CarAdmin(admin.ModelAdmin):
         'default_warehouse_prices_display', 'total_price', 'current_price', 'storage_cost', 'days', 'warehouse_payment_display',
         'free_days_display', 'rate_display', 'services_summary_display', 'warehouse_services_display', 'line_services_display', 'carrier_services_display'
     )
-    # inlines = [CarServiceInline]  # Убрано - услуги отображаются в разделах контрагентов
+    # inlines = []  # Услуги управляются через разделы ниже
     fieldsets = (
         ('Основные данные', {
             'fields': (
@@ -996,51 +1115,50 @@ class CarAdmin(admin.ModelAdmin):
                 print(f"Ошибка при пересчете стоимости хранения: {e}")
 
     def warehouse_services_display(self, obj):
-        """Отображает редактируемые поля для услуг склада"""
-        if not obj.warehouse:
-            return "Склад не выбран"
-        
+        """Отображает редактируемые поля для услуг всех складов"""
         try:
-            # Получаем услуги склада, которые уже связаны с автомобилем
+            # Получаем ВСЕ услуги склада, которые уже связаны с автомобилем (от любых складов)
             car_services = CarService.objects.filter(
                 car=obj, 
                 service_type='WAREHOUSE'
-            )
-            
-            if not car_services:
-                return "Услуги будут созданы при сохранении"
+            ).select_related('car')
             
             html = '<div style="margin: 10px 0; display: flex; flex-wrap: wrap; gap: 10px;">'
             
-            for car_service in car_services:
-                try:
-                    # Получаем детали услуги
-                    service = WarehouseService.objects.get(id=car_service.service_id)
-                    current_value = car_service.custom_price or service.default_price
-                    
-                    html += f'''
-                    <div style="border: 1px solid #ddd; padding: 10px; background: #f9f9f9; position: relative; min-width: 200px;">
-                        <button type="button" onclick="removeService({service.id}, 'warehouse')" style="position: absolute; top: 5px; right: 5px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 12px;">×</button>
-                        <strong>{service.name}</strong><br>
-                        <input type="number" name="warehouse_service_{service.id}" value="{current_value}" step="0.01" style="width: 100px; margin-top: 5px;">
-                        <input type="hidden" name="remove_warehouse_service_{service.id}" id="remove_warehouse_service_{service.id}" value="">
-                    </div>
-                    '''
-                except:
-                    continue
+            if car_services:
+                for car_service in car_services:
+                    try:
+                        # Получаем детали услуги и склада
+                        service = WarehouseService.objects.select_related('warehouse').get(id=car_service.service_id)
+                        current_value = car_service.custom_price or service.default_price
+                        warehouse_name = service.warehouse.name
+                        
+                        # Подсветка: основной склад - зеленый, другие - желтый
+                        bg_color = "#e8f5e9" if (obj.warehouse and service.warehouse.id == obj.warehouse.id) else "#fff9e6"
+                        
+                        html += f'''
+                        <div style="border: 1px solid #ddd; padding: 10px; background: {bg_color}; position: relative; min-width: 220px;">
+                            <button type="button" onclick="removeService({service.id}, 'warehouse')" style="position: absolute; top: 5px; right: 5px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 12px;">×</button>
+                            <div style="font-size: 11px; color: #666; margin-bottom: 3px;">📦 {warehouse_name}</div>
+                            <strong>{service.name}</strong><br>
+                            <input type="number" name="warehouse_service_{service.id}" value="{current_value}" step="0.01" style="width: 100px; margin-top: 5px;">
+                            <input type="hidden" name="remove_warehouse_service_{service.id}" id="remove_warehouse_service_{service.id}" value="">
+                        </div>
+                        '''
+                    except Exception as e:
+                        continue
             
             html += '</div>'
             
-            # Добавляем кнопку для добавления новых услуг
-            if obj.warehouse:
-                html += f'''
-                <div style="margin-top: 10px;">
-                    <button type="button" class="add-service-btn" onclick="openModal('warehouseServicesModal', 'warehouse')" title="Добавить услуги склада">
-                        +
-                    </button>
-                    <span style="margin-left: 5px; color: #666;">Добавить услуги склада</span>
-                </div>
-                '''
+            # Кнопка для добавления услуг - теперь всегда доступна
+            html += f'''
+            <div style="margin-top: 10px;">
+                <button type="button" class="add-service-btn" onclick="openModal('warehouseServicesModal', 'warehouse')" title="Добавить услуги любого склада">
+                    +
+                </button>
+                <span style="margin-left: 5px; color: #666;">Добавить услуги склада</span>
+            </div>
+            '''
             
             # Добавляем JavaScript для удаления услуг
             html += '''
