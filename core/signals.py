@@ -1,6 +1,7 @@
 from django.db.models.signals import post_save, post_delete, pre_delete, pre_save
 from django.dispatch import receiver
 from .models import Car, PaymentOLD, InvoiceOLD, Container, WarehouseService, LineService, CarrierService, CarService, DeletedCarService
+from .models_billing import NewInvoice
 from django.db.models import Sum
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
@@ -59,6 +60,25 @@ def update_related_on_car_save(sender, instance, **kwargs):
             logger.debug(f"Bulk updated {len(invoices_to_update)} invoices for car {instance.id}")
     except Exception as e:
         logger.error(f"Failed to update invoices for car {instance.id}: {e}")
+    
+    # Также обновляем новые инвойсы (NewInvoice)
+    # Добавляем защиту от рекурсии
+    if not getattr(instance, '_updating_invoices', False):
+        try:
+            instance._updating_invoices = True
+            
+            # Получаем все новые инвойсы, связанные с этим автомобилем
+            new_invoices = NewInvoice.objects.filter(cars=instance)
+            
+            if new_invoices.exists():
+                for invoice in new_invoices:
+                    # Пересоздаем позиции инвойса на основе актуальных данных автомобиля
+                    invoice.regenerate_items_from_cars()
+                    logger.info(f"Auto-regenerated invoice {invoice.number} for car {instance.vin}")
+        except Exception as e:
+            logger.error(f"Failed to update new invoices for car {instance.id}: {e}")
+        finally:
+            instance._updating_invoices = False
 
 
 @receiver(post_save, sender=InvoiceOLD)

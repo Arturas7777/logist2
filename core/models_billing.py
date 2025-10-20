@@ -492,6 +492,14 @@ class NewInvoice(models.Model):
         
         order = 0
         for car in self.cars.all():
+            # ВАЖНО! Пересчитываем хранение и стоимость перед генерацией позиций
+            car.update_days_and_storage()
+            car.calculate_total_price()
+            
+            # Защита от рекурсии - не триггерим сигналы при сохранении
+            car._updating_invoices = True
+            car.save(update_fields=['storage_cost', 'days', 'current_price', 'total_price'])
+            car._updating_invoices = False
             # Определяем какие услуги брать в зависимости от типа выставителя
             if issuer_type == 'Warehouse':
                 services = car.get_warehouse_services()
@@ -516,18 +524,38 @@ class NewInvoice(models.Model):
                 services = car.get_carrier_services()
                 prefix = 'Перевозчик'
             elif issuer_type == 'Company':
-                # Компания выставляет клиенту - все услуги + хранение
+                # Компания выставляет клиенту - все услуги + хранение + наценка
                 services = car.car_services.all()
                 prefix = 'Все услуги'
+                
+                # Определяем статус для описания
+                status_note = ""
+                if car.status == 'TRANSFERRED' and car.transfer_date:
+                    status_note = f" [Передан {car.transfer_date}]"
+                else:
+                    from django.utils import timezone
+                    status_note = f" [Текущее хранение на {timezone.now().date()}]"
                 
                 # Добавляем хранение для клиентских инвойсов
                 if car.storage_cost and car.storage_cost > 0:
                     InvoiceItem.objects.create(
                         invoice=self,
-                        description=f"Хранение - {car.brand} {car.vin} ({car.days} дн.)",
+                        description=f"Хранение - {car.brand} {car.vin} ({car.days} дн.){status_note}",
                         car=car,
                         quantity=car.days,
                         unit_price=car.warehouse.rate if car.warehouse else Decimal('0'),
+                        order=order
+                    )
+                    order += 1
+                
+                # Добавляем наценку Caromoto Lithuania как отдельную позицию
+                if car.proft and car.proft > 0:
+                    InvoiceItem.objects.create(
+                        invoice=self,
+                        description=f"Наценка Caromoto Lithuania - {car.brand} {car.vin}",
+                        car=car,
+                        quantity=1,
+                        unit_price=car.proft,
                         order=order
                     )
                     order += 1
