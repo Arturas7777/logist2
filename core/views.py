@@ -773,6 +773,21 @@ def get_discrepancies_api(request):
 
 @staff_member_required
 @csrf_exempt
+def get_warehouses(request):
+    """Получает список всех активных складов"""
+    try:
+        warehouses = Warehouse.objects.all().order_by('name')
+        warehouses_data = [{
+            'id': warehouse.id,
+            'name': warehouse.name
+        } for warehouse in warehouses]
+        
+        return JsonResponse({'warehouses': warehouses_data})
+    except Exception as e:
+        logger.error(f"Error loading warehouses: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
 def get_available_services(request, car_id):
     """Получает доступные услуги для добавления к автомобилю"""
     logger.info(f"get_available_services called: car_id={car_id}, method={request.method}")
@@ -790,8 +805,19 @@ def get_available_services(request, car_id):
         logger.info(f"Found car: {car.vin}, warehouse={car.warehouse}, line={car.line}, carrier={car.carrier}")
         services = []
         
-        if service_type == 'warehouse' and car.warehouse:
-            logger.info(f"Processing warehouse services for warehouse: {car.warehouse}")
+        if service_type == 'warehouse':
+            # Проверяем, передан ли конкретный склад
+            warehouse_id = request.GET.get('warehouse_id')
+            if warehouse_id:
+                warehouse = Warehouse.objects.get(id=warehouse_id)
+                logger.info(f"Processing warehouse services for selected warehouse: {warehouse}")
+            elif car.warehouse:
+                warehouse = car.warehouse
+                logger.info(f"Processing warehouse services for car's warehouse: {warehouse}")
+            else:
+                logger.info("No warehouse selected or assigned to car")
+                return JsonResponse({'services': []})
+            
             # Получаем услуги склада, которые еще не добавлены к автомобилю
             existing_service_ids = CarService.objects.filter(
                 car=car, 
@@ -801,7 +827,7 @@ def get_available_services(request, car_id):
             logger.info(f"Existing warehouse service IDs: {list(existing_service_ids)}")
             
             available_services = WarehouseService.objects.filter(
-                warehouse=car.warehouse
+                warehouse=warehouse
             ).exclude(id__in=existing_service_ids)
             
             logger.info(f"Available warehouse services count: {available_services.count()}")

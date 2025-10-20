@@ -124,6 +124,12 @@
     <div class="modal-content">
       <span class="close" onclick="closeModal('warehouseServicesModal')">&times;</span>
       <h2>Добавить услуги склада</h2>
+      <div style="margin-bottom: 15px;">
+        <label for="warehouseSelect" style="font-weight: bold;">Выберите склад:</label>
+        <select id="warehouseSelect" onchange="loadWarehouseServices()" style="width: 100%; padding: 5px; margin-top: 5px;">
+          <option value="">-- Выберите склад --</option>
+        </select>
+      </div>
       <div id="warehouseServicesList"></div>
       <div class="modal-footer">
         <button class="btn-primary" onclick="addSelectedServices('warehouse')">Добавить выбранные</button>
@@ -158,8 +164,72 @@
       const modal = document.getElementById(modalId);
       modal.style.display = "block";
       
-      // Загружаем доступные услуги
-      loadAvailableServices(serviceType);
+      // Для складов загружаем список складов
+      if (serviceType === 'warehouse') {
+        loadWarehouses();
+      } else {
+        // Для линий и перевозчиков загружаем услуги напрямую
+        loadAvailableServices(serviceType);
+      }
+    }
+    
+    function loadWarehouses() {
+      // Загружаем все склады
+      fetch('/api/warehouses/')
+        .then(response => response.json())
+        .then(data => {
+          const warehouseSelect = document.getElementById('warehouseSelect');
+          warehouseSelect.innerHTML = '<option value="">-- Выберите склад --</option>';
+          
+          if (data.warehouses && data.warehouses.length > 0) {
+            data.warehouses.forEach(warehouse => {
+              const option = document.createElement('option');
+              option.value = warehouse.id;
+              option.textContent = warehouse.name;
+              warehouseSelect.appendChild(option);
+            });
+          }
+        })
+        .catch(error => {
+          console.error('Error loading warehouses:', error);
+        });
+    }
+    
+    function loadWarehouseServices() {
+      const warehouseId = document.getElementById('warehouseSelect').value;
+      if (!warehouseId) {
+        document.getElementById('warehouseServicesList').innerHTML = '';
+        return;
+      }
+      
+      const carId = {{ original.id }};
+      const url = `/api/car/${carId}/get_available_services/?type=warehouse&warehouse_id=${warehouseId}`;
+      
+      fetch(url)
+        .then(response => response.json())
+        .then(data => {
+          const listElement = document.getElementById('warehouseServicesList');
+          listElement.innerHTML = '';
+          
+          if (data.services && data.services.length > 0) {
+            data.services.forEach(service => {
+              const serviceItem = document.createElement('div');
+              serviceItem.className = 'service-item';
+              serviceItem.innerHTML = `
+                <input type="checkbox" class="service-checkbox" value="${service.id}" id="service_${service.id}">
+                <label for="service_${service.id}" class="service-name">${service.name}</label>
+                <span class="service-price">$${service.price}</span>
+              `;
+              listElement.appendChild(serviceItem);
+            });
+          } else {
+            listElement.innerHTML = '<p>Нет доступных услуг для добавления.</p>';
+          }
+        })
+        .catch(error => {
+          console.error('Error loading services:', error);
+          document.getElementById('warehouseServicesList').innerHTML = `<p>Ошибка загрузки услуг: ${error.message}</p>`;
+        });
     }
 
     function closeModal(modalId) {
