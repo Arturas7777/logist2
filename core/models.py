@@ -593,6 +593,7 @@ class Container(models.Model):
         Применяет новый склад ко всем авто контейнера:
         - ставит warehouse
         - жёстко перезаписывает все складские поля дефолтами нового склада
+        - дата разгрузки ВСЕГДА наследуется из контейнера (принудительно)
         - пересчитывает хранение и суммы
         """
         # Проверяем, что у экземпляра есть первичный ключ
@@ -602,9 +603,10 @@ class Container(models.Model):
         for car in self.container_cars.all():
             car.warehouse = self.warehouse
             car.apply_warehouse_defaults(force=True)  # перезаписать rate/free_days и прочее
-            # если в контейнере уже стоит дата разгрузки — подтянем и её
-            if self.unload_date and not car.unload_date:
+            # Дата разгрузки ВСЕГДА наследуется из контейнера (принудительно)
+            if self.unload_date:
                 car.unload_date = self.unload_date
+                logger.debug(f"Car {car.vin}: forced unload_date={self.unload_date} from container {self.number}")
             car.update_days_and_storage()
             car.calculate_total_price()
             car.save()
@@ -612,7 +614,8 @@ class Container(models.Model):
     def sync_cars_after_edit(self):
         """
         Обновляет поля машин после изменения контейнера:
-        — проставляет склад/дату разгрузки/клиента, если у авто они пустые,
+        — проставляет склад/клиента, если у авто они пустые,
+        — дата разгрузки ВСЕГДА берется из контейнера (принудительное наследование),
         — подтягивает дефолты склада (rate/free_days/и т.д.) при пустых/дефолтных значениях,
         — пересчитывает хранение и цены.
         """
@@ -631,9 +634,13 @@ class Container(models.Model):
             if not car.client and self.client:
                 car.client = self.client
                 changed = True
-            if not car.unload_date and self.unload_date:
-                car.unload_date = self.unload_date
-                changed = True
+            
+            # Дата разгрузки ВСЕГДА наследуется из контейнера (принудительно)
+            if self.unload_date:
+                if car.unload_date != self.unload_date:
+                    car.unload_date = self.unload_date
+                    changed = True
+                    logger.info(f"Car {car.vin}: forced unload_date update to {self.unload_date} from container {self.number}")
 
             # подтянуть дефолты со склада (перезаписать только пустые/дефолтные)
             if car.warehouse:
@@ -1055,7 +1062,9 @@ class Car(models.Model):
         # Проверяем, что у контейнера есть первичный ключ
         if not self.warehouse and self.container and self.container.pk and self.container.warehouse:
             self.warehouse = self.container.warehouse
-        if not self.unload_date and self.container and self.container.pk and self.container.unload_date:
+        
+        # Дата разгрузки ВСЕГДА берется из контейнера (принудительное наследование)
+        if self.container and self.container.pk and self.container.unload_date:
             self.unload_date = self.container.unload_date
 
         if self.transfer_date and self.status != 'TRANSFERRED':

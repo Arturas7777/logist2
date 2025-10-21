@@ -11,15 +11,39 @@ import logging
 
 logger = logging.getLogger('django')
 @receiver(post_save, sender=Container)
-def update_related_on_container_save(sender, instance, **kwargs):
-    # При изменении контейнера — все машины внутри получают такой же статус
+def update_related_on_container_save(sender, instance, created, **kwargs):
+    # При изменении контейнера — все машины внутри получают такой же статус и дату разгрузки
     # ОПТИМИЗИРОВАНО: Использует bulk_update вместо цикла
     if not instance.pk:
         return
     
     try:
-        # Массовое обновление одним запросом вместо N
-        instance.container_cars.update(status=instance.status)
+        # Если есть дата разгрузки - обновляем её у всех автомобилей принудительно
+        if instance.unload_date:
+            # Подготавливаем данные для массового обновления
+            cars_to_update = []
+            for car in instance.container_cars.select_related('warehouse').all():
+                # Обновляем дату разгрузки принудительно
+                car.unload_date = instance.unload_date
+                car.status = instance.status
+                
+                # Пересчитываем хранение и цены
+                car.update_days_and_storage()
+                car.calculate_total_price()
+                cars_to_update.append(car)
+            
+            # Массовое обновление одним запросом
+            if cars_to_update:
+                Car.objects.bulk_update(
+                    cars_to_update,
+                    ['unload_date', 'status', 'days', 'storage_cost', 'current_price', 'total_price'],
+                    batch_size=50
+                )
+                logger.info(f"✅ Container {instance.number}: bulk updated {len(cars_to_update)} cars (unload_date + status)")
+        else:
+            # Если нет даты разгрузки - обновляем только статус
+            instance.container_cars.update(status=instance.status)
+            logger.debug(f"Container {instance.number}: updated status for {instance.container_cars.count()} cars")
         
         # Отправляем batch WebSocket уведомление
         from core.utils import WebSocketBatcher
@@ -28,57 +52,66 @@ def update_related_on_container_save(sender, instance, **kwargs):
         WebSocketBatcher.flush()
         
     except Exception as e:
-        logger.error(f"Failed to update cars status for container {instance.id}: {e}")
+        logger.error(f"Failed to update cars for container {instance.id}: {e}")
 
 @receiver(post_save, sender=Car)
 def update_related_on_car_save(sender, instance, **kwargs):
     # Обновляем total_amount инвойсов МАССОВО через bulk_update
+    logger.debug(f"🔔 Signal post_save triggered for Car {instance.id} ({instance.vin})")
+    
     # Проверяем, что у экземпляра есть первичный ключ
     if not instance.pk:
+        logger.debug("Skipping - no PK")
         return
     
     try:
         # Получаем все связанные инвойсы одним запросом
         invoices = list(instance.invoiceold_set.all())
         
-        if not invoices:
-            return
-        
-        # Обновляем все инвойсы в памяти
-        invoices_to_update = []
-        for invoice in invoices:
-            invoice.update_total_amount()
-            invoices_to_update.append(invoice)
-        
-        # Одно массовое обновление вместо N отдельных
-        if invoices_to_update:
-            InvoiceOLD.objects.bulk_update(
-                invoices_to_update,
-                ['total_amount', 'paid'],
-                batch_size=50
-            )
-            logger.debug(f"Bulk updated {len(invoices_to_update)} invoices for car {instance.id}")
+        if invoices:
+            # Обновляем все инвойсы в памяти
+            invoices_to_update = []
+            for invoice in invoices:
+                invoice.update_total_amount()
+                invoices_to_update.append(invoice)
+            
+            # Одно массовое обновление вместо N отдельных
+            if invoices_to_update:
+                InvoiceOLD.objects.bulk_update(
+                    invoices_to_update,
+                    ['total_amount', 'paid'],
+                    batch_size=50
+                )
+                logger.debug(f"Bulk updated {len(invoices_to_update)} invoices for car {instance.id}")
     except Exception as e:
         logger.error(f"Failed to update invoices for car {instance.id}: {e}")
     
     # Также обновляем новые инвойсы (NewInvoice)
     # Добавляем защиту от рекурсии
+    logger.debug(f"Checking NewInvoice update for car {instance.id}, _updating_invoices={getattr(instance, '_updating_invoices', False)}")
+    
     if not getattr(instance, '_updating_invoices', False):
         try:
             instance._updating_invoices = True
             
             # Получаем все новые инвойсы, связанные с этим автомобилем
             new_invoices = NewInvoice.objects.filter(cars=instance)
+            logger.debug(f"Found {new_invoices.count()} NewInvoice(s) for car {instance.vin}")
             
             if new_invoices.exists():
                 for invoice in new_invoices:
+                    logger.info(f"Regenerating invoice {invoice.number} for car {instance.vin}...")
                     # Пересоздаем позиции инвойса на основе актуальных данных автомобиля
                     invoice.regenerate_items_from_cars()
-                    logger.info(f"Auto-regenerated invoice {invoice.number} for car {instance.vin}")
+                    logger.info(f"✅ Auto-regenerated invoice {invoice.number} for car {instance.vin}")
+            else:
+                logger.debug(f"No NewInvoice found for car {instance.vin}")
         except Exception as e:
-            logger.error(f"Failed to update new invoices for car {instance.id}: {e}")
+            logger.error(f"❌ Failed to update new invoices for car {instance.id}: {e}", exc_info=True)
         finally:
             instance._updating_invoices = False
+    else:
+        logger.debug(f"Skipping NewInvoice update (recursion protection) for car {instance.id}")
 
 
 @receiver(post_save, sender=InvoiceOLD)
