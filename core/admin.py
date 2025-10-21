@@ -672,7 +672,23 @@ class CarAdmin(admin.ModelAdmin):
             )
         }),
     )
-    actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'set_title_with_us']
+    actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'set_transferred_today', 'set_title_with_us']
+
+    def set_transferred_today(self, request, queryset):
+        """Устанавливает статус 'Передан' и дату передачи на сегодня"""
+        from django.utils import timezone
+        
+        today = timezone.now().date()
+        updated = 0
+        
+        for car in queryset:
+            car.status = 'TRANSFERRED'
+            car.transfer_date = today
+            car.save()
+            updated += 1
+        
+        self.message_user(request, f"Статус изменён на 'Передан' для {updated} автомобилей. Дата передачи: {today}")
+    set_transferred_today.short_description = "Передан сегодня"
 
     def default_warehouse_prices_display(self, obj):
         details = obj.warehouse_details()
