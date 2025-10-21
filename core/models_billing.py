@@ -486,20 +486,24 @@ class NewInvoice(models.Model):
         
         issuer = self.issuer
         if not issuer:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"⚠️ Инвойс {self.number}: выставитель не указан, позиции не будут созданы")
             return
         
         issuer_type = issuer.__class__.__name__
         
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"📋 Генерация позиций для инвойса {self.number}, выставитель: {issuer} (тип: {issuer_type})")
+        
         order = 0
         for car in self.cars.all():
             # ВАЖНО! Пересчитываем хранение и стоимость перед генерацией позиций
+            # НО НЕ СОХРАНЯЕМ - чтобы не вызвать рекурсивный сигнал
+            # Данные автомобиля должны быть актуальными на момент вызова regenerate
             car.update_days_and_storage()
             car.calculate_total_price()
-            
-            # Защита от рекурсии - не триггерим сигналы при сохранении
-            car._updating_invoices = True
-            car.save(update_fields=['storage_cost', 'days', 'current_price', 'total_price'])
-            car._updating_invoices = False
             # Определяем какие услуги брать в зависимости от типа выставителя
             if issuer_type == 'Warehouse':
                 services = car.get_warehouse_services()
@@ -550,6 +554,9 @@ class NewInvoice(models.Model):
                 
                 # Добавляем наценку Caromoto Lithuania как отдельную позицию
                 if car.proft and car.proft > 0:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"✅ Добавляем наценку {car.proft} для автомобиля {car.vin} в инвойс {self.number}")
                     InvoiceItem.objects.create(
                         invoice=self,
                         description=f"Наценка Caromoto Lithuania - {car.brand} {car.vin}",
@@ -559,6 +566,10 @@ class NewInvoice(models.Model):
                         order=order
                     )
                     order += 1
+                else:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"⚠️ Наценка НЕ добавлена для {car.vin}: proft={car.proft}")
             else:
                 continue
             

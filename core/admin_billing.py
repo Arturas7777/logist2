@@ -168,6 +168,20 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     
     def save_model(self, request, obj, form, change):
         """Сохраняем инвойс и автоматически генерируем позиции из автомобилей"""
+        # Автоматически устанавливаем Caromoto Lithuania как выставителя по умолчанию
+        if not obj.issuer_company and not obj.issuer_warehouse and not obj.issuer_line and not obj.issuer_carrier:
+            try:
+                from core.models import Company
+                caromoto = Company.objects.get(name="Caromoto Lithuania")
+                obj.issuer_company = caromoto
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"Автоматически установлена компания Caromoto Lithuania как выставитель инвойса {obj.number}")
+            except Company.DoesNotExist:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning("Компания Caromoto Lithuania не найдена в базе данных")
+        
         # Сначала сохраняем объект
         super().save_model(request, obj, form, change)
         
