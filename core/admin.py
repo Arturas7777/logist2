@@ -250,25 +250,90 @@ class ContainerAdmin(admin.ModelAdmin):
             # Для существующих объектов сохраняем как обычно
             super().save_model(request, obj, form, change)
 
-        # Временно отключено для диагностики
-        # # если изменили склад — разнесём новый склад во все авто
-        # if change and form and 'warehouse' in getattr(form, 'changed_data', []):
-        #     try:
-        #         obj.sync_cars_after_warehouse_change()
-        #     except Exception as e:
-        #         logger.error(f"Failed to sync cars after warehouse change for container {obj.id}: {e}")
+        # Если изменили склад — разнесём новый склад во все авто
+        if change and form and 'warehouse' in getattr(form, 'changed_data', []):
+            try:
+                logger.info(f"Warehouse changed for container {obj.id}, syncing cars...")
+                obj.sync_cars_after_warehouse_change()
+                logger.info(f"Successfully synced warehouse for {obj.container_cars.count()} cars")
+            except Exception as e:
+                logger.error(f"Failed to sync cars after warehouse change for container {obj.id}: {e}")
 
-        # # опционально: если изменили дату разгрузки — пересчитать авто (без перетирания тарифов)
-        # if change and form and 'unload_date' in getattr(form, 'changed_data', []):
-        #     try:
-        #         for car in obj.container_cars.all():
-        #             if not car.unload_date:
-        #                 car.unload_date = obj.unload_date
-        #             car.update_days_and_storage()
-        #             car.calculate_total_price()
-        #             car.save(update_fields=['unload_date', 'days', 'storage_cost', 'current_price', 'total_price'])
-        #     except Exception as e:
-        #         logger.error(f"Failed to update cars after unload_date change for container {obj.id}: {e}")
+        # Если изменили дату разгрузки — обновить дату у ВСЕХ автомобилей в контейнере
+        if change and form and 'unload_date' in getattr(form, 'changed_data', []):
+            try:
+                from django.db.models.signals import post_save, post_delete
+                from core.signals import update_related_on_car_save, create_car_services_on_car_save, recalculate_car_price_on_service_save, recalculate_car_price_on_service_delete
+                
+                logger.info(f"Unload date changed for container {obj.id} to {obj.unload_date}, bulk updating all cars...")
+                
+                # Обновляем контейнер из БД, чтобы быть уверенными в актуальности данных
+                obj.refresh_from_db()
+                
+                # Временно отключаем ВСЕ сигналы для оптимизации
+                post_save.disconnect(update_related_on_car_save, sender=Car)
+                post_save.disconnect(create_car_services_on_car_save, sender=Car)
+                post_save.disconnect(recalculate_car_price_on_service_save, sender=CarService)
+                post_delete.disconnect(recalculate_car_price_on_service_delete, sender=CarService)
+                
+                cars_to_update = []
+                affected_invoices = set()
+                
+                for car in obj.container_cars.select_related('warehouse').all():
+                    # Обновляем дату разгрузки у ВСЕХ автомобилей
+                    car.unload_date = obj.unload_date
+                    car.update_days_and_storage()
+                    car.calculate_total_price()
+                    cars_to_update.append(car)
+                    
+                    # Собираем инвойсы для обновления
+                    for invoice in car.invoiceold_set.all():
+                        affected_invoices.add(invoice)
+                    for invoice in car.newinvoice_set.all():
+                        affected_invoices.add(invoice)
+                
+                # Массовое обновление одним запросом
+                if cars_to_update:
+                    Car.objects.bulk_update(
+                        cars_to_update,
+                        ['unload_date', 'days', 'storage_cost', 'current_price', 'total_price'],
+                        batch_size=50
+                    )
+                    logger.info(f"✅ Bulk updated {len(cars_to_update)} cars in container {obj.number}")
+                
+                # Включаем сигналы обратно
+                post_save.connect(update_related_on_car_save, sender=Car)
+                post_save.connect(create_car_services_on_car_save, sender=Car)
+                post_save.connect(recalculate_car_price_on_service_save, sender=CarService)
+                post_delete.connect(recalculate_car_price_on_service_delete, sender=CarService)
+                
+                # Обновляем все затронутые инвойсы одним пакетом
+                if affected_invoices:
+                    logger.info(f"Updating {len(affected_invoices)} affected invoices...")
+                    for invoice in affected_invoices:
+                        try:
+                            if hasattr(invoice, 'regenerate_items_from_cars'):
+                                # NewInvoice
+                                invoice.regenerate_items_from_cars()
+                            else:
+                                # InvoiceOLD
+                                invoice.update_total_amount()
+                        except Exception as e:
+                            logger.error(f"Error updating invoice {invoice.id}: {e}")
+                    logger.info(f"✅ Updated {len(affected_invoices)} invoices")
+                
+            except Exception as e:
+                logger.error(f"Failed to update cars after unload_date change for container {obj.id}: {e}")
+                # Убедимся, что сигналы включены даже в случае ошибки
+                try:
+                    from django.db.models.signals import post_save, post_delete
+                    from core.signals import update_related_on_car_save, create_car_services_on_car_save, recalculate_car_price_on_service_save, recalculate_car_price_on_service_delete
+                    post_save.connect(update_related_on_car_save, sender=Car)
+                    post_save.connect(create_car_services_on_car_save, sender=Car)
+                    post_save.connect(recalculate_car_price_on_service_save, sender=CarService)
+                    post_delete.connect(recalculate_car_price_on_service_delete, sender=CarService)
+                except:
+                    pass
 
         # если изменили линию — обновить линию во всех автомобилях контейнера
         if change and form and 'line' in getattr(form, 'changed_data', []):
@@ -303,15 +368,18 @@ class ContainerAdmin(admin.ModelAdmin):
                 # статус всегда как у контейнера
                 obj.status = parent.status
 
-                # склад/клиент/дата разгрузки/линия по контейнеру, если не заданы
+                # склад/клиент/линия по контейнеру, если не заданы
                 if not obj.warehouse_id and parent.warehouse_id:
                     obj.warehouse = parent.warehouse
                 if not obj.client_id and parent.client_id:
                     obj.client = parent.client
-                if not obj.unload_date and parent.unload_date:
-                    obj.unload_date = parent.unload_date
                 if not obj.line_id and parent.line_id:
                     obj.line = parent.line
+                
+                # Дата разгрузки ВСЕГДА берется из контейнера (наследуется принудительно)
+                if parent.unload_date:
+                    obj.unload_date = parent.unload_date
+                    logger.debug(f"Car {obj.vin}: inherited unload_date={obj.unload_date} from container {parent.number}")
 
                 creating = obj.pk is None
                 if creating and obj.warehouse_id:
