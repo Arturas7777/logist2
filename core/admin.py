@@ -620,12 +620,12 @@ class ContainerAdmin(admin.ModelAdmin):
 class CarAdmin(admin.ModelAdmin):
     change_form_template = 'admin/core/car/change_form.html'
     list_display = (
-        'vin', 'brand', 'year_display', 'client', 'colored_status', 'container_display', 'warehouse', 'line', 'carrier',
+        'vin', 'brand', 'year_display', 'client', 'colored_status', 'container_display', 'warehouse', 'line',
         'unload_date_display', 'total_price_display', 'current_price_display',
         'storage_cost_display', 'days_display', 'has_title'
     )
     list_editable = ('has_title',)
-    list_filter = (MultiStatusFilter, MultiWarehouseFilter, 'client', 'has_title', 'line', 'carrier')
+    list_filter = (MultiStatusFilter, MultiWarehouseFilter, 'client', 'has_title', 'line')
     search_fields = ('vin', 'brand')
     # ОПТИМИЗАЦИЯ: Предзагрузка связанных объектов для list view
     list_select_related = ('client', 'warehouse', 'line', 'carrier', 'container')
