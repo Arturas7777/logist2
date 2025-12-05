@@ -33,54 +33,6 @@
         </div>
     </div>
     
-    <!-- Список услуг -->
-    {% if invoice.items.exists %}
-    <div style="background: white; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-        <h3 style="margin-top: 0;">📋 Позиции инвойса</h3>
-        <table style="width: 100%; border-collapse: collapse;">
-            <thead>
-                <tr style="background: #f8f9fa;">
-                    <th style="padding: 10px; text-align: left; border-bottom: 2px solid #dee2e6;">Описание</th>
-                    <th style="padding: 10px; text-align: center; border-bottom: 2px solid #dee2e6;">Кол-во</th>
-                    <th style="padding: 10px; text-align: right; border-bottom: 2px solid #dee2e6;">Цена</th>
-                    <th style="padding: 10px; text-align: right; border-bottom: 2px solid #dee2e6;">Сумма</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in invoice.items.all %}
-                <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">
-                        {{ item.description }}
-                        {% if item.car %}<br><small style="color: #666;">🚗 {{ item.car }}</small>{% endif %}
-                    </td>
-                    <td style="padding: 10px; text-align: center; border-bottom: 1px solid #eee;">{{ item.quantity }}</td>
-                    <td style="padding: 10px; text-align: right; border-bottom: 1px solid #eee;">{{ item.unit_price }} €</td>
-                    <td style="padding: 10px; text-align: right; border-bottom: 1px solid #eee; font-weight: bold;">{{ item.total }} €</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-            <tfoot>
-                <tr style="background: #f8f9fa;">
-                    <td colspan="3" style="padding: 12px; text-align: right; font-weight: bold; font-size: 1.1em;">Итого:</td>
-                    <td style="padding: 12px; text-align: right; font-weight: bold; font-size: 1.2em;">{{ invoice.total }} €</td>
-                </tr>
-            </tfoot>
-        </table>
-    </div>
-    {% endif %}
-    
-    <!-- Автомобили (если позиций нет но есть авто) -->
-    {% if invoice.cars.exists and not invoice.items.exists %}
-    <div style="background: white; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-        <h3 style="margin-top: 0;">🚗 Автомобили в инвойсе</h3>
-        <ul style="margin: 0; padding-left: 20px;">
-            {% for car in invoice.cars.all %}
-            <li style="padding: 5px 0;">{{ car }} - {{ car.total_services_cost }} €</li>
-            {% endfor %}
-        </ul>
-    </div>
-    {% endif %}
-    
     <!-- Баланс клиента -->
     {% if client_balance and client_balance > 0 %}
     <div style="background: #d4edda; border: 2px solid #28a745; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
@@ -169,6 +121,54 @@
     <div style="background: #f8d7da; border: 2px solid #dc3545; border-radius: 8px; padding: 15px; margin-top: 20px;">
         <strong style="color: #721c24;">⚠ ВНИМАНИЕ!</strong><br>
         Инвойс просрочен. Срок оплаты истек {{ invoice.due_date|date:"d.m.Y" }}.
+    </div>
+    {% endif %}
+    
+    <!-- Список услуг (внизу) -->
+    {% if invoice.items.exists %}
+    <div style="background: white; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin-top: 20px;">
+        <h3 style="margin-top: 0;">📋 Позиции инвойса</h3>
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="background: #f8f9fa;">
+                    <th style="padding: 10px; text-align: left; border-bottom: 2px solid #dee2e6;">Описание</th>
+                    <th style="padding: 10px; text-align: center; border-bottom: 2px solid #dee2e6;">Кол-во</th>
+                    <th style="padding: 10px; text-align: right; border-bottom: 2px solid #dee2e6;">Цена</th>
+                    <th style="padding: 10px; text-align: right; border-bottom: 2px solid #dee2e6;">Сумма</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in invoice.items.all %}
+                <tr>
+                    <td style="padding: 10px; border-bottom: 1px solid #eee;">
+                        {{ item.description }}
+                        {% if item.car %}<br><small style="color: #666;">🚗 {{ item.car }}</small>{% endif %}
+                    </td>
+                    <td style="padding: 10px; text-align: center; border-bottom: 1px solid #eee;">{{ item.quantity }}</td>
+                    <td style="padding: 10px; text-align: right; border-bottom: 1px solid #eee;">{{ item.unit_price }} €</td>
+                    <td style="padding: 10px; text-align: right; border-bottom: 1px solid #eee; font-weight: bold;">{{ item.total }} €</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr style="background: #f8f9fa;">
+                    <td colspan="3" style="padding: 12px; text-align: right; font-weight: bold; font-size: 1.1em;">Итого:</td>
+                    <td style="padding: 12px; text-align: right; font-weight: bold; font-size: 1.2em;">{{ invoice.total }} €</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    {% endif %}
+    
+    <!-- Автомобили (если позиций нет но есть авто) -->
+    {% if invoice.cars.exists and not invoice.items.exists %}
+    <div style="background: white; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin-top: 20px;">
+        <h3 style="margin-top: 0;">🚗 Автомобили в инвойсе</h3>
+        <ul style="margin: 0; padding-left: 20px;">
+            {% for car in invoice.cars.all %}
+            <li style="padding: 5px 0;">{{ car }} - {{ car.total_services_cost }} €</li>
+            {% endfor %}
+        </ul>
     </div>
     {% endif %}
 </div>
