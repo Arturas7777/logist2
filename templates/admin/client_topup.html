@@ -1,0 +1,60 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block content %}
+<div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+    <h1>💵 Пополнение баланса</h1>
+    
+    <div style="background: linear-gradient(135deg, {% if client.balance > 0 %}#11998e, #38ef7d{% elif client.balance < 0 %}#eb3349, #f45c43{% else %}#667eea, #764ba2{% endif %}); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
+        <div style="font-size: 1.2em; margin-bottom: 5px;">{{ client.name }}</div>
+        <div style="font-size: 2em; font-weight: bold;">
+            {% if client.balance >= 0 %}+{% endif %}{{ client.balance }} €
+        </div>
+        <div style="opacity: 0.9; margin-top: 5px;">
+            {% if client.balance < 0 %}📉 Долг{% elif client.balance > 0 %}💰 На балансе{% else %}⚖️ Нулевой баланс{% endif %}
+        </div>
+    </div>
+    
+    <form method="post" style="background: #f8f9fa; padding: 25px; border-radius: 8px;">
+        {% csrf_token %}
+        
+        <div style="margin-bottom: 20px;">
+            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Сумма (€)</label>
+            <input type="number" name="amount" step="0.01" min="0.01" required 
+                   style="width: 100%; padding: 12px; font-size: 18px; border: 2px solid #dee2e6; border-radius: 6px;">
+        </div>
+        
+        <div style="margin-bottom: 20px;">
+            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Способ оплаты</label>
+            <div style="display: flex; gap: 15px;">
+                <label style="flex: 1; display: flex; align-items: center; padding: 15px; background: white; border: 2px solid #dee2e6; border-radius: 6px; cursor: pointer;">
+                    <input type="radio" name="method" value="CASH" checked style="margin-right: 10px;">
+                    💵 Наличные
+                </label>
+                <label style="flex: 1; display: flex; align-items: center; padding: 15px; background: white; border: 2px solid #dee2e6; border-radius: 6px; cursor: pointer;">
+                    <input type="radio" name="method" value="CARD" style="margin-right: 10px;">
+                    💳 Перевод
+                </label>
+            </div>
+        </div>
+        
+        <div style="margin-bottom: 20px;">
+            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Описание (необязательно)</label>
+            <textarea name="description" rows="3" 
+                      style="width: 100%; padding: 12px; border: 2px solid #dee2e6; border-radius: 6px;"
+                      placeholder="Примечание к платежу..."></textarea>
+        </div>
+        
+        <div style="display: flex; gap: 15px;">
+            <button type="submit" style="flex: 1; padding: 15px; background: #28a745; color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer;">
+                ✅ Пополнить баланс
+            </button>
+            <a href="{% url 'admin:core_client_change' client.pk %}" 
+               style="padding: 15px 25px; background: #6c757d; color: white; text-decoration: none; border-radius: 6px; font-size: 16px;">
+                Отмена
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
