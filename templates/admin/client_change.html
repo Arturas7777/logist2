@@ -78,6 +78,37 @@
 {% endblock %}
 
 {% block content %}
+    <!-- Панель управления балансом -->
+    {% if original %}
+    <div style="margin-bottom: 20px; padding: 20px; background: linear-gradient(135deg, {% if original.balance > 0 %}#11998e, #38ef7d{% elif original.balance < 0 %}#eb3349, #f45c43{% else %}#667eea, #764ba2{% endif %}); border-radius: 12px; color: white;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+            <div>
+                <div style="font-size: 2em; font-weight: bold;">
+                    {% if original.balance >= 0 %}+{% endif %}{{ original.balance }} €
+                </div>
+                <div style="opacity: 0.9; margin-top: 5px;">
+                    {% if original.balance < 0 %}📉 Долг{% elif original.balance > 0 %}💰 На балансе{% else %}⚖️ Нулевой баланс{% endif %}
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <a href="{% url 'admin:client_topup' original.pk %}" 
+                   style="background: white; color: #333; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
+                    💵 Пополнить
+                </a>
+                <a href="{% url 'admin:client_reset_balance' original.pk %}" 
+                   style="background: rgba(255,255,255,0.2); color: white; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; border: 2px solid white;"
+                   onclick="return confirm('Обнулить баланс клиента {{ original.name }}?');">
+                    🔄 Обнулить
+                </a>
+                <a href="{% url 'admin:client_recalc_balance' original.pk %}" 
+                   style="background: rgba(255,255,255,0.2); color: white; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; border: 2px solid white;">
+                    📊 Пересчитать
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    
     {{ block.super }}
     
     <!-- Сводка по балансу уже есть в админке выше -->

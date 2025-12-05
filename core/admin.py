@@ -2067,6 +2067,116 @@ class ClientAdmin(admin.ModelAdmin):
             messages.error(request, f'Ошибка при обнулении балансов: {e}')
     
     reset_client_balance.short_description = 'Обнулить балансы выбранных клиентов'
+    
+    # ========================================================================
+    # ПОПОЛНЕНИЕ И УПРАВЛЕНИЕ БАЛАНСОМ КЛИЕНТА
+    # ========================================================================
+    
+    def get_urls(self):
+        from django.urls import path
+        urls = super().get_urls()
+        custom_urls = [
+            path('<int:client_id>/topup/', self.admin_site.admin_view(self.topup_balance_view), name='client_topup'),
+            path('<int:client_id>/reset-balance/', self.admin_site.admin_view(self.reset_balance_view), name='client_reset_balance'),
+            path('<int:client_id>/recalc-balance/', self.admin_site.admin_view(self.recalc_balance_view), name='client_recalc_balance'),
+        ]
+        return custom_urls + urls
+    
+    def topup_balance_view(self, request, client_id):
+        """Страница пополнения баланса клиента"""
+        from django.shortcuts import render, redirect
+        from django.contrib import messages
+        from decimal import Decimal
+        from core.services.billing_service import BillingService
+        
+        client = Client.objects.get(pk=client_id)
+        
+        if request.method == 'POST':
+            try:
+                amount = Decimal(request.POST.get('amount', 0))
+                method = request.POST.get('method', 'CASH')
+                description = request.POST.get('description', '')
+                
+                if amount <= 0:
+                    raise ValueError("Сумма должна быть положительной")
+                
+                trx = BillingService.topup_balance(
+                    entity=client,
+                    amount=amount,
+                    method=method,
+                    description=description or f"Пополнение баланса клиента {client.name}",
+                    created_by=request.user
+                )
+                
+                messages.success(
+                    request, 
+                    f'✅ Баланс пополнен! Транзакция: {trx.number}, сумма: {amount}€'
+                )
+                
+                return redirect('admin:core_client_change', client_id)
+                
+            except Exception as e:
+                messages.error(request, f'❌ Ошибка: {e}')
+        
+        context = {
+            'client': client,
+            'opts': self.model._meta,
+            'title': f'Пополнение баланса - {client.name}',
+        }
+        
+        return render(request, 'admin/client_topup.html', context)
+    
+    def reset_balance_view(self, request, client_id):
+        """Обнулить баланс клиента"""
+        from django.shortcuts import redirect
+        from django.contrib import messages
+        from decimal import Decimal
+        
+        client = Client.objects.get(pk=client_id)
+        old_balance = client.balance
+        
+        client.balance = Decimal('0.00')
+        client.save(update_fields=['balance'])
+        
+        messages.success(request, f'✅ Баланс клиента {client.name} обнулён (был: {old_balance}€)')
+        return redirect('admin:core_client_change', client_id)
+    
+    def recalc_balance_view(self, request, client_id):
+        """Пересчитать баланс клиента на основе транзакций"""
+        from django.shortcuts import redirect
+        from django.contrib import messages
+        from django.db.models import Sum
+        from decimal import Decimal
+        from core.models_billing import Transaction
+        
+        client = Client.objects.get(pk=client_id)
+        old_balance = client.balance
+        
+        # Пополнения (TOPUP)
+        topups = Transaction.objects.filter(
+            to_client=client,
+            type='TOPUP',
+            status='COMPLETED'
+        ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
+        
+        # Платежи (PAYMENT)
+        payments = Transaction.objects.filter(
+            from_client=client,
+            type='PAYMENT',
+            status='COMPLETED'
+        ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
+        
+        # Новый баланс
+        new_balance = topups - payments
+        
+        client.balance = new_balance
+        client.save(update_fields=['balance'])
+        
+        messages.success(
+            request, 
+            f'✅ Баланс пересчитан: {old_balance}€ → {new_balance}€ (пополнения: {topups}€, платежи: {payments}€)'
+        )
+        return redirect('admin:core_client_change', client_id)
 
 @admin.register(Company)
 class CompanyAdmin(admin.ModelAdmin):
