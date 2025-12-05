@@ -483,9 +483,15 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             except Exception as e:
                 messages.error(request, f'Ошибка при проведении платежа: {str(e)}')
         
+        # Получаем баланс клиента если есть
+        client_balance = None
+        if invoice.recipient_client:
+            client_balance = invoice.recipient_client.balance
+        
         context = {
             'invoice': invoice,
             'remaining': invoice.remaining_amount,
+            'client_balance': client_balance,
             'opts': self.model._meta,
             'has_view_permission': self.has_view_permission(request),
         }
