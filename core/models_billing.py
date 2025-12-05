@@ -342,6 +342,9 @@ class NewInvoice(models.Model):
         verbose_name="Создал"
     )
     
+    # Служебное поле для отслеживания обновления баланса
+    _balance_updated = models.BooleanField(default=False, editable=False)
+    
     class Meta:
         verbose_name = "Инвойс (новая система)"
         verbose_name_plural = "Инвойсы (новая система)"
