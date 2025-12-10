@@ -4,6 +4,7 @@
 {% block extrahead %}
 {{ block.super }}
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
 <style>
     :root {
         --primary: #667eea;
@@ -770,8 +771,20 @@
 
 </form>
 
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<!-- Используем jQuery из Django Admin -->
+<script>
+// Проверяем, загружен ли уже jQuery (из Django Admin)
+if (typeof jQuery === 'undefined') {
+    document.write('<script src="https://code.jquery.com/jquery-3.6.0.min.js"><\/script>');
+}
+</script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+// Fallback: если Select2 не загрузился, попробуем другой CDN
+if (typeof jQuery.fn.select2 === 'undefined') {
+    document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"><\/script>');
+}
+</script>
 <script>
 $(document).ready(function() {
     // AJAX поиск для выставителя
