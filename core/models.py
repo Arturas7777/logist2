@@ -13,9 +13,8 @@ from datetime import timedelta
 
 # Импортируем оптимизированные менеджеры
 from .managers import (
-    OptimizedCarManager, OptimizedInvoiceManager, OptimizedPaymentManager,
-    OptimizedContainerManager, OptimizedClientManager, OptimizedWarehouseManager,
-    OptimizedCompanyManager
+    OptimizedCarManager, OptimizedContainerManager, OptimizedClientManager, 
+    OptimizedWarehouseManager, OptimizedCompanyManager
 )
 
 
@@ -48,10 +47,10 @@ class BaseManager(models.Manager):
 class Line(models.Model):
     name = models.CharField(max_length=100, verbose_name="Название линии")
     
-    # Балансы линии
-    invoice_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Инвойс-баланс")
-    cash_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Наличные")
-    card_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Безнал")
+    # Единый баланс (новая система)
+    balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс",
+                                  help_text="Положительный = нам должны, отрицательный = мы должны")
+    balance_updated_at = models.DateTimeField(auto_now=True, verbose_name="Баланс обновлен")
     
     # Услуги и цены
     ocean_freight_rate = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Стоимость перевозки (за авто)")
@@ -66,56 +65,6 @@ class Line(models.Model):
 
     def __str__(self):
         return self.name
-    
-    def get_balance(self, balance_type):
-        """Получить баланс определенного типа"""
-        if balance_type == 'INVOICE':
-            return self.invoice_balance
-        elif balance_type == 'CASH':
-            return self.cash_balance
-        elif balance_type == 'CARD':
-            return self.card_balance
-        return Decimal('0.00')
-    
-    def update_balance(self, balance_type, amount):
-        """Обновить баланс определенного типа"""
-        if balance_type == 'INVOICE':
-            self.invoice_balance += amount
-        elif balance_type == 'CASH':
-            self.cash_balance += amount
-        elif balance_type == 'CARD':
-            self.card_balance += amount
-        self.save()
-    
-    def get_balance_summary(self):
-        """Получить сводку по всем балансам"""
-        return {
-            'invoice_balance': self.invoice_balance,
-            'cash_balance': self.cash_balance,
-            'card_balance': self.card_balance,
-            'total_balance': self.invoice_balance + self.cash_balance + self.card_balance
-        }
-    
-    def update_balance_from_invoices(self):
-        """Обновляет инвойс-баланс на основе реальных инвойсов и платежей"""
-        from django.db.models import Sum
-        from decimal import Decimal
-        
-        # Сумма всех исходящих инвойсов (мы выставляем счета)
-        outgoing_invoices = Invoice.objects.filter(
-            from_entity_type='LINE',
-            from_entity_id=self.id
-        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
-        
-        # Сумма всех входящих инвойсов (нам выставляют счета)
-        incoming_invoices = Invoice.objects.filter(
-            to_entity_type='LINE',
-            to_entity_id=self.id
-        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
-        
-        # Инвойс-баланс = входящие - исходящие
-        self.invoice_balance = incoming_invoices - outgoing_invoices
-        self.save(update_fields=['invoice_balance'])
 
 
 class Carrier(models.Model):
@@ -125,10 +74,10 @@ class Carrier(models.Model):
     phone = models.CharField(max_length=20, blank=True, null=True, verbose_name="Телефон")
     email = models.EmailField(blank=True, null=True, verbose_name="Email")
     
-    # Балансы
-    invoice_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Инвойс-баланс")
-    cash_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Наличные")
-    card_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Безнал")
+    # Единый баланс (новая система)
+    balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс",
+                                  help_text="Положительный = нам должны, отрицательный = мы должны")
+    balance_updated_at = models.DateTimeField(auto_now=True, verbose_name="Баланс обновлен")
     
     # Услуги и цены
     transport_rate = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Стоимость перевозки (за км)")
@@ -140,281 +89,59 @@ class Carrier(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
     
-    def __str__(self):
-        return self.name
-    
-    def get_balance(self, balance_type):
-        """Получить баланс определенного типа"""
-        if balance_type == 'INVOICE':
-            return self.invoice_balance
-        elif balance_type == 'CASH':
-            return self.cash_balance
-        elif balance_type == 'CARD':
-            return self.card_balance
-        return Decimal('0.00')
-    
-    def update_balance(self, balance_type, amount):
-        """Обновить баланс определенного типа"""
-        if balance_type == 'INVOICE':
-            self.invoice_balance += amount
-        elif balance_type == 'CASH':
-            self.cash_balance += amount
-        elif balance_type == 'CARD':
-            self.card_balance += amount
-        self.save()
-    
-    def get_balance_summary(self):
-        """Получить сводку по всем балансам"""
-        return {
-            'invoice_balance': self.invoice_balance,
-            'cash_balance': self.cash_balance,
-            'card_balance': self.card_balance,
-            'total_balance': self.invoice_balance + self.cash_balance + self.card_balance
-        }
-    
-    def update_balance_from_invoices(self):
-        """Обновляет инвойс-баланс на основе реальных инвойсов и платежей"""
-        from django.db.models import Sum
-        from decimal import Decimal
-        
-        # Сумма всех исходящих инвойсов (мы выставляем счета)
-        outgoing_invoices = Invoice.objects.filter(
-            from_entity_type='CARRIER',
-            from_entity_id=self.id
-        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
-        
-        # Сумма всех входящих инвойсов (нам выставляют счета)
-        incoming_invoices = Invoice.objects.filter(
-            to_entity_type='CARRIER',
-            to_entity_id=self.id
-        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
-        
-        # Инвойс-баланс = входящие - исходящие
-        self.invoice_balance = incoming_invoices - outgoing_invoices
-        self.save(update_fields=['invoice_balance'])
-    
-    objects = OptimizedCompanyManager()  # Используем CompanyManager для Carrier
+    objects = OptimizedCompanyManager()
     
     class Meta:
         verbose_name = "Перевозчик"
         verbose_name_plural = "Перевозчики"
+    
+    def __str__(self):
+        return self.name
 
 
 class Client(models.Model):
     name = models.CharField(max_length=100, verbose_name="Имя клиента")
     
-    # НОВАЯ СИСТЕМА - единый баланс
+    # Единый баланс (новая система)
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс", 
                                    help_text="Положительный = переплата, отрицательный = долг")
-    balance_updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлен")
+    balance_updated_at = models.DateTimeField(auto_now=True, verbose_name="Баланс обновлен")
     
-    # Старые балансы (для совместимости со старой системой)
-    invoice_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Инвойс-баланс (старая)")
-    cash_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Наличные (старая)")
-    card_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Безнал (старая)")
-    debt = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Долг (старая)")
-    
-    def __str__(self):
-        return self.name
-
-    @property
-    def total_invoiced_amount(self):
-        """Общая сумма всех входящих инвойсов клиента"""
-        from django.db.models import Sum
-        return self.invoiceold_set.filter(is_outgoing=False).aggregate(
-            total=Sum('total_amount')
-        )['total'] or Decimal('0.00')
-
-    @property
-    def total_paid_amount(self):
-        """Общая сумма всех платежей клиента по инвойсам (включая списания с баланса)"""
-        from django.db.models import Sum
-        return PaymentOLD.objects.filter(
-            from_client=self,
-            invoice__isnull=False  # Только платежи по инвойсам
-        ).aggregate(
-            total=Sum('amount')
-        )['total'] or Decimal('0.00')
-
-    @property
-    def total_balance_payments(self):
-        """Общая сумма всех платежей клиента без инвойса (пополнение баланса)"""
-        from django.db.models import Sum
-        return PaymentOLD.objects.filter(
-            from_client=self,
-            invoice__isnull=True  # Только платежи без инвойса
-        ).aggregate(
-            total=Sum('amount')
-        )['total'] or Decimal('0.00')
-
-    @property
-    def total_balance_debits(self):
-        """Общая сумма всех списаний с баланса клиента"""
-        from django.db.models import Sum
-        return PaymentOLD.objects.filter(
-            from_client=self
-        ).aggregate(
-            total=Sum('amount')
-        )['total'] or Decimal('0.00')
-
-    @property
-    def real_balance(self):
-        """Инвойс-баланс: инвойсы - платежи (положительный = долг, отрицательный = переплата)"""
-        return self.total_invoiced_amount - self.total_paid_amount
-
-    @property
-    def balance_status(self):
-        """Статус баланса для отображения"""
-        balance = self.real_balance
-        if balance > 0:
-            return "ДОЛГ"
-        elif balance < 0:
-            return "ПЕРЕПЛАТА"
-        else:
-            return "БАЛАНС"
-
-    @property
-    def balance_color(self):
-        """Цвет для отображения баланса"""
-        balance = self.real_balance
-        if balance > 0:
-            return "#dc3545"  # красный для долга
-        elif balance < 0:
-            return "#28a745"  # зеленый для переплаты
-        else:
-            return "#6c757d"  # серый для нуля
-
-    def get_balance_summary(self):
-        """Получить сводку по всем балансам"""
-        return {
-            'invoice_balance': self.invoice_balance,
-            'cash_balance': self.cash_balance,
-            'card_balance': self.card_balance,
-            'total_balance': self.invoice_balance + self.cash_balance + self.card_balance,
-            'real_balance': self.real_balance,
-            'balance_status': self.balance_status,
-            'balance_color': self.balance_color
-        }
-
-    def update_balance_from_invoices(self):
-        """Обновляет инвойс-баланс на основе реальных инвойсов и платежей"""
-        self.invoice_balance = self.real_balance
-        self.save(update_fields=['invoice_balance'])
-    
-    def sync_balance_fields(self):
-        """Синхронизирует поля баланса с реальными данными"""
-        # Обновляем invoice_balance на основе реальных инвойсов
-        self.invoice_balance = self.real_balance
-        
-        # Обновляем наличный и безналичный балансы
-        from django.db.models import Sum
-        
-        # Сумма всех входящих наличных платежей (клиент получает деньги)
-        cash_incoming = PaymentOLD.objects.filter(
-            to_client=self,
-            payment_type='CASH',
-            invoice__isnull=True
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        
-        # Сумма всех входящих безналичных платежей (клиент получает деньги)
-        card_incoming = PaymentOLD.objects.filter(
-            to_client=self,
-            payment_type='CARD',
-            invoice__isnull=True
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        
-        # Сумма всех исходящих наличных платежей (клиент отправляет деньги)
-        cash_outgoing = PaymentOLD.objects.filter(
-            from_client=self,
-            payment_type='CASH'
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        
-        # Сумма всех исходящих безналичных платежей (клиент отправляет деньги)
-        card_outgoing = PaymentOLD.objects.filter(
-            from_client=self,
-            payment_type='CARD'
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        
-        self.cash_balance = cash_incoming - cash_outgoing
-        self.card_balance = card_incoming - card_outgoing
-        
-        self.save()
-
-    def balance_details(self):
-        """Детальная информация о балансах"""
-        summary = self.get_balance_summary()
-        
-        # Дополнительная информация
-        from django.db.models import Sum, Q
-        from django.utils import timezone
-        
-        # Последние платежи
-        recent_payments = PaymentOLD.objects.filter(
-            from_client=self
-        ).order_by('-date')[:5]
-        
-        # Неоплаченные инвойсы
-        unpaid_invoices = self.invoiceold_set.filter(
-            Q(paid=False) | Q(paid_amount__lt=models.F('total_amount'))
-        ).order_by('issue_date')
-        
-        # Просроченные инвойсы
-        overdue_invoices = unpaid_invoices.filter(
-            issue_date__lt=timezone.now().date() - timedelta(days=30)
-        )
-        
-        return {
-            **summary,
-            'recent_payments': [
-                {
-                    'amount': p.amount,
-                    'type': p.get_payment_type_display(),
-                    'date': p.date,
-                    'description': p.description
-                } for p in recent_payments
-            ],
-            'unpaid_invoices_count': unpaid_invoices.count(),
-            'overdue_invoices_count': overdue_invoices.count(),
-            'total_unpaid_amount': unpaid_invoices.aggregate(
-                total=Sum('total_amount')
-            )['total'] or Decimal('0.00')
-        }
-
-    def can_pay_from_balance(self, amount, payment_type, from_cash_balance):
-        """Проверяет, может ли клиент оплатить с баланса"""
-        if from_cash_balance:
-            return self.cash_balance >= amount
-        else:
-            return self.card_balance >= amount
-
-    def recalculate_balance(self):
-        """Пересчитывает все балансы клиента"""
-        logger.info(f"Recalculating balance for client {self.name}")
-        
-        # Синхронизируем поля баланса
-        self.sync_balance_fields()
-        
-        # Обновляем устаревшие поля для совместимости
-        self.debt = self.invoice_balance
-        
-        self.save()
-        
-        logger.info(f"Client {self.name} balance recalculated: invoice={self.invoice_balance}, cash={self.cash_balance}, card={self.card_balance}")
-
     objects = OptimizedClientManager()
     
     class Meta:
         verbose_name = "Клиент"
         verbose_name_plural = "Клиенты"
+    
+    def __str__(self):
+        return self.name
+    
+    @property
+    def balance_status(self):
+        """Статус баланса для отображения"""
+        if self.balance > 0:
+            return "ПЕРЕПЛАТА"
+        elif self.balance < 0:
+            return "ДОЛГ"
+        return "БАЛАНС"
+    
+    @property
+    def balance_color(self):
+        """Цвет для отображения баланса"""
+        if self.balance > 0:
+            return "#28a745"  # зеленый для переплаты
+        elif self.balance < 0:
+            return "#dc3545"  # красный для долга
+        return "#6c757d"  # серый для нуля
 
 class Warehouse(models.Model):
     name = models.CharField(max_length=100, verbose_name="Название склада")
     address = models.CharField(max_length=300, blank=True, verbose_name="Адрес склада")
     
-    # Балансы склада
-    invoice_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Инвойс-баланс")
-    cash_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Наличные")
-    card_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Безнал")
+    # Единый баланс (новая система)
+    balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс",
+                                  help_text="Положительный = нам должны, отрицательный = мы должны")
+    balance_updated_at = models.DateTimeField(auto_now=True, verbose_name="Баланс обновлен")
 
     # Цены на услуги
     default_unloading_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Цена за разгрузку")
@@ -429,85 +156,14 @@ class Warehouse(models.Model):
     export_declaration = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Экспортная декл.")
     additional_expenses = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Доп.расходы")
 
+    objects = OptimizedWarehouseManager()
+    
     class Meta:
         verbose_name = "Склад"
         verbose_name_plural = "Склады"
 
     def __str__(self):
         return self.name
-
-    @property
-    def balance(self):
-        """Общий баланс склада (сумма всех типов)"""
-        return self.invoice_balance + self.cash_balance + self.card_balance
-    
-    def get_balance(self, balance_type):
-        """Получить баланс определенного типа"""
-        if balance_type == 'INVOICE':
-            return self.invoice_balance
-        elif balance_type == 'CASH':
-            return self.cash_balance
-        elif balance_type == 'CARD':
-            return self.card_balance
-        return Decimal('0.00')
-    
-    def update_balance(self, balance_type, amount):
-        """Обновить баланс определенного типа"""
-        if balance_type == 'INVOICE':
-            self.invoice_balance += amount
-        elif balance_type == 'CASH':
-            self.cash_balance += amount
-        elif balance_type == 'CARD':
-            self.card_balance += amount
-        self.save()
-    
-    def get_balance_summary(self):
-        """Получить сводку по всем балансам"""
-        return {
-            'invoice_balance': self.invoice_balance,
-            'cash_balance': self.cash_balance,
-            'card_balance': self.card_balance,
-            'total_balance': self.balance
-        }
-    
-    def update_balance_from_invoices(self):
-        """Обновляет инвойс-баланс на основе реальных инвойсов и платежей"""
-        from django.db.models import Sum
-        from decimal import Decimal
-        
-        # Сумма всех исходящих инвойсов (мы выставляем счета)
-        outgoing_invoices = Invoice.objects.filter(
-            from_entity_type='WAREHOUSE',
-            from_entity_id=self.id
-        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
-        
-        # Сумма всех входящих инвойсов (нам выставляют счета)
-        incoming_invoices = Invoice.objects.filter(
-            to_entity_type='WAREHOUSE',
-            to_entity_id=self.id
-        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
-        
-        # Инвойс-баланс = входящие - исходящие
-        self.invoice_balance = incoming_invoices - outgoing_invoices
-        self.save(update_fields=['invoice_balance'])
-
-    def balance_details(self):
-        """Детальная информация о балансах склада"""
-        summary = self.get_balance_summary()
-        
-        # Получаем кастомные услуги склада
-        warehouse_services = WarehouseService.objects.filter(warehouse=self, is_active=True)
-        services_dict = {}
-        for service in warehouse_services:
-            services_dict[service.name.lower().replace(' ', '_')] = service.default_price
-        
-        # Дополнительная информация о складе
-        return {
-            **summary,
-            'services': services_dict
-        }
-
-    objects = OptimizedWarehouseManager()
 
 # Контейнеры
 class ContainerManager(BaseManager):
@@ -693,10 +349,7 @@ class Container(models.Model):
 
 # Автомобили
 class CarManager(BaseManager):
-    def update_related(self, instance):
-        for invoice in instance.invoiceold_set.all():
-            invoice.update_total_amount()
-            invoice.save()
+    pass
 
 
 class Car(models.Model):
@@ -1154,320 +807,15 @@ class Car(models.Model):
         ]
 
 
-# ============================================================================
-# СТАРАЯ МОДЕЛЬ INVOICE - ПЕРЕИМЕНОВАНА В InvoiceOLD
-# ============================================================================
-# Модель переименована, чтобы не конфликтовать с новой системой
-# Используйте NewInvoice из models_billing.py для новых инвойсов
-# ============================================================================
-
-class InvoiceOLD(models.Model):
-    ENTITY_TYPES = [
-        ('CLIENT', 'Клиент'),
-        ('WAREHOUSE', 'Склад'),
-        ('LINE', 'Линия'),
-        ('CARRIER', 'Перевозчик'),
-        ('COMPANY', 'Компания'),
-    ]
-    
-    SERVICE_TYPES = [
-        ('WAREHOUSE_SERVICES', 'Услуги склада'),
-        ('LINE_SERVICES', 'Услуги линий'),
-        ('CARRIER_SERVICES', 'Услуги перевозчиков'),
-        ('TRANSPORT_SERVICES', 'Транспортные услуги'),
-        ('OTHER_SERVICES', 'Прочие услуги'),
-    ]
-    
-    number = models.CharField(max_length=20, unique=True, verbose_name="Номер инвойса")
-    
-    # Новые поля для отправителя и получателя инвойса
-    from_entity_type = models.CharField(max_length=20, choices=ENTITY_TYPES, default='COMPANY', verbose_name="Тип отправителя")
-    from_entity_id = models.PositiveIntegerField(null=True, blank=True, verbose_name="ID отправителя")
-    
-    to_entity_type = models.CharField(max_length=20, choices=ENTITY_TYPES, default='CLIENT', verbose_name="Тип получателя")
-    to_entity_id = models.PositiveIntegerField(null=True, blank=True, verbose_name="ID получателя")
-    
-    # Тип услуг, за которые выставляется инвойс
-    service_type = models.CharField(max_length=20, choices=SERVICE_TYPES, default='WAREHOUSE_SERVICES', verbose_name="Тип услуг")
-    
-    # Устаревшие поля (оставляем для совместимости)
-    client = models.ForeignKey('Client', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Клиент (устарело)")
-    warehouse = models.ForeignKey('Warehouse', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Склад (устарело)")
-    
-    cars = models.ManyToManyField('Car', blank=True, verbose_name="Автомобили")
-    total_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Сумма")
-    issue_date = models.DateField(auto_now_add=True, verbose_name="Дата выпуска")
-    paid = models.BooleanField(default=False, verbose_name="Оплачен")
-    is_outgoing = models.BooleanField(default=False, verbose_name="Нужно оплатить")
-
-    def update_total_amount(self):
-        try:
-            total = Decimal('0.00')
-            # Проверяем, что у экземпляра есть первичный ключ
-            if not self.pk:
-                return
-            if self.cars.exists():  # Это поле ManyToMany в Invoice, не меняем
-                for car in self.cars.all():
-                    cur, tot = car.calculate_total_price()
-                    
-                    if self.service_type == 'WAREHOUSE_SERVICES':
-                        # Услуги склада: только стоимость хранения
-                        total += Decimal(str(car.storage_cost or 0))
-                    elif self.service_type == 'LINE_SERVICES':
-                        # Услуги линий: стоимость перевозки + THS сбор
-                        total += Decimal(str(car.ocean_freight or 0))
-                        total += Decimal(str(car.ths or 0))
-                    elif self.service_type == 'CARRIER_SERVICES':
-                        # Услуги перевозчиков: доставка до склада + перевозка по Казахстану
-                        total += Decimal(str(car.delivery_fee or 0)) + Decimal(str(car.transport_kz or 0))
-                    elif self.service_type == 'TRANSPORT_SERVICES':
-                        # Транспортные услуги: доставка до склада + перевозка по Казахстану
-                        total += Decimal(str(car.delivery_fee or 0)) + Decimal(str(car.transport_kz or 0))
-                    else:
-                        # Прочие услуги или клиентский инвойс: полная стоимость
-                        if not self.is_outgoing:
-                            # клиентский инвойс: если авто передано — берём итог, иначе текущую
-                            total += tot if (tot and tot > 0) else (cur or Decimal('0.00'))
-                        else:
-                            # исходящий: считаем фактическое хранение
-                            total += Decimal(str(car.storage_cost or 0))
-                            
-            self.total_amount = total
-            # Сохраняем в базу данных
-            InvoiceOLD.objects.filter(pk=self.pk).update(total_amount=self.total_amount)
-            logger.info(f"Updated total_amount for invoice {self.number} (service_type: {self.service_type}): {self.total_amount}")
-        except Exception as e:
-            logger.error(f"Error calculating total_amount for invoice {self.number}: {e}")
-            raise
-
-    @property
-    def from_entity(self):
-        """Получает объект отправителя инвойса"""
-        if not self.from_entity_id:
-            return None
-        
-        try:
-            if self.from_entity_type == 'CLIENT':
-                return Client.objects.get(id=self.from_entity_id)
-            elif self.from_entity_type == 'WAREHOUSE':
-                return Warehouse.objects.get(id=self.from_entity_id)
-            elif self.from_entity_type == 'LINE':
-                return Line.objects.get(id=self.from_entity_id)
-            elif self.from_entity_type == 'COMPANY':
-                return Company.objects.get(id=self.from_entity_id)
-        except (Client.DoesNotExist, Warehouse.DoesNotExist, Line.DoesNotExist, Company.DoesNotExist):
-            return None
-        return None
-    
-    @property
-    def to_entity(self):
-        """Получает объект получателя инвойса"""
-        if not self.to_entity_id:
-            return None
-        
-        try:
-            if self.to_entity_type == 'CLIENT':
-                return Client.objects.get(id=self.to_entity_id)
-            elif self.to_entity_type == 'WAREHOUSE':
-                return Warehouse.objects.get(id=self.to_entity_id)
-            elif self.to_entity_type == 'LINE':
-                return Line.objects.get(id=self.to_entity_id)
-            elif self.to_entity_type == 'COMPANY':
-                return Company.objects.get(id=self.to_entity_id)
-        except (Client.DoesNotExist, Warehouse.DoesNotExist, Line.DoesNotExist, Company.DoesNotExist):
-            return None
-        return None
-    
-    @property
-    def from_entity_name(self):
-        """Получает имя отправителя инвойса"""
-        entity = self.from_entity
-        if entity:
-            return str(entity)
-        return f"{self.get_from_entity_type_display()} #{self.from_entity_id}" if self.from_entity_id else "Не указан"
-    
-    @property
-    def to_entity_name(self):
-        """Получает имя получателя инвойса"""
-        entity = self.to_entity
-        if entity:
-            return str(entity)
-        return f"{self.get_to_entity_type_display()} #{self.to_entity_id}" if self.to_entity_id else "Не указан"
-    
-    @property
-    def paid_amount(self):
-        return PaymentOLD.objects.filter(invoice=self).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-
-    @property
-    def balance(self):
-        paid = self.paid_amount or Decimal('0.00')
-        total = self.total_amount or Decimal('0.00')
-        return paid - total
-
-    @property
-    def due_date(self):
-        try:
-            return (self.issue_date or timezone.now().date()) + timedelta(days=14)
-        except Exception:
-            return None
-
-    @property
-    def is_overdue(self):
-        try:
-            return (not self.paid) and self.due_date and self.due_date < timezone.now().date()
-        except Exception:
-            return False
-
-    @property
-    def is_partial(self) -> bool:
-        try:
-            total = Decimal(str(self.total_amount or 0))
-            paid = Decimal(str(self.paid_amount or 0))
-            return paid > 0 and paid < total
-        except Exception:
-            return False
-
-    @property
-    def payment_status(self) -> str:
-        if self.paid:
-            return 'PAID'
-        if self.is_partial:
-            return 'PARTIAL'
-        return 'UNPAID'
-
-    def save(self, *args, **kwargs):
-        logger.info(
-            f"Saving invoice {self.number}, total_amount={self.total_amount}, from={self.from_entity_name}, to={self.to_entity_name}")
-        
-        # Автоматически устанавливаем компанию Caromoto Lithuania как отправителя по умолчанию
-        if not self.from_entity_id:
-            try:
-                default_company = Company.objects.get(name="Caromoto Lithuania")
-                self.from_entity_type = 'COMPANY'
-                self.from_entity_id = default_company.id
-                logger.info(f"Автоматически установлена компания по умолчанию: {default_company.name}")
-            except Company.DoesNotExist:
-                logger.warning("Компания Caromoto Lithuania не найдена")
-        
-        # Автоматически заполняем устаревшие поля для совместимости
-        if self.from_entity_type == 'CLIENT' and self.from_entity_id:
-            self.client = Client.objects.get(id=self.from_entity_id)
-        elif self.to_entity_type == 'CLIENT' and self.to_entity_id:
-            self.client = Client.objects.get(id=self.from_entity_id)
-        
-        if self.from_entity_type == 'WAREHOUSE' and self.from_entity_id:
-            self.warehouse = Warehouse.objects.get(id=self.from_entity_id)
-        elif self.to_entity_type == 'WAREHOUSE' and self.to_entity_id:
-            self.warehouse = Warehouse.objects.get(id=self.to_entity_id)
-        
-        with transaction.atomic():
-            old_invoice = None
-            if self.pk:
-                try:
-                    old_invoice = InvoiceOLD.objects.get(pk=self.pk)
-                    logger.info(
-                        f"Old invoice found: total_amount={old_invoice.total_amount}, from={old_invoice.from_entity_name}, to={old_invoice.to_entity_name}")
-                except InvoiceOLD.DoesNotExist:
-                    logger.warning(f"No old invoice found for id={self.pk}")
-            
-            if self.is_outgoing:
-                self.client = None
-            
-            # Сначала сохраняем инвойс, чтобы получить id
-            super().save(*args, **kwargs)
-            
-            # Теперь можем обновить сумму на основе автомобилей
-            self.update_total_amount()
-            
-            # Пересчитываем баланс получателя на основе реальных инвойсов и платежей
-            if self.to_entity and hasattr(self.to_entity, 'update_balance_from_invoices'):
-                self.to_entity.update_balance_from_invoices()
-            
-            # Пометим оплачено только при наличии платежей >= суммы
-            paid_amt = Decimal(str(self.paid_amount or 0))
-            total_amt = Decimal(str(self.total_amount or 0))
-            self.paid = paid_amt >= total_amt and total_amt > 0
-            # Обновляем только поле paid, чтобы избежать рекурсии
-            Invoice.objects.filter(pk=self.pk).update(paid=self.paid)
-
-        def _notify():
-            channel_layer = get_channel_layer()
-            async_to_sync(channel_layer.group_send)(
-                "updates",
-                {
-                    "type": "data_update",
-                    "data": {
-                        "model": "Invoice",
-                        "id": self.id,
-                        "total_amount": str(self.total_amount),
-                        "paid": self.paid
-                    }
-                }
-            )
-        transaction.on_commit(_notify)
-
-    def recalculate_client_balance(self):
-        """Пересчитывает баланс клиента на основе реальных инвойсов и платежей"""
-        if not self.client:
-            return
-            
-        from django.db.models import Sum
-        
-        # Сумма всех входящих инвойсов клиента
-        total_invoiced = InvoiceOLD.objects.filter(
-            client=self.client, 
-            is_outgoing=False
-        ).aggregate(
-            total=Sum('total_amount')
-        )['total'] or Decimal('0.00')
-        
-        # Сумма всех платежей клиента по инвойсам (включая списания с баланса)
-        total_paid = PaymentOLD.objects.filter(
-            from_client=self.client,
-            invoice__isnull=False  # Только платежи по инвойсам
-        ).aggregate(
-            total=Sum('amount')
-        )['total'] or Decimal('0.00')
-        
-        # Реальный долг = инвойсы - платежи
-        real_debt = total_invoiced - total_paid
-        
-        # Обновляем поле debt
-        if self.client.debt != real_debt:
-            logger.info(f"Updating client {self.client.name} debt from {self.client.debt} to {real_debt}")
-            self.client.debt = real_debt
-            self.client.save()
-
-    def __str__(self):
-        direction = "Нужно оплатить" if self.is_outgoing else "Ждём оплату"
-        return f"{self.number} ({direction})"
-
-    objects = OptimizedInvoiceManager()
-    
-    class Meta:
-        verbose_name = "Инвойс (старая система)"
-        verbose_name_plural = "Инвойсы (старая система)"
-        db_table = 'core_invoice'  # Сохраняем старое имя таблицы
-        indexes = [
-            models.Index(fields=['is_outgoing', 'paid']),
-            # Дополнительные индексы для оптимизации запросов
-            models.Index(fields=['from_entity_type', 'from_entity_id']),
-            models.Index(fields=['to_entity_type', 'to_entity_id']),
-            models.Index(fields=['issue_date', 'paid']),
-            models.Index(fields=['service_type']),
-            models.Index(fields=['client']),
-            models.Index(fields=['warehouse']),
-        ]
-
 class Company(models.Model):
     """Модель для логистической компании Caromoto Lithuania"""
     
     name = models.CharField(max_length=100, default="Caromoto Lithuania", verbose_name="Название компании")
     
-    # Балансы компании
-    invoice_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Инвойс-баланс")
-    cash_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Наличные")
-    card_balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Безнал")
+    # Единый баланс (новая система)
+    balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс",
+                                  help_text="Положительный = нам должны, отрицательный = мы должны")
+    balance_updated_at = models.DateTimeField(auto_now=True, verbose_name="Баланс обновлен")
     
     # Метаданные
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
@@ -1481,300 +829,8 @@ class Company(models.Model):
     
     def __str__(self):
         return self.name
-    
-    def get_balance(self, balance_type):
-        """Получить баланс определенного типа"""
-        if balance_type == 'INVOICE':
-            return self.invoice_balance
-        elif balance_type == 'CASH':
-            return self.cash_balance
-        elif balance_type == 'CARD':
-            return self.card_balance
-        return Decimal('0.00')
-    
-    def update_balance(self, balance_type, amount):
-        """Обновить баланс определенного типа"""
-        if balance_type == 'INVOICE':
-            self.invoice_balance += amount
-        elif balance_type == 'CASH':
-            self.cash_balance += amount
-        elif balance_type == 'CARD':
-            self.card_balance += amount
-        self.save()
-    
-    def get_balance_summary(self):
-        """Получить сводку по всем балансам"""
-        return {
-            'invoice_balance': self.invoice_balance,
-            'cash_balance': self.cash_balance,
-            'card_balance': self.card_balance,
-            'total_balance': self.invoice_balance + self.cash_balance + self.card_balance
-        }
-    
-    def update_balance_from_invoices(self):
-        """Обновляет инвойс-баланс на основе реальных инвойсов и платежей"""
-        from django.db.models import Sum
-        from decimal import Decimal
-        
-        # Сумма всех исходящих инвойсов (мы выставляем счета)
-        outgoing_invoices = Invoice.objects.filter(
-            from_entity_type='COMPANY',
-            from_entity_id=self.id
-        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
-        
-        # Сумма всех входящих инвойсов (нам выставляют счета)
-        incoming_invoices = Invoice.objects.filter(
-            to_entity_type='COMPANY',
-            to_entity_id=self.id
-        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0.00')
-        
-        # Инвойс-баланс = входящие - исходящие
-        self.invoice_balance = incoming_invoices - outgoing_invoices
-        self.save(update_fields=['invoice_balance'])
-    
-    def balance_details(self):
-        """Детальная информация о балансах компании"""
-        summary = self.get_balance_summary()
-        
-        # Дополнительная информация о компании
-        return {
-            **summary,
-            'company_info': {
-                'name': self.name,
-                'created_at': self.created_at,
-                'updated_at': self.updated_at
-            }
-        }
 
-# ============================================================================
-# СТАРАЯ МОДЕЛЬ PAYMENT - ПЕРЕИМЕНОВАНА В PaymentOLD
-# ============================================================================
-# Модель переименована, чтобы не конфликтовать с новой системой
-# Используйте Transaction из models_billing.py для новых платежей
-# ============================================================================
-
-class PaymentOLD(models.Model):
-    PAYMENT_TYPES = [
-        ('CASH', 'Наличные (пополнение/списание наличного баланса)'),
-        ('CARD', 'Безналичные (пополнение/списание безналичного баланса)'),
-        ('INVOICE', 'Инвойс (оплата счета)'),
-    ]
-    
-    # Основная информация
-    amount = models.DecimalField(max_digits=15, decimal_places=2, verbose_name="Сумма")
-    payment_type = models.CharField(max_length=20, choices=PAYMENT_TYPES, verbose_name="Тип платежа")
-    description = models.TextField(blank=True, verbose_name="Описание", help_text="Например: 'Пополнение баланса', 'Оплата инвойса №123', 'Перевод средств'")
-    date = models.DateTimeField(auto_now_add=True, verbose_name="Дата")
-    
-    # Новые прямые связи вместо GenericForeignKey
-    from_client = models.ForeignKey('Client', on_delete=models.CASCADE, null=True, blank=True, related_name='payments_sent')
-    from_warehouse = models.ForeignKey('Warehouse', on_delete=models.CASCADE, null=True, blank=True, related_name='payments_sent')
-    from_line = models.ForeignKey('Line', on_delete=models.CASCADE, null=True, blank=True, related_name='payments_sent')
-    from_company = models.ForeignKey('Company', on_delete=models.CASCADE, null=True, blank=True, related_name='payments_sent')
-    
-    to_client = models.ForeignKey('Client', on_delete=models.CASCADE, null=True, blank=True, related_name='payments_received')
-    to_warehouse = models.ForeignKey('Warehouse', on_delete=models.CASCADE, null=True, blank=True, related_name='payments_received')
-    to_line = models.ForeignKey('Line', on_delete=models.CASCADE, null=True, blank=True, related_name='payments_received')
-    to_company = models.ForeignKey('Company', on_delete=models.CASCADE, null=True, blank=True, related_name='payments_received')
-    
-    invoice = models.ForeignKey('InvoiceOLD', on_delete=models.CASCADE, null=True, blank=True, verbose_name="Инвойс")
-    created_by = models.CharField(max_length=100, blank=True, verbose_name="Создано пользователем")
-    
-    @property
-    def sender(self):
-        """Возвращает отправителя платежа"""
-        if self.from_client: return self.from_client
-        if self.from_warehouse: return self.from_warehouse
-        if self.from_line: return self.from_line
-        if self.from_company: return self.from_company
-        return None
-    
-    @property
-    def recipient(self):
-        """Возвращает получателя платежа"""
-        if self.to_client: return self.to_client
-        if self.to_warehouse: return self.to_warehouse
-        if self.to_line: return self.to_line
-        if self.to_company: return self.to_company
-        return None
-    
-    @property
-    def payer(self):
-        """Совместимость со старой системой"""
-        return self.sender
-    
-    @property
-    def is_correction(self):
-        """Проверяет, является ли платеж корректировкой"""
-        return 'correction' in self.description.lower() or 'корректировка' in self.description.lower()
-    
-    def save(self, *args, **kwargs):
-        is_new = not self.pk
-        if is_new:  # Только для новых платежей
-            self.created_by = get_current_user()
-        
-        super().save(*args, **kwargs)
-        
-        # Балансы обновляются через Django сигналы, поэтому здесь ничего не делаем
-        # if is_new and not getattr(self, '_skip_balance_update', False):
-        #     self.update_balances()
-    
-    def update_balances(self):
-        """Обновляет балансы отправителя и получателя"""
-        try:
-            # Проверяем, является ли это пополнением собственного баланса
-            is_self_payment = (self.sender == self.recipient and 
-                              self.sender is not None and 
-                              self.payment_type in ['CASH', 'CARD'])
-            
-            if is_self_payment:
-                # Пополнение собственного баланса - только увеличиваем
-                sender = self.sender
-                if hasattr(sender, 'cash_balance') and hasattr(sender, 'card_balance'):
-                    if self.payment_type == 'CASH':
-                        sender.cash_balance += self.amount
-                    elif self.payment_type == 'CARD':
-                        sender.card_balance += self.amount
-                    sender.save()
-                    logger.info(f"Пополнен {self.payment_type} баланс для {sender}: +{self.amount}")
-            else:
-                # Обычный перевод между разными участниками
-                # Обновляем баланс отправителя (уменьшаем)
-                sender = self.sender
-                if sender:
-                    if hasattr(sender, 'cash_balance') and hasattr(sender, 'card_balance'):
-                        if self.payment_type == 'CASH':
-                            sender.cash_balance -= self.amount
-                        elif self.payment_type == 'CARD':
-                            sender.card_balance -= self.amount
-                        sender.save()
-                        logger.info(f"Списан {self.payment_type} баланс для {sender}: -{self.amount}")
-                
-                # Обновляем баланс получателя (увеличиваем)
-                recipient = self.recipient
-                if recipient:
-                    if hasattr(recipient, 'cash_balance') and hasattr(recipient, 'card_balance'):
-                        if self.payment_type == 'CASH':
-                            recipient.cash_balance += self.amount
-                        elif self.payment_type == 'CARD':
-                            recipient.card_balance += self.amount
-                        recipient.save()
-                        logger.info(f"Зачислен {self.payment_type} баланс для {recipient}: +{self.amount}")
-                    
-        except Exception as e:
-            # Логируем ошибку, но не прерываем сохранение платежа
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Ошибка обновления балансов для платежа {self.id}: {e}")
-    
-    @classmethod
-    def recalculate_all_balances(cls):
-        """Пересчитывает все балансы на основе существующих платежей"""
-        from django.db import transaction
-        
-        with transaction.atomic():
-            # Сбрасываем все балансы
-            for model_class in [Client, Warehouse, Line, Company]:
-                model_class.objects.all().update(
-                    cash_balance=0,
-                    card_balance=0
-                )
-            
-            # Пересчитываем балансы на основе платежей
-            for payment in cls.objects.all().order_by('date'):
-                # Временно отключаем автоматическое обновление балансов
-                # чтобы избежать двойного обновления
-                payment._skip_balance_update = True
-                payment.update_balances()
-                payment._skip_balance_update = False
-    
-    @classmethod
-    def reset_all_balances(cls):
-        """Полностью обнуляет все балансы всех партнеров и компаний"""
-        from django.db import transaction
-        
-        with transaction.atomic():
-            # Обнуляем все балансы
-            for model_class in [Client, Warehouse, Line, Company]:
-                model_class.objects.all().update(
-                    cash_balance=0,
-                    card_balance=0,
-                    invoice_balance=0
-                )
-            
-            # Также обнуляем устаревшие поля для совместимости
-            Client.objects.all().update(
-                debt=0
-            )
-            
-            logger.info("Все балансы партнеров и компаний обнулены")
-            
-        return {
-            'message': 'Все балансы успешно обнулены',
-            'affected_models': ['Client', 'Warehouse', 'Line', 'Company'],
-            'timestamp': timezone.now()
-        }
-
-    def __str__(self):
-        sender_str = str(self.sender) if self.sender else "Неизвестно"
-        recipient_str = str(self.recipient) if self.recipient else "Неизвестно"
-        return f"Платеж {self.amount} от {sender_str} к {recipient_str}"
-
-    objects = OptimizedPaymentManager()
-    
-    class Meta:
-        verbose_name = "Платеж (старая система)"
-        verbose_name_plural = "Платежи (старая система)"
-        db_table = 'core_payment'  # Сохраняем старое имя таблицы
-        ordering = ['-date']
-        indexes = [
-            models.Index(fields=['invoice', 'date']),
-            models.Index(fields=['from_client']),
-            models.Index(fields=['from_warehouse']),
-            models.Index(fields=['from_line']),
-            models.Index(fields=['from_company']),
-            models.Index(fields=['to_client']),
-            models.Index(fields=['to_warehouse']),
-            models.Index(fields=['to_line']),
-            models.Index(fields=['to_company']),
-            models.Index(fields=['payment_type']),
-            # Дополнительные составные индексы
-            models.Index(fields=['date', 'payment_type']),
-            models.Index(fields=['from_client', 'date']),
-            models.Index(fields=['to_client', 'date']),
-        ]
-
-# Декларации
-class Declaration(models.Model):
-    number = models.CharField(max_length=20, unique=True, verbose_name="Номер декларации")
-    container = models.ForeignKey(Container, on_delete=models.CASCADE, verbose_name="Контейнер")
-    customs_procedure = models.CharField(max_length=20, choices=Container.CUSTOMS_PROCEDURE_CHOICES,
-                                         verbose_name="Таможенная процедура")
-    date = models.DateField(verbose_name="Дата оформления")
-
-    class Meta:
-        verbose_name = "Декларация"
-        verbose_name_plural = "Декларации"
-
-    def __str__(self):
-        return self.number
-
-# Бухгалтерия
-class Accounting(models.Model):
-    invoice = models.ForeignKey(InvoiceOLD, on_delete=models.CASCADE, verbose_name="Инвойс")
-    payment = models.ForeignKey(PaymentOLD, on_delete=models.CASCADE, null=True, blank=True, verbose_name="Платеж")
-    sync_status = models.CharField(max_length=20, default="PENDING", verbose_name="Статус синхронизации")
-    sync_date = models.DateTimeField(null=True, blank=True, verbose_name="Дата синхронизации")
-
-    class Meta:
-        verbose_name = "Бухгалтерская запись"
-        verbose_name_plural = "Бухгалтерия"
-
-    def __str__(self):
-        return f"{self.invoice} - {self.sync_status}"
-
-
-# Новые модели для системы услуг
+# Модели для системы услуг
 
 
 

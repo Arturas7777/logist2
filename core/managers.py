@@ -15,7 +15,7 @@ class OptimizedCarManager(models.Manager):
         """Получить автомобили с предзагруженными связанными объектами"""
         return self.select_related(
             'client', 'warehouse', 'container', 'container__line'
-        ).prefetch_related('invoiceold_set')
+        )
     
     def by_client(self, client_id):
         """Автомобили клиента с оптимизацией"""
@@ -45,14 +45,6 @@ class OptimizedCarManager(models.Manager):
         cutoff_date = timezone.now().date() - timedelta(days=days)
         return self.with_related().filter(unload_date__gte=cutoff_date)
     
-    def with_balance_info(self):
-        """Автомобили с информацией о балансах"""
-        return self.with_related().annotate(
-            total_invoices=Sum('invoiceold__total_amount'),
-            paid_invoices=Sum('invoiceold__paid_amount'),
-            balance_difference=models.F('total_invoices') - models.F('paid_invoices')
-        )
-    
     def search_cars(self, query):
         """Поиск автомобилей по VIN, марке, году"""
         return self.with_related().filter(
@@ -60,16 +52,6 @@ class OptimizedCarManager(models.Manager):
             Q(brand__icontains=query) |
             Q(year__icontains=query)
         )
-    
-    def update_related(self, instance):
-        """Обновить связанные объекты автомобиля"""
-        # Проверяем, что у экземпляра есть первичный ключ
-        if not instance.pk:
-            return
-            
-        for invoice in instance.invoiceold_set.all():
-            invoice.update_total_amount()
-            invoice.save()
 
 
 class OptimizedInvoiceManager(models.Manager):
@@ -228,20 +210,8 @@ class OptimizedClientManager(models.Manager):
     """Оптимизированный менеджер для модели Client"""
     
     def with_balance_info(self):
-        """Клиенты с информацией о балансах - БЫСТРАЯ ВЕРСИЯ через annotate"""
+        """Клиенты с информацией о балансах - использует единое поле balance"""
         return self.annotate(
-            # Общая сумма входящих инвойсов
-            total_invoiced=Sum(
-                'invoiceold__total_amount',
-                filter=Q(invoiceold__is_outgoing=False)
-            ),
-            # Общая сумма платежей по инвойсам
-            total_paid=Sum(
-                'payments_sent__amount',
-                filter=Q(payments_sent__invoice__isnull=False)
-            ),
-            # Реальный баланс (инвойсы - платежи)
-            calculated_real_balance=models.F('total_invoiced') - models.F('total_paid'),
             # Количество автомобилей
             cars_count=Count('car'),
             # Активные автомобили
@@ -249,10 +219,10 @@ class OptimizedClientManager(models.Manager):
                 'car', 
                 filter=Q(car__status__in=['FLOATING', 'IN_PORT', 'UNLOADED'])
             ),
-            # Неоплаченные инвойсы
+            # Неоплаченные инвойсы (новая система)
             unpaid_invoices_count=Count(
-                'invoiceold',
-                filter=Q(invoiceold__paid=False)
+                'received_invoices_new',
+                filter=Q(received_invoices_new__status__in=['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'])
             )
         )
     
@@ -261,8 +231,8 @@ class OptimizedClientManager(models.Manager):
         cutoff_date = timezone.now().date() - timedelta(days=days)
         return self.with_balance_info().filter(
             Q(car__unload_date__gte=cutoff_date) |
-            Q(invoiceold__issue_date__gte=cutoff_date) |
-            Q(payments_sent__date__gte=cutoff_date)
+            Q(received_invoices_new__date__gte=cutoff_date) |
+            Q(transactions_sent_new__date__gte=cutoff_date)
         ).distinct()
     
     def search_clients(self, query):
