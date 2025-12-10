@@ -7,7 +7,8 @@ from django.contrib.auth.decorators import login_required
 from django.db.models import Q, Sum
 from datetime import timedelta, datetime
 from typing import Optional
-from .models import Car, InvoiceOLD as Invoice, Container, PaymentOLD as Payment, Client, Warehouse, Line, Company, Carrier, CarService, WarehouseService, LineService, CarrierService
+from .models import Car, Container, Client, Warehouse, Line, Company, Carrier, CarService, WarehouseService, LineService, CarrierService
+from .models_billing import NewInvoice as Invoice, Transaction as Payment
 from .services.comparison_service import ComparisonService
 from .pagination import paginate_queryset, paginated_json_response, PaginationHelper
 from .cache_utils import cache_company_stats, cache_client_stats, cache_warehouse_stats, cache_comparison_data
@@ -984,3 +985,103 @@ def sync_container_photos_from_gdrive(request, container_id):
     except Exception as e:
         logger.error(f"Error syncing Google Drive photos: {e}", exc_info=True)
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@staff_member_required
+@require_GET
+def search_counterparties(request):
+    """
+    API для поиска контрагентов (клиенты, склады, линии, перевозчики, компании)
+    Используется для автокомплита в форме инвойса
+    """
+    query = request.GET.get('q', '').strip()
+    
+    if len(query) < 1:
+        return JsonResponse({'results': []})
+    
+    results = []
+    
+    # Поиск по компаниям
+    companies = Company.objects.filter(name__icontains=query)[:5]
+    for obj in companies:
+        results.append({
+            'id': f'company_{obj.pk}',
+            'text': f'🏢 {obj.name}',
+            'type': 'company',
+            'type_id': obj.pk,
+        })
+    
+    # Поиск по клиентам
+    clients = Client.objects.filter(name__icontains=query)[:5]
+    for obj in clients:
+        results.append({
+            'id': f'client_{obj.pk}',
+            'text': f'👤 {obj.name}',
+            'type': 'client',
+            'type_id': obj.pk,
+        })
+    
+    # Поиск по складам
+    warehouses = Warehouse.objects.filter(name__icontains=query)[:5]
+    for obj in warehouses:
+        results.append({
+            'id': f'warehouse_{obj.pk}',
+            'text': f'🏭 {obj.name}',
+            'type': 'warehouse',
+            'type_id': obj.pk,
+        })
+    
+    # Поиск по линиям
+    lines = Line.objects.filter(name__icontains=query)[:5]
+    for obj in lines:
+        results.append({
+            'id': f'line_{obj.pk}',
+            'text': f'🚢 {obj.name}',
+            'type': 'line',
+            'type_id': obj.pk,
+        })
+    
+    # Поиск по перевозчикам
+    carriers = Carrier.objects.filter(Q(name__icontains=query) | Q(contact_person__icontains=query))[:5]
+    for obj in carriers:
+        results.append({
+            'id': f'carrier_{obj.pk}',
+            'text': f'🚚 {obj.name}',
+            'type': 'carrier',
+            'type_id': obj.pk,
+        })
+    
+    return JsonResponse({'results': results})
+
+
+@staff_member_required
+@require_GET
+def search_cars(request):
+    """
+    API для поиска автомобилей по VIN, марке
+    Используется для автокомплита в форме инвойса
+    """
+    query = request.GET.get('q', '').strip()
+    selected = request.GET.getlist('selected', [])  # Уже выбранные ID
+    
+    if len(query) < 2:
+        return JsonResponse({'results': []})
+    
+    # Исключаем уже выбранные
+    cars = Car.objects.filter(
+        Q(vin__icontains=query) | Q(brand__icontains=query)
+    ).exclude(pk__in=selected).select_related('client')[:15]
+    
+    results = []
+    for car in cars:
+        client_name = car.client.name if car.client else 'Без клиента'
+        results.append({
+            'id': car.pk,
+            'text': f'{car.brand} {car.year} ({car.vin})',
+            'vin': car.vin,
+            'brand': car.brand,
+            'year': car.year,
+            'client': client_name,
+        })
+    
+    return JsonResponse({'results': results})

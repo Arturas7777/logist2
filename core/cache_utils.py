@@ -31,7 +31,8 @@ def cache_company_stats():
     if cached_data is not None:
         return cached_data
     
-    from .models import Company, InvoiceOLD as Invoice, PaymentOLD as Payment, Car
+    from .models import Company, Car
+    from .models_billing import NewInvoice as Invoice, Transaction as Payment
     
     try:
         # Получаем компанию по умолчанию
@@ -112,7 +113,8 @@ def cache_client_stats(client_id):
     if cached_data is not None:
         return cached_data
     
-    from .models import Client, Car, InvoiceOLD as Invoice, PaymentOLD as Payment
+    from .models import Client, Car
+    from .models_billing import NewInvoice as Invoice, Transaction as Payment
     
     try:
         client = Client.objects.get(id=client_id)
@@ -188,7 +190,8 @@ def cache_warehouse_stats(warehouse_id):
     if cached_data is not None:
         return cached_data
     
-    from .models import Warehouse, Car, Container, InvoiceOLD as Invoice, PaymentOLD as Payment
+    from .models import Warehouse, Car, Container
+    from .models_billing import NewInvoice as Invoice, Transaction as Payment
     
     try:
         warehouse = Warehouse.objects.get(id=warehouse_id)

@@ -346,8 +346,8 @@ class NewInvoice(models.Model):
     _balance_updated = models.BooleanField(default=False, editable=False)
     
     class Meta:
-        verbose_name = "Инвойс (новая система)"
-        verbose_name_plural = "Инвойсы (новая система)"
+        verbose_name = "Инвойс"
+        verbose_name_plural = "Инвойсы"
         ordering = ['-date', '-created_at']
         indexes = [
             models.Index(fields=['number']),
@@ -446,16 +446,19 @@ class NewInvoice(models.Model):
     
     def update_status(self):
         """Обновить статус на основе оплаты"""
-        if self.paid_amount >= self.total:
+        # Не меняем статус если total = 0 (инвойс без позиций)
+        if self.total > 0 and self.paid_amount >= self.total:
             self.status = 'PAID'
-        elif self.paid_amount > 0:
+        elif self.paid_amount > 0 and self.total > 0:
             self.status = 'PARTIALLY_PAID'
         elif self.is_overdue:
             self.status = 'OVERDUE'
         elif self.status == 'DRAFT':
             pass  # Остается черновиком
-        else:
+        elif self.status == 'PAID' and self.total == 0:
+            # Если был PAID но теперь total=0, сбрасываем на ISSUED
             self.status = 'ISSUED'
+        # Если уже установлен валидный статус - не меняем
     
     def generate_number(self):
         """Сгенерировать уникальный номер инвойса"""

@@ -15,7 +15,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django import forms
 from decimal import Decimal
-from .models import Client, Warehouse, Car, InvoiceOLD, PaymentOLD, Container, Declaration, Accounting, Line, Company, Carrier, LineService, CarrierService, WarehouseService, CarService, DeletedCarService
+from .models import Client, Warehouse, Car, Container, Line, Company, Carrier, LineService, CarrierService, WarehouseService, CarService, DeletedCarService
 from .forms import LineForm, CarrierForm, WarehouseForm
 from .admin_filters import MultiStatusFilter, MultiWarehouseFilter
 
@@ -286,9 +286,7 @@ class ContainerAdmin(admin.ModelAdmin):
                     car.calculate_total_price()
                     cars_to_update.append(car)
                     
-                    # Собираем инвойсы для обновления
-                    for invoice in car.invoiceold_set.all():
-                        affected_invoices.add(invoice)
+                    # Собираем инвойсы для обновления (только новая система)
                     for invoice in car.newinvoice_set.all():
                         affected_invoices.add(invoice)
                 
@@ -1385,11 +1383,9 @@ class CarAdmin(admin.ModelAdmin):
 
 @admin.register(Warehouse)
 class WarehouseAdmin(admin.ModelAdmin):
-    list_display = (
-        'name', 'address', 'free_days', 'rate', 'balance_display', 'cash_balance_display', 'card_balance_display'
-    )
+    list_display = ('name', 'address', 'free_days', 'rate', 'balance_display')
     search_fields = ('name', 'address')
-    readonly_fields = ('balance_summary_display', 'balance_transactions_display')
+    readonly_fields = ('balance',)
     exclude = (
         'default_unloading_fee', 'delivery_to_warehouse', 'loading_on_trawl',
         'documents_fee', 'transfer_fee', 'transit_declaration', 'export_declaration',
@@ -1405,15 +1401,15 @@ class WarehouseAdmin(admin.ModelAdmin):
             'description': 'Настройки для расчета стоимости хранения на складе. Ставка за сутки умножается на количество дней хранения минус бесплатные дни.'
         }),
         ('Баланс', {
-            'fields': ('balance_summary_display', 'balance_transactions_display'),
-            'description': 'Информация о балансе склада и транзакциях'
+            'fields': ('balance',),
+            'description': 'Баланс склада'
         }),
     )
 
     def balance_display(self, obj):
-        """Показывает общий баланс склада"""
+        """Показывает баланс склада"""
         try:
-            balance = obj.invoice_balance + obj.cash_balance + obj.card_balance
+            balance = obj.balance or 0
             color = '#28a745' if balance >= 0 else '#dc3545'
             sign = '+' if balance >= 0 else ''
             return format_html(
@@ -1422,61 +1418,21 @@ class WarehouseAdmin(admin.ModelAdmin):
             )
         except:
             return '-'
-    balance_display.short_description = 'Общий баланс'
-
-    def cash_balance_display(self, obj):
-        """Показывает наличный баланс склада"""
-        try:
-            balance = obj.cash_balance or 0
-            color = '#28a745' if balance >= 0 else '#dc3545'
-            sign = '+' if balance >= 0 else ''
-            return format_html(
-                '<span style="color:{}; font-weight:600;">{} {:.2f}</span>',
-                color, sign, balance
-            )
-        except:
-            return '-'
-    cash_balance_display.short_description = 'Наличные'
-
-    def card_balance_display(self, obj):
-        """Показывает безналичный баланс склада"""
-        try:
-            balance = obj.card_balance or 0
-            color = '#28a745' if balance >= 0 else '#dc3545'
-            sign = '+' if balance >= 0 else ''
-            return format_html(
-                '<span style="color:{}; font-weight:600;">{} {:.2f}</span>',
-                color, sign, balance
-            )
-        except:
-            return '-'
-    card_balance_display.short_description = 'Безналичные'
+    balance_display.short_description = 'Баланс'
 
     def balance_summary_display(self, obj):
         """Показывает сводку по балансу склада"""
         try:
-            cash_balance = obj.cash_balance or 0
-            card_balance = obj.card_balance or 0
-            invoice_balance = obj.invoice_balance or 0
-            total_balance = cash_balance + card_balance + invoice_balance
+            balance = obj.balance or 0
             
             html = f"""
             <div style="background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #dee2e6;">
-                <h3 style="margin-top:0; color:#495057;">Сводка по балансу склада</h3>
+                <h3 style="margin-top:0; color:#495057;">Баланс склада</h3>
                 
-                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:15px; margin-bottom:20px;">
-                    <div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">
-                        <strong>Наличный баланс:</strong><br>
-                        <span style="font-size:18px; color:{'#28a745' if cash_balance >= 0 else '#dc3545'};">{cash_balance:.2f}</span>
-                    </div>
-                    <div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">
-                        <strong>Безналичный баланс:</strong><br>
-                        <span style="font-size:18px; color:{'#28a745' if card_balance >= 0 else '#dc3545'};">{card_balance:.2f}</span>
-                    </div>
-                    <div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">
-                        <strong>Инвойс-баланс:</strong><br>
-                        <span style="font-size:18px; color:{'#28a745' if invoice_balance >= 0 else '#dc3545'};">{invoice_balance:.2f}</span>
-                    </div>
+                <div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">
+                    <strong>Баланс:</strong><br>
+                    <span style="font-size:18px; color:{'#28a745' if balance >= 0 else '#dc3545'};">{balance:.2f}</span>
+                </div>
                 </div>
                 
                 <div style="background:white; padding:15px; border-radius:5px; border:2px solid {'#28a745' if total_balance >= 0 else '#dc3545'};">
@@ -1539,9 +1495,7 @@ class WarehouseAdmin(admin.ModelAdmin):
         
         try:
             for warehouse in queryset:
-                warehouse.cash_balance = 0
-                warehouse.card_balance = 0
-                warehouse.invoice_balance = 0
+                warehouse.balance = 0
                 warehouse.save()
             
             messages.success(request, f'Балансы {queryset.count()} складов успешно обнулены')
@@ -1660,11 +1614,11 @@ class WarehouseAdmin(admin.ModelAdmin):
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
     change_form_template = 'admin/client_change.html'
-    list_display = ('name', 'new_balance_display', 'balance_status_new', 'old_balances_display', 'sync_status')
+    list_display = ('name', 'new_balance_display', 'balance_status_new')
     list_filter = ('name',)
     search_fields = ('name',)
-    actions = ['reset_balances', 'recalculate_balance', 'sync_all_balances', 'reset_client_balance']
-    readonly_fields = ('balance', 'balance_updated_at', 'new_invoices_display', 'new_transactions_display', 'balance_summary_display', 'balance_transactions_display')
+    actions = ['reset_balances', 'recalculate_balance', 'reset_client_balance']
+    readonly_fields = ('balance', 'balance_updated_at', 'new_invoices_display', 'new_transactions_display')
     
     def get_queryset(self, request):
         """ОПТИМИЗАЦИЯ: Используем with_balance_info для предрасчета данных"""
@@ -1678,14 +1632,9 @@ class ClientAdmin(admin.ModelAdmin):
         ('Основная информация', {
             'fields': ('name',)
         }),
-        ('💰 НОВАЯ СИСТЕМА БАЛАНСОВ', {
+        ('💰 Баланс', {
             'fields': ('balance', 'balance_updated_at', 'new_invoices_display', 'new_transactions_display'),
-            'description': '✨ Новая упрощенная система с единым балансом и полной историей транзакций'
-        }),
-        ('📊 Старая система (для справки)', {
-            'fields': ('debt', 'cash_balance', 'card_balance', 'invoice_balance', 'balance_summary_display', 'balance_transactions_display'),
-            'classes': ('collapse',),
-            'description': 'Старые балансы - только для просмотра. Новые операции используют поле "balance" выше.'
+            'description': 'Единый баланс клиента с историей транзакций'
         }),
     )
 
@@ -1715,32 +1664,6 @@ class ClientAdmin(admin.ModelAdmin):
         )
     balance_status_display.short_description = 'Статус'
 
-    def cash_balance_display(self, obj):
-        """Показывает наличный баланс"""
-        balance = obj.cash_balance
-        color = '#28a745' if balance >= 0 else '#dc3545'
-        sign = '+' if balance >= 0 else ''
-        formatted = f"{balance:.2f}"
-        
-        return format_html(
-            '<span style="color:{}; font-weight:600;">{} {}</span>',
-            color, sign, formatted
-        )
-    cash_balance_display.short_description = 'Наличные'
-
-    def card_balance_display(self, obj):
-        """Показывает безналичный баланс"""
-        balance = obj.card_balance
-        color = '#28a745' if balance >= 0 else '#dc3545'
-        sign = '+' if balance >= 0 else ''
-        formatted = f"{balance:.2f}"
-        
-        return format_html(
-            '<span style="color:{}; font-weight:600;">{} {}</span>',
-            color, sign, formatted
-        )
-    card_balance_display.short_description = 'Безналичные'
-    
     def new_balance_display(self, obj):
         """НОВАЯ СИСТЕМА - единый баланс"""
         balance = obj.balance
@@ -1772,14 +1695,6 @@ class ClientAdmin(admin.ModelAdmin):
             return format_html('<span style="background:#6c757d; color:white; padding:3px 8px; border-radius:3px;">OK</span>')
     balance_status_new.short_description = 'Статус'
     
-    def old_balances_display(self, obj):
-        """Старые балансы"""
-        return format_html(
-            '<small style="color:#999;">Inv:{} Cash:{} Card:{}</small>',
-            int(obj.invoice_balance), int(obj.cash_balance), int(obj.card_balance)
-        )
-    old_balances_display.short_description = 'Старые'
-    
     def new_invoices_display(self, obj):
         """Показывает инвойсы из новой системы"""
         from core.models_billing import NewInvoice
@@ -1804,7 +1719,7 @@ class ClientAdmin(admin.ModelAdmin):
         
         html += '</table>'
         return format_html(html)
-    new_invoices_display.short_description = 'Инвойсы (новая система)'
+    new_invoices_display.short_description = 'Инвойсы'
     
     def new_transactions_display(self, obj):
         """Показывает транзакции из новой системы"""
@@ -1833,122 +1748,7 @@ class ClientAdmin(admin.ModelAdmin):
         
         html += '</table>'
         return format_html(html)
-    new_transactions_display.short_description = 'Транзакции (новая система)'
-
-    def sync_status(self, obj):
-        """Показывает, синхронизированы ли поля с реальными данными"""
-        summary = obj.get_balance_summary()
-        stored_debt = obj.debt  # Используем поле debt из модели
-        real_balance = summary['real_balance']
-        
-        if abs(stored_debt - real_balance) < Decimal('0.01'):
-            return format_html(
-                '<span style="color:#28a745; font-weight:bold;">✓ Синхронизирован</span>'
-            )
-        else:
-            return format_html(
-                '<span style="color:#dc3545; font-weight:bold;">⚠ Не синхронизирован</span>'
-            )
-    sync_status.short_description = 'Статус синхронизации'
-
-    def balance_summary_display(self, obj):
-        """Показывает детальную сводку по балансу в форме редактирования"""
-        summary = obj.get_balance_summary()
-        
-        html = f"""
-        <div style="background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #dee2e6;">
-            <h3 style="margin-top:0; color:#495057;">Сводка по балансу клиента</h3>
-            
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px; margin-bottom:20px;">
-                <div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">
-                    <strong>Общая сумма инвойсов:</strong><br>
-                    <span style="font-size:18px; color:#495057;">{obj.total_invoiced_amount:.2f}</span>
-                </div>
-                <div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">
-                    <strong>Общая сумма платежей:</strong><br>
-                    <span style="font-size:18px; color:#495057;">{obj.total_paid_amount:.2f}</span>
-                </div>
-            </div>
-            
-            <div style="background:white; padding:15px; border-radius:5px; border:2px solid {summary['balance_color']}; margin-bottom:20px;">
-                <strong style="color:{summary['balance_color']};">Инвойс-баланс:</strong><br>
-                <span style="font-size:24px; font-weight:bold; color:{summary['balance_color']};">{summary['real_balance']:.2f}</span><br>
-                <span style="background:{summary['balance_color']}; color:white; padding:4px 8px; border-radius:4px; font-size:12px;">{summary['balance_status']}</span>
-            </div>
-            
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px;">
-                <div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">
-                    <strong>Наличный баланс:</strong><br>
-                    <span style="font-size:16px; color:{'#28a745' if summary['cash_balance'] >= 0 else '#dc3545'};">{summary['cash_balance']:.2f}</span>
-                </div>
-                <div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">
-                    <strong>Безналичный баланс:</strong><br>
-                    <span style="font-size:16px; color:{'#28a745' if summary['card_balance'] >= 0 else '#dc3545'};">{summary['card_balance']:.2f}</span>
-                </div>
-            </div>
-            
-            <div style="margin-top:20px; padding:10px; background:#fff3cd; border:1px solid #ffeaa7; border-radius:5px;">
-                <strong>Поле debt в БД:</strong> {obj.debt:.2f}<br>
-                <small>Это поле должно совпадать с инвойс-балансом. Если не совпадает, используйте действие "Синхронизировать балансы".</small>
-            </div>
-        </div>
-        """
-        
-        return format_html(html)
-    balance_summary_display.short_description = 'Сводка по балансу'
-
-    def balance_transactions_display(self, obj):
-        """Показывает платежи клиента"""
-        try:
-            # Получаем все платежи для клиента
-            payments = Payment.objects.filter(
-                models.Q(from_client=obj) | models.Q(to_client=obj)
-            ).order_by('-date', '-id')[:20]  # Последние 20 платежей
-            
-            if not payments.exists():
-                return format_html('<p style="color:#6c757d;">Нет платежей</p>')
-            
-            html = ['<div style="margin-top:15px;">']
-            html.append('<h4 style="margin-bottom:10px; color:#495057;">Последние платежи</h4>')
-            html.append('<table style="width:100%; border-collapse:collapse; font-size:12px;">')
-            html.append('<tr style="background-color:#f8f9fa;">')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Дата</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Тип</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Сумма</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">От кого</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Кому</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Описание</th>')
-            html.append('</tr>')
-            
-            for payment in payments:
-                # Определяем, является ли клиент отправителем или получателем
-                if payment.from_client == obj:
-                    # Клиент отправляет деньги
-                    amount_color = '#dc3545'  # Красный для исходящих
-                    amount_sign = '-'
-                    amount_display = f"{amount_sign}{payment.amount:.2f}"
-                else:
-                    # Клиент получает деньги
-                    amount_color = '#28a745'  # Зеленый для входящих
-                    amount_sign = '+'
-                    amount_display = f"{amount_sign}{payment.amount:.2f}"
-                
-                html.append('<tr>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.date}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.get_payment_type_display()}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px; color:{amount_color}; font-weight:bold;">{amount_display}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.sender or "-"}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.recipient or "-"}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.description or "-"}</td>')
-                html.append('</tr>')
-            
-            html.append('</table>')
-            html.append('</div>')
-            
-            return format_html(''.join(html))
-        except Exception as e:
-            return format_html(f'<p style="color:#dc3545;">Ошибка загрузки платежей: {e}</p>')
-    balance_transactions_display.short_description = 'Платежи'
+    new_transactions_display.short_description = 'Транзакции'
 
     def recalculate_balance(self, request, queryset):
         """Пересчитывает инвойс-баланс для выбранных клиентов"""
@@ -1992,25 +1792,8 @@ class ClientAdmin(admin.ModelAdmin):
     sync_all_balances.short_description = 'Синхронизировать инвойс-балансы'
 
     def get_queryset(self, request):
-        """Добавляем аннотацию для сортировки по инвойс-балансу"""
-        qs = super().get_queryset(request)
-
-        # Аннотируем инвойс-баланс для сортировки
-        from django.db.models import Sum, Value, DecimalField
-        from django.db.models.functions import Coalesce
-
-
-        
-        # Упрощаем аннотацию - убираем сложный подсчет платежей
-        qs = qs.annotate(
-            _real_balance_annotated=Coalesce(
-                Sum('invoiceold__total_amount', filter=Q(invoiceold__is_outgoing=False)),
-                Value(0),
-                output_field=DecimalField()
-            )
-        )
-
-        return qs
+        """Получаем queryset с оптимизацией"""
+        return Client.objects.with_balance_info()
 
     def change_view(self, request, object_id, form_url='', extra_context=None):
         extra_context = extra_context or {}
@@ -2054,12 +1837,7 @@ class ClientAdmin(admin.ModelAdmin):
         
         try:
             for client in queryset:
-                client.cash_balance = 0
-                client.card_balance = 0
-                client.invoice_balance = 0
-                client.debt = 0
-                client.cash_balance_old = 0
-                client.card_balance_old = 0
+                client.balance = 0
                 client.save()
             
             messages.success(request, f'Балансы {queryset.count()} клиентов успешно обнулены')
@@ -2181,9 +1959,9 @@ class ClientAdmin(admin.ModelAdmin):
 @admin.register(Company)
 class CompanyAdmin(admin.ModelAdmin):
     change_form_template = 'admin/company_change.html'
-    list_display = ('name', 'balance_display', 'cash_balance_display', 'card_balance_display', 'is_main_company', 'created_at', 'updated_at')
+    list_display = ('name', 'balance_display', 'is_main_company', 'created_at', 'updated_at')
     search_fields = ('name',)
-    readonly_fields = ('created_at', 'updated_at', 'balance_summary_display', 'balance_transactions_display', 'invoices_display', 'payments_display')
+    readonly_fields = ('created_at', 'updated_at', 'balance')
     actions = ['reset_company_balance']
     
     fieldsets = (
@@ -2191,19 +1969,8 @@ class CompanyAdmin(admin.ModelAdmin):
             'fields': ('name',)
         }),
         ('Баланс', {
-            'fields': ('balance_summary_display', 'balance_transactions_display'),
-            'description': 'Информация о балансе компании и транзакциях'
-        }),
-        ('Балансы', {
-            'fields': ('invoice_balance', 'cash_balance', 'card_balance')
-        }),
-        ('Связанные инвойсы', {
-            'fields': ('invoices_display',),
-            'description': 'Инвойсы, выставляемые компанией и получаемые компанией'
-        }),
-        ('Платежи', {
-            'fields': ('payments_display',),
-            'description': 'Все платежи, связанные с компанией'
+            'fields': ('balance',),
+            'description': 'Баланс компании'
         }),
         ('Системная информация', {
             'classes': ('collapse',),
@@ -2212,9 +1979,9 @@ class CompanyAdmin(admin.ModelAdmin):
     )
 
     def balance_display(self, obj):
-        """Показывает общий баланс компании"""
+        """Показывает баланс компании"""
         try:
-            balance = (obj.invoice_balance or 0) + (obj.cash_balance or 0) + (obj.card_balance or 0)
+            balance = obj.balance or 0
             color = '#28a745' if balance >= 0 else '#dc3545'
             sign = '+' if balance >= 0 else ''
             return format_html(
@@ -2223,75 +1990,7 @@ class CompanyAdmin(admin.ModelAdmin):
             )
         except:
             return '-'
-    balance_display.short_description = 'Общий баланс'
-
-    def cash_balance_display(self, obj):
-        """Показывает наличный баланс компании"""
-        try:
-            balance = obj.cash_balance or 0
-            color = '#28a745' if balance >= 0 else '#dc3545'
-            sign = '+' if balance >= 0 else ''
-            return format_html(
-                '<span style="color:{}; font-weight:600;">{} {:.2f}</span>',
-                color, sign, balance
-            )
-        except:
-            return '-'
-    cash_balance_display.short_description = 'Наличные'
-
-    def card_balance_display(self, obj):
-        """Показывает безналичный баланс компании"""
-        try:
-            balance = obj.card_balance or 0
-            color = '#28a745' if balance >= 0 else '#dc3545'
-            sign = '+' if balance >= 0 else ''
-            return format_html(
-                '<span style="color:{}; font-weight:600;">{} {:.2f}</span>',
-                color, sign, balance
-            )
-        except:
-            return '-'
-    card_balance_display.short_description = 'Безналичные'
-
-    def balance_summary_display(self, obj):
-        """Показывает сводку по балансу компании"""
-        try:
-            cash_balance = obj.cash_balance or 0
-            card_balance = obj.card_balance or 0
-            invoice_balance = obj.invoice_balance or 0
-            total_balance = cash_balance + card_balance + invoice_balance
-            
-            html = f"""
-            <div style="background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #dee2e6;">
-                <h3 style="margin-top:0; color:#495057;">Сводка по балансу компании</h3>
-                
-                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:15px; margin-bottom:20px;">
-                    <div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">
-                        <strong>Наличный баланс:</strong><br>
-                        <span style="font-size:18px; color:{'#28a745' if cash_balance >= 0 else '#dc3545'};">{cash_balance:.2f}</span>
-                    </div>
-                    <div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">
-                        <strong>Безналичный баланс:</strong><br>
-                        <span style="font-size:18px; color:{'#28a745' if card_balance >= 0 else '#dc3545'};">{card_balance:.2f}</span>
-                    </div>
-                    <div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">
-                        <strong>Инвойс-баланс:</strong><br>
-                        <span style="font-size:18px; color:{'#28a745' if invoice_balance >= 0 else '#dc3545'};">{invoice_balance:.2f}</span>
-                    </div>
-                </div>
-                
-                <div style="background:white; padding:15px; border-radius:5px; border:2px solid {'#28a745' if total_balance >= 0 else '#dc3545'};">
-                    <strong style="color:{'#28a745' if total_balance >= 0 else '#dc3545'};">Общий баланс:</strong><br>
-                    <span style="font-size:24px; font-weight:bold; color:{'#28a745' if total_balance >= 0 else '#dc3545'};">{total_balance:.2f}</span>
-                </div>
-                
-                <!-- Кнопка для перехода к дашборду (только для Caromoto Lithuania) -->
-            </div>
-            """
-            return format_html(html)
-        except:
-            return '-'
-    balance_summary_display.short_description = 'Сводка по балансу'
+    balance_display.short_description = 'Баланс'
     
     def is_main_company(self, obj):
         """Показывает, является ли компания главной"""
@@ -2520,9 +2219,7 @@ class CompanyAdmin(admin.ModelAdmin):
         
         try:
             for company in queryset:
-                company.cash_balance = 0
-                company.card_balance = 0
-                company.invoice_balance = 0
+                company.balance = 0
                 company.save()
             
             messages.success(request, f'Балансы {queryset.count()} компаний успешно обнулены')
@@ -2533,9 +2230,7 @@ class CompanyAdmin(admin.ModelAdmin):
 
 
 # Регистрация моделей в админке Django
-admin.site.register(Declaration)
 admin.site.register(Container, ContainerAdmin)
-admin.site.register(Accounting)
 # LineServiceInline удален - используется кастомный раздел "Управление услугами"
 
 
@@ -2543,9 +2238,9 @@ admin.site.register(Accounting)
 class LineAdmin(admin.ModelAdmin):
     change_form_template = 'admin/line_change.html'
     form = LineForm
-    list_display = ('name', 'balance_display', 'cash_balance_display', 'card_balance_display')
+    list_display = ('name', 'balance_display')
     search_fields = ('name',)
-    readonly_fields = ('balance_summary_display', 'balance_transactions_display')
+    readonly_fields = ('balance',)
     actions = ['reset_line_balance']
     exclude = ('ocean_freight_rate', 'documentation_fee', 'handling_fee', 'ths_fee', 'additional_fees')
     inlines = [LineServiceInline]
@@ -2554,133 +2249,24 @@ class LineAdmin(admin.ModelAdmin):
             'fields': ('name',)
         }),
         ('Баланс', {
-            'fields': ('balance_summary_display', 'balance_transactions_display'),
-            'description': 'Информация о балансе линии и транзакциях'
+            'fields': ('balance',),
+            'description': 'Баланс линии'
         }),
     )
 
     def balance_display(self, obj):
-        """Показывает общий баланс линии"""
+        """Показывает баланс линии"""
         try:
-            balance = (obj.invoice_balance or 0) + (obj.cash_balance or 0) + (obj.card_balance or 0)
+            balance = obj.balance or 0
             color = '#28a745' if balance >= 0 else '#dc3545'
             sign = '+' if balance >= 0 else ''
             return format_html(
                 '<span style="color:{}; font-weight:bold;">{} {:.2f}</span>',
                 color, sign, balance
             )
-        except:
-            return '-'
-    balance_display.short_description = 'Общий баланс'
-
-    def cash_balance_display(self, obj):
-        """Показывает наличный баланс линии"""
-        try:
-            balance = obj.cash_balance or 0
-            color = '#28a745' if balance >= 0 else '#dc3545'
-            sign = '+' if balance >= 0 else ''
-            return format_html(
-                '<span style="color:{}; font-weight:600;">{} {:.2f}</span>',
-                color, sign, balance
-            )
-        except:
-            return '-'
-    cash_balance_display.short_description = 'Наличные'
-
-    def card_balance_display(self, obj):
-        """Показывает безналичный баланс линии"""
-        try:
-            balance = obj.card_balance or 0
-            color = '#28a745' if balance >= 0 else '#dc3545'
-            sign = '+' if balance >= 0 else ''
-            return format_html(
-                '<span style="color:{}; font-weight:600;">{} {:.2f}</span>',
-                color, sign, balance
-            )
-        except:
-            return '-'
-    card_balance_display.short_description = 'Безналичные'
-
-    def balance_summary_display(self, obj):
-        """Показывает сводку по балансу линии"""
-        try:
-            cash_balance = obj.cash_balance or 0
-            card_balance = obj.card_balance or 0
-            invoice_balance = obj.invoice_balance or 0
-            total_balance = cash_balance + card_balance + invoice_balance
-            
-            html = f"""
-            <div style="background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #dee2e6;">
-                <h3 style="margin-top:0; color:#495057;">Сводка по балансу линии</h3>
-                
-                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:15px; margin-bottom:20px;">
-                    <div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">
-                        <strong>Наличный баланс:</strong><br>
-                        <span style="font-size:18px; color:{'#28a745' if cash_balance >= 0 else '#dc3545'};">{cash_balance:.2f}</span>
-                    </div>
-                    <div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">
-                        <strong>Безналичный баланс:</strong><br>
-                        <span style="font-size:18px; color:{'#28a745' if card_balance >= 0 else '#dc3545'};">{card_balance:.2f}</span>
-                    </div>
-                    <div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">
-                        <strong>Инвойс-баланс:</strong><br>
-                        <span style="font-size:18px; color:{'#28a745' if invoice_balance >= 0 else '#dc3545'};">{invoice_balance:.2f}</span>
-                    </div>
-                </div>
-                
-                <div style="background:white; padding:15px; border-radius:5px; border:2px solid {'#28a745' if total_balance >= 0 else '#dc3545'};">
-                    <strong style="color:{'#28a745' if total_balance >= 0 else '#dc3545'};">Общий баланс:</strong><br>
-                    <span style="font-size:24px; font-weight:bold; color:{'#28a745' if total_balance >= 0 else '#dc3545'};">{total_balance:.2f}</span>
-                </div>
-            </div>
-            """
-            
-            return format_html(html)
         except Exception as e:
-            return format_html(f'<p style="color:#dc3545;">Ошибка загрузки баланса: {e}</p>')
-    balance_summary_display.short_description = 'Сводка по балансу'
-
-    def balance_transactions_display(self, obj):
-        """Показывает платежи линии"""
-        try:
-            # Получаем все платежи для линии
-            payments = Payment.objects.filter(
-                models.Q(from_line=obj) | models.Q(to_line=obj)
-            ).order_by('-date', '-id')[:20]  # Последние 20 платежей
-            
-            if not payments.exists():
-                return format_html('<p style="color:#6c757d;">Нет платежей</p>')
-            
-            html = ['<div style="margin-top:15px;">']
-            html.append('<h4 style="margin-bottom:10px; color:#495057;">Последние платежи</h4>')
-            html.append('<table style="width:100%; border-collapse:collapse; font-size:12px;">')
-            html.append('<tr style="background-color:#f8f9fa;">')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Дата</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Тип</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Сумма</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Отправитель</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Получатель</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Описание</th>')
-            html.append('</tr>')
-            
-            for payment in payments:
-                amount_color = '#28a745' if payment.to_line == obj else '#dc3545'
-                html.append('<tr>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.date.strftime("%d.%m.%Y")}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.get_payment_type_display()}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px; color:{amount_color}; font-weight:bold;">{payment.amount:.2f}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.sender or "-"}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.recipient or "-"}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.description or "-"}</td>')
-                html.append('</tr>')
-            
-            html.append('</table>')
-            html.append('</div>')
-            
-            return format_html(''.join(html))
-        except Exception as e:
-            return format_html(f'<p style="color:#dc3545;">Ошибка загрузки платежей: {e}</p>')
-    balance_transactions_display.short_description = 'Платежи'
+            return '-'
+    balance_display.short_description = 'Баланс'
     
     def reset_line_balance(self, request, queryset):
         """Обнуляет балансы выбранных линий"""
@@ -2688,9 +2274,7 @@ class LineAdmin(admin.ModelAdmin):
         
         try:
             for line in queryset:
-                line.cash_balance = 0
-                line.card_balance = 0
-                line.invoice_balance = 0
+                line.balance = 0
                 line.save()
             
             messages.success(request, f'Балансы {queryset.count()} линий успешно обнулены')
@@ -2789,18 +2373,18 @@ class LineAdmin(admin.ModelAdmin):
 class CarrierAdmin(admin.ModelAdmin):
     change_form_template = 'admin/carrier_change.html'
     form = CarrierForm
-    list_display = ('name', 'contact_person', 'phone', 'total_balance')
+    list_display = ('name', 'contact_person', 'phone', 'balance_display')
     search_fields = ('name', 'contact_person', 'phone', 'email')
     list_filter = ('created_at',)
-    readonly_fields = ('created_at', 'updated_at')
+    readonly_fields = ('created_at', 'updated_at', 'balance')
     exclude = ('transport_rate', 'loading_fee', 'unloading_fee', 'fuel_surcharge', 'additional_fees')
     inlines = [CarrierServiceInline]
     fieldsets = (
         ('Основная информация', {
             'fields': ('name', 'short_name', 'contact_person', 'phone', 'email')
         }),
-        ('Балансы', {
-            'fields': ('invoice_balance', 'cash_balance', 'card_balance')
+        ('Баланс', {
+            'fields': ('balance',)
         }),
         ('Системная информация', {
             'fields': ('created_at', 'updated_at'),
@@ -2808,9 +2392,19 @@ class CarrierAdmin(admin.ModelAdmin):
         }),
     )
     
-    def total_balance(self, obj):
-        return obj.invoice_balance + obj.cash_balance + obj.card_balance
-    total_balance.short_description = 'Общий баланс'
+    def balance_display(self, obj):
+        """Показывает баланс перевозчика"""
+        try:
+            balance = obj.balance or 0
+            color = '#28a745' if balance >= 0 else '#dc3545'
+            sign = '+' if balance >= 0 else ''
+            return format_html(
+                '<span style="color:{}; font-weight:bold;">{} {:.2f}</span>',
+                color, sign, balance
+            )
+        except:
+            return '-'
+    balance_display.short_description = 'Баланс'
 
     def change_view(self, request, object_id, form_url='', extra_context=None):
         """Переопределяем change_view для обработки услуг"""

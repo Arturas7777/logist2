@@ -9,7 +9,8 @@ from datetime import timedelta
 from typing import Dict, List, Any
 import logging
 
-from ..models import Car, InvoiceOLD as Invoice, PaymentOLD as Payment, Warehouse, Client, Company
+from ..models import Car, Warehouse, Client, Company
+from ..models_billing import NewInvoice as Invoice, Transaction as Payment
 
 logger = logging.getLogger('django')
 

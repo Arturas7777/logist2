@@ -3,7 +3,8 @@ from django.utils import timezone
 from decimal import Decimal
 from django.contrib.auth import get_user_model
 
-from .models import Client, Warehouse, Container, Car, InvoiceOLD as Invoice, PaymentOLD as Payment
+from .models import Client, Warehouse, Container, Car
+from .models_billing import NewInvoice as Invoice, Transaction as Payment
 
 
 class BillingTests(TestCase):

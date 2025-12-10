@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import Car, InvoiceOLD as Invoice
+from .models import Car
+from .models_billing import NewInvoice
 
 class CarSerializer(serializers.ModelSerializer):
     text = serializers.CharField(source='__str__')
@@ -10,7 +11,11 @@ class CarSerializer(serializers.ModelSerializer):
 
 class InvoiceSerializer(serializers.ModelSerializer):
     cars = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
-    client_name = serializers.CharField(source='client.name', read_only=True)
+    recipient_name = serializers.SerializerMethodField()
+    
     class Meta:
-        model = Invoice
-        fields = ['id', 'number', 'client', 'client_name', 'warehouse', 'total_amount', 'issue_date', 'paid', 'is_outgoing', 'cars']
+        model = NewInvoice
+        fields = ['id', 'number', 'recipient', 'recipient_name', 'total', 'created_at', 'status', 'cars']
+    
+    def get_recipient_name(self, obj):
+        return str(obj.recipient) if obj.recipient else None

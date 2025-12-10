@@ -32,9 +32,13 @@ class InvoiceItemInline(admin.TabularInline):
     """Inline для редактирования позиций инвойса"""
     
     model = InvoiceItem
-    extra = 1
+    extra = 3  # 3 пустые строки для новых позиций
     fields = ('description', 'car', 'quantity', 'unit_price', 'total_price')
     readonly_fields = ('total_price',)
+    autocomplete_fields = ['car']
+    
+    verbose_name = "Позиция инвойса"
+    verbose_name_plural = "📦 Позиции инвойса (редактируемые)"
     
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)
@@ -54,46 +58,34 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     Простая и понятная админка для инвойсов
     """
     
+    change_form_template = 'admin/core/newinvoice/change_form.html'
+    
     class Media:
         css = {
-            'all': ('admin/css/widgets.css', 'css/invoice_admin.css',)
+            'all': ('admin/css/widgets.css',)
         }
         js = ('admin/js/SelectBox.js', 'admin/js/SelectFilter2.js',)
     
     list_display = (
         'number_display',
         'date',
-        'issuer_display',
         'recipient_display',
         'total_display',
         'paid_amount_display',
         'remaining_display',
         'status_display',
-        'due_date',
         'actions_display'
     )
     
     list_filter = (
         'status',
         'date',
-        'due_date',
-        'issuer_company',
-        'issuer_warehouse',
-        'issuer_line',
-        'issuer_carrier',
+        'recipient_client',
     )
     
     search_fields = (
         'number',
         'recipient_client__name',
-        'recipient_warehouse__name',
-        'recipient_line__name',
-        'recipient_carrier__name',
-        'recipient_company__name',
-        'issuer_company__name',
-        'issuer_warehouse__name',
-        'issuer_line__name',
-        'issuer_carrier__name',
         'notes',
     )
     
@@ -105,56 +97,46 @@ class NewInvoiceAdmin(admin.ModelAdmin):
         'created_at',
         'updated_at',
         'created_by',
-        'remaining_amount_display',
-        'status_info_display',
-        'payment_history_display',
     )
     
     fieldsets = (
-        ('Основная информация', {
+        ('📋 Основная информация', {
             'fields': (
-                'number',
-                'date',
-                'due_date',
-                'status',
+                ('date', 'due_date', 'status'),
             )
         }),
-        ('Кто выставил (укажите ОДНО)', {
-            'fields': (
-                ('issuer_company', 'issuer_warehouse', 'issuer_line', 'issuer_carrier'),
-            ),
-            'classes': ('issuer-fields',),
+        ('🏢 Выставитель инвойса', {
+            'fields': ('issuer_company',),
+            'description': 'По умолчанию: Caromoto Lithuania'
         }),
-        ('Кому выставлен (укажите ОДНО)', {
-            'fields': (
-                ('recipient_company', 'recipient_client', 'recipient_warehouse', 'recipient_line', 'recipient_carrier'),
-            ),
-            'classes': ('recipient-fields',),
+        ('👤 Получатель инвойса', {
+            'fields': ('recipient_client',),
         }),
-        ('🚗 Выберите автомобили (позиции создадутся автоматически!)', {
+        ('🚗 Автомобили', {
             'fields': ('cars',),
+            'description': 'Выберите автомобили - позиции создадутся автоматически из их услуг'
         }),
-        ('Финансы', {
+        ('💰 Финансы', {
             'fields': (
-                'subtotal',
-                'discount',
-                'tax',
-                'total',
-                'paid_amount',
-                'remaining_amount_display',
-                'status_info_display',
-            )
-        }),
-        ('История платежей', {
-            'fields': ('payment_history_display',),
+                ('subtotal', 'discount', 'tax'),
+                ('total', 'paid_amount'),
+            ),
             'classes': ('collapse',),
         }),
-        ('Дополнительно', {
+        ('📝 Дополнительно', {
+            'fields': ('notes',),
+            'classes': ('collapse',),
+        }),
+        ('⚙️ Прочие получатели (если не клиент)', {
             'fields': (
-                'notes',
-                'created_at',
-                'updated_at',
-                'created_by',
+                ('recipient_warehouse', 'recipient_line'),
+                ('recipient_carrier', 'recipient_company'),
+            ),
+            'classes': ('collapse',),
+        }),
+        ('⚙️ Прочие выставители (если не компания)', {
+            'fields': (
+                ('issuer_warehouse', 'issuer_line', 'issuer_carrier'),
             ),
             'classes': ('collapse',),
         }),
@@ -162,9 +144,170 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     
     inlines = [InvoiceItemInline]
     
-    filter_horizontal = ('cars',)  # Удобный виджет для выбора множества авто
+    filter_horizontal = ('cars',)
     
-    actions = ['mark_as_paid', 'cancel_invoices', 'export_to_pdf', 'regenerate_items']
+    actions = ['mark_as_paid', 'cancel_invoices', 'regenerate_items']
+    
+    def add_view(self, request, form_url='', extra_context=None):
+        """Кастомная обработка добавления инвойса"""
+        from core.models import Company, Client, Car
+        
+        if request.method == 'POST':
+            return self._handle_custom_form(request, None)
+        
+        extra_context = self._get_extra_context(None, extra_context)
+        return super().add_view(request, form_url, extra_context)
+    
+    def change_view(self, request, object_id, form_url='', extra_context=None):
+        """Кастомная обработка изменения инвойса"""
+        if request.method == 'POST':
+            return self._handle_custom_form(request, object_id)
+        
+        extra_context = self._get_extra_context(object_id, extra_context)
+        return super().change_view(request, object_id, form_url, extra_context)
+    
+    def _get_extra_context(self, object_id, extra_context=None):
+        """Получаем контекст для шаблона"""
+        from core.models import Company, Client, Car
+        
+        extra_context = extra_context or {}
+        
+        # Получаем queryset для всех полей
+        extra_context['companies'] = Company.objects.all().order_by('name')
+        extra_context['clients'] = Client.objects.all().order_by('name')
+        extra_context['cars'] = Car.objects.all().select_related('client').order_by('-id')[:500]
+        
+        # Определяем Caromoto Lithuania по умолчанию
+        try:
+            caromoto = Company.objects.get(name="Caromoto Lithuania")
+            extra_context['default_company_id'] = caromoto.pk
+        except Company.DoesNotExist:
+            extra_context['default_company_id'] = None
+        
+        # Получаем ID выбранных машин для редактирования
+        selected_car_ids = []
+        if object_id:
+            try:
+                invoice = NewInvoice.objects.get(pk=object_id)
+                selected_car_ids = list(invoice.cars.values_list('pk', flat=True))
+            except NewInvoice.DoesNotExist:
+                pass
+        extra_context['selected_car_ids'] = selected_car_ids
+        
+        return extra_context
+    
+    def _handle_custom_form(self, request, object_id):
+        """Обрабатываем кастомную форму"""
+        from core.models import Company, Client, Car
+        from django.utils import timezone
+        from datetime import datetime
+        
+        try:
+            # Получаем или создаем инвойс
+            if object_id:
+                invoice = NewInvoice.objects.get(pk=object_id)
+            else:
+                invoice = NewInvoice()
+            
+            # Заполняем поля из POST
+            date_str = request.POST.get('date')
+            if date_str:
+                invoice.date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            
+            due_date_str = request.POST.get('due_date')
+            if due_date_str:
+                invoice.due_date = datetime.strptime(due_date_str, '%Y-%m-%d').date()
+            else:
+                invoice.due_date = None
+            
+            invoice.status = request.POST.get('status', 'ISSUED')
+            invoice.notes = request.POST.get('notes', '')
+            
+            # Очищаем все поля выставителя и получателя перед установкой новых
+            invoice.issuer_company = None
+            invoice.issuer_warehouse = None
+            invoice.issuer_line = None
+            invoice.issuer_carrier = None
+            invoice.recipient_client = None
+            invoice.recipient_company = None
+            invoice.recipient_warehouse = None
+            invoice.recipient_line = None
+            invoice.recipient_carrier = None
+            
+            # Выставитель (парсим формат "type_id", например "company_123")
+            issuer_value = request.POST.get('issuer', '')
+            if issuer_value and '_' in issuer_value:
+                issuer_type, issuer_id = issuer_value.rsplit('_', 1)
+                if issuer_type == 'company':
+                    invoice.issuer_company = Company.objects.get(pk=issuer_id)
+                elif issuer_type == 'warehouse':
+                    from core.models import Warehouse
+                    invoice.issuer_warehouse = Warehouse.objects.get(pk=issuer_id)
+                elif issuer_type == 'line':
+                    from core.models import Line
+                    invoice.issuer_line = Line.objects.get(pk=issuer_id)
+                elif issuer_type == 'carrier':
+                    from core.models import Carrier
+                    invoice.issuer_carrier = Carrier.objects.get(pk=issuer_id)
+            else:
+                # По умолчанию Caromoto Lithuania
+                try:
+                    invoice.issuer_company = Company.objects.get(name="Caromoto Lithuania")
+                except Company.DoesNotExist:
+                    pass
+            
+            # Получатель (парсим формат "type_id", например "client_456")
+            recipient_value = request.POST.get('recipient', '')
+            if recipient_value and '_' in recipient_value:
+                recipient_type, recipient_id = recipient_value.rsplit('_', 1)
+                if recipient_type == 'client':
+                    invoice.recipient_client = Client.objects.get(pk=recipient_id)
+                elif recipient_type == 'company':
+                    invoice.recipient_company = Company.objects.get(pk=recipient_id)
+                elif recipient_type == 'warehouse':
+                    from core.models import Warehouse
+                    invoice.recipient_warehouse = Warehouse.objects.get(pk=recipient_id)
+                elif recipient_type == 'line':
+                    from core.models import Line
+                    invoice.recipient_line = Line.objects.get(pk=recipient_id)
+                elif recipient_type == 'carrier':
+                    from core.models import Carrier
+                    invoice.recipient_carrier = Carrier.objects.get(pk=recipient_id)
+            
+            # Сохраняем инвойс
+            invoice.save()
+            
+            # Обрабатываем автомобили (ManyToMany)
+            car_ids = request.POST.getlist('cars')
+            if car_ids:
+                cars = Car.objects.filter(pk__in=car_ids)
+                invoice.cars.set(cars)
+                # Генерируем позиции из услуг автомобилей
+                invoice.regenerate_items_from_cars()
+                messages.success(request, f'✅ Инвойс {invoice.number} сохранен! Создано {invoice.items.count()} позиций.')
+            else:
+                invoice.cars.clear()
+                messages.success(request, f'✅ Инвойс {invoice.number} сохранен!')
+            
+            # Определяем куда редиректить
+            if '_save' in request.POST:
+                return redirect('admin:core_newinvoice_changelist')
+            elif '_continue' in request.POST:
+                return redirect('admin:core_newinvoice_change', invoice.pk)
+            elif '_addanother' in request.POST:
+                return redirect('admin:core_newinvoice_add')
+            else:
+                return redirect('admin:core_newinvoice_changelist')
+                
+        except Exception as e:
+            messages.error(request, f'Ошибка при сохранении инвойса: {str(e)}')
+            import traceback
+            traceback.print_exc()
+            
+            if object_id:
+                return redirect('admin:core_newinvoice_change', object_id)
+            else:
+                return redirect('admin:core_newinvoice_add')
     
     def save_model(self, request, obj, form, change):
         """Сохраняем инвойс и автоматически генерируем позиции из автомобилей"""
