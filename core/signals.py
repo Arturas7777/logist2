@@ -110,9 +110,96 @@ def save_old_contractors(sender, instance, **kwargs):
         except Car.DoesNotExist:
             pass
 
+def find_line_service_by_container_count(line, container, vehicle_type):
+    """
+    Находит подходящую услугу линии на основе количества авто в контейнере и типа ТС.
+    
+    Логика выбора:
+    - Для мотоциклов: ищем "THS {ЛИНИЯ} MOTO" или "MOTO" в названии
+    - Для авто: ищем "THS {ЛИНИЯ} {КОЛ-ВО} АВТО" или "{КОЛ-ВО} АВТО" в названии
+    """
+    if not line or not container:
+        return None
+    
+    line_name_upper = line.name.upper()
+    
+    # Считаем количество авто в контейнере (исключая текущий, если он уже там)
+    car_count = container.container_cars.count()
+    
+    # Получаем все активные услуги линии
+    services = LineService.objects.filter(line=line, is_active=True)
+    
+    if vehicle_type == 'MOTO':
+        # Для мотоциклов ищем услугу с MOTO в названии
+        for service in services:
+            service_name_upper = service.name.upper()
+            if 'MOTO' in service_name_upper:
+                # Проверяем что это услуга для этой линии
+                if line_name_upper in service_name_upper or 'THS' in service_name_upper:
+                    return service
+        # Если не нашли специфичную, ищем любую с MOTO
+        for service in services:
+            if 'MOTO' in service.name.upper():
+                return service
+    else:
+        # Для авто ищем услугу по количеству
+        # Формат: "THS MAERSK 3 АВТО" или "3 АВТО"
+        search_patterns = [
+            f'{car_count} АВТО',
+            f'{car_count} AUTO',
+            f'{car_count}АВТО',
+            f'{car_count}AUTO',
+        ]
+        
+        for service in services:
+            service_name_upper = service.name.upper()
+            for pattern in search_patterns:
+                if pattern in service_name_upper:
+                    return service
+    
+    return None
+
+
+def find_warehouse_services_for_car(warehouse):
+    """
+    Находит стандартные услуги склада для автомобиля.
+    Возвращает услуги: "Разгрузка/Погрузка/Декларация" и "Хранение"
+    """
+    if not warehouse:
+        return []
+    
+    services = []
+    all_services = WarehouseService.objects.filter(warehouse=warehouse, is_active=True)
+    
+    # Ключевые слова для поиска услуг
+    unload_keywords = ['РАЗГРУЗКА', 'ПОГРУЗКА', 'ДЕКЛАРАЦИЯ', 'UNLOAD', 'LOADING']
+    storage_keywords = ['ХРАНЕНИЕ', 'STORAGE', 'СКЛАДИРОВАНИЕ']
+    
+    for service in all_services:
+        service_name_upper = service.name.upper()
+        
+        # Проверяем услугу разгрузки/погрузки/декларации
+        if any(kw in service_name_upper for kw in unload_keywords):
+            services.append(service)
+            continue
+        
+        # Проверяем услугу хранения
+        if any(kw in service_name_upper for kw in storage_keywords):
+            services.append(service)
+    
+    return services
+
+
 @receiver(post_save, sender=Car)
 def create_car_services_on_car_save(sender, instance, **kwargs):
-    """Создает записи CarService при сохранении автомобиля с контрагентами"""
+    """
+    Создает записи CarService при сохранении автомобиля с контрагентами.
+    
+    Умный выбор услуг:
+    - Услуги линий: выбираются по количеству авто в контейнере (THS MAERSK 3 АВТО)
+    - Для мотоциклов: выбирается услуга с MOTO (THS CMA MOTO)
+    - Услуги складов: добавляются "Разгрузка/Погрузка/Декларация" и "Хранение"
+    """
     if not instance.pk:
         return
     
@@ -136,31 +223,26 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
         _old_contractors.pop(instance.pk, None)
     
     try:
-        # Получаем старые записи CarService для сравнения
-        old_warehouse_services = set(instance.car_services.filter(service_type='WAREHOUSE').values_list('service_id', flat=True))
-        old_line_services = set(instance.car_services.filter(service_type='LINE').values_list('service_id', flat=True))
-        old_carrier_services = set(instance.car_services.filter(service_type='CARRIER').values_list('service_id', flat=True))
+        # Получаем черные списки удаленных услуг
+        deleted_warehouse_services = set(
+            DeletedCarService.objects.filter(car=instance, service_type='WAREHOUSE').values_list('service_id', flat=True)
+        )
+        deleted_line_services = set(
+            DeletedCarService.objects.filter(car=instance, service_type='LINE').values_list('service_id', flat=True)
+        )
+        deleted_carrier_services = set(
+            DeletedCarService.objects.filter(car=instance, service_type='CARRIER').values_list('service_id', flat=True)
+        )
         
-        # Обрабатываем услуги склада
+        # ========== УСЛУГИ СКЛАДА ==========
+        # Удаляем старые услуги склада если склад изменился
+        instance.car_services.filter(service_type='WAREHOUSE').delete()
+        
         if instance.warehouse:
-            warehouse_services = WarehouseService.objects.only('id', 'default_price').filter(
-                warehouse=instance.warehouse, 
-                is_active=True,
-                default_price__gt=0
-            )
-            current_warehouse_service_ids = set()
-            
-            # Получаем черный список удаленных услуг
-            deleted_warehouse_services = set(
-                DeletedCarService.objects.filter(
-                    car=instance,
-                    service_type='WAREHOUSE'
-                ).values_list('service_id', flat=True)
-            )
+            # Находим стандартные услуги склада (Разгрузка/Декларация и Хранение)
+            warehouse_services = find_warehouse_services_for_car(instance.warehouse)
             
             for service in warehouse_services:
-                current_warehouse_service_ids.add(service.id)
-                # Проверяем черный список
                 if service.id not in deleted_warehouse_services:
                     CarService.objects.get_or_create(
                         car=instance,
@@ -168,77 +250,44 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
                         service_id=service.id,
                         defaults={'custom_price': service.default_price}
                     )
-            
-            # Удаляем услуги склада, которые больше не актуальны
-            services_to_remove = old_warehouse_services - current_warehouse_service_ids
-            if services_to_remove:
-                instance.car_services.filter(
-                    service_type='WAREHOUSE',
-                    service_id__in=services_to_remove
-                ).delete()
-        else:
-            # Если склад не назначен, удаляем все услуги склада
-            instance.car_services.filter(service_type='WAREHOUSE').delete()
+                    logger.info(f"🏭 Добавлена услуга склада '{service.name}' для {instance.vin}")
         
-        # Обрабатываем услуги линии
-        if instance.line:
-            line_services = LineService.objects.only('id', 'default_price').filter(
-                line=instance.line, 
-                is_active=True,
-                default_price__gt=0
-            )
-            current_line_service_ids = set()
+        # ========== УСЛУГИ ЛИНИИ ==========
+        # Удаляем старые услуги линии если линия изменилась
+        instance.car_services.filter(service_type='LINE').delete()
+        
+        if instance.line and instance.container:
+            # Определяем тип ТС (по умолчанию CAR если поле не существует)
+            vehicle_type = getattr(instance, 'vehicle_type', 'CAR')
             
-            # Получаем черный список удаленных услуг
-            deleted_line_services = set(
-                DeletedCarService.objects.filter(
+            # Находим подходящую услугу линии по количеству авто в контейнере
+            line_service = find_line_service_by_container_count(
+                instance.line, 
+                instance.container, 
+                vehicle_type
+            )
+            
+            if line_service and line_service.id not in deleted_line_services:
+                CarService.objects.get_or_create(
                     car=instance,
-                    service_type='LINE'
-                ).values_list('service_id', flat=True)
-            )
-            
-            for service in line_services:
-                current_line_service_ids.add(service.id)
-                # Проверяем черный список
-                if service.id not in deleted_line_services:
-                    CarService.objects.get_or_create(
-                        car=instance,
-                        service_type='LINE',
-                        service_id=service.id,
-                        defaults={'custom_price': service.default_price}
-                    )
-            
-            # Удаляем услуги линии, которые больше не актуальны
-            services_to_remove = old_line_services - current_line_service_ids
-            if services_to_remove:
-                instance.car_services.filter(
                     service_type='LINE',
-                    service_id__in=services_to_remove
-                ).delete()
-        else:
-            # Если линия не назначена, удаляем все услуги линии
-            instance.car_services.filter(service_type='LINE').delete()
+                    service_id=line_service.id,
+                    defaults={'custom_price': line_service.default_price}
+                )
+                logger.info(f"🚢 Добавлена услуга линии '{line_service.name}' для {instance.vin} (контейнер: {instance.container.number})")
         
-        # Обрабатываем услуги перевозчика
+        # ========== УСЛУГИ ПЕРЕВОЗЧИКА ==========
+        # Удаляем старые услуги перевозчика если перевозчик изменился
+        instance.car_services.filter(service_type='CARRIER').delete()
+        
         if instance.carrier:
-            carrier_services = CarrierService.objects.only('id', 'default_price').filter(
+            carrier_services = CarrierService.objects.filter(
                 carrier=instance.carrier, 
                 is_active=True,
                 default_price__gt=0
             )
-            current_carrier_service_ids = set()
-            
-            # Получаем черный список удаленных услуг
-            deleted_carrier_services = set(
-                DeletedCarService.objects.filter(
-                    car=instance,
-                    service_type='CARRIER'
-                ).values_list('service_id', flat=True)
-            )
             
             for service in carrier_services:
-                current_carrier_service_ids.add(service.id)
-                # Проверяем черный список
                 if service.id not in deleted_carrier_services:
                     CarService.objects.get_or_create(
                         car=instance,
@@ -246,17 +295,6 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
                         service_id=service.id,
                         defaults={'custom_price': service.default_price}
                     )
-            
-            # Удаляем услуги перевозчика, которые больше не актуальны
-            services_to_remove = old_carrier_services - current_carrier_service_ids
-            if services_to_remove:
-                instance.car_services.filter(
-                    service_type='CARRIER',
-                    service_id__in=services_to_remove
-                ).delete()
-        else:
-            # Если перевозчик не назначен, удаляем все услуги перевозчика
-            instance.car_services.filter(service_type='CARRIER').delete()
                 
     except Exception as e:
         logger.error(f"Error creating car services: {e}")
