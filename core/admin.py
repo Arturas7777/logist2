@@ -201,7 +201,7 @@ class CarInline(admin.TabularInline):
     model = Car
     extra = 1
     can_delete = True
-    fields = ('year', 'brand', 'vin', 'client','total_price', 'has_title')  # без status, добавили has_title
+    fields = ('year', 'brand', 'vehicle_type', 'vin', 'client', 'total_price', 'has_title')  # добавили vehicle_type
     readonly_fields = ('total_price',)
 
     def get_formset(self, request, obj=None, **kwargs):
@@ -618,7 +618,7 @@ class ContainerAdmin(admin.ModelAdmin):
 class CarAdmin(admin.ModelAdmin):
     change_form_template = 'admin/core/car/change_form.html'
     list_display = (
-        'vin', 'brand', 'year_display', 'client', 'colored_status', 'container_display', 'warehouse', 'line',
+        'vin', 'brand', 'vehicle_type', 'year_display', 'client', 'colored_status', 'container_display', 'warehouse', 'line',
         'unload_date_display', 'total_price_display', 'current_price_display',
         'storage_cost_display', 'days_display', 'has_title'
     )
@@ -636,7 +636,7 @@ class CarAdmin(admin.ModelAdmin):
     fieldsets = (
         ('Основные данные', {
             'fields': (
-                ('year', 'brand', 'vin', 'client', 'status'),
+                ('year', 'brand', 'vehicle_type', 'vin', 'client', 'status'),
                 ('unload_date', 'transfer_date'),
                 ('has_title', 'title_notes'),
             )

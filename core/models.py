@@ -353,8 +353,15 @@ class CarManager(BaseManager):
 
 
 class Car(models.Model):
+    # Типы транспортных средств
+    VEHICLE_TYPE_CHOICES = [
+        ('CAR', 'Автомобиль'),
+        ('MOTO', 'Мотоцикл'),
+    ]
+    
     year = models.PositiveIntegerField(verbose_name="Год выпуска")
     brand = models.CharField(max_length=50, verbose_name="Марка")
+    vehicle_type = models.CharField(max_length=10, choices=VEHICLE_TYPE_CHOICES, default='CAR', verbose_name="Тип ТС")
     vin = models.CharField(max_length=17, unique=True, verbose_name="VIN")
     client = models.ForeignKey('Client', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Клиент")
     status = models.CharField(max_length=20, choices=Container.STATUS_CHOICES, verbose_name="Статус")
