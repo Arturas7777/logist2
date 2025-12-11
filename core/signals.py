@@ -117,14 +117,16 @@ def find_line_service_by_container_count(line, container, vehicle_type):
     Логика выбора:
     - Для мотоциклов: ищем "THS {ЛИНИЯ} MOTO" или "MOTO" в названии
     - Для авто: ищем "THS {ЛИНИЯ} {КОЛ-ВО} АВТО" или "{КОЛ-ВО} АВТО" в названии
+    
+    ВАЖНО: Мотоциклы НЕ учитываются при подсчёте количества авто!
     """
     if not line or not container:
         return None
     
     line_name_upper = line.name.upper()
     
-    # Считаем количество авто в контейнере (исключая текущий, если он уже там)
-    car_count = container.container_cars.count()
+    # Считаем количество ТОЛЬКО автомобилей в контейнере (мотоциклы не учитываются!)
+    car_count = container.container_cars.exclude(vehicle_type='MOTO').count()
     
     # Получаем все активные услуги линии
     services = LineService.objects.filter(line=line, is_active=True)
