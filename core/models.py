@@ -1030,25 +1030,35 @@ def recalculate_car_price_on_service_delete(sender, instance, **kwargs):
 @receiver(post_save, sender=Car)
 def recalculate_car_price_on_car_save(sender, instance, **kwargs):
     """Пересчитывает текущую цену автомобиля при изменении полей, влияющих на расчет"""
+    # Защита от рекурсии
+    if getattr(instance, '_recalculating_price', False):
+        return
+    if getattr(instance, '_creating_services', False):
+        return
+    
     try:
-        # Пересчитываем только если изменились поля, влияющие на расчет
+        # Пропускаем для новых объектов
         if hasattr(instance, '_state') and instance._state.adding:
-            return  # Пропускаем для новых объектов
+            return
         
-        # Проверяем, изменились ли поля, влияющие на расчет
-        if hasattr(instance, '_state') and hasattr(instance._state, 'db'):
-            # Получаем старую версию объекта из базы
-            try:
-                old_instance = Car.objects.get(pk=instance.pk)
-                fields_to_check = ['status', 'transfer_date', 'unload_date', 'warehouse', 'proft']
-                
-                for field in fields_to_check:
-                    if getattr(old_instance, field) != getattr(instance, field):
-                        instance.calculate_total_price()
-                        instance.save(update_fields=['current_price', 'total_price'])
-                        break
-            except Car.DoesNotExist:
-                pass
+        # Пропускаем если это update_fields=['current_price', 'total_price'] - означает что цены уже пересчитаны
+        update_fields = kwargs.get('update_fields')
+        if update_fields and set(update_fields) == {'current_price', 'total_price'}:
+            return
+        
+        # Устанавливаем флаг защиты от рекурсии
+        instance._recalculating_price = True
+        
+        try:
+            instance.calculate_total_price()
+            # Используем update() вместо save() чтобы не триггерить сигналы
+            Car.objects.filter(id=instance.id).update(
+                current_price=instance.current_price,
+                total_price=instance.total_price
+            )
+        finally:
+            instance._recalculating_price = False
+            
     except Exception as e:
         print(f"Ошибка пересчета цены при изменении автомобиля: {e}")
 
