@@ -374,6 +374,14 @@ class ContainerAdmin(admin.ModelAdmin):
             parent.save()
             logger.info(f"Saved parent container {parent.pk}")
 
+        # Пропускаем если нет изменённых инстансов и нет удалённых объектов
+        if not instances and not formset.deleted_objects:
+            logger.info(f"No changes in formset for {formset.model.__name__}, skipping")
+            formset.save_m2m()
+            return
+
+        logger.info(f"Processing {len(instances)} changed instances in formset")
+
         for obj in instances:
             if isinstance(obj, Car):
                 # привязываем к контейнеру
