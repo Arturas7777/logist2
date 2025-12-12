@@ -27,6 +27,9 @@ def save_old_container_values(sender, instance, **kwargs):
 
 @receiver(post_save, sender=Container)
 def update_related_on_container_save(sender, instance, created, **kwargs):
+    import time
+    signal_start = time.time()
+    
     # При изменении контейнера — все машины внутри получают такой же статус и дату разгрузки
     # ОПТИМИЗИРОВАНО: Использует bulk_update вместо цикла
     if not instance.pk:
@@ -35,13 +38,17 @@ def update_related_on_container_save(sender, instance, created, **kwargs):
     # Проверяем, изменились ли status или unload_date
     old_values = _old_container_values.pop(instance.pk, None)
     
+    logger.info(f"[SIGNAL] update_related_on_container_save for {instance.number}, created={created}, old_values={old_values}")
+    
     if not created and old_values:
         status_changed = old_values.get('status') != instance.status
         unload_date_changed = old_values.get('unload_date') != instance.unload_date
         
+        logger.info(f"[SIGNAL] status_changed={status_changed}, unload_date_changed={unload_date_changed}")
+        
         # Если ни статус ни дата не изменились - пропускаем тяжёлые операции
         if not status_changed and not unload_date_changed:
-            logger.debug(f"Container {instance.number}: skipping car updates - no status/unload_date changes")
+            logger.info(f"[SIGNAL] Skipping heavy operations - no changes. Took {time.time() - signal_start:.2f}s")
             return
     
     try:
