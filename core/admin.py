@@ -243,12 +243,18 @@ class ContainerAdmin(admin.ModelAdmin):
         return qs.select_related('line', 'client', 'warehouse').prefetch_related('container_cars')
 
     def save_model(self, request, obj, form, change):
+        import time
+        start_time = time.time()
+        logger.info(f"[TIMING] Container save_model started for {obj.number}")
+        
         # Если это новый объект и у него еще нет pk, сохраняем его
         if not change and not obj.pk:
             super().save_model(request, obj, form, change)
         elif change:
             # Для существующих объектов сохраняем как обычно
             super().save_model(request, obj, form, change)
+        
+        logger.info(f"[TIMING] Container saved in {time.time() - start_time:.2f}s")
 
         # Если изменили склад — разнесём новый склад во все авто
         if change and form and 'warehouse' in getattr(form, 'changed_data', []):
@@ -335,12 +341,13 @@ class ContainerAdmin(admin.ModelAdmin):
 
         # если изменили линию — обновить линию во всех автомобилях контейнера
         if change and form and 'line' in getattr(form, 'changed_data', []):
+            line_start = time.time()
             try:
                 from django.db.models.signals import post_save, post_delete
                 from core.signals import update_related_on_car_save, create_car_services_on_car_save
                 from core.models import recalculate_car_price_on_service_save, recalculate_car_price_on_service_delete
                 
-                logger.info(f"Line changed for container {obj.id} to {obj.line}, updating cars...")
+                logger.info(f"[TIMING] Line change started for container {obj.id}")
                 
                 # Временно отключаем сигналы чтобы избежать рекурсии
                 post_save.disconnect(update_related_on_car_save, sender=Car)
@@ -351,7 +358,7 @@ class ContainerAdmin(admin.ModelAdmin):
                 try:
                     # Массовое обновление линии - без вызова сигналов
                     updated_count = obj.container_cars.update(line=obj.line)
-                    logger.info(f"Successfully updated line for {updated_count} cars via bulk update")
+                    logger.info(f"[TIMING] Line updated for {updated_count} cars in {time.time() - line_start:.2f}s")
                 finally:
                     # Включаем сигналы обратно
                     post_save.connect(update_related_on_car_save, sender=Car)
@@ -363,8 +370,13 @@ class ContainerAdmin(admin.ModelAdmin):
                 logger.error(f"Failed to update cars after line change for container {obj.id}: {e}")
 
     def save_formset(self, request, form, formset, change):
-        logger.info(f"Saving formset for {formset.model.__name__}")
+        import time
+        formset_start = time.time()
+        logger.info(f"[TIMING] save_formset started for {formset.model.__name__}")
+        
         instances = formset.save(commit=False)
+        logger.info(f"[TIMING] formset.save(commit=False) took {time.time() - formset_start:.2f}s")
+        
         parent = form.instance  # контейнер
 
         # Проверяем, что у родительского объекта есть первичный ключ
@@ -376,11 +388,11 @@ class ContainerAdmin(admin.ModelAdmin):
 
         # Пропускаем если нет изменённых инстансов и нет удалённых объектов
         if not instances and not formset.deleted_objects:
-            logger.info(f"No changes in formset for {formset.model.__name__}, skipping")
+            logger.info(f"[TIMING] No changes in formset, skipping. Total: {time.time() - formset_start:.2f}s")
             formset.save_m2m()
             return
 
-        logger.info(f"Processing {len(instances)} changed instances in formset")
+        logger.info(f"[TIMING] Processing {len(instances)} changed instances")
 
         for obj in instances:
             if isinstance(obj, Car):
