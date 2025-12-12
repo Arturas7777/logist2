@@ -336,12 +336,29 @@ class ContainerAdmin(admin.ModelAdmin):
         # если изменили линию — обновить линию во всех автомобилях контейнера
         if change and form and 'line' in getattr(form, 'changed_data', []):
             try:
-                logger.info(f"Line changed for container {obj.id}, updating cars...")
-                for car in obj.container_cars.all():
-                    car.line = obj.line
-                    car.save(update_fields=['line'])
-                    logger.debug(f"Updated line for car {car.vin}")
-                logger.info(f"Successfully updated line for {obj.container_cars.count()} cars")
+                from django.db.models.signals import post_save, post_delete
+                from core.signals import update_related_on_car_save, create_car_services_on_car_save
+                from core.models import recalculate_car_price_on_service_save, recalculate_car_price_on_service_delete
+                
+                logger.info(f"Line changed for container {obj.id} to {obj.line}, updating cars...")
+                
+                # Временно отключаем сигналы чтобы избежать рекурсии
+                post_save.disconnect(update_related_on_car_save, sender=Car)
+                post_save.disconnect(create_car_services_on_car_save, sender=Car)
+                post_save.disconnect(recalculate_car_price_on_service_save, sender=CarService)
+                post_delete.disconnect(recalculate_car_price_on_service_delete, sender=CarService)
+                
+                try:
+                    # Массовое обновление линии - без вызова сигналов
+                    updated_count = obj.container_cars.update(line=obj.line)
+                    logger.info(f"Successfully updated line for {updated_count} cars via bulk update")
+                finally:
+                    # Включаем сигналы обратно
+                    post_save.connect(update_related_on_car_save, sender=Car)
+                    post_save.connect(create_car_services_on_car_save, sender=Car)
+                    post_save.connect(recalculate_car_price_on_service_save, sender=CarService)
+                    post_delete.connect(recalculate_car_price_on_service_delete, sender=CarService)
+                    
             except Exception as e:
                 logger.error(f"Failed to update cars after line change for container {obj.id}: {e}")
 

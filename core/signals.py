@@ -205,6 +205,10 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
     if not instance.pk:
         return
     
+    # Защита от рекурсии - пропускаем если уже создаем услуги для этого авто
+    if getattr(instance, '_creating_services', False):
+        return
+    
     # Проверяем, изменились ли контрагенты (только при создании или смене контрагентов)
     created = kwargs.get('created', False)
     if not created:
@@ -223,6 +227,9 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
         
         # Очищаем сохраненные значения
         _old_contractors.pop(instance.pk, None)
+    
+    # Устанавливаем флаг для защиты от рекурсии
+    instance._creating_services = True
     
     try:
         # Получаем черные списки удаленных услуг
@@ -300,6 +307,9 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
                 
     except Exception as e:
         logger.error(f"Error creating car services: {e}")
+    finally:
+        # Сбрасываем флаг защиты от рекурсии
+        instance._creating_services = False
 
 @receiver(post_save, sender=WarehouseService)
 def update_cars_on_warehouse_service_change(sender, instance, **kwargs):

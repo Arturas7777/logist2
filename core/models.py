@@ -996,9 +996,16 @@ from django.dispatch import receiver
 @receiver(post_save, sender=CarService)
 def recalculate_car_price_on_service_save(sender, instance, **kwargs):
     """Пересчитывает текущую цену автомобиля при сохранении услуги"""
+    # Защита от рекурсии - пропускаем если идёт создание услуг
+    if getattr(instance.car, '_creating_services', False):
+        return
     try:
         instance.car.calculate_total_price()
-        instance.car.save(update_fields=['current_price', 'total_price'])
+        # Используем update() вместо save() чтобы не триггерить сигналы
+        Car.objects.filter(id=instance.car.id).update(
+            current_price=instance.car.current_price,
+            total_price=instance.car.total_price
+        )
     except Exception as e:
         print(f"Ошибка пересчета цены при сохранении услуги: {e}")
 
@@ -1006,9 +1013,16 @@ def recalculate_car_price_on_service_save(sender, instance, **kwargs):
 @receiver(post_delete, sender=CarService)
 def recalculate_car_price_on_service_delete(sender, instance, **kwargs):
     """Пересчитывает текущую цену автомобиля при удалении услуги"""
+    # Защита от рекурсии - пропускаем если идёт создание услуг
+    if getattr(instance.car, '_creating_services', False):
+        return
     try:
         instance.car.calculate_total_price()
-        instance.car.save(update_fields=['current_price', 'total_price'])
+        # Используем update() вместо save() чтобы не триггерить сигналы
+        Car.objects.filter(id=instance.car.id).update(
+            current_price=instance.car.current_price,
+            total_price=instance.car.total_price
+        )
     except Exception as e:
         print(f"Ошибка пересчета цены при удалении услуги: {e}")
 
