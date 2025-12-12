@@ -17,39 +17,45 @@ _old_container_values = {}
 @receiver(pre_save, sender=Container)
 def save_old_container_values(sender, instance, **kwargs):
     """Сохраняем старые значения контейнера до сохранения"""
+    print(f"[PRE_SAVE] Container {instance.number} pk={instance.pk}", flush=True)
     if instance.pk:
         try:
             old = Container.objects.filter(pk=instance.pk).values('status', 'unload_date').first()
             if old:
                 _old_container_values[instance.pk] = old
-        except:
-            pass
+                print(f"[PRE_SAVE] Saved old values: {old}", flush=True)
+        except Exception as e:
+            print(f"[PRE_SAVE] Error: {e}", flush=True)
 
 @receiver(post_save, sender=Container)
 def update_related_on_container_save(sender, instance, created, **kwargs):
     import time
     signal_start = time.time()
+    print(f"[POST_SAVE] Container {instance.number} START", flush=True)
     
     # При изменении контейнера — все машины внутри получают такой же статус и дату разгрузки
     # ОПТИМИЗИРОВАНО: Использует bulk_update вместо цикла
     if not instance.pk:
+        print(f"[POST_SAVE] No PK, returning", flush=True)
         return
     
     # Проверяем, изменились ли status или unload_date
     old_values = _old_container_values.pop(instance.pk, None)
     
-    logger.info(f"[SIGNAL] update_related_on_container_save for {instance.number}, created={created}, old_values={old_values}")
+    print(f"[POST_SAVE] old_values={old_values}, created={created}", flush=True)
     
     if not created and old_values:
         status_changed = old_values.get('status') != instance.status
         unload_date_changed = old_values.get('unload_date') != instance.unload_date
         
-        logger.info(f"[SIGNAL] status_changed={status_changed}, unload_date_changed={unload_date_changed}")
+        print(f"[POST_SAVE] status_changed={status_changed}, unload_date_changed={unload_date_changed}", flush=True)
         
         # Если ни статус ни дата не изменились - пропускаем тяжёлые операции
         if not status_changed and not unload_date_changed:
-            logger.info(f"[SIGNAL] Skipping heavy operations - no changes. Took {time.time() - signal_start:.2f}s")
+            print(f"[POST_SAVE] SKIPPING heavy ops, took {time.time() - signal_start:.2f}s", flush=True)
             return
+    
+    print(f"[POST_SAVE] Will do heavy operations...", flush=True)
     
     try:
         # Если есть дата разгрузки - обновляем её у всех автомобилей принудительно
