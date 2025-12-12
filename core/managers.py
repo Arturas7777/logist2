@@ -52,6 +52,10 @@ class OptimizedCarManager(models.Manager):
             Q(brand__icontains=query) |
             Q(year__icontains=query)
         )
+    
+    def update_related(self, instance):
+        """Заглушка для совместимости с BaseManager - для Car не делает ничего"""
+        pass
 
 
 class OptimizedInvoiceManager(models.Manager):
