@@ -29,6 +29,11 @@ def save_old_container_values(sender, instance, **kwargs):
 
 @receiver(post_save, sender=Container)
 def update_related_on_container_save(sender, instance, created, **kwargs):
+    # ВРЕМЕННО ОТКЛЮЧЕНО ДЛЯ ДИАГНОСТИКИ
+    print(f"[POST_SAVE] DISABLED - just returning", flush=True)
+    return
+    # END DISABLE
+    
     import time
     signal_start = time.time()
     print(f"[POST_SAVE] Container {instance.number} START", flush=True)
