@@ -10,12 +10,39 @@ from decimal import Decimal
 import logging
 
 logger = logging.getLogger('django')
+
+# Сохраняем старые значения контейнера для определения что изменилось
+_old_container_values = {}
+
+@receiver(pre_save, sender=Container)
+def save_old_container_values(sender, instance, **kwargs):
+    """Сохраняем старые значения контейнера до сохранения"""
+    if instance.pk:
+        try:
+            old = Container.objects.filter(pk=instance.pk).values('status', 'unload_date').first()
+            if old:
+                _old_container_values[instance.pk] = old
+        except:
+            pass
+
 @receiver(post_save, sender=Container)
 def update_related_on_container_save(sender, instance, created, **kwargs):
     # При изменении контейнера — все машины внутри получают такой же статус и дату разгрузки
     # ОПТИМИЗИРОВАНО: Использует bulk_update вместо цикла
     if not instance.pk:
         return
+    
+    # Проверяем, изменились ли status или unload_date
+    old_values = _old_container_values.pop(instance.pk, None)
+    
+    if not created and old_values:
+        status_changed = old_values.get('status') != instance.status
+        unload_date_changed = old_values.get('unload_date') != instance.unload_date
+        
+        # Если ни статус ни дата не изменились - пропускаем тяжёлые операции
+        if not status_changed and not unload_date_changed:
+            logger.debug(f"Container {instance.number}: skipping car updates - no status/unload_date changes")
+            return
     
     try:
         # Если есть дата разгрузки - обновляем её у всех автомобилей принудительно
