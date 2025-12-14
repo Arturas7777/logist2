@@ -202,6 +202,9 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
                 # Очищаем сохраненные значения
                 _old_contractors.pop(instance.pk, None)
                 return
+        else:
+            # Нет сохранённых значений - значит контрагенты не менялись
+            return
         
         # Очищаем сохраненные значения
         _old_contractors.pop(instance.pk, None)
