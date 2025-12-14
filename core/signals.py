@@ -5,7 +5,7 @@ from .models_billing import NewInvoice
 from django.db.models import Sum
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-from django.db import transaction
+from django.db import transaction, OperationalError
 from decimal import Decimal
 import logging
 
@@ -29,75 +29,13 @@ def save_old_container_values(sender, instance, **kwargs):
 
 @receiver(post_save, sender=Container)
 def update_related_on_container_save(sender, instance, created, **kwargs):
-    # ВРЕМЕННО ОТКЛЮЧЕНО ДЛЯ ДИАГНОСТИКИ
-    print(f"[POST_SAVE] DISABLED - just returning", flush=True)
-    return
-    # END DISABLE
-    
-    import time
-    signal_start = time.time()
-    print(f"[POST_SAVE] Container {instance.number} START", flush=True)
-    
-    # При изменении контейнера — все машины внутри получают такой же статус и дату разгрузки
-    # ОПТИМИЗИРОВАНО: Использует bulk_update вместо цикла
-    if not instance.pk:
-        print(f"[POST_SAVE] No PK, returning", flush=True)
-        return
-    
-    # Проверяем, изменились ли status или unload_date
-    old_values = _old_container_values.pop(instance.pk, None)
-    
-    print(f"[POST_SAVE] old_values={old_values}, created={created}", flush=True)
-    
-    if not created and old_values:
-        status_changed = old_values.get('status') != instance.status
-        unload_date_changed = old_values.get('unload_date') != instance.unload_date
-        
-        print(f"[POST_SAVE] status_changed={status_changed}, unload_date_changed={unload_date_changed}", flush=True)
-        
-        # Если ни статус ни дата не изменились - пропускаем тяжёлые операции
-        if not status_changed and not unload_date_changed:
-            print(f"[POST_SAVE] SKIPPING heavy ops, took {time.time() - signal_start:.2f}s", flush=True)
-            return
-    
-    print(f"[POST_SAVE] Will do heavy operations...", flush=True)
-    
-    try:
-        # Если есть дата разгрузки - обновляем её у всех автомобилей принудительно
-        if instance.unload_date:
-            # Подготавливаем данные для массового обновления
-            cars_to_update = []
-            for car in instance.container_cars.select_related('warehouse').all():
-                # Обновляем дату разгрузки принудительно
-                car.unload_date = instance.unload_date
-                car.status = instance.status
-                
-                # Пересчитываем хранение и цены
-                car.update_days_and_storage()
-                car.calculate_total_price()
-                cars_to_update.append(car)
-            
-            # Массовое обновление одним запросом
-            if cars_to_update:
-                Car.objects.bulk_update(
-                    cars_to_update,
-                    ['unload_date', 'status', 'days', 'storage_cost', 'current_price', 'total_price'],
-                    batch_size=50
-                )
-                logger.info(f"✅ Container {instance.number}: bulk updated {len(cars_to_update)} cars (unload_date + status)")
-        else:
-            # Если нет даты разгрузки - обновляем только статус
-            instance.container_cars.update(status=instance.status)
-            logger.debug(f"Container {instance.number}: updated status for {instance.container_cars.count()} cars")
-        
-        # Отправляем batch WebSocket уведомление
-        from core.utils import WebSocketBatcher
-        for car in instance.container_cars.only('id', 'status'):
-            WebSocketBatcher.add('Car', car.id, {'status': car.status})
-        WebSocketBatcher.flush()
-        
-    except Exception as e:
-        logger.error(f"Failed to update cars for container {instance.id}: {e}")
+    """
+    ОТКЛЮЧЕНО - обновление автомобилей теперь происходит в ContainerAdmin.save_model()
+    Это позволяет избежать дублирования работы и таймаутов
+    """
+    # Просто очищаем сохранённые значения, ничего больше не делаем
+    _old_container_values.pop(instance.pk, None)
+    logger.debug(f"Container {instance.number} post_save: signal disabled, handled in admin")
 
 @receiver(post_save, sender=Car)
 def update_related_on_car_save(sender, instance, **kwargs):
@@ -118,15 +56,24 @@ def update_related_on_car_save(sender, instance, **kwargs):
             instance._updating_invoices = True
             
             # Получаем все новые инвойсы, связанные с этим автомобилем
-            new_invoices = NewInvoice.objects.filter(cars=instance)
-            logger.debug(f"Found {new_invoices.count()} NewInvoice(s) for car {instance.vin}")
+            # Используем select_for_update(nowait=True) чтобы не ждать блокировку
+            new_invoices = list(NewInvoice.objects.filter(cars=instance).values_list('id', flat=True))
+            logger.debug(f"Found {len(new_invoices)} NewInvoice(s) for car {instance.vin}")
             
-            if new_invoices.exists():
-                for invoice in new_invoices:
-                    logger.info(f"Regenerating invoice {invoice.number} for car {instance.vin}...")
-                    # Пересоздаем позиции инвойса на основе актуальных данных автомобиля
-                    invoice.regenerate_items_from_cars()
-                    logger.info(f"✅ Auto-regenerated invoice {invoice.number} for car {instance.vin}")
+            if new_invoices:
+                for invoice_id in new_invoices:
+                    try:
+                        # Каждый инвойс обрабатываем в отдельной транзакции
+                        with transaction.atomic():
+                            invoice = NewInvoice.objects.select_for_update(nowait=True).get(id=invoice_id)
+                            logger.info(f"Regenerating invoice {invoice.number} for car {instance.vin}...")
+                            invoice.regenerate_items_from_cars()
+                            logger.info(f"✅ Auto-regenerated invoice {invoice.number} for car {instance.vin}")
+                    except OperationalError:
+                        # Инвойс заблокирован другой транзакцией - пропускаем
+                        logger.warning(f"⏭️ Skipping invoice {invoice_id} - locked by another transaction")
+                    except NewInvoice.DoesNotExist:
+                        logger.warning(f"⏭️ Invoice {invoice_id} was deleted")
             else:
                 logger.debug(f"No NewInvoice found for car {instance.vin}")
         except Exception as e:
@@ -209,32 +156,18 @@ def find_line_service_by_container_count(line, container, vehicle_type):
 
 def find_warehouse_services_for_car(warehouse):
     """
-    Находит стандартные услуги склада для автомобиля.
-    Возвращает услуги: "Разгрузка/Погрузка/Декларация" и "Хранение"
+    Находит услуги склада для автомобиля, которые должны добавляться по умолчанию.
+    Возвращает только услуги с флагом add_by_default=True.
     """
     if not warehouse:
         return []
     
-    services = []
-    all_services = WarehouseService.objects.filter(warehouse=warehouse, is_active=True)
-    
-    # Ключевые слова для поиска услуг
-    unload_keywords = ['РАЗГРУЗКА', 'ПОГРУЗКА', 'ДЕКЛАРАЦИЯ', 'UNLOAD', 'LOADING']
-    storage_keywords = ['ХРАНЕНИЕ', 'STORAGE', 'СКЛАДИРОВАНИЕ']
-    
-    for service in all_services:
-        service_name_upper = service.name.upper()
-        
-        # Проверяем услугу разгрузки/погрузки/декларации
-        if any(kw in service_name_upper for kw in unload_keywords):
-            services.append(service)
-            continue
-        
-        # Проверяем услугу хранения
-        if any(kw in service_name_upper for kw in storage_keywords):
-            services.append(service)
-    
-    return services
+    # Возвращаем только услуги с флагом add_by_default=True
+    return list(WarehouseService.objects.filter(
+        warehouse=warehouse, 
+        is_active=True,
+        add_by_default=True
+    ))
 
 
 @receiver(post_save, sender=Car)
@@ -502,3 +435,92 @@ def recalculate_invoices_on_car_service_delete(sender, instance, **kwargs):
             
     except Exception as e:
         logger.error(f"Error recalculating invoices on CarService delete: {e}")
+
+
+# ============================================================================
+# СИГНАЛЫ ДЛЯ EMAIL-УВЕДОМЛЕНИЙ КЛИЕНТОВ
+# ============================================================================
+
+# Храним старые значения для определения изменений
+_old_notification_values = {}
+
+@receiver(pre_save, sender=Container)
+def save_old_notification_values(sender, instance, **kwargs):
+    """Сохраняем старые значения planned_unload_date и unload_date перед сохранением"""
+    if instance.pk:
+        try:
+            old = Container.objects.filter(pk=instance.pk).values('planned_unload_date', 'unload_date').first()
+            if old:
+                _old_notification_values[instance.pk] = {
+                    'planned_unload_date': old.get('planned_unload_date'),
+                    'unload_date': old.get('unload_date')
+                }
+        except Exception:
+            pass
+
+
+@receiver(post_save, sender=Container)
+def send_container_notifications_on_save(sender, instance, created, **kwargs):
+    """
+    Автоматически отправляет уведомления клиентам:
+    - При установке planned_unload_date -> уведомление о планируемой разгрузке
+    - При установке unload_date -> уведомление о фактической разгрузке
+    """
+    if not instance.pk:
+        return
+    
+    # Получаем старые значения
+    old_values = _old_notification_values.pop(instance.pk, {})
+    old_planned_unload_date = old_values.get('planned_unload_date')
+    old_unload_date = old_values.get('unload_date')
+    
+    # Проверяем нужно ли отправить уведомление о планируемой разгрузке
+    should_notify_planned = False
+    if instance.planned_unload_date:
+        if created:
+            should_notify_planned = True
+        elif old_planned_unload_date is None:
+            # Планируемая дата разгрузки была установлена впервые
+            should_notify_planned = True
+    
+    # Проверяем нужно ли отправить уведомление о фактической разгрузке
+    should_notify_unload = False
+    if instance.unload_date:
+        if created:
+            should_notify_unload = True
+        elif old_unload_date is None:
+            # Дата разгрузки была установлена впервые
+            should_notify_unload = True
+    
+    # Отправляем уведомления асинхронно после коммита транзакции
+    if should_notify_planned:
+        def send_planned_notifications():
+            try:
+                from core.services.email_service import ContainerNotificationService
+                
+                if not ContainerNotificationService.was_planned_notification_sent(instance):
+                    sent, failed = ContainerNotificationService.send_planned_to_all_clients(instance)
+                    if sent > 0:
+                        logger.info(f"📧 Auto-sent planned unload notifications for {instance.number}: {sent} sent, {failed} failed")
+                else:
+                    logger.debug(f"Planned unload notifications already sent for {instance.number}")
+            except Exception as e:
+                logger.error(f"Failed to send planned unload notifications for {instance.number}: {e}")
+        
+        transaction.on_commit(send_planned_notifications)
+    
+    if should_notify_unload:
+        def send_unload_notifications():
+            try:
+                from core.services.email_service import ContainerNotificationService
+                
+                if not ContainerNotificationService.was_unload_notification_sent(instance):
+                    sent, failed = ContainerNotificationService.send_unload_to_all_clients(instance)
+                    if sent > 0:
+                        logger.info(f"📧 Auto-sent unload notifications for {instance.number}: {sent} sent, {failed} failed")
+                else:
+                    logger.debug(f"Unload notifications already sent for {instance.number}")
+            except Exception as e:
+                logger.error(f"Failed to send unload notifications for {instance.number}: {e}")
+        
+        transaction.on_commit(send_unload_notifications)
