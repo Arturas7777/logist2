@@ -29,11 +29,15 @@ static_root/
 .env.local
 .env.production
 
+# Credentials (passwords file)
+CREDENTIALS.md
+
 # Backup files
 *.zip
 *.sql
 *.sql.gz
 *.tar.gz
+*.dump
 backups/
 
 # System files
