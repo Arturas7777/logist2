@@ -1,0 +1,45 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | Caromoto CRM{% endblock %}
+
+{% block branding %}
+<h1 id="site-name">
+    <a href="{% url 'admin:index' %}">
+        <img src="{% static 'website/images/caromoto_logo.png' %}" alt="Caromoto" style="height: 55px; vertical-align: middle; margin-left: -20px;">
+    </a>
+</h1>
+
+<!-- Иконки быстрого доступа -->
+<div id="quick-nav" style="position: absolute; left: 50%; transform: translateX(-50%) translateY(-50%); top: 50%; display: flex; gap: 25px; align-items: center;">
+    <a href="{% url 'admin:core_container_changelist' %}" title="Контейнеры" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">📦</a>
+    <a href="{% url 'admin:core_car_changelist' %}" title="Автомобили" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">🚗</a>
+    <a href="{% url 'admin:core_client_changelist' %}" title="Клиенты" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">👥</a>
+    <a href="{% url 'admin:core_newinvoice_changelist' %}" title="Инвойсы" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">📄</a>
+    <a href="{% url 'admin:core_warehouse_changelist' %}" title="Склады" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">🏭</a>
+    <a href="{% url 'admin:core_line_changelist' %}" title="Линии" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">🚢</a>
+    <a href="{% url 'admin:core_carrier_changelist' %}" title="Перевозчики" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">🚚</a>
+</div>
+{% endblock %}
+
+{% block welcome-msg %}{% endblock %}
+
+{% block userlinks %}
+<a href="/" target="_blank">САЙТ</a> /
+<a href="{% url 'admin:password_change' %}">ИЗМ.ПАРОЛЬ</a> /
+<a href="{% url 'admin:logout' %}">Выйти</a>
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" type="text/css" href="{% static 'css/logist2_custom_admin.css' %}">
+<style>
+    #header {
+        position: relative;
+    }
+    #quick-nav a:hover {
+        transform: scale(1.2);
+    }
+</style>
+{% endblock %}
+

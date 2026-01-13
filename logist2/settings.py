@@ -208,3 +208,20 @@ STATICFILES_DIRS = [
 # Media files (Uploaded content)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# Email settings for notifications
+# Для тестирования используем console backend (письма выводятся в терминал)
+# На production установите EMAIL_BACKEND в .env
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
+EMAIL_USE_TLS = str(os.getenv('EMAIL_USE_TLS', 'True')).lower() == 'true'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'Caromoto Lithuania <noreply@caromoto-lt.com>')
+
+# Company info for email templates
+COMPANY_NAME = 'Caromoto Lithuania'
+COMPANY_PHONE = '+370 XXX XXXXX'
+COMPANY_EMAIL = 'info@caromoto-lt.com'
+COMPANY_WEBSITE = 'https://caromoto-lt.com'

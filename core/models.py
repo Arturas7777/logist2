@@ -101,7 +101,17 @@ class Carrier(models.Model):
 
 class Client(models.Model):
     name = models.CharField(max_length=100, verbose_name="Имя клиента")
-    
+    email = models.EmailField(blank=True, null=True, verbose_name="Email 1",
+                              help_text="Основной email для уведомлений о разгрузке контейнеров")
+    email2 = models.EmailField(blank=True, null=True, verbose_name="Email 2",
+                               help_text="Дополнительный email для уведомлений")
+    email3 = models.EmailField(blank=True, null=True, verbose_name="Email 3",
+                               help_text="Дополнительный email для уведомлений")
+    email4 = models.EmailField(blank=True, null=True, verbose_name="Email 4",
+                               help_text="Дополнительный email для уведомлений")
+    notification_enabled = models.BooleanField(default=True, verbose_name="Получать уведомления",
+                                               help_text="Отправлять email-уведомления о контейнерах")
+
     # Единый баланс (новая система)
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс", 
                                    help_text="Положительный = переплата, отрицательный = долг")
@@ -115,6 +125,21 @@ class Client(models.Model):
     
     def __str__(self):
         return self.name
+    
+    def get_notification_emails(self):
+        """
+        Возвращает список всех заполненных email-адресов для уведомлений.
+        Пустые и None значения исключаются.
+        """
+        emails = []
+        for field in [self.email, self.email2, self.email3, self.email4]:
+            if field and field.strip():
+                emails.append(field.strip())
+        return emails
+    
+    def has_notification_emails(self):
+        """Проверяет, есть ли хотя бы один email для уведомлений"""
+        return len(self.get_notification_emails()) > 0
     
     @property
     def balance_status(self):
@@ -210,6 +235,8 @@ class Container(models.Model):
     proft = models.DecimalField(max_digits=10, decimal_places=2, default=20, verbose_name="Наценка",
                                 validators=[MinValueValidator(0)])
     warehouse = models.ForeignKey('Warehouse', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Склад")
+    planned_unload_date = models.DateField(null=True, blank=True, verbose_name="Будем разгружать",
+                                           help_text="Укажите когда планируете разгружать контейнер (клиенты получат уведомление)")
     unload_date = models.DateField(null=True, blank=True, verbose_name="Дата разгрузки")
     free_days = models.PositiveIntegerField(default=0, verbose_name="Бесплатные дни")
     days = models.PositiveIntegerField(default=0, verbose_name="Платные дни")
@@ -880,6 +907,8 @@ class WarehouseService(models.Model):
     description = models.TextField(blank=True, verbose_name="Описание")
     default_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Цена по умолчанию")
     is_active = models.BooleanField(default=True, verbose_name="Активна")
+    add_by_default = models.BooleanField(default=False, verbose_name="Добавлять по умолчанию",
+        help_text="Автоматически добавлять эту услугу при создании автомобиля на этом складе")
     
     def __str__(self):
         return f"{self.warehouse.name} - {self.name}"

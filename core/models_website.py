@@ -370,3 +370,46 @@ class TrackingRequest(models.Model):
     def __str__(self):
         return f"{self.tracking_number} - {self.created_at.strftime('%Y-%m-%d')}"
 
+
+class NotificationLog(models.Model):
+    """
+    Лог отправленных email-уведомлений клиентам
+    """
+    NOTIFICATION_TYPES = [
+        ('PLANNED', 'Планируемая разгрузка'),
+        ('UNLOADED', 'Разгрузка выполнена'),
+    ]
+    
+    container = models.ForeignKey(Container, on_delete=models.CASCADE, related_name='notifications', 
+                                  verbose_name="Контейнер")
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='notifications',
+                               verbose_name="Клиент")
+    notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES, 
+                                         verbose_name="Тип уведомления")
+    
+    email_to = models.EmailField(verbose_name="Email получателя")
+    subject = models.CharField(max_length=255, verbose_name="Тема письма")
+    
+    cars_info = models.TextField(blank=True, verbose_name="Информация об авто",
+                                 help_text="JSON со списком VIN и марок авто в уведомлении")
+    
+    sent_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата отправки")
+    success = models.BooleanField(default=True, verbose_name="Успешно отправлено")
+    error_message = models.TextField(blank=True, verbose_name="Сообщение об ошибке")
+    
+    created_by = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True, blank=True,
+                                   verbose_name="Отправил", help_text="Кто инициировал отправку")
+    
+    class Meta:
+        verbose_name = "Лог уведомлений"
+        verbose_name_plural = "Логи уведомлений"
+        ordering = ['-sent_at']
+        indexes = [
+            models.Index(fields=['container', 'notification_type']),
+            models.Index(fields=['client', 'sent_at']),
+        ]
+    
+    def __str__(self):
+        status = "✓" if self.success else "✗"
+        return f"{status} {self.get_notification_type_display()} - {self.container.number} → {self.email_to}"
+

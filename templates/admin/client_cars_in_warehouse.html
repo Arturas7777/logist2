@@ -1,0 +1,119 @@
+{% extends "admin/base_site.html" %}
+{% load static i18n %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div style="padding: 20px;">
+    <h1>🚗 Авто на складе - {{ client.name }}</h1>
+    
+    <div style="margin: 20px 0; display: flex; gap: 15px; flex-wrap: wrap;">
+        <a href="{% url 'admin:core_client_change' client.pk %}" 
+           style="background: #6c757d; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none;">
+            ← Назад к клиенту
+        </a>
+        <button onclick="copyToClipboard()" 
+                style="background: #28a745; color: white; padding: 10px 20px; border-radius: 6px; border: none; cursor: pointer; font-size: 14px;">
+            📋 Скопировать список
+        </button>
+    </div>
+    
+    {% if total_count == 0 %}
+        <div style="padding: 40px; text-align: center; background: #f8f9fa; border-radius: 8px; margin: 20px 0;">
+            <p style="font-size: 18px; color: #6c757d;">У клиента нет авто на складе</p>
+            <p style="color: #999;">Здесь отображаются только авто со статусом "Разгружен"</p>
+        </div>
+    {% else %}
+        <div style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
+            <div style="font-size: 2em; font-weight: bold;">{{ total_count }} авто</div>
+            <div style="opacity: 0.9;">на складе</div>
+        </div>
+        
+        {% for wh_name, wh_cars in warehouses_data.items %}
+        <div style="background: white; border: 1px solid #dee2e6; border-radius: 8px; margin-bottom: 20px; overflow: hidden;">
+            <div style="background: #f8f9fa; padding: 15px; border-bottom: 1px solid #dee2e6;">
+                <h3 style="margin: 0; display: flex; align-items: center; gap: 10px;">
+                    📍 {{ wh_name }}
+                    <span style="background: #007bff; color: white; padding: 3px 10px; border-radius: 12px; font-size: 14px;">
+                        {{ wh_cars|length }} авто
+                    </span>
+                </h3>
+            </div>
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: #f8f9fa;">
+                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6;">VIN</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6;">Марка</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6;">Год</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6;">Контейнер</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6;">Дата разгрузки</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6;">Дней на складе</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for car in wh_cars %}
+                    <tr style="border-bottom: 1px solid #eee;">
+                        <td style="padding: 12px;">
+                            <a href="{% url 'admin:core_car_change' car.pk %}" style="font-family: monospace; font-weight: bold;">
+                                {{ car.vin }}
+                            </a>
+                        </td>
+                        <td style="padding: 12px;">{{ car.brand }}</td>
+                        <td style="padding: 12px;">{{ car.year }}</td>
+                        <td style="padding: 12px;">
+                            {% if car.container %}
+                                <a href="{% url 'admin:core_container_change' car.container.pk %}">{{ car.container.number }}</a>
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td style="padding: 12px;">
+                            {% if car.unload_date %}
+                                {{ car.unload_date|date:"d.m.Y" }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td style="padding: 12px;">
+                            {% if car.days %}
+                                <span style="{% if car.days > 14 %}color: #dc3545;{% elif car.days > 7 %}color: #ffc107;{% else %}color: #28a745;{% endif %} font-weight: bold;">
+                                    {{ car.days }} дн.
+                                </span>
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endfor %}
+    {% endif %}
+</div>
+
+<!-- Скрытое поле для текста копирования -->
+<textarea id="copyText" style="position: absolute; left: -9999px;">{{ text_for_copy }}</textarea>
+
+<script>
+function copyToClipboard() {
+    var copyText = document.getElementById("copyText");
+    copyText.select();
+    copyText.setSelectionRange(0, 99999);
+    
+    try {
+        navigator.clipboard.writeText(copyText.value).then(function() {
+            alert('✅ Список скопирован в буфер обмена!');
+        }).catch(function() {
+            // Fallback
+            document.execCommand("copy");
+            alert('✅ Список скопирован в буфер обмена!');
+        });
+    } catch (err) {
+        document.execCommand("copy");
+        alert('✅ Список скопирован в буфер обмена!');
+    }
+}
+</script>
+{% endblock %}
+

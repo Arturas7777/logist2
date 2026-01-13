@@ -582,6 +582,13 @@ class NewInvoice(models.Model):
             # Создаем позиции из услуг
             for service in services:
                 service_name = service.get_service_name()
+                
+                # ЗАЩИТА: Пропускаем услуги, которые не найдены в справочнике
+                # Это может произойти если услуга была удалена, а CarService остался
+                if service_name == "Услуга не найдена":
+                    logger.warning(f"⚠️ Пропущена битая услуга: type={service.service_type}, id={service.service_id} для авто {car.vin}")
+                    continue
+                
                 price = service.custom_price if service.custom_price else service.get_default_price()
                 
                 InvoiceItem.objects.create(
@@ -1026,6 +1033,12 @@ class Transaction(models.Model):
         return f"{prefix}-{next_num:05d}"
     
     def save(self, *args, **kwargs):
+        """Переопределяем save для автоматической генерации номера"""
+        if not self.number:
+            self.number = self.generate_number()
+        
+        super().save(*args, **kwargs)
+
         """Переопределяем save для автоматической генерации номера"""
         if not self.number:
             self.number = self.generate_number()

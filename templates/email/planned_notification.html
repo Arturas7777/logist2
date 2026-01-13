@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Планируемая разгрузка контейнера</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            border-bottom: 2px solid #2196F3;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            color: #2196F3;
+            margin: 0;
+            font-size: 24px;
+        }
+        .info-block {
+            background-color: #e3f2fd;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .info-block h2 {
+            color: #1565C0;
+            margin-top: 0;
+            font-size: 18px;
+        }
+        .highlight {
+            font-size: 28px;
+            font-weight: bold;
+            color: #1565C0;
+        }
+        .cars-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        .cars-table th {
+            background-color: #2196F3;
+            color: white;
+            padding: 12px;
+            text-align: left;
+        }
+        .cars-table td {
+            padding: 12px;
+            border-bottom: 1px solid #ddd;
+        }
+        .cars-table tr:hover {
+            background-color: #f5f5f5;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+        }
+        .footer a {
+            color: #2196F3;
+            text-decoration: none;
+        }
+        .greeting {
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{ company_name }}</h1>
+        </div>
+        
+        <p class="greeting">Уважаемый(ая) {{ client_name }},</p>
+        
+        <p>Информируем вас о планируемой дате разгрузки контейнера с вашими автомобилями.</p>
+        
+        <div class="info-block">
+            <h2>Информация о контейнере</h2>
+            <p><strong>Номер контейнера:</strong> {{ container_number }}</p>
+            <p><strong>Планируемая дата разгрузки:</strong></p>
+            <p class="highlight">{{ planned_date|date:"d.m.Y" }}</p>
+            {% if warehouse %}
+            <p><strong>Склад:</strong> {{ warehouse }}</p>
+            {% endif %}
+        </div>
+        
+        <h3>Ваши автомобили в контейнере:</h3>
+        <table class="cars-table">
+            <thead>
+                <tr>
+                    <th>Марка</th>
+                    <th>Год</th>
+                    <th>VIN</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for car in cars %}
+                <tr>
+                    <td>{{ car.brand }}</td>
+                    <td>{{ car.year }}</td>
+                    <td>{{ car.vin }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        <p>Мы свяжемся с вами сразу после фактической разгрузки контейнера.</p>
+        
+        <div class="footer">
+            <p><strong>{{ company_name }}</strong></p>
+            {% if company_phone %}<p>Телефон: {{ company_phone }}</p>{% endif %}
+            {% if company_email %}<p>Email: <a href="mailto:{{ company_email }}">{{ company_email }}</a></p>{% endif %}
+            {% if company_website %}<p>Сайт: <a href="{{ company_website }}">{{ company_website }}</a></p>{% endif %}
+        </div>
+    </div>
+</body>
+</html>

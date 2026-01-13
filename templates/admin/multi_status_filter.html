@@ -1,29 +1,26 @@
 {% load i18n %}
 <h3>{% blocktrans with filter_title=title %} By {{ filter_title }} {% endblocktrans %}</h3>
-<div style="max-height: 200px; overflow-y: auto;">
-    <ul style="list-style: none; padding: 0;">
-        {% for choice in choices %}
-            <li style="margin: 5px 0;">
-                <label style="display: flex; align-items: center; cursor: pointer;">
-                    <input type="checkbox" 
-                           name="{{ spec.parameter_name }}" 
-                           value="{{ choice.value }}"
-                           {% if choice.selected %}checked{% endif %}
-                           style="margin-right: 8px;"
-                           id="status_{{ choice.value }}">
-                    <span>{{ choice.display }}</span>
-                </label>
-            </li>
-        {% endfor %}
-    </ul>
-    <div style="margin-top: 10px;">
-        <button type="button" onclick="applyFilter()" style="background: #417690; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">
-            Применить фильтр
-        </button>
-        <button type="button" onclick="clearFilter()" style="background: #ba2121; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; margin-left: 5px;">
-            Очистить
-        </button>
-    </div>
+<ul>
+    {% for choice in choices %}
+        <li>
+            <label>
+                <input type="checkbox" 
+                       name="{{ spec.parameter_name }}" 
+                       value="{{ choice.value }}"
+                       {% if choice.selected %}checked{% endif %}
+                       id="status_{{ choice.value }}">
+                {{ choice.display }}
+            </label>
+        </li>
+    {% endfor %}
+</ul>
+<div style="margin-top: 10px; padding-left: 15px;">
+    <button type="button" onclick="applyFilter()" style="background: #417690; color: white; border: none; padding: 8px 17px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">
+        Применить
+    </button>
+    <button type="button" onclick="clearFilter()" style="background: #ba2121; color: white; border: none; padding: 8px 17px; border-radius: 4px; cursor: pointer; margin-left: 5px; font-size: 14px; font-weight: 500;">
+        Сбросить
+    </button>
 </div>
 
 <script>

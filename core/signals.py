@@ -441,6 +441,64 @@ def recalculate_invoices_on_car_service_delete(sender, instance, **kwargs):
 
 
 # ============================================================================
+# КАСКАДНОЕ УДАЛЕНИЕ CarService ПРИ УДАЛЕНИИ УСЛУГ ИЗ СПРАВОЧНИКОВ
+# ============================================================================
+
+@receiver(pre_delete, sender=LineService)
+def delete_car_services_on_line_service_delete(sender, instance, **kwargs):
+    """
+    Удаляет связанные CarService записи при удалении услуги линии.
+    Это предотвращает появление 'битых' записей с несуществующими service_id.
+    """
+    try:
+        deleted_count = CarService.objects.filter(
+            service_type='LINE',
+            service_id=instance.id
+        ).delete()[0]
+        
+        if deleted_count > 0:
+            logger.info(f"🗑️ Удалено {deleted_count} CarService записей при удалении LineService '{instance.name}' (id={instance.id})")
+    except Exception as e:
+        logger.error(f"Error deleting CarService on LineService delete: {e}")
+
+
+@receiver(pre_delete, sender=WarehouseService)
+def delete_car_services_on_warehouse_service_delete(sender, instance, **kwargs):
+    """
+    Удаляет связанные CarService записи при удалении услуги склада.
+    Это предотвращает появление 'битых' записей с несуществующими service_id.
+    """
+    try:
+        deleted_count = CarService.objects.filter(
+            service_type='WAREHOUSE',
+            service_id=instance.id
+        ).delete()[0]
+        
+        if deleted_count > 0:
+            logger.info(f"🗑️ Удалено {deleted_count} CarService записей при удалении WarehouseService '{instance.name}' (id={instance.id})")
+    except Exception as e:
+        logger.error(f"Error deleting CarService on WarehouseService delete: {e}")
+
+
+@receiver(pre_delete, sender=CarrierService)
+def delete_car_services_on_carrier_service_delete(sender, instance, **kwargs):
+    """
+    Удаляет связанные CarService записи при удалении услуги перевозчика.
+    Это предотвращает появление 'битых' записей с несуществующими service_id.
+    """
+    try:
+        deleted_count = CarService.objects.filter(
+            service_type='CARRIER',
+            service_id=instance.id
+        ).delete()[0]
+        
+        if deleted_count > 0:
+            logger.info(f"🗑️ Удалено {deleted_count} CarService записей при удалении CarrierService '{instance.name}' (id={instance.id})")
+    except Exception as e:
+        logger.error(f"Error deleting CarService on CarrierService delete: {e}")
+
+
+# ============================================================================
 # СИГНАЛЫ ДЛЯ EMAIL-УВЕДОМЛЕНИЙ КЛИЕНТОВ
 # ============================================================================
 

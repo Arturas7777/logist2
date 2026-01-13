@@ -95,6 +95,10 @@
                    style="background: white; color: #333; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
                     💵 Пополнить
                 </a>
+                <a href="{% url 'admin:client_cars_in_warehouse' original.pk %}" 
+                   style="background: white; color: #333; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
+                    🚗 Авто на складе
+                </a>
                 <a href="{% url 'admin:client_reset_balance' original.pk %}" 
                    style="background: rgba(255,255,255,0.2); color: white; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: bold; border: 2px solid white;"
                    onclick="return confirm('Обнулить баланс клиента {{ original.name }}?');">

@@ -146,6 +146,21 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
 SECURE_HSTS_PRELOAD = not DEBUG
 SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 
+# Email settings for notifications
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'localhost')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '25'))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'False').lower() == 'true'
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@caromoto-lt.com')
+
+# Company info for email templates
+COMPANY_NAME = 'Caromoto Lithuania'
+COMPANY_PHONE = '+37068830450'
+COMPANY_EMAIL = 'lithuania@caromoto.com'
+COMPANY_WEBSITE = 'https://caromoto-lt.com'
+
 def _build_csrf_trusted(origins):
     result = []
     for host in origins:
