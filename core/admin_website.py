@@ -5,7 +5,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from .models_website import (
     ClientUser, CarPhoto, ContainerPhoto, ContainerPhotoArchive, AIChat,
-    NewsPost, ContactMessage, TrackingRequest
+    NewsPost, ContactMessage, TrackingRequest, NotificationLog
 )
 
 
@@ -335,4 +335,63 @@ class ContainerPhotoArchiveAdmin(admin.ModelAdmin):
                     f'Ошибка при обработке архива: {str(e)}',
                     level='ERROR'
                 )
+
+
+@admin.register(NotificationLog)
+class NotificationLogAdmin(admin.ModelAdmin):
+    """Просмотр истории отправленных уведомлений"""
+    list_display = ['sent_at', 'notification_type_display', 'container', 'client', 'email_to', 'success_display', 'created_by']
+    list_filter = ['notification_type', 'success', 'sent_at']
+    search_fields = ['container__number', 'client__name', 'email_to', 'subject']
+    readonly_fields = ['container', 'client', 'notification_type', 'email_to', 'subject', 'cars_info', 'sent_at', 'success', 'error_message', 'created_by']
+    ordering = ['-sent_at']
+    date_hierarchy = 'sent_at'
+    
+    fieldsets = (
+        ('Уведомление', {
+            'fields': ('notification_type', 'container', 'client', 'email_to', 'subject')
+        }),
+        ('Автомобили', {
+            'fields': ('cars_info',),
+            'classes': ('collapse',)
+        }),
+        ('Статус отправки', {
+            'fields': ('sent_at', 'success', 'error_message', 'created_by')
+        }),
+    )
+    
+    def notification_type_display(self, obj):
+        """Красивое отображение типа уведомления"""
+        colors = {
+            'PLANNED': '#2196F3',  # синий
+            'UNLOADED': '#4CAF50',  # зеленый
+        }
+        color = colors.get(obj.notification_type, '#666')
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 8px; border-radius: 3px;">{}</span>',
+            color,
+            obj.get_notification_type_display()
+        )
+    notification_type_display.short_description = 'Тип'
+    notification_type_display.admin_order_field = 'notification_type'
+    
+    def success_display(self, obj):
+        """Красивое отображение статуса"""
+        if obj.success:
+            return format_html('<span style="color: green;">✓ Успешно</span>')
+        return format_html('<span style="color: red;">✗ Ошибка</span>')
+    success_display.short_description = 'Статус'
+    success_display.admin_order_field = 'success'
+    
+    def has_add_permission(self, request):
+        """Запрещаем создание записей вручную"""
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        """Запрещаем редактирование"""
+        return False
+    
+    def has_delete_permission(self, request, obj=None):
+        """Разрешаем удаление для очистки старых записей"""
+        return True
 

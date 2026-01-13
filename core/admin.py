@@ -25,7 +25,7 @@ from .admin_filters import MultiStatusFilter, MultiWarehouseFilter
 class WarehouseServiceInline(admin.TabularInline):
     model = WarehouseService
     extra = 1
-    fields = ('name', 'description', 'default_price', 'is_active')
+    fields = ('name', 'description', 'default_price', 'is_active', 'add_by_default')
     verbose_name = "Услуга склада"
     verbose_name_plural = "Услуги склада"
     
@@ -215,7 +215,7 @@ class CarInline(admin.TabularInline):
 
 class ContainerAdmin(admin.ModelAdmin):
     change_form_template = 'admin/core/container/change_form.html'
-    list_display = ('number', 'colored_status', 'unload_date', 'line', 'eta', 'warehouse')
+    list_display = ('number', 'colored_status', 'eta', 'planned_unload_date', 'unload_date', 'line', 'warehouse')
     list_display_links = ('number',)  # Делаем номер контейнера кликабельным
     list_filter = (MultiStatusFilter, 'line', 'client', 'unload_date')
     search_fields = ('number',)
@@ -226,13 +226,13 @@ class ContainerAdmin(admin.ModelAdmin):
             'classes': ('collapse',),
             'fields': (
                 ('number', 'status', 'line', 'warehouse', 'ths'),
-                ('eta', 'unload_date'),
+                ('eta', 'planned_unload_date', 'unload_date'),
                 'google_drive_folder_url',
             )
         }),
     )
     readonly_fields = ('days', 'storage_cost')
-    actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'check_container_status', 'bulk_update_container_statuses', 'sync_photos_from_gdrive']
+    actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'check_container_status', 'bulk_update_container_statuses', 'sync_photos_from_gdrive', 'resend_planned_notifications', 'resend_unload_notifications']
 
     class Media:
         css = {'all': ('css/logist2_custom_admin.css',)}
@@ -264,6 +264,15 @@ class ContainerAdmin(admin.ModelAdmin):
                 logger.info(f"Successfully synced warehouse for {obj.container_cars.count()} cars")
             except Exception as e:
                 logger.error(f"Failed to sync cars after warehouse change for container {obj.id}: {e}")
+
+        # Если изменили статус — обновить статус у ВСЕХ автомобилей в контейнере
+        if change and form and 'status' in getattr(form, 'changed_data', []):
+            try:
+                logger.info(f"Status changed for container {obj.id} to {obj.status}, bulk updating all cars...")
+                updated_count = obj.container_cars.update(status=obj.status)
+                logger.info(f"✅ Updated status to '{obj.status}' for {updated_count} cars in container {obj.number}")
+            except Exception as e:
+                logger.error(f"Failed to update car statuses for container {obj.id}: {e}")
 
         # Если изменили дату разгрузки — обновить дату у ВСЕХ автомобилей в контейнере
         if change and form and 'unload_date' in getattr(form, 'changed_data', []):
@@ -339,35 +348,100 @@ class ContainerAdmin(admin.ModelAdmin):
                 except:
                     pass
 
-        # если изменили линию — обновить линию во всех автомобилях контейнера
+        # если изменили линию — обновить линию во всех автомобилях контейнера И пересоздать услуги линии
         if change and form and 'line' in getattr(form, 'changed_data', []):
             line_start = time.time()
             try:
                 from django.db.models.signals import post_save, post_delete
-                from core.signals import update_related_on_car_save, create_car_services_on_car_save
-                from core.models import recalculate_car_price_on_service_save, recalculate_car_price_on_service_delete
+                from core.signals import update_related_on_car_save, create_car_services_on_car_save, find_line_service_by_container_count, recalculate_invoices_on_car_service_save, recalculate_invoices_on_car_service_delete
+                from core.models import recalculate_car_price_on_service_save, recalculate_car_price_on_service_delete, LineService
+                from core.models_billing import NewInvoice
                 
-                logger.info(f"[TIMING] Line change started for container {obj.id}")
+                logger.info(f"[TIMING] Line change started for container {obj.id}, new line: {obj.line}")
                 
-                # Временно отключаем сигналы чтобы избежать рекурсии
+                # Временно отключаем ВСЕ сигналы чтобы избежать рекурсии и каскадных обновлений
                 post_save.disconnect(update_related_on_car_save, sender=Car)
                 post_save.disconnect(create_car_services_on_car_save, sender=Car)
                 post_save.disconnect(recalculate_car_price_on_service_save, sender=CarService)
                 post_delete.disconnect(recalculate_car_price_on_service_delete, sender=CarService)
+                post_save.disconnect(recalculate_invoices_on_car_service_save, sender=CarService)
+                post_delete.disconnect(recalculate_invoices_on_car_service_delete, sender=CarService)
                 
                 try:
-                    # Массовое обновление линии - без вызова сигналов
+                    # 1. Массовое обновление линии у всех авто
+                    car_ids = list(obj.container_cars.values_list('id', flat=True))
                     updated_count = obj.container_cars.update(line=obj.line)
-                    logger.info(f"[TIMING] Line updated for {updated_count} cars in {time.time() - line_start:.2f}s")
+                    logger.info(f"[TIMING] Line updated for {updated_count} cars")
+                    
+                    # 2. Удаляем старые услуги линии для всех авто контейнера (BULK)
+                    deleted_services = CarService.objects.filter(
+                        car_id__in=car_ids,
+                        service_type='LINE'
+                    ).delete()
+                    logger.info(f"[TIMING] Deleted {deleted_services[0]} old line services")
+                    
+                    # 3. Создаём новые услуги линии если линия указана
+                    if obj.line:
+                        new_services = []
+                        for car in obj.container_cars.select_related('container').all():
+                            vehicle_type = getattr(car, 'vehicle_type', 'CAR')
+                            line_service = find_line_service_by_container_count(obj.line, obj, vehicle_type)
+                            
+                            if line_service:
+                                new_services.append(CarService(
+                                    car=car,
+                                    service_type='LINE',
+                                    service_id=line_service.id,
+                                    custom_price=line_service.default_price,
+                                    quantity=1
+                                ))
+                        
+                        if new_services:
+                            CarService.objects.bulk_create(new_services, ignore_conflicts=True)
+                            logger.info(f"[TIMING] Created {len(new_services)} new line services")
+                    
+                    # 4. Пересчитываем цены для всех авто (BULK)
+                    cars_to_update = []
+                    affected_invoices = set()
+                    for car in obj.container_cars.select_related('warehouse').all():
+                        car.update_days_and_storage()
+                        car.calculate_total_price()
+                        cars_to_update.append(car)
+                        # Собираем связанные инвойсы
+                        for invoice in NewInvoice.objects.filter(cars=car, status__in=['DRAFT', 'ISSUED', 'PARTIALLY_PAID', 'OVERDUE']):
+                            affected_invoices.add(invoice)
+                    
+                    if cars_to_update:
+                        Car.objects.bulk_update(
+                            cars_to_update,
+                            ['days', 'storage_cost', 'current_price', 'total_price'],
+                            batch_size=50
+                        )
+                        logger.info(f"[TIMING] Recalculated prices for {len(cars_to_update)} cars")
+                    
+                    # 5. Обновляем связанные инвойсы
+                    if affected_invoices:
+                        logger.info(f"[TIMING] Updating {len(affected_invoices)} affected invoices...")
+                        for invoice in affected_invoices:
+                            try:
+                                invoice.regenerate_items_from_cars()
+                            except Exception as e:
+                                logger.error(f"Error updating invoice {invoice.number}: {e}")
+                        logger.info(f"[TIMING] Invoices updated")
+                    
+                    logger.info(f"[TIMING] Line change completed in {time.time() - line_start:.2f}s")
+                    
                 finally:
                     # Включаем сигналы обратно
                     post_save.connect(update_related_on_car_save, sender=Car)
                     post_save.connect(create_car_services_on_car_save, sender=Car)
                     post_save.connect(recalculate_car_price_on_service_save, sender=CarService)
                     post_delete.connect(recalculate_car_price_on_service_delete, sender=CarService)
+                    post_save.connect(recalculate_invoices_on_car_service_save, sender=CarService)
+                    post_delete.connect(recalculate_invoices_on_car_service_delete, sender=CarService)
                     
             except Exception as e:
-                logger.error(f"Failed to update cars after line change for container {obj.id}: {e}")
+                logger.error(f"Failed to update cars after line change for container {obj.id}: {e}", exc_info=True)
 
     def save_formset(self, request, form, formset, change):
         import time
@@ -475,7 +549,9 @@ class ContainerAdmin(admin.ModelAdmin):
             obj.update_days_and_storage()
             obj.sync_cars()
             obj.save(update_fields=['days', 'storage_cost'])
-        self.message_user(request, f"Статус изменён на 'В пути' для {updated} контейнеров.")
+            # Обновляем статус у всех авто в контейнере
+            obj.container_cars.update(status='FLOATING')
+        self.message_user(request, f"Статус изменён на 'В пути' для {updated} контейнеров и их авто.")
     set_status_floating.short_description = "Изменить статус на В пути"
 
     def set_status_in_port(self, request, queryset):
@@ -484,7 +560,9 @@ class ContainerAdmin(admin.ModelAdmin):
             obj.update_days_and_storage()
             obj.sync_cars()
             obj.save(update_fields=['days', 'storage_cost'])
-        self.message_user(request, f"Статус изменён на 'В порту' для {updated} контейнеров.")
+            # Обновляем статус у всех авто в контейнере
+            obj.container_cars.update(status='IN_PORT')
+        self.message_user(request, f"Статус изменён на 'В порту' для {updated} контейнеров и их авто.")
     set_status_in_port.short_description = "Изменить статус на В порту"
 
     def set_status_unloaded(self, request, queryset):
@@ -495,10 +573,12 @@ class ContainerAdmin(admin.ModelAdmin):
                 obj.update_days_and_storage()
                 obj.sync_cars()
                 obj.save(update_fields=['status', 'days', 'storage_cost'])
+                # Обновляем статус у всех авто в контейнере
+                obj.container_cars.update(status='UNLOADED')
                 updated += 1
             else:
                 self.message_user(request, f"Контейнер {obj.number} не обновлён: требуются поля 'Склад' и 'Дата разгрузки'.", level='warning')
-        self.message_user(request, f"Статус изменён на 'Разгружен' для {updated} контейнеров.")
+        self.message_user(request, f"Статус изменён на 'Разгружен' для {updated} контейнеров и их авто.")
     set_status_unloaded.short_description = "Изменить статус на Разгружен"
 
     def set_status_transferred(self, request, queryset):
@@ -507,7 +587,9 @@ class ContainerAdmin(admin.ModelAdmin):
             obj.update_days_and_storage()
             obj.sync_cars()
             obj.save(update_fields=['days', 'storage_cost'])
-        self.message_user(request, f"Статус изменён на 'Передан' для {updated} контейнеров.")
+            # Обновляем статус у всех авто в контейнере
+            obj.container_cars.update(status='TRANSFERRED')
+        self.message_user(request, f"Статус изменён на 'Передан' для {updated} контейнеров и их авто.")
     set_status_transferred.short_description = "Изменить статус на Передан"
 
     def check_container_status(self, request, queryset):
@@ -640,6 +722,94 @@ class ContainerAdmin(admin.ModelAdmin):
             )
     
     sync_photos_from_gdrive.short_description = "📥 Загрузить фото с Google Drive"
+
+    def resend_planned_notifications(self, request, queryset):
+        """Повторно отправляет уведомления клиентам о планируемой дате разгрузки"""
+        from core.services.email_service import ContainerNotificationService
+        
+        total_sent = 0
+        total_failed = 0
+        containers_processed = 0
+        
+        for container in queryset:
+            if not container.planned_unload_date:
+                self.message_user(
+                    request,
+                    f"Контейнер {container.number}: не указана планируемая дата разгрузки",
+                    level='WARNING'
+                )
+                continue
+            
+            sent, failed = ContainerNotificationService.send_planned_to_all_clients(container, user=request.user)
+            total_sent += sent
+            total_failed += failed
+            if sent > 0:
+                containers_processed += 1
+        
+        if total_sent > 0:
+            self.message_user(
+                request,
+                f"✅ Отправлено {total_sent} уведомлений о планируемой разгрузке для {containers_processed} контейнеров. Ошибок: {total_failed}",
+                level='SUCCESS'
+            )
+        elif total_failed > 0:
+            self.message_user(
+                request,
+                f"❌ Не удалось отправить уведомления. Ошибок: {total_failed}. Проверьте email клиентов.",
+                level='ERROR'
+            )
+        else:
+            self.message_user(
+                request,
+                "Нет клиентов с email для отправки уведомлений (или уведомления уже были отправлены)",
+                level='WARNING'
+            )
+    
+    resend_planned_notifications.short_description = "📧 Повторить уведомление о планируемой разгрузке"
+
+    def resend_unload_notifications(self, request, queryset):
+        """Повторно отправляет уведомления клиентам о разгрузке контейнера"""
+        from core.services.email_service import ContainerNotificationService
+        
+        total_sent = 0
+        total_failed = 0
+        containers_processed = 0
+        
+        for container in queryset:
+            if not container.unload_date:
+                self.message_user(
+                    request,
+                    f"Контейнер {container.number}: не указана дата разгрузки",
+                    level='WARNING'
+                )
+                continue
+            
+            sent, failed = ContainerNotificationService.send_unload_to_all_clients(container, user=request.user)
+            total_sent += sent
+            total_failed += failed
+            if sent > 0:
+                containers_processed += 1
+        
+        if total_sent > 0:
+            self.message_user(
+                request,
+                f"✅ Отправлено {total_sent} уведомлений о разгрузке для {containers_processed} контейнеров. Ошибок: {total_failed}",
+                level='SUCCESS'
+            )
+        elif total_failed > 0:
+            self.message_user(
+                request,
+                f"❌ Не удалось отправить уведомления. Ошибок: {total_failed}. Проверьте email клиентов.",
+                level='ERROR'
+            )
+        else:
+            self.message_user(
+                request,
+                "Нет клиентов с email для отправки уведомлений (или уведомления уже были отправлены)",
+                level='WARNING'
+            )
+    
+    resend_unload_notifications.short_description = "📧 Повторить уведомление о разгрузке"
 
     def get_changelist(self, request, **kwargs):
         """Добавляет фильтрацию по умолчанию для статусов 'В порту' и 'Разгружен'"""
@@ -1651,12 +1821,12 @@ class WarehouseAdmin(admin.ModelAdmin):
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
     change_form_template = 'admin/client_change.html'
-    list_display = ('name', 'new_balance_display', 'balance_status_new')
-    list_filter = ('name',)
-    search_fields = ('name',)
+    list_display = ('name', 'emails_display', 'notification_enabled', 'new_balance_display', 'balance_status_new')
+    list_filter = ('name', 'notification_enabled')
+    search_fields = ('name', 'email', 'email2', 'email3', 'email4')
     actions = ['reset_balances', 'recalculate_balance', 'reset_client_balance']
     readonly_fields = ('balance', 'balance_updated_at', 'new_invoices_display', 'new_transactions_display')
-    
+
     def get_queryset(self, request):
         """ОПТИМИЗАЦИЯ: Используем with_balance_info для предрасчета данных"""
         qs = super().get_queryset(request)
@@ -1664,16 +1834,33 @@ class ClientAdmin(admin.ModelAdmin):
         if 'changelist' in request.path:
             return qs.with_balance_info()
         return qs
-    
+
     fieldsets = (
         ('Основная информация', {
-            'fields': ('name',)
+            'fields': ('name', 'notification_enabled')
+        }),
+        ('📧 Email-адреса для уведомлений', {
+            'fields': ('email', 'email2', 'email3', 'email4'),
+            'description': 'Уведомления о разгрузке контейнеров будут отправлены на все указанные адреса'
         }),
         ('💰 Баланс', {
             'fields': ('balance', 'balance_updated_at', 'new_invoices_display', 'new_transactions_display'),
             'description': 'Единый баланс клиента с историей транзакций'
         }),
     )
+    
+    def emails_display(self, obj):
+        """Отображает количество email-адресов"""
+        emails = obj.get_notification_emails()
+        count = len(emails)
+        if count == 0:
+            return format_html('<span style="color: #999;">—</span>')
+        elif count == 1:
+            return format_html('<span title="{}">{}</span>', emails[0], emails[0])
+        else:
+            all_emails = ', '.join(emails)
+            return format_html('<span title="{}">{} (+{})</span>', all_emails, emails[0], count - 1)
+    emails_display.short_description = 'Email'
 
     def real_balance_display(self, obj):
         """Показывает инвойс-баланс клиента (инвойсы - платежи)"""
@@ -1894,6 +2081,7 @@ class ClientAdmin(admin.ModelAdmin):
             path('<int:client_id>/topup/', self.admin_site.admin_view(self.topup_balance_view), name='client_topup'),
             path('<int:client_id>/reset-balance/', self.admin_site.admin_view(self.reset_balance_view), name='client_reset_balance'),
             path('<int:client_id>/recalc-balance/', self.admin_site.admin_view(self.recalc_balance_view), name='client_recalc_balance'),
+            path('<int:client_id>/cars-in-warehouse/', self.admin_site.admin_view(self.cars_in_warehouse_view), name='client_cars_in_warehouse'),
         ]
         return custom_urls + urls
     
@@ -1992,6 +2180,56 @@ class ClientAdmin(admin.ModelAdmin):
             f'✅ Баланс пересчитан: {old_balance}€ → {new_balance}€ (пополнения: {topups}€, платежи: {payments}€)'
         )
         return redirect('admin:core_client_change', client_id)
+    
+    def cars_in_warehouse_view(self, request, client_id):
+        """Показывает список всех разгруженных авто клиента на складе"""
+        from django.shortcuts import render
+        from django.http import JsonResponse
+        
+        client = Client.objects.get(pk=client_id)
+        
+        # Получаем все авто клиента со статусом UNLOADED (на складе)
+        cars = Car.objects.filter(
+            client=client,
+            status='UNLOADED'
+        ).select_related('warehouse', 'container').order_by('warehouse__name', '-unload_date')
+        
+        # Группируем по складам
+        warehouses_data = {}
+        for car in cars:
+            wh_name = car.warehouse.name if car.warehouse else 'Без склада'
+            if wh_name not in warehouses_data:
+                warehouses_data[wh_name] = []
+            warehouses_data[wh_name].append(car)
+        
+        # Формируем текст для копирования
+        text_for_copy = f"Авто на складе - {client.name}\n"
+        text_for_copy += f"Дата: {timezone.now().strftime('%d.%m.%Y')}\n"
+        text_for_copy += "=" * 40 + "\n\n"
+        
+        for wh_name, wh_cars in warehouses_data.items():
+            text_for_copy += f"📍 {wh_name} ({len(wh_cars)} авто)\n"
+            text_for_copy += "-" * 30 + "\n"
+            for car in wh_cars:
+                text_for_copy += f"• {car.vin} - {car.brand} {car.year}"
+                if car.unload_date:
+                    text_for_copy += f" (разгр. {car.unload_date.strftime('%d.%m.%Y')})"
+                text_for_copy += "\n"
+            text_for_copy += "\n"
+        
+        text_for_copy += f"Итого: {cars.count()} авто"
+        
+        context = {
+            'client': client,
+            'cars': cars,
+            'warehouses_data': warehouses_data,
+            'text_for_copy': text_for_copy,
+            'total_count': cars.count(),
+            'opts': self.model._meta,
+            'title': f'Авто на складе - {client.name}',
+        }
+        
+        return render(request, 'admin/client_cars_in_warehouse.html', context)
 
 @admin.register(Company)
 class CompanyAdmin(admin.ModelAdmin):

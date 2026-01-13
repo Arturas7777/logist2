@@ -282,3 +282,11 @@ class Command(BaseCommand):
         self.stdout.write(f'  Obnovleno: {updated_count}')
         self.stdout.write(f'  Sozdano: {created_count}')
         self.stdout.write(f'  Pereschitano cen: {len(cars_to_recalc)}')
+
+
+
+
+
+
+
+

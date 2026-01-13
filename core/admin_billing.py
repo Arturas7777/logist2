@@ -68,7 +68,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     
     list_display = (
         'number_display',
-        'date',
+        'notes_display',
         'recipient_display',
         'total_display',
         'paid_amount_display',
@@ -352,6 +352,16 @@ class NewInvoiceAdmin(admin.ModelAdmin):
         return format_html('<a href="{}" style="font-weight: bold;">{}</a>', url, obj.number)
     number_display.short_description = 'Номер'
     number_display.admin_order_field = 'number'
+    
+    def notes_display(self, obj):
+        """Примечания инвойса"""
+        if obj.notes:
+            # Обрезаем длинный текст до 50 символов
+            notes_text = obj.notes[:50] + '...' if len(obj.notes) > 50 else obj.notes
+            return format_html('<span title="{}">{}</span>', obj.notes, notes_text)
+        return format_html('<span style="color: #999;">—</span>')
+    notes_display.short_description = 'Примечания'
+    notes_display.admin_order_field = 'notes'
     
     def issuer_display(self, obj):
         """Выставитель"""
