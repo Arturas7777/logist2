@@ -1,0 +1,217 @@
+{% load i18n %}
+
+<h3>{% blocktranslate with filter_title=title %}By {{ filter_title }}{% endblocktranslate %}</h3>
+
+{% for choice in choices %}
+<ul>
+<li style="padding: 0; list-style: none;">
+    <!-- Поле поиска -->
+    <input type="text" 
+           id="client-search-input" 
+           placeholder="🔍 Введите имя клиента..."
+           autocomplete="off"
+           class="client-search-field">
+    
+    <!-- Результаты поиска -->
+    <div id="client-search-results" class="client-search-results"></div>
+    
+    {% if choice.current_value %}
+    <div class="client-selected">
+        <span>✓ {{ choice.current_text }}</span>
+        <a href="{{ choice.query_string }}" title="Сбросить">✕</a>
+    </div>
+    {% endif %}
+</li>
+</ul>
+
+<script type="text/javascript">
+(function() {
+    var clientsData = {{ choice.clients_json|safe }};
+    var paramName = '{{ choice.parameter_name }}';
+    
+    function initSearch() {
+        var input = document.getElementById('client-search-input');
+        var results = document.getElementById('client-search-results');
+        if (!input || !results) return;
+        
+        var selectedIndex = -1;
+        var filteredClients = [];
+        
+        function showResults(clients) {
+            filteredClients = clients;
+            selectedIndex = -1;
+            
+            if (clients.length === 0) {
+                results.innerHTML = '<div class="no-results">Не найдено</div>';
+                results.style.display = 'block';
+                return;
+            }
+            
+            var html = '';
+            clients.forEach(function(client, index) {
+                html += '<div class="client-option" data-id="' + client.id + '" data-index="' + index + '">' +
+                        client.text + '</div>';
+            });
+            results.innerHTML = html;
+            results.style.display = 'block';
+            
+            var options = results.querySelectorAll('.client-option');
+            options.forEach(function(opt) {
+                opt.addEventListener('click', function() {
+                    selectClient(this.dataset.id);
+                });
+                opt.addEventListener('mouseenter', function() {
+                    highlightOption(parseInt(this.dataset.index));
+                });
+            });
+        }
+        
+        function highlightOption(index) {
+            var options = results.querySelectorAll('.client-option');
+            options.forEach(function(opt, i) {
+                opt.style.backgroundColor = (i === index) ? 'var(--selected-row)' : '';
+            });
+            selectedIndex = index;
+        }
+        
+        function selectClient(clientId) {
+            var url = new URL(window.location.href);
+            url.searchParams.set(paramName, clientId);
+            window.location.href = url.toString();
+        }
+        
+        input.addEventListener('input', function() {
+            var query = this.value.toLowerCase().trim();
+            
+            if (query.length < 1) {
+                results.style.display = 'none';
+                return;
+            }
+            
+            var filtered = clientsData.filter(function(client) {
+                return client.text.toLowerCase().indexOf(query) !== -1;
+            });
+            
+            showResults(filtered.slice(0, 15));
+        });
+        
+        input.addEventListener('keydown', function(e) {
+            if (results.style.display === 'none') return;
+            
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (selectedIndex < filteredClients.length - 1) {
+                    highlightOption(selectedIndex + 1);
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (selectedIndex > 0) {
+                    highlightOption(selectedIndex - 1);
+                }
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (selectedIndex >= 0 && filteredClients[selectedIndex]) {
+                    selectClient(filteredClients[selectedIndex].id);
+                }
+            } else if (e.key === 'Escape') {
+                results.style.display = 'none';
+            }
+        });
+        
+        document.addEventListener('click', function(e) {
+            if (!input.contains(e.target) && !results.contains(e.target)) {
+                results.style.display = 'none';
+            }
+        });
+        
+        input.addEventListener('focus', function() {
+            if (this.value.length >= 1) {
+                var query = this.value.toLowerCase().trim();
+                var filtered = clientsData.filter(function(client) {
+                    return client.text.toLowerCase().indexOf(query) !== -1;
+                });
+                showResults(filtered.slice(0, 15));
+            }
+        });
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initSearch);
+    } else {
+        setTimeout(initSearch, 50);
+    }
+})();
+</script>
+
+<style>
+.client-search-field {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--hairline-color, #ccc);
+    border-radius: 4px;
+    font-size: 12px;
+    box-sizing: border-box;
+    background: var(--body-bg, #fff);
+    color: var(--body-fg, #333);
+}
+.client-search-field:focus {
+    border-color: var(--primary, #417690);
+    outline: none;
+}
+.client-search-field::placeholder {
+    color: var(--body-quiet-color, #999);
+}
+.client-search-results {
+    display: none;
+    position: absolute;
+    z-index: 1000;
+    background: var(--body-bg, #fff);
+    border: 1px solid var(--hairline-color, #ccc);
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+    max-height: 200px;
+    overflow-y: auto;
+    width: calc(100% - 30px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+.client-search-results .client-option {
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 12px;
+    border-bottom: 1px solid var(--hairline-color, #eee);
+    color: var(--body-fg, #333);
+}
+.client-search-results .client-option:hover {
+    background: var(--selected-row, #e8f4f8);
+}
+.client-search-results .client-option:last-child {
+    border-bottom: none;
+}
+.client-search-results .no-results {
+    padding: 8px 10px;
+    color: var(--body-quiet-color, #999);
+    font-size: 11px;
+}
+.client-selected {
+    margin-top: 6px;
+    padding: 5px 8px;
+    background: var(--selected-row, #e8f4f8);
+    border-radius: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+}
+.client-selected span {
+    color: var(--body-fg, #333);
+}
+.client-selected a {
+    color: var(--delete-button-bg, #ba2121);
+    text-decoration: none;
+    font-weight: bold;
+}
+.client-selected a:hover {
+    color: var(--delete-button-hover-bg, #a41515);
+}
+</style>
+{% endfor %}

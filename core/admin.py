@@ -17,7 +17,7 @@ from django import forms
 from decimal import Decimal
 from .models import Client, Warehouse, Car, Container, Line, Company, Carrier, LineService, CarrierService, WarehouseService, CarService, DeletedCarService
 from .forms import LineForm, CarrierForm, WarehouseForm
-from .admin_filters import MultiStatusFilter, MultiWarehouseFilter
+from .admin_filters import MultiStatusFilter, MultiWarehouseFilter, ClientAutocompleteFilter
 
 
 # Inline формы для управления услугами прямо в карточках контрагентов
@@ -217,7 +217,7 @@ class ContainerAdmin(admin.ModelAdmin):
     change_form_template = 'admin/core/container/change_form.html'
     list_display = ('number', 'colored_status', 'eta', 'planned_unload_date', 'unload_date', 'line', 'warehouse')
     list_display_links = ('number',)  # Делаем номер контейнера кликабельным
-    list_filter = (MultiStatusFilter, 'line', 'client', 'unload_date')
+    list_filter = (MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter)
     search_fields = ('number',)
     ordering = ['-unload_date', '-id']  # Сначала по дате разгрузки (новые сверху), потом по ID
     inlines = [CarInline]
@@ -830,7 +830,7 @@ class CarAdmin(admin.ModelAdmin):
         'storage_cost_display', 'days_display', 'has_title'
     )
     list_editable = ('has_title',)
-    list_filter = (MultiStatusFilter, MultiWarehouseFilter, 'client', 'has_title', 'line')
+    list_filter = (MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter)
     search_fields = ('vin', 'brand')
     # ОПТИМИЗАЦИЯ: Предзагрузка связанных объектов для list view
     list_select_related = ('client', 'warehouse', 'line', 'carrier', 'container')

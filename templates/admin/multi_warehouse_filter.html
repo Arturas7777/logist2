@@ -8,12 +8,45 @@
                        name="{{ spec.parameter_name }}" 
                        value="{{ choice.value }}"
                        {% if choice.selected %}checked{% endif %}
-                       onchange="this.form.submit();">
+                       id="warehouse_{{ choice.value }}">
                 {{ choice.display }}
             </label>
         </li>
     {% endfor %}
 </ul>
+<div style="margin-top: 10px; padding-left: 15px;">
+    <button type="button" onclick="applyWarehouseFilter()" style="background: #417690; color: white; border: none; padding: 8px 17px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500;">
+        Применить
+    </button>
+    <button type="button" onclick="clearWarehouseFilter()" style="background: #ba2121; color: white; border: none; padding: 8px 17px; border-radius: 4px; cursor: pointer; margin-left: 5px; font-size: 14px; font-weight: 500;">
+        Сбросить
+    </button>
+</div>
 
+<script>
+function applyWarehouseFilter() {
+    // Собираем все выбранные чекбоксы складов
+    const checkboxes = document.querySelectorAll('input[name="{{ spec.parameter_name }}"]:checked');
+    const values = Array.from(checkboxes).map(cb => cb.value);
+    
+    // Создаем новый URL с выбранными значениями
+    const url = new URL(window.location);
+    url.searchParams.delete('{{ spec.parameter_name }}');
+    
+    values.forEach(value => {
+        url.searchParams.append('{{ spec.parameter_name }}', value);
+    });
+    
+    // Переходим на новый URL
+    window.location.href = url.toString();
+}
 
-
+function clearWarehouseFilter() {
+    // Создаем новый URL без параметров фильтра складов
+    const url = new URL(window.location);
+    url.searchParams.delete('{{ spec.parameter_name }}');
+    
+    // Переходим на новый URL
+    window.location.href = url.toString();
+}
+</script>
