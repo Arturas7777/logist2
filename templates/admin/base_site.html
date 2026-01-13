@@ -40,6 +40,14 @@
     #quick-nav a:hover {
         transform: scale(1.2);
     }
+    /* Принудительно светлая тема */
+    :root {
+        color-scheme: light !important;
+    }
 </style>
+<script>
+    // Принудительно устанавливаем светлую тему
+    document.documentElement.dataset.theme = 'light';
+</script>
 {% endblock %}
 

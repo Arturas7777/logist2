@@ -3,6 +3,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.utils.html import format_html
 from django.urls import reverse
+import json
 
 
 class MultiStatusFilter(SimpleListFilter):
@@ -117,3 +118,49 @@ class MultiWarehouseFilter(SimpleListFilter):
                 'display': title,
                 'value': lookup,
             }
+
+
+class ClientAutocompleteFilter(SimpleListFilter):
+    """Фильтр клиентов с автодополнением (поиск по имени)"""
+    title = _('Клиент')
+    parameter_name = 'client__id__exact'
+    template = 'admin/client_autocomplete_filter.html'
+
+    def lookups(self, request, model_admin):
+        """Возвращает список клиентов для автодополнения"""
+        from core.models import Client
+        clients = Client.objects.all().order_by('name')
+        return [(str(c.id), c.name) for c in clients]
+
+    def queryset(self, request, queryset):
+        """Фильтрует по выбранному клиенту"""
+        if self.value():
+            return queryset.filter(client_id=self.value())
+        return queryset
+
+    def choices(self, changelist):
+        """Возвращает данные для шаблона"""
+        from core.models import Client
+        
+        # Получаем всех клиентов для Select2
+        clients = Client.objects.all().order_by('name')
+        clients_data = [{'id': str(c.id), 'text': c.name} for c in clients]
+        
+        # Текущий выбранный клиент
+        current_value = self.value()
+        current_text = ''
+        if current_value:
+            try:
+                current_text = Client.objects.get(id=current_value).name
+            except Client.DoesNotExist:
+                pass
+        
+        yield {
+            'selected': current_value is None,
+            'query_string': changelist.get_query_string(remove=[self.parameter_name]),
+            'display': _('Все'),
+            'clients_json': json.dumps(clients_data),
+            'current_value': current_value or '',
+            'current_text': current_text,
+            'parameter_name': self.parameter_name,
+        }
