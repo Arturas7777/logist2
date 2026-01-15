@@ -41,11 +41,27 @@ class LineServiceInline(admin.TabularInline):
     fields = ('name', 'description', 'default_price', 'is_active')
     verbose_name = "Услуга линии"
     verbose_name_plural = "Услуги линии"
-    
+
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)
         formset.form.base_fields['description'].widget.attrs.update({'rows': 1})
         return formset
+
+
+class LineTHSPercentInline(admin.TabularInline):
+    """Inline для настройки процентов THS для каждого типа ТС"""
+    from .models import LineTHSPercent
+    model = LineTHSPercent
+    extra = 0
+    fields = ('vehicle_type', 'percent')
+    verbose_name = "Процент THS для типа ТС"
+    verbose_name_plural = "Проценты THS для типов ТС"
+    
+    def get_extra(self, request, obj=None, **kwargs):
+        """Если нет записей - показываем все 11 типов для заполнения"""
+        if obj and obj.ths_percents.exists():
+            return 0
+        return 11  # Количество типов ТС
 
 
 class CarrierServiceInline(admin.TabularInline):
@@ -225,7 +241,8 @@ class ContainerAdmin(admin.ModelAdmin):
         ('Основные данные', {
             'classes': ('collapse',),
             'fields': (
-                ('number', 'status', 'line', 'warehouse', 'ths'),
+                ('number', 'status', 'line', 'warehouse'),
+                ('ths', 'ths_payer'),
                 ('eta', 'planned_unload_date', 'unload_date'),
                 'google_drive_folder_url',
             )
@@ -348,16 +365,24 @@ class ContainerAdmin(admin.ModelAdmin):
                 except:
                     pass
 
-        # если изменили линию — обновить линию во всех автомобилях контейнера И пересоздать услуги линии
-        if change and form and 'line' in getattr(form, 'changed_data', []):
+        # Проверяем изменения связанные с THS: линия, сумма THS, плательщик THS
+        changed_data = getattr(form, 'changed_data', []) if form else []
+        ths_related_changed = any(field in changed_data for field in ['line', 'ths', 'ths_payer'])
+        
+        # Для нового контейнера - создаём THS если указаны line и ths
+        # Для существующего - только если изменились поля THS
+        should_create_ths = (not change and obj.line and obj.ths) or (change and ths_related_changed)
+
+        # если создаём новый контейнер с THS или изменили THS поля — обновить услуги THS
+        if should_create_ths:
             line_start = time.time()
             try:
                 from django.db.models.signals import post_save, post_delete
-                from core.signals import update_related_on_car_save, create_car_services_on_car_save, find_line_service_by_container_count, recalculate_invoices_on_car_service_save, recalculate_invoices_on_car_service_delete
-                from core.models import recalculate_car_price_on_service_save, recalculate_car_price_on_service_delete, LineService
+                from core.signals import update_related_on_car_save, create_car_services_on_car_save, create_ths_services_for_container, recalculate_invoices_on_car_service_save, recalculate_invoices_on_car_service_delete
+                from core.models import recalculate_car_price_on_service_save, recalculate_car_price_on_service_delete, LineService, WarehouseService
                 from core.models_billing import NewInvoice
                 
-                logger.info(f"[TIMING] Line change started for container {obj.id}, new line: {obj.line}")
+                logger.info(f"[TIMING] THS-related change started for container {obj.id}, line: {obj.line}, ths: {obj.ths}, ths_payer: {obj.ths_payer}")
                 
                 # Временно отключаем ВСЕ сигналы чтобы избежать рекурсии и каскадных обновлений
                 post_save.disconnect(update_related_on_car_save, sender=Car)
@@ -368,39 +393,36 @@ class ContainerAdmin(admin.ModelAdmin):
                 post_delete.disconnect(recalculate_invoices_on_car_service_delete, sender=CarService)
                 
                 try:
-                    # 1. Массовое обновление линии у всех авто
-                    car_ids = list(obj.container_cars.values_list('id', flat=True))
-                    updated_count = obj.container_cars.update(line=obj.line)
-                    logger.info(f"[TIMING] Line updated for {updated_count} cars")
+                    # 1. Если изменилась линия - обновляем линию у всех авто
+                    if 'line' in changed_data:
+                        car_ids = list(obj.container_cars.values_list('id', flat=True))
+                        updated_count = obj.container_cars.update(line=obj.line)
+                        logger.info(f"[TIMING] Line updated for {updated_count} cars")
                     
-                    # 2. Удаляем старые услуги линии для всех авто контейнера (BULK)
-                    deleted_services = CarService.objects.filter(
-                        car_id__in=car_ids,
-                        service_type='LINE'
-                    ).delete()
-                    logger.info(f"[TIMING] Deleted {deleted_services[0]} old line services")
+                    # 2. Создаём услуги THS с пропорциональным распределением
+                    if obj.line and obj.ths:
+                        created_count = create_ths_services_for_container(obj)
+                        logger.info(f"[TIMING] Created {created_count} THS services with proportional distribution")
+                    else:
+                        # Если линии нет или THS = 0, удаляем старые услуги THS
+                        car_ids = list(obj.container_cars.values_list('id', flat=True))
+                        # Удаляем услуги THS от линий
+                        deleted_line = CarService.objects.filter(
+                            car_id__in=car_ids,
+                            service_type='LINE'
+                        ).filter(
+                            service_id__in=LineService.objects.filter(name__icontains='THS').values_list('id', flat=True)
+                        ).delete()
+                        # Удаляем услуги THS от складов
+                        deleted_wh = CarService.objects.filter(
+                            car_id__in=car_ids,
+                            service_type='WAREHOUSE'
+                        ).filter(
+                            service_id__in=WarehouseService.objects.filter(name__icontains='THS').values_list('id', flat=True)
+                        ).delete()
+                        logger.info(f"[TIMING] Deleted {deleted_line[0]} line THS services and {deleted_wh[0]} warehouse THS services")
                     
-                    # 3. Создаём новые услуги линии если линия указана
-                    if obj.line:
-                        new_services = []
-                        for car in obj.container_cars.select_related('container').all():
-                            vehicle_type = getattr(car, 'vehicle_type', 'CAR')
-                            line_service = find_line_service_by_container_count(obj.line, obj, vehicle_type)
-                            
-                            if line_service:
-                                new_services.append(CarService(
-                                    car=car,
-                                    service_type='LINE',
-                                    service_id=line_service.id,
-                                    custom_price=line_service.default_price,
-                                    quantity=1
-                                ))
-                        
-                        if new_services:
-                            CarService.objects.bulk_create(new_services, ignore_conflicts=True)
-                            logger.info(f"[TIMING] Created {len(new_services)} new line services")
-                    
-                    # 4. Пересчитываем цены для всех авто (BULK)
+                    # 3. Пересчитываем цены для всех авто (BULK)
                     cars_to_update = []
                     affected_invoices = set()
                     for car in obj.container_cars.select_related('warehouse').all():
@@ -419,7 +441,7 @@ class ContainerAdmin(admin.ModelAdmin):
                         )
                         logger.info(f"[TIMING] Recalculated prices for {len(cars_to_update)} cars")
                     
-                    # 5. Обновляем связанные инвойсы
+                    # 4. Обновляем связанные инвойсы
                     if affected_invoices:
                         logger.info(f"[TIMING] Updating {len(affected_invoices)} affected invoices...")
                         for invoice in affected_invoices:
@@ -429,7 +451,7 @@ class ContainerAdmin(admin.ModelAdmin):
                                 logger.error(f"Error updating invoice {invoice.number}: {e}")
                         logger.info(f"[TIMING] Invoices updated")
                     
-                    logger.info(f"[TIMING] Line change completed in {time.time() - line_start:.2f}s")
+                    logger.info(f"[TIMING] THS-related change completed in {time.time() - line_start:.2f}s")
                     
                 finally:
                     # Включаем сигналы обратно
@@ -510,22 +532,15 @@ class ContainerAdmin(admin.ModelAdmin):
 
         formset.save_m2m()
 
-        # Временно отключено для диагностики
-        # try:
-        #     cars_qs = parent.container_cars.all()
-        #     count = cars_qs.count()
-        #     if count:
-        #         from decimal import Decimal, ROUND_HALF_UP
-        #         share = (parent.ths or 0) / Decimal(count)
-        #         # округлим до 2 знаков банкинг-методом
-        #         share = share.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-        #         for car in cars_qs:
-        #             car.ths = share
-        #             # пересчёт итогов с учётом новой ths
-        #             car.calculate_total_price()
-        #             car.save(update_fields=['ths', 'current_price', 'total_price'])
-        # except Exception as e:
-        #     logger.error(f"Failed to distribute THS for container {parent.id}: {e}")
+        # После сохранения ТС - создаём услуги THS если указаны line и ths
+        if parent.line and parent.ths and parent.container_cars.exists():
+            try:
+                from core.signals import create_ths_services_for_container
+                created = create_ths_services_for_container(parent)
+                if created > 0:
+                    logger.info(f"[FORMSET] Created {created} THS services for container {parent.number}")
+            except Exception as e:
+                logger.error(f"Failed to create THS services in formset for container {parent.id}: {e}")
 
 
     def get_form(self, request, obj=None, **kwargs):
@@ -2518,7 +2533,7 @@ class LineAdmin(admin.ModelAdmin):
     readonly_fields = ('balance',)
     actions = ['reset_line_balance']
     exclude = ('ocean_freight_rate', 'documentation_fee', 'handling_fee', 'ths_fee', 'additional_fees')
-    inlines = [LineServiceInline]
+    inlines = [LineTHSPercentInline, LineServiceInline]
     fieldsets = (
         ('Основные данные', {
             'fields': ('name',)
