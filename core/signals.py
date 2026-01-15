@@ -1,6 +1,6 @@
 from django.db.models.signals import post_save, post_delete, pre_delete, pre_save
 from django.dispatch import receiver
-from .models import Car, Container, WarehouseService, LineService, CarrierService, CarService, DeletedCarService
+from .models import Car, Container, WarehouseService, LineService, CarrierService, CarService, DeletedCarService, LineTHSPercent
 from .models_billing import NewInvoice
 from django.db.models import Sum
 from channels.layers import get_channel_layer
@@ -106,6 +106,9 @@ def find_line_service_by_container_count(line, container, vehicle_type):
     """
     Находит подходящую услугу линии на основе количества авто в контейнере и типа ТС.
     
+    УСТАРЕВШИЙ МЕТОД - используется для обратной совместимости.
+    Для новой логики с процентами используйте calculate_ths_for_container().
+    
     Логика выбора:
     - Для мотоциклов: ищем "THS {ЛИНИЯ} MOTO" или "MOTO" в названии
     - Для авто: ищем "THS {ЛИНИЯ} {КОЛ-ВО} АВТО" или "{КОЛ-ВО} АВТО" в названии
@@ -118,12 +121,14 @@ def find_line_service_by_container_count(line, container, vehicle_type):
     line_name_upper = line.name.upper()
     
     # Считаем количество ТОЛЬКО автомобилей в контейнере (мотоциклы не учитываются!)
-    car_count = container.container_cars.exclude(vehicle_type='MOTO').count()
+    # Исключаем все мото-типы
+    moto_types = ['MOTO', 'BIG_MOTO', 'ATV']
+    car_count = container.container_cars.exclude(vehicle_type__in=moto_types).count()
     
     # Получаем все активные услуги линии
     services = LineService.objects.filter(line=line, is_active=True)
     
-    if vehicle_type == 'MOTO':
+    if vehicle_type in moto_types:
         # Для мотоциклов ищем услугу с MOTO в названии
         for service in services:
             service_name_upper = service.name.upper()
@@ -152,6 +157,198 @@ def find_line_service_by_container_count(line, container, vehicle_type):
                     return service
     
     return None
+
+
+def calculate_ths_for_container(container):
+    """
+    Рассчитывает THS для каждого ТС в контейнере пропорционально их типам.
+    
+    Алгоритм:
+    1. Получить общую сумму THS контейнера
+    2. Для каждого ТС получить процент его типа из LineTHSPercent
+    3. Нормировать проценты до 100%
+    4. Рассчитать сумму THS для каждого ТС
+    
+    Возвращает словарь: {car_id: ths_amount}
+    
+    Пример:
+    - Контейнер THS = 300 EUR
+    - ТС: Легковой (20%), Джип (40%), Мотоцикл (10%)
+    - Сумма: 70%, нормируем до 100%
+    - Легковой: 300 * (20/70) = 85.71 EUR
+    - Джип: 300 * (40/70) = 171.43 EUR  
+    - Мотоцикл: 300 * (10/70) = 42.86 EUR
+    """
+    if not container or not container.line or not container.ths:
+        return {}
+    
+    total_ths = Decimal(str(container.ths))
+    if total_ths <= 0:
+        return {}
+    
+    # Получаем все ТС в контейнере
+    cars = list(container.container_cars.all())
+    if not cars:
+        return {}
+    
+    # Получаем проценты для типов ТС этой линии
+    ths_percents = {
+        tp.vehicle_type: Decimal(str(tp.percent))
+        for tp in LineTHSPercent.objects.filter(line=container.line)
+    }
+    
+    # Рассчитываем сумму процентов для нормировки
+    total_percent = Decimal('0.00')
+    car_percents = {}
+    
+    for car in cars:
+        # Получаем процент для типа ТС, по умолчанию 25%
+        percent = ths_percents.get(car.vehicle_type, Decimal('25.00'))
+        car_percents[car.id] = percent
+        total_percent += percent
+    
+    # Функция округления в большую сторону с шагом 5 EUR
+    def round_up_to_5(value):
+        """Округляет в большую сторону с шагом 5 EUR. Пример: 73.12 -> 75"""
+        import math
+        return Decimal(str(math.ceil(float(value) / 5) * 5))
+    
+    # Если сумма процентов = 0, делим поровну
+    if total_percent == 0:
+        equal_share = total_ths / len(cars)
+        return {car.id: round_up_to_5(equal_share) for car in cars}
+    
+    # Нормируем и рассчитываем THS для каждого ТС
+    result = {}
+    for car in cars:
+        normalized_percent = car_percents[car.id] / total_percent
+        car_ths = total_ths * normalized_percent
+        # Округляем в большую сторону с шагом 5 EUR
+        result[car.id] = round_up_to_5(car_ths)
+    
+    return result
+
+
+def create_ths_services_for_container(container):
+    """
+    Создает услуги THS для всех ТС в контейнере на основе процентного распределения.
+    
+    Тип поставщика услуги (LINE или WAREHOUSE) определяется полем container.ths_payer.
+    
+    Возвращает количество созданных услуг.
+    """
+    if not container or not container.line:
+        return 0
+    
+    # Рассчитываем THS для каждого ТС
+    ths_distribution = calculate_ths_for_container(container)
+    if not ths_distribution:
+        return 0
+    
+    # Определяем тип услуги (LINE или WAREHOUSE)
+    service_type = container.ths_payer if hasattr(container, 'ths_payer') else 'LINE'
+    
+    # Получаем или создаем услугу THS для линии
+    # Ищем услугу с названием "THS" или создаем абстрактную услугу
+    line_service = None
+    if service_type == 'LINE':
+        line_service = LineService.objects.filter(
+            line=container.line,
+            is_active=True,
+            name__icontains='THS'
+        ).first()
+        
+        if not line_service:
+            # Создаем услугу THS если её нет
+            line_service, created = LineService.objects.get_or_create(
+                line=container.line,
+                name=f"THS {container.line.name}",
+                defaults={
+                    'description': 'Услуга THS (рассчитывается пропорционально)',
+                    'default_price': 0,
+                    'is_active': True
+                }
+            )
+    
+    warehouse_service = None
+    if service_type == 'WAREHOUSE' and container.warehouse:
+        warehouse_service = WarehouseService.objects.filter(
+            warehouse=container.warehouse,
+            is_active=True,
+            name__icontains='THS'
+        ).first()
+        
+        if not warehouse_service:
+            # Создаем услугу THS если её нет
+            warehouse_service, created = WarehouseService.objects.get_or_create(
+                warehouse=container.warehouse,
+                name=f"THS {container.warehouse.name}",
+                defaults={
+                    'description': 'Услуга THS (рассчитывается пропорционально)',
+                    'default_price': 0,
+                    'is_active': True,
+                    'add_by_default': False
+                }
+            )
+    
+    created_count = 0
+    
+    for car_id, ths_amount in ths_distribution.items():
+        try:
+            car = Car.objects.get(id=car_id)
+            
+            # Удаляем старые услуги THS для этого авто
+            # Удаляем от линии
+            CarService.objects.filter(
+                car=car,
+                service_type='LINE'
+            ).filter(
+                service_id__in=LineService.objects.filter(
+                    name__icontains='THS'
+                ).values_list('id', flat=True)
+            ).delete()
+            
+            # Удаляем от склада
+            CarService.objects.filter(
+                car=car,
+                service_type='WAREHOUSE'
+            ).filter(
+                service_id__in=WarehouseService.objects.filter(
+                    name__icontains='THS'
+                ).values_list('id', flat=True)
+            ).delete()
+            
+            # Создаем новую услугу THS
+            if service_type == 'LINE' and line_service:
+                CarService.objects.create(
+                    car=car,
+                    service_type='LINE',
+                    service_id=line_service.id,
+                    custom_price=ths_amount,
+                    quantity=1,
+                    notes=f"THS рассчитан пропорционально. Тип ТС: {car.get_vehicle_type_display()}"
+                )
+                logger.info(f"🚢 THS {ths_amount} EUR для {car.vin} (тип: {car.get_vehicle_type_display()}) от линии")
+                created_count += 1
+                
+            elif service_type == 'WAREHOUSE' and warehouse_service:
+                CarService.objects.create(
+                    car=car,
+                    service_type='WAREHOUSE',
+                    service_id=warehouse_service.id,
+                    custom_price=ths_amount,
+                    quantity=1,
+                    notes=f"THS рассчитан пропорционально. Тип ТС: {car.get_vehicle_type_display()}"
+                )
+                logger.info(f"🏭 THS {ths_amount} EUR для {car.vin} (тип: {car.get_vehicle_type_display()}) от склада")
+                created_count += 1
+                
+        except Car.DoesNotExist:
+            logger.warning(f"Car {car_id} not found when creating THS service")
+        except Exception as e:
+            logger.error(f"Error creating THS service for car {car_id}: {e}")
+    
+    return created_count
 
 
 def find_warehouse_services_for_car(warehouse):
@@ -242,29 +439,12 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
                     )
                     logger.info(f"🏭 Добавлена услуга склада '{service.name}' для {instance.vin}")
         
-        # ========== УСЛУГИ ЛИНИИ ==========
-        # Удаляем старые услуги линии если линия изменилась
-        instance.car_services.filter(service_type='LINE').delete()
-        
-        if instance.line and instance.container:
-            # Определяем тип ТС (по умолчанию CAR если поле не существует)
-            vehicle_type = getattr(instance, 'vehicle_type', 'CAR')
-            
-            # Находим подходящую услугу линии по количеству авто в контейнере
-            line_service = find_line_service_by_container_count(
-                instance.line, 
-                instance.container, 
-                vehicle_type
-            )
-            
-            if line_service and line_service.id not in deleted_line_services:
-                CarService.objects.get_or_create(
-                    car=instance,
-                    service_type='LINE',
-                    service_id=line_service.id,
-                    defaults={'custom_price': line_service.default_price}
-                )
-                logger.info(f"🚢 Добавлена услуга линии '{line_service.name}' для {instance.vin} (контейнер: {instance.container.number})")
+        # ========== УСЛУГИ ЛИНИИ (THS) ==========
+        # ОТКЛЮЧЕНО: THS теперь рассчитывается пропорционально через create_ths_services_for_container()
+        # при сохранении контейнера в admin.py
+        # Услуги линии НЕ добавляются автоматически при создании/изменении авто
+        # Они создаются централизованно при изменении контейнера (line, ths, ths_payer)
+        pass
         
         # ========== УСЛУГИ ПЕРЕВОЗЧИКА ==========
         # Удаляем старые услуги перевозчика если перевозчик изменился
@@ -327,36 +507,23 @@ def update_cars_on_warehouse_service_change(sender, instance, **kwargs):
 
 @receiver(post_save, sender=LineService)
 def update_cars_on_line_service_change(sender, instance, **kwargs):
-    """Обновляет записи CarService при изменении услуг линии"""
-    try:
-        # Находим все автомобили с этой линией
-        cars = Car.objects.filter(line=instance.line)
-        
-        for car in cars:
-            if instance.is_active and instance.default_price > 0:
-                # Проверяем черный список перед созданием
-                if not DeletedCarService.objects.filter(
-                    car=car,
-                    service_type='LINE',
-                    service_id=instance.id
-                ).exists():
-                    # Создаем или обновляем запись CarService
-                    CarService.objects.get_or_create(
-                        car=car,
-                        service_type='LINE',
-                        service_id=instance.id,
-                        defaults={'custom_price': instance.default_price}
-                    )
-            else:
-                # Удаляем запись CarService если услуга неактивна или цена = 0
-                CarService.objects.filter(
-                    car=car,
-                    service_type='LINE',
-                    service_id=instance.id
-                ).delete()
-                
-    except Exception as e:
-        logger.error(f"Error updating cars on line service change: {e}")
+    """
+    ОТКЛЮЧЕНО: Услуги линии (THS) теперь управляются централизованно 
+    через create_ths_services_for_container() при сохранении контейнера.
+    
+    Этот сигнал больше НЕ добавляет услуги линии автоматически к автомобилям.
+    """
+    # Только удаляем услугу если она стала неактивной
+    if not instance.is_active:
+        try:
+            deleted = CarService.objects.filter(
+                service_type='LINE',
+                service_id=instance.id
+            ).delete()
+            if deleted[0] > 0:
+                logger.info(f"Deleted {deleted[0]} LINE services for inactive LineService {instance.id}")
+        except Exception as e:
+            logger.error(f"Error deleting inactive line service: {e}")
 
 @receiver(post_save, sender=CarrierService)
 def update_cars_on_carrier_service_change(sender, instance, **kwargs):

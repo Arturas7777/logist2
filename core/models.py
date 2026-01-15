@@ -67,6 +67,42 @@ class Line(models.Model):
         return self.name
 
 
+class LineTHSPercent(models.Model):
+    """Процент от THS для типа ТС у конкретной линии.
+    
+    Используется для распределения общей суммы THS контейнера между ТС
+    пропорционально их типам. Проценты нормируются до 100%.
+    """
+    # Типы ТС дублируем здесь чтобы избежать циклического импорта
+    VEHICLE_TYPE_CHOICES = [
+        ('SEDAN', 'Легковой'),
+        ('CROSSOVER', 'Кроссовер'),
+        ('SUV', 'Джип'),
+        ('PICKUP', 'Пикап'),
+        ('NEW_CAR', 'Новая машина'),
+        ('MOTO', 'Мотоцикл'),
+        ('BIG_MOTO', 'Большой мотоцикл'),
+        ('ATV', 'Квадроцикл/Багги'),
+        ('BOAT', 'Лодка'),
+        ('RV', 'Автодом (RV)'),
+        ('CONSTRUCTION', 'Стр. техника'),
+    ]
+    
+    line = models.ForeignKey(Line, on_delete=models.CASCADE, related_name='ths_percents', verbose_name="Линия")
+    vehicle_type = models.CharField(max_length=20, choices=VEHICLE_TYPE_CHOICES, verbose_name="Тип ТС")
+    percent = models.DecimalField(max_digits=5, decimal_places=2, default=25.00, 
+                                  verbose_name="Процент от THS",
+                                  help_text="Процент от общей суммы THS для данного типа ТС")
+    
+    class Meta:
+        verbose_name = "Процент THS для типа ТС"
+        verbose_name_plural = "Проценты THS для типов ТС"
+        unique_together = ['line', 'vehicle_type']
+    
+    def __str__(self):
+        return f"{self.line.name} - {self.get_vehicle_type_display()}: {self.percent}%"
+
+
 class Carrier(models.Model):
     name = models.CharField(max_length=100, verbose_name="Название перевозчика")
     short_name = models.CharField(max_length=20, blank=True, null=True, verbose_name="Короткое название")
@@ -226,8 +262,16 @@ class Container(models.Model):
     client = models.ForeignKey('Client', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Клиент")
     customs_procedure = models.CharField(max_length=20, choices=CUSTOMS_PROCEDURE_CHOICES, null=True, blank=True,
                                          verbose_name="Таможенная процедура")
+    THS_PAYER_CHOICES = [
+        ('LINE', 'Напрямую линии'),
+        ('WAREHOUSE', 'Через склад'),
+    ]
+    
     ths = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Оплата линиям",
                               validators=[MinValueValidator(0)])
+    ths_payer = models.CharField(max_length=20, choices=THS_PAYER_CHOICES, default='LINE',
+                                 verbose_name="Оплата THS через",
+                                 help_text="От чьего имени записать расход THS в карточках ТС: напрямую линии или через склад")
     sklad = models.DecimalField(max_digits=10, decimal_places=2, default=160, verbose_name="Оплата складу",
                                 validators=[MinValueValidator(0)])
     dekl = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Декларация",
@@ -380,15 +424,24 @@ class CarManager(BaseManager):
 
 
 class Car(models.Model):
-    # Типы транспортных средств
+    # Типы транспортных средств (расширенный список)
     VEHICLE_TYPE_CHOICES = [
-        ('CAR', 'Автомобиль'),
+        ('SEDAN', 'Легковой'),
+        ('CROSSOVER', 'Кроссовер'),
+        ('SUV', 'Джип'),
+        ('PICKUP', 'Пикап'),
+        ('NEW_CAR', 'Новая машина'),
         ('MOTO', 'Мотоцикл'),
+        ('BIG_MOTO', 'Большой мотоцикл'),
+        ('ATV', 'Квадроцикл/Багги'),
+        ('BOAT', 'Лодка'),
+        ('RV', 'Автодом (RV)'),
+        ('CONSTRUCTION', 'Стр. техника'),
     ]
     
     year = models.PositiveIntegerField(verbose_name="Год выпуска")
     brand = models.CharField(max_length=50, verbose_name="Марка")
-    vehicle_type = models.CharField(max_length=10, choices=VEHICLE_TYPE_CHOICES, default='CAR', verbose_name="Тип ТС")
+    vehicle_type = models.CharField(max_length=20, choices=VEHICLE_TYPE_CHOICES, default='SEDAN', verbose_name="Тип ТС")
     vin = models.CharField(max_length=17, unique=True, verbose_name="VIN")
     client = models.ForeignKey('Client', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Клиент")
     status = models.CharField(max_length=20, choices=Container.STATUS_CHOICES, verbose_name="Статус")
