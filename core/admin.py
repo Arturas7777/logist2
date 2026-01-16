@@ -65,7 +65,7 @@ class LineTHSCoefficientInline(admin.TabularInline):
     
     def get_extra(self, request, obj=None, **kwargs):
         """Если нет записей - показываем все 11 типов для заполнения"""
-        if obj and obj.ths_percents.exists():
+        if obj and obj.ths_coefficients.exists():
             return 0
         return 11  # Количество типов ТС
 
