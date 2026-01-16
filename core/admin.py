@@ -217,6 +217,7 @@ class CarInline(admin.TabularInline):
     model = Car
     extra = 1
     can_delete = True
+    show_change_link = True  # Ссылка на редактирование отдельной машины
     fields = ('year', 'brand', 'vehicle_type', 'vin', 'client', 'total_price', 'has_title')  # добавили vehicle_type
     readonly_fields = ('total_price',)
 
@@ -528,18 +529,26 @@ class ContainerAdmin(admin.ModelAdmin):
             else:
                 obj.save()
 
+        # Удаляем объекты, помеченные на удаление
+        deleted_cars = [o for o in formset.deleted_objects if isinstance(o, Car)]
         for o in formset.deleted_objects:
             o.delete()
 
         formset.save_m2m()
 
-        # После сохранения ТС - создаём услуги THS если указаны line и ths
-        if parent.line and parent.ths and parent.container_cars.exists():
+        # После любых изменений в ТС (добавление/изменение/удаление) - пересчитываем THS
+        # Условие: есть line, есть ths, и либо есть машины, либо были удалены машины
+        cars_changed = instances or deleted_cars
+        if parent.line and parent.ths and cars_changed:
             try:
                 from core.signals import create_ths_services_for_container
-                created = create_ths_services_for_container(parent)
-                if created > 0:
-                    logger.info(f"[FORMSET] Created {created} THS services for container {parent.number}")
+                # Пересчитываем THS для оставшихся машин
+                if parent.container_cars.exists():
+                    created = create_ths_services_for_container(parent)
+                    if created > 0:
+                        logger.info(f"[FORMSET] Created/updated {created} THS services for container {parent.number}")
+                else:
+                    logger.info(f"[FORMSET] No cars left in container {parent.number}, THS services cleared")
             except Exception as e:
                 logger.error(f"Failed to create THS services in formset for container {parent.id}: {e}")
 
