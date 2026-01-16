@@ -542,11 +542,16 @@ class ContainerAdmin(admin.ModelAdmin):
         if parent.line and parent.ths and cars_changed:
             try:
                 from core.signals import create_ths_services_for_container
-                # Пересчитываем THS для оставшихся машин
+                # Пересчитываем THS для ВСЕХ машин в контейнере
                 if parent.container_cars.exists():
                     created = create_ths_services_for_container(parent)
-                    if created > 0:
-                        logger.info(f"[FORMSET] Created/updated {created} THS services for container {parent.number}")
+                    logger.info(f"[FORMSET] Created/updated {created} THS services for container {parent.number}")
+                    
+                    # Пересчитываем цены ВСЕХ машин в контейнере после обновления THS
+                    for car in parent.container_cars.all():
+                        car.calculate_total_price()
+                        car.save(update_fields=['total_price', 'storage_cost', 'days'])
+                    logger.info(f"[FORMSET] Recalculated prices for all cars in container {parent.number}")
                 else:
                     logger.info(f"[FORMSET] No cars left in container {parent.number}, THS services cleared")
             except Exception as e:
