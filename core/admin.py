@@ -1139,12 +1139,12 @@ class CarAdmin(admin.ModelAdmin):
     free_days_display.admin_order_field = 'free_days'
     
     def rate_display(self, obj):
-        """Показывает ставку за сутки из склада"""
+        """Показывает ставку за сутки из услуги 'Хранение' склада"""
         if obj.warehouse:
-            return f"{obj.warehouse.rate:.2f}"
-        return f"{obj.rate:.2f}"  # Fallback на старое поле
+            daily_rate = obj._get_storage_daily_rate()
+            return f"{daily_rate:.2f}"
+        return "0.00"
     rate_display.short_description = 'Ставка/день'
-    rate_display.admin_order_field = 'rate'
 
     def set_status_floating(self, request, queryset):
         updated = queryset.update(status='FLOATING')

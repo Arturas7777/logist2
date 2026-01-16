@@ -583,8 +583,7 @@ class Car(models.Model):
                     return wh_val
             return cur_val
 
-        # ключевые поля
-        self.rate = _override(self.rate, 'rate', self.warehouse.rate or 0)
+        # ключевые поля (rate удалён - ставка теперь берётся из услуги "Хранение")
         self.free_days = _override(self.free_days, 'free_days', self.warehouse.free_days or 0)
 
         # заодно остальные складские услуги, если нужно
