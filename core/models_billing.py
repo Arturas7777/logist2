@@ -522,7 +522,7 @@ class NewInvoice(models.Model):
                         description=f"Хранение - {car.brand} {car.vin} ({car.days} дн.)",
                         car=car,
                         quantity=car.days,
-                        unit_price=car.warehouse.rate if car.warehouse else Decimal('0'),
+                        unit_price=car._get_storage_daily_rate() if car.warehouse else Decimal('0'),
                         order=order
                     )
                     order += 1
@@ -553,7 +553,7 @@ class NewInvoice(models.Model):
                         description=f"Хранение - {car.brand} {car.vin} ({car.days} дн.){status_note}",
                         car=car,
                         quantity=car.days,
-                        unit_price=car.warehouse.rate if car.warehouse else Decimal('0'),
+                        unit_price=car._get_storage_daily_rate() if car.warehouse else Decimal('0'),
                         order=order
                     )
                     order += 1
