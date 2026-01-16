@@ -48,14 +48,20 @@ class LineServiceInline(admin.TabularInline):
         return formset
 
 
-class LineTHSPercentInline(admin.TabularInline):
-    """Inline для настройки процентов THS для каждого типа ТС"""
-    from .models import LineTHSPercent
-    model = LineTHSPercent
+class LineTHSCoefficientInline(admin.TabularInline):
+    """Inline для настройки коэффициентов THS для каждого типа ТС
+    
+    Коэффициент определяет "вес" типа ТС при распределении THS:
+    - 1.0 = стандартный (легковой)
+    - 2.0 = двойной (джип, RV)
+    - 0.5 = половина (мотоцикл)
+    """
+    from .models import LineTHSCoefficient
+    model = LineTHSCoefficient
     extra = 0
-    fields = ('vehicle_type', 'percent')
-    verbose_name = "Процент THS для типа ТС"
-    verbose_name_plural = "Проценты THS для типов ТС"
+    fields = ('vehicle_type', 'coefficient')
+    verbose_name = "Коэффициент THS для типа ТС"
+    verbose_name_plural = "Коэффициенты THS для типов ТС"
     
     def get_extra(self, request, obj=None, **kwargs):
         """Если нет записей - показываем все 11 типов для заполнения"""
@@ -2599,7 +2605,7 @@ class LineAdmin(admin.ModelAdmin):
     readonly_fields = ('balance',)
     actions = ['reset_line_balance']
     exclude = ('ocean_freight_rate', 'documentation_fee', 'handling_fee', 'ths_fee', 'additional_fees')
-    inlines = [LineTHSPercentInline, LineServiceInline]
+    inlines = [LineTHSCoefficientInline, LineServiceInline]
     fieldsets = (
         ('Основные данные', {
             'fields': ('name',)

@@ -1,6 +1,6 @@
 from django.db.models.signals import post_save, post_delete, pre_delete, pre_save
 from django.dispatch import receiver
-from .models import Car, Container, WarehouseService, LineService, CarrierService, CarService, DeletedCarService, LineTHSPercent
+from .models import Car, Container, WarehouseService, LineService, CarrierService, CarService, DeletedCarService, LineTHSCoefficient
 from .models_billing import NewInvoice
 from django.db.models import Sum
 from channels.layers import get_channel_layer
@@ -161,24 +161,25 @@ def find_line_service_by_container_count(line, container, vehicle_type):
 
 def calculate_ths_for_container(container):
     """
-    Рассчитывает THS для каждого ТС в контейнере пропорционально их типам.
+    Рассчитывает THS для каждого ТС в контейнере пропорционально их коэффициентам.
     
     Алгоритм:
     1. Получить общую сумму THS контейнера
-    2. Для каждого ТС получить процент его типа из LineTHSPercent
-    3. Нормировать проценты до 100%
-    4. Рассчитать сумму THS для каждого ТС
+    2. Для каждого ТС получить коэффициент его типа из LineTHSCoefficient
+    3. Рассчитать долю каждого ТС = коэффициент / сумма_всех_коэффициентов
+    4. THS для ТС = общий_THS × доля
     
     Возвращает словарь: {car_id: ths_amount}
     
     Пример:
-    - Контейнер THS = 300 EUR
-    - ТС: Легковой (20%), Джип (40%), Мотоцикл (10%)
-    - Сумма: 70%, нормируем до 100%
-    - Легковой: 300 * (20/70) = 85.71 EUR
-    - Джип: 300 * (40/70) = 171.43 EUR  
-    - Мотоцикл: 300 * (10/70) = 42.86 EUR
+    - Контейнер THS = 500 EUR
+    - 3 машины: легковой(1.0) + джип(2.0) + мото(0.5) = сумма коэффициентов 3.5
+    - Легковой: 500 × (1.0/3.5) = 143 EUR → округляем до 145 EUR
+    - Джип: 500 × (2.0/3.5) = 286 EUR → округляем до 290 EUR
+    - Мото: 500 × (0.5/3.5) = 71 EUR → округляем до 75 EUR
     """
+    from core.models import LineTHSCoefficient
+    
     if not container or not container.line or not container.ths:
         return {}
     
@@ -191,21 +192,21 @@ def calculate_ths_for_container(container):
     if not cars:
         return {}
     
-    # Получаем проценты для типов ТС этой линии
-    ths_percents = {
-        tp.vehicle_type: Decimal(str(tp.percent))
-        for tp in LineTHSPercent.objects.filter(line=container.line)
+    # Получаем коэффициенты для типов ТС этой линии
+    ths_coefficients = {
+        tc.vehicle_type: Decimal(str(tc.coefficient))
+        for tc in LineTHSCoefficient.objects.filter(line=container.line)
     }
     
-    # Рассчитываем сумму процентов для нормировки
-    total_percent = Decimal('0.00')
-    car_percents = {}
+    # Рассчитываем сумму коэффициентов для всех машин
+    total_coefficient = Decimal('0.00')
+    car_coefficients = {}
     
     for car in cars:
-        # Получаем процент для типа ТС, по умолчанию 25%
-        percent = ths_percents.get(car.vehicle_type, Decimal('25.00'))
-        car_percents[car.id] = percent
-        total_percent += percent
+        # Получаем коэффициент для типа ТС, по умолчанию 1.0 (стандартный)
+        coeff = ths_coefficients.get(car.vehicle_type, Decimal('1.00'))
+        car_coefficients[car.id] = coeff
+        total_coefficient += coeff
     
     # Функция округления в большую сторону с шагом 5 EUR
     def round_up_to_5(value):
@@ -213,18 +214,20 @@ def calculate_ths_for_container(container):
         import math
         return Decimal(str(math.ceil(float(value) / 5) * 5))
     
-    # Если сумма процентов = 0, делим поровну
-    if total_percent == 0:
+    # Если сумма коэффициентов = 0, делим поровну
+    if total_coefficient == 0:
         equal_share = total_ths / len(cars)
         return {car.id: round_up_to_5(equal_share) for car in cars}
     
-    # Нормируем и рассчитываем THS для каждого ТС
+    # Рассчитываем THS для каждого ТС пропорционально коэффициенту
     result = {}
     for car in cars:
-        normalized_percent = car_percents[car.id] / total_percent
-        car_ths = total_ths * normalized_percent
+        car_share = car_coefficients[car.id] / total_coefficient
+        car_ths = total_ths * car_share
         # Округляем в большую сторону с шагом 5 EUR
         result[car.id] = round_up_to_5(car_ths)
+    
+    logger.info(f"THS distribution for container {container.number}: total={total_ths}, coefficients={car_coefficients}, result={result}")
     
     return result
 
