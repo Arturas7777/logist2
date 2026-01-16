@@ -3,8 +3,34 @@
 
 {% block extrahead %}
 {{ block.super }}
+<style>
+    .recalc-section {
+        margin: 20px 0;
+    }
+    .recalc-section input[type="submit"] {
+        background: #417690;
+        padding: 10px 15px;
+        border: none;
+        border-radius: 4px;
+        color: white !important;
+        cursor: pointer;
+        font-size: 13px;
+    }
+    .recalc-section input[type="submit"]:hover {
+        background: #205067;
+    }
+</style>
 {% endblock %}
 
 {% block field_sets %}
 {{ block.super }}
+
+{% if original %}
+<div class="recalc-section">
+    <form action="{% url 'admin:core_line_recalculate_ths' original.pk %}" method="get" style="display:inline;"
+          onsubmit="return confirm('Пересчитать THS для всех машин линии {{ original.name }}?');">
+        <input type="submit" value="↻ Пересчитать THS">
+    </form>
+</div>
+{% endif %}
 {% endblock %}
