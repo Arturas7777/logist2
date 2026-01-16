@@ -531,39 +531,56 @@ class ContainerAdmin(admin.ModelAdmin):
 
         # Удаляем объекты, помеченные на удаление
         deleted_cars = [o for o in formset.deleted_objects if isinstance(o, Car)]
+        logger.info(f"[FORMSET] deleted_objects count: {len(formset.deleted_objects)}, deleted_cars: {len(deleted_cars)}")
+        
         for o in formset.deleted_objects:
             try:
                 # Сначала удаляем связанные CarService
                 if isinstance(o, Car):
                     o.car_services.all().delete()
                 o.delete()
+                logger.info(f"[FORMSET] Deleted object: {o}")
             except Exception as e:
                 logger.error(f"Error deleting object {o}: {e}")
 
         formset.save_m2m()
 
         # После любых изменений в ТС (добавление/изменение/удаление) - пересчитываем THS
-        # Условие: есть line, есть ths, и либо есть машины, либо были удалены машины
-        cars_changed = instances or deleted_cars
-        if parent.line and parent.ths and cars_changed:
+        # Условие: есть line, есть ths, и (есть изменённые машины или удалённые машины)
+        cars_changed = bool(instances) or bool(deleted_cars)
+        logger.info(f"[FORMSET] instances count: {len(instances)}, cars_changed: {cars_changed}")
+        logger.info(f"[FORMSET] parent.line: {parent.line}, parent.ths: {parent.ths}")
+        
+        # ВСЕГДА пересчитываем THS если есть line и ths (даже без явных изменений)
+        if parent.line and parent.ths:
             try:
                 from core.signals import create_ths_services_for_container
                 from django.db import transaction
                 
+                # Принудительно обновляем данные контейнера из БД
+                parent.refresh_from_db()
+                
+                logger.info(f"[FORMSET] Starting THS recalculation for container {parent.number}")
+                
                 # Используем savepoint для безопасного пересчёта
                 with transaction.atomic():
                     # Пересчитываем THS для ВСЕХ машин в контейнере
-                    if parent.container_cars.exists():
+                    cars_in_container = list(parent.container_cars.all())
+                    logger.info(f"[FORMSET] Found {len(cars_in_container)} cars in container")
+                    
+                    if cars_in_container:
                         created = create_ths_services_for_container(parent)
                         logger.info(f"[FORMSET] Created/updated {created} THS services for container {parent.number}")
                         
                         # Пересчитываем цены ВСЕХ машин в контейнере после обновления THS
-                        for car in parent.container_cars.all():
+                        for car in cars_in_container:
+                            car.refresh_from_db()  # Обновляем данные машины из БД
                             car.calculate_total_price()
                             car.save(update_fields=['total_price', 'storage_cost', 'days'])
-                        logger.info(f"[FORMSET] Recalculated prices for all cars in container {parent.number}")
+                            logger.info(f"[FORMSET] Recalculated price for car {car.vin}: {car.total_price}")
+                        logger.info(f"[FORMSET] Recalculated prices for all {len(cars_in_container)} cars")
                     else:
-                        logger.info(f"[FORMSET] No cars left in container {parent.number}, THS services cleared")
+                        logger.info(f"[FORMSET] No cars left in container {parent.number}")
             except Exception as e:
                 logger.error(f"Failed to create THS services in formset for container {parent.id}: {e}", exc_info=True)
 
