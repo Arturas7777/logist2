@@ -7,7 +7,8 @@
     .recalc-section {
         margin: 20px 0;
     }
-    .recalc-section input[type="submit"] {
+    .recalc-btn {
+        display: inline-block;
         background: #417690;
         padding: 10px 15px;
         border: none;
@@ -15,9 +16,11 @@
         color: white !important;
         cursor: pointer;
         font-size: 13px;
+        text-decoration: none;
     }
-    .recalc-section input[type="submit"]:hover {
+    .recalc-btn:hover {
         background: #205067;
+        color: white !important;
     }
 </style>
 {% endblock %}
@@ -27,10 +30,10 @@
 
 {% if original %}
 <div class="recalc-section">
-    <form action="{% url 'admin:core_line_recalculate_ths' original.pk %}" method="get" style="display:inline;"
-          onsubmit="return confirm('Пересчитать THS для всех машин линии {{ original.name }}?');">
-        <input type="submit" value="↻ Пересчитать THS">
-    </form>
+    <a href="{% url 'admin:core_line_recalculate_ths' original.pk %}" class="recalc-btn"
+       onclick="return confirm('Пересчитать THS для всех машин линии {{ original.name }}?');">
+        ↻ Пересчитать THS
+    </a>
 </div>
 {% endif %}
 {% endblock %}

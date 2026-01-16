@@ -607,22 +607,26 @@ class Car(models.Model):
 
     def calculate_total_price(self):
         """Пересчитывает цену используя систему услуг CarService.
-        
+
         Цена = сумма всех услуг + наценка.
         После статуса TRANSFERRED цена фиксируется и не пересчитывается,
         пока статус не изменится обратно.
         """
+        # Сбрасываем кэш related objects чтобы получить актуальные услуги из БД
+        if hasattr(self, '_prefetched_objects_cache'):
+            self._prefetched_objects_cache.pop('car_services', None)
+        
         # Сначала обновляем дни и цену услуги "Хранение"
         self.update_days_and_storage()
-        
+
         # Получаем суммы по поставщикам из CarService
         line_total = self.get_services_total_by_provider('LINE')
         carrier_total = self.get_services_total_by_provider('CARRIER')
         warehouse_total = self.get_warehouse_services_total()  # Включает услугу "Хранение"
-        
+
         # Наценка Caromoto Lithuania из поля proft автомобиля
         markup_amount = self.proft or Decimal('0.00')
-        
+
         # Общая сумма всех услуг + наценка
         self.total_price = line_total + warehouse_total + carrier_total + markup_amount
 
