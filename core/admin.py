@@ -1094,10 +1094,36 @@ class CarAdmin(admin.ModelAdmin):
     days_display.admin_order_field = 'days'
 
     def total_price_display(self, obj):
-        # Для не переданных авто пересчитываем цену динамически
+        # Для не переданных авто рассчитываем цену динамически
         if obj.status != 'TRANSFERRED':
+            from decimal import Decimal
+            from core.models import CarService, WarehouseService
+            
+            # Обновляем платные дни
             obj.update_days_and_storage()
-            obj.calculate_total_price()
+            
+            # Рассчитываем сумму услуг напрямую из базы (без prefetch кэша)
+            total = Decimal('0.00')
+            
+            for cs in CarService.objects.filter(car=obj):
+                service_name = cs.get_service_name()
+                # Для услуги "Хранение" используем расчётную цену
+                if service_name == 'Хранение':
+                    storage_ws = WarehouseService.objects.filter(
+                        id=cs.service_id, is_active=True
+                    ).first()
+                    if storage_ws:
+                        price = Decimal(str(obj.days or 0)) * Decimal(str(storage_ws.default_price or 0))
+                    else:
+                        price = Decimal('0.00')
+                else:
+                    price = Decimal(str(cs.custom_price or 0))
+                total += price
+            
+            # Добавляем наценку
+            total += obj.proft or Decimal('0.00')
+            return f"{total:.2f}"
+        
         return f"{obj.total_price:.2f}"
     total_price_display.short_description = 'Цена'
     total_price_display.admin_order_field = 'total_price'
