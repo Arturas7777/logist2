@@ -326,7 +326,7 @@ class ContainerAdmin(admin.ModelAdmin):
                 if cars_to_update:
                     Car.objects.bulk_update(
                         cars_to_update,
-                        ['unload_date', 'days', 'storage_cost', 'current_price', 'total_price'],
+                        ['unload_date', 'days', 'storage_cost', 'total_price'],
                         batch_size=50
                     )
                     logger.info(f"✅ Bulk updated {len(cars_to_update)} cars in container {obj.number}")
@@ -365,12 +365,13 @@ class ContainerAdmin(admin.ModelAdmin):
                 except:
                     pass
 
-        # Проверяем изменения связанные с THS: линия, сумма THS, плательщик THS
+        # Проверяем изменения связанные с THS: линия, сумма THS, плательщик THS, склад
+        # Склад включён потому что при ths_payer='WAREHOUSE' THS записывается как услуга склада
         changed_data = getattr(form, 'changed_data', []) if form else []
-        ths_related_changed = any(field in changed_data for field in ['line', 'ths', 'ths_payer'])
-        
+        ths_related_changed = any(field in changed_data for field in ['line', 'ths', 'ths_payer', 'warehouse'])
+
         # Для нового контейнера - создаём THS если указаны line и ths
-        # Для существующего - только если изменились поля THS
+        # Для существующего - только если изменились поля THS или склад
         should_create_ths = (not change and obj.line and obj.ths) or (change and ths_related_changed)
 
         # если создаём новый контейнер с THS или изменили THS поля — обновить услуги THS
@@ -436,7 +437,7 @@ class ContainerAdmin(admin.ModelAdmin):
                     if cars_to_update:
                         Car.objects.bulk_update(
                             cars_to_update,
-                            ['days', 'storage_cost', 'current_price', 'total_price'],
+                            ['days', 'storage_cost', 'total_price'],
                             batch_size=50
                         )
                         logger.info(f"[TIMING] Recalculated prices for {len(cars_to_update)} cars")
@@ -841,7 +842,7 @@ class CarAdmin(admin.ModelAdmin):
     change_form_template = 'admin/core/car/change_form.html'
     list_display = (
         'vin', 'brand', 'vehicle_type', 'year_display', 'client', 'colored_status', 'container_display', 'warehouse', 'line',
-        'unload_date_display', 'total_price_display', 'current_price_display',
+        'unload_date_display', 'total_price_display',
         'storage_cost_display', 'days_display', 'has_title'
     )
     list_editable = ('has_title',)
@@ -851,7 +852,7 @@ class CarAdmin(admin.ModelAdmin):
     list_select_related = ('client', 'warehouse', 'line', 'carrier', 'container')
     list_prefetch_related = ('car_services',)
     readonly_fields = (
-        'default_warehouse_prices_display', 'total_price', 'current_price', 'storage_cost', 'days', 'warehouse_payment_display',
+        'default_warehouse_prices_display', 'total_price', 'storage_cost', 'days', 'warehouse_payment_display',
         'free_days_display', 'rate_display', 'services_summary_display', 'warehouse_services_display', 'line_services_display', 'carrier_services_display'
     )
     # inlines = []  # Услуги управляются через разделы ниже
@@ -932,33 +933,28 @@ class CarAdmin(admin.ModelAdmin):
     def services_summary_display(self, obj):
         """Отображает сводку по всем услугам с наценкой Caromoto Lithuania"""
         from decimal import Decimal
+        from core.models import CarService
         
-        # Получаем суммы по поставщикам
-        line_total = obj.get_services_total_by_provider('LINE')
+        # Обновляем дни и стоимость хранения перед отображением
+        obj.update_days_and_storage()
+        
+        # Разделяем услуги: THS отдельно, склад отдельно, перевозчик отдельно
+        ths_total = Decimal('0.00')
+        warehouse_other = Decimal('0.00')  # Услуги склада без THS
         carrier_total = obj.get_services_total_by_provider('CARRIER')
         
-        # Склад - разделяем хранение и услуги
-        try:
-            storage_cost = obj.calculate_storage_cost()
-            # Получаем только услуги склада (без хранения)
-            warehouse_services_only = obj.get_warehouse_services_total()
+        # Получаем все услуги и разделяем THS от остальных
+        for service in obj.car_services.all():
+            service_name = service.get_service_name().upper()
+            price = Decimal(str(service.custom_price or 0))
             
-            # Рассчитываем платные дни
-            if obj.warehouse and obj.unload_date:
-                from django.utils import timezone
-                end_date = obj.transfer_date if obj.status == 'TRANSFERRED' and obj.transfer_date else timezone.now().date()
-                total_days = (end_date - obj.unload_date).days + 1
-                free_days = obj.warehouse.free_days or 0
-                paid_days = max(0, total_days - free_days)
-            else:
-                paid_days = 0
-        except Exception as e:
-            storage_cost = Decimal('0.00')
-            warehouse_services_only = Decimal('0.00')
-            paid_days = 0
-            print(f"Ошибка расчета стоимости хранения: {e}")
+            if 'THS' in service_name:
+                ths_total += price
+            elif service.service_type == 'WAREHOUSE':
+                warehouse_other += price
         
-        warehouse_total = storage_cost + warehouse_services_only
+        # Платные дни для отображения
+        paid_days = obj.days or 0
         
         # Наценка Caromoto Lithuania из поля proft автомобиля
         markup_amount = obj.proft or Decimal('0.00')
@@ -967,58 +963,60 @@ class CarAdmin(admin.ModelAdmin):
         is_transferred = obj.status == 'TRANSFERRED' and obj.transfer_date
         
         # Базовые суммы (без наценки)
-        base_total = line_total + warehouse_total + carrier_total
+        base_total = ths_total + warehouse_other + carrier_total
         
         html = ['<div style="margin-top:15px; background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #dee2e6;">']
         html.append('<h3 style="margin-top:0; color:#495057;">Сводка по услугам</h3>')
         
         html.append('<div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:15px; margin-bottom:20px;">')
         
-        # Линии
+        # THS (оплата линиям)
         html.append('<div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">')
-        html.append('<strong>Услуги линий:</strong><br>')
-        html.append(f'<span style="font-size:18px; color:#007bff;">{line_total:.2f}</span>')
+        html.append('<strong>THS (оплата линиям):</strong><br>')
+        html.append(f'<span style="font-size:18px; color:#007bff;">{ths_total:.2f}</span>')
         html.append('</div>')
         
-        # Склад
+        # Склад (без THS) - с детализацией услуг
         html.append('<div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">')
-        html.append('<strong>Склад:</strong><br>')
+        html.append('<strong>Услуги склада:</strong><br>')
+        
+        # Показываем каждую услугу склада (кроме THS)
+        warehouse_services_list = []
+        for service in obj.car_services.filter(service_type='WAREHOUSE'):
+            service_name = service.get_service_name()
+            if 'THS' not in service_name.upper():
+                price = Decimal(str(service.custom_price or 0))
+                warehouse_services_list.append((service_name, price))
+        
+        for name, price in warehouse_services_list:
+            html.append(f'<span style="font-size:13px; color:#6c757d;">{name}: {price:.2f}</span><br>')
+        
         if obj.warehouse:
             free_days = obj.warehouse.free_days or 0
-            html.append(f'<span style="font-size:14px; color:#6c757d;">Беспл. дней: {free_days}</span><br>')
-        html.append(f'<span style="font-size:14px; color:#6c757d;">Плат. дней: {paid_days}</span><br>')
-        html.append(f'<span style="font-size:14px; color:#6c757d;">Хранение: {storage_cost:.2f}</span><br>')
-        html.append(f'<span style="font-size:14px; color:#6c757d;">Услуги: {warehouse_services_only:.2f}</span><br>')
-        html.append(f'<span style="font-size:18px; color:#28a745; font-weight:bold;">Итого: {warehouse_total:.2f}</span>')
+            html.append(f'<span style="font-size:12px; color:#adb5bd;">Беспл. дней: {free_days}, Плат. дней: {paid_days}</span><br>')
+        
+        html.append(f'<span style="font-size:18px; color:#28a745; font-weight:bold;">Итого: {warehouse_other:.2f}</span>')
         html.append('</div>')
         
         # Перевозчик
         html.append('<div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">')
-        html.append('<strong>Услуги перевозчика:</strong><br>')
+        html.append('<strong>Перевозчик:</strong><br>')
         html.append(f'<span style="font-size:18px; color:#ffc107;">{carrier_total:.2f}</span>')
         html.append('</div>')
         
         # Наценка Caromoto Lithuania
         html.append('<div style="background:#e8f5e8; padding:10px; border-radius:5px; border:1px solid #28a745;">')
-        html.append('<strong style="color:#28a745;">Наценка Caromoto Lithuania:</strong><br>')
+        html.append('<strong style="color:#28a745;">Наценка:</strong><br>')
         html.append(f'<span style="font-size:18px; font-weight:bold; color:#28a745;">{markup_amount:.2f}</span>')
         html.append('</div>')
         
         html.append('</div>')
         
         # Общий итог
+        total_with_markup = base_total + markup_amount
         html.append('<div style="background:white; padding:15px; border-radius:5px; border:2px solid #6c757d;">')
-        if is_transferred:
-            # Если передан - показываем итоговую цену с наценкой
-            total_final = base_total + markup_amount
-            html.append('<strong style="color:#6c757d;">Итоговая стоимость услуг:</strong><br>')
-            html.append(f'<span style="font-size:20px; color:#6c757d;">{total_final:.2f}</span>')
-        else:
-            # Если не передан - показываем текущую цену с наценкой
-            total_current_with_markup = base_total + markup_amount
-            html.append('<strong style="color:#6c757d;">Текущая стоимость услуг:</strong><br>')
-            html.append(f'<span style="font-size:18px; color:#6c757d;">Базовая: {base_total:.2f}</span><br>')
-            html.append(f'<span style="font-size:20px; color:#6c757d;">С наценкой: {total_current_with_markup:.2f}</span>')
+        html.append('<strong style="color:#6c757d;">Итого к оплате:</strong><br>')
+        html.append(f'<span style="font-size:20px; font-weight:bold; color:#495057;">{total_with_markup:.2f} EUR</span>')
         html.append('</div>')
         
         html.append('</div>')
@@ -1097,13 +1095,10 @@ class CarAdmin(admin.ModelAdmin):
 
     def total_price_display(self, obj):
         return f"{obj.total_price:.2f}"
-    total_price_display.short_description = 'Итоговая цена'
+    total_price_display.short_description = 'Цена'
     total_price_display.admin_order_field = 'total_price'
 
-    def current_price_display(self, obj):
-        return f"{obj.current_price:.2f}"
-    current_price_display.short_description = 'Текущая цена'
-    current_price_display.admin_order_field = 'current_price'
+    # УДАЛЕНО: current_price_display - теперь используется только total_price
 
     def free_days_display(self, obj):
         """Показывает бесплатные дни из склада"""
@@ -1125,7 +1120,7 @@ class CarAdmin(admin.ModelAdmin):
         updated = queryset.update(status='FLOATING')
         for obj in queryset:
             obj.update_days_and_storage()
-            obj.save(update_fields=['days', 'storage_cost', 'total_price', 'current_price'])
+            obj.save(update_fields=['days', 'storage_cost', 'total_price'])
         self.message_user(request, f"Статус изменён на 'В пути' для {updated} автомобилей.")
     set_status_floating.short_description = "Изменить статус на В пути"
 
@@ -1133,7 +1128,7 @@ class CarAdmin(admin.ModelAdmin):
         updated = queryset.update(status='IN_PORT')
         for obj in queryset:
             obj.update_days_and_storage()
-            obj.save(update_fields=['days', 'storage_cost', 'total_price', 'current_price'])
+            obj.save(update_fields=['days', 'storage_cost', 'total_price'])
         self.message_user(request, f"Статус изменён на 'В порту' для {updated} автомобилей.")
     set_status_in_port.short_description = "Изменить статус на В порту"
 
@@ -1143,7 +1138,7 @@ class CarAdmin(admin.ModelAdmin):
             if obj.warehouse and obj.unload_date:
                 obj.status = 'UNLOADED'
                 obj.update_days_and_storage()
-                obj.save(update_fields=['status', 'days', 'storage_cost', 'total_price', 'current_price'])
+                obj.save(update_fields=['status', 'days', 'storage_cost', 'total_price'])
                 updated += 1
             else:
                 self.message_user(request, f"Автомобиль {obj.vin} не обновлён: требуются поля 'Склад' и 'Дата разгрузки'.", level='warning')
@@ -1156,7 +1151,7 @@ class CarAdmin(admin.ModelAdmin):
             if obj.status == 'TRANSFERRED' and not obj.transfer_date:
                 obj.transfer_date = timezone.now().date()
             obj.update_days_and_storage()
-            obj.save(update_fields=['transfer_date', 'days', 'storage_cost', 'total_price', 'current_price'])
+            obj.save(update_fields=['transfer_date', 'days', 'storage_cost', 'total_price'])
         self.message_user(request, f"Статус изменён на 'Передан' для {updated} автомобилей.")
     set_status_transferred.short_description = "Изменить статус на Передан"
 
@@ -1413,7 +1408,7 @@ class CarAdmin(admin.ModelAdmin):
                 obj.update_days_and_storage()
                 obj.calculate_total_price()
                 # Сохраняем обновленные поля
-                obj.save(update_fields=['storage_cost', 'days', 'current_price', 'total_price'])
+                obj.save(update_fields=['storage_cost', 'days', 'total_price'])
                 print(f"Обновлены поля: storage_cost={obj.storage_cost}, days={obj.days}")
             except Exception as e:
                 print(f"Ошибка при пересчете стоимости хранения: {e}")
@@ -1605,7 +1600,7 @@ class CarAdmin(admin.ModelAdmin):
 
 @admin.register(Warehouse)
 class WarehouseAdmin(admin.ModelAdmin):
-    list_display = ('name', 'address', 'free_days', 'rate', 'balance_display')
+    list_display = ('name', 'address', 'free_days', 'balance_display')
     search_fields = ('name', 'address')
     readonly_fields = ('balance',)
     exclude = (
@@ -1618,9 +1613,9 @@ class WarehouseAdmin(admin.ModelAdmin):
         ('Основные данные', {
             'fields': ('name', 'address')
         }),
-        ('Ставки хранения', {
-            'fields': ('free_days', 'rate'),
-            'description': 'Настройки для расчета стоимости хранения на складе. Ставка за сутки умножается на количество дней хранения минус бесплатные дни.'
+        ('Настройки хранения', {
+            'fields': ('free_days',),
+            'description': 'Бесплатные дни хранения. Ставка за сутки берётся из услуги "Хранение" в списке услуг склада.'
         }),
         ('Баланс', {
             'fields': ('balance',),
