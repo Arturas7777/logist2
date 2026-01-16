@@ -456,7 +456,7 @@ class Car(models.Model):
     carrier = models.ForeignKey('Carrier', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Перевозчик")
     unload_date = models.DateField(null=True, blank=True, verbose_name="Дата разгрузки")
     transfer_date = models.DateField(null=True, blank=True, verbose_name="Дата передачи")
-    has_title = models.BooleanField(default=False, verbose_name="Тайтл у нас")
+    has_title = models.BooleanField(default=False, verbose_name="Т")
     title_notes = models.CharField(max_length=200, blank=True, verbose_name="Примечания к тайтлу")
     total_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Цена")
     # УДАЛЕНО: current_price - теперь используется только total_price

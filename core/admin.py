@@ -889,8 +889,7 @@ class CarAdmin(admin.ModelAdmin):
     change_form_template = 'admin/core/car/change_form.html'
     list_display = (
         'vin', 'brand', 'vehicle_type', 'year_display', 'client', 'colored_status', 'container_display', 'warehouse', 'line',
-        'unload_date_display', 'total_price_display',
-        'storage_cost_display', 'days_display', 'has_title'
+        'unload_date_display', 'days_display', 'storage_cost_display', 'total_price_display', 'has_title'
     )
     list_editable = ('has_title',)
     list_filter = (MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter)
@@ -1107,7 +1106,7 @@ class CarAdmin(admin.ModelAdmin):
 
     def unload_date_display(self, obj):
         return obj.unload_date
-    unload_date_display.short_description = 'Разгружен'
+    unload_date_display.short_description = 'Дата разгрузки'
     unload_date_display.admin_order_field = 'unload_date'
 
     def transfer_date_display(self, obj):
@@ -1123,7 +1122,7 @@ class CarAdmin(admin.ModelAdmin):
         except Exception as e:
             print(f"Ошибка расчета стоимости хранения: {e}")
             return f"{obj.storage_cost:.2f}"  # Fallback на старое поле
-    storage_cost_display.short_description = 'Складирование'
+    storage_cost_display.short_description = 'Хран'
     storage_cost_display.admin_order_field = 'storage_cost'
 
     def days_display(self, obj):
@@ -1137,7 +1136,7 @@ class CarAdmin(admin.ModelAdmin):
             chargeable_days = max(0, total_days - free_days)
             return f"{chargeable_days} (из {total_days})"
         return obj.days if hasattr(obj, 'days') else 0
-    days_display.short_description = 'Платные дни'
+    days_display.short_description = 'Плат.дн.'
     days_display.admin_order_field = 'days'
 
     def total_price_display(self, obj):
