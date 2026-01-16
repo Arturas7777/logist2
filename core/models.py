@@ -67,11 +67,17 @@ class Line(models.Model):
         return self.name
 
 
-class LineTHSPercent(models.Model):
-    """Процент от THS для типа ТС у конкретной линии.
+class LineTHSCoefficient(models.Model):
+    """Коэффициент THS для типа ТС у конкретной линии.
     
     Используется для распределения общей суммы THS контейнера между ТС
-    пропорционально их типам. Проценты нормируются до 100%.
+    пропорционально их "весу" (коэффициенту).
+    
+    Пример: Контейнер THS = 500 EUR
+    3 машины: легковой(1.0) + джип(2.0) + мото(0.5) = сумма весов 3.5
+    - Легковой: 500 × (1.0/3.5) = 143 EUR
+    - Джип: 500 × (2.0/3.5) = 286 EUR  
+    - Мото: 500 × (0.5/3.5) = 71 EUR
     """
     # Типы ТС дублируем здесь чтобы избежать циклического импорта
     VEHICLE_TYPE_CHOICES = [
@@ -88,19 +94,19 @@ class LineTHSPercent(models.Model):
         ('CONSTRUCTION', 'Стр. техника'),
     ]
     
-    line = models.ForeignKey(Line, on_delete=models.CASCADE, related_name='ths_percents', verbose_name="Линия")
+    line = models.ForeignKey(Line, on_delete=models.CASCADE, related_name='ths_coefficients', verbose_name="Линия")
     vehicle_type = models.CharField(max_length=20, choices=VEHICLE_TYPE_CHOICES, verbose_name="Тип ТС")
-    percent = models.DecimalField(max_digits=5, decimal_places=2, default=25.00, 
-                                  verbose_name="Процент от THS",
-                                  help_text="Процент от общей суммы THS для данного типа ТС")
+    coefficient = models.DecimalField(max_digits=5, decimal_places=2, default=1.00, 
+                                      verbose_name="Коэффициент",
+                                      help_text="Вес типа ТС при распределении THS (1.0 = стандарт, 2.0 = двойной, 0.5 = половина)")
     
     class Meta:
-        verbose_name = "Процент THS для типа ТС"
-        verbose_name_plural = "Проценты THS для типов ТС"
+        verbose_name = "Коэффициент THS для типа ТС"
+        verbose_name_plural = "Коэффициенты THS для типов ТС"
         unique_together = ['line', 'vehicle_type']
     
     def __str__(self):
-        return f"{self.line.name} - {self.get_vehicle_type_display()}: {self.percent}%"
+        return f"{self.line.name} - {self.get_vehicle_type_display()}: ×{self.coefficient}"
 
 
 class Carrier(models.Model):
