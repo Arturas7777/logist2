@@ -2649,7 +2649,7 @@ class LineAdmin(admin.ModelAdmin):
         from django.urls import path
         urls = super().get_urls()
         custom_urls = [
-            path('<path:object_id>/recalculate_ths/',
+            path('<int:object_id>/recalculate_ths/',
                  self.admin_site.admin_view(self.recalculate_ths_view),
                  name='core_line_recalculate_ths'),
         ]
@@ -2659,41 +2659,68 @@ class LineAdmin(admin.ModelAdmin):
         """Пересчитывает THS для всех машин линии со статусом UNLOADED и IN_PORT"""
         from django.contrib import messages
         from django.shortcuts import redirect
-        from core.models import Container, Car
+        from django.db import transaction
+        from core.models import Container, Car, Line
         from core.signals import create_ths_services_for_container
+        import logging
+        logger = logging.getLogger(__name__)
         
-        line = self.get_object(request, object_id)
-        if not line:
+        print(f"=== RECALCULATE THS VIEW CALLED === object_id={object_id}")
+        logger.warning(f"=== RECALCULATE THS VIEW CALLED === object_id={object_id}")
+
+        # Получаем линию напрямую по ID
+        try:
+            line = Line.objects.get(pk=object_id)
+        except Line.DoesNotExist:
             messages.error(request, 'Линия не найдена')
-            return redirect('..')
-        
+            return redirect('admin:core_line_changelist')
+        print(f"Line: {line}")
+
+        logger.info(f"[RECALC THS] Starting for line {line.name}")
+
         # Находим все контейнеры этой линии с машинами в нужных статусах
         containers = Container.objects.filter(
             line=line,
             container_cars__status__in=['UNLOADED', 'IN_PORT']
         ).distinct()
-        
+
         updated_containers = 0
         updated_cars = 0
-        
-        for container in containers:
-            if container.ths:
-                # Пересчитываем THS
-                created = create_ths_services_for_container(container)
-                updated_containers += 1
-                
-                # Пересчитываем цены машин
-                for car in container.container_cars.filter(status__in=['UNLOADED', 'IN_PORT']):
-                    car.refresh_from_db()
-                    car.calculate_total_price()
-                    car.save(update_fields=['total_price', 'storage_cost', 'days'])
-                    updated_cars += 1
-        
-        messages.success(
-            request, 
-            f'Пересчитано: {updated_containers} контейнеров, {updated_cars} машин'
-        )
-        return redirect('..')
+
+        try:
+            with transaction.atomic():
+                for container in containers:
+                    if container.ths:
+                        logger.info(f"[RECALC THS] Container {container.number}, THS={container.ths}")
+                        
+                        # Пересчитываем THS услуги
+                        created = create_ths_services_for_container(container)
+                        logger.info(f"[RECALC THS] Created {created} THS services")
+                        updated_containers += 1
+
+                        # Пересчитываем цены машин
+                        for car in container.container_cars.filter(status__in=['UNLOADED', 'IN_PORT']):
+                            old_price = car.total_price
+                            # Очищаем кэш и получаем свежие данные
+                            car.refresh_from_db()
+                            if hasattr(car, '_prefetched_objects_cache'):
+                                car._prefetched_objects_cache.clear()
+                            
+                            car.calculate_total_price()
+                            car.save(update_fields=['total_price', 'storage_cost', 'days'])
+                            logger.info(f"[RECALC THS] Car {car.vin}: {old_price} -> {car.total_price}")
+                            updated_cars += 1
+
+            messages.success(
+                request,
+                f'Пересчитано: {updated_containers} контейнеров, {updated_cars} машин'
+            )
+        except Exception as e:
+            logger.error(f"[RECALC THS] Error: {e}", exc_info=True)
+            messages.error(request, f'Ошибка при пересчёте: {e}')
+
+        from django.urls import reverse
+        return redirect(reverse('admin:core_line_change', args=[object_id]))
 
     def change_view(self, request, object_id, form_url='', extra_context=None):
         """Переопределяем change_view для обработки услуг"""
