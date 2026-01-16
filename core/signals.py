@@ -433,7 +433,7 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
                 if service.id not in deleted_warehouse_services:
                     # Для услуги "Хранение" цена = платные_дни × ставка_за_день
                     # Если платных дней нет - цена = 0
-                    if 'хранение' in service.name.lower():
+                    if service.name == 'Хранение':
                         storage_price = Decimal(str(instance.days or 0)) * Decimal(str(service.default_price or 0))
                         custom_price = storage_price
                     else:
@@ -496,7 +496,7 @@ def update_cars_on_warehouse_service_change(sender, instance, **kwargs):
                     service_id=instance.id
                 ).exists():
                     # Для услуги "Хранение" цена = платные_дни × ставка_за_день
-                    if 'хранение' in instance.name.lower():
+                    if instance.name == 'Хранение':
                         custom_price = Decimal(str(car.days or 0)) * Decimal(str(instance.default_price or 0))
                     else:
                         custom_price = instance.default_price

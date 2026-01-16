@@ -657,7 +657,7 @@ class Car(models.Model):
         try:
             storage_service = WarehouseService.objects.filter(
                 warehouse=self.warehouse,
-                name__icontains='хранение',
+                name='Хранение',
                 is_active=True
             ).first()
             
@@ -680,7 +680,7 @@ class Car(models.Model):
             # Находим услугу "Хранение" для этого склада
             storage_service = WarehouseService.objects.filter(
                 warehouse=self.warehouse,
-                name__icontains='хранение',
+                name='Хранение',
                 is_active=True
             ).first()
             
@@ -688,11 +688,17 @@ class Car(models.Model):
                 # Стоимость = платные_дни × цена_за_день
                 storage_price = Decimal(str(self.days)) * Decimal(str(storage_service.default_price or 0))
                 
-                # Обновляем цену в CarService
-                self.car_services.filter(
+                # Обновляем цену в CarService напрямую в базе
+                from core.models import CarService
+                CarService.objects.filter(
+                    car=self,
                     service_type='WAREHOUSE',
                     service_id=storage_service.id
                 ).update(custom_price=storage_price)
+                
+                # Сбрасываем prefetch кэш чтобы получить актуальные данные
+                if hasattr(self, '_prefetched_objects_cache'):
+                    self._prefetched_objects_cache.pop('car_services', None)
         except Exception:
             pass  # Игнорируем ошибки - модель может быть ещё не сохранена
 
