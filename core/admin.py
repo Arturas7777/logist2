@@ -1094,6 +1094,10 @@ class CarAdmin(admin.ModelAdmin):
     days_display.admin_order_field = 'days'
 
     def total_price_display(self, obj):
+        # Для не переданных авто пересчитываем цену динамически
+        if obj.status != 'TRANSFERRED':
+            obj.update_days_and_storage()
+            obj.calculate_total_price()
         return f"{obj.total_price:.2f}"
     total_price_display.short_description = 'Цена'
     total_price_display.admin_order_field = 'total_price'
