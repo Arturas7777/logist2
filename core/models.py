@@ -476,6 +476,15 @@ class Car(models.Model):
     extra_costs = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Доп.расходы", validators=[MinValueValidator(0)])
     dekl = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Декларация", validators=[MinValueValidator(0)])
     proft = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('20.00'), null=True, blank=True, verbose_name="Наценка", validators=[MinValueValidator(0)])
+    hide_markup_in = models.ForeignKey(
+        'CarService', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='cars_with_hidden_markup',
+        verbose_name="Скрыть наценку в услуге",
+        help_text="Выберите услугу, в которую добавить наценку (вместо отдельной строки в инвойсе)"
+    )
     free_days = models.PositiveIntegerField(default=0, verbose_name="Бесплатные дни")
     rate = models.DecimalField(max_digits=10, decimal_places=2, default=5, verbose_name="Ставка за сутки", validators=[MinValueValidator(0)])
     complex_fee = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Комплекс", validators=[MinValueValidator(0)])
@@ -608,10 +617,13 @@ class Car(models.Model):
     def calculate_total_price(self):
         """Пересчитывает цену используя систему услуг CarService.
 
-        Цена = сумма всех услуг + наценка.
-        После статуса TRANSFERRED цена фиксируется и не пересчитывается,
-        пока статус не изменится обратно.
+        Цена = сумма всех услуг + сумма всех скрытых наценок.
+        
+        ВАЖНО: total_price включает скрытую наценку (markup_amount)!
+        Это полная сумма, которую заплатит клиент.
         """
+        from django.db.models import Sum
+        
         # Сбрасываем кэш related objects чтобы получить актуальные услуги из БД
         if hasattr(self, '_prefetched_objects_cache'):
             self._prefetched_objects_cache.pop('car_services', None)
@@ -619,16 +631,16 @@ class Car(models.Model):
         # Сначала обновляем дни и цену услуги "Хранение"
         self.update_days_and_storage()
 
-        # Получаем суммы по поставщикам из CarService
+        # Получаем суммы по поставщикам из CarService (final_price = базовая цена БЕЗ наценки)
         line_total = self.get_services_total_by_provider('LINE')
         carrier_total = self.get_services_total_by_provider('CARRIER')
         warehouse_total = self.get_warehouse_services_total()  # Включает услугу "Хранение"
+        
+        # Сумма всех скрытых наценок
+        distributed_markup = self.car_services.aggregate(total=Sum('markup_amount'))['total'] or Decimal('0')
 
-        # Наценка Caromoto Lithuania из поля proft автомобиля
-        markup_amount = self.proft or Decimal('0.00')
-
-        # Общая сумма всех услуг + наценка
-        self.total_price = line_total + warehouse_total + carrier_total + markup_amount
+        # Общая сумма = услуги + скрытые наценки
+        self.total_price = line_total + warehouse_total + carrier_total + distributed_markup
 
         return self.total_price
 
@@ -678,9 +690,10 @@ class Car(models.Model):
         return Decimal('0.00')
     
     def _update_storage_service_price(self):
-        """Обновляет цену услуги 'Хранение' в CarService.
+        """Обновляет цену и наценку услуги 'Хранение' в CarService.
         
         Цена = платные_дни × ставка_за_день (из WarehouseService)
+        Наценка = платные_дни × наценка_за_день (из WarehouseService.default_markup)
         """
         if not self.pk or not self.warehouse:
             return
@@ -694,16 +707,19 @@ class Car(models.Model):
             ).first()
             
             if storage_service:
+                days = Decimal(str(self.days))
                 # Стоимость = платные_дни × цена_за_день
-                storage_price = Decimal(str(self.days)) * Decimal(str(storage_service.default_price or 0))
+                storage_price = days * Decimal(str(storage_service.default_price or 0))
+                # Наценка = платные_дни × наценка_за_день
+                storage_markup = days * Decimal(str(storage_service.default_markup or 0))
                 
-                # Обновляем цену в CarService напрямую в базе
+                # Обновляем цену и наценку в CarService напрямую в базе
                 from core.models import CarService
                 CarService.objects.filter(
                     car=self,
                     service_type='WAREHOUSE',
                     service_id=storage_service.id
-                ).update(custom_price=storage_price)
+                ).update(custom_price=storage_price, markup_amount=storage_markup)
                 
                 # Сбрасываем prefetch кэш чтобы получить актуальные данные
                 if hasattr(self, '_prefetched_objects_cache'):
@@ -983,6 +999,8 @@ class LineService(models.Model):
     name = models.CharField(max_length=200, verbose_name="Название услуги")
     description = models.TextField(blank=True, verbose_name="Описание")
     default_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Цена по умолчанию")
+    default_markup = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Наценка по умолчанию",
+        help_text="Скрытая наценка, которая будет автоматически добавлена при создании услуги для авто")
     is_active = models.BooleanField(default=True, verbose_name="Активна")
     
     def __str__(self):
@@ -999,6 +1017,8 @@ class CarrierService(models.Model):
     name = models.CharField(max_length=200, verbose_name="Название услуги")
     description = models.TextField(blank=True, verbose_name="Описание")
     default_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Цена по умолчанию")
+    default_markup = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Наценка по умолчанию",
+        help_text="Скрытая наценка, которая будет автоматически добавлена при создании услуги для авто")
     is_active = models.BooleanField(default=True, verbose_name="Активна")
     
     def __str__(self):
@@ -1015,6 +1035,8 @@ class WarehouseService(models.Model):
     name = models.CharField(max_length=200, verbose_name="Название услуги")
     description = models.TextField(blank=True, verbose_name="Описание")
     default_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Цена по умолчанию")
+    default_markup = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Наценка по умолчанию",
+        help_text="Скрытая наценка, которая будет автоматически добавлена при создании услуги для авто")
     is_active = models.BooleanField(default=True, verbose_name="Активна")
     add_by_default = models.BooleanField(default=False, verbose_name="Добавлять по умолчанию",
         help_text="Автоматически добавлять эту услугу при создании автомобиля на этом складе")
@@ -1056,6 +1078,13 @@ class CarService(models.Model):
     service_type = models.CharField(max_length=20, choices=SERVICE_TYPES, verbose_name="Тип поставщика")
     service_id = models.PositiveIntegerField(verbose_name="ID услуги")
     custom_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Индивидуальная цена")
+    markup_amount = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2, 
+        default=0, 
+        verbose_name="Скрытая наценка",
+        help_text="Сумма наценки, которая будет добавлена к цене услуги в инвойсе (скрыто от клиента)"
+    )
     quantity = models.PositiveIntegerField(default=1, verbose_name="Количество")
     notes = models.TextField(blank=True, verbose_name="Примечания")
     
@@ -1111,9 +1140,26 @@ class CarService(models.Model):
     
     @property
     def final_price(self):
-        """Итоговая цена с учетом количества"""
-        price = self.custom_price if self.custom_price else self.get_default_price()
+        """Итоговая цена с учетом количества (БЕЗ скрытой наценки - для внутреннего учёта)"""
+        # Используем custom_price если он задан (даже если 0), иначе default_price
+        price = self.custom_price if self.custom_price is not None else self.get_default_price()
         return price * self.quantity
+    
+    @property
+    def invoice_price(self):
+        """Цена для инвойса (С учётом скрытой наценки)"""
+        # Используем custom_price если он задан (даже если 0), иначе default_price
+        base_price = self.custom_price if self.custom_price is not None else self.get_default_price()
+        markup = self.markup_amount or Decimal('0')
+        return (base_price + markup) * self.quantity
+    
+    def get_total_distributed_markup(self):
+        """Возвращает сумму распределённой наценки для этого авто"""
+        if not self.car_id:
+            return Decimal('0')
+        return CarService.objects.filter(car_id=self.car_id).aggregate(
+            total=models.Sum('markup_amount')
+        )['total'] or Decimal('0')
     
     class Meta:
         verbose_name = "Услуга автомобиля"
