@@ -558,24 +558,9 @@ class NewInvoice(models.Model):
                     )
                     order += 1
                 
-                # Добавляем наценку Caromoto Lithuania как отдельную позицию
-                if car.proft and car.proft > 0:
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.info(f"✅ Добавляем наценку {car.proft} для автомобиля {car.vin} в инвойс {self.number}")
-                    InvoiceItem.objects.create(
-                        invoice=self,
-                        description=f"Наценка Caromoto Lithuania - {car.brand} {car.vin}",
-                        car=car,
-                        quantity=1,
-                        unit_price=car.proft,
-                        order=order
-                    )
-                    order += 1
-                else:
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.warning(f"⚠️ Наценка НЕ добавлена для {car.vin}: proft={car.proft}")
+                # Наценка НЕ показывается отдельной строкой в инвойсе!
+                # Она скрыто добавляется к ценам услуг через markup_amount в CarService
+                # Это прибыль Caromoto Lithuania, которая не видна клиенту
             else:
                 continue
             
@@ -589,14 +574,26 @@ class NewInvoice(models.Model):
                     logger.warning(f"⚠️ Пропущена битая услуга: type={service.service_type}, id={service.service_id} для авто {car.vin}")
                     continue
                 
-                price = service.custom_price if service.custom_price else service.get_default_price()
+                # ЗАЩИТА: Для Company пропускаем услугу "Хранение" - она уже добавлена выше вручную
+                # Это предотвращает дублирование стоимости хранения в инвойсе
+                if issuer_type == 'Company' and service_name == 'Хранение':
+                    logger.debug(f"⏭️ Пропускаем услугу 'Хранение' для {car.vin} - уже добавлена вручную")
+                    continue
+                
+                # Для Company используем invoice_price (включает скрытую наценку)
+                # Для остальных - обычную цену
+                if issuer_type == 'Company':
+                    # invoice_price уже включает markup_amount и учитывает quantity
+                    unit_price = (service.custom_price if service.custom_price else service.get_default_price()) + (service.markup_amount or Decimal('0'))
+                else:
+                    unit_price = service.custom_price if service.custom_price else service.get_default_price()
                 
                 InvoiceItem.objects.create(
                     invoice=self,
                     description=f"{prefix}: {service_name} - {car.brand} {car.vin}",
                     car=car,
                     quantity=service.quantity,
-                    unit_price=price,
+                    unit_price=unit_price,
                     order=order
                 )
                 order += 1

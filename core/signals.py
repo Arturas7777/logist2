@@ -434,21 +434,25 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
             
             for service in warehouse_services:
                 if service.id not in deleted_warehouse_services:
-                    # Для услуги "Хранение" цена = платные_дни × ставка_за_день
+                    # Для услуги "Хранение" цена и наценка = платные_дни × ставка_за_день
                     # Если платных дней нет - цена = 0
                     if service.name == 'Хранение':
-                        storage_price = Decimal(str(instance.days or 0)) * Decimal(str(service.default_price or 0))
-                        custom_price = storage_price
+                        days = Decimal(str(instance.days or 0))
+                        custom_price = days * Decimal(str(service.default_price or 0))
+                        # Наценка тоже умножается на дни
+                        default_markup = days * Decimal(str(getattr(service, 'default_markup', 0) or 0))
                     else:
                         custom_price = service.default_price
+                        # Получаем default_markup из услуги
+                        default_markup = getattr(service, 'default_markup', None) or Decimal('0')
                     
                     CarService.objects.get_or_create(
                         car=instance,
                         service_type='WAREHOUSE',
                         service_id=service.id,
-                        defaults={'custom_price': custom_price}
+                        defaults={'custom_price': custom_price, 'markup_amount': default_markup}
                     )
-                    logger.info(f"🏭 Добавлена услуга склада '{service.name}' для {instance.vin} (цена: {custom_price})")
+                    logger.info(f"🏭 Добавлена услуга склада '{service.name}' для {instance.vin} (цена: {custom_price}, наценка: {default_markup})")
         
         # ========== УСЛУГИ ЛИНИИ (THS) ==========
         # ОТКЛЮЧЕНО: THS теперь рассчитывается пропорционально через create_ths_services_for_container()
@@ -470,11 +474,14 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
             
             for service in carrier_services:
                 if service.id not in deleted_carrier_services:
+                    # Получаем default_markup из услуги
+                    default_markup = getattr(service, 'default_markup', None) or Decimal('0')
+                    
                     CarService.objects.get_or_create(
                         car=instance,
                         service_type='CARRIER',
                         service_id=service.id,
-                        defaults={'custom_price': service.default_price}
+                        defaults={'custom_price': service.default_price, 'markup_amount': default_markup}
                     )
                 
     except Exception as e:
@@ -498,18 +505,22 @@ def update_cars_on_warehouse_service_change(sender, instance, **kwargs):
                     service_type='WAREHOUSE',
                     service_id=instance.id
                 ).exists():
-                    # Для услуги "Хранение" цена = платные_дни × ставка_за_день
+                    # Для услуги "Хранение" цена и наценка = платные_дни × ставка_за_день
                     if instance.name == 'Хранение':
-                        custom_price = Decimal(str(car.days or 0)) * Decimal(str(instance.default_price or 0))
+                        days = Decimal(str(car.days or 0))
+                        custom_price = days * Decimal(str(instance.default_price or 0))
+                        default_markup = days * Decimal(str(getattr(instance, 'default_markup', 0) or 0))
                     else:
                         custom_price = instance.default_price
+                        # Получаем default_markup из услуги
+                        default_markup = getattr(instance, 'default_markup', None) or Decimal('0')
                     
                     # Создаем или обновляем запись CarService
                     CarService.objects.get_or_create(
                         car=car,
                         service_type='WAREHOUSE',
                         service_id=instance.id,
-                        defaults={'custom_price': custom_price}
+                        defaults={'custom_price': custom_price, 'markup_amount': default_markup}
                     )
             else:
                 # Удаляем запись CarService если услуга неактивна или цена = 0

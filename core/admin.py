@@ -25,7 +25,7 @@ from .admin_filters import MultiStatusFilter, MultiWarehouseFilter, ClientAutoco
 class WarehouseServiceInline(admin.TabularInline):
     model = WarehouseService
     extra = 1
-    fields = ('name', 'description', 'default_price', 'is_active', 'add_by_default')
+    fields = ('name', 'description', 'default_price', 'default_markup', 'is_active', 'add_by_default')
     verbose_name = "Услуга склада"
     verbose_name_plural = "Услуги склада"
     
@@ -38,7 +38,7 @@ class WarehouseServiceInline(admin.TabularInline):
 class LineServiceInline(admin.TabularInline):
     model = LineService
     extra = 1
-    fields = ('name', 'description', 'default_price', 'is_active')
+    fields = ('name', 'description', 'default_price', 'default_markup', 'is_active')
     verbose_name = "Услуга линии"
     verbose_name_plural = "Услуги линии"
 
@@ -73,7 +73,7 @@ class LineTHSCoefficientInline(admin.TabularInline):
 class CarrierServiceInline(admin.TabularInline):
     model = CarrierService
     extra = 1
-    fields = ('name', 'description', 'default_price', 'is_active')
+    fields = ('name', 'description', 'default_price', 'default_markup', 'is_active')
     verbose_name = "Услуга перевозчика"
     verbose_name_plural = "Услуги перевозчика"
 
@@ -151,8 +151,8 @@ class CarServiceInline(admin.TabularInline):
     form = CarServiceInlineForm
     extra = 1
     can_delete = True
-    fields = ('service_type', 'warehouse_service', 'line_service', 'carrier_service', 'service_display', 'warehouse_display', 'custom_price', 'quantity', 'final_price_display', 'notes')
-    readonly_fields = ('service_display', 'warehouse_display', 'final_price_display')
+    fields = ('service_type', 'warehouse_service', 'line_service', 'carrier_service', 'service_display', 'warehouse_display', 'custom_price', 'markup_amount', 'quantity', 'final_price_display', 'invoice_price_display', 'notes')
+    readonly_fields = ('service_display', 'warehouse_display', 'final_price_display', 'invoice_price_display')
     verbose_name = "Дополнительная услуга"
     verbose_name_plural = "Дополнительные услуги (от других складов/компаний)"
     
@@ -190,11 +190,18 @@ class CarServiceInline(admin.TabularInline):
     warehouse_display.short_description = "Компания/Склад"
     
     def final_price_display(self, obj):
-        """Отображает итоговую цену"""
+        """Отображает итоговую цену (без скрытой наценки)"""
         if obj and obj.pk:
             return f"{obj.final_price:.2f}"
         return "0.00"
     final_price_display.short_description = "Итого"
+    
+    def invoice_price_display(self, obj):
+        """Отображает цену для инвойса (с учётом скрытой наценки)"""
+        if obj and obj.pk:
+            return f"{obj.invoice_price:.2f}"
+        return "0.00"
+    invoice_price_display.short_description = "В инвойсе"
     
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)
@@ -532,6 +539,38 @@ class ContainerAdmin(admin.ModelAdmin):
                 obj.save()
                 
                 logger.debug(f"Saved Car {obj.vin} (creating={creating}, has_title={obj.has_title})")
+                
+                # Для новых машин принудительно создаём услуги склада с наценкой
+                if creating and obj.warehouse_id:
+                    from core.models import WarehouseService, CarService
+                    from decimal import Decimal
+                    
+                    warehouse_services = WarehouseService.objects.filter(
+                        warehouse=obj.warehouse,
+                        is_active=True,
+                        add_by_default=True
+                    )
+                    
+                    for service in warehouse_services:
+                        # Проверяем, нет ли уже такой услуги
+                        if not CarService.objects.filter(car=obj, service_type='WAREHOUSE', service_id=service.id).exists():
+                            # Для "Хранение" рассчитываем цену и наценку × количество дней
+                            if service.name == 'Хранение':
+                                days = Decimal(str(obj.days or 0))
+                                custom_price = days * Decimal(str(service.default_price or 0))
+                                default_markup = days * Decimal(str(service.default_markup or 0))
+                            else:
+                                custom_price = service.default_price
+                                default_markup = service.default_markup or Decimal('0')
+                            
+                            CarService.objects.create(
+                                car=obj,
+                                service_type='WAREHOUSE',
+                                service_id=service.id,
+                                custom_price=custom_price,
+                                markup_amount=default_markup
+                            )
+                            logger.info(f"🏭 [FORMSET] Создана услуга склада '{service.name}' для {obj.vin} (цена: {custom_price}, наценка: {default_markup})")
             else:
                 obj.save()
 
@@ -932,9 +971,7 @@ class CarAdmin(admin.ModelAdmin):
             )
         }),
         ('Финансы', {
-            'classes': ('collapse',),
             'fields': (
-                ('proft',),
                 'services_summary_display',
             )
         }),
@@ -980,46 +1017,64 @@ class CarAdmin(admin.ModelAdmin):
         """Отображает сводку по всем услугам с наценкой Caromoto Lithuania"""
         from decimal import Decimal
         from core.models import CarService
+        from django.db.models import Sum
         
         # Обновляем дни и стоимость хранения перед отображением
         obj.update_days_and_storage()
         
-        # Разделяем услуги: THS отдельно, склад отдельно, перевозчик отдельно
-        ths_total = Decimal('0.00')
-        warehouse_other = Decimal('0.00')  # Услуги склада без THS
+        # Разделяем услуги: линии (все + THS из склада), склад (без THS), перевозчик
+        line_total = Decimal('0.00')  # Все услуги линий + THS (даже если через склад)
+        warehouse_total = Decimal('0.00')  # Услуги склада (без THS)
         carrier_total = obj.get_services_total_by_provider('CARRIER')
         
-        # Получаем все услуги и разделяем THS от остальных
+        # Получаем все услуги и разделяем по категориям
+        # THS всегда считается услугой линии, даже если оплачивается через склад
         for service in obj.car_services.all():
             service_name = service.get_service_name().upper()
-            price = Decimal(str(service.custom_price or 0))
+            price = Decimal(str(service.final_price))
             
-            if 'THS' in service_name:
-                ths_total += price
+            if service.service_type == 'LINE' or 'THS' in service_name:
+                line_total += price  # Все услуги линий + THS из склада
             elif service.service_type == 'WAREHOUSE':
-                warehouse_other += price
+                warehouse_total += price  # Услуги склада без THS
         
         # Платные дни для отображения
         paid_days = obj.days or 0
         
-        # Наценка Caromoto Lithuania из поля proft автомобиля
-        markup_amount = obj.proft or Decimal('0.00')
+        # Сумма распределённых наценок (из услуг)
+        distributed_markup = obj.car_services.aggregate(total=Sum('markup_amount'))['total'] or Decimal('0')
         
-        # Проверяем статус автомобиля
-        is_transferred = obj.status == 'TRANSFERRED' and obj.transfer_date
+        # Наценка из поля proft (если не распределена)
+        proft_amount = obj.proft or Decimal('0.00')
+        
+        # Общая наценка = только распределённая (proft больше не используется)
+        total_markup = distributed_markup
         
         # Базовые суммы (без наценки)
-        base_total = ths_total + warehouse_other + carrier_total
+        base_total = line_total + warehouse_total + carrier_total
         
         html = ['<div style="margin-top:15px; background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #dee2e6;">']
         html.append('<h3 style="margin-top:0; color:#495057;">Сводка по услугам</h3>')
         
         html.append('<div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:15px; margin-bottom:20px;">')
         
-        # THS (оплата линиям)
+        # Услуги линий (THS, Отправка в Грузию и т.д.) - с детализацией
         html.append('<div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">')
-        html.append('<strong>THS (оплата линиям):</strong><br>')
-        html.append(f'<span style="font-size:18px; color:#007bff;">{ths_total:.2f}</span>')
+        html.append('<strong>Услуги линий:</strong><br>')
+        
+        # Показываем каждую услугу линии (включая THS из склада)
+        line_services_list = []
+        for service in obj.car_services.all():
+            service_name = service.get_service_name()
+            # THS считается услугой линии даже если оплачивается через склад
+            if service.service_type == 'LINE' or 'THS' in service_name.upper():
+                price = Decimal(str(service.final_price))
+                line_services_list.append((service_name, price))
+        
+        for name, price in line_services_list:
+            html.append(f'<span style="font-size:13px; color:#6c757d;">{name}: {price:.2f}</span><br>')
+        
+        html.append(f'<span style="font-size:18px; color:#007bff; font-weight:bold;">Итого: {line_total:.2f}</span>')
         html.append('</div>')
         
         # Склад (без THS) - с детализацией услуг
@@ -1031,7 +1086,8 @@ class CarAdmin(admin.ModelAdmin):
         for service in obj.car_services.filter(service_type='WAREHOUSE'):
             service_name = service.get_service_name()
             if 'THS' not in service_name.upper():
-                price = Decimal(str(service.custom_price or 0))
+                # Используем final_price который учитывает default_price если custom_price не задан
+                price = Decimal(str(service.final_price))
                 warehouse_services_list.append((service_name, price))
         
         for name, price in warehouse_services_list:
@@ -1041,7 +1097,7 @@ class CarAdmin(admin.ModelAdmin):
             free_days = obj.warehouse.free_days or 0
             html.append(f'<span style="font-size:12px; color:#adb5bd;">Беспл. дней: {free_days}, Плат. дней: {paid_days}</span><br>')
         
-        html.append(f'<span style="font-size:18px; color:#28a745; font-weight:bold;">Итого: {warehouse_other:.2f}</span>')
+        html.append(f'<span style="font-size:18px; color:#28a745; font-weight:bold;">Итого: {warehouse_total:.2f}</span>')
         html.append('</div>')
         
         # Перевозчик
@@ -1050,16 +1106,20 @@ class CarAdmin(admin.ModelAdmin):
         html.append(f'<span style="font-size:18px; color:#ffc107;">{carrier_total:.2f}</span>')
         html.append('</div>')
         
-        # Наценка Caromoto Lithuania
-        html.append('<div style="background:#e8f5e8; padding:10px; border-radius:5px; border:1px solid #28a745;">')
-        html.append('<strong style="color:#28a745;">Наценка:</strong><br>')
-        html.append(f'<span style="font-size:18px; font-weight:bold; color:#28a745;">{markup_amount:.2f}</span>')
+        # Наценка - показываем распределённую сумму
+        html.append('<div style="background:#fffde7; padding:10px; border-radius:5px; border:1px solid #ffc107;">')
+        html.append('<strong style="color:#ff8f00;">Скрытая наценка:</strong><br>')
+        html.append(f'<span style="font-size:18px; font-weight:bold; color:#ff8f00;">{distributed_markup:.2f}</span>')
+        if distributed_markup > 0:
+            html.append(f'<br><span style="font-size:11px; color:#666;">(распределена по услугам)</span>')
+        else:
+            html.append(f'<br><span style="font-size:11px; color:#666;">(введите в жёлтых полях)</span>')
         html.append('</div>')
         
         html.append('</div>')
         
         # Общий итог
-        total_with_markup = base_total + markup_amount
+        total_with_markup = base_total + total_markup
         html.append('<div style="background:white; padding:15px; border-radius:5px; border:2px solid #6c757d;">')
         html.append('<strong style="color:#6c757d;">Итого к оплате:</strong><br>')
         html.append(f'<span style="font-size:20px; font-weight:bold; color:#495057;">{total_with_markup:.2f} EUR</span>')
@@ -1143,31 +1203,23 @@ class CarAdmin(admin.ModelAdmin):
         # Для не переданных авто рассчитываем цену динамически
         if obj.status != 'TRANSFERRED':
             from decimal import Decimal
-            from core.models import CarService, WarehouseService
+            from django.db.models import Sum
+            from core.models import CarService
             
             # Обновляем платные дни
             obj.update_days_and_storage()
             
-            # Рассчитываем сумму услуг напрямую из базы (без prefetch кэша)
-            total = Decimal('0.00')
-            
+            # Рассчитываем сумму услуг (final_price = базовая цена)
+            base_total = Decimal('0.00')
             for cs in CarService.objects.filter(car=obj):
-                service_name = cs.get_service_name()
-                # Для услуги "Хранение" используем расчётную цену
-                if service_name == 'Хранение':
-                    storage_ws = WarehouseService.objects.filter(
-                        id=cs.service_id, is_active=True
-                    ).first()
-                    if storage_ws:
-                        price = Decimal(str(obj.days or 0)) * Decimal(str(storage_ws.default_price or 0))
-                    else:
-                        price = Decimal('0.00')
-                else:
-                    price = Decimal(str(cs.custom_price or 0))
-                total += price
+                base_total += Decimal(str(cs.final_price))
             
-            # Добавляем наценку
-            total += obj.proft or Decimal('0.00')
+            # Добавляем распределённую наценку из CarService
+            distributed_markup = CarService.objects.filter(car=obj).aggregate(
+                total=Sum('markup_amount')
+            )['total'] or Decimal('0.00')
+            
+            total = base_total + distributed_markup
             return f"{total:.2f}"
         
         return f"{obj.total_price:.2f}"
@@ -1318,6 +1370,36 @@ class CarAdmin(admin.ModelAdmin):
         print(f"Removed services: {removed_services}")
         
         # Обрабатываем поля услуг склада
+        # Сначала обновляем ВСЕ существующие услуги склада
+        existing_warehouse_car_services = CarService.objects.filter(
+            car=obj,
+            service_type='WAREHOUSE'
+        )
+        
+        for car_service in existing_warehouse_car_services:
+            # Проверяем, не была ли услуга удалена
+            if f'warehouse_{car_service.service_id}' in removed_services:
+                continue
+            
+            field_name = f'warehouse_service_{car_service.service_id}'
+            value = request.POST.get(field_name)
+            
+            if value:
+                try:
+                    car_service.custom_price = float(value)
+                except (ValueError, TypeError):
+                    pass
+            
+            # Сохраняем скрытую наценку
+            markup_field = f'markup_warehouse_service_{car_service.service_id}'
+            markup_value = request.POST.get(markup_field, '0')
+            try:
+                car_service.markup_amount = float(markup_value) if markup_value else 0
+            except (ValueError, TypeError):
+                car_service.markup_amount = 0
+            car_service.save()
+        
+        # Затем создаём новые услуги из справочника (если нужно)
         if obj.warehouse:
             warehouse_services = WarehouseService.objects.filter(
                 warehouse=obj.warehouse, 
@@ -1325,11 +1407,7 @@ class CarAdmin(admin.ModelAdmin):
                 default_price__gt=0
             ).only('id', 'default_price')
             
-            # Если нет записей CarService для этого склада, создаем их автоматически
-            existing_car_services = CarService.objects.filter(
-                car=obj,
-                service_type='WAREHOUSE'
-            ).values_list('service_id', flat=True)
+            existing_car_service_ids = set(existing_warehouse_car_services.values_list('service_id', flat=True))
             
             # Получаем черный список удаленных услуг
             deleted_services = DeletedCarService.objects.filter(
@@ -1340,37 +1418,57 @@ class CarAdmin(admin.ModelAdmin):
             for service in warehouse_services:
                 # Проверяем, не была ли услуга удалена
                 if f'warehouse_{service.id}' in removed_services:
-                    continue  # Пропускаем удаленную услугу
+                    continue
                 
                 # Проверяем черный список
                 if service.id in deleted_services:
-                    continue  # Пропускаем услуги из черного списка
-                
-                field_name = f'warehouse_service_{service.id}'
-                value = request.POST.get(field_name)
+                    continue
                 
                 # Если услуги еще нет в CarService, создаем её автоматически
-                if service.id not in existing_car_services:
-                    value = value or service.default_price
+                if service.id not in existing_car_service_ids:
+                    field_name = f'warehouse_service_{service.id}'
+                    value = request.POST.get(field_name) or service.default_price
+                    # Получаем default_markup из услуги
+                    default_markup = getattr(service, 'default_markup', 0) or 0
                     CarService.objects.create(
                         car=obj,
                         service_type='WAREHOUSE',
                         service_id=service.id,
-                        custom_price=float(value)
+                        custom_price=float(value),
+                        markup_amount=float(default_markup)
                     )
-                elif value:
-                    # Обновляем существующую услугу
-                    car_service, created = CarService.objects.get_or_create(
-                        car=obj,
-                        service_type='WAREHOUSE',
-                        service_id=service.id,
-                        defaults={'custom_price': float(value)}
-                    )
-                    if not created:
-                        car_service.custom_price = float(value)
-                        car_service.save()
         
         # Обрабатываем поля услуг линии
+        # Сначала обновляем ВСЕ существующие услуги линии (включая THS)
+        existing_line_car_services = CarService.objects.filter(
+            car=obj,
+            service_type='LINE'
+        )
+        
+        for car_service in existing_line_car_services:
+            # Проверяем, не была ли услуга удалена
+            if f'line_{car_service.service_id}' in removed_services:
+                continue
+            
+            field_name = f'line_service_{car_service.service_id}'
+            value = request.POST.get(field_name)
+            
+            if value:
+                try:
+                    car_service.custom_price = float(value)
+                except (ValueError, TypeError):
+                    pass
+            
+            # Сохраняем скрытую наценку
+            markup_field = f'markup_line_service_{car_service.service_id}'
+            markup_value = request.POST.get(markup_field, '0')
+            try:
+                car_service.markup_amount = float(markup_value) if markup_value else 0
+            except (ValueError, TypeError):
+                car_service.markup_amount = 0
+            car_service.save()
+        
+        # Затем создаём новые услуги из справочника (если нужно)
         if obj.line:
             line_services = LineService.objects.filter(
                 line=obj.line, 
@@ -1378,11 +1476,7 @@ class CarAdmin(admin.ModelAdmin):
                 default_price__gt=0
             ).only('id', 'default_price')
             
-            # Если нет записей CarService для этой линии, создаем их автоматически
-            existing_car_services = CarService.objects.filter(
-                car=obj,
-                service_type='LINE'
-            ).values_list('service_id', flat=True)
+            existing_car_service_ids = set(existing_line_car_services.values_list('service_id', flat=True))
             
             # Получаем черный список удаленных услуг
             deleted_services = DeletedCarService.objects.filter(
@@ -1393,37 +1487,57 @@ class CarAdmin(admin.ModelAdmin):
             for service in line_services:
                 # Проверяем, не была ли услуга удалена
                 if f'line_{service.id}' in removed_services:
-                    continue  # Пропускаем удаленную услугу
+                    continue
                 
                 # Проверяем черный список
                 if service.id in deleted_services:
-                    continue  # Пропускаем услуги из черного списка
-                
-                field_name = f'line_service_{service.id}'
-                value = request.POST.get(field_name)
+                    continue
                 
                 # Если услуги еще нет в CarService, создаем её автоматически
-                if service.id not in existing_car_services:
-                    value = value or service.default_price
+                if service.id not in existing_car_service_ids:
+                    field_name = f'line_service_{service.id}'
+                    value = request.POST.get(field_name) or service.default_price
+                    # Получаем default_markup из услуги
+                    default_markup = getattr(service, 'default_markup', 0) or 0
                     CarService.objects.create(
                         car=obj,
                         service_type='LINE',
                         service_id=service.id,
-                        custom_price=float(value)
+                        custom_price=float(value),
+                        markup_amount=float(default_markup)
                     )
-                elif value:
-                    # Обновляем существующую услугу
-                    car_service, created = CarService.objects.get_or_create(
-                        car=obj,
-                        service_type='LINE',
-                        service_id=service.id,
-                        defaults={'custom_price': float(value)}
-                    )
-                    if not created:
-                        car_service.custom_price = float(value)
-                        car_service.save()
         
         # Обрабатываем поля услуг перевозчика
+        # Сначала обновляем ВСЕ существующие услуги перевозчика
+        existing_carrier_car_services = CarService.objects.filter(
+            car=obj,
+            service_type='CARRIER'
+        )
+        
+        for car_service in existing_carrier_car_services:
+            # Проверяем, не была ли услуга удалена
+            if f'carrier_{car_service.service_id}' in removed_services:
+                continue
+            
+            field_name = f'carrier_service_{car_service.service_id}'
+            value = request.POST.get(field_name)
+            
+            if value:
+                try:
+                    car_service.custom_price = float(value)
+                except (ValueError, TypeError):
+                    pass
+            
+            # Сохраняем скрытую наценку
+            markup_field = f'markup_carrier_service_{car_service.service_id}'
+            markup_value = request.POST.get(markup_field, '0')
+            try:
+                car_service.markup_amount = float(markup_value) if markup_value else 0
+            except (ValueError, TypeError):
+                car_service.markup_amount = 0
+            car_service.save()
+        
+        # Затем создаём новые услуги из справочника (если нужно)
         if obj.carrier:
             carrier_services = CarrierService.objects.filter(
                 carrier=obj.carrier, 
@@ -1431,11 +1545,7 @@ class CarAdmin(admin.ModelAdmin):
                 default_price__gt=0
             ).only('id', 'default_price')
             
-            # Если нет записей CarService для этого перевозчика, создаем их автоматически
-            existing_car_services = CarService.objects.filter(
-                car=obj,
-                service_type='CARRIER'
-            ).values_list('service_id', flat=True)
+            existing_car_service_ids = set(existing_carrier_car_services.values_list('service_id', flat=True))
             
             # Получаем черный список удаленных услуг
             deleted_services = DeletedCarService.objects.filter(
@@ -1446,35 +1556,25 @@ class CarAdmin(admin.ModelAdmin):
             for service in carrier_services:
                 # Проверяем, не была ли услуга удалена
                 if f'carrier_{service.id}' in removed_services:
-                    continue  # Пропускаем удаленную услугу
+                    continue
                 
                 # Проверяем черный список
                 if service.id in deleted_services:
-                    continue  # Пропускаем услуги из черного списка
-                
-                field_name = f'carrier_service_{service.id}'
-                value = request.POST.get(field_name)
+                    continue
                 
                 # Если услуги еще нет в CarService, создаем её автоматически
-                if service.id not in existing_car_services:
-                    value = value or service.default_price
+                if service.id not in existing_car_service_ids:
+                    field_name = f'carrier_service_{service.id}'
+                    value = request.POST.get(field_name) or service.default_price
+                    # Получаем default_markup из услуги
+                    default_markup = getattr(service, 'default_markup', 0) or 0
                     CarService.objects.create(
                         car=obj,
                         service_type='CARRIER',
                         service_id=service.id,
-                        custom_price=float(value)
+                        custom_price=float(value),
+                        markup_amount=float(default_markup)
                     )
-                elif value:
-                    # Обновляем существующую услугу
-                    car_service, created = CarService.objects.get_or_create(
-                        car=obj,
-                        service_type='CARRIER',
-                        service_id=service.id,
-                        defaults={'custom_price': float(value)}
-                    )
-                    if not created:
-                        car_service.custom_price = float(value)
-                        car_service.save()
         
         # Пересчитываем стоимость хранения и дни при смене склада
         if change and form and 'warehouse' in getattr(form, 'changed_data', []):
@@ -1506,6 +1606,7 @@ class CarAdmin(admin.ModelAdmin):
                         # Получаем детали услуги и склада
                         service = WarehouseService.objects.select_related('warehouse').get(id=car_service.service_id)
                         current_value = car_service.custom_price or service.default_price
+                        markup_value = car_service.markup_amount or 0
                         warehouse_name = service.warehouse.name
                         
                         # Подсветка: основной склад - зеленый, другие - желтый
@@ -1516,7 +1617,11 @@ class CarAdmin(admin.ModelAdmin):
                             <button type="button" onclick="removeService({service.id}, 'warehouse')" style="position: absolute; top: 5px; right: 5px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 12px;">×</button>
                             <div style="font-size: 11px; color: #666; margin-bottom: 3px;">📦 {warehouse_name}</div>
                             <strong>{service.name}</strong><br>
-                            <input type="number" name="warehouse_service_{service.id}" value="{current_value}" step="0.01" style="width: 100px; margin-top: 5px;">
+                            <div style="display: flex; gap: 5px; align-items: center; margin-top: 5px;">
+                                <input type="number" name="warehouse_service_{service.id}" value="{current_value}" step="0.01" style="width: 80px;" title="Цена услуги">
+                                <span style="color: #28a745; font-weight: bold;">+</span>
+                                <input type="number" name="markup_warehouse_service_{service.id}" value="{markup_value}" step="0.01" style="width: 60px; background: #fffde7; border-color: #ffc107;" title="Скрытая наценка" placeholder="0">
+                            </div>
                             <input type="hidden" name="remove_warehouse_service_{service.id}" id="remove_warehouse_service_{service.id}" value="">
                         </div>
                         '''
@@ -1575,12 +1680,17 @@ class CarAdmin(admin.ModelAdmin):
                     # Получаем детали услуги
                     service = LineService.objects.get(id=car_service.service_id)
                     current_value = car_service.custom_price or service.default_price
+                    markup_value = car_service.markup_amount or 0
                     
                     html += f'''
-                    <div style="border: 1px solid #ddd; padding: 10px; background: #f9f9f9; position: relative; min-width: 200px;">
+                    <div style="border: 1px solid #ddd; padding: 10px; background: #e3f2fd; position: relative; min-width: 200px;">
                         <button type="button" onclick="removeService({service.id}, 'line')" style="position: absolute; top: 5px; right: 5px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 12px;">×</button>
                         <strong>{service.name}</strong><br>
-                        <input type="number" name="line_service_{service.id}" value="{current_value}" step="0.01" style="width: 100px; margin-top: 5px;">
+                        <div style="display: flex; gap: 5px; align-items: center; margin-top: 5px;">
+                            <input type="number" name="line_service_{service.id}" value="{current_value}" step="0.01" style="width: 80px;" title="Цена услуги">
+                            <span style="color: #28a745; font-weight: bold;">+</span>
+                            <input type="number" name="markup_line_service_{service.id}" value="{markup_value}" step="0.01" style="width: 60px; background: #fffde7; border-color: #ffc107;" title="Скрытая наценка" placeholder="0">
+                        </div>
                         <input type="hidden" name="remove_line_service_{service.id}" id="remove_line_service_{service.id}" value="">
                     </div>
                     '''
@@ -1627,12 +1737,17 @@ class CarAdmin(admin.ModelAdmin):
                     # Получаем детали услуги
                     service = CarrierService.objects.get(id=car_service.service_id)
                     current_value = car_service.custom_price or service.default_price
+                    markup_value = car_service.markup_amount or 0
                     
                     html += f'''
-                    <div style="border: 1px solid #ddd; padding: 10px; background: #f9f9f9; position: relative; min-width: 200px;">
+                    <div style="border: 1px solid #ddd; padding: 10px; background: #fff3e0; position: relative; min-width: 200px;">
                         <button type="button" onclick="removeService({service.id}, 'carrier')" style="position: absolute; top: 5px; right: 5px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 12px;">×</button>
                         <strong>{service.name}</strong><br>
-                        <input type="number" name="carrier_service_{service.id}" value="{current_value}" step="0.01" style="width: 100px; margin-top: 5px;">
+                        <div style="display: flex; gap: 5px; align-items: center; margin-top: 5px;">
+                            <input type="number" name="carrier_service_{service.id}" value="{current_value}" step="0.01" style="width: 80px;" title="Цена услуги">
+                            <span style="color: #28a745; font-weight: bold;">+</span>
+                            <input type="number" name="markup_carrier_service_{service.id}" value="{markup_value}" step="0.01" style="width: 60px; background: #fffde7; border-color: #ffc107;" title="Скрытая наценка" placeholder="0">
+                        </div>
                         <input type="hidden" name="remove_carrier_service_{service.id}" id="remove_carrier_service_{service.id}" value="">
                     </div>
                     '''

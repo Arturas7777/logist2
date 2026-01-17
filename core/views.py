@@ -916,11 +916,41 @@ def add_services(request, car_id):
         added_count = 0
         
         for service_id in service_ids:
-            # Создаем CarService для каждой выбранной услуги
+            # Получаем default_price и default_markup из услуги
+            default_price = 0
+            default_markup = 0
+            if service_type.upper() == 'WAREHOUSE':
+                from .models import WarehouseService
+                try:
+                    ws = WarehouseService.objects.get(id=service_id)
+                    default_price = ws.default_price or 0
+                    default_markup = ws.default_markup or 0
+                except WarehouseService.DoesNotExist:
+                    pass
+            elif service_type.upper() == 'LINE':
+                from .models import LineService
+                try:
+                    ls = LineService.objects.get(id=service_id)
+                    default_price = ls.default_price or 0
+                    default_markup = ls.default_markup or 0
+                except LineService.DoesNotExist:
+                    pass
+            elif service_type.upper() == 'CARRIER':
+                from .models import CarrierService
+                try:
+                    cs = CarrierService.objects.get(id=service_id)
+                    default_price = cs.default_price or 0
+                    default_markup = cs.default_markup or 0
+                except CarrierService.DoesNotExist:
+                    pass
+            
+            # Создаем CarService для каждой выбранной услуги с ценой и наценкой
             car_service = CarService.objects.create(
                 car=car,
                 service_type=service_type.upper(),
-                service_id=service_id
+                service_id=service_id,
+                custom_price=float(default_price),
+                markup_amount=float(default_markup)
             )
             added_count += 1
         
