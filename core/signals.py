@@ -30,12 +30,57 @@ def save_old_container_values(sender, instance, **kwargs):
 @receiver(post_save, sender=Container)
 def update_related_on_container_save(sender, instance, created, **kwargs):
     """
-    ОТКЛЮЧЕНО - обновление автомобилей теперь происходит в ContainerAdmin.save_model()
-    Это позволяет избежать дублирования работы и таймаутов
+    Обновляет автомобили при изменении контейнера.
+    
+    Основная логика в ContainerAdmin.save_model(), но этот сигнал работает как 
+    резервный механизм для случаев когда:
+    - form.changed_data не распознал изменение
+    - Сохранение произошло не через админку (API, shell, management command)
     """
-    # Просто очищаем сохранённые значения, ничего больше не делаем
-    _old_container_values.pop(instance.pk, None)
-    logger.debug(f"Container {instance.number} post_save: signal disabled, handled in admin")
+    old_values = _old_container_values.pop(instance.pk, None)
+    
+    if not instance.pk:
+        return
+    
+    # Проверяем изменилась ли дата разгрузки
+    if old_values:
+        old_unload_date = old_values.get('unload_date')
+        new_unload_date = instance.unload_date
+        
+        # Если дата разгрузки изменилась - обновляем все авто
+        if old_unload_date != new_unload_date and new_unload_date is not None:
+            logger.info(f"🔄 [SIGNAL] unload_date changed for container {instance.number}: {old_unload_date} -> {new_unload_date}")
+            
+            try:
+                # Проверяем, не обновлены ли уже авто (через admin.save_model)
+                # Берём первый авто и проверяем его дату
+                first_car = instance.container_cars.first()
+                if first_car and first_car.unload_date == new_unload_date:
+                    logger.debug(f"[SIGNAL] Cars already updated by admin.save_model, skipping")
+                    return
+                
+                # Обновляем дату у всех авто одним запросом (быстро и надёжно)
+                updated_count = instance.container_cars.update(unload_date=new_unload_date)
+                logger.info(f"✅ [SIGNAL] Updated unload_date to {new_unload_date} for {updated_count} cars in container {instance.number}")
+                
+                # Пересчитываем дни и цены для каждого авто
+                if updated_count > 0:
+                    cars_to_update = []
+                    for car in instance.container_cars.select_related('warehouse').all():
+                        car.update_days_and_storage()
+                        car.calculate_total_price()
+                        cars_to_update.append(car)
+                    
+                    if cars_to_update:
+                        Car.objects.bulk_update(
+                            cars_to_update,
+                            ['days', 'storage_cost', 'total_price'],
+                            batch_size=50
+                        )
+                        logger.info(f"✅ [SIGNAL] Recalculated prices for {len(cars_to_update)} cars")
+                        
+            except Exception as e:
+                logger.error(f"❌ [SIGNAL] Failed to update cars for container {instance.number}: {e}", exc_info=True)
 
 @receiver(post_save, sender=Car)
 def update_related_on_car_save(sender, instance, **kwargs):
