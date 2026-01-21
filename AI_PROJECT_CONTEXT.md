@@ -396,6 +396,18 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
    - ✅ Нормализация VIN при поиске
    - ✅ Поиск по частичному совпадению VIN
 
+5. **ИСПРАВЛЕНИЕ URL ФОТОГРАФИЙ НА VPS:**
+   - ✅ Фото не отображались на сервере (иконка поломанной картинки)
+   - ✅ Причина: API возвращал URL без `/media/` префикса
+   - ✅ Решение: добавлена проверка и добавление `/media/` в `views.py` и `views_website.py`
+   - ✅ Исправлены права доступа к media файлам (`chown -R www-root:www-root`)
+
+6. **ИСПРАВЛЕНИЕ HOVER-ЭФФЕКТА КНОПОК:**
+   - ✅ Убрано мигание при наведении на кнопки
+   - ✅ Заменён `transition: all` на `transition: opacity` (убирает перерисовку)
+   - ✅ Финальный hover-эффект: простой `opacity: 0.85`
+   - ✅ Файл: `core/static/website/css/style.css`
+
 **Файлы изменены:**
 - `core/google_drive_sync.py` - автопоиск папок, разделение по типам
 - `core/management/commands/sync_photos_gdrive.py` - новые режимы
@@ -406,6 +418,7 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 - `templates/admin/core/container/photos_gallery.html` - AJAX галерея с вкладками
 - `templates/website/home.html` - клиентская галерея с вкладками и lightbox
 - `sync_photos_cron.sh` - cron скрипт для автосинхронизации
+- `core/static/website/css/style.css` - исправлен hover-эффект кнопок (убрано мигание)
 
 ---
 
