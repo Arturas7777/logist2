@@ -750,8 +750,7 @@ footer a:hover {
 }
 
 .btn:hover {
-    filter: brightness(1.1);
-    box-shadow: 0 0 15px rgba(220, 20, 60, 0.4);
+    opacity: 0.85;
 }
 
 .btn-primary {
