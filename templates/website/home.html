@@ -844,6 +844,93 @@ document.addEventListener('DOMContentLoaded', function() {
         // Сохраняем ссылки на обработчики для удаления при закрытии
         viewer._dragHandlers = { move: handleMouseMove, up: handleMouseUp };
         
+        // === TOUCH СОБЫТИЯ ДЛЯ ТЕЛЕФОНА ===
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchStartDist = 0;
+        let initialScale = 1;
+        let isSwiping = false;
+        
+        // Расчёт расстояния между двумя пальцами
+        function getTouchDistance(touches) {
+            const dx = touches[0].clientX - touches[1].clientX;
+            const dy = touches[0].clientY - touches[1].clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+        
+        container.addEventListener('touchstart', function(e) {
+            if (e.touches.length === 2) {
+                // Pinch-to-zoom начало
+                touchStartDist = getTouchDistance(e.touches);
+                initialScale = scale;
+            } else if (e.touches.length === 1 && scale === 1) {
+                // Свайп начало (только если нет зума)
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+                isSwiping = true;
+            }
+        }, { passive: true });
+        
+        container.addEventListener('touchmove', function(e) {
+            if (e.touches.length === 2) {
+                // Pinch-to-zoom
+                e.preventDefault();
+                const currentDist = getTouchDistance(e.touches);
+                const ratio = currentDist / touchStartDist;
+                scale = Math.min(Math.max(initialScale * ratio, 1), 5);
+                if (scale === 1) {
+                    translateX = 0;
+                    translateY = 0;
+                }
+                updateTransform(false);
+            } else if (e.touches.length === 1 && scale > 1) {
+                // Панорамирование при зуме
+                e.preventDefault();
+                if (isDragging) {
+                    translateX = e.touches[0].clientX - startX;
+                    translateY = e.touches[0].clientY - startY;
+                    updateTransform(false);
+                }
+            }
+        }, { passive: false });
+        
+        container.addEventListener('touchend', function(e) {
+            if (isSwiping && scale === 1 && e.changedTouches.length === 1) {
+                const touchEndX = e.changedTouches[0].clientX;
+                const touchEndY = e.changedTouches[0].clientY;
+                const diffX = touchEndX - touchStartX;
+                const diffY = touchEndY - touchStartY;
+                
+                // Свайп только если горизонтальное движение больше вертикального
+                if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 50) {
+                    if (diffX > 0 && currentPhotoIndex > 0) {
+                        // Свайп вправо - предыдущее фото
+                        currentPhotoIndex--;
+                        updateViewerImage();
+                    } else if (diffX < 0 && currentPhotoIndex < currentTabPhotosUrls.length - 1) {
+                        // Свайп влево - следующее фото
+                        currentPhotoIndex++;
+                        updateViewerImage();
+                    }
+                }
+            }
+            isSwiping = false;
+            touchStartDist = 0;
+        }, { passive: true });
+        
+        // Touch drag для панорамирования при зуме
+        container.addEventListener('touchstart', function(e) {
+            if (e.touches.length === 1 && scale > 1) {
+                isDragging = true;
+                startX = e.touches[0].clientX - translateX;
+                startY = e.touches[0].clientY - translateY;
+            }
+        }, { passive: true });
+        
+        container.addEventListener('touchend', function() {
+            isDragging = false;
+        }, { passive: true });
+        
         // Навигация между фото
         document.getElementById('prev-photo')?.addEventListener('click', function(e) {
             e.stopPropagation();
