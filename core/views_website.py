@@ -222,56 +222,104 @@ class ContactMessageViewSet(viewsets.ModelViewSet):
 @permission_classes([AllowAny])
 def track_shipment(request):
     """Отследить груз по номеру VIN или контейнера"""
-    tracking_number = request.data.get('tracking_number', '').strip()
-    email = request.data.get('email', '').strip()
+    import logging
+    logger = logging.getLogger('django')
     
-    if not tracking_number:
-        return Response(
-            {'error': 'Пожалуйста, укажите номер для отслеживания'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    
-    # Ищем по VIN (с загрузкой контейнера, склада и фотографий)
-    car = Car.objects.filter(vin__iexact=tracking_number).select_related(
-        'container', 'container__warehouse', 'warehouse'
-    ).prefetch_related(
-        Prefetch('container__photos', queryset=ContainerPhoto.objects.filter(is_public=True))
-    ).first()
-    container = None
-    
-    if not car:
-        # Ищем по номеру контейнера (с загрузкой склада)
-        container = Container.objects.filter(number__iexact=tracking_number).select_related(
-            'warehouse'
+    try:
+        tracking_number = request.data.get('tracking_number', '').strip()
+        email = request.data.get('email', '').strip()
+        
+        logger.info(f"[TRACK] Поиск груза: '{tracking_number}'")
+        
+        if not tracking_number:
+            return Response(
+                {'error': 'Пожалуйста, укажите номер для отслеживания'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Нормализуем номер: убираем пробелы, тире, переводим в верхний регистр
+        normalized_number = tracking_number.upper().replace(' ', '').replace('-', '')
+        logger.info(f"[TRACK] Нормализованный номер: '{normalized_number}'")
+        
+        # Ищем по VIN (с загрузкой контейнера, склада и фотографий)
+        # Пробуем сначала точное совпадение, потом по нормализованному
+        car = Car.objects.filter(vin__iexact=tracking_number).select_related(
+            'container', 'container__warehouse', 'warehouse'
         ).prefetch_related(
-            Prefetch('photos', queryset=ContainerPhoto.objects.filter(is_public=True))
+            Prefetch('container__photos', queryset=ContainerPhoto.objects.filter(is_public=True))
         ).first()
-    
-    # Сохраняем запрос
-    TrackingRequest.objects.create(
-        tracking_number=tracking_number,
-        email=email,
-        car=car,
-        container=container,
-        ip_address=request.META.get('REMOTE_ADDR')
-    )
-    
-    if car:
-        serializer = ClientCarSerializer(car, context={'request': request})
-        return Response({
-            'type': 'car',
-            'data': serializer.data
-        })
-    elif container:
-        serializer = ClientContainerSerializer(container, context={'request': request})
-        return Response({
-            'type': 'container',
-            'data': serializer.data
-        })
-    else:
+        
+        # Если не нашли - пробуем по нормализованному VIN
+        if not car and normalized_number != tracking_number.upper():
+            car = Car.objects.filter(vin__iexact=normalized_number).select_related(
+                'container', 'container__warehouse', 'warehouse'
+            ).prefetch_related(
+                Prefetch('container__photos', queryset=ContainerPhoto.objects.filter(is_public=True))
+            ).first()
+        
+        # Если не нашли - ищем по частичному совпадению VIN (содержит)
+        if not car:
+            car = Car.objects.filter(vin__icontains=normalized_number).select_related(
+                'container', 'container__warehouse', 'warehouse'
+            ).prefetch_related(
+                Prefetch('container__photos', queryset=ContainerPhoto.objects.filter(is_public=True))
+            ).first()
+        
+        container = None
+        
+        if not car:
+            # Ищем по номеру контейнера (с загрузкой склада)
+            container = Container.objects.filter(number__iexact=tracking_number).select_related(
+                'warehouse'
+            ).prefetch_related(
+                Prefetch('photos', queryset=ContainerPhoto.objects.filter(is_public=True))
+            ).first()
+            
+            # Если не нашли - пробуем по нормализованному
+            if not container and normalized_number != tracking_number.upper():
+                container = Container.objects.filter(number__iexact=normalized_number).select_related(
+                    'warehouse'
+                ).prefetch_related(
+                    Prefetch('photos', queryset=ContainerPhoto.objects.filter(is_public=True))
+                ).first()
+        
+        # Сохраняем запрос
+        try:
+            TrackingRequest.objects.create(
+                tracking_number=tracking_number,
+                email=email,
+                car=car,
+                container=container,
+                ip_address=request.META.get('REMOTE_ADDR')
+            )
+        except Exception as e:
+            logger.warning(f"[TRACK] Не удалось сохранить TrackingRequest: {e}")
+        
+        if car:
+            logger.info(f"[TRACK] Найден автомобиль: {car.vin}")
+            serializer = ClientCarSerializer(car, context={'request': request})
+            return Response({
+                'type': 'car',
+                'data': serializer.data
+            })
+        elif container:
+            logger.info(f"[TRACK] Найден контейнер: {container.number}")
+            serializer = ClientContainerSerializer(container, context={'request': request})
+            return Response({
+                'type': 'container',
+                'data': serializer.data
+            })
+        else:
+            logger.info(f"[TRACK] Груз не найден: '{tracking_number}'")
+            return Response(
+                {'error': 'Груз не найден. Проверьте правильность номера.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+    except Exception as e:
+        logger.error(f"[TRACK] Ошибка при поиске груза: {e}", exc_info=True)
         return Response(
-            {'error': 'Груз не найден. Проверьте правильность номера.'},
-            status=status.HTTP_404_NOT_FOUND
+            {'error': f'Ошибка сервера: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
 
@@ -559,7 +607,7 @@ def ai_chat_history(request):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def get_container_photos(request, container_number):
-    """Получить фотографии контейнера"""
+    """Получить фотографии контейнера с разделением по типам"""
     try:
         container = Container.objects.get(number=container_number)
         photos = ContainerPhoto.objects.filter(
@@ -572,13 +620,19 @@ def get_container_photos(request, container_number):
         photos_list.sort(key=lambda p: p.photo.name if p.photo else '')
         
         photos_data = []
+        type_counts = {'IN_CONTAINER': 0, 'UNLOADING': 0, 'GENERAL': 0}
+        
         for photo in photos_list:
+            photo_type = photo.photo_type or 'GENERAL'
+            type_counts[photo_type] = type_counts.get(photo_type, 0) + 1
+            
             photos_data.append({
                 'id': photo.id,
                 'url': photo.photo.url,
                 'thumbnail_url': photo.thumbnail.url if photo.thumbnail else photo.photo.url,
                 'description': photo.description,
                 'photo_type': photo.get_photo_type_display(),
+                'photo_type_code': photo_type,  # Сырой код для фильтрации
                 'uploaded_at': photo.uploaded_at.strftime('%Y-%m-%d %H:%M'),
                 'filename': photo.filename
             })
@@ -587,7 +641,8 @@ def get_container_photos(request, container_number):
             'success': True,
             'container_number': container.number,
             'photos': photos_data,
-            'photos_count': len(photos_data)
+            'photos_count': len(photos_data),
+            'type_counts': type_counts  # Количество фото каждого типа
         })
         
     except Container.DoesNotExist:

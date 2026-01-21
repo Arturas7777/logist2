@@ -224,6 +224,25 @@
                     <p class="mt-2">Загружаем фотографии...</p>
                 </div>
                 <div id="photos-content" style="display: none;">
+                    <!-- Вкладки для типов фото -->
+                    <ul class="nav nav-tabs mb-3" id="photosTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="all-photos-tab" data-bs-toggle="tab" data-bs-target="#all-photos" type="button" role="tab">
+                                <i class="bi bi-images"></i> Все
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation" id="in-container-tab-li" style="display: none;">
+                            <button class="nav-link" id="in-container-tab" data-bs-toggle="tab" data-bs-target="#in-container-photos" type="button" role="tab">
+                                <i class="bi bi-box-seam"></i> В контейнере
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation" id="unloading-tab-li" style="display: none;">
+                            <button class="nav-link" id="unloading-tab" data-bs-toggle="tab" data-bs-target="#unloading-photos" type="button" role="tab">
+                                <i class="bi bi-truck"></i> Выгруженные
+                            </button>
+                        </li>
+                    </ul>
+                    
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <div class="form-check">
@@ -234,13 +253,22 @@
                             </div>
                         </div>
                         <div class="col-md-6 text-end">
-                            <button id="downloadSelectedBtn" class="btn btn-primary" disabled>
+                            <button id="downloadSelectedBtn" class="btn btn-success" disabled>
                                 <i class="bi bi-download"></i> Скачать выбранные
                             </button>
                         </div>
                     </div>
-                    <div id="photos-grid" class="row g-3">
-                        <!-- Фотографии будут загружены здесь -->
+                    
+                    <div class="tab-content" id="photosTabContent">
+                        <div class="tab-pane fade show active" id="all-photos" role="tabpanel">
+                            <div id="photos-grid-all" class="row g-3"></div>
+                        </div>
+                        <div class="tab-pane fade" id="in-container-photos" role="tabpanel">
+                            <div id="photos-grid-in-container" class="row g-3"></div>
+                        </div>
+                        <div class="tab-pane fade" id="unloading-photos" role="tabpanel">
+                            <div id="photos-grid-unloading" class="row g-3"></div>
+                        </div>
                     </div>
                 </div>
                 <div id="photos-error" class="alert alert-danger" style="display: none;">
@@ -383,7 +411,15 @@ document.addEventListener('DOMContentLoaded', function() {
         const photosLoading = document.getElementById('photos-loading');
         const photosContent = document.getElementById('photos-content');
         const photosError = document.getElementById('photos-error');
-        const photosGrid = document.getElementById('photos-grid');
+        
+        // Grids для каждого типа
+        const photosGridAll = document.getElementById('photos-grid-all');
+        const photosGridInContainer = document.getElementById('photos-grid-in-container');
+        const photosGridUnloading = document.getElementById('photos-grid-unloading');
+        
+        // Вкладки
+        const inContainerTabLi = document.getElementById('in-container-tab-li');
+        const unloadingTabLi = document.getElementById('unloading-tab-li');
         
         // Показываем загрузку
         photosLoading.style.display = 'block';
@@ -396,32 +432,42 @@ document.addEventListener('DOMContentLoaded', function() {
             photosLoading.style.display = 'none';
             
             if (data.success && data.photos.length > 0) {
-                photosGrid.innerHTML = '';
+                // Очищаем все grid'ы
+                photosGridAll.innerHTML = '';
+                photosGridInContainer.innerHTML = '';
+                photosGridUnloading.innerHTML = '';
+                
+                // Счётчики
+                let inContainerCount = 0;
+                let unloadingCount = 0;
                 
                 data.photos.forEach(photo => {
-                    const photoCard = document.createElement('div');
-                    photoCard.className = 'col-md-4 col-sm-6';
-                    photoCard.innerHTML = `
-                        <div class="card h-100">
-                            <div class="card-img-top-container" style="height: 200px; overflow: hidden; cursor: pointer; position: relative;">
-                                <img src="${photo.thumbnail_url}" class="card-img-top photo-preview" style="width: 100%; height: 100%; object-fit: cover;" alt="${photo.description}" data-full-url="${photo.url}" loading="lazy">
-                                <div class="photo-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0); transition: all 0.3s; display: flex; align-items: center; justify-content: center;">
-                                    <i class="bi bi-zoom-in" style="color: white; font-size: 2rem; opacity: 0; transition: opacity 0.3s;"></i>
-                                </div>
-                            </div>
-                            <div class="card-body p-2">
-                                <div class="form-check">
-                                    <input class="form-check-input photo-checkbox" type="checkbox" value="${photo.id}" id="photo_${photo.id}">
-                                    <label class="form-check-label" for="photo_${photo.id}">
-                                        <small class="text-muted">${photo.photo_type}</small>
-                                    </label>
-                                </div>
-                                <small class="text-muted d-block">${photo.uploaded_at}</small>
-                            </div>
-                        </div>
-                    `;
-                    photosGrid.appendChild(photoCard);
+                    const photoCard = createPhotoCard(photo);
+                    
+                    // Добавляем во "Все"
+                    photosGridAll.appendChild(photoCard.cloneNode(true));
+                    
+                    // Добавляем в соответствующую вкладку
+                    if (photo.photo_type_code === 'IN_CONTAINER') {
+                        photosGridInContainer.appendChild(photoCard.cloneNode(true));
+                        inContainerCount++;
+                    } else if (photo.photo_type_code === 'UNLOADING') {
+                        photosGridUnloading.appendChild(photoCard.cloneNode(true));
+                        unloadingCount++;
+                    } else {
+                        // GENERAL - добавляем в обе категории
+                        photosGridUnloading.appendChild(photoCard.cloneNode(true));
+                        unloadingCount++;
+                    }
                 });
+                
+                
+                // Показываем/скрываем вкладки в зависимости от наличия фото
+                inContainerTabLi.style.display = inContainerCount > 0 ? 'block' : 'none';
+                unloadingTabLi.style.display = unloadingCount > 0 ? 'block' : 'none';
+                
+                // Сбрасываем на вкладку "Все"
+                document.getElementById('all-photos-tab').click();
                 
                 photosContent.style.display = 'block';
                 setupPhotoSelection();
@@ -438,46 +484,108 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
+    function createPhotoCard(photo) {
+        const photoCard = document.createElement('div');
+        photoCard.className = 'col-md-4 col-sm-6';
+        photoCard.innerHTML = `
+            <div class="card h-100">
+                <div class="card-img-top-container" style="height: 200px; overflow: hidden; cursor: pointer; position: relative;">
+                    <img src="${photo.thumbnail_url}" class="card-img-top photo-preview" style="width: 100%; height: 100%; object-fit: cover;" alt="${photo.description}" data-full-url="${photo.url}" loading="lazy">
+                    <div class="photo-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0); transition: all 0.3s; display: flex; align-items: center; justify-content: center;">
+                        <i class="bi bi-zoom-in" style="color: white; font-size: 2rem; opacity: 0; transition: opacity 0.3s;"></i>
+                    </div>
+                </div>
+                <div class="card-body p-2">
+                    <div class="form-check">
+                        <input class="form-check-input photo-checkbox" type="checkbox" value="${photo.id}" id="photo_${photo.id}_${Math.random().toString(36).substr(2, 9)}">
+                        <label class="form-check-label">
+                            <small class="text-muted">${photo.photo_type}</small>
+                        </label>
+                    </div>
+                    <small class="text-muted d-block">${photo.uploaded_at}</small>
+                </div>
+            </div>
+        `;
+        return photoCard;
+    }
+    
     function setupPhotoSelection() {
         const selectAllCheckbox = document.getElementById('selectAllPhotos');
-        const photoCheckboxes = document.querySelectorAll('.photo-checkbox');
         const downloadBtn = document.getElementById('downloadSelectedBtn');
+        const photosContent = document.getElementById('photos-content');
         
-        selectAllCheckbox.addEventListener('change', function() {
-            photoCheckboxes.forEach(checkbox => {
+        // Удаляем старые обработчики если есть
+        const newSelectAll = selectAllCheckbox.cloneNode(true);
+        selectAllCheckbox.parentNode.replaceChild(newSelectAll, selectAllCheckbox);
+        
+        const newDownloadBtn = downloadBtn.cloneNode(true);
+        downloadBtn.parentNode.replaceChild(newDownloadBtn, downloadBtn);
+        
+        // Получаем чекбоксы из активной вкладки
+        function getActiveTabCheckboxes() {
+            const activePane = document.querySelector('#photosTabContent .tab-pane.active');
+            return activePane ? Array.from(activePane.querySelectorAll('.photo-checkbox')) : [];
+        }
+        
+        // Получаем ID выбранных фото (уникальные)
+        function getSelectedPhotoIds() {
+            const checkboxes = getActiveTabCheckboxes();
+            const ids = new Set();
+            checkboxes.forEach(cb => {
+                if (cb.checked) ids.add(cb.value);
+            });
+            return Array.from(ids);
+        }
+        
+        // Обновление кнопки скачивания
+        function updateDownloadButton() {
+            const count = getSelectedPhotoIds().length;
+            newDownloadBtn.disabled = count === 0;
+            newDownloadBtn.innerHTML = `<i class="bi bi-download"></i> Скачать выбранные${count > 0 ? ' (' + count + ')' : ''}`;
+        }
+        
+        // "Выбрать все"
+        newSelectAll.addEventListener('change', function() {
+            const checkboxes = getActiveTabCheckboxes();
+            checkboxes.forEach(checkbox => {
                 checkbox.checked = this.checked;
             });
             updateDownloadButton();
         });
         
-        photoCheckboxes.forEach(checkbox => {
-            checkbox.addEventListener('change', function() {
+        // Обработка клика на чекбоксы (делегирование)
+        photosContent.addEventListener('change', function(e) {
+            if (e.target.classList.contains('photo-checkbox')) {
                 updateDownloadButton();
                 
-                // Проверяем, все ли выбраны
-                const allChecked = Array.from(photoCheckboxes).every(cb => cb.checked);
-                const noneChecked = Array.from(photoCheckboxes).every(cb => !cb.checked);
+                const checkboxes = getActiveTabCheckboxes();
+                const checkedCount = checkboxes.filter(cb => cb.checked).length;
+                const totalCount = checkboxes.length;
                 
-                selectAllCheckbox.checked = allChecked;
-                selectAllCheckbox.indeterminate = !allChecked && !noneChecked;
-            });
-        });
-        
-        downloadBtn.addEventListener('click', function() {
-            const selectedPhotos = Array.from(photoCheckboxes)
-                .filter(cb => cb.checked)
-                .map(cb => cb.value);
-            
-            if (selectedPhotos.length > 0) {
-                downloadPhotosArchive(selectedPhotos);
+                newSelectAll.checked = checkedCount === totalCount && totalCount > 0;
+                newSelectAll.indeterminate = checkedCount > 0 && checkedCount < totalCount;
             }
         });
         
-        function updateDownloadButton() {
-            const selectedCount = Array.from(photoCheckboxes).filter(cb => cb.checked).length;
-            downloadBtn.disabled = selectedCount === 0;
-            downloadBtn.innerHTML = `<i class="bi bi-download"></i> Скачать выбранные (${selectedCount})`;
-        }
+        // Сброс при смене вкладки
+        document.querySelectorAll('#photosTabs button').forEach(tab => {
+            tab.addEventListener('shown.bs.tab', function() {
+                newSelectAll.checked = false;
+                newSelectAll.indeterminate = false;
+                updateDownloadButton();
+            });
+        });
+        
+        // Скачивание
+        newDownloadBtn.addEventListener('click', function() {
+            const photoIds = getSelectedPhotoIds();
+            if (photoIds.length > 0) {
+                downloadPhotosArchive(photoIds);
+            }
+        });
+        
+        // Инициализация
+        updateDownloadButton();
     }
     
     function downloadPhotosArchive(photoIds) {
@@ -515,19 +623,33 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     let currentPhotoIndex = 0;
-    let allPhotosUrls = [];
+    let currentTabPhotosUrls = [];
     
     function setupPhotoZoom() {
-        // Собираем все URL фотографий
-        const containers = document.querySelectorAll('.card-img-top-container');
-        allPhotosUrls = [];
+        // Получаем URL фото из активной вкладки
+        function getActiveTabPhotos() {
+            const activePane = document.querySelector('#photosTabContent .tab-pane.active');
+            if (!activePane) return [];
+            
+            const images = activePane.querySelectorAll('.photo-preview');
+            return Array.from(images).map(img => img.getAttribute('data-full-url'));
+        }
         
-        containers.forEach((container, index) => {
+        // Находим индекс фото в активной вкладке
+        function getPhotoIndexInActiveTab(container) {
+            const activePane = document.querySelector('#photosTabContent .tab-pane.active');
+            if (!activePane) return 0;
+            
+            const containers = Array.from(activePane.querySelectorAll('.card-img-top-container'));
+            return containers.indexOf(container);
+        }
+        
+        // Обрабатываем все контейнеры
+        const allContainers = document.querySelectorAll('.card-img-top-container');
+        
+        allContainers.forEach((container) => {
             const overlay = container.querySelector('.photo-overlay');
             const icon = overlay.querySelector('i');
-            const img = container.querySelector('.photo-preview');
-            
-            allPhotosUrls.push(img.getAttribute('data-full-url'));
             
             container.addEventListener('mouseenter', function() {
                 overlay.style.background = 'rgba(0,0,0,0.5)';
@@ -541,8 +663,13 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Открываем фото по клику
             container.addEventListener('click', function() {
-                currentPhotoIndex = index;
-                openPhotoViewer(allPhotosUrls[currentPhotoIndex]);
+                // Получаем фото только из активной вкладки
+                currentTabPhotosUrls = getActiveTabPhotos();
+                currentPhotoIndex = getPhotoIndexInActiveTab(container);
+                
+                if (currentPhotoIndex >= 0 && currentTabPhotosUrls.length > 0) {
+                    openPhotoViewer(currentTabPhotosUrls[currentPhotoIndex]);
+                }
             });
         });
     }
@@ -577,7 +704,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </button>
                 ` : ''}
                 
-                ${currentPhotoIndex < allPhotosUrls.length - 1 ? `
+                ${currentPhotoIndex < currentTabPhotosUrls.length - 1 ? `
                 <button id="next-photo" style="position: absolute; right: 20px; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.9); border: none; color: black; padding: 15px 20px; border-radius: 50%; cursor: pointer; font-size: 1.5rem; z-index: 10000;">
                     <i class="bi bi-chevron-right"></i>
                 </button>
@@ -585,7 +712,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 <!-- Верхняя панель -->
                 <div style="position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); padding: 10px 20px; border-radius: 25px; color: white; z-index: 10000;">
-                    <span>${currentPhotoIndex + 1} / ${allPhotosUrls.length}</span>
+                    <span>${currentPhotoIndex + 1} / ${currentTabPhotosUrls.length}</span>
                 </div>
                 
                 <!-- Кнопки управления -->
@@ -670,9 +797,13 @@ document.addEventListener('DOMContentLoaded', function() {
             updateTransform(true);
         });
         
-        // Перемещение изображения при зуме (БЕЗ плавности - без инерции)
+        // Перемещение изображения при зуме
+        // Используем document для отслеживания mousemove и mouseup
+        // чтобы корректно обрабатывать отпускание мыши за пределами контейнера
+        
         container.addEventListener('mousedown', function(e) {
             if (scale > 1) {
+                e.preventDefault(); // Предотвращаем выделение текста
                 isDragging = true;
                 container.style.cursor = 'grabbing';
                 startX = e.clientX - translateX;
@@ -680,27 +811,31 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
         
-        container.addEventListener('mousemove', function(e) {
+        // Отслеживаем движение на всём документе
+        function handleMouseMove(e) {
             if (isDragging) {
+                e.preventDefault();
                 translateX = e.clientX - startX;
                 translateY = e.clientY - startY;
-                updateTransform(false); // БЕЗ transition - мгновенное перемещение
+                updateTransform(false);
             }
-        });
+        }
         
-        container.addEventListener('mouseup', function() {
-            isDragging = false;
-            if (scale > 1) {
-                container.style.cursor = 'grab';
+        // Отслеживаем отпускание мыши на всём документе
+        function handleMouseUp() {
+            if (isDragging) {
+                isDragging = false;
+                if (scale > 1) {
+                    container.style.cursor = 'grab';
+                }
             }
-        });
+        }
         
-        container.addEventListener('mouseleave', function() {
-            isDragging = false;
-            if (scale > 1) {
-                container.style.cursor = 'grab';
-            }
-        });
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        
+        // Сохраняем ссылки на обработчики для удаления при закрытии
+        viewer._dragHandlers = { move: handleMouseMove, up: handleMouseUp };
         
         // Навигация между фото
         document.getElementById('prev-photo')?.addEventListener('click', function(e) {
@@ -713,7 +848,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         document.getElementById('next-photo')?.addEventListener('click', function(e) {
             e.stopPropagation();
-            if (currentPhotoIndex < allPhotosUrls.length - 1) {
+            if (currentPhotoIndex < currentTabPhotosUrls.length - 1) {
                 currentPhotoIndex++;
                 updateViewerImage();
             }
@@ -724,7 +859,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (e.key === 'ArrowLeft' && currentPhotoIndex > 0) {
                 currentPhotoIndex--;
                 updateViewerImage();
-            } else if (e.key === 'ArrowRight' && currentPhotoIndex < allPhotosUrls.length - 1) {
+            } else if (e.key === 'ArrowRight' && currentPhotoIndex < currentTabPhotosUrls.length - 1) {
                 currentPhotoIndex++;
                 updateViewerImage();
             }
@@ -736,7 +871,7 @@ document.addEventListener('DOMContentLoaded', function() {
             translateX = 0;
             translateY = 0;
             closePhotoViewer();
-            openPhotoViewer(allPhotosUrls[currentPhotoIndex]);
+            openPhotoViewer(currentTabPhotosUrls[currentPhotoIndex]);
         }
         
         // Закрытие по кнопке
@@ -749,8 +884,8 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('download-single').addEventListener('click', function(e) {
             e.stopPropagation();
             const link = document.createElement('a');
-            link.href = allPhotosUrls[currentPhotoIndex];
-            link.download = allPhotosUrls[currentPhotoIndex].split('/').pop();
+            link.href = currentTabPhotosUrls[currentPhotoIndex];
+            link.download = currentTabPhotosUrls[currentPhotoIndex].split('/').pop();
             link.click();
         });
         
@@ -767,6 +902,11 @@ document.addEventListener('DOMContentLoaded', function() {
     function closePhotoViewer() {
         const viewer = document.getElementById('photo-viewer');
         if (viewer) {
+            // Удаляем обработчики перетаскивания
+            if (viewer._dragHandlers) {
+                document.removeEventListener('mousemove', viewer._dragHandlers.move);
+                document.removeEventListener('mouseup', viewer._dragHandlers.up);
+            }
             viewer.remove();
             document.body.style.overflow = '';
             document.removeEventListener('keydown', handleEscKey);
