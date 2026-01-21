@@ -750,8 +750,8 @@ footer a:hover {
 }
 
 .btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(0,0,0,.2);
+    filter: brightness(1.1);
+    box-shadow: 0 0 15px rgba(220, 20, 60, 0.4);
 }
 
 .btn-primary {
