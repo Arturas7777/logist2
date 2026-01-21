@@ -626,10 +626,19 @@ def get_container_photos(request, container_number):
             photo_type = photo.photo_type or 'GENERAL'
             type_counts[photo_type] = type_counts.get(photo_type, 0) + 1
             
+            # Ensure URLs have /media/ prefix
+            photo_url = photo.photo.url
+            if not photo_url.startswith('/media/') and not photo_url.startswith('http'):
+                photo_url = '/media/' + photo_url.lstrip('/')
+            
+            thumb_url = photo.thumbnail.url if photo.thumbnail else photo_url
+            if not thumb_url.startswith('/media/') and not thumb_url.startswith('http'):
+                thumb_url = '/media/' + thumb_url.lstrip('/')
+            
             photos_data.append({
                 'id': photo.id,
-                'url': photo.photo.url,
-                'thumbnail_url': photo.thumbnail.url if photo.thumbnail else photo.photo.url,
+                'url': photo_url,
+                'thumbnail_url': thumb_url,
                 'description': photo.description,
                 'photo_type': photo.get_photo_type_display(),
                 'photo_type_code': photo_type,  # Сырой код для фильтрации
