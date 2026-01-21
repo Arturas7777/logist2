@@ -4,66 +4,141 @@
 {% block extrastyle %}
   {{ block.super }}
   <link rel="stylesheet" type="text/css" href="{% static 'css/logist2_custom_admin.css' %}">
+  <style>
+    /* Скрываем стандартный inline фотографий - используем кастомную галерею */
+    .inline-group[id*="photos"] {
+      display: none !important;
+    }
+    
+    /* Кнопка синхронизации с Google Drive */
+    #sync-gdrive-btn {
+      background: linear-gradient(135deg, #4285f4 0%, #2962ff 100%);
+      border: none;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 8px rgba(66, 133, 244, 0.3);
+    }
+    
+    #sync-gdrive-btn:hover {
+      background: linear-gradient(135deg, #2962ff 0%, #1565c0 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(66, 133, 244, 0.4);
+    }
+    
+    #sync-gdrive-btn:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    /* Статус синхронизации */
+    #sync-status {
+      display: inline-block;
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    
+    /* Контейнер для информации о фото */
+    .photos-info {
+      display: inline-block;
+      margin-left: 15px;
+      padding: 8px 15px;
+      background: #f0f7ff;
+      border-radius: 20px;
+      font-size: 14px;
+      color: #1565c0;
+    }
+    
+    .photos-info.has-photos {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+  </style>
 {% endblock %}
 
 {% block content %}
-  <div id="container_form">
-    <div class="container-details">
-      <p>
-        <span class="status-highlight"
-      style="background-color: {{ original.get_status_color }}; color: white; padding: 4px 8px; border-radius: 5px;">
-  {{ original.get_status_display }}
-</span>
-        {% if original.notes %}
-          <span style="margin-left: 20px; width: 1000px; display: inline-block;">
-            {{ original.notes }}
-          </span>
-        {% endif %}
-      </p>
+  <div class="container-details" style="margin-bottom: 15px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+    <p style="margin: 0 0 15px 0;">
+      <span class="status-highlight"
+            style="background-color: {{ original.get_status_color }}; color: white; padding: 8px 16px; border-radius: 5px; font-weight: 600;">
+        {{ original.get_status_display }}
+      </span>
+      {% if original.notes %}
+        <span style="margin-left: 20px; color: #666;">
+          {{ original.notes }}
+        </span>
+      {% endif %}
+    </p>
+    
+    {% if original.pk %}
+    <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+      <button type="button" id="sync-gdrive-btn">
+        📥 Загрузить фото с Google Drive
+      </button>
+      <span id="sync-status"></span>
       
-      {% if original.pk %}
-      <div style="margin-top: 10px;">
-        <button type="button" id="sync-gdrive-btn" class="button" style="background-color: #4285f4; color: white;">
-          📥 Загрузить фото с Google Drive
-        </button>
-        <span id="sync-status" style="margin-left: 10px;"></span>
-      </div>
+      {% with photos_count=original.photos.count %}
+      <span class="photos-info {% if photos_count > 0 %}has-photos{% endif %}">
+        📷 Фотографий: <strong>{{ photos_count }}</strong>
+      </span>
+      {% endwith %}
       
-      <script>
-      document.getElementById('sync-gdrive-btn').addEventListener('click', function() {
-        const btn = this;
-        const status = document.getElementById('sync-status');
-        
-        btn.disabled = true;
-        btn.textContent = '⏳ Загрузка...';
-        status.textContent = '';
-        
-        fetch('{% url "core:sync_container_photos_gdrive" original.pk %}', {
-          method: 'POST',
-          headers: {
-            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-          }
-        })
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) {
-            status.innerHTML = '<span style="color: green;">✓ ' + data.message + '</span>';
-            setTimeout(() => location.reload(), 1500);
-          } else {
-            status.innerHTML = '<span style="color: red;">✗ ' + data.error + '</span>';
-          }
-          btn.disabled = false;
-          btn.textContent = '📥 Загрузить фото с Google Drive';
-        })
-        .catch(error => {
-          status.innerHTML = '<span style="color: red;">✗ Ошибка: ' + error + '</span>';
-          btn.disabled = false;
-          btn.textContent = '📥 Загрузить фото с Google Drive';
-        });
-      });
-      </script>
+      {% if original.google_drive_folder_url %}
+      <a href="{{ original.google_drive_folder_url }}" target="_blank" 
+         style="color: #4285f4; text-decoration: none; font-size: 14px;">
+        🔗 Открыть папку Google Drive
+      </a>
       {% endif %}
     </div>
-    {{ block.super }}
+    
+    <script>
+    document.getElementById('sync-gdrive-btn').addEventListener('click', function() {
+      const btn = this;
+      const status = document.getElementById('sync-status');
+      
+      btn.disabled = true;
+      btn.innerHTML = '⏳ Синхронизация...';
+      status.textContent = '';
+      
+      fetch('{% url "core:sync_container_photos_gdrive" original.pk %}', {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        }
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          status.innerHTML = '<span style="color: #2e7d32; background: #e8f5e9; padding: 5px 10px; border-radius: 4px;">✓ ' + data.message + '</span>';
+          setTimeout(() => location.reload(), 2000);
+        } else {
+          status.innerHTML = '<span style="color: #c62828; background: #ffebee; padding: 5px 10px; border-radius: 4px;">✗ ' + data.error + '</span>';
+          btn.disabled = false;
+          btn.innerHTML = '📥 Загрузить фото с Google Drive';
+        }
+      })
+      .catch(error => {
+        status.innerHTML = '<span style="color: #c62828; background: #ffebee; padding: 5px 10px; border-radius: 4px;">✗ Ошибка: ' + error + '</span>';
+        btn.disabled = false;
+        btn.innerHTML = '📥 Загрузить фото с Google Drive';
+      });
+    });
+    </script>
+    {% endif %}
   </div>
+  
+  {{ block.super }}
+{% endblock %}
+
+{% block after_related_objects %}
+  {{ block.super }}
+  {# Галерея фотографий - отдельный блок под всеми inline #}
+  {% if original.pk %}
+  {% include "admin/core/container/photos_gallery.html" with photos_json=photos_json %}
+  {% endif %}
 {% endblock %}

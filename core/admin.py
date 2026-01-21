@@ -1,10 +1,10 @@
 from django.contrib import admin
 
-# Импортируем админку для клиентского сайта
+# Импортируем админку для клиентского сайта (упрощённая версия - фото только в карточке контейнера)
 from .admin_website import (
-    ClientUserAdmin, CarPhotoAdmin, ContainerPhotoAdmin, ContainerPhotoArchiveAdmin,
-    AIChatAdmin, NewsPostAdmin, ContactMessageAdmin, TrackingRequestAdmin
+    ClientUserAdmin, AIChatAdmin, NewsPostAdmin, ContactMessageAdmin, TrackingRequestAdmin
 )
+from .models_website import ContainerPhoto
 from django.utils import timezone
 from django.urls import reverse
 from django.utils.html import format_html
@@ -241,16 +241,52 @@ class CarInline(admin.TabularInline):
         return formset
 
 
+class ContainerPhotoInline(admin.TabularInline):
+    """
+    Inline для отображения фотографий контейнера прямо в карточке контейнера.
+    Фотографии загружаются автоматически с Google Drive.
+    """
+    model = ContainerPhoto
+    extra = 0  # Не показываем пустые формы для добавления - фото загружаются автоматически
+    can_delete = True
+    max_num = 100  # Ограничение для производительности
+    fields = ('thumbnail_preview', 'photo', 'photo_type', 'is_public')
+    readonly_fields = ('thumbnail_preview',)
+    verbose_name = "Фотография"
+    verbose_name_plural = "📷 Фотографии контейнера"
+    
+    def thumbnail_preview(self, obj):
+        """Миниатюра фотографии"""
+        if obj.thumbnail:
+            return format_html(
+                '<a href="{}" target="_blank"><img src="{}" style="max-width: 80px; max-height: 80px; border-radius: 4px; cursor: pointer;" /></a>',
+                obj.photo.url if obj.photo else '#',
+                obj.thumbnail.url
+            )
+        elif obj.photo:
+            return format_html(
+                '<a href="{}" target="_blank"><img src="{}" style="max-width: 80px; max-height: 80px; border-radius: 4px; cursor: pointer;" /></a>',
+                obj.photo.url,
+                obj.photo.url
+            )
+        return '-'
+    thumbnail_preview.short_description = 'Превью'
+    
+    def get_queryset(self, request):
+        """Оптимизируем запрос - загружаем только нужные поля"""
+        return super().get_queryset(request).only('id', 'container', 'photo', 'thumbnail', 'photo_type', 'is_public')
+
+
 # CarServiceInline удален
 
 class ContainerAdmin(admin.ModelAdmin):
     change_form_template = 'admin/core/container/change_form.html'
-    list_display = ('number', 'colored_status', 'eta', 'planned_unload_date', 'unload_date', 'line', 'warehouse')
+    list_display = ('number', 'colored_status', 'eta', 'planned_unload_date', 'unload_date', 'line', 'warehouse', 'photos_count_display')
     list_display_links = ('number',)  # Делаем номер контейнера кликабельным
     list_filter = (MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter)
     search_fields = ('number',)
     ordering = ['-unload_date', '-id']  # Сначала по дате разгрузки (новые сверху), потом по ID
-    inlines = [CarInline]
+    inlines = [CarInline, ContainerPhotoInline]  # Фотографии под списком машин
     fieldsets = (
         ('Основные данные', {
             'classes': ('collapse',),
@@ -644,6 +680,17 @@ class ContainerAdmin(admin.ModelAdmin):
             obj.get_status_display()
         )
     colored_status.short_description = 'Статус'
+    
+    def photos_count_display(self, obj):
+        """Отображает количество фотографий контейнера"""
+        count = obj.photos.count()
+        if count > 0:
+            return format_html(
+                '<span style="background-color: #4285f4; color: white; padding: 2px 8px; border-radius: 10px;">📷 {}</span>',
+                count
+            )
+        return '-'
+    photos_count_display.short_description = 'Фото'
 
     def set_status_floating(self, request, queryset):
         updated = queryset.update(status='FLOATING')
@@ -912,6 +959,20 @@ class ContainerAdmin(admin.ModelAdmin):
             )
     
     resend_unload_notifications.short_description = "📧 Повторить уведомление о разгрузке"
+
+    def change_view(self, request, object_id, form_url='', extra_context=None):
+        """Переопределяем change_view для передачи данных фотографий в шаблон"""
+        extra_context = extra_context or {}
+        
+        if object_id:
+            obj = self.get_object(request, object_id)
+            if obj:
+                # Только считаем фото - быстрый COUNT запрос
+                # Сами данные фото загружаются через AJAX при клике
+                extra_context['photos_count'] = obj.photos.count()
+                extra_context['container_id'] = object_id
+        
+        return super().change_view(request, object_id, form_url, extra_context)
 
     def get_changelist(self, request, **kwargs):
         """Добавляет фильтрацию по умолчанию для статусов 'В порту' и 'Разгружен'"""

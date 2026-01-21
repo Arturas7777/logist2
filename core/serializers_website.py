@@ -79,7 +79,7 @@ class ClientCarSerializer(serializers.ModelSerializer):
             'id', 'vin', 'brand', 'year', 'status', 'status_display',
             'warehouse_name', 'warehouse_address', 'container_number', 
             'container_unload_date', 'unload_date', 'transfer_date',
-            'current_price', 'total_price', 'storage_cost', 'days',
+            'total_price', 'storage_cost', 'days',
             'photos', 'photos_count', 'container_photos', 'container_photos_count'
         ]
     

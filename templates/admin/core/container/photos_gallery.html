@@ -1,0 +1,455 @@
+{% load static %}
+{# Галерея фотографий контейнера с разделением по типам и lazy loading #}
+
+<style>
+/* Контейнер галереи */
+#container-photos-gallery {
+    margin: 20px 0;
+    padding: 0;
+    background: #fff;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    clear: both !important;
+    width: 100% !important;
+    max-width: none !important;
+    box-sizing: border-box;
+}
+
+#container-photos-gallery h2 {
+    margin: 0;
+    padding: 10px 15px;
+    background: linear-gradient(to bottom, #f8f8f8, #eee);
+    border-bottom: 1px solid #ccc;
+    font-size: 13px;
+    font-weight: bold;
+    color: #333;
+    cursor: pointer;
+    user-select: none;
+}
+
+#container-photos-gallery h2:hover {
+    background: linear-gradient(to bottom, #fff, #f5f5f5);
+}
+
+.photos-gallery-content {
+    padding: 15px;
+}
+
+.photos-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+}
+
+.photos-tab {
+    padding: 8px 16px;
+    background: #f5f5f5;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.photos-tab:hover {
+    background: #e8f4fc;
+    border-color: #79aec8;
+}
+
+.photos-tab.active {
+    background: #417690;
+    border-color: #417690;
+    color: white;
+}
+
+.photos-tab .count {
+    background: rgba(0,0,0,0.1);
+    padding: 2px 6px;
+    border-radius: 8px;
+    font-size: 11px;
+}
+
+.photos-tab.active .count {
+    background: rgba(255,255,255,0.3);
+}
+
+.photos-section {
+    display: none;
+}
+
+.photos-section.active {
+    display: block;
+}
+
+.photos-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 10px;
+}
+
+.photo-item {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #f0f0f0;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    border: 1px solid #ddd;
+}
+
+.photo-item:hover {
+    transform: scale(1.02);
+    box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+    border-color: #79aec8;
+}
+
+.photo-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.photo-item img.loading {
+    opacity: 0.5;
+}
+
+/* Lightbox */
+.lightbox {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.9);
+    z-index: 10000;
+    justify-content: center;
+    align-items: center;
+}
+
+.lightbox.active {
+    display: flex;
+}
+
+.lightbox img {
+    max-width: 90%;
+    max-height: 90%;
+    object-fit: contain;
+    border-radius: 4px;
+}
+
+.lightbox-close {
+    position: absolute;
+    top: 15px;
+    right: 25px;
+    color: white;
+    font-size: 35px;
+    cursor: pointer;
+    opacity: 0.8;
+    transition: opacity 0.2s;
+}
+
+.lightbox-close:hover {
+    opacity: 1;
+}
+
+.lightbox-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    color: white;
+    font-size: 40px;
+    cursor: pointer;
+    opacity: 0.8;
+    padding: 15px;
+    user-select: none;
+}
+
+.lightbox-nav:hover {
+    opacity: 1;
+}
+
+.lightbox-nav.prev { left: 10px; }
+.lightbox-nav.next { right: 10px; }
+
+.lightbox-counter {
+    position: absolute;
+    bottom: 15px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: white;
+    font-size: 13px;
+    background: rgba(0,0,0,0.5);
+    padding: 5px 12px;
+    border-radius: 12px;
+}
+
+.no-photos {
+    text-align: center;
+    padding: 30px;
+    color: #999;
+    font-size: 13px;
+}
+
+.no-photos-icon {
+    font-size: 40px;
+    margin-bottom: 8px;
+    opacity: 0.5;
+}
+</style>
+
+<fieldset id="container-photos-gallery" class="module aligned collapse">
+    <h2 onclick="togglePhotosGallery()" style="cursor: pointer;">
+        📷 Фотографии контейнера 
+        <span id="photos-count-badge" style="background: #417690; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; margin-left: 8px;">{{ photos_count|default:0 }}</span>
+        <span id="photos-toggle-icon" style="float: right; margin-right: 10px;">▶</span>
+    </h2>
+    
+    <div class="photos-gallery-content" id="photosGalleryContent" style="display: none;">
+        <div id="photosLoading" style="text-align: center; padding: 20px; color: #666;">
+            ⏳ Загрузка фотографий...
+        </div>
+        <div class="photos-tabs" id="photosTabs" style="display: none;">
+            <!-- Tabs -->
+        </div>
+        <div id="photosContent">
+            <!-- Photo sections -->
+        </div>
+    </div>
+</fieldset>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox">
+    <span class="lightbox-close" onclick="closeLightbox()">&times;</span>
+    <span class="lightbox-nav prev" onclick="navigateLightbox(-1)">&#10094;</span>
+    <img id="lightboxImage" src="" alt="Photo">
+    <span class="lightbox-nav next" onclick="navigateLightbox(1)">&#10095;</span>
+    <div class="lightbox-counter" id="lightboxCounter"></div>
+</div>
+
+<script>
+(function() {
+    // ID контейнера для AJAX запроса
+    const containerId = {{ container_id|default:"null" }};
+    
+    // Перемещаем галерею после inlines
+    const gallery = document.getElementById('container-photos-gallery');
+    const lightbox = document.getElementById('lightbox');
+    
+    if (gallery) {
+        const inlineGroups = document.querySelectorAll('.inline-group');
+        const lastInline = inlineGroups[inlineGroups.length - 1];
+        const submitRow = document.querySelector('.submit-row');
+        
+        if (lastInline && lastInline.parentNode) {
+            lastInline.parentNode.insertBefore(gallery, lastInline.nextSibling);
+        } else if (submitRow && submitRow.parentNode) {
+            submitRow.parentNode.insertBefore(gallery, submitRow);
+        }
+        
+        if (lightbox) {
+            document.body.appendChild(lightbox);
+        }
+    }
+    
+    let photosLoaded = false;
+    let photosData = [];
+    let types = null;
+    let observer = null;
+    
+    // Toggle gallery - загружаем фото через AJAX только при первом открытии
+    window.togglePhotosGallery = function() {
+        const content = document.getElementById('photosGalleryContent');
+        const icon = document.getElementById('photos-toggle-icon');
+        const loading = document.getElementById('photosLoading');
+        
+        if (content.style.display === 'none') {
+            content.style.display = 'block';
+            icon.textContent = '▼';
+            
+            // Загружаем фото через AJAX только при первом открытии
+            if (!photosLoaded && containerId) {
+                loading.style.display = 'block';
+                loading.innerHTML = '⏳ Загрузка фотографий...';
+                
+                fetch(`/core/container/${containerId}/photos-json/`)
+                    .then(response => response.json())
+                    .then(data => {
+                        loading.style.display = 'none';
+                        if (data.success) {
+                            photosData = data.photos;
+                            renderPhotos();
+                        } else {
+                            document.getElementById('photosContent').innerHTML = `
+                                <div class="no-photos">
+                                    <div class="no-photos-icon">⚠️</div>
+                                    <p>Ошибка загрузки: ${data.error}</p>
+                                </div>
+                            `;
+                        }
+                    })
+                    .catch(error => {
+                        loading.style.display = 'none';
+                        document.getElementById('photosContent').innerHTML = `
+                            <div class="no-photos">
+                                <div class="no-photos-icon">⚠️</div>
+                                <p>Ошибка загрузки фотографий</p>
+                            </div>
+                        `;
+                    });
+                
+                photosLoaded = true;
+            }
+        } else {
+            content.style.display = 'none';
+            icon.textContent = '▶';
+        }
+    };
+    
+    // Функция рендеринга фото после загрузки через AJAX
+    function renderPhotos() {
+        types = {
+            'IN_CONTAINER': { label: 'В контейнере', icon: '📦', photos: [] },
+            'UNLOADING': { label: 'Выгруженные', icon: '🚗', photos: [] },
+            'GENERAL': { label: 'Прочие', icon: '📷', photos: [] }
+        };
+        
+        // Distribute photos by type
+        photosData.forEach(photo => {
+            const type = types[photo.type] || types['GENERAL'];
+            type.photos.push(photo);
+        });
+        
+        const activeTypes = Object.entries(types).filter(([key, data]) => data.photos.length > 0);
+        
+        const tabsContainer = document.getElementById('photosTabs');
+        const contentContainer = document.getElementById('photosContent');
+        
+        // Clear previous content
+        tabsContainer.innerHTML = '';
+        contentContainer.innerHTML = '';
+        
+        if (activeTypes.length === 0) {
+            contentContainer.innerHTML = `
+                <div class="no-photos">
+                    <div class="no-photos-icon">📷</div>
+                    <p>Фотографий пока нет</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Show tabs
+        tabsContainer.style.display = 'flex';
+        
+        // Create tabs and photo sections
+        activeTypes.forEach(([typeKey, typeData], index) => {
+            const tab = document.createElement('div');
+            tab.className = 'photos-tab' + (index === 0 ? ' active' : '');
+            tab.dataset.type = typeKey;
+            tab.innerHTML = `${typeData.icon} ${typeData.label} <span class="count">${typeData.photos.length}</span>`;
+            tab.onclick = () => switchTab(typeKey);
+            tabsContainer.appendChild(tab);
+            
+            const section = document.createElement('div');
+            section.className = 'photos-section' + (index === 0 ? ' active' : '');
+            section.id = 'section-' + typeKey;
+            
+            const grid = document.createElement('div');
+            grid.className = 'photos-grid';
+            
+            typeData.photos.forEach((photo, photoIndex) => {
+                const item = document.createElement('div');
+                item.className = 'photo-item';
+                item.onclick = () => openLightbox(typeKey, photoIndex);
+                
+                const img = document.createElement('img');
+                img.className = 'loading';
+                img.alt = 'Photo';
+                img.dataset.src = photo.thumbnail || photo.url;
+                img.dataset.fullSrc = photo.url;
+                // Placeholder
+                img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect fill="%23e8e8e8" width="100" height="100"/%3E%3C/svg%3E';
+                
+                item.appendChild(img);
+                grid.appendChild(item);
+            });
+            
+            section.appendChild(grid);
+            contentContainer.appendChild(section);
+        });
+        
+        // Lazy loading с Intersection Observer
+        observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const img = entry.target;
+                    img.src = img.dataset.src;
+                    img.onload = () => img.classList.remove('loading');
+                    observer.unobserve(img);
+                }
+            });
+        }, { rootMargin: '50px' });
+        
+        document.querySelectorAll('.photo-item img').forEach(img => observer.observe(img));
+    }
+    
+    // Tab switching
+    window.switchTab = function(typeKey) {
+        document.querySelectorAll('.photos-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.photos-section').forEach(s => s.classList.remove('active'));
+        document.querySelector(`.photos-tab[data-type="${typeKey}"]`).classList.add('active');
+        document.getElementById('section-' + typeKey).classList.add('active');
+    };
+    
+    // Lightbox
+    let currentType = null;
+    let currentIndex = 0;
+    
+    window.openLightbox = function(typeKey, index) {
+        currentType = typeKey;
+        currentIndex = index;
+        updateLightbox();
+        document.getElementById('lightbox').classList.add('active');
+        document.body.style.overflow = 'hidden';
+    };
+    
+    window.closeLightbox = function() {
+        document.getElementById('lightbox').classList.remove('active');
+        document.body.style.overflow = '';
+    };
+    
+    window.navigateLightbox = function(direction) {
+        if (!types || !types[currentType]) return;
+        const photos = types[currentType].photos;
+        currentIndex = (currentIndex + direction + photos.length) % photos.length;
+        updateLightbox();
+    };
+    
+    function updateLightbox() {
+        if (!types || !types[currentType]) return;
+        const photos = types[currentType].photos;
+        const photo = photos[currentIndex];
+        document.getElementById('lightboxImage').src = photo.url;
+        document.getElementById('lightboxCounter').textContent = `${currentIndex + 1} / ${photos.length}`;
+    }
+    
+    // Keyboard navigation
+    document.addEventListener('keydown', (e) => {
+        if (!document.getElementById('lightbox').classList.contains('active')) return;
+        if (e.key === 'Escape') closeLightbox();
+        if (e.key === 'ArrowLeft') navigateLightbox(-1);
+        if (e.key === 'ArrowRight') navigateLightbox(1);
+    });
+    
+    document.getElementById('lightbox').addEventListener('click', (e) => {
+        if (e.target.id === 'lightbox') closeLightbox();
+    });
+})();
+</script>

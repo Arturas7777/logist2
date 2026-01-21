@@ -237,8 +237,14 @@ python manage.py regenerate_thumbnails --force
 python manage.py cleanup_broken_photos
 python manage.py cleanup_broken_photos --delete
 
-# Синхронизация с Google Drive
+# Синхронизация с Google Drive (устаревшая команда)
 python manage.py sync_google_drive_photos
+
+# Синхронизация фото с Google Drive (НОВАЯ - рекомендуется)
+python manage.py sync_photos_gdrive --no-photos     # Быстрая проверка контейнеров без фото
+python manage.py sync_photos_gdrive --recent        # Недавние контейнеры (14 дней)
+python manage.py sync_photos_gdrive --container ECMU5566195  # Конкретный контейнер
+python manage.py sync_photos_gdrive --verbose       # С подробным логированием
 
 # Исправление прав доступа после загрузки фотографий (ВАЖНО!)
 ./fix_media_permissions.sh
@@ -358,6 +364,50 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 ⚠️ Миниатюры могут не отображаться если nginx конфигурация неправильная
 ⚠️ Асинхронная загрузка из Google Drive - нужно ждать 1-2 минуты
 ⚠️ **ВАЖНО:** После загрузки фотографий вручную (через команды от root) нужно исправить права доступа: `./fix_media_permissions.sh`
+
+### Недавние изменения (январь 2026):
+
+**21.01.2026 - Улучшенная система фотографий контейнеров:**
+
+1. **АВТОМАТИЧЕСКАЯ СИНХРОНИЗАЦИЯ С GOOGLE DRIVE:** ⭐ НОВЫЙ ФУНКЦИОНАЛ
+   - ✅ Автоматический поиск папки контейнера на Google Drive по номеру
+   - ✅ Поддержка папок с дополнительным текстом в названии
+   - ✅ Разделение фото по типам: IN_CONTAINER (в контейнере) и UNLOADING (выгруженные)
+   - ✅ Автоматическое сохранение ссылки на найденную папку Google Drive
+   - ✅ Management команда `sync_photos_gdrive` с режимами: --no-photos, --recent, --container
+   - ✅ Cron задачи для периодической синхронизации
+
+2. **ГАЛЕРЕЯ В АДМИНКЕ КОНТЕЙНЕРА:**
+   - ✅ Свёрнутая по умолчанию галерея (быстрая загрузка страницы)
+   - ✅ AJAX загрузка фото при клике на заголовок
+   - ✅ Вкладки "В контейнере" и "Выгруженные"
+   - ✅ Lazy loading миниатюр
+   - ✅ Lightbox с навигацией
+
+3. **ГАЛЕРЕЯ НА КЛИЕНТСКОМ САЙТЕ:**
+   - ✅ Вкладки "Все", "В контейнере", "Выгруженные"
+   - ✅ Выбор фото для скачивания
+   - ✅ Кнопка "Скачать выбранные" (зелёная)
+   - ✅ Lightbox с правильной навигацией в рамках текущей вкладки
+   - ✅ Улучшенное перетаскивание (drag при зажатой кнопке мыши)
+
+4. **ИСПРАВЛЕНИЯ ПОИСКА:**
+   - ✅ Убрано несуществующее поле `current_price` из сериализатора
+   - ✅ Нормализация VIN при поиске
+   - ✅ Поиск по частичному совпадению VIN
+
+**Файлы изменены:**
+- `core/google_drive_sync.py` - автопоиск папок, разделение по типам
+- `core/management/commands/sync_photos_gdrive.py` - новые режимы
+- `core/views.py` - API endpoint для AJAX загрузки фото
+- `core/views_website.py` - улучшенный поиск, API для клиентских фото
+- `core/serializers_website.py` - удалено поле current_price
+- `templates/admin/core/container/change_form.html` - кнопка синхронизации
+- `templates/admin/core/container/photos_gallery.html` - AJAX галерея с вкладками
+- `templates/website/home.html` - клиентская галерея с вкладками и lightbox
+- `sync_photos_cron.sh` - cron скрипт для автосинхронизации
+
+---
 
 ### Недавние изменения (декабрь 2025):
 

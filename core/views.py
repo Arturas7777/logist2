@@ -916,41 +916,11 @@ def add_services(request, car_id):
         added_count = 0
         
         for service_id in service_ids:
-            # Получаем default_price и default_markup из услуги
-            default_price = 0
-            default_markup = 0
-            if service_type.upper() == 'WAREHOUSE':
-                from .models import WarehouseService
-                try:
-                    ws = WarehouseService.objects.get(id=service_id)
-                    default_price = ws.default_price or 0
-                    default_markup = ws.default_markup or 0
-                except WarehouseService.DoesNotExist:
-                    pass
-            elif service_type.upper() == 'LINE':
-                from .models import LineService
-                try:
-                    ls = LineService.objects.get(id=service_id)
-                    default_price = ls.default_price or 0
-                    default_markup = ls.default_markup or 0
-                except LineService.DoesNotExist:
-                    pass
-            elif service_type.upper() == 'CARRIER':
-                from .models import CarrierService
-                try:
-                    cs = CarrierService.objects.get(id=service_id)
-                    default_price = cs.default_price or 0
-                    default_markup = cs.default_markup or 0
-                except CarrierService.DoesNotExist:
-                    pass
-            
-            # Создаем CarService для каждой выбранной услуги с ценой и наценкой
+            # Создаем CarService для каждой выбранной услуги
             car_service = CarService.objects.create(
                 car=car,
                 service_type=service_type.upper(),
-                service_id=service_id,
-                custom_price=float(default_price),
-                markup_amount=float(default_markup)
+                service_id=service_id
             )
             added_count += 1
         
@@ -963,9 +933,46 @@ def add_services(request, car_id):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+def get_container_photos_json(request, container_id):
+    """
+    API endpoint для получения списка фотографий контейнера.
+    Вызывается через AJAX при клике на раздел "Фотографии контейнера".
+    """
+    try:
+        from .models import Container
+        from .models_website import ContainerPhoto
+        
+        container = Container.objects.get(id=container_id)
+        
+        photos_data = []
+        for photo in container.photos.only('id', 'photo', 'thumbnail', 'photo_type').all():
+            photos_data.append({
+                'id': photo.id,
+                'url': photo.photo.url if photo.photo else '',
+                'thumbnail': photo.thumbnail.url if photo.thumbnail else (photo.photo.url if photo.photo else ''),
+                'type': photo.photo_type or 'GENERAL'
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'photos': photos_data,
+            'count': len(photos_data)
+        })
+    except Container.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Container not found'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
 @csrf_exempt
 def sync_container_photos_from_gdrive(request, container_id):
-    """Синхронизирует фотографии контейнера с Google Drive"""
+    """
+    Синхронизирует фотографии контейнера с Google Drive.
+    
+    Если указана ссылка на папку Google Drive - использует её.
+    Если ссылка не указана - автоматически ищет папку по номеру контейнера
+    в структуре папок Google Drive (ВЫГРУЖЕННЫЕ / В КОНТЕЙНЕРЕ).
+    """
     try:
         if request.method != 'POST':
             return JsonResponse({'success': False, 'error': 'Only POST method allowed'}, status=405)
@@ -975,13 +982,8 @@ def sync_container_photos_from_gdrive(request, container_id):
         from django.db import connection
         
         container = Container.objects.get(id=container_id)
-        
-        # Проверяем, есть ли ссылка на Google Drive
-        if not container.google_drive_folder_url:
-            return JsonResponse({
-                'success': False,
-                'error': 'Не указана ссылка на папку Google Drive. Добавьте ссылку в поле "Google Drive папка"'
-            })
+        container_number = container.number
+        folder_url = container.google_drive_folder_url
         
         # Закрываем соединение с БД перед запуском в фоне
         connection.close()
@@ -992,21 +994,36 @@ def sync_container_photos_from_gdrive(request, container_id):
             try:
                 # Django пересоздаст соединение автоматически в новом потоке
                 from django.db import connection as thread_connection
-                GoogleDriveSync.download_folder_photos(
-                    container.google_drive_folder_url,
-                    container
-                )
+                from .models import Container as ContainerModel
+                
+                # Перезагружаем контейнер в новом потоке
+                container_obj = ContainerModel.objects.get(id=container_id)
+                
+                if folder_url:
+                    # Используем указанную ссылку
+                    GoogleDriveSync.download_folder_photos(folder_url, container_obj)
+                else:
+                    # Автопоиск по номеру контейнера в структуре Google Drive
+                    GoogleDriveSync.sync_container_by_number(container_number)
+                
                 thread_connection.close()
             except Exception as e:
-                logger.error(f"Background download error: {e}", exc_info=True)
+                logger.error(f"Background download error for {container_number}: {e}", exc_info=True)
         
         thread = threading.Thread(target=download_in_background, daemon=True)
         thread.start()
         
         # Сразу возвращаем ответ
+        message = 'Загрузка фотографий начата. '
+        if folder_url:
+            message += 'Используется указанная ссылка на папку.'
+        else:
+            message += 'Ищем папку по номеру контейнера.'
+        message += ' Обновите страницу через 1-2 минуты.'
+        
         return JsonResponse({
             'success': True,
-            'message': 'Загрузка фотографий начата. Обновите страницу через 1-2 минуты чтобы увидеть результат.',
+            'message': message,
             'photos_count': 0
         })
         
@@ -1015,6 +1032,106 @@ def sync_container_photos_from_gdrive(request, container_id):
     except Exception as e:
         logger.error(f"Error syncing Google Drive photos: {e}", exc_info=True)
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@staff_member_required
+@require_GET
+def search_counterparties(request):
+    """
+    API для поиска контрагентов (клиенты, склады, линии, перевозчики, компании)
+    Используется для автокомплита в форме инвойса
+    """
+    query = request.GET.get('q', '').strip()
+    
+    if len(query) < 1:
+        return JsonResponse({'results': []})
+    
+    results = []
+    
+    # Поиск по компаниям
+    companies = Company.objects.filter(name__icontains=query)[:5]
+    for obj in companies:
+        results.append({
+            'id': f'company_{obj.pk}',
+            'text': f'🏢 {obj.name}',
+            'type': 'company',
+            'type_id': obj.pk,
+        })
+    
+    # Поиск по клиентам
+    clients = Client.objects.filter(name__icontains=query)[:5]
+    for obj in clients:
+        results.append({
+            'id': f'client_{obj.pk}',
+            'text': f'👤 {obj.name}',
+            'type': 'client',
+            'type_id': obj.pk,
+        })
+    
+    # Поиск по складам
+    warehouses = Warehouse.objects.filter(name__icontains=query)[:5]
+    for obj in warehouses:
+        results.append({
+            'id': f'warehouse_{obj.pk}',
+            'text': f'🏭 {obj.name}',
+            'type': 'warehouse',
+            'type_id': obj.pk,
+        })
+    
+    # Поиск по линиям
+    lines = Line.objects.filter(name__icontains=query)[:5]
+    for obj in lines:
+        results.append({
+            'id': f'line_{obj.pk}',
+            'text': f'🚢 {obj.name}',
+            'type': 'line',
+            'type_id': obj.pk,
+        })
+    
+    # Поиск по перевозчикам
+    carriers = Carrier.objects.filter(Q(name__icontains=query) | Q(contact_person__icontains=query))[:5]
+    for obj in carriers:
+        results.append({
+            'id': f'carrier_{obj.pk}',
+            'text': f'🚚 {obj.name}',
+            'type': 'carrier',
+            'type_id': obj.pk,
+        })
+    
+    return JsonResponse({'results': results})
+
+
+@staff_member_required
+@require_GET
+def search_cars(request):
+    """
+    API для поиска автомобилей по VIN, марке
+    Используется для автокомплита в форме инвойса
+    """
+    query = request.GET.get('q', '').strip()
+    selected = request.GET.getlist('selected', [])  # Уже выбранные ID
+    
+    if len(query) < 2:
+        return JsonResponse({'results': []})
+    
+    # Исключаем уже выбранные
+    cars = Car.objects.filter(
+        Q(vin__icontains=query) | Q(brand__icontains=query)
+    ).exclude(pk__in=selected).select_related('client')[:15]
+    
+    results = []
+    for car in cars:
+        client_name = car.client.name if car.client else 'Без клиента'
+        results.append({
+            'id': car.pk,
+            'text': f'{car.brand} {car.year} ({car.vin})',
+            'vin': car.vin,
+            'brand': car.brand,
+            'year': car.year,
+            'client': client_name,
+        })
+    
+    return JsonResponse({'results': results})
 
 
 @staff_member_required
