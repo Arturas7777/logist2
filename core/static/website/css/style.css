@@ -761,7 +761,6 @@ footer a:hover {
 
 .btn-primary:hover {
     background: var(--accent-red) !important;
-    box-shadow: 0 8px 20px rgba(220, 20, 60, 0.4) !important;
 }
 
 .btn-outline-primary {
