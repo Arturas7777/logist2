@@ -946,10 +946,19 @@ def get_container_photos_json(request, container_id):
         
         photos_data = []
         for photo in container.photos.only('id', 'photo', 'thumbnail', 'photo_type').all():
+            # Ensure URLs have /media/ prefix
+            photo_url = photo.photo.url if photo.photo else ''
+            if photo_url and not photo_url.startswith('/media/') and not photo_url.startswith('http'):
+                photo_url = '/media/' + photo_url.lstrip('/')
+            
+            thumb_url = photo.thumbnail.url if photo.thumbnail else photo_url
+            if thumb_url and not thumb_url.startswith('/media/') and not thumb_url.startswith('http'):
+                thumb_url = '/media/' + thumb_url.lstrip('/')
+            
             photos_data.append({
                 'id': photo.id,
-                'url': photo.photo.url if photo.photo else '',
-                'thumbnail': photo.thumbnail.url if photo.thumbnail else (photo.photo.url if photo.photo else ''),
+                'url': photo_url,
+                'thumbnail': thumb_url,
                 'type': photo.photo_type or 'GENERAL'
             })
         
