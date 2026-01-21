@@ -743,10 +743,10 @@ footer a:hover {
 
 /* ===== Кнопки - Caromoto Style ===== */
 .btn {
-    transition: all 0.3s ease;
     font-weight: 600;
     letter-spacing: 0.3px;
     border-radius: 8px;
+    transition: opacity 0.2s ease;
 }
 
 .btn:hover {
