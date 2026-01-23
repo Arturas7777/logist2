@@ -545,10 +545,12 @@ def ai_chat(request):
         )
 
     photo_keywords = [
-        'фото', 'фотографии', 'снимки', 'картинки', 'изображения', 'photo', 'photos'
+        'фото', 'фотографии', 'фотография', 'фотки', 'фотка', 'фоточку',
+        'снимки', 'картинки', 'изображения', 'галерея', 'gallery', 'photo', 'photos'
     ]
     vin_pattern = re.compile(r"\b[A-HJ-NPR-Z0-9]{17}\b", re.IGNORECASE)
-    if any(keyword in message.lower() for keyword in photo_keywords):
+    message_lower = message.lower()
+    if any(keyword in message_lower for keyword in photo_keywords) or re.search(r"\bфот", message_lower):
         vin_match = vin_pattern.search(message)
         if vin_match:
             vin = vin_match.group(0).upper()
