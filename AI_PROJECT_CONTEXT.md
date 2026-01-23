@@ -114,6 +114,7 @@ logist2/
 │   │   ├── cleanup_broken_photos.py
 │   │   └── sync_google_drive_photos.py
 │   ├── services/                   # Бизнес-логика
+│   │   └── ai_chat_service.py      # AI-помощник (контекст из БД)
 │   ├── static/                     # Статика для админки
 │   └── templates/                  # Шаблоны админки
 ├── templates/                      # Общие шаблоны
@@ -160,6 +161,12 @@ logist2/
 - `thumbnail` - миниатюра (создается автоматически)
 - `is_public` - доступно клиенту
 
+### AI-помощник (чат)
+- Контекст формируется из БД на каждый запрос
+- Авто-поиск по VIN/контейнеру, статус, склад, даты и фото
+- Финансовые вопросы (цены/оплаты/балансы/инвойсы) блокируются
+- Виджет доступен на клиентском сайте и в админке
+
 ### NewInvoice (Новый инвойс) - ОСНОВНАЯ СИСТЕМА БИЛЛИНГА
 - `number` - номер инвойса (генерируется автоматически)
 - `issuer_*` - кто выставил (может быть Company, Warehouse, Line, Carrier)
@@ -194,6 +201,10 @@ logist2/
 - `POST /api/track/` - отслеживание груза по VIN или номеру контейнера
 - `GET /api/container-photos/<container_number>/` - фотографии контейнера
 - `POST /api/download-photos-archive/` - скачать архив фотографий
+- `POST /api/ai-chat/` - AI-помощник (контекст из БД, блок финансовых вопросов)
+
+### Публичная ссылка на галерею:
+- `/?track=<номер_контейнера>&photos=1` — автоматически запускает поиск и открывает фото
 
 ## GOOGLE DRIVE ИНТЕГРАЦИЯ
 
@@ -428,6 +439,21 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 - `sync_photos_cron.sh` - cron скрипт для автосинхронизации
 - `core/static/website/css/style.css` - исправлен hover-эффект кнопок (убрано мигание)
 
+**23.01.2026 - AI-помощник на сайте и в админке:**
+1. **AI-ЧАТ:** подключён чат на клиентском сайте и в админке
+2. **КОНТЕКСТ ИЗ БД:** VIN/контейнер, статус, склад, даты и фото
+3. **ОГРАНИЧЕНИЕ ФИНАНСОВ:** вопросы про цены/оплату/балансы блокируются
+4. **ГАЛЕРЕЯ ФОТО:** ссылка вида `/?track=<номер>&photos=1` открывает фото
+
+**Файлы изменены:**
+- `core/services/ai_chat_service.py` — сервис AI
+- `core/views_website.py` — endpoint AI и логика фото/галереи
+- `core/static/website/js/ai-chat.js` — CSRF и кликабельные ссылки
+- `templates/admin/base_site.html` — виджет чата в админке
+- `core/static/admin/css/ai-chat.css` — стили админ-виджета
+- `logist2/settings.py`, `logist2/settings_base.py` — AI настройки
+- `env.example`, `env.local.example` — примеры AI переменных
+
 ---
 
 ### Недавние изменения (декабрь 2025):
@@ -625,6 +651,17 @@ URL: https://caromoto-lt.com/admin/
 ```
 Nginx: www-data или www-root
 Gunicorn: www-root
+```
+
+### AI чат (в `.env`)
+```
+AI_CHAT_ENABLED=True
+AI_API_KEY=...
+AI_API_BASE_URL=https://api.openai.com/v1
+AI_MODEL=gpt-4o-mini
+AI_MAX_TOKENS=400
+AI_TEMPERATURE=0.2
+AI_REQUEST_TIMEOUT=40
 ```
 
 ### Права на файлы

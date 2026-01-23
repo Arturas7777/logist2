@@ -288,6 +288,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const photosModal = new bootstrap.Modal(document.getElementById('photosModal'));
     
     let currentContainerNumber = null;
+    const urlParams = new URLSearchParams(window.location.search);
+    const autoTrack = urlParams.get('track');
+    let autoShowPhotos = urlParams.get('photos') === '1';
     
     // Обновляем обработчик формы отслеживания
     trackingForm.addEventListener('submit', function(e) {
@@ -349,6 +352,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     } else {
                         photosSection.style.display = 'none';
                     }
+
+                    if (autoShowPhotos && currentContainerNumber) {
+                        loadContainerPhotos(currentContainerNumber);
+                        photosModal.show();
+                        autoShowPhotos = false;
+                    }
                 } else if (data.type === 'container') {
                     const container = data.data;
                     resultHtml += `<p><strong>Контейнер:</strong> ${container.number}</p>`;
@@ -377,6 +386,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     currentContainerNumber = container.number;
                     photosSection.style.display = 'block';
                     showPhotosBtn.style.display = 'block';
+
+                    if (autoShowPhotos && currentContainerNumber) {
+                        loadContainerPhotos(currentContainerNumber);
+                        photosModal.show();
+                        autoShowPhotos = false;
+                    }
                 }
                 
                 resultHtml += '</div>';
@@ -1005,6 +1020,10 @@ document.addEventListener('DOMContentLoaded', function() {
             document.body.style.overflow = '';
             document.removeEventListener('keydown', handleEscKey);
         }
+    }
+    if (autoTrack) {
+        document.getElementById('tracking_number').value = autoTrack;
+        trackingForm.dispatchEvent(new Event('submit'));
     }
 });
 </script>

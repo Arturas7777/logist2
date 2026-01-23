@@ -220,6 +220,15 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'Caromoto Lithuania <noreply@caromoto-lt.com>')
 
+# AI Chat settings
+AI_CHAT_ENABLED = os.getenv('AI_CHAT_ENABLED', 'False').lower() == 'true'
+AI_API_KEY = os.getenv('AI_API_KEY', os.getenv('OPENAI_API_KEY', ''))
+AI_API_BASE_URL = os.getenv('AI_API_BASE_URL', 'https://api.openai.com/v1')
+AI_MODEL = os.getenv('AI_MODEL', 'gpt-4o-mini')
+AI_MAX_TOKENS = int(os.getenv('AI_MAX_TOKENS', '400'))
+AI_TEMPERATURE = float(os.getenv('AI_TEMPERATURE', '0.2'))
+AI_REQUEST_TIMEOUT = int(os.getenv('AI_REQUEST_TIMEOUT', '40'))
+
 # Company info for email templates
 COMPANY_NAME = 'Caromoto Lithuania'
 COMPANY_PHONE = '+370 XXX XXXXX'
