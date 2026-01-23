@@ -14,7 +14,7 @@ from django.views.decorators.http import require_http_methods
 from django.db.models import Q, Count, Prefetch
 from django.utils import timezone
 from rest_framework import viewsets, permissions, status
-from rest_framework.decorators import api_view, permission_classes, action
+from rest_framework.decorators import api_view, permission_classes, action, authentication_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.conf import settings
@@ -531,6 +531,7 @@ def get_ai_response_openai(message, user=None, client=None):
 
 @csrf_exempt
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def ai_chat(request):
     """Эндпоинт для чата с ИИ-помощником"""
