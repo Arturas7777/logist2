@@ -33,6 +33,7 @@
 {% block extrastyle %}
 {{ block.super }}
 <link rel="stylesheet" type="text/css" href="{% static 'css/logist2_custom_admin.css' %}">
+<link rel="stylesheet" type="text/css" href="{% static 'admin/css/ai-chat.css' %}">
 <style>
     #header {
         position: relative;
@@ -49,5 +50,30 @@
     // Принудительно устанавливаем светлую тему
     document.documentElement.dataset.theme = 'light';
 </script>
+{% endblock %}
+
+{% block footer %}
+{{ block.super }}
+<div id="ai-chat-widget">
+    <button class="ai-chat-button" id="ai-chat-toggle" title="AI помощник">AI</button>
+    <div class="ai-chat-window" id="ai-chat-window" style="display: none;">
+        <div class="ai-chat-header">
+            <h6>AI помощник</h6>
+            <button class="btn-close btn-close-white" id="ai-chat-close" aria-label="Close"></button>
+        </div>
+        <div class="ai-chat-messages" id="ai-chat-messages">
+            <div class="ai-message">
+                <div class="message-content">
+                    Здравствуйте! Я AI-помощник. Чем могу помочь?
+                </div>
+            </div>
+        </div>
+        <div class="ai-chat-input">
+            <input type="text" id="ai-chat-input" placeholder="Введите вопрос..." />
+            <button id="ai-chat-send">Отправить</button>
+        </div>
+    </div>
+</div>
+<script src="{% static 'website/js/ai-chat.js' %}"></script>
 {% endblock %}
 

@@ -23,6 +23,19 @@ const chatMessages = document.getElementById('ai-chat-messages');
 const chatInput = document.getElementById('ai-chat-input');
 const chatSend = document.getElementById('ai-chat-send');
 
+if (!chatToggle || !chatWindow || !chatClose || !chatMessages || !chatInput || !chatSend) {
+    console.warn('AI chat widget elements not found on this page');
+} else {
+// CSRF helper for Django
+function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+    return '';
+}
+
+const csrfToken = getCookie('csrftoken');
+
 // Открытие/закрытие чата
 chatToggle.addEventListener('click', () => {
     chatWindow.style.display = chatWindow.style.display === 'none' ? 'flex' : 'none';
@@ -43,13 +56,51 @@ function addMessage(text, isUser = false) {
     
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
-    contentDiv.textContent = text;
+    if (isUser) {
+        contentDiv.textContent = text;
+    } else {
+        appendTextWithLinks(contentDiv, text);
+    }
     
     messageDiv.appendChild(contentDiv);
     chatMessages.appendChild(messageDiv);
     
     // Прокрутка вниз
     chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function appendTextWithLinks(container, text) {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const trailingPunctRegex = /[).,!?;:\]]+$/;
+    let lastIndex = 0;
+    let match;
+    while ((match = urlRegex.exec(text)) !== null) {
+        let url = match[0];
+        let trailing = '';
+        const trailingMatch = url.match(trailingPunctRegex);
+        if (trailingMatch) {
+            trailing = trailingMatch[0];
+            url = url.slice(0, -trailing.length);
+        }
+        const start = match.index;
+        if (start > lastIndex) {
+            container.appendChild(document.createTextNode(text.slice(lastIndex, start)));
+        }
+        const link = document.createElement('a');
+        link.href = url;
+        link.textContent = 'Открыть';
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.style.margin = '0 4px';
+        container.appendChild(link);
+        if (trailing) {
+            container.appendChild(document.createTextNode(trailing));
+        }
+        lastIndex = start + url.length;
+    }
+    if (lastIndex < text.length) {
+        container.appendChild(document.createTextNode(text.slice(lastIndex)));
+    }
 }
 
 // Отправка сообщения
@@ -73,6 +124,7 @@ async function sendMessage() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
             },
             body: JSON.stringify({
                 message: message,
@@ -91,6 +143,11 @@ async function sendMessage() {
             
             // Сохраняем в локальное хранилище
             saveChatToLocal(message, data.response);
+
+            if (data.meta && data.meta.used_fallback) {
+                console.warn('AI fallback used:', data.meta.fallback_reason || 'unknown');
+                addMessage('⚠️ Включен резервный режим ИИ (см. консоль).', false);
+            }
         } else {
             addMessage('Извините, произошла ошибка. Попробуйте еще раз.', false);
         }
@@ -170,5 +227,6 @@ if (!hasVisited) {
 
 console.log('ИИ-помощник Caromoto Lithuania инициализирован');
 console.log('Для очистки истории вызовите: clearChatHistory()');
+}
 
 
