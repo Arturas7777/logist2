@@ -118,8 +118,6 @@ def _build_tracking_context(message: str, user=None, client=None) -> str:
         car_qs = Car.objects.select_related("container", "warehouse").filter(vin__iexact=vin)
         if client:
             car_qs = car_qs.filter(client=client)
-        elif not is_staff:
-            car_qs = car_qs.filter(client__isnull=False)
         car = car_qs.first()
 
         if not car:
@@ -181,8 +179,6 @@ def _build_tracking_context(message: str, user=None, client=None) -> str:
         container_qs = Container.objects.select_related("warehouse").filter(number__iexact=number)
         if client:
             container_qs = container_qs.filter(client=client)
-        elif not is_staff:
-            container_qs = container_qs.filter(client__isnull=False)
         container = container_qs.first()
 
         if not container:
