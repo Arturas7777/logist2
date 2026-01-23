@@ -529,6 +529,7 @@ def get_ai_response_openai(message, user=None, client=None):
 """
 
 
+@csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def ai_chat(request):
