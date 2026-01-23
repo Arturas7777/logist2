@@ -288,6 +288,12 @@ class Container(models.Model):
     planned_unload_date = models.DateField(null=True, blank=True, verbose_name="Будем разгружать",
                                            help_text="Укажите когда планируете разгружать контейнер (клиенты получат уведомление)")
     unload_date = models.DateField(null=True, blank=True, verbose_name="Дата разгрузки")
+    unloaded_status_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Статус 'Разгружен' с",
+        help_text="Когда контейнер получил статус 'Разгружен' (для задержки синхронизации фото)"
+    )
     free_days = models.PositiveIntegerField(default=0, verbose_name="Бесплатные дни")
     days = models.PositiveIntegerField(default=0, verbose_name="Платные дни")
     rate = models.DecimalField(max_digits=10, decimal_places=2, default=5, verbose_name="Ставка",

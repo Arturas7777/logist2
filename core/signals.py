@@ -6,6 +6,7 @@ from django.db.models import Sum
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from django.db import transaction, OperationalError
+from django.utils import timezone
 from decimal import Decimal
 import logging
 
@@ -24,8 +25,21 @@ def save_old_container_values(sender, instance, **kwargs):
             if old:
                 _old_container_values[instance.pk] = old
                 print(f"[PRE_SAVE] Saved old values: {old}", flush=True)
+
+                # Фиксируем момент получения статуса UNLOADED
+                old_status = old.get('status')
+                if (
+                    instance.status == 'UNLOADED'
+                    and old_status != 'UNLOADED'
+                    and not instance.unloaded_status_at
+                ):
+                    instance.unloaded_status_at = timezone.now()
         except Exception as e:
             print(f"[PRE_SAVE] Error: {e}", flush=True)
+    else:
+        # Новый контейнер: если сразу UNLOADED — сохраняем момент статуса
+        if instance.status == 'UNLOADED' and not instance.unloaded_status_at:
+            instance.unloaded_status_at = timezone.now()
 
 @receiver(post_save, sender=Container)
 def update_related_on_container_save(sender, instance, created, **kwargs):
@@ -831,74 +845,14 @@ def send_container_notifications_on_save(sender, instance, created, **kwargs):
 @receiver(post_save, sender=Container)
 def auto_sync_photos_on_container_change(sender, instance, created, **kwargs):
     """
-    Автоматически запускает синхронизацию фотографий с Google Drive когда:
-    - Контейнер получает статус "Разгружен" (UNLOADED)
-    - Устанавливается дата разгрузки
-    
-    Синхронизация запускается в фоновом потоке чтобы не блокировать сохранение.
+    Автоматическая синхронизация фотографий перенесена в регулярный cron.
+    Логика: через 12 часов после статуса "Разгружен" и затем каждый час.
     """
     if not instance.pk:
         return
     
-    # Получаем старые значения из _old_container_values (если есть)
-    old_values = _old_container_values.get(instance.pk, {})
-    old_status = old_values.get('status')
-    old_unload_date = old_values.get('unload_date')
-    
-    # Проверяем нужно ли синхронизировать фото
-    should_sync = False
-    
-    # Если статус изменился на "Разгружен"
-    if instance.status == 'UNLOADED' and old_status != 'UNLOADED':
-        should_sync = True
-        logger.info(f"📸 Контейнер {instance.number} разгружен - запускаем синхронизацию фото")
-    
-    # Если установлена дата разгрузки впервые
-    if instance.unload_date and not old_unload_date:
-        should_sync = True
-        logger.info(f"📸 Контейнер {instance.number} - установлена дата разгрузки, запускаем синхронизацию фото")
-    
-    if should_sync:
-        def sync_photos_background():
-            """Фоновая задача синхронизации фото"""
-            try:
-                import threading
-                from django.db import connection
-                
-                # Закрываем соединение перед созданием потока
-                connection.close()
-                
-                def do_sync():
-                    try:
-                        from core.google_drive_sync import GoogleDriveSync
-                        from core.models import Container as ContainerModel
-                        from django.db import connection as thread_connection
-                        
-                        # Получаем контейнер заново в новом потоке
-                        container = ContainerModel.objects.get(pk=instance.pk)
-                        container_number = container.number
-                        
-                        if container.google_drive_folder_url:
-                            # Используем указанную ссылку
-                            added = GoogleDriveSync.download_folder_photos(
-                                container.google_drive_folder_url,
-                                container
-                            )
-                            logger.info(f"📸 Контейнер {container_number}: добавлено {added} фото (по ссылке)")
-                        else:
-                            # Автопоиск папки по номеру контейнера
-                            added = GoogleDriveSync.sync_container_by_number(container_number)
-                            logger.info(f"📸 Контейнер {container_number}: добавлено {added} фото (автопоиск)")
-                        
-                        thread_connection.close()
-                    except Exception as e:
-                        logger.error(f"Ошибка фоновой синхронизации фото для {instance.number}: {e}")
-                
-                thread = threading.Thread(target=do_sync, daemon=True)
-                thread.start()
-                
-            except Exception as e:
-                logger.error(f"Ошибка запуска синхронизации фото для {instance.number}: {e}")
-        
-        # Запускаем после коммита транзакции
-        transaction.on_commit(sync_photos_background)
+    if instance.status == 'UNLOADED':
+        logger.info(
+            f"📸 Контейнер {instance.number}: статус UNLOADED. "
+            "Синхронизация будет выполнена по крону (через 12 часов и далее каждый час)."
+        )
