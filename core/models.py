@@ -690,10 +690,13 @@ class Car(models.Model):
         return Decimal('0.00')
     
     def _update_storage_service_price(self):
-        """Обновляет цену и наценку услуги 'Хранение' в CarService.
+        """Обновляет цену услуги 'Хранение' в CarService.
         
         Цена = платные_дни × ставка_за_день (из WarehouseService)
-        Наценка = платные_дни × наценка_за_день (из WarehouseService.default_markup)
+        
+        ВАЖНО: markup_amount НЕ обновляется автоматически!
+        Наценка устанавливается только при создании услуги (из default_markup)
+        или вручную пользователем в админке.
         """
         if not self.pk or not self.warehouse:
             return
@@ -710,16 +713,15 @@ class Car(models.Model):
                 days = Decimal(str(self.days))
                 # Стоимость = платные_дни × цена_за_день
                 storage_price = days * Decimal(str(storage_service.default_price or 0))
-                # Наценка = платные_дни × наценка_за_день
-                storage_markup = days * Decimal(str(storage_service.default_markup or 0))
                 
-                # Обновляем цену и наценку в CarService напрямую в базе
+                # Обновляем ТОЛЬКО цену в CarService (markup_amount не трогаем!)
+                # Наценка устанавливается при создании услуги или вручную в админке
                 from core.models import CarService
                 CarService.objects.filter(
                     car=self,
                     service_type='WAREHOUSE',
                     service_id=storage_service.id
-                ).update(custom_price=storage_price, markup_amount=storage_markup)
+                ).update(custom_price=storage_price)
                 
                 # Сбрасываем prefetch кэш чтобы получить актуальные данные
                 if hasattr(self, '_prefetched_objects_cache'):
