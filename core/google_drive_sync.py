@@ -529,6 +529,80 @@ class GoogleDriveSync:
             stats['errors'].append(str(e))
         
         return stats
+
+    @staticmethod
+    def sync_unloaded_containers_after_delay(hours=12):
+        """
+        Синхронизирует фотографии для разгруженных контейнеров
+        только спустя заданную задержку после статуса UNLOADED.
+
+        Логика: если контейнер в статусе UNLOADED и
+        unloaded_status_at <= now - hours, и фото еще нет — проверяем Google Drive.
+        """
+        from .models import Container
+        from django.utils import timezone
+        from datetime import timedelta
+        from django.db.models import Count
+
+        stats = {
+            'containers_checked': 0,
+            'containers_with_new_photos': 0,
+            'photos_added': 0,
+            'errors': []
+        }
+
+        try:
+            threshold = timezone.now() - timedelta(hours=hours)
+
+            containers_no_photos = (
+                Container.objects.filter(
+                    status='UNLOADED',
+                    unloaded_status_at__isnull=False,
+                    unloaded_status_at__lte=threshold
+                )
+                .annotate(photos_count=Count('photos'))
+                .filter(photos_count=0)
+                .order_by('unloaded_status_at')
+            )
+
+            count = containers_no_photos.count()
+            if count == 0:
+                logger.info("✅ Нет разгруженных контейнеров без фото для проверки")
+                return stats
+
+            logger.info(f"🔍 Найдено {count} разгруженных контейнеров без фото (задержка {hours}ч)")
+
+            for container in containers_no_photos:
+                try:
+                    if container.google_drive_folder_url:
+                        added = GoogleDriveSync.download_folder_photos(
+                            container.google_drive_folder_url,
+                            container
+                        )
+                    else:
+                        added = GoogleDriveSync.sync_container_by_number(container.number)
+
+                    stats['containers_checked'] += 1
+                    stats['photos_added'] += added
+
+                    if added > 0:
+                        stats['containers_with_new_photos'] += 1
+                        logger.info(f"   🎉 {container.number}: найдено {added} фото!")
+                    else:
+                        logger.debug(f"   ⏳ {container.number}: фото пока нет на Google Drive")
+
+                except Exception as e:
+                    stats['errors'].append(f"{container.number}: {e}")
+
+            logger.info(f"✅ Проверено: {stats['containers_checked']}, "
+                       f"с новыми фото: {stats['containers_with_new_photos']}, "
+                       f"всего фото: {stats['photos_added']}")
+
+        except Exception as e:
+            logger.error(f"Ошибка sync_unloaded_containers_after_delay: {e}", exc_info=True)
+            stats['errors'].append(str(e))
+
+        return stats
     
     @staticmethod
     def sync_recent_containers(days=30, prioritize_no_photos=True):

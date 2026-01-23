@@ -36,6 +36,17 @@ class Command(BaseCommand):
     
     def add_arguments(self, parser):
         parser.add_argument(
+            '--unloaded-delay',
+            action='store_true',
+            help='Проверять разгруженные контейнеры без фото после задержки (см. --delay-hours)'
+        )
+        parser.add_argument(
+            '--delay-hours',
+            type=int,
+            default=12,
+            help='Задержка в часах после статуса UNLOADED (по умолчанию 12)'
+        )
+        parser.add_argument(
             '--no-photos',
             action='store_true',
             help='[BEST] Проверить только контейнеры БЕЗ фотографий (быстрый режим)'
@@ -92,6 +103,23 @@ class Command(BaseCommand):
             else:
                 self.stdout.write(self.style.WARNING(f'[WARN] No new photos found'))
         
+        elif options['unloaded_delay']:
+            delay_hours = options['delay_hours']
+            self.stdout.write(f'[DELAY] UNLOADED containers without photos (delay {delay_hours} hours)')
+
+            stats = GoogleDriveSync.sync_unloaded_containers_after_delay(hours=delay_hours)
+
+            self.stdout.write('')
+            self.stdout.write(self.style.SUCCESS('=' * 60))
+            self.stdout.write(self.style.SUCCESS('[RESULTS]:'))
+            self.stdout.write(f'   Containers checked: {stats["containers_checked"]}')
+            self.stdout.write(f'   With new photos: {stats["containers_with_new_photos"]}')
+            self.stdout.write(f'   Photos added: {stats["photos_added"]}')
+            if stats['errors']:
+                self.stdout.write(self.style.ERROR(f'   Errors: {len(stats["errors"])}'))
+                for error in stats['errors'][:5]:
+                    self.stdout.write(self.style.ERROR(f'      - {error}'))
+
         elif options['no_photos']:
             # БЫСТРЫЙ РЕЖИМ: только контейнеры без фото
             days = options['days']
@@ -160,6 +188,7 @@ class Command(BaseCommand):
         else:
             raise CommandError(
                 'Specify sync mode:\n'
+                '  --unloaded-delay [NEW] containers UNLOADED after delay\n'
                 '  --no-photos  [BEST] only containers without photos (fast)\n'
                 '  --recent     - all recent containers\n'
                 '  --all        - full sync\n'

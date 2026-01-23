@@ -4,14 +4,14 @@
 # 
 # Для автоматического запуска добавьте в crontab:
 #   crontab -e
-#   # Каждый час
-#   0 * * * * /path/to/logist2/sync_photos_cron.sh >> /var/log/logist2_photo_sync.log 2>&1
+#   # Каждый час (проверка разгруженных контейнеров через 12 часов)
+#   0 * * * * /var/www/www-root/data/www/logist2/sync_photos_cron.sh >> /var/log/logist2_photo_sync.log 2>&1
 #
 #   # Или каждые 30 минут
 #   */30 * * * * /path/to/logist2/sync_photos_cron.sh >> /var/log/logist2_photo_sync.log 2>&1
 
-# Путь к проекту (измените на ваш путь)
-PROJECT_DIR="/home/caromoto-lt/logist2"
+# Путь к проекту
+PROJECT_DIR="/var/www/www-root/data/www/logist2"
 
 # Активация виртуального окружения
 source "$PROJECT_DIR/venv/bin/activate"
@@ -26,9 +26,9 @@ echo "========================================"
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Запуск синхронизации фотографий"
 echo "========================================"
 
-# Синхронизация только недавних контейнеров (за последние 30 дней)
-# Это более эффективный вариант для регулярного запуска
-python manage.py sync_photos_gdrive --recent --days 30
+# Проверка разгруженных контейнеров без фото после задержки 12 часов
+# Запускается каждый час
+python manage.py sync_photos_gdrive --unloaded-delay --delay-hours 12
 
 echo "========================================"
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Синхронизация завершена"
