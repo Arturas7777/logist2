@@ -36,6 +36,11 @@ from .serializers_website import (
 )
 
 
+class CsrfExemptSessionAuthentication(SessionAuthentication):
+    def enforce_csrf(self, request):
+        return
+
+
 # ============================================================================
 # Главная страница и информационные страницы
 # ============================================================================
@@ -534,7 +539,7 @@ def get_ai_response_openai(message, user=None, client=None):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([SessionAuthentication])
+@authentication_classes([CsrfExemptSessionAuthentication])
 @permission_classes([AllowAny])
 def ai_chat(request):
     """Эндпоинт для чата с ИИ-помощником"""
