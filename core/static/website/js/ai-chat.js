@@ -22,6 +22,8 @@ const chatClose = document.getElementById('ai-chat-close');
 const chatMessages = document.getElementById('ai-chat-messages');
 const chatInput = document.getElementById('ai-chat-input');
 const chatSend = document.getElementById('ai-chat-send');
+const isAdminPage = window.location.pathname.startsWith('/admin/');
+const adminPageContext = window.__adminPageContext || null;
 
 if (!chatToggle || !chatWindow || !chatClose || !chatMessages || !chatInput || !chatSend) {
     console.warn('AI chat widget elements not found on this page');
@@ -36,11 +38,76 @@ function getCookie(name) {
 
 const csrfToken = getCookie('csrftoken');
 
+function getAdminUiContext() {
+    if (!isAdminPage && !adminPageContext) return null;
+    const breadcrumbs = document.querySelector('.breadcrumbs');
+    const baseContext = adminPageContext || {
+        is_admin: true,
+        path: window.location.pathname,
+        title: document.title,
+        model_name: '',
+        object_id: ''
+    };
+    return {
+        ...baseContext,
+        location: window.location.href,
+        breadcrumbs: breadcrumbs ? breadcrumbs.textContent.trim() : ''
+    };
+}
+
+function renderAdminContext() {
+    if (!isAdminPage && !adminPageContext) return;
+    const headerTitle = document.querySelector('#ai-chat-window .ai-chat-header h6');
+    if (!headerTitle) return;
+    let contextEl = headerTitle.querySelector('.ai-chat-context');
+    if (!contextEl) {
+        contextEl = document.createElement('span');
+        contextEl.className = 'ai-chat-context';
+        headerTitle.appendChild(contextEl);
+    }
+    const model = (adminPageContext && adminPageContext.model_name) ? adminPageContext.model_name : 'page';
+    const obj = (adminPageContext && adminPageContext.object_id) ? `#${adminPageContext.object_id}` : '';
+    contextEl.textContent = `Контекст: ${model}${obj}`;
+}
+
+function renderQuickActions() {
+    if (!isAdminPage && !adminPageContext) return;
+    if (document.querySelector('.ai-chat-quick-actions')) return;
+    const inputBlock = document.querySelector('#ai-chat-window .ai-chat-input');
+    if (!inputBlock) return;
+
+    const actions = [
+        'Диагностика текущей страницы',
+        'Пересчитать THS',
+        'Почему не обновился инвойс?',
+        'Проблема с ценой хранения',
+        'Где смотреть фото контейнера?'
+    ];
+
+    const container = document.createElement('div');
+    container.className = 'ai-chat-quick-actions';
+    actions.forEach(text => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'ai-chat-quick-action';
+        btn.textContent = text;
+        btn.addEventListener('click', () => {
+            chatInput.value = text;
+            sendMessage();
+        });
+        container.appendChild(btn);
+    });
+
+    inputBlock.parentNode.insertBefore(container, inputBlock);
+}
+
 // Открытие/закрытие чата
 chatToggle.addEventListener('click', () => {
     chatWindow.style.display = chatWindow.style.display === 'none' ? 'flex' : 'none';
     if (chatWindow.style.display === 'flex') {
         chatInput.focus();
+        renderAdminContext();
+        renderQuickActions();
         loadChatHistory();
     }
 });
@@ -125,14 +192,27 @@ async function sendMessage() {
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': csrfToken,
+                'X-Admin-Chat': isAdminPage ? '1' : '0'
             },
             body: JSON.stringify({
                 message: message,
-                session_id: sessionId
+                session_id: sessionId,
+                page_context: getAdminUiContext()
             })
         });
         
-        const data = await response.json();
+        let data = null;
+        const rawText = await response.text();
+        try {
+            data = rawText ? JSON.parse(rawText) : {};
+        } catch (parseError) {
+            loadingDiv.remove();
+            addMessage(`Ошибка ответа сервера (${response.status}). ${rawText.slice(0, 200)}`, false);
+            console.error('Chat parse error:', parseError);
+            return;
+        }
+        
+        console.debug('AI chat response', { status: response.status, data });
         
         // Удаляем индикатор загрузки
         loadingDiv.remove();
@@ -153,7 +233,7 @@ async function sendMessage() {
         }
     } catch (error) {
         loadingDiv.remove();
-        addMessage('Ошибка соединения. Проверьте интернет-подключение.', false);
+        addMessage(`Ошибка соединения: ${error.message || 'неизвестно'}`, false);
         console.error('Chat error:', error);
     }
 }
