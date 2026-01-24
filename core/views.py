@@ -7,7 +7,7 @@ from django.contrib.auth.decorators import login_required
 from django.db.models import Q, Sum
 from datetime import timedelta, datetime
 from typing import Optional
-from .models import Car, Container, Client, Warehouse, Line, Company, Carrier, CarService, WarehouseService, LineService, CarrierService
+from .models import Car, Container, Client, Warehouse, Line, Company, Carrier, CarService, WarehouseService, LineService, CarrierService, CompanyService
 from .models_billing import NewInvoice as Invoice, Transaction as Payment
 from .services.comparison_service import ComparisonService
 from .pagination import paginate_queryset, paginated_json_response, PaginationHelper
@@ -789,6 +789,23 @@ def get_warehouses(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+@staff_member_required
+@csrf_exempt
+def get_companies(request):
+    """Получает список всех компаний"""
+    try:
+        companies = Company.objects.all().order_by('name')
+        companies_data = [{
+            'id': company.id,
+            'name': company.name
+        } for company in companies]
+        
+        return JsonResponse({'companies': companies_data})
+    except Exception as e:
+        logger.error(f"Error loading companies: {e}")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
 def get_available_services(request, car_id):
     """Получает доступные услуги для добавления к автомобилю"""
     logger.info(f"get_available_services called: car_id={car_id}, method={request.method}")
@@ -882,6 +899,30 @@ def get_available_services(request, car_id):
                 'name': service.name,
                 'price': float(service.default_price)
             } for service in available_services]
+        
+        elif service_type == 'company':
+            company_id = request.GET.get('company_id')
+            if not company_id:
+                logger.info("No company selected")
+                return JsonResponse({'services': []})
+            
+            company = Company.objects.get(id=company_id)
+            logger.info(f"Processing company services for company: {company}")
+            
+            existing_service_ids = CarService.objects.filter(
+                car=car,
+                service_type='COMPANY'
+            ).values_list('service_id', flat=True)
+            
+            available_services = CompanyService.objects.filter(
+                company=company
+            ).exclude(id__in=existing_service_ids)
+            
+            services = [{
+                'id': service.id,
+                'name': service.name,
+                'price': float(service.default_price)
+            } for service in available_services]
         else:
             logger.warning(f"No {service_type} associated with car {car_id}")
             services = []
@@ -916,13 +957,45 @@ def add_services(request, car_id):
         added_count = 0
         
         for service_id in service_ids:
-            # Создаем CarService для каждой выбранной услуги
-            car_service = CarService.objects.create(
-                car=car,
-                service_type=service_type.upper(),
-                service_id=service_id
-            )
-            added_count += 1
+            service_type_upper = service_type.upper()
+            custom_price = None
+            markup_amount = Decimal('0')
+            
+            try:
+                if service_type_upper == 'WAREHOUSE':
+                    service = WarehouseService.objects.get(id=service_id)
+                    if service.name == 'Хранение':
+                        days = Decimal(str(car.days or 0))
+                        custom_price = days * Decimal(str(service.default_price or 0))
+                        markup_amount = days * Decimal(str(getattr(service, 'default_markup', 0) or 0))
+                    else:
+                        custom_price = service.default_price
+                        markup_amount = getattr(service, 'default_markup', 0) or 0
+                elif service_type_upper == 'LINE':
+                    service = LineService.objects.get(id=service_id)
+                    custom_price = service.default_price
+                    markup_amount = getattr(service, 'default_markup', 0) or 0
+                elif service_type_upper == 'CARRIER':
+                    service = CarrierService.objects.get(id=service_id)
+                    custom_price = service.default_price
+                    markup_amount = getattr(service, 'default_markup', 0) or 0
+                elif service_type_upper == 'COMPANY':
+                    service = CompanyService.objects.get(id=service_id)
+                    custom_price = service.default_price
+                    markup_amount = getattr(service, 'default_markup', 0) or 0
+                else:
+                    continue
+                
+                CarService.objects.create(
+                    car=car,
+                    service_type=service_type_upper,
+                    service_id=service_id,
+                    custom_price=custom_price,
+                    markup_amount=markup_amount
+                )
+                added_count += 1
+            except Exception as e:
+                logger.error(f"Error adding service {service_id} ({service_type_upper}) to car {car_id}: {e}")
         
         return JsonResponse({
             'success': True,

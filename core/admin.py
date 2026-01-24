@@ -15,7 +15,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django import forms
 from decimal import Decimal
-from .models import Client, Warehouse, Car, Container, Line, Company, Carrier, LineService, CarrierService, WarehouseService, CarService, DeletedCarService
+from .models import Client, Warehouse, Car, Container, Line, Company, Carrier, LineService, CarrierService, WarehouseService, CompanyService, CarService, DeletedCarService
 from .forms import LineForm, CarrierForm, WarehouseForm
 from .admin_filters import MultiStatusFilter, MultiWarehouseFilter, ClientAutocompleteFilter
 
@@ -38,7 +38,7 @@ class WarehouseServiceInline(admin.TabularInline):
 class LineServiceInline(admin.TabularInline):
     model = LineService
     extra = 1
-    fields = ('name', 'description', 'default_price', 'default_markup', 'is_active')
+    fields = ('name', 'description', 'default_price', 'default_markup', 'is_active', 'add_by_default')
     verbose_name = "Услуга линии"
     verbose_name_plural = "Услуги линии"
 
@@ -73,10 +73,23 @@ class LineTHSCoefficientInline(admin.TabularInline):
 class CarrierServiceInline(admin.TabularInline):
     model = CarrierService
     extra = 1
-    fields = ('name', 'description', 'default_price', 'default_markup', 'is_active')
+    fields = ('name', 'description', 'default_price', 'default_markup', 'is_active', 'add_by_default')
     verbose_name = "Услуга перевозчика"
     verbose_name_plural = "Услуги перевозчика"
 
+    def get_formset(self, request, obj=None, **kwargs):
+        formset = super().get_formset(request, obj, **kwargs)
+        formset.form.base_fields['description'].widget.attrs.update({'rows': 1})
+        return formset
+
+
+class CompanyServiceInline(admin.TabularInline):
+    model = CompanyService
+    extra = 1
+    fields = ('name', 'description', 'default_price', 'default_markup', 'is_active', 'add_by_default')
+    verbose_name = "Услуга компании"
+    verbose_name_plural = "Услуги компании"
+    
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)
         formset.form.base_fields['description'].widget.attrs.update({'rows': 1})
@@ -104,6 +117,12 @@ class CarServiceInlineForm(forms.ModelForm):
         label="Услуга перевозчика",
         help_text="Выберите услугу перевозчика"
     )
+    company_service = forms.ModelChoiceField(
+        queryset=CompanyService.objects.select_related('company').filter(is_active=True),
+        required=False,
+        label="Услуга компании",
+        help_text="Выберите услугу компании"
+    )
     
     class Meta:
         model = CarService
@@ -128,6 +147,11 @@ class CarServiceInlineForm(forms.ModelForm):
                     self.fields['carrier_service'].initial = self.instance.service_id
                 except:
                     pass
+            elif self.instance.service_type == 'COMPANY':
+                try:
+                    self.fields['company_service'].initial = self.instance.service_id
+                except:
+                    pass
     
     def save(self, commit=True):
         instance = super().save(commit=False)
@@ -139,6 +163,8 @@ class CarServiceInlineForm(forms.ModelForm):
             instance.service_id = self.cleaned_data['line_service'].id
         elif instance.service_type == 'CARRIER' and self.cleaned_data.get('carrier_service'):
             instance.service_id = self.cleaned_data['carrier_service'].id
+        elif instance.service_type == 'COMPANY' and self.cleaned_data.get('company_service'):
+            instance.service_id = self.cleaned_data['company_service'].id
         
         if commit:
             instance.save()
@@ -999,7 +1025,7 @@ class CarAdmin(admin.ModelAdmin):
     list_prefetch_related = ('car_services',)
     readonly_fields = (
         'default_warehouse_prices_display', 'total_price', 'storage_cost', 'days', 'warehouse_payment_display',
-        'free_days_display', 'rate_display', 'services_summary_display', 'warehouse_services_display', 'line_services_display', 'carrier_services_display'
+        'free_days_display', 'rate_display', 'services_summary_display', 'warehouse_services_display', 'line_services_display', 'carrier_services_display', 'company_services_display'
     )
     # inlines = []  # Услуги управляются через разделы ниже
     fieldsets = (
@@ -1029,6 +1055,12 @@ class CarAdmin(admin.ModelAdmin):
             'fields': (
                 'carrier',
                 'carrier_services_display',
+            )
+        }),
+        ('Услуги', {
+            'classes': ('collapse',),
+            'fields': (
+                'company_services_display',
             )
         }),
         ('Финансы', {
@@ -1083,10 +1115,11 @@ class CarAdmin(admin.ModelAdmin):
         # Обновляем дни и стоимость хранения перед отображением
         obj.update_days_and_storage()
         
-        # Разделяем услуги: линии (все + THS из склада), склад (без THS), перевозчик
+        # Разделяем услуги: линии (все + THS из склада), склад (без THS), перевозчик, компании
         line_total = Decimal('0.00')  # Все услуги линий + THS (даже если через склад)
         warehouse_total = Decimal('0.00')  # Услуги склада (без THS)
         carrier_total = obj.get_services_total_by_provider('CARRIER')
+        company_total = obj.get_services_total_by_provider('COMPANY')
         
         # Получаем все услуги и разделяем по категориям
         # THS всегда считается услугой линии, даже если оплачивается через склад
@@ -1112,12 +1145,12 @@ class CarAdmin(admin.ModelAdmin):
         total_markup = distributed_markup
         
         # Базовые суммы (без наценки)
-        base_total = line_total + warehouse_total + carrier_total
+        base_total = line_total + warehouse_total + carrier_total + company_total
         
         html = ['<div style="margin-top:15px; background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #dee2e6;">']
         html.append('<h3 style="margin-top:0; color:#495057;">Сводка по услугам</h3>')
         
-        html.append('<div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:15px; margin-bottom:20px;">')
+        html.append('<div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:15px; margin-bottom:20px;">')
         
         # Услуги линий (THS, Отправка в Грузию и т.д.) - с детализацией
         html.append('<div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">')
@@ -1165,6 +1198,25 @@ class CarAdmin(admin.ModelAdmin):
         html.append('<div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">')
         html.append('<strong>Перевозчик:</strong><br>')
         html.append(f'<span style="font-size:18px; color:#ffc107;">{carrier_total:.2f}</span>')
+        html.append('</div>')
+        
+        # Компании
+        html.append('<div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">')
+        html.append('<strong>Услуги компаний:</strong><br>')
+        
+        company_services_list = []
+        for service in obj.car_services.filter(service_type='COMPANY'):
+            try:
+                company_service = CompanyService.objects.select_related('company').get(id=service.service_id)
+                price = Decimal(str(service.final_price))
+                company_services_list.append((company_service.company.name, company_service.name, price))
+            except Exception:
+                continue
+        
+        for company_name, name, price in company_services_list:
+            html.append(f'<span style="font-size:13px; color:#6c757d;">{company_name}: {name}: {price:.2f}</span><br>')
+        
+        html.append(f'<span style="font-size:18px; color:#6f42c1; font-weight:bold;">Итого: {company_total:.2f}</span>')
         html.append('</div>')
         
         # Наценка - показываем распределённую сумму
@@ -1427,6 +1479,24 @@ class CarAdmin(admin.ModelAdmin):
                     print(f"Deleted carrier service {service_id}: {deleted_count}")
                 except Exception as e:
                     print(f"Error deleting carrier service {service_id}: {e}")
+            elif key.startswith('remove_company_service_') and value == '1':
+                service_id = key.replace('remove_company_service_', '')
+                removed_services.add(f'company_{service_id}')
+                try:
+                    deleted_count = CarService.objects.filter(
+                        car=obj,
+                        service_type='COMPANY',
+                        service_id=service_id
+                    ).delete()
+                    # Добавляем в черный список
+                    DeletedCarService.objects.get_or_create(
+                        car=obj,
+                        service_type='COMPANY',
+                        service_id=service_id
+                    )
+                    print(f"Deleted company service {service_id}: {deleted_count}")
+                except Exception as e:
+                    print(f"Error deleting company service {service_id}: {e}")
         
         print(f"Removed services: {removed_services}")
         
@@ -1636,6 +1706,33 @@ class CarAdmin(admin.ModelAdmin):
                         custom_price=float(value),
                         markup_amount=float(default_markup)
                     )
+
+        # Обрабатываем услуги компаний
+        existing_company_car_services = CarService.objects.filter(
+            car=obj,
+            service_type='COMPANY'
+        )
+        
+        for car_service in existing_company_car_services:
+            if f'company_{car_service.service_id}' in removed_services:
+                continue
+            
+            field_name = f'company_service_{car_service.service_id}'
+            value = request.POST.get(field_name)
+            
+            if value:
+                try:
+                    car_service.custom_price = float(value)
+                except (ValueError, TypeError):
+                    pass
+            
+            markup_field = f'markup_company_service_{car_service.service_id}'
+            markup_value = request.POST.get(markup_field, '0')
+            try:
+                car_service.markup_amount = float(markup_value) if markup_value else 0
+            except (ValueError, TypeError):
+                car_service.markup_amount = 0
+            car_service.save()
         
         # Пересчитываем стоимость хранения и дни при смене склада
         if change and form and 'warehouse' in getattr(form, 'changed_data', []):
@@ -1832,6 +1929,55 @@ class CarAdmin(admin.ModelAdmin):
         except Exception as e:
             return f"Ошибка загрузки услуг: {e}"
     carrier_services_display.short_description = "Услуги перевозчика"
+
+    def company_services_display(self, obj):
+        """Отображает редактируемые поля для услуг компаний"""
+        try:
+            car_services = CarService.objects.filter(
+                car=obj,
+                service_type='COMPANY'
+            )
+            
+            html = '<div style="margin: 10px 0; display: flex; flex-wrap: wrap; gap: 10px;">'
+            
+            if car_services:
+                for car_service in car_services:
+                    try:
+                        service = CompanyService.objects.select_related('company').get(id=car_service.service_id)
+                        current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
+                        markup_value = car_service.markup_amount or 0
+                        
+                        html += f'''
+                        <div style="border: 1px solid #ddd; padding: 10px; background: #f3e8ff; position: relative; min-width: 240px;">
+                            <button type="button" onclick="removeService({service.id}, 'company')" style="position: absolute; top: 5px; right: 5px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 12px;">×</button>
+                            <div style="font-size: 11px; color: #666; margin-bottom: 3px;">🏢 {service.company.name}</div>
+                            <strong>{service.name}</strong><br>
+                            <div style="display: flex; gap: 5px; align-items: center; margin-top: 5px;">
+                                <input type="number" name="company_service_{service.id}" value="{current_value}" step="0.01" style="width: 80px;" title="Цена услуги">
+                                <span style="color: #28a745; font-weight: bold;">+</span>
+                                <input type="number" name="markup_company_service_{service.id}" value="{markup_value}" step="0.01" style="width: 60px; background: #fffde7; border-color: #ffc107;" title="Скрытая наценка" placeholder="0">
+                            </div>
+                            <input type="hidden" name="remove_company_service_{service.id}" id="remove_company_service_{service.id}" value="">
+                        </div>
+                        '''
+                    except Exception:
+                        continue
+            
+            html += '</div>'
+            
+            html += f'''
+            <div style="margin-top: 10px;">
+                <button type="button" class="add-service-btn" onclick="openModal('companyServicesModal', 'company')" title="Добавить услуги компании">
+                    +
+                </button>
+                <span style="margin-left: 5px; color: #666;">Добавить услуги компании</span>
+            </div>
+            '''
+            
+            return mark_safe(html)
+        except Exception as e:
+            return f"Ошибка загрузки услуг: {e}"
+    company_services_display.short_description = "Услуги компаний"
 
     def get_changelist(self, request, **kwargs):
         """Добавляет фильтрацию по умолчанию для статусов 'В порту' и 'Разгружен'"""
@@ -2500,6 +2646,7 @@ class CompanyAdmin(admin.ModelAdmin):
     search_fields = ('name',)
     readonly_fields = ('created_at', 'updated_at', 'balance')
     actions = ['reset_company_balance']
+    inlines = [CompanyServiceInline]
     
     fieldsets = (
         ('Основная информация', {

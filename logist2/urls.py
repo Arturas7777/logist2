@@ -3,7 +3,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
-from core.views import car_list_api, get_invoice_total, get_container_data, register_payment, get_client_balance, company_dashboard, get_payment_objects, search_partners_api, get_warehouse_cars_api, get_invoice_cars_api, comparison_dashboard, compare_car_costs_api, compare_client_costs_api, compare_warehouse_costs_api, get_discrepancies_api, get_available_services, add_services, get_warehouses
+from core.views import car_list_api, get_invoice_total, get_container_data, register_payment, get_client_balance, company_dashboard, get_payment_objects, search_partners_api, get_warehouse_cars_api, get_invoice_cars_api, comparison_dashboard, compare_car_costs_api, compare_client_costs_api, compare_warehouse_costs_api, get_discrepancies_api, get_available_services, add_services, get_warehouses, get_companies
 from core.routing import websocket_urlpatterns
 from core.api import CarViewSet, InvoiceViewSet
 
@@ -34,6 +34,7 @@ urlpatterns = [
     path('api/car/<int:car_id>/get_available_services/', get_available_services, name='get_available_services'),
     path('api/car/<int:car_id>/add_services/', add_services, name='add_services'),
     path('api/warehouses/', get_warehouses, name='get_warehouses'),
+    path('api/companies/', get_companies, name='get_companies'),
     path('api/v1/', include(router.urls)),
     path('ws/', include(websocket_urlpatterns)),
 ]
