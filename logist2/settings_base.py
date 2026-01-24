@@ -163,6 +163,10 @@ AI_MODEL = os.getenv('AI_MODEL', 'gpt-4o-mini')
 AI_MAX_TOKENS = int(os.getenv('AI_MAX_TOKENS', '400'))
 AI_TEMPERATURE = float(os.getenv('AI_TEMPERATURE', '0.2'))
 AI_REQUEST_TIMEOUT = int(os.getenv('AI_REQUEST_TIMEOUT', '40'))
+AI_EMBEDDINGS_MODEL = os.getenv('AI_EMBEDDINGS_MODEL', 'text-embedding-3-small')
+AI_RAG_INDEX_PATH = os.getenv('AI_RAG_INDEX_PATH', os.path.join(BASE_DIR, 'core', 'ai_rag_index.json'))
+AI_RAG_TOP_K = int(os.getenv('AI_RAG_TOP_K', '4'))
+AI_RAG_MAX_AGE_HOURS = int(os.getenv('AI_RAG_MAX_AGE_HOURS', '24'))
 
 # Company info for email templates
 COMPANY_NAME = 'Caromoto Lithuania'

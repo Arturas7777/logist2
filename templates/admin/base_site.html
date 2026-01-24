@@ -74,6 +74,19 @@
         </div>
     </div>
 </div>
+<script>
+    window.__adminPageContext = {
+        is_admin: true,
+        path: "{{ request.path|escapejs }}",
+        title: "{{ title|default:''|escapejs }}",
+        app_label: "{% if opts %}{{ opts.app_label|escapejs }}{% endif %}",
+        model_name: "{% if opts %}{{ opts.model_name|escapejs }}{% endif %}",
+        object_id: "{% if object_id %}{{ object_id|escapejs }}{% endif %}",
+        add: {{ add|default:False|yesno:"true,false" }},
+        change: {{ change|default:False|yesno:"true,false" }},
+        is_popup: {{ is_popup|default:False|yesno:"true,false" }}
+    };
+</script>
 <script src="{% static 'website/js/ai-chat.js' %}"></script>
 {% endblock %}
 

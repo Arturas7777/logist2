@@ -251,7 +251,9 @@ def _call_ai_api(messages: List[dict]) -> str:
     }
 
     try:
-        response = requests.post(
+        session = requests.Session()
+        session.trust_env = False
+        response = session.post(
             url,
             headers={
                 "Authorization": f"Bearer {api_key}",
@@ -262,12 +264,12 @@ def _call_ai_api(messages: List[dict]) -> str:
         )
     except requests.RequestException as exc:
         logger.exception("AI API request failed")
-        raise AIServiceError("AI API request failed") from exc
+        raise AIServiceError(f"AI API request failed: {exc.__class__.__name__}: {exc}") from exc
 
     if not response.ok:
-        error_text = response.text[:1000] if response.text else ""
+        error_text = response.text[:500] if response.text else ""
         logger.error("AI API error: %s - %s", response.status_code, error_text)
-        raise AIServiceError(f"AI API returned error ({response.status_code})")
+        raise AIServiceError(f"AI API returned error ({response.status_code}): {error_text}")
 
     data = response.json()
     try:

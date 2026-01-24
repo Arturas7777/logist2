@@ -4,6 +4,7 @@ Views для клиентского сайта Caromoto Lithuania
 import os
 import time
 import zipfile
+import logging
 from io import BytesIO
 from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.decorators import login_required
@@ -17,6 +18,7 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import api_view, permission_classes, action, authentication_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.authentication import SessionAuthentication
 from django.conf import settings
 import re
 
@@ -26,6 +28,7 @@ from .models_website import (
     NewsPost, ContactMessage, TrackingRequest
 )
 from .services.ai_chat_service import generate_ai_response, AIServiceError
+from .services.admin_ai_agent import generate_admin_ai_response
 from .serializers_website import (
     ClientUserSerializer, CarPhotoSerializer, ContainerPhotoSerializer,
     ClientCarSerializer, ClientContainerSerializer, AIChatSerializer,
@@ -531,178 +534,284 @@ def get_ai_response_openai(message, user=None, client=None):
 
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([])
+@authentication_classes([SessionAuthentication])
 @permission_classes([AllowAny])
 def ai_chat(request):
     """Эндпоинт для чата с ИИ-помощником"""
+    logger = logging.getLogger(__name__)
     message = request.data.get('message', '').strip()
     session_id = request.data.get('session_id', '')
-    
+    page_context = request.data.get('page_context') or {}
+    if not isinstance(page_context, dict):
+        page_context = {}
+
     if not message:
         return Response(
             {'error': 'Сообщение не может быть пустым'},
             status=status.HTTP_400_BAD_REQUEST
         )
 
-    photo_keywords = [
-        'фото', 'фотографии', 'фотография', 'фотки', 'фотка', 'фоточку',
-        'снимки', 'картинки', 'изображения', 'галерея', 'gallery', 'photo', 'photos'
-    ]
-    vin_pattern = re.compile(r"\b[A-HJ-NPR-Z0-9]{17}\b", re.IGNORECASE)
-    message_lower = message.lower()
-    if any(keyword in message_lower for keyword in photo_keywords) or re.search(r"\bфот", message_lower):
-        vin_match = vin_pattern.search(message)
-        if vin_match:
-            vin = vin_match.group(0).upper()
-            car_qs = Car.objects.select_related('container').filter(vin__iexact=vin)
-            if request.user.is_authenticated and hasattr(request.user, 'clientuser'):
-                car_qs = car_qs.filter(client=request.user.clientuser.client)
-            car = car_qs.first()
+    user = request.user if request.user.is_authenticated else None
+    is_staff = bool(user and (user.is_staff or user.is_superuser))
+    referer = request.META.get("HTTP_REFERER", "")
+    admin_header = request.META.get("HTTP_X_ADMIN_CHAT", "")
+    logger.info(
+        "AI chat request: user=%s staff=%s admin_header=%s referer=%s page_context=%s",
+        getattr(user, "username", None),
+        is_staff,
+        admin_header,
+        referer,
+        page_context,
+    )
+    is_admin_context = bool(page_context.get("is_admin")) and is_staff
+    if not is_admin_context and is_staff:
+        if admin_header == "1" or "/admin/" in referer:
+            page_context.setdefault("is_admin", True)
+            is_admin_context = True
 
-            if car:
-                is_staff = request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)
-                car_photos = CarPhoto.objects.filter(car=car)
-                if not is_staff:
-                    car_photos = car_photos.filter(is_public=True)
-                car_count = car_photos.count()
-                last_car_photo = car_photos.order_by('-uploaded_at').first()
+    try:
+        if is_admin_context:
+            start_time = time.time()
+            response_text = None
+            fallback_reason = None
+            used_fallback = False
+            try:
+                result = generate_admin_ai_response(
+                    message=message,
+                    user=user,
+                    page_context=page_context,
+                    session_id=session_id,
+                    language_code=getattr(request, "LANGUAGE_CODE", "ru"),
+                )
+                response_text = result.get("response")
+                used_fallback = bool(result.get("used_fallback"))
+                fallback_reason = result.get("fallback_reason")
+            except Exception as exc:
+                fallback_reason = str(exc)
+                used_fallback = True
+                response_text = "Не удалось обработать запрос. Попробуйте переформулировать вопрос."
 
-                container_link_text = ""
-                if car.container:
-                    gallery_link = request.build_absolute_uri(
-                        f"/?track={car.container.number}&photos=1"
-                    )
-                    container_link_text = f" Ссылка на галерею фото контейнера: {gallery_link}"
+            processing_time = time.time() - start_time
+            chat = AIChat.objects.create(
+                session_id=session_id,
+                user=user,
+                client=None,
+                message=message,
+                response=response_text,
+                processing_time=processing_time,
+                context_snapshot=page_context,
+            )
+            serializer = AIChatSerializer(chat)
+            payload = serializer.data
+            if settings.DEBUG:
+                payload["meta"] = {
+                    "used_fallback": used_fallback,
+                    "fallback_reason": fallback_reason,
+                    "admin_context": True,
+                }
+            logger.info("AI chat admin response: used_fallback=%s reason=%s", used_fallback, fallback_reason)
+            return Response(payload)
 
-                if car_count:
-                    response_text = (
-                        f"Фото автомобиля по VIN {vin} доступны в личном кабинете. "
-                        f"Количество: {car_count}. "
-                        + (
-                            f"Последняя загрузка: {last_car_photo.uploaded_at.strftime('%Y-%m-%d %H:%M')}."
-                            if last_car_photo else ""
-                        )
-                        + container_link_text
-                    )
-                else:
-                    container_photos_text = ""
+        photo_keywords = [
+            'фото', 'фотографии', 'фотография', 'фотки', 'фотка', 'фоточку',
+            'снимки', 'картинки', 'изображения', 'галерея', 'gallery', 'photo', 'photos'
+        ]
+        vin_pattern = re.compile(r"\b[A-HJ-NPR-Z0-9]{17}\b", re.IGNORECASE)
+        container_pattern = re.compile(r"\b[A-Z]{4}\d{7}\b", re.IGNORECASE)
+        message_lower = message.lower()
+        if any(keyword in message_lower for keyword in photo_keywords) or re.search(r"\bфот", message_lower):
+            vin_match = vin_pattern.search(message)
+            if vin_match:
+                vin = vin_match.group(0).upper()
+                car_qs = Car.objects.select_related('container').filter(vin__iexact=vin)
+                if request.user.is_authenticated and hasattr(request.user, 'clientuser'):
+                    car_qs = car_qs.filter(client=request.user.clientuser.client)
+                car = car_qs.first()
+
+                if car:
+                    is_staff = request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)
+                    car_photos = CarPhoto.objects.filter(car=car)
+                    if not is_staff:
+                        car_photos = car_photos.filter(is_public=True)
+                    car_count = car_photos.count()
+                    last_car_photo = car_photos.order_by('-uploaded_at').first()
+
+                    container_link_text = ""
                     if car.container:
-                        container_photos = ContainerPhoto.objects.filter(container=car.container)
-                        if not is_staff:
-                            container_photos = container_photos.filter(is_public=True)
-                        container_count = container_photos.count()
-                        last_container_photo = container_photos.order_by('-uploaded_at').first()
-                        if container_count:
-                            container_photos_text = (
-                                f"Есть фото контейнера {car.container.number}: {container_count} шт."
-                                + (
-                                    f" Последняя загрузка: {last_container_photo.uploaded_at.strftime('%Y-%m-%d %H:%M')}."
-                                    if last_container_photo else ""
-                                )
-                            )
-                    if container_photos_text:
+                        gallery_link = request.build_absolute_uri(
+                            f"/?track={car.container.number}&photos=1"
+                        )
+                        container_link_text = f" Ссылка на галерею фото контейнера: {gallery_link}"
+
+                    if car_count:
                         response_text = (
-                            f"Фото автомобиля по VIN {vin} отсутствуют. {container_photos_text} "
-                            "Посмотреть можно по ссылке."
+                            f"Фото автомобиля по VIN {vin} доступны в личном кабинете. "
+                            f"Количество: {car_count}. "
+                            + (
+                                f"Последняя загрузка: {last_car_photo.uploaded_at.strftime('%Y-%m-%d %H:%M')}."
+                                if last_car_photo else ""
+                            )
                             + container_link_text
                         )
                     else:
+                        container_photos_text = ""
+                        if car.container:
+                            container_photos = ContainerPhoto.objects.filter(container=car.container)
+                            if not is_staff:
+                                container_photos = container_photos.filter(is_public=True)
+                            container_count = container_photos.count()
+                            last_container_photo = container_photos.order_by('-uploaded_at').first()
+                            if container_count:
+                                container_photos_text = (
+                                    f"Есть фото контейнера {car.container.number}: {container_count} шт."
+                                    + (
+                                        f" Последняя загрузка: {last_container_photo.uploaded_at.strftime('%Y-%m-%d %H:%M')}."
+                                        if last_container_photo else ""
+                                    )
+                                )
+                        if container_photos_text:
+                            response_text = (
+                                f"Фото автомобиля по VIN {vin} отсутствуют. {container_photos_text} "
+                                "Посмотреть можно по ссылке."
+                                + container_link_text
+                            )
+                        else:
+                            response_text = (
+                                f"Фото автомобиля по VIN {vin} пока не загружены. "
+                                "Если нужно — уточните у менеджера сроки загрузки."
+                            )
+
+                    chat = AIChat.objects.create(
+                        session_id=session_id,
+                        user=request.user if request.user.is_authenticated else None,
+                        client=getattr(request.user, 'clientuser', None).client if request.user.is_authenticated and hasattr(request.user, 'clientuser') else None,
+                        message=message,
+                        response=response_text,
+                        processing_time=0,
+                    )
+                    serializer = AIChatSerializer(chat)
+                    payload = serializer.data
+                    if settings.DEBUG:
+                        payload["meta"] = {"used_fallback": False, "fallback_reason": "photo_lookup"}
+                    return Response(payload)
+
+            container_match = container_pattern.search(message)
+            if container_match:
+                number = container_match.group(0).upper()
+                container = Container.objects.select_related('warehouse').filter(number__iexact=number).first()
+                if container:
+                    is_staff = request.user.is_authenticated and (request.user.is_staff or request.user.is_superuser)
+                    container_photos = ContainerPhoto.objects.filter(container=container)
+                    if not is_staff:
+                        container_photos = container_photos.filter(is_public=True)
+                    container_count = container_photos.count()
+                    last_container_photo = container_photos.order_by('-uploaded_at').first()
+                    gallery_link = request.build_absolute_uri(
+                        f"/?track={container.number}&photos=1"
+                    )
+                    if container_count:
                         response_text = (
-                            f"Фото автомобиля по VIN {vin} пока не загружены. "
-                            "Если нужно — уточните у менеджера сроки загрузки."
+                            f"Фото контейнера {container.number}: {container_count} шт. "
+                            + (
+                                f"Последняя загрузка: {last_container_photo.uploaded_at.strftime('%Y-%m-%d %H:%M')}. "
+                                if last_container_photo else ""
+                            )
+                            + f"Ссылка на галерею: {gallery_link}"
+                        )
+                    else:
+                        response_text = (
+                            f"Фото контейнера {container.number} пока не загружены. "
+                            f"Ссылка на галерею: {gallery_link}"
                         )
 
-                chat = AIChat.objects.create(
-                    session_id=session_id,
-                    user=request.user if request.user.is_authenticated else None,
-                    client=getattr(request.user, 'clientuser', None).client if request.user.is_authenticated and hasattr(request.user, 'clientuser') else None,
-                    message=message,
-                    response=response_text,
-                    processing_time=0,
-                )
-                serializer = AIChatSerializer(chat)
-                payload = serializer.data
-                if settings.DEBUG:
-                    payload["meta"] = {"used_fallback": False, "fallback_reason": "photo_lookup"}
-                return Response(payload)
+                    chat = AIChat.objects.create(
+                        session_id=session_id,
+                        user=request.user if request.user.is_authenticated else None,
+                        client=getattr(request.user, 'clientuser', None).client if request.user.is_authenticated and hasattr(request.user, 'clientuser') else None,
+                        message=message,
+                        response=response_text,
+                        processing_time=0,
+                    )
+                    serializer = AIChatSerializer(chat)
+                    payload = serializer.data
+                    if settings.DEBUG:
+                        payload["meta"] = {"used_fallback": False, "fallback_reason": "container_photo_lookup"}
+                    return Response(payload)
 
-    financial_keywords = [
-        'цена', 'стоимость', 'сколько стоит', 'тариф', 'оплата', 'платеж', 'платёж',
-        'счет', 'счёт', 'инвойс', 'invoice', 'payment', 'balance', 'баланс', 'долг',
-        'mark up', 'markup', 'наценка', 'комиссия'
-    ]
-    message_lower = message.lower()
-    if any(keyword in message_lower for keyword in financial_keywords):
-        response_text = (
-            "По финансовым вопросам, ценам и оплатам я не консультирую. "
-            "Пожалуйста, обратитесь к вашему менеджеру или в службу поддержки."
-        )
+        financial_keywords = [
+            'цена', 'стоимость', 'сколько стоит', 'тариф', 'оплата', 'платеж', 'платёж',
+            'счет', 'счёт', 'инвойс', 'invoice', 'payment', 'balance', 'баланс', 'долг',
+            'mark up', 'markup', 'наценка', 'комиссия'
+        ]
+        message_lower = message.lower()
+        if any(keyword in message_lower for keyword in financial_keywords):
+            response_text = (
+                "По финансовым вопросам, ценам и оплатам я не консультирую. "
+                "Пожалуйста, обратитесь к вашему менеджеру или в службу поддержки."
+            )
+            chat = AIChat.objects.create(
+                session_id=session_id,
+                user=request.user if request.user.is_authenticated else None,
+                client=getattr(request.user, 'clientuser', None).client if request.user.is_authenticated and hasattr(request.user, 'clientuser') else None,
+                message=message,
+                response=response_text,
+                processing_time=0,
+            )
+            serializer = AIChatSerializer(chat)
+            payload = serializer.data
+            if settings.DEBUG:
+                payload["meta"] = {"used_fallback": False, "fallback_reason": "financial_block"}
+            return Response(payload)
+
+        client = None
+        if user and hasattr(user, 'clientuser'):
+            client = user.clientuser.client
+
+        start_time = time.time()
+        response_text = None
+        used_fallback = False
+        fallback_reason = None
+        try:
+            response_text = generate_ai_response(
+                message=message,
+                user=user,
+                client=client,
+                session_id=session_id,
+                language_code=getattr(request, "LANGUAGE_CODE", "ru"),
+            )
+        except AIServiceError as exc:
+            fallback_reason = str(exc)
+            logger.warning("AI service failed, fallback to local rules: %s", fallback_reason)
+
+        if not response_text:
+            used_fallback = True
+            response_text = get_ai_response(message, user=user, client=client)
+
+        processing_time = time.time() - start_time
         chat = AIChat.objects.create(
             session_id=session_id,
-            user=request.user if request.user.is_authenticated else None,
-            client=getattr(request.user, 'clientuser', None).client if request.user.is_authenticated and hasattr(request.user, 'clientuser') else None,
+            user=user,
+            client=client,
             message=message,
             response=response_text,
-            processing_time=0,
+            processing_time=processing_time
         )
+
         serializer = AIChatSerializer(chat)
         payload = serializer.data
         if settings.DEBUG:
-            payload["meta"] = {"used_fallback": False, "fallback_reason": "financial_block"}
+            payload["meta"] = {
+                "used_fallback": used_fallback,
+                "fallback_reason": fallback_reason,
+            }
+        logger.info("AI chat client response: used_fallback=%s reason=%s", used_fallback, fallback_reason)
         return Response(payload)
-    
-    # Получаем информацию о пользователе, если авторизован
-    user = request.user if request.user.is_authenticated else None
-    client = None
-    
-    if user and hasattr(user, 'clientuser'):
-        client = user.clientuser.client
-    
-    # Засекаем время обработки
-    start_time = time.time()
-    
-    # Получаем ответ от ИИ
-    response_text = None
-    used_fallback = False
-    fallback_reason = None
-    try:
-        response_text = generate_ai_response(
-            message=message,
-            user=user,
-            client=client,
-            session_id=session_id,
-            language_code=getattr(request, "LANGUAGE_CODE", "ru"),
+    except Exception as exc:
+        logger.exception("AI chat failed")
+        return Response(
+            {"error": "AI chat error", "detail": str(exc)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-    except AIServiceError as exc:
-        import logging
-        logger = logging.getLogger(__name__)
-        fallback_reason = str(exc)
-        logger.warning("AI service failed, fallback to local rules: %s", fallback_reason)
-
-    if not response_text:
-        used_fallback = True
-        response_text = get_ai_response(message, user=user, client=client)
-    
-    processing_time = time.time() - start_time
-    
-    # Сохраняем в историю чата
-    chat = AIChat.objects.create(
-        session_id=session_id,
-        user=user,
-        client=client,
-        message=message,
-        response=response_text,
-        processing_time=processing_time
-    )
-    
-    serializer = AIChatSerializer(chat)
-    payload = serializer.data
-    if settings.DEBUG:
-        payload["meta"] = {
-            "used_fallback": used_fallback,
-            "fallback_reason": fallback_reason,
-        }
-    return Response(payload)
 
 
 @api_view(['POST'])

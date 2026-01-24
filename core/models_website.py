@@ -280,6 +280,7 @@ class AIChat(models.Model):
     # Метаданные для аналитики
     processing_time = models.FloatField(null=True, blank=True, verbose_name="Время обработки (сек)")
     was_helpful = models.BooleanField(null=True, blank=True, verbose_name="Был ли полезен ответ")
+    context_snapshot = models.JSONField(null=True, blank=True, verbose_name="Контекст")
     
     class Meta:
         verbose_name = "Чат с ИИ"

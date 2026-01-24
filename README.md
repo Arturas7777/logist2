@@ -47,13 +47,18 @@ logist2/
 │   ├── views.py            # Представления
 │   └── services/           # Бизнес-логика
 ├── logist2/                # Настройки Django
-│   ├── settings.py         # Основные настройки
+│   ├── settings.py         # Локальные настройки (InMemory Channels)
+│   ├── settings_base.py    # Базовые настройки (Redis Channels)
+│   ├── settings_dev.py     # Dev-профиль
+│   ├── settings_prod.py    # Prod-профиль
+│   ├── settings_test.py    # Test-профиль (SQLite)
 │   └── urls.py             # URL маршруты
 ├── templates/              # HTML шаблоны
 ├── staticfiles/            # Статические файлы
 ├── START_ME.bat           # 🟢 Запуск локально
 ├── deploy.ps1             # 🚀 Деплой на сервер
-└── requirements.txt       # Python зависимости
+├── requirements.txt       # Python зависимости
+└── requirements_website.txt # Доп. зависимости сайта (опционально)
 ```
 
 ## 🔧 Основные функции
@@ -68,11 +73,12 @@ logist2/
 
 ## 🛠 Технологии
 
-- **Backend:** Django 4.2, Python 3.11
-- **Database:** PostgreSQL
-- **Frontend:** Bootstrap 5, HTMX
-- **Server:** Nginx + Gunicorn
-- **Admin:** Django Admin + Jazzmin
+- **Backend:** Django 5.1.7, Python 3.10-3.12
+- **Database:** PostgreSQL (тесты — SQLite через `settings_test.py`)
+- **Frontend:** Django templates + Bootstrap 5 + HTMX
+- **WebSockets:** Django Channels + Daphne (Redis в продакшн-конфиге)
+- **Server:** Nginx + Gunicorn, статика через WhiteNoise
+- **Admin:** Django Admin с кастомными шаблонами (без Jazzmin)
 
 ## 📞 Поддержка
 
@@ -81,4 +87,4 @@ logist2/
 ---
 
 **Версия:** 2.0  
-**Последнее обновление:** Октябрь 2025
+**Последнее обновление:** 24 января 2026
