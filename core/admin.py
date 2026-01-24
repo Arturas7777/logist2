@@ -1828,9 +1828,6 @@ class CarAdmin(admin.ModelAdmin):
                 service_type='LINE'
             )
             
-            if not car_services:
-                return "Услуги будут созданы при сохранении"
-            
             html = '<div style="margin: 10px 0; display: flex; flex-wrap: wrap; gap: 10px;">'
             
             for car_service in car_services:
@@ -1868,6 +1865,9 @@ class CarAdmin(admin.ModelAdmin):
                 </div>
                 '''
             
+            if not car_services:
+                html += '<div style="margin-top: 8px; color: #6c757d;">Услуги еще не добавлены. Используйте кнопку “+”.</div>'
+            
             return mark_safe(html)
         except Exception as e:
             return f"Ошибка загрузки услуг: {e}"
@@ -1884,9 +1884,6 @@ class CarAdmin(admin.ModelAdmin):
                 car=obj, 
                 service_type='CARRIER'
             )
-            
-            if not car_services:
-                return "Услуги будут созданы при сохранении"
             
             html = '<div style="margin: 10px 0; display: flex; flex-wrap: wrap; gap: 10px;">'
             
@@ -1924,6 +1921,9 @@ class CarAdmin(admin.ModelAdmin):
                     <span style="margin-left: 5px; color: #666;">Добавить услуги перевозчика</span>
                 </div>
                 '''
+            
+            if not car_services:
+                html += '<div style="margin-top: 8px; color: #6c757d;">Услуги еще не добавлены. Используйте кнопку “+”.</div>'
             
             return mark_safe(html)
         except Exception as e:
