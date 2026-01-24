@@ -1,6 +1,6 @@
 from django.db.models.signals import post_save, post_delete, pre_delete, pre_save
 from django.dispatch import receiver
-from .models import Car, Container, WarehouseService, LineService, CarrierService, CarService, DeletedCarService, LineTHSCoefficient
+from .models import Car, Container, WarehouseService, LineService, CarrierService, Company, CompanyService, CarService, DeletedCarService, LineTHSCoefficient
 from .models_billing import NewInvoice
 from django.db.models import Sum
 from channels.layers import get_channel_layer
@@ -429,6 +429,51 @@ def find_warehouse_services_for_car(warehouse):
     ))
 
 
+def find_line_services_for_car(line):
+    """
+    Находит услуги линии для автомобиля, которые должны добавляться по умолчанию.
+    THS-услуги исключаются (THS управляется отдельно).
+    """
+    if not line:
+        return []
+    return list(LineService.objects.filter(
+        line=line,
+        is_active=True,
+        add_by_default=True
+    ).exclude(name__icontains='THS'))
+
+
+def find_carrier_services_for_car(carrier):
+    """
+    Находит услуги перевозчика для автомобиля, которые должны добавляться по умолчанию.
+    """
+    if not carrier:
+        return []
+    return list(CarrierService.objects.filter(
+        carrier=carrier,
+        is_active=True,
+        add_by_default=True
+    ))
+
+
+def get_main_company():
+    """Возвращает главную компанию (Caromoto Lithuania), если есть."""
+    return Company.objects.filter(name="Caromoto Lithuania").first()
+
+
+def find_company_services_for_car(company):
+    """
+    Находит услуги компании для автомобиля, которые должны добавляться по умолчанию.
+    """
+    if not company:
+        return []
+    return list(CompanyService.objects.filter(
+        company=company,
+        is_active=True,
+        add_by_default=True
+    ))
+
+
 @receiver(post_save, sender=Car)
 def create_car_services_on_car_save(sender, instance, **kwargs):
     """
@@ -482,6 +527,9 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
         deleted_carrier_services = set(
             DeletedCarService.objects.filter(car=instance, service_type='CARRIER').values_list('service_id', flat=True)
         )
+        deleted_company_services = set(
+            DeletedCarService.objects.filter(car=instance, service_type='COMPANY').values_list('service_id', flat=True)
+        )
         
         # ========== УСЛУГИ СКЛАДА ==========
         # Удаляем старые услуги склада если склад изменился
@@ -513,23 +561,34 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
                     )
                     logger.info(f"🏭 Добавлена услуга склада '{service.name}' для {instance.vin} (цена: {custom_price}, наценка: {default_markup})")
         
-        # ========== УСЛУГИ ЛИНИИ (THS) ==========
-        # ОТКЛЮЧЕНО: THS теперь рассчитывается пропорционально через create_ths_services_for_container()
-        # при сохранении контейнера в admin.py
-        # Услуги линии НЕ добавляются автоматически при создании/изменении авто
-        # Они создаются централизованно при изменении контейнера (line, ths, ths_payer)
-        pass
+        # ========== УСЛУГИ ЛИНИИ ==========
+        # THS создается отдельно через create_ths_services_for_container()
+        # Здесь добавляем только услуги с add_by_default=True (кроме THS)
+        instance.car_services.filter(
+            service_type='LINE'
+        ).exclude(
+            service_id__in=LineService.objects.filter(name__icontains='THS').values_list('id', flat=True)
+        ).delete()
+        
+        if instance.line:
+            line_services = find_line_services_for_car(instance.line)
+            for service in line_services:
+                if service.id not in deleted_line_services:
+                    default_markup = getattr(service, 'default_markup', None) or Decimal('0')
+                    CarService.objects.get_or_create(
+                        car=instance,
+                        service_type='LINE',
+                        service_id=service.id,
+                        defaults={'custom_price': service.default_price, 'markup_amount': default_markup}
+                    )
+                    logger.info(f"🚢 Добавлена услуга линии '{service.name}' для {instance.vin} (цена: {service.default_price}, наценка: {default_markup})")
         
         # ========== УСЛУГИ ПЕРЕВОЗЧИКА ==========
         # Удаляем старые услуги перевозчика если перевозчик изменился
         instance.car_services.filter(service_type='CARRIER').delete()
         
         if instance.carrier:
-            carrier_services = CarrierService.objects.filter(
-                carrier=instance.carrier, 
-                is_active=True,
-                default_price__gt=0
-            )
+            carrier_services = find_carrier_services_for_car(instance.carrier)
             
             for service in carrier_services:
                 if service.id not in deleted_carrier_services:
@@ -539,6 +598,23 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
                     CarService.objects.get_or_create(
                         car=instance,
                         service_type='CARRIER',
+                        service_id=service.id,
+                        defaults={'custom_price': service.default_price, 'markup_amount': default_markup}
+                    )
+        
+        # ========== УСЛУГИ КОМПАНИИ ==========
+        # Добавляем только для новых авто и только для главной компании
+        if created:
+            main_company = get_main_company()
+            if main_company:
+                company_services = find_company_services_for_car(main_company)
+                for service in company_services:
+                    if service.id in deleted_company_services:
+                        continue
+                    default_markup = getattr(service, 'default_markup', None) or Decimal('0')
+                    CarService.objects.get_or_create(
+                        car=instance,
+                        service_type='COMPANY',
                         service_id=service.id,
                         defaults={'custom_price': service.default_price, 'markup_amount': default_markup}
                     )
@@ -557,30 +633,31 @@ def update_cars_on_warehouse_service_change(sender, instance, **kwargs):
         cars = Car.objects.filter(warehouse=instance.warehouse)
         
         for car in cars:
+            car_service = CarService.objects.filter(
+                car=car,
+                service_type='WAREHOUSE',
+                service_id=instance.id
+            ).first()
+            
             if instance.is_active and instance.default_price > 0:
-                # Проверяем черный список перед созданием
-                if not DeletedCarService.objects.filter(
-                    car=car,
-                    service_type='WAREHOUSE',
-                    service_id=instance.id
-                ).exists():
-                    # Для услуги "Хранение" цена и наценка = платные_дни × ставка_за_день
-                    if instance.name == 'Хранение':
-                        days = Decimal(str(car.days or 0))
-                        custom_price = days * Decimal(str(instance.default_price or 0))
-                        default_markup = days * Decimal(str(getattr(instance, 'default_markup', 0) or 0))
-                    else:
-                        custom_price = instance.default_price
-                        # Получаем default_markup из услуги
-                        default_markup = getattr(instance, 'default_markup', None) or Decimal('0')
-                    
-                    # Создаем или обновляем запись CarService
-                    CarService.objects.get_or_create(
-                        car=car,
-                        service_type='WAREHOUSE',
-                        service_id=instance.id,
-                        defaults={'custom_price': custom_price, 'markup_amount': default_markup}
-                    )
+                if not car_service:
+                    # Не добавляем услугу в существующие авто автоматически
+                    continue
+                
+                # Для услуги "Хранение" цена и наценка = платные_дни × ставка_за_день
+                if instance.name == 'Хранение':
+                    days = Decimal(str(car.days or 0))
+                    custom_price = days * Decimal(str(instance.default_price or 0))
+                    default_markup = days * Decimal(str(getattr(instance, 'default_markup', 0) or 0))
+                else:
+                    custom_price = instance.default_price
+                    # Получаем default_markup из услуги
+                    default_markup = getattr(instance, 'default_markup', None) or Decimal('0')
+                
+                # Обновляем существующую запись CarService
+                car_service.custom_price = custom_price
+                car_service.markup_amount = default_markup
+                car_service.save(update_fields=['custom_price', 'markup_amount'])
             else:
                 # Удаляем запись CarService если услуга неактивна или цена = 0
                 CarService.objects.filter(
@@ -620,20 +697,21 @@ def update_cars_on_carrier_service_change(sender, instance, **kwargs):
         cars = Car.objects.filter(carrier=instance.carrier)
         
         for car in cars:
+            car_service = CarService.objects.filter(
+                car=car,
+                service_type='CARRIER',
+                service_id=instance.id
+            ).first()
+            
             if instance.is_active and instance.default_price > 0:
-                # Проверяем черный список перед созданием
-                if not DeletedCarService.objects.filter(
-                    car=car,
-                    service_type='CARRIER',
-                    service_id=instance.id
-                ).exists():
-                    # Создаем или обновляем запись CarService
-                    CarService.objects.get_or_create(
-                        car=car,
-                        service_type='CARRIER',
-                        service_id=instance.id,
-                        defaults={'custom_price': instance.default_price}
-                    )
+                if not car_service:
+                    # Не добавляем услугу в существующие авто автоматически
+                    continue
+                
+                default_markup = getattr(instance, 'default_markup', None) or Decimal('0')
+                car_service.custom_price = instance.default_price
+                car_service.markup_amount = default_markup
+                car_service.save(update_fields=['custom_price', 'markup_amount'])
             else:
                 # Удаляем запись CarService если услуга неактивна или цена = 0
                 CarService.objects.filter(
@@ -644,6 +722,24 @@ def update_cars_on_carrier_service_change(sender, instance, **kwargs):
                 
     except Exception as e:
         logger.error(f"Error updating cars on carrier service change: {e}")
+
+
+@receiver(post_save, sender=CompanyService)
+def update_cars_on_company_service_change(sender, instance, **kwargs):
+    """Обновляет записи CarService при изменении услуг компании"""
+    try:
+        car_services = CarService.objects.filter(
+            service_type='COMPANY',
+            service_id=instance.id
+        )
+        
+        if instance.is_active and instance.default_price > 0:
+            default_markup = getattr(instance, 'default_markup', None) or Decimal('0')
+            car_services.update(custom_price=instance.default_price, markup_amount=default_markup)
+        else:
+            car_services.delete()
+    except Exception as e:
+        logger.error(f"Error updating cars on company service change: {e}")
 
 
 # ============================================================================
@@ -750,6 +846,23 @@ def delete_car_services_on_carrier_service_delete(sender, instance, **kwargs):
             logger.info(f"🗑️ Удалено {deleted_count} CarService записей при удалении CarrierService '{instance.name}' (id={instance.id})")
     except Exception as e:
         logger.error(f"Error deleting CarService on CarrierService delete: {e}")
+
+
+@receiver(pre_delete, sender=CompanyService)
+def delete_car_services_on_company_service_delete(sender, instance, **kwargs):
+    """
+    Удаляет связанные CarService записи при удалении услуги компании.
+    """
+    try:
+        deleted_count = CarService.objects.filter(
+            service_type='COMPANY',
+            service_id=instance.id
+        ).delete()[0]
+        
+        if deleted_count > 0:
+            logger.info(f"🗑️ Удалено {deleted_count} CarService записей при удалении CompanyService '{instance.name}' (id={instance.id})")
+    except Exception as e:
+        logger.error(f"Error deleting CarService on CompanyService delete: {e}")
 
 
 # ============================================================================

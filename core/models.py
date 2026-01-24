@@ -641,12 +641,13 @@ class Car(models.Model):
         line_total = self.get_services_total_by_provider('LINE')
         carrier_total = self.get_services_total_by_provider('CARRIER')
         warehouse_total = self.get_warehouse_services_total()  # Включает услугу "Хранение"
+        company_total = self.get_services_total_by_provider('COMPANY')
         
         # Сумма всех скрытых наценок
         distributed_markup = self.car_services.aggregate(total=Sum('markup_amount'))['total'] or Decimal('0')
 
         # Общая сумма = услуги + скрытые наценки
-        self.total_price = line_total + warehouse_total + carrier_total + distributed_markup
+        self.total_price = line_total + warehouse_total + carrier_total + company_total + distributed_markup
 
         return self.total_price
 
@@ -785,6 +786,12 @@ class Car(models.Model):
         carrier_service_ids = CarrierService.objects.only('id').filter(carrier=self.carrier).values_list('id', flat=True)
         return self.car_services.filter(service_type='CARRIER', service_id__in=carrier_service_ids)
     
+    def get_company_services(self):
+        """Получает услуги компаний для этого автомобиля"""
+        if not self.pk:
+            return self.car_services.none()
+        return self.car_services.filter(service_type='COMPANY')
+    
     def get_warehouse_services(self):
         """Получает все услуги складов для этого автомобиля (включая услуги от других складов)"""
         if not self.pk:
@@ -802,6 +809,8 @@ class Car(models.Model):
             services = self.get_line_services()
         elif provider_type == 'CARRIER' and self.carrier:
             services = self.get_carrier_services()
+        elif provider_type == 'COMPANY':
+            services = self.get_company_services()
         elif provider_type == 'WAREHOUSE' and self.warehouse:
             services = self.get_warehouse_services()
         else:
@@ -997,6 +1006,34 @@ class Company(models.Model):
     def __str__(self):
         return self.name
 
+
+class CompanyService(models.Model):
+    """Услуги компаний"""
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='services', verbose_name="Компания")
+    name = models.CharField(max_length=200, verbose_name="Название услуги")
+    description = models.TextField(blank=True, verbose_name="Описание")
+    default_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Цена по умолчанию")
+    default_markup = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        verbose_name="Наценка по умолчанию",
+        help_text="Скрытая наценка, которая будет автоматически добавлена при создании услуги для авто"
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Активна")
+    add_by_default = models.BooleanField(
+        default=False,
+        verbose_name="Добавлять по умолчанию",
+        help_text="Автоматически добавлять эту услугу при создании автомобиля для этой компании"
+    )
+    
+    def __str__(self):
+        return f"{self.company.name} - {self.name}"
+    
+    class Meta:
+        verbose_name = "Услуга компании"
+        verbose_name_plural = "Услуги компаний"
+
 # Модели для системы услуг
 
 
@@ -1010,6 +1047,11 @@ class LineService(models.Model):
     default_markup = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Наценка по умолчанию",
         help_text="Скрытая наценка, которая будет автоматически добавлена при создании услуги для авто")
     is_active = models.BooleanField(default=True, verbose_name="Активна")
+    add_by_default = models.BooleanField(
+        default=False,
+        verbose_name="Добавлять по умолчанию",
+        help_text="Автоматически добавлять эту услугу при создании автомобиля для этой линии"
+    )
     
     def __str__(self):
         return f"{self.line.name} - {self.name}"
@@ -1028,6 +1070,11 @@ class CarrierService(models.Model):
     default_markup = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Наценка по умолчанию",
         help_text="Скрытая наценка, которая будет автоматически добавлена при создании услуги для авто")
     is_active = models.BooleanField(default=True, verbose_name="Активна")
+    add_by_default = models.BooleanField(
+        default=False,
+        verbose_name="Добавлять по умолчанию",
+        help_text="Автоматически добавлять эту услугу при создании автомобиля для этого перевозчика"
+    )
     
     def __str__(self):
         return f"{self.carrier.name} - {self.name}"
@@ -1064,6 +1111,7 @@ class DeletedCarService(models.Model):
         ('LINE', 'Линия'),
         ('CARRIER', 'Перевозчик'),
         ('WAREHOUSE', 'Склад'),
+        ('COMPANY', 'Компания'),
     ], verbose_name="Тип поставщика")
     service_id = models.PositiveIntegerField(verbose_name="ID услуги")
     deleted_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата удаления")
@@ -1080,6 +1128,7 @@ class CarService(models.Model):
         ('LINE', 'Линия'),
         ('CARRIER', 'Перевозчик'),
         ('WAREHOUSE', 'Склад'),
+        ('COMPANY', 'Компания'),
     ]
     
     car = models.ForeignKey(Car, on_delete=models.CASCADE, related_name='car_services', verbose_name="Автомобиль")
@@ -1122,6 +1171,12 @@ class CarService(models.Model):
                 return service.name
             except WarehouseService.DoesNotExist:
                 return "Услуга не найдена"
+        elif self.service_type == 'COMPANY':
+            try:
+                service = CompanyService.objects.get(id=self.service_id)
+                return service.name
+            except CompanyService.DoesNotExist:
+                return "Услуга не найдена"
         return "Неизвестная услуга"
     
     def get_default_price(self):
@@ -1143,6 +1198,12 @@ class CarService(models.Model):
                 service = WarehouseService.objects.get(id=self.service_id)
                 return service.default_price
             except WarehouseService.DoesNotExist:
+                return 0
+        elif self.service_type == 'COMPANY':
+            try:
+                service = CompanyService.objects.get(id=self.service_id)
+                return service.default_price
+            except CompanyService.DoesNotExist:
                 return 0
         return 0
     

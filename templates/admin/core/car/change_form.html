@@ -159,6 +159,23 @@
     </div>
   </div>
 
+  <div id="companyServicesModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeModal('companyServicesModal')">&times;</span>
+      <h2>Добавить услуги компании</h2>
+      <div style="margin-bottom: 15px;">
+        <label for="companySelect" style="font-weight: bold;">Выберите компанию:</label>
+        <select id="companySelect" onchange="loadCompanyServices()" style="width: 100%; padding: 5px; margin-top: 5px;">
+          <option value="">-- Выберите компанию --</option>
+        </select>
+      </div>
+      <div id="companyServicesList"></div>
+      <div class="modal-footer">
+        <button class="btn-primary" onclick="addSelectedServices('company')">Добавить выбранные</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     function openModal(modalId, serviceType) {
       const modal = document.getElementById(modalId);
@@ -167,6 +184,8 @@
       // Для складов загружаем список складов
       if (serviceType === 'warehouse') {
         loadWarehouses();
+      } else if (serviceType === 'company') {
+        loadCompanies();
       } else {
         // Для линий и перевозчиков загружаем услуги напрямую
         loadAvailableServices(serviceType);
@@ -229,6 +248,64 @@
         .catch(error => {
           console.error('Error loading services:', error);
           document.getElementById('warehouseServicesList').innerHTML = `<p>Ошибка загрузки услуг: ${error.message}</p>`;
+        });
+    }
+
+    function loadCompanies() {
+      fetch('/api/companies/')
+        .then(response => response.json())
+        .then(data => {
+          const companySelect = document.getElementById('companySelect');
+          companySelect.innerHTML = '<option value="">-- Выберите компанию --</option>';
+          
+          if (data.companies && data.companies.length > 0) {
+            data.companies.forEach(company => {
+              const option = document.createElement('option');
+              option.value = company.id;
+              option.textContent = company.name;
+              companySelect.appendChild(option);
+            });
+          }
+        })
+        .catch(error => {
+          console.error('Error loading companies:', error);
+        });
+    }
+
+    function loadCompanyServices() {
+      const companyId = document.getElementById('companySelect').value;
+      if (!companyId) {
+        document.getElementById('companyServicesList').innerHTML = '';
+        return;
+      }
+      
+      const carId = {{ original.id }};
+      const url = `/api/car/${carId}/get_available_services/?type=company&company_id=${companyId}`;
+      
+      fetch(url)
+        .then(response => response.json())
+        .then(data => {
+          const listElement = document.getElementById('companyServicesList');
+          listElement.innerHTML = '';
+          
+          if (data.services && data.services.length > 0) {
+            data.services.forEach(service => {
+              const serviceItem = document.createElement('div');
+              serviceItem.className = 'service-item';
+              serviceItem.innerHTML = `
+                <input type="checkbox" class="service-checkbox" value="${service.id}" id="service_${service.id}">
+                <label for="service_${service.id}" class="service-name">${service.name}</label>
+                <span class="service-price">$${service.price}</span>
+              `;
+              listElement.appendChild(serviceItem);
+            });
+          } else {
+            listElement.innerHTML = '<p>Нет доступных услуг для добавления.</p>';
+          }
+        })
+        .catch(error => {
+          console.error('Error loading services:', error);
+          document.getElementById('companyServicesList').innerHTML = `<p>Ошибка загрузки услуг: ${error.message}</p>`;
         });
     }
 
