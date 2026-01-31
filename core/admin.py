@@ -1013,9 +1013,10 @@ class ContainerAdmin(admin.ModelAdmin):
 @admin.register(Car)
 class CarAdmin(admin.ModelAdmin):
     change_form_template = 'admin/core/car/change_form.html'
+    change_list_template = 'admin/core/car/change_list.html'  # Кастомный шаблон для отображения суммы наценок
     list_display = (
         'vin', 'brand', 'vehicle_type', 'year_display', 'client', 'colored_status', 'container_display', 'warehouse', 'line',
-        'unload_date_display', 'days_display', 'storage_cost_display', 'total_price_display', 'has_title'
+        'unload_date_display', 'days_display', 'storage_cost_display', 'total_price_display', 'markup_display', 'has_title'
     )
     list_editable = ('has_title',)
     list_filter = (MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter)
@@ -1023,6 +1024,24 @@ class CarAdmin(admin.ModelAdmin):
     # ОПТИМИЗАЦИЯ: Предзагрузка связанных объектов для list view
     list_select_related = ('client', 'warehouse', 'line', 'carrier', 'container')
     list_prefetch_related = ('car_services',)
+    
+    def get_queryset(self, request):
+        """Оптимизированный queryset с аннотацией общей наценки.
+        
+        Использует annotate + Sum для расчёта общей наценки одним запросом,
+        что избегает N+1 проблемы при отображении списка ТС.
+        """
+        from django.db.models import Sum, F
+        from decimal import Decimal
+        
+        queryset = super().get_queryset(request)
+        
+        # Аннотируем общую наценку из CarService
+        queryset = queryset.annotate(
+            _total_markup=Sum('car_services__markup_amount')
+        )
+        
+        return queryset
     readonly_fields = (
         'default_warehouse_prices_display', 'total_price', 'storage_cost', 'days', 'warehouse_payment_display',
         'free_days_display', 'rate_display', 'services_summary_display', 'warehouse_services_display', 'line_services_display', 'carrier_services_display', 'company_services_display'
@@ -1338,6 +1357,63 @@ class CarAdmin(admin.ModelAdmin):
         return f"{obj.total_price:.2f}"
     total_price_display.short_description = 'Цена'
     total_price_display.admin_order_field = 'total_price'
+
+    def markup_display(self, obj):
+        """Отображает общую скрытую наценку для ТС.
+        
+        Использует аннотацию из get_queryset для производительности.
+        Если аннотация не доступна (карточка ТС), делает прямой запрос.
+        """
+        # Если есть аннотация из get_queryset - используем её (для списка)
+        if hasattr(obj, '_total_markup'):
+            return f"{obj._total_markup:.2f}" if obj._total_markup else "0.00"
+        
+        # Fallback для карточки ТС или если аннотация не сработала
+        from decimal import Decimal
+        from django.db.models import Sum
+        
+        total_markup = obj.car_services.aggregate(
+            total=Sum('markup_amount')
+        )['total'] or Decimal('0.00')
+        
+        return f"{total_markup:.2f}"
+    
+    markup_display.short_description = 'Н'  # Н = Наценка
+    markup_display.admin_order_field = '_total_markup'  # Сортировка по аннотации
+    
+    def changelist_view(self, request, extra_context=None):
+        """Переопределяем changelist_view для добавления общей суммы наценок.
+        
+        Рассчитывает общую сумму наценок для ОТОБРАЖАЕМЫХ на странице ТС
+        и передаёт в контекст шаблона.
+        """
+        from django.db.models import Sum
+        from decimal import Decimal
+        
+        # Вызываем родительский метод для получения response
+        response = super().changelist_view(request, extra_context)
+        
+        try:
+            # Получаем changelist из response
+            cl = response.context_data['cl']
+            
+            # Получаем отфильтрованный queryset (те ТС, которые отображаются)
+            queryset = cl.get_queryset(request)
+            
+            # Рассчитываем общую сумму наценок для отображаемых ТС
+            # Используем только Sum без аннотации для простоты
+            total_markup_sum = queryset.aggregate(
+                total=Sum('car_services__markup_amount')
+            )['total'] or Decimal('0.00')
+            
+            # Добавляем в контекст
+            response.context_data['total_markup_sum'] = total_markup_sum
+            
+        except (AttributeError, KeyError):
+            # Если что-то пошло не так, просто не добавляем сумму
+            pass
+        
+        return response
 
     # УДАЛЕНО: current_price_display - теперь используется только total_price
 
