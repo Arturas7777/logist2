@@ -1,0 +1,18 @@
+{% extends "admin/change_list.html" %}
+{% load i18n admin_urls static admin_list %}
+
+{% block result_list %}
+  {{ block.super }}
+  
+  {% if total_markup_sum is not None %}
+  <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border: 2px solid #28a745; border-radius: 8px;">
+    <h3 style="margin: 0; color: #28a745; font-size: 18px;">
+      <strong>Общая скрытая наценка (отображаемые ТС):</strong>
+      <span style="color: #007bff; font-size: 22px; margin-left: 15px;">{{ total_markup_sum|floatformat:2 }} EUR</span>
+    </h3>
+    <p style="margin: 5px 0 0 0; font-size: 13px; color: #6c757d;">
+      Сумма рассчитана для {{ cl.result_count }} ТС, отображаемых на текущей странице с учётом фильтров.
+    </p>
+  </div>
+  {% endif %}
+{% endblock %}
