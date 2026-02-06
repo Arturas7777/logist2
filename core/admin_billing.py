@@ -146,7 +146,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     
     filter_horizontal = ('cars',)
     
-    actions = ['mark_as_paid', 'cancel_invoices', 'regenerate_items']
+    actions = ['mark_as_issued', 'mark_as_paid', 'cancel_invoices', 'export_to_pdf', 'regenerate_items']
     
     def add_view(self, request, form_url='', extra_context=None):
         """Кастомная обработка добавления инвойса"""
@@ -342,7 +342,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             form.instance.regenerate_items_from_cars()
             messages.success(request, f"✅ Автоматически создано {form.instance.items.count()} позиций из услуг автомобилей!")
     
-    actions = ['mark_as_paid', 'cancel_invoices', 'export_to_pdf', 'regenerate_items']
+    actions = ['mark_as_issued', 'mark_as_paid', 'cancel_invoices', 'export_to_pdf', 'regenerate_items']
     
     # ========================================================================
     # ОТОБРАЖЕНИЕ ПОЛЕЙ В СПИСКЕ
@@ -544,6 +544,18 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     # ========================================================================
     # ДЕЙСТВИЯ
     # ========================================================================
+    
+    def mark_as_issued(self, request, queryset):
+        """Пометить как выставленные"""
+        updated = 0
+        for invoice in queryset:
+            if invoice.status not in ('ISSUED', 'PAID', 'CANCELLED'):
+                invoice.status = 'ISSUED'
+                invoice.save(update_fields=['status', 'updated_at'])
+                updated += 1
+        
+        self.message_user(request, f'Выставлено: {updated} инвойсов', messages.SUCCESS)
+    mark_as_issued.short_description = "📤 Пометить как выставленные"
     
     def mark_as_paid(self, request, queryset):
         """Пометить как оплаченные"""
