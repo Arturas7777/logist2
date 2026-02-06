@@ -115,6 +115,8 @@ class Carrier(models.Model):
     contact_person = models.CharField(max_length=100, blank=True, null=True, verbose_name="Контактное лицо")
     phone = models.CharField(max_length=20, blank=True, null=True, verbose_name="Телефон")
     email = models.EmailField(blank=True, null=True, verbose_name="Email")
+    eori_code = models.CharField(max_length=50, blank=True, null=True, verbose_name="EORI код",
+                                  help_text="Код EORI перевозчика для таможенного оформления")
     
     # Единый баланс (новая система)
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс",
@@ -139,6 +141,61 @@ class Carrier(models.Model):
     
     def __str__(self):
         return self.name
+
+
+class CarrierTruck(models.Model):
+    """Автовоз перевозчика (тягач + прицеп)"""
+    carrier = models.ForeignKey(Carrier, on_delete=models.CASCADE, related_name='trucks', verbose_name="Перевозчик")
+    truck_number = models.CharField(max_length=20, verbose_name="Номер тягача",
+                                     help_text="Номер головы автовоза")
+    trailer_number = models.CharField(max_length=20, blank=True, verbose_name="Номер прицепа",
+                                       help_text="Номер прицепа (опционально)")
+    is_active = models.BooleanField(default=True, verbose_name="Активен")
+    notes = models.TextField(blank=True, verbose_name="Примечания")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    
+    class Meta:
+        verbose_name = "Автовоз перевозчика"
+        verbose_name_plural = "Автовозы перевозчиков"
+        unique_together = ['carrier', 'truck_number', 'trailer_number']
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        if self.trailer_number:
+            return f"{self.truck_number} / {self.trailer_number}"
+        return self.truck_number
+    
+    @property
+    def full_number(self):
+        """Полный номер автовоза в формате XXXXX / XXXXX"""
+        if self.trailer_number:
+            return f"{self.truck_number} / {self.trailer_number}"
+        return self.truck_number
+
+
+class CarrierDriver(models.Model):
+    """Водитель перевозчика"""
+    carrier = models.ForeignKey(Carrier, on_delete=models.CASCADE, related_name='drivers', verbose_name="Перевозчик")
+    first_name = models.CharField(max_length=50, verbose_name="Имя")
+    last_name = models.CharField(max_length=50, verbose_name="Фамилия")
+    phone = models.CharField(max_length=20, verbose_name="Телефон")
+    is_active = models.BooleanField(default=True, verbose_name="Активен")
+    notes = models.TextField(blank=True, verbose_name="Примечания")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+    
+    class Meta:
+        verbose_name = "Водитель перевозчика"
+        verbose_name_plural = "Водители перевозчиков"
+        ordering = ['last_name', 'first_name']
+    
+    def __str__(self):
+        return f"{self.first_name} {self.last_name}"
+    
+    @property
+    def full_name(self):
+        """Полное имя водителя"""
+        return f"{self.first_name} {self.last_name}"
 
 
 class Client(models.Model):
@@ -1311,6 +1368,165 @@ def recalculate_car_price_on_car_save(sender, instance, **kwargs):
             
     except Exception as e:
         print(f"Ошибка пересчета цены при изменении автомобиля: {e}")
+
+
+class AutoTransport(models.Model):
+    """Автовоз на загрузку - формирование рейса"""
+    STATUS_CHOICES = [
+        ('DRAFT', 'Черновик'),
+        ('FORMED', 'Сформирован'),
+        ('LOADED', 'Загружен'),
+        ('IN_TRANSIT', 'В пути'),
+        ('DELIVERED', 'Доставлен'),
+        ('CANCELLED', 'Отменен'),
+    ]
+    
+    # Основная информация
+    number = models.CharField(max_length=50, unique=True, verbose_name="Номер автовоза",
+                               help_text="Уникальный номер рейса")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT', verbose_name="Статус")
+    
+    # Перевозчик и его данные
+    carrier = models.ForeignKey(Carrier, on_delete=models.PROTECT, related_name='auto_transports', 
+                                 verbose_name="Перевозчик")
+    eori_code = models.CharField(max_length=50, blank=True, verbose_name="EORI код",
+                                  help_text="Автоматически подтягивается из перевозчика")
+    
+    # Автовоз (тягач + прицеп)
+    truck = models.ForeignKey(CarrierTruck, on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name='transports', verbose_name="Автовоз")
+    truck_number_manual = models.CharField(max_length=20, blank=True, verbose_name="Номер тягача (вручную)",
+                                            help_text="Если автовоза нет в списке")
+    trailer_number_manual = models.CharField(max_length=20, blank=True, verbose_name="Номер прицепа (вручную)",
+                                              help_text="Если автовоза нет в списке")
+    
+    # Водитель
+    driver = models.ForeignKey(CarrierDriver, on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name='transports', verbose_name="Водитель")
+    driver_name_manual = models.CharField(max_length=100, blank=True, verbose_name="ФИО водителя (вручную)",
+                                           help_text="Если водителя нет в списке")
+    driver_phone = models.CharField(max_length=20, blank=True, verbose_name="Телефон водителя",
+                                     help_text="Автоматически подтягивается из водителя или вводится вручную")
+    
+    # Граница пересечения
+    border_crossing = models.CharField(max_length=100, blank=True, verbose_name="Граница пересечения",
+                                        help_text="Название пункта пересечения границы")
+    
+    # Автомобили в автовозе
+    cars = models.ManyToManyField('Car', related_name='auto_transports', blank=True, 
+                                   verbose_name="Автомобили")
+    
+    # Даты
+    loading_date = models.DateField(null=True, blank=True, verbose_name="Дата загрузки")
+    departure_date = models.DateField(null=True, blank=True, verbose_name="Дата отправления")
+    estimated_delivery_date = models.DateField(null=True, blank=True, verbose_name="Планируемая дата доставки")
+    actual_delivery_date = models.DateField(null=True, blank=True, verbose_name="Фактическая дата доставки")
+    
+    # Дополнительная информация
+    notes = models.TextField(blank=True, verbose_name="Примечания")
+    
+    # Технические поля
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+    created_by = models.CharField(max_length=100, blank=True, verbose_name="Создал")
+    
+    class Meta:
+        verbose_name = "Автовоз на загрузку"
+        verbose_name_plural = "Автовозы на загрузку"
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Автовоз {self.number} - {self.carrier.name}"
+    
+    def save(self, *args, **kwargs):
+        # Автоматически подтягиваем EORI код из перевозчика если не указан
+        if not self.eori_code and self.carrier:
+            self.eori_code = self.carrier.eori_code or ''
+        
+        # Генерируем номер если не указан
+        if not self.number:
+            from django.utils import timezone
+            date_str = timezone.now().strftime('%Y%m%d')
+            count = AutoTransport.objects.filter(number__startswith=f'AT-{date_str}').count()
+            self.number = f'AT-{date_str}-{count + 1:03d}'
+        
+        # Подтягиваем телефон водителя если выбран водитель
+        if self.driver and not self.driver_phone:
+            self.driver_phone = self.driver.phone
+        
+        super().save(*args, **kwargs)
+    
+    @property
+    def truck_full_number(self):
+        """Полный номер автовоза"""
+        if self.truck:
+            return self.truck.full_number
+        elif self.truck_number_manual:
+            if self.trailer_number_manual:
+                return f"{self.truck_number_manual} / {self.trailer_number_manual}"
+            return self.truck_number_manual
+        return "Не указан"
+    
+    @property
+    def driver_full_name(self):
+        """Полное имя водителя"""
+        if self.driver:
+            return self.driver.full_name
+        return self.driver_name_manual or "Не указан"
+    
+    @property
+    def cars_count(self):
+        """Количество автомобилей в автовозе"""
+        return self.cars.count()
+    
+    def get_clients(self):
+        """Получить список уникальных клиентов автомобилей в автовозе"""
+        return Client.objects.filter(car__in=self.cars.all()).distinct()
+    
+    def generate_invoices(self):
+        """Создать/обновить инвойсы для клиентов"""
+        from .models_billing import NewInvoice
+        from django.utils import timezone
+        
+        clients = self.get_clients()
+        created_invoices = []
+        
+        for client in clients:
+            # Получаем автомобили этого клиента в автовозе
+            client_cars = self.cars.filter(client=client)
+            
+            if not client_cars.exists():
+                continue
+            
+            # Проверяем, есть ли уже инвойс для этого автовоза и клиента
+            existing_invoice = NewInvoice.objects.filter(
+                auto_transport=self,
+                recipient_client=client
+            ).first()
+            
+            if existing_invoice:
+                # Обновляем существующий инвойс
+                existing_invoice.cars.set(client_cars)
+                existing_invoice.regenerate_items_from_cars()
+                created_invoices.append(existing_invoice)
+            else:
+                # Создаем новый инвойс
+                from .models import Company
+                company = Company.objects.filter(name='Caromoto Lithuania').first()
+                
+                if company:
+                    invoice = NewInvoice.objects.create(
+                        issuer_company=company,
+                        recipient_client=client,
+                        auto_transport=self,
+                        status='DRAFT',
+                        date=timezone.now().date()
+                    )
+                    invoice.cars.set(client_cars)
+                    invoice.regenerate_items_from_cars()
+                    created_invoices.append(invoice)
+        
+        return created_invoices
 
 
 # ==============================================================================

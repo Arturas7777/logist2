@@ -331,6 +331,17 @@ class NewInvoice(models.Model):
         help_text="Выберите автомобили - позиции создадутся автоматически из их услуг"
     )
     
+    # Связь с автовозом (если инвойс создан для автовоза)
+    auto_transport = models.ForeignKey(
+        'AutoTransport',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='invoices',
+        verbose_name="Автовоз",
+        help_text="Автовоз, для которого создан этот инвойс"
+    )
+    
     # Аудит
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")

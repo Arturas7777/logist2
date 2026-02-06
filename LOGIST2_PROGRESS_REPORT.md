@@ -1,6 +1,6 @@
 # Отчёт о проделанной работе по проекту Logist2
 
-**Дата последнего обновления:** 31 января 2026 г.
+**Дата последнего обновления:** 4 февраля 2026 г.
 
 ---
 
@@ -548,6 +548,98 @@ total_markup_sum = queryset.aggregate(
 
 ---
 
+### 22. Система автовозов на загрузку (04.02.2026)
+
+**Статус:** Завершено
+
+**Цель:** Формирование автовозов для отправки ТС клиентам с автоматическим созданием инвойсов.
+
+**Новые модели:**
+
+1. **CarrierTruck** - автовозы перевозчика
+   - `carrier` - связь с перевозчиком
+   - `truck_number`, `trailer_number` - номера тягача и прицепа
+   - `full_number` (property) - полный номер в формате "XXXXX / YYYYY"
+   - `is_active` - активность
+
+2. **CarrierDriver** - водители перевозчика
+   - `carrier` - связь с перевозчиком
+   - `first_name`, `last_name` - имя и фамилия
+   - `phone` - телефон водителя
+   - `full_name` (property) - полное имя "Имя Фамилия"
+   - `is_active` - активность
+
+3. **AutoTransport** - автовоз на загрузку
+   - `number` - номер автовоза (генерируется автоматически: AT-YYYYMMDD-NNNN)
+   - `carrier` - перевозчик
+   - `eori_code` - EORI код (автозаполнение из перевозчика)
+   - `truck`, `driver` - ссылки на CarrierTruck и CarrierDriver
+   - `truck_number_manual`, `trailer_number_manual`, `driver_name_manual` - ручной ввод если нет в базе
+   - `driver_phone` - телефон водителя (автозаполнение)
+   - `border_crossing` - граница пересечения
+   - `cars` - ManyToMany связь с ТС
+   - `loading_date`, `departure_date`, `estimated_delivery_date`, `actual_delivery_date` - даты
+   - `status` - DRAFT, FORMED, LOADED, IN_TRANSIT, DELIVERED, CANCELLED
+   - `created_by` - кто создал
+
+**Расширение модели Carrier:**
+- `eori_code` - EORI код перевозчика
+- Связи: `trucks` (CarrierTruck), `drivers` (CarrierDriver), `auto_transports` (AutoTransport)
+
+**Расширение модели NewInvoice:**
+- `auto_transport` - ForeignKey к AutoTransport (связывает инвойс с автовозом)
+
+**Функционал:**
+
+1. **Автозаполнение данных перевозчика:**
+   - При выборе перевозчика автоматически заполняется EORI код
+   - Подтягиваются списки автовозов и водителей этого перевозчика
+   - При выборе водителя автоматически заполняется его телефон
+
+2. **Выбор автомобилей:**
+   - Select2 с поиском по VIN/марке (как в инвойсах)
+   - Отображение клиента через дефис
+   - Цветные теги по статусу ТС
+   - Иконки статусов в выпадающем списке
+
+3. **Автоматическое создание инвойсов:**
+   - При установке статуса "Сформирован" автоматически создаются инвойсы
+   - Отдельный инвойс для каждого клиента, чьи ТС в автовозе
+   - Если все ТС одного клиента - создается один инвойс
+   - Инвойсы автоматически обновляются при изменении состава автовоза
+
+4. **Сигналы:**
+   - `autotransport_post_save` - создание/обновление инвойсов при сохранении
+   - `autotransport_cars_changed_handler` - обновление инвойсов при изменении списка ТС
+
+**API endpoints:**
+- `GET /core/api/autotransport/carrier-info/<carrier_id>/` - информация о перевозчике (EORI, автовозы, водители)
+- `GET /core/api/autotransport/driver-phone/<driver_id>/` - телефон водителя
+- `GET /core/api/autotransport/border-crossings/` - список границ пересечения
+- `POST /core/api/autotransport/create-truck/` - создание нового автовоза
+- `POST /core/api/autotransport/create-driver/` - создание нового водителя
+
+**Интерфейс:**
+- Кастомная страница создания/редактирования (templates/admin/core/autotransport/change_form.html)
+- Красивый дизайн с карточками и градиентами
+- Sidebar с информацией об автовозе и созданных инвойсах
+- Полностью идентичный стиль и функционал выбора автомобилей как в инвойсах
+
+**Файлы:**
+- `core/models.py` - новые модели CarrierTruck, CarrierDriver, AutoTransport, расширение Carrier
+- `core/models_billing.py` - поле auto_transport в NewInvoice
+- `core/admin.py` - AutoTransportAdmin с кастомным шаблоном
+- `core/views_autotransport.py` - API endpoints (новый файл)
+- `core/signals.py` - сигналы для автоматического создания инвойсов
+- `templates/admin/core/autotransport/change_form.html` - кастомный шаблон
+- `core/static/css/autotransport.css` - стили
+- `core/urls.py` - роутинг API endpoints
+
+**Миграции:**
+- `0103_carrier_eori_code_autotransport_and_more.py`
+
+---
+
 ## ИСТОРИЯ ИЗМЕНЕНИЙ
 
 | Дата | Описание |
@@ -565,6 +657,7 @@ total_markup_sum = queryset.aggregate(
 | 24.01.2026 | Услуги компаний, add_by_default для линий/перевозчиков, исправление автодобавления |
 | 24.01.2026 | Админ-агент, RAG индекс, контекст админки, быстрые действия |
 | 31.01.2026 | Столбец "Наценка" (Н) в списке ТС с оптимизацией через annotate + Sum |
+| 04.02.2026 | Система автовозов на загрузку: формирование автовозов, автоматическое создание инвойсов |
 
 ---
 

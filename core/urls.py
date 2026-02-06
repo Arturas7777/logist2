@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from . import views_autotransport
 
 app_name = 'core'
 
@@ -12,5 +13,12 @@ urlpatterns = [
     # API для автокомплита в инвойсах
     path('api/search-counterparties/', views.search_counterparties, name='search_counterparties'),
     path('api/search-cars/', views.search_cars, name='search_cars'),
+    # API для автовозов
+    path('api/carrier/<int:carrier_id>/info/', views_autotransport.get_carrier_info, name='get_carrier_info'),
+    path('api/driver/<int:driver_id>/phone/', views_autotransport.get_driver_phone, name='get_driver_phone'),
+    path('api/driver/update-phone/', views_autotransport.update_driver_phone, name='update_driver_phone'),
+    path('api/border-crossings/', views_autotransport.get_border_crossings, name='get_border_crossings'),
+    path('api/carrier/create-truck/', views_autotransport.create_carrier_truck, name='create_carrier_truck'),
+    path('api/carrier/create-driver/', views_autotransport.create_carrier_driver, name='create_carrier_driver'),
 ]
 

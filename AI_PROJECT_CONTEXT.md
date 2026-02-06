@@ -207,6 +207,31 @@ logist2/
 - `thumbnail` - миниатюра (создается автоматически)
 - `is_public` - доступно клиенту
 
+### AutoTransport (Автовоз на загрузку)
+- `number` - номер автовоза (генерируется автоматически: AT-YYYYMMDD-NNNN)
+- `carrier` - перевозчик
+- `eori_code` - EORI код (автозаполнение)
+- `truck`, `driver` - связи с CarrierTruck и CarrierDriver
+- `truck_number_manual`, `trailer_number_manual`, `driver_name_manual` - ручной ввод
+- `driver_phone` - телефон водителя
+- `border_crossing` - граница пересечения
+- `cars` - ManyToMany связь с ТС
+- `status` - DRAFT, FORMED, LOADED, IN_TRANSIT, DELIVERED, CANCELLED
+- **При статусе "Сформирован"** автоматически создаются инвойсы для каждого клиента
+
+### CarrierTruck (Автовоз перевозчика)
+- `carrier` - связь с перевозчиком
+- `truck_number`, `trailer_number` - номера тягача и прицепа
+- `full_number` (property) - полный номер "XXXXX / YYYYY"
+- `is_active` - активность
+
+### CarrierDriver (Водитель перевозчика)
+- `carrier` - связь с перевозчиком
+- `first_name`, `last_name` - имя и фамилия
+- `phone` - телефон
+- `full_name` (property) - "Имя Фамилия"
+- `is_active` - активность
+
 ### AI-помощник (чат)
 - Контекст формируется из БД на каждый запрос
 - Авто-поиск по VIN/контейнеру, статус, склад, даты и фото
@@ -249,6 +274,13 @@ logist2/
 - `POST /api/car/<car_id>/add_services/` - добавить услуги к ТС
 - `GET /core/api/search-counterparties/` - поиск контрагентов для инвойсов
 - `GET /core/api/search-cars/` - поиск ТС для инвойсов
+
+### Для автовозов:
+- `GET /core/api/autotransport/carrier-info/<carrier_id>/` - EORI код, автовозы, водители перевозчика
+- `GET /core/api/autotransport/driver-phone/<driver_id>/` - телефон водителя
+- `GET /core/api/autotransport/border-crossings/` - список границ пересечения
+- `POST /core/api/autotransport/create-truck/` - создание нового автовоза
+- `POST /core/api/autotransport/create-driver/` - создание нового водителя
 
 ### Для клиентского портала:
 - `POST /api/track/` - отслеживание груза по VIN или номеру контейнера
@@ -428,6 +460,44 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 ⚠️ Миниатюры могут не отображаться если nginx конфигурация неправильная
 ⚠️ Асинхронная загрузка из Google Drive - нужно ждать 1-2 минуты
 ⚠️ **ВАЖНО:** После загрузки фотографий вручную (через команды от root) нужно исправить права доступа: `./fix_media_permissions.sh`
+
+### Недавние изменения (февраль 2026):
+
+**04.02.2026 - Система автовозов на загрузку:**
+1. **НОВЫЙ ФУНКЦИОНАЛ - АВТОВОЗЫ:** ⭐
+   - ✅ Формирование автовозов для отправки ТС клиентам
+   - ✅ Автоматическое создание инвойсов для каждого клиента при "формировании" автовоза
+   - ✅ Автоматическое обновление инвойсов при изменении состава автовоза
+   - ✅ Выбор автомобилей с поиском по VIN/марке (как в инвойсах)
+   - ✅ Автозаполнение EORI кода, списка автовозов и водителей при выборе перевозчика
+   - ✅ Возможность добавления новых автовозов и водителей прямо из формы
+
+**Новые модели:**
+- `CarrierTruck` - автовозы перевозчика (номера тягача и прицепа)
+- `CarrierDriver` - водители перевозчика (имя, телефон)
+- `AutoTransport` - автовоз на загрузку (связь с ТС, перевозчиком, датами, инвойсами)
+
+**Расширение Carrier:**
+- `eori_code` - EORI код перевозчика
+- Связи: `trucks`, `drivers`, `auto_transports`
+
+**API endpoints:**
+- `GET /core/api/autotransport/carrier-info/<carrier_id>/`
+- `GET /core/api/autotransport/driver-phone/<driver_id>/`
+- `GET /core/api/autotransport/border-crossings/`
+- `POST /core/api/autotransport/create-truck/`
+- `POST /core/api/autotransport/create-driver/`
+
+**Файлы:**
+- `core/models.py` - новые модели
+- `core/models_billing.py` - связь NewInvoice с AutoTransport
+- `core/admin.py` - AutoTransportAdmin
+- `core/views_autotransport.py` - API endpoints
+- `core/signals.py` - автоматическое создание инвойсов
+- `templates/admin/core/autotransport/change_form.html` - кастомный шаблон
+- `core/static/css/autotransport.css` - стили
+
+---
 
 ### Недавние изменения (январь 2026):
 

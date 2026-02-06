@@ -1,0 +1,555 @@
+/* ============================================
+   🚛 АВТОВОЗЫ - КАСТОМНЫЙ ИНТЕРФЕЙС
+   ============================================ */
+
+:root {
+    --primary: #667eea;
+    --primary-dark: #5a67d8;
+    --success: #28a745;
+    --danger: #dc3545;
+    --warning: #ffc107;
+    --info: #17a2b8;
+    --gray-100: #f8f9fa;
+    --gray-200: #e9ecef;
+    --gray-300: #dee2e6;
+    --gray-600: #6c757d;
+    --gray-800: #343a40;
+    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+body { 
+    background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); 
+    min-height: 100vh; 
+}
+
+.breadcrumbs { display: none; }
+#content { padding: 30px; max-width: 1400px; margin: 0 auto; }
+
+/* Заголовок страницы */
+.autotransport-page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+}
+
+.autotransport-page-header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--gray-800);
+    margin: 0;
+}
+
+.back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--gray-600);
+    text-decoration: none;
+    font-size: 14px;
+    padding: 8px 16px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+}
+
+.back-link:hover { color: var(--primary); }
+
+/* Сетка страницы */
+.autotransport-grid {
+    display: grid;
+    grid-template-columns: 1fr 350px;
+    gap: 30px;
+}
+
+/* Карточки */
+.card {
+    background: white;
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    margin-bottom: 25px;
+}
+
+.card-header {
+    padding: 20px 25px;
+    border-bottom: 1px solid var(--gray-200);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.card-header h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--gray-800);
+    margin: 0;
+}
+
+.card-header .icon { font-size: 24px; }
+.card-body { padding: 25px; }
+
+/* Статусы */
+.status-badge {
+    display: inline-flex;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-left: auto;
+}
+
+.status-draft { background: var(--gray-200); color: var(--gray-600); }
+.status-loading { background: #fff3cd; color: #856404; }
+.status-formed { background: #d4edda; color: #155724; }
+.status-in_transit { background: #cce5ff; color: #004085; }
+.status-delivered { background: #28a745; color: white; }
+.status-cancelled { background: #f8d7da; color: #721c24; }
+
+.cars-count-badge {
+    display: inline-flex;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-left: auto;
+    background: linear-gradient(135deg, var(--primary) 0%, #764ba2 100%);
+    color: white;
+}
+
+/* Номер автовоза */
+.autotransport-number-display {
+    background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
+    color: white;
+    padding: 25px;
+    text-align: center;
+    margin: -25px -25px 25px -25px;
+}
+
+.autotransport-number-display .label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    opacity: 0.8;
+    margin-bottom: 8px;
+}
+
+.autotransport-number-display .number {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 2px;
+}
+
+/* Информационные блоки */
+.info-grid { display: grid; gap: 12px; margin-bottom: 20px; }
+
+.info-item {
+    background: var(--gray-100);
+    padding: 15px;
+    border-radius: 10px;
+    text-align: center;
+}
+
+.info-item .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--gray-600);
+    margin-bottom: 5px;
+}
+
+.info-item .value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--gray-800);
+}
+
+.info-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+/* Ссылки на инвойсы */
+.invoice-link-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 15px;
+    background: var(--gray-100);
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
+
+.invoice-link-item:last-child { margin-bottom: 0; }
+
+.invoice-number {
+    font-weight: 600;
+    color: var(--gray-800);
+    font-size: 14px;
+}
+
+.invoice-client {
+    font-size: 12px;
+    color: var(--gray-600);
+}
+
+.invoice-amount {
+    margin-left: auto;
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.invoice-link-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    background: var(--primary);
+    color: white;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 16px;
+}
+
+.invoice-link-btn:hover {
+    background: var(--primary-dark);
+    color: white;
+}
+
+/* Формы */
+.form-group { margin-bottom: 20px; }
+.form-group:last-child { margin-bottom: 0; }
+
+.form-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--gray-600);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 12px 16px;
+    border: 2px solid var(--gray-200);
+    border-radius: 10px;
+    font-size: 15px;
+    box-sizing: border-box;
+}
+
+.form-group input,
+.form-group select {
+    height: 48px;
+}
+
+.form-group select {
+    appearance: none;
+    background: white url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E") no-repeat right 16px center;
+    padding-right: 40px;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+.form-group textarea { min-height: 100px; height: auto; }
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+
+.form-row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+
+.form-hint {
+    font-size: 11px;
+    color: #999;
+    margin-top: 5px;
+}
+
+.cars-hint {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 15px;
+    background: #fff3cd;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #856404;
+    margin-bottom: 15px;
+}
+
+/* Кнопки */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    border: none;
+    width: 100%;
+    box-sizing: border-box;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
+    color: white;
+    box-shadow: 0 4px 15px rgba(255, 107, 53, 0.35);
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(255, 107, 53, 0.45);
+    color: white;
+}
+
+.btn-success {
+    background: linear-gradient(135deg, var(--success) 0%, #20c997 100%);
+    color: white;
+}
+
+.btn-success:hover { color: white; }
+
+.btn-outline {
+    background: white;
+    color: var(--gray-600);
+    border: 2px solid var(--gray-300);
+}
+
+.btn-outline:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.btn-danger { background: var(--danger); color: white; }
+.btn-sm { padding: 10px 16px; font-size: 13px; }
+
+.actions-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.actions-divider {
+    height: 1px;
+    background: var(--gray-200);
+    margin: 10px 0;
+}
+
+/* Адаптация стандартных полей Django */
+.form-group .vForeignKeyRawIdAdminField,
+.form-group .vTextField,
+.form-group .vDateField {
+    width: 100% !important;
+    padding: 12px 16px !important;
+    border: 2px solid var(--gray-200) !important;
+    border-radius: 10px !important;
+    font-size: 15px !important;
+    height: 48px !important;
+    box-sizing: border-box !important;
+}
+
+.form-group textarea {
+    min-height: 100px !important;
+}
+
+.form-group .vManyToManyRawIdAdminField {
+    width: 100% !important;
+    min-height: 80px !important;
+    padding: 12px 16px !important;
+    border: 2px solid var(--gray-200) !important;
+    border-radius: 10px !important;
+    font-size: 15px !important;
+    box-sizing: border-box !important;
+}
+
+/* Select2 стили для множественного выбора */
+.select2-container { width: 100% !important; }
+
+.select2-container--default .select2-selection--multiple {
+    border: 2px solid var(--gray-200) !important;
+    border-radius: 10px !important;
+    padding: 10px 12px !important;
+    min-height: 120px !important;
+    max-height: 400px !important;
+    overflow-y: auto !important;
+}
+
+.select2-container--default .select2-selection--multiple .select2-selection__choice {
+    border: none !important;
+    border-radius: 8px !important;
+    color: white !important;
+    padding: 6px 12px 6px 8px !important;
+    margin: 4px !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    max-width: calc(100% - 16px) !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    line-height: 1.4 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0 !important;
+}
+
+.select2-container--default .select2-selection--multiple .select2-selection__choice span {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+
+/* Цвета тегов по статусу автомобиля */
+.select2-selection__choice[data-status="FLOATING"] {
+    background: linear-gradient(135deg, #2772a8 0%, #1e5a8a 100%) !important;
+}
+.select2-selection__choice[data-status="IN_PORT"] {
+    background: linear-gradient(135deg, #8B0000 0%, #6B0000 100%) !important;
+}
+.select2-selection__choice[data-status="UNLOADED"] {
+    background: linear-gradient(135deg, #239f58 0%, #1a7a43 100%) !important;
+}
+.select2-selection__choice[data-status="TRANSFERRED"] {
+    background: linear-gradient(135deg, #78458c 0%, #5a3369 100%) !important;
+}
+/* По умолчанию если статус не определен */
+.select2-selection__choice:not([data-status]) {
+    background: linear-gradient(135deg, var(--primary) 0%, #764ba2 100%) !important;
+}
+
+/* Цвета в выпадающем списке */
+.select2-results__option[data-status="FLOATING"] { border-left: 4px solid #2772a8; }
+.select2-results__option[data-status="IN_PORT"] { border-left: 4px solid #8B0000; }
+.select2-results__option[data-status="UNLOADED"] { border-left: 4px solid #239f58; }
+.select2-results__option[data-status="TRANSFERRED"] { border-left: 4px solid #78458c; }
+
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+    color: rgba(255,255,255,0.9) !important;
+    font-size: 16px !important;
+    font-weight: bold !important;
+    margin-right: 8px !important;
+    border: none !important;
+    background: rgba(0,0,0,0.15) !important;
+    border-radius: 50% !important;
+    width: 20px !important;
+    height: 20px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+}
+
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+    color: #ff6b6b !important;
+    background: transparent !important;
+}
+
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove:focus {
+    outline: none !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* Поле ввода поиска внутри multiple select */
+.select2-container--default .select2-selection--multiple .select2-search--inline .select2-search__field {
+    margin-top: 8px !important;
+    font-size: 14px !important;
+}
+
+.select2-dropdown {
+    border: 2px solid var(--gray-200) !important;
+    border-radius: 10px !important;
+    box-shadow: var(--shadow-lg) !important;
+}
+
+.select2-results__option--highlighted { 
+    background-color: var(--primary) !important; 
+}
+
+.select2-container--default .select2-selection--single {
+    height: 48px !important;
+    border: 2px solid var(--gray-200) !important;
+    border-radius: 10px !important;
+    padding: 8px 16px !important;
+}
+
+.select2-container--default .select2-selection--single .select2-selection__rendered {
+    line-height: 30px !important;
+    padding-left: 0 !important;
+}
+
+.select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: 46px !important;
+}
+
+/* Адаптивность */
+@media (max-width: 1200px) {
+    .autotransport-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 768px) {
+    .form-row, .form-row-2 { grid-template-columns: 1fr; }
+}
+
+/* Скрываем стандартные элементы Django */
+.form-row.field-carrier .help,
+.form-row.field-truck .help,
+.form-row.field-driver .help,
+.form-row.field-cars .help {
+    display: none;
+}
+
+/* Подсказки для границ */
+.border-suggestions {
+    position: absolute;
+    z-index: 1000;
+    background: white;
+    border: 2px solid var(--gray-200);
+    border-radius: 10px;
+    box-shadow: var(--shadow-lg);
+    max-height: 250px;
+    overflow-y: auto;
+    margin-top: 5px;
+    width: calc(100% - 4px);
+}
+
+.border-suggestion-item {
+    padding: 12px 16px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--gray-100);
+    font-size: 14px;
+    color: var(--gray-800);
+}
+
+.border-suggestion-item:last-child {
+    border-bottom: none;
+}
+
+.border-suggestion-item:hover {
+    background: var(--primary);
+    color: white;
+}
+
+/* Позиционирование для родителя подсказок */
+.form-group {
+    position: relative;
+}
