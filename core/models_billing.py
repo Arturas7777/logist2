@@ -455,6 +455,80 @@ class NewInvoice(models.Model):
         self.total = self.subtotal - self.discount + self.tax
         return self.total
     
+    def get_items_pivot_table(self):
+        """
+        Возвращает данные для табличного отображения инвойса:
+        строки = авто, столбцы = группы услуг (short_name), крайний правый = итого
+        """
+        from collections import OrderedDict
+        
+        items = self.items.all().select_related('car').order_by('order')
+        
+        if not items.exists():
+            return None
+        
+        # Собираем уникальные заголовки столбцов (в порядке появления)
+        columns = []
+        seen_cols = set()
+        
+        # Группируем по авто
+        car_rows = OrderedDict()
+        
+        for item in items:
+            col_name = item.description
+            if col_name not in seen_cols:
+                columns.append(col_name)
+                seen_cols.add(col_name)
+            
+            car_key = item.car_id or 0
+            if car_key not in car_rows:
+                car_label = ''
+                if item.car:
+                    car_label = f"{item.car.brand}, {item.car.vin}"
+                else:
+                    car_label = 'Без авто'
+                car_rows[car_key] = {
+                    'car': item.car,
+                    'car_label': car_label,
+                    'services': {},
+                    'total': Decimal('0'),
+                }
+            
+            car_rows[car_key]['services'][col_name] = item.unit_price
+            car_rows[car_key]['total'] += item.total_price
+        
+        # Считаем итоги по столбцам
+        column_totals = {}
+        for col in columns:
+            column_totals[col] = sum(
+                row['services'].get(col, Decimal('0')) for row in car_rows.values()
+            )
+        
+        grand_total = sum(row['total'] for row in car_rows.values())
+        
+        # Формируем строки с ячейками в порядке столбцов
+        rows = []
+        for car_data in car_rows.values():
+            cells = []
+            for col in columns:
+                val = car_data['services'].get(col, None)
+                cells.append(val)
+            rows.append({
+                'car_label': car_data['car_label'],
+                'cells': cells,
+                'total': car_data['total'],
+            })
+        
+        # Итого по столбцам
+        col_totals_list = [column_totals[col] for col in columns]
+        
+        return {
+            'columns': columns,
+            'rows': rows,
+            'col_totals': col_totals_list,
+            'grand_total': grand_total,
+        }
+    
     def update_status(self):
         """Обновить статус на основе оплаты"""
         # Не меняем статус если total = 0 (инвойс без позиций)
@@ -496,115 +570,89 @@ class NewInvoice(models.Model):
     
     def regenerate_items_from_cars(self):
         """
-        Автоматически создает позиции инвойса из услуг выбранных автомобилей
+        Автоматически создает позиции инвойса из услуг выбранных автомобилей.
+        
+        Табличный формат (06.02.2026):
+        - Одна позиция на каждую группу услуг (по short_name) для каждого авто
+        - Услуги с одинаковым short_name суммируются (напр. Разгрузка+Погрузка+Декларация → "Порт")
+        - Хранение — отдельная группа "Хран"
+        - description = short_name (для группировки в таблице)
         """
+        from collections import OrderedDict
+        
         # Удаляем старые позиции
         self.items.all().delete()
         
         issuer = self.issuer
         if not issuer:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"⚠️ Инвойс {self.number}: выставитель не указан, позиции не будут созданы")
             return
         
         issuer_type = issuer.__class__.__name__
-        
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"📋 Генерация позиций для инвойса {self.number}, выставитель: {issuer} (тип: {issuer_type})")
+        is_company = (issuer_type == 'Company')
         
         order = 0
         for car in self.cars.all():
-            # ВАЖНО! Пересчитываем хранение и стоимость перед генерацией позиций
-            # НО НЕ СОХРАНЯЕМ - чтобы не вызвать рекурсивный сигнал
-            # Данные автомобиля должны быть актуальными на момент вызова regenerate
+            # Пересчитываем хранение и стоимость перед генерацией позиций
             car.update_days_and_storage()
             car.calculate_total_price()
-            # Определяем какие услуги брать в зависимости от типа выставителя
+            
+            # Определяем набор услуг в зависимости от типа выставителя
             if issuer_type == 'Warehouse':
                 services = car.get_warehouse_services()
-                prefix = 'Склад'
-                
-                # ВАЖНО! Добавляем хранение как отдельную позицию
-                if car.storage_cost and car.storage_cost > 0:
-                    InvoiceItem.objects.create(
-                        invoice=self,
-                        description=f"Хранение - {car.brand} {car.vin} ({car.days} дн.)",
-                        car=car,
-                        quantity=car.days,
-                        unit_price=car._get_storage_daily_rate() if car.warehouse else Decimal('0'),
-                        order=order
-                    )
-                    order += 1
-                    
             elif issuer_type == 'Line':
                 services = car.get_line_services()
-                prefix = 'Линия'
             elif issuer_type == 'Carrier':
                 services = car.get_carrier_services()
-                prefix = 'Перевозчик'
             elif issuer_type == 'Company':
-                # Компания выставляет клиенту - все услуги + хранение + наценка
                 services = car.car_services.all()
-                prefix = 'Все услуги'
-                
-                # Определяем статус для описания
-                status_note = ""
-                if car.status == 'TRANSFERRED' and car.transfer_date:
-                    status_note = f" [Передан {car.transfer_date}]"
-                else:
-                    from django.utils import timezone
-                    status_note = f" [Текущее хранение на {timezone.now().date()}]"
-                
-                # Добавляем хранение для клиентских инвойсов
-                if car.storage_cost and car.storage_cost > 0:
-                    InvoiceItem.objects.create(
-                        invoice=self,
-                        description=f"Хранение - {car.brand} {car.vin} ({car.days} дн.){status_note}",
-                        car=car,
-                        quantity=car.days,
-                        unit_price=car._get_storage_daily_rate() if car.warehouse else Decimal('0'),
-                        order=order
-                    )
-                    order += 1
-                
-                # Наценка НЕ показывается отдельной строкой в инвойсе!
-                # Она скрыто добавляется к ценам услуг через markup_amount в CarService
-                # Это прибыль Caromoto Lithuania, которая не видна клиенту
             else:
                 continue
             
-            # Создаем позиции из услуг
+            # === Группируем услуги по short_name ===
+            # OrderedDict сохраняет порядок добавления
+            groups = OrderedDict()
+            
             for service in services:
                 service_name = service.get_service_name()
                 
-                # ЗАЩИТА: Пропускаем услуги, которые не найдены в справочнике
-                # Это может произойти если услуга была удалена, а CarService остался
+                # Пропускаем битые услуги
                 if service_name == "Услуга не найдена":
-                    logger.warning(f"⚠️ Пропущена битая услуга: type={service.service_type}, id={service.service_id} для авто {car.vin}")
                     continue
                 
-                # ЗАЩИТА: Для Company пропускаем услугу "Хранение" - она уже добавлена выше вручную
-                # Это предотвращает дублирование стоимости хранения в инвойсе
-                if issuer_type == 'Company' and service_name == 'Хранение':
-                    logger.debug(f"⏭️ Пропускаем услугу 'Хранение' для {car.vin} - уже добавлена вручную")
+                # Хранение обрабатывается отдельно (не через CarService)
+                if service_name == 'Хранение':
                     continue
                 
-                # Для Company используем invoice_price (включает скрытую наценку)
-                # Для остальных - обычную цену
-                if issuer_type == 'Company':
-                    # invoice_price уже включает markup_amount и учитывает quantity
-                    unit_price = (service.custom_price if service.custom_price else service.get_default_price()) + (service.markup_amount or Decimal('0'))
+                short = service.get_service_short_name()
+                
+                # Рассчитываем цену
+                if is_company:
+                    price = (service.custom_price if service.custom_price is not None else service.get_default_price()) + (service.markup_amount or Decimal('0'))
                 else:
-                    unit_price = service.custom_price if service.custom_price else service.get_default_price()
+                    price = service.custom_price if service.custom_price is not None else service.get_default_price()
                 
+                amount = price * service.quantity
+                
+                if short in groups:
+                    groups[short] += amount
+                else:
+                    groups[short] = amount
+            
+            # === Добавляем хранение как отдельную группу ===
+            if (is_company or issuer_type == 'Warehouse'):
+                if car.storage_cost and car.storage_cost > 0 and car.days and car.days > 0:
+                    daily_rate = car._get_storage_daily_rate() if car.warehouse else Decimal('0')
+                    storage_total = daily_rate * car.days
+                    groups['Хран'] = storage_total
+            
+            # === Создаём InvoiceItem для каждой группы ===
+            for short_name, amount in groups.items():
                 InvoiceItem.objects.create(
                     invoice=self,
-                    description=f"{prefix}: {service_name} - {car.brand} {car.vin}",
+                    description=short_name,
                     car=car,
-                    quantity=service.quantity,
-                    unit_price=unit_price,
+                    quantity=1,
+                    unit_price=amount,
                     order=order
                 )
                 order += 1

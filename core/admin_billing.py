@@ -190,6 +190,8 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             try:
                 invoice = NewInvoice.objects.get(pk=object_id)
                 selected_car_ids = list(invoice.cars.values_list('pk', flat=True))
+                # Данные для pivot-таблицы
+                extra_context['pivot_table'] = invoice.get_items_pivot_table()
             except NewInvoice.DoesNotExist:
                 pass
         extra_context['selected_car_ids'] = selected_car_ids

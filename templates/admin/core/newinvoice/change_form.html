@@ -292,6 +292,17 @@
     .items-table td:last-child { text-align: right; font-weight: 600; }
     .items-table tr:last-child td { border-bottom: none; }
     
+    /* Pivot table specific styles */
+    .pivot-table th { text-align: center; white-space: nowrap; padding: 10px 12px; }
+    .pivot-table th:first-child { text-align: left; }
+    .pivot-table td { font-size: 14px; }
+    .pivot-table tbody tr:hover { background: #f0f4ff; }
+    .pivot-table tfoot td { 
+        border-top: 2px solid var(--gray-300); 
+        padding: 12px 15px;
+        font-size: 14px;
+    }
+    
     .items-table input {
         padding: 8px 12px;
         border: 2px solid var(--gray-200);
@@ -622,14 +633,54 @@
             </div>
         </div>
         
-        <!-- Позиции инвойса -->
+        <!-- Позиции инвойса (табличный формат) -->
         <div class="card">
             <div class="card-header">
                 <span class="icon">📦</span>
                 <h2>Позиции инвойса</h2>
             </div>
             <div class="card-body">
-                {% if original and original.items.exists %}
+                {% if pivot_table %}
+                <div style="overflow-x: auto;">
+                <table class="items-table pivot-table">
+                    <thead>
+                        <tr>
+                            <th style="min-width: 200px;">Авто</th>
+                            {% for col in pivot_table.columns %}
+                            <th style="text-align: center; min-width: 70px;">{{ col }}</th>
+                            {% endfor %}
+                            <th style="text-align: right; min-width: 80px; background: linear-gradient(135deg, var(--primary) 0%, #764ba2 100%); color: white; border-radius: 0 10px 10px 0 !important;">Итого</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in pivot_table.rows %}
+                        <tr>
+                            <td style="font-weight: 500;">{{ row.car_label }}</td>
+                            {% for cell in row.cells %}
+                            <td style="text-align: center;">
+                                {% if cell != None %}
+                                {{ cell|floatformat:2 }}
+                                {% else %}
+                                <span style="color: #ccc;">—</span>
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                            <td style="text-align: right; font-weight: 700; color: var(--primary);">{{ row.total|floatformat:2 }} €</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr style="background: var(--gray-100); font-weight: 700;">
+                            <td>Итого</td>
+                            {% for ct in pivot_table.col_totals %}
+                            <td style="text-align: center;">{{ ct|floatformat:2 }}</td>
+                            {% endfor %}
+                            <td style="text-align: right; font-size: 1.15em; color: var(--primary);">{{ pivot_table.grand_total|floatformat:2 }} €</td>
+                        </tr>
+                    </tfoot>
+                </table>
+                </div>
+                {% elif original and original.items.exists %}
                 <table class="items-table">
                     <thead>
                         <tr>
@@ -639,10 +690,10 @@
                             <th>Сумма</th>
                         </tr>
                     </thead>
-                    <tbody id="items-tbody">
+                    <tbody>
                         {% for item in original.items.all %}
                         <tr>
-                            <td>{{ item.description }}{% if item.car %}<br><small style="color:#999;">🚗 {{ item.car.vin }}</small>{% endif %}</td>
+                            <td>{{ item.description }}{% if item.car %}<br><small style="color:#999;">{{ item.car.vin }}</small>{% endif %}</td>
                             <td>{{ item.quantity }}</td>
                             <td>{{ item.unit_price|floatformat:2 }} €</td>
                             <td>{{ item.total_price|floatformat:2 }} €</td>

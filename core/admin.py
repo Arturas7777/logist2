@@ -25,7 +25,7 @@ from .admin_filters import MultiStatusFilter, MultiWarehouseFilter, ClientAutoco
 class WarehouseServiceInline(admin.TabularInline):
     model = WarehouseService
     extra = 1
-    fields = ('name', 'description', 'default_price', 'default_markup', 'is_active', 'add_by_default')
+    fields = ('name', 'short_name', 'description', 'default_price', 'default_markup', 'is_active', 'add_by_default')
     verbose_name = "Услуга склада"
     verbose_name_plural = "Услуги склада"
     
@@ -38,7 +38,7 @@ class WarehouseServiceInline(admin.TabularInline):
 class LineServiceInline(admin.TabularInline):
     model = LineService
     extra = 1
-    fields = ('name', 'description', 'default_price', 'default_markup', 'is_active', 'add_by_default')
+    fields = ('name', 'short_name', 'description', 'default_price', 'default_markup', 'is_active', 'add_by_default')
     verbose_name = "Услуга линии"
     verbose_name_plural = "Услуги линии"
 
@@ -73,7 +73,7 @@ class LineTHSCoefficientInline(admin.TabularInline):
 class CarrierServiceInline(admin.TabularInline):
     model = CarrierService
     extra = 1
-    fields = ('name', 'description', 'default_price', 'default_markup', 'is_active', 'add_by_default')
+    fields = ('name', 'short_name', 'description', 'default_price', 'default_markup', 'is_active', 'add_by_default')
     verbose_name = "Услуга перевозчика"
     verbose_name_plural = "Услуги перевозчика"
 
@@ -106,7 +106,7 @@ class CarrierDriverInline(admin.TabularInline):
 class CompanyServiceInline(admin.TabularInline):
     model = CompanyService
     extra = 1
-    fields = ('name', 'description', 'default_price', 'default_markup', 'is_active', 'add_by_default')
+    fields = ('name', 'short_name', 'description', 'default_price', 'default_markup', 'is_active', 'add_by_default')
     verbose_name = "Услуга компании"
     verbose_name_plural = "Услуги компании"
     

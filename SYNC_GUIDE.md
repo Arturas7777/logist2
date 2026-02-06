@@ -107,6 +107,38 @@ Remove-Item logist2_sync_backup.dump
 
 ---
 
+## Готовые скрипты (необязательно, но удобно)
+
+### `vps_push.sh` — коммит и пуш с VPS
+
+Скрипт уже лежит на сервере. Если работал напрямую на VPS (админка, правки в коде) и нужно закоммитить:
+
+```powershell
+ssh root@176.118.198.78 "cd /var/www/www-root/data/www/logist2 && ./vps_push.sh"
+```
+
+Или с ручным описанием коммита:
+
+```powershell
+ssh root@176.118.198.78 "cd /var/www/www-root/data/www/logist2 && ./vps_push.sh 'добавил новый контейнер'"
+```
+
+Скрипт автоматически выполнит `git add -A`, `git commit` и `git push origin master`.
+
+### `sync_from_vps.ps1` — синхронизация с VPS на локальный компьютер
+
+Запуск на ПК/ноутбуке. Автоматически тянет код и БД с VPS:
+
+```powershell
+.\sync_from_vps.ps1            # код + БД
+.\sync_from_vps.ps1 -NoDB      # только код (без БД)
+.\sync_from_vps.ps1 -DBOnly    # только БД (без кода)
+```
+
+Скрипт автоматически: коммитит и пушит изменения на VPS, делает `git pull` локально, создает дамп БД на VPS, скачивает и восстанавливает локально.
+
+---
+
 ## Шпаргалка
 
 | Что нужно | Команда |
@@ -115,6 +147,8 @@ Remove-Item logist2_sync_backup.dump
 | Запушить код в git | `git add -A; git commit -m "..."; git push origin master` |
 | Скачать БД с сервера | 3 команды из сценария 4 |
 | Обновить сервер из git | SSH → `git pull` + `migrate` + `restart gunicorn` |
+| Закоммитить с VPS | `./vps_push.sh` (на сервере) |
+| Полная синхронизация | `.\sync_from_vps.ps1` (на ПК/ноуте) |
 
 ## Если SSH не подключается (таймаут)
 

@@ -1068,6 +1068,8 @@ class CompanyService(models.Model):
     """Услуги компаний"""
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='services', verbose_name="Компания")
     name = models.CharField(max_length=200, verbose_name="Название услуги")
+    short_name = models.CharField(max_length=20, blank=True, default='', verbose_name="Сокращённо",
+        help_text="Короткое название для инвойсов и таблиц (напр. THS, Порт, Хран)")
     description = models.TextField(blank=True, verbose_name="Описание")
     default_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Цена по умолчанию")
     default_markup = models.DecimalField(
@@ -1099,6 +1101,8 @@ class LineService(models.Model):
     """Услуги морских линий"""
     line = models.ForeignKey(Line, on_delete=models.CASCADE, related_name='services', verbose_name="Линия")
     name = models.CharField(max_length=200, verbose_name="Название услуги")
+    short_name = models.CharField(max_length=20, blank=True, default='', verbose_name="Сокращённо",
+        help_text="Короткое название для инвойсов и таблиц (напр. THS, Порт, Хран)")
     description = models.TextField(blank=True, verbose_name="Описание")
     default_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Цена по умолчанию")
     default_markup = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Наценка по умолчанию",
@@ -1122,6 +1126,8 @@ class CarrierService(models.Model):
     """Услуги перевозчиков"""
     carrier = models.ForeignKey(Carrier, on_delete=models.CASCADE, related_name='services', verbose_name="Перевозчик")
     name = models.CharField(max_length=200, verbose_name="Название услуги")
+    short_name = models.CharField(max_length=20, blank=True, default='', verbose_name="Сокращённо",
+        help_text="Короткое название для инвойсов и таблиц (напр. THS, Порт, Хран)")
     description = models.TextField(blank=True, verbose_name="Описание")
     default_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Цена по умолчанию")
     default_markup = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Наценка по умолчанию",
@@ -1145,6 +1151,8 @@ class WarehouseService(models.Model):
     """Услуги складов"""
     warehouse = models.ForeignKey(Warehouse, on_delete=models.CASCADE, related_name='services', verbose_name="Склад")
     name = models.CharField(max_length=200, verbose_name="Название услуги")
+    short_name = models.CharField(max_length=20, blank=True, default='', verbose_name="Сокращённо",
+        help_text="Короткое название для инвойсов и таблиц (напр. THS, Порт, Хран)")
     description = models.TextField(blank=True, verbose_name="Описание")
     default_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Цена по умолчанию")
     default_markup = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Наценка по умолчанию",
@@ -1235,6 +1243,23 @@ class CarService(models.Model):
             except CompanyService.DoesNotExist:
                 return "Услуга не найдена"
         return "Неизвестная услуга"
+    
+    def get_service_short_name(self):
+        """Получает сокращённое название услуги (для инвойсов и таблиц)"""
+        model_map = {
+            'LINE': LineService,
+            'CARRIER': CarrierService,
+            'WAREHOUSE': WarehouseService,
+            'COMPANY': CompanyService,
+        }
+        model_class = model_map.get(self.service_type)
+        if model_class:
+            try:
+                service = model_class.objects.get(id=self.service_id)
+                return service.short_name or service.name[:10]
+            except model_class.DoesNotExist:
+                return "?"
+        return "?"
     
     def get_default_price(self):
         """Получает цену по умолчанию"""
