@@ -1188,7 +1188,7 @@ def search_counterparties(request):
 def search_cars(request):
     """
     API для поиска автомобилей по VIN, марке
-    Используется для автокомплита в форме инвойса
+    Используется для автокомплита в форме инвойса и автовоза
     """
     query = request.GET.get('q', '').strip()
     selected = request.GET.getlist('selected', [])  # Уже выбранные ID
@@ -1206,11 +1206,12 @@ def search_cars(request):
         client_name = car.client.name if car.client else 'Без клиента'
         results.append({
             'id': car.pk,
-            'text': f'{car.brand} {car.year} ({car.vin})',
+            'text': f'{car.brand} {car.year} ({car.vin}) - {client_name}',
             'vin': car.vin,
             'brand': car.brand,
             'year': car.year,
             'client': client_name,
+            'status': car.status,  # Добавляем статус для цветных тегов
         })
     
     return JsonResponse({'results': results})
@@ -1293,13 +1294,14 @@ def search_cars(request):
     query = request.GET.get('q', '').strip()
     selected = request.GET.getlist('selected', [])  # Уже выбранные ID
     
-    if len(query) < 2:
-        return JsonResponse({'results': []})
-    
-    # Исключаем уже выбранные
-    cars = Car.objects.filter(
-        Q(vin__icontains=query) | Q(brand__icontains=query)
-    ).exclude(pk__in=selected).select_related('client')[:15]
+    # Если запрос пустой - показываем первые 15 авто
+    if not query:
+        cars = Car.objects.exclude(pk__in=selected).select_related('client')[:15]
+    else:
+        # Исключаем уже выбранные
+        cars = Car.objects.filter(
+            Q(vin__icontains=query) | Q(brand__icontains=query)
+        ).exclude(pk__in=selected).select_related('client')[:15]
     
     results = []
     for car in cars:
@@ -1311,6 +1313,8 @@ def search_cars(request):
             'brand': car.brand,
             'year': car.year,
             'client': client_name,
+            'client_name': client_name,
+            'status': car.status,
         })
     
-    return JsonResponse({'results': results})
+    return JsonResponse({'results': results})# API endpoints for AutoTransport

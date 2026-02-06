@@ -1,6 +1,6 @@
 # ПОЛНОЕ ОПИСАНИЕ ПРОЕКТА LOGIST2
 
-**Версия документа:** 31 января 2026  
+**Версия документа:** 4 февраля 2026  
 **Назначение:** Описание функционала для работы с AI-ассистентами
 
 ---
@@ -227,6 +227,65 @@ CompanyService:         # Услуги компаний
     default_markup      # Наценка по умолчанию
     is_active           # Активна ли услуга
     add_by_default      # ✅ ВАЖНО: добавлять ли автоматически при создании ТС компании
+
+AutoTransport:          # Автовоз на загрузку ⭐ НОВОЕ
+    number              # Номер автовоза (генерируется автоматически: AT-YYYYMMDD-NNNN)
+    carrier             # FK → Carrier (перевозчик)
+    eori_code           # EORI код (автозаполнение из перевозчика)
+    truck               # FK → CarrierTruck (автовоз)
+    driver              # FK → CarrierDriver (водитель)
+    truck_number_manual # Ручной ввод номера тягача (если нет в базе)
+    trailer_number_manual # Ручной ввод номера прицепа
+    driver_name_manual  # Ручной ввод имени водителя
+    driver_phone        # Телефон водителя (автозаполнение)
+    border_crossing     # Граница пересечения (choices)
+    cars                # ManyToMany → Car (автомобили в автовозе)
+    loading_date        # Дата погрузки
+    departure_date      # Дата отправления
+    estimated_delivery_date # Планируемая дата доставки
+    actual_delivery_date    # Фактическая дата доставки
+    status              # DRAFT, FORMED, LOADED, IN_TRANSIT, DELIVERED, CANCELLED
+    notes               # Примечания
+    created_by          # FK → User (кто создал)
+    created_at, updated_at # Даты создания/обновления
+    
+    # При статусе "Сформирован" (FORMED):
+    # - Автоматически создаются инвойсы для каждого клиента, чьи ТС в автовозе
+    # - Если все ТС одного клиента - создается один инвойс
+    # - Инвойсы автоматически обновляются при изменении состава автовоза
+
+CarrierTruck:           # Автовозы перевозчика ⭐ НОВОЕ
+    carrier             # FK → Carrier
+    truck_number        # Номер тягача
+    trailer_number      # Номер прицепа
+    is_active           # Активность (default: True)
+    created_at, updated_at # Даты создания/обновления
+    
+    # Property: full_number - полный номер "XXXXX / YYYYY"
+
+CarrierDriver:          # Водители перевозчика ⭐ НОВОЕ
+    carrier             # FK → Carrier
+    first_name          # Имя
+    last_name           # Фамилия
+    phone               # Телефон
+    is_active           # Активность (default: True)
+    created_at, updated_at # Даты создания/обновления
+    
+    # Property: full_name - полное имя "Имя Фамилия"
+
+# Расширение модели Carrier:
+Carrier:
+    # ... существующие поля
+    eori_code           # ⭐ НОВОЕ: EORI код перевозчика
+    # Связи:
+    # - trucks (CarrierTruck)
+    # - drivers (CarrierDriver)
+    # - auto_transports (AutoTransport)
+
+# Расширение модели NewInvoice:
+NewInvoice:
+    # ... существующие поля
+    auto_transport      # ⭐ НОВОЕ: FK → AutoTransport (связь с автовозом)
 ```
 
 ### LineTHSCoefficient (Коэффициенты THS)
@@ -842,6 +901,33 @@ if hasattr(self, '_prefetched_objects_cache'):
 4. Добавить ТС через ManyToMany
 5. Сохранить → позиции создадутся автоматически из CarService
 6. Скрытая наценка добавится к ценам услуг
+
+### Формирование автовоза ⭐ НОВОЕ
+
+1. Создать AutoTransport
+2. Выбрать перевозчика → автоматически заполнится EORI код, списки автовозов и водителей
+3. Выбрать автовоз и водителя → автоматически заполнится телефон водителя
+4. Добавить автомобили через Select2 с поиском по VIN/марке
+5. Выбрать границу пересечения, указать даты
+6. Установить статус "Сформирован" (FORMED)
+7. Сохранить → автоматически создадутся инвойсы для каждого клиента, чьи ТС в автовозе
+8. При изменении состава автовоза → инвойсы автоматически обновятся
+
+**API endpoints для автовозов:**
+- `GET /core/api/autotransport/carrier-info/<carrier_id>/` - EORI код, автовозы, водители перевозчика
+- `GET /core/api/autotransport/driver-phone/<driver_id>/` - телефон водителя
+- `GET /core/api/autotransport/border-crossings/` - список границ пересечения
+- `POST /core/api/autotransport/create-truck/` - создание нового автовоза
+- `POST /core/api/autotransport/create-driver/` - создание нового водителя
+
+**Файлы:**
+- `core/models.py` - модели AutoTransport, CarrierTruck, CarrierDriver
+- `core/models_billing.py` - связь NewInvoice с AutoTransport
+- `core/admin.py` - AutoTransportAdmin
+- `core/views_autotransport.py` - API endpoints
+- `core/signals.py` - автоматическое создание инвойсов
+- `templates/admin/core/autotransport/change_form.html` - кастомный шаблон
+- `core/static/css/autotransport.css` - стили
 
 ---
 

@@ -83,6 +83,26 @@ class CarrierServiceInline(admin.TabularInline):
         return formset
 
 
+class CarrierTruckInline(admin.TabularInline):
+    """Инлайн для автовозов перевозчика"""
+    from .models import CarrierTruck
+    model = CarrierTruck
+    extra = 1
+    fields = ('truck_number', 'trailer_number', 'is_active', 'notes')
+    verbose_name = "Автовоз"
+    verbose_name_plural = "Автовозы перевозчика"
+
+
+class CarrierDriverInline(admin.TabularInline):
+    """Инлайн для водителей перевозчика"""
+    from .models import CarrierDriver
+    model = CarrierDriver
+    extra = 1
+    fields = ('first_name', 'last_name', 'phone', 'is_active', 'notes')
+    verbose_name = "Водитель"
+    verbose_name_plural = "Водители перевозчика"
+
+
 class CompanyServiceInline(admin.TabularInline):
     model = CompanyService
     extra = 1
@@ -3209,15 +3229,15 @@ class LineAdmin(admin.ModelAdmin):
 class CarrierAdmin(admin.ModelAdmin):
     change_form_template = 'admin/carrier_change.html'
     form = CarrierForm
-    list_display = ('name', 'contact_person', 'phone', 'balance_display')
-    search_fields = ('name', 'contact_person', 'phone', 'email')
+    list_display = ('name', 'eori_code', 'contact_person', 'phone', 'balance_display')
+    search_fields = ('name', 'eori_code', 'contact_person', 'phone', 'email')
     list_filter = ('created_at',)
     readonly_fields = ('created_at', 'updated_at', 'balance')
     exclude = ('transport_rate', 'loading_fee', 'unloading_fee', 'fuel_surcharge', 'additional_fees')
-    inlines = [CarrierServiceInline]
+    inlines = [CarrierServiceInline, CarrierTruckInline, CarrierDriverInline]
     fieldsets = (
         ('Основная информация', {
-            'fields': ('name', 'short_name', 'contact_person', 'phone', 'email')
+            'fields': ('name', 'short_name', 'eori_code', 'contact_person', 'phone', 'email')
         }),
         ('Баланс', {
             'fields': ('balance',)
@@ -3298,6 +3318,214 @@ class CarrierAdmin(admin.ModelAdmin):
 
 
 # Company уже зарегистрирован через @admin.register выше
+
+
+# ==============================================================================
+# 🚛 СИСТЕМА АВТОВОЗОВ НА ЗАГРУЗКУ
+# ==============================================================================
+
+from .models import AutoTransport, CarrierTruck, CarrierDriver
+
+@admin.register(AutoTransport)
+class AutoTransportAdmin(admin.ModelAdmin):
+    """
+    Админка для формирования автовозов на загрузку
+    
+    Функционал:
+    - AJAX выбор автомобилей
+    - Автоматическое заполнение EORI кода из перевозчика
+    - Автоматическое заполнение телефона водителя
+    - Формирование инвойсов для клиентов при сохранении
+    """
+    
+    change_form_template = 'admin/core/autotransport/change_form.html'
+    
+    list_display = (
+        'number',
+        'carrier',
+        'truck_display',
+        'driver_display',
+        'cars_count_display',
+        'status_display',
+        'loading_date',
+        'actions_display'
+    )
+    
+    list_filter = (
+        'status',
+        'carrier',
+        'loading_date',
+        'created_at',
+    )
+    
+    search_fields = (
+        'number',
+        'carrier__name',
+        'truck_number_manual',
+        'driver_name_manual',
+        'border_crossing',
+    )
+    
+    readonly_fields = (
+        'number',
+        'created_at',
+        'updated_at',
+        'created_by',
+        'cars_count',
+    )
+    
+    filter_horizontal = ('cars',)
+    
+    fieldsets = (
+        ('Основная информация', {
+            'fields': ('number', 'status')
+        }),
+        ('Перевозчик', {
+            'fields': ('carrier', 'eori_code')
+        }),
+        ('Автовоз', {
+            'fields': (
+                ('truck', 'truck_number_manual', 'trailer_number_manual'),
+            ),
+            'description': 'Выберите автовоз из списка или введите номера вручную'
+        }),
+        ('Водитель', {
+            'fields': (
+                ('driver', 'driver_name_manual', 'driver_phone'),
+            ),
+            'description': 'Выберите водителя из списка или введите данные вручную'
+        }),
+        ('Граница и маршрут', {
+            'fields': ('border_crossing',)
+        }),
+        ('Автомобили', {
+            'fields': ('cars', 'cars_count'),
+            'description': 'Выберите автомобили для загрузки в автовоз'
+        }),
+        ('Даты', {
+            'fields': (
+                'loading_date',
+                'departure_date',
+                'estimated_delivery_date',
+                'actual_delivery_date',
+            )
+        }),
+        ('Дополнительно', {
+            'fields': ('notes',),
+            'classes': ('collapse',)
+        }),
+        ('Системная информация', {
+            'fields': ('created_at', 'updated_at', 'created_by'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def save_model(self, request, obj, form, change):
+        """Сохранение автовоза с автозаполнением полей"""
+        # Сохраняем кто создал
+        if not change:
+            obj.created_by = request.user.username
+        
+        # Сохраняем объект
+        super().save_model(request, obj, form, change)
+        
+        # Если статус "Сформирован" - создаем/обновляем инвойсы
+        if obj.status == 'FORMED':
+            try:
+                invoices = obj.generate_invoices()
+                from django.contrib import messages
+                messages.success(
+                    request,
+                    f'Автовоз сформирован. Создано/обновлено инвойсов: {len(invoices)}'
+                )
+            except Exception as e:
+                from django.contrib import messages
+                messages.error(request, f'Ошибка при создании инвойсов: {e}')
+    
+    def truck_display(self, obj):
+        """Отображение номера автовоза"""
+        return obj.truck_full_number
+    truck_display.short_description = 'Автовоз'
+    
+    def driver_display(self, obj):
+        """Отображение водителя"""
+        return f"{obj.driver_full_name} ({obj.driver_phone or 'нет тел.'})"
+    driver_display.short_description = 'Водитель'
+    
+    def cars_count_display(self, obj):
+        """Количество автомобилей"""
+        count = obj.cars_count
+        return format_html(
+            '<span style="font-weight:bold;">{} авто</span>',
+            count
+        )
+    cars_count_display.short_description = 'Количество авто'
+    
+    def status_display(self, obj):
+        """Цветной статус"""
+        colors = {
+            'DRAFT': '#6c757d',
+            'FORMED': '#28a745',
+            'LOADED': '#17a2b8',
+            'IN_TRANSIT': '#ffc107',
+            'DELIVERED': '#28a745',
+            'CANCELLED': '#dc3545',
+        }
+        color = colors.get(obj.status, '#6c757d')
+        return format_html(
+            '<span style="color:{}; font-weight:bold;">{}</span>',
+            color, obj.get_status_display()
+        )
+    status_display.short_description = 'Статус'
+    
+    def actions_display(self, obj):
+        """Кнопки действий"""
+        html = []
+        
+        if obj.status == 'DRAFT':
+            html.append(format_html(
+                '<a class="button" href="{}">Сформировать</a>',
+                reverse('admin:core_autotransport_change', args=[obj.id])
+            ))
+        
+        if obj.id:
+            html.append(format_html(
+                '<a class="button" href="{}">Инвойсы</a>',
+                reverse('admin:core_newinvoice_changelist') + f'?auto_transport__id__exact={obj.id}'
+            ))
+        
+        return format_html(' '.join(html))
+    actions_display.short_description = 'Действия'
+    
+    def add_view(self, request, form_url='', extra_context=None):
+        """Кастомная обработка добавления автовоза"""
+        extra_context = self._get_extra_context(None, extra_context)
+        return super().add_view(request, form_url, extra_context)
+    
+    def change_view(self, request, object_id, form_url='', extra_context=None):
+        """Кастомная обработка изменения автовоза"""
+        extra_context = self._get_extra_context(object_id, extra_context)
+        return super().change_view(request, object_id, form_url, extra_context)
+    
+    def _get_extra_context(self, object_id, extra_context=None):
+        """Получаем контекст для шаблона"""
+        extra_context = extra_context or {}
+        
+        # Передаем все автомобили для выбора (как в инвойсах)
+        from .models import Car
+        extra_context['cars'] = Car.objects.select_related('client').all()
+        
+        # Если редактируем существующий автовоз - передаем выбранные ID
+        if object_id:
+            try:
+                autotransport = self.get_object(None, object_id)
+                extra_context['selected_car_ids'] = list(autotransport.cars.values_list('pk', flat=True))
+            except:
+                extra_context['selected_car_ids'] = []
+        else:
+            extra_context['selected_car_ids'] = []
+        
+        return extra_context
 
 
 # ==============================================================================

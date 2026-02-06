@@ -22,7 +22,7 @@ staticfiles/
 static_root/
 
 # Media files (опционально, зависит от стратегии)
-# media/
+media/
 
 # Env
 .env
@@ -65,3 +65,4 @@ htmlcov/
 node_modules/
 npm-debug.log
 yarn-error.log
+container_photos/

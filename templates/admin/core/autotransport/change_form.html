@@ -1,0 +1,454 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrahead %}
+{{ block.super }}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
+<link href="{% static 'css/autotransport.css' %}?v=4" rel="stylesheet">
+{% endblock %}
+
+{% block content %}
+<div class="autotransport-page-header">
+    <h1>
+        {% if add %}🚛 Новый автовоз{% else %}🚛 Автовоз {{ original.number }}{% endif %}
+    </h1>
+    <a href="{% url 'admin:core_autotransport_changelist' %}" class="back-link">← Назад к списку</a>
+</div>
+
+<form method="post" id="{{ opts.model_name }}_form" enctype="multipart/form-data" novalidate>
+{% csrf_token %}
+{% if is_popup %}<input type="hidden" name="{{ is_popup_var }}" value="1">{% endif %}
+{% if to_field %}<input type="hidden" name="{{ to_field_var }}" value="{{ to_field }}">{% endif %}
+
+<div class="autotransport-grid">
+    <div class="main-content">
+        <!-- Информация о перевозчике -->
+        <div class="card">
+            <div class="card-header">
+                <span class="icon">🚚</span>
+                <h2>Перевозчик</h2>
+                {% if original %}
+                <span class="status-badge status-{{ original.status|lower }}">{{ original.get_status_display }}</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Перевозчик *</label>
+                        {{ adminform.form.carrier }}
+                    </div>
+                    <div class="form-group">
+                        <label>EORI код</label>
+                        {{ adminform.form.eori_code }}
+                        <div class="form-hint">Заполняется автоматически из данных перевозчика</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Транспорт и водитель -->
+        <div class="card">
+            <div class="card-header">
+                <span class="icon">🚛</span>
+                <h2>Транспорт и водитель</h2>
+            </div>
+            <div class="card-body">
+                <div class="form-row-2" style="margin-bottom: 20px;">
+                    <div class="form-group">
+                        <label>Автовоз</label>
+                        {{ adminform.form.truck }}
+                        <div class="form-hint">Выберите из списка или введите вручную ниже</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Водитель</label>
+                        {{ adminform.form.driver }}
+                        <div class="form-hint">Выберите из списка или введите вручную ниже</div>
+                    </div>
+                </div>
+
+                <div class="form-row-2" style="margin-bottom: 20px;">
+                    <div class="form-group">
+                        <label>Номер тягача (ручной ввод)</label>
+                        {{ adminform.form.truck_number_manual }}
+                    </div>
+                    <div class="form-group">
+                        <label>Номер прицепа (ручной ввод)</label>
+                        {{ adminform.form.trailer_number_manual }}
+                    </div>
+                </div>
+
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>ФИО водителя (ручной ввод)</label>
+                        {{ adminform.form.driver_name_manual }}
+                    </div>
+                    <div class="form-group">
+                        <label>Телефон водителя</label>
+                        {{ adminform.form.driver_phone }}
+                        <div class="form-hint">Заполняется автоматически или введите вручную</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Маршрут -->
+        <div class="card">
+            <div class="card-header">
+                <span class="icon">🛣️</span>
+                <h2>Маршрут</h2>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label>Граница пересечения</label>
+                    {{ adminform.form.border_crossing }}
+                    <div class="form-hint">Начните вводить - система подскажет ранее использованные границы</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Даты -->
+        <div class="card">
+            <div class="card-header">
+                <span class="icon">📅</span>
+                <h2>Даты</h2>
+            </div>
+            <div class="card-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Дата загрузки</label>
+                        {{ adminform.form.loading_date }}
+                    </div>
+                    <div class="form-group">
+                        <label>Дата выезда</label>
+                        {{ adminform.form.departure_date }}
+                    </div>
+                </div>
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Планируемая доставка</label>
+                        {{ adminform.form.estimated_delivery_date }}
+                    </div>
+                    <div class="form-group">
+                        <label>Фактическая доставка</label>
+                        {{ adminform.form.actual_delivery_date }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Автомобили -->
+        <div class="card">
+            <div class="card-header">
+                <span class="icon">🚗</span>
+                <h2>Автомобили в автовозе</h2>
+                {% if original %}
+                <span class="cars-count-badge">{{ original.cars_count }} авто</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div class="cars-hint">
+                    💡 Начните вводить VIN или марку - автомобили появятся автоматически. После формирования создадутся инвойсы!
+                </div>
+                <select name="cars" id="cars_select" multiple="multiple" style="width: 100%;">
+                    {% for car in cars %}
+                    <option value="{{ car.pk }}" data-status="{{ car.status }}" {% if original and car.pk in selected_car_ids %}selected{% endif %}>{{ car.brand }} {{ car.year }} ({{ car.vin }}) {% if car.client %}- {{ car.client.name }}{% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <!-- Примечания -->
+        <div class="card">
+            <div class="card-header">
+                <span class="icon">📝</span>
+                <h2>Примечания</h2>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    {{ adminform.form.notes }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="sidebar">
+        {% if original %}
+        <div class="card">
+            <div class="card-body">
+                <div class="autotransport-number-display">
+                    <div class="label">Номер автовоза</div>
+                    <div class="number">{{ original.number }}</div>
+                </div>
+                
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="label">Автомобилей</div>
+                        <div class="value">{{ original.cars_count }}</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-item">
+                            <div class="label">Клиентов</div>
+                            <div class="value">{{ original.get_clients|length }}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="label">Инвойсов</div>
+                            <div class="value">{{ original.invoices.count }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% if original.invoices.exists %}
+        <div class="card">
+            <div class="card-header">
+                <span class="icon">📄</span>
+                <h2>Созданные инвойсы</h2>
+            </div>
+            <div class="card-body">
+                {% for invoice in original.invoices.all %}
+                <div class="invoice-link-item">
+                    <div>
+                        <div class="invoice-number">{{ invoice.number }}</div>
+                        <div class="invoice-client">{{ invoice.recipient_client.name }}</div>
+                    </div>
+                    <div class="invoice-amount">{{ invoice.total|floatformat:2 }} €</div>
+                    <a href="{% url 'admin:core_newinvoice_change' invoice.pk %}" class="invoice-link-btn">→</a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="card">
+            <div class="card-body">
+                <div class="autotransport-number-display">
+                    <div class="label">Новый автовоз</div>
+                    <div class="number" style="font-size:18px;">Номер присвоится<br>автоматически</div>
+                </div>
+                <p style="text-align:center;color:var(--gray-600);font-size:14px;margin:0;">После формирования создадутся инвойсы</p>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card">
+            <div class="card-header">
+                <span class="icon">⚙️</span>
+                <h2>Статус</h2>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    {{ adminform.form.status }}
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="icon">⚡</span>
+                <h2>Действия</h2>
+            </div>
+            <div class="card-body">
+                <div class="actions-buttons">
+                    <button type="submit" name="_save" value="1" class="btn btn-primary">💾 Сохранить</button>
+                    {% if original %}
+                    <button type="submit" name="_continue" value="1" class="btn btn-outline">💾 Сохранить и продолжить</button>
+                    {% else %}
+                    <button type="submit" name="_addanother" value="1" class="btn btn-outline">➕ Сохранить и добавить ещё</button>
+                    {% endif %}
+                    <a href="{% url 'admin:core_autotransport_changelist' %}" class="btn btn-outline">✕ Отмена</a>
+                    {% if original %}
+                    <div class="actions-divider"></div>
+                    <a href="{% url 'admin:core_autotransport_delete' original.pk %}" class="btn btn-danger btn-sm">🗑 Удалить</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+</form>
+
+<script>
+// КРИТИЧЕСКИ ВАЖНО: Select2 CDN требует window.jQuery
+// Django admin использует django.jQuery - создаем мост
+window.jQuery = window.django && window.django.jQuery ? window.django.jQuery : window.jQuery;
+window.$ = window.jQuery;
+console.log('✅ jQuery мост установлен, версия:', window.jQuery ? window.jQuery.fn.jquery : 'НЕТ');
+</script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+// Используем django.jQuery если доступен, иначе обычный jQuery
+(function($) {
+    if (!$) {
+        console.error('jQuery not found!');
+        return;
+    }
+    
+    $(document).ready(function() {
+        console.log('🚛 AutoTransport JS инициализирован');
+
+        // ============================================
+        // 1. АВТОЗАПОЛНЕНИЕ EORI КОДА ИЗ ПЕРЕВОЗЧИКА
+        // ============================================
+        const carrierSelect = $('#id_carrier');
+        const eoriInput = $('#id_eori_code');
+
+        if (carrierSelect.length && eoriInput.length) {
+            carrierSelect.on('change', function() {
+                const carrierId = $(this).val();
+                if (!carrierId) {
+                    eoriInput.val('');
+                    return;
+                }
+
+                $.ajax({
+                    url: '/core/api/carrier/' + carrierId + '/info/',
+                    method: 'GET',
+                    success: function(data) {
+                        if (data.eori_code) {
+                            eoriInput.val(data.eori_code);
+                        }
+                        
+                        // Обновляем списки автовозов и водителей
+                        updateTrucksList(data.trucks);
+                        updateDriversList(data.drivers);
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('Ошибка загрузки данных перевозчика:', error);
+                    }
+                });
+            });
+        }
+
+        // ============================================
+        // 2. ОБНОВЛЕНИЕ СПИСКА АВТОВОЗОВ
+        // ============================================
+        function updateTrucksList(trucks) {
+            const truckSelect = $('#id_truck');
+            if (!truckSelect.length) return;
+
+            const currentValue = truckSelect.val();
+            truckSelect.empty();
+            truckSelect.append('<option value="">---------</option>');
+
+            trucks.forEach(function(truck) {
+                const option = $('<option></option>')
+                    .val(truck.id)
+                    .text(truck.text);
+                truckSelect.append(option);
+            });
+
+            if (currentValue) {
+                truckSelect.val(currentValue);
+            }
+        }
+
+        // ============================================
+        // 3. ОБНОВЛЕНИЕ СПИСКА ВОДИТЕЛЕЙ
+        // ============================================
+        function updateDriversList(drivers) {
+            const driverSelect = $('#id_driver');
+            if (!driverSelect.length) return;
+
+            const currentValue = driverSelect.val();
+            driverSelect.empty();
+            driverSelect.append('<option value="">---------</option>');
+
+            drivers.forEach(function(driver) {
+                const option = $('<option></option>')
+                    .val(driver.id)
+                    .text(driver.text);
+                driverSelect.append(option);
+            });
+
+            if (currentValue) {
+                driverSelect.val(currentValue);
+            }
+        }
+
+        // ============================================
+        // 4. АВТОЗАПОЛНЕНИЕ ТЕЛЕФОНА ВОДИТЕЛЯ
+        // ============================================
+        const driverSelect = $('#id_driver');
+        const driverPhoneInput = $('#id_driver_phone');
+
+        if (driverSelect.length && driverPhoneInput.length) {
+            driverSelect.on('change', function() {
+                const driverId = $(this).val();
+                if (!driverId) {
+                    return;
+                }
+
+                $.ajax({
+                    url: '/core/api/driver/' + driverId + '/phone/',
+                    method: 'GET',
+                    success: function(data) {
+                        if (data.phone) {
+                            driverPhoneInput.val(data.phone);
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('Ошибка загрузки телефона водителя:', error);
+                    }
+                });
+            });
+        }
+
+        // ============================================
+        // 5. ИНИЦИАЛИЗАЦИЯ SELECT2 ДЛЯ АВТОМОБИЛЕЙ (БЕЗ AJAX, КАК В ИНВОЙСАХ)
+        // ============================================
+        $('#cars_select').select2({
+            placeholder: 'Введите VIN или марку для поиска...',
+            allowClear: true,
+            templateResult: function(state) {
+                if (!state.id) return state.text;
+                var status = $(state.element).data('status');
+                var statusLabels = {
+                    'FLOATING': '🚢 В пути',
+                    'IN_PORT': '⚓ В порту',
+                    'UNLOADED': '✅ Разгружен',
+                    'TRANSFERRED': '📦 Передан'
+                };
+                var statusLabel = statusLabels[status] || '';
+                return $('<span>' + state.text + (statusLabel ? ' <small style="opacity:0.7;">' + statusLabel + '</small>' : '') + '</span>');
+            },
+            templateSelection: function(state) {
+                if (!state.id) return state.text;
+                var status = $(state.element).data('status');
+                return $('<span data-status="' + status + '">' + state.text + '</span>');
+            }
+        });
+        
+        // Добавляем data-status к созданным тегам
+        $('#cars_select').on('select2:select', function(e) {
+            var status = $(e.params.data.element).data('status');
+            setTimeout(function() {
+                $('.select2-selection__choice').each(function() {
+                    var $choice = $(this);
+                    var $span = $choice.find('span[data-status]');
+                    if ($span.length) {
+                        $choice.attr('data-status', $span.data('status'));
+                    }
+                });
+            }, 10);
+        });
+        
+        // Инициализируем статусы для уже выбранных тегов
+        setTimeout(function() {
+            $('.select2-selection__choice').each(function() {
+                var $choice = $(this);
+                var $span = $choice.find('span[data-status]');
+                if ($span.length) {
+                    $choice.attr('data-status', $span.data('status'));
+                }
+            });
+        }, 100);
+
+        console.log('✅ Все обработчики AutoTransport подключены');
+    });
+
+})(django.jQuery || jQuery || $);
+</script>
+{% endblock %}

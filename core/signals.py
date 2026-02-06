@@ -1,4 +1,4 @@
-from django.db.models.signals import post_save, post_delete, pre_delete, pre_save
+from django.db.models.signals import post_save, post_delete, pre_delete, pre_save, m2m_changed
 from django.dispatch import receiver
 from .models import Car, Container, WarehouseService, LineService, CarrierService, Company, CompanyService, CarService, DeletedCarService, LineTHSCoefficient
 from .models_billing import NewInvoice
@@ -969,3 +969,64 @@ def auto_sync_photos_on_container_change(sender, instance, created, **kwargs):
             f"📸 Контейнер {instance.number}: статус UNLOADED. "
             "Синхронизация будет выполнена по крону (через 12 часов и далее каждый час)."
         )
+
+
+# ==============================================================================
+# 🚛 СИГНАЛЫ ДЛЯ АВТОВОЗОВ
+# ==============================================================================
+
+@receiver(post_save, sender='core.AutoTransport')
+def autotransport_post_save(sender, instance, created, **kwargs):
+    """
+    При сохранении автовоза со статусом FORMED создаем/обновляем инвойсы
+    """
+    if instance.status == 'FORMED':
+        try:
+            # Создаем/обновляем инвойсы для клиентов
+            invoices = instance.generate_invoices()
+            if invoices:
+                logger.info(f"🚛 Автовоз {instance.number}: создано/обновлено инвойсов: {len(invoices)}")
+        except Exception as e:
+            logger.error(f"🚛 Ошибка при создании инвойсов для автовоза {instance.number}: {e}")
+
+
+# Сигнал для изменения автомобилей в автовозе будет подключен после инициализации моделей
+def autotransport_cars_changed_handler(sender, instance, action, **kwargs):
+    """
+    При изменении списка автомобилей в автовозе обновляем инвойсы
+    """
+    if action in ['post_add', 'post_remove', 'post_clear']:
+        # Обновляем только если автовоз уже сформирован
+        if instance.status == 'FORMED':
+            try:
+                invoices = instance.generate_invoices()
+                if invoices:
+                    logger.info(f"🚛 Автовоз {instance.number}: инвойсы обновлены после изменения списка авто")
+            except Exception as e:
+                logger.error(f"🚛 Ошибка при обновлении инвойсов для автовоза {instance.number}: {e}")
+
+
+# Подключаем сигнал после инициализации моделей
+def connect_autotransport_signals():
+    """Подключение сигналов для автовозов"""
+    try:
+        from .models import AutoTransport
+        m2m_changed.connect(autotransport_cars_changed_handler, sender=AutoTransport.cars.through)
+        logger.info("🚛 Сигналы для автовозов подключены")
+    except Exception as e:
+        logger.warning(f"⚠️ Не удалось подключить сигналы для автовозов: {e}")
+
+
+# Вызываем подключение после импорта всех моделей
+from django.apps import apps
+if apps.ready:
+    connect_autotransport_signals()
+else:
+    # Если модели еще не готовы, подключим при готовности приложения
+    from django.db.models.signals import post_migrate
+    
+    def setup_autotransport_signals(sender, **kwargs):
+        if sender.name == 'core':
+            connect_autotransport_signals()
+    
+    post_migrate.connect(setup_autotransport_signals)

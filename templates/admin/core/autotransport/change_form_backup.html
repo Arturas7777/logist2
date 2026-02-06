@@ -1,0 +1,873 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrahead %}
+{{ block.super }}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
+<style>
+    :root {
+        --primary: #667eea;
+        --primary-dark: #5a67d8;
+        --success: #28a745;
+        --danger: #dc3545;
+        --warning: #ffc107;
+        --info: #17a2b8;
+        --gray-100: #f8f9fa;
+        --gray-200: #e9ecef;
+        --gray-300: #dee2e6;
+        --gray-600: #6c757d;
+        --gray-800: #343a40;
+        --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    }
+    
+    body { background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); min-height: 100vh; }
+    .breadcrumbs { display: none; }
+    #content { padding: 30px; max-width: 1400px; margin: 0 auto; }
+    
+    .invoice-page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+    }
+    
+    .invoice-page-header h1 {
+        font-size: 28px;
+        font-weight: 700;
+        color: var(--gray-800);
+        margin: 0;
+    }
+    
+    .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--gray-600);
+        text-decoration: none;
+        font-size: 14px;
+        padding: 8px 16px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: var(--shadow);
+    }
+    
+    .back-link:hover { color: var(--primary); }
+    
+    .invoice-grid {
+        display: grid;
+        grid-template-columns: 1fr 350px;
+        gap: 30px;
+    }
+    
+    .card {
+        background: white;
+        border-radius: 16px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        margin-bottom: 25px;
+    }
+    
+    .card-header {
+        padding: 20px 25px;
+        border-bottom: 1px solid var(--gray-200);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    
+    .card-header h2 {
+        font-size: 18px;
+        font-weight: 600;
+        color: var(--gray-800);
+        margin: 0;
+    }
+    
+    .card-header .icon { font-size: 24px; }
+    .card-body { padding: 25px; }
+    
+    .status-badge {
+        display: inline-flex;
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 13px;
+        font-weight: 600;
+        margin-left: auto;
+    }
+    
+    .status-draft { background: var(--gray-200); color: var(--gray-600); }
+    .status-issued { background: #cce5ff; color: #004085; }
+    .status-partially_paid { background: #fff3cd; color: #856404; }
+    .status-paid { background: #d4edda; color: #155724; }
+    .status-overdue { background: #f8d7da; color: #721c24; }
+    
+    .invoice-number-display {
+        background: linear-gradient(135deg, var(--primary) 0%, #764ba2 100%);
+        color: white;
+        padding: 25px;
+        text-align: center;
+        margin: -25px -25px 25px -25px;
+    }
+    
+    .invoice-number-display .label {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        opacity: 0.8;
+        margin-bottom: 8px;
+    }
+    
+    .invoice-number-display .number {
+        font-size: 28px;
+        font-weight: 700;
+        letter-spacing: 2px;
+    }
+    
+    .financial-grid { display: grid; gap: 12px; margin-bottom: 20px; }
+    
+    .financial-item {
+        background: var(--gray-100);
+        padding: 15px;
+        border-radius: 10px;
+        text-align: center;
+    }
+    
+    .financial-item.highlight {
+        background: linear-gradient(135deg, var(--primary) 0%, #764ba2 100%);
+        color: white;
+    }
+    
+    .financial-item .label {
+        font-size: 11px;
+        text-transform: uppercase;
+        color: var(--gray-600);
+        margin-bottom: 5px;
+    }
+    
+    .financial-item.highlight .label { color: rgba(255,255,255,0.8); }
+    
+    .financial-item .value {
+        font-size: 24px;
+        font-weight: 700;
+        color: var(--gray-800);
+    }
+    
+    .financial-item.highlight .value { color: white; }
+    .financial-item.success .value { color: var(--success); }
+    .financial-item.danger .value { color: var(--danger); }
+    
+    .financial-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+    
+    .form-group { margin-bottom: 20px; }
+    .form-group:last-child { margin-bottom: 0; }
+    
+    .form-group label {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--gray-600);
+        margin-bottom: 8px;
+        text-transform: uppercase;
+    }
+    
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+        width: 100%;
+        padding: 12px 16px;
+        border: 2px solid var(--gray-200);
+        border-radius: 10px;
+        font-size: 15px;
+        box-sizing: border-box;
+        height: 48px;
+    }
+    
+    .form-group select {
+        appearance: none;
+        background: white url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E") no-repeat right 16px center;
+        padding-right: 40px;
+    }
+    
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+    }
+    
+    .form-group textarea { min-height: 100px; height: auto; }
+    
+    .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 15px;
+    }
+    
+    .form-row-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+    }
+    
+    .form-hint {
+        font-size: 11px;
+        color: #999;
+        margin-top: 5px;
+    }
+    
+    .cars-hint {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 15px;
+        background: #e7f3ff;
+        border-radius: 8px;
+        font-size: 13px;
+        color: #004085;
+        margin-bottom: 15px;
+    }
+    
+    .cars-selector { background: var(--gray-100); border-radius: 12px; padding: 20px; }
+    
+    .cars-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        min-height: 50px;
+        padding: 10px;
+        background: white;
+        border-radius: 8px;
+        border: 2px solid var(--gray-200);
+    }
+    
+    .car-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        background: var(--primary);
+        color: white;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 500;
+    }
+    
+    .car-tag .remove {
+        cursor: pointer;
+        opacity: 0.8;
+    }
+    
+    .car-tag .remove:hover { opacity: 1; }
+    
+    .items-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+    
+    .items-table th {
+        background: var(--gray-100);
+        padding: 12px 15px;
+        text-align: left;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: var(--gray-600);
+    }
+    
+    .items-table th:first-child { border-radius: 10px 0 0 10px; }
+    .items-table th:last-child { border-radius: 0 10px 10px 0; text-align: right; }
+    
+    .items-table td {
+        padding: 14px 15px;
+        border-bottom: 1px solid var(--gray-200);
+    }
+    
+    .items-table td:last-child { text-align: right; font-weight: 600; }
+    .items-table tr:last-child td { border-bottom: none; }
+    
+    .items-table input {
+        padding: 8px 12px;
+        border: 2px solid var(--gray-200);
+        border-radius: 6px;
+        font-size: 14px;
+    }
+    
+    .items-table input[type="number"] { width: 80px; text-align: right; }
+    .items-table input[type="text"] { width: 100%; }
+    
+    .add-item-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        background: var(--gray-100);
+        color: var(--primary);
+        border: none;
+        border-radius: 8px;
+        font-weight: 500;
+        cursor: pointer;
+        margin-top: 15px;
+    }
+    
+    .add-item-btn:hover { background: var(--primary); color: white; }
+    
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 12px 20px;
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: 600;
+        text-decoration: none;
+        cursor: pointer;
+        border: none;
+        width: 100%;
+        box-sizing: border-box;
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+        color: white;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.35);
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.45);
+        color: white;
+    }
+    
+    .btn-success {
+        background: linear-gradient(135deg, var(--success) 0%, #20c997 100%);
+        color: white;
+    }
+    
+    .btn-success:hover { color: white; }
+    
+    .btn-outline {
+        background: white;
+        color: var(--gray-600);
+        border: 2px solid var(--gray-300);
+    }
+    
+    .btn-outline:hover {
+        border-color: var(--primary);
+        color: var(--primary);
+    }
+    
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-sm { padding: 10px 16px; font-size: 13px; }
+    
+    .actions-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .actions-divider {
+        height: 1px;
+        background: var(--gray-200);
+        margin: 10px 0;
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: var(--gray-600);
+    }
+    
+    .empty-state .icon { font-size: 48px; margin-bottom: 15px; }
+    
+    .select2-container { width: 100% !important; }
+    
+    .select2-container--default .select2-selection--single {
+        height: 48px !important;
+        border: 2px solid var(--gray-200) !important;
+        border-radius: 10px !important;
+        padding: 8px 16px !important;
+    }
+    
+    .select2-container--default .select2-selection--single .select2-selection__rendered {
+        line-height: 30px !important;
+        padding-left: 0 !important;
+    }
+    
+    .select2-container--default .select2-selection--single .select2-selection__arrow {
+        height: 46px !important;
+    }
+    
+    .select2-container--default .select2-selection--multiple {
+        border: 2px solid var(--gray-200) !important;
+        border-radius: 10px !important;
+        padding: 10px 12px !important;
+        min-height: 80px !important;
+        max-height: 300px !important;
+        overflow-y: auto !important;
+    }
+    
+    .select2-container--default .select2-selection--multiple .select2-selection__choice {
+        border: none !important;
+        border-radius: 8px !important;
+        color: white !important;
+        padding: 6px 12px 6px 8px !important;
+        margin: 4px !important;
+        font-size: 13px !important;
+        font-weight: 500 !important;
+        max-width: calc(100% - 16px) !important;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        line-height: 1.4 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 0 !important;
+    }
+    
+    .select2-container--default .select2-selection--multiple .select2-selection__choice span {
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+    }
+    
+    /* Цвета тегов по статусу автомобиля */
+    .select2-selection__choice[data-status="FLOATING"] {
+        background: linear-gradient(135deg, #2772a8 0%, #1e5a8a 100%) !important;
+    }
+    .select2-selection__choice[data-status="IN_PORT"] {
+        background: linear-gradient(135deg, #8B0000 0%, #6B0000 100%) !important;
+    }
+    .select2-selection__choice[data-status="UNLOADED"] {
+        background: linear-gradient(135deg, #239f58 0%, #1a7a43 100%) !important;
+    }
+    .select2-selection__choice[data-status="TRANSFERRED"] {
+        background: linear-gradient(135deg, #78458c 0%, #5a3369 100%) !important;
+    }
+    /* По умолчанию если статус не определен */
+    .select2-selection__choice:not([data-status]) {
+        background: linear-gradient(135deg, var(--primary) 0%, #764ba2 100%) !important;
+    }
+    
+    /* Цвета в выпадающем списке */
+    .select2-results__option[data-status="FLOATING"] { border-left: 4px solid #2772a8; }
+    .select2-results__option[data-status="IN_PORT"] { border-left: 4px solid #8B0000; }
+    .select2-results__option[data-status="UNLOADED"] { border-left: 4px solid #239f58; }
+    .select2-results__option[data-status="TRANSFERRED"] { border-left: 4px solid #78458c; }
+    
+    .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+        color: rgba(255,255,255,0.9) !important;
+        font-size: 16px !important;
+        font-weight: bold !important;
+        border: none !important;
+        background: rgba(0,0,0,0.15) !important;
+        border-radius: 50% !important;
+        outline: none !important;
+        box-shadow: none !important;
+        width: 20px !important;
+        height: 20px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        cursor: pointer !important;
+        flex-shrink: 0 !important;
+        margin-right: 8px !important;
+        position: relative !important;
+        top: 0 !important;
+    }
+    
+    .select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+        color: #ff6b6b !important;
+        background: transparent !important;
+        border: none !important;
+    }
+    
+    .select2-container--default .select2-selection--multiple .select2-selection__choice__remove:focus {
+        outline: none !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+    
+    /* Поле ввода поиска внутри multiple select */
+    .select2-container--default .select2-selection--multiple .select2-search--inline .select2-search__field {
+        margin-top: 8px !important;
+        font-size: 14px !important;
+    }
+    
+    .select2-dropdown {
+        border: 2px solid var(--gray-200) !important;
+        border-radius: 10px !important;
+        box-shadow: var(--shadow-lg) !important;
+    }
+    
+    .select2-results__option--highlighted { background-color: var(--primary) !important; }
+    
+    @media (max-width: 1200px) {
+        .invoice-grid { grid-template-columns: 1fr; }
+    }
+    
+    @media (max-width: 768px) {
+        .form-row, .form-row-2 { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="invoice-page-header">
+    <h1>
+        {% if add %}📝 Новый инвойс{% else %}📄 Инвойс {{ original.number }}{% endif %}
+    </h1>
+    <a href="{% url 'admin:core_newinvoice_changelist' %}" class="back-link">← Назад к списку</a>
+</div>
+
+<form method="post" id="{{ opts.model_name }}_form" enctype="multipart/form-data" novalidate>
+{% csrf_token %}
+{% if is_popup %}<input type="hidden" name="{{ is_popup_var }}" value="1">{% endif %}
+{% if to_field %}<input type="hidden" name="{{ to_field_var }}" value="{{ to_field }}">{% endif %}
+
+<div class="invoice-grid">
+    <div class="main-content">
+        <!-- Основная информация -->
+        <div class="card">
+            <div class="card-header">
+                <span class="icon">📋</span>
+                <h2>Основная информация</h2>
+                {% if original %}
+                <span class="status-badge status-{{ original.status|lower }}">{{ original.get_status_display }}</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div class="form-row" style="margin-bottom: 20px;">
+                    <div class="form-group">
+                        <label>Дата выставления</label>
+                        <input type="date" name="date" value="{% if original %}{{ original.date|date:'Y-m-d' }}{% else %}{% now 'Y-m-d' %}{% endif %}" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Срок оплаты</label>
+                        <input type="date" name="due_date" value="{% if original %}{{ original.due_date|date:'Y-m-d' }}{% endif %}">
+                    </div>
+                    <div class="form-group">
+                        <label>Статус</label>
+                        <select name="status">
+                            <option value="DRAFT" {% if original.status == 'DRAFT' %}selected{% endif %}>Черновик</option>
+                            <option value="ISSUED" {% if original.status == 'ISSUED' or not original %}selected{% endif %}>Выставлен</option>
+                            <option value="PARTIALLY_PAID" {% if original.status == 'PARTIALLY_PAID' %}selected{% endif %}>Частично оплачен</option>
+                            <option value="PAID" {% if original.status == 'PAID' %}selected{% endif %}>Оплачен</option>
+                            <option value="OVERDUE" {% if original.status == 'OVERDUE' %}selected{% endif %}>Просрочен</option>
+                            <option value="CANCELLED" {% if original.status == 'CANCELLED' %}selected{% endif %}>Отменён</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>🏢 Выставитель</label>
+                        <select name="issuer" id="issuer_select">
+                            {% if original.issuer_company %}
+                            <option value="company_{{ original.issuer_company.pk }}" selected>🏢 {{ original.issuer_company.name }}</option>
+                            {% elif original.issuer_warehouse %}
+                            <option value="warehouse_{{ original.issuer_warehouse.pk }}" selected>🏭 {{ original.issuer_warehouse.name }}</option>
+                            {% elif original.issuer_line %}
+                            <option value="line_{{ original.issuer_line.pk }}" selected>🚢 {{ original.issuer_line.name }}</option>
+                            {% elif original.issuer_carrier %}
+                            <option value="carrier_{{ original.issuer_carrier.pk }}" selected>🚚 {{ original.issuer_carrier.name }}</option>
+                            {% elif default_company_id %}
+                            <option value="company_{{ default_company_id }}" selected>🏢 Caromoto Lithuania</option>
+                            {% endif %}
+                        </select>
+                        <div class="form-hint">Поиск по компаниям, складам, линиям, перевозчикам</div>
+                    </div>
+                    <div class="form-group">
+                        <label>👤 Получатель</label>
+                        <select name="recipient" id="recipient_select">
+                            {% if original.recipient_client %}
+                            <option value="client_{{ original.recipient_client.pk }}" selected>👤 {{ original.recipient_client.name }}</option>
+                            {% elif original.recipient_company %}
+                            <option value="company_{{ original.recipient_company.pk }}" selected>🏢 {{ original.recipient_company.name }}</option>
+                            {% elif original.recipient_warehouse %}
+                            <option value="warehouse_{{ original.recipient_warehouse.pk }}" selected>🏭 {{ original.recipient_warehouse.name }}</option>
+                            {% elif original.recipient_line %}
+                            <option value="line_{{ original.recipient_line.pk }}" selected>🚢 {{ original.recipient_line.name }}</option>
+                            {% elif original.recipient_carrier %}
+                            <option value="carrier_{{ original.recipient_carrier.pk }}" selected>🚚 {{ original.recipient_carrier.name }}</option>
+                            {% endif %}
+                        </select>
+                        <div class="form-hint">Поиск по клиентам, компаниям, складам, линиям, перевозчикам</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Автомобили -->
+        <div class="card">
+            <div class="card-header">
+                <span class="icon">🚗</span>
+                <h2>Автомобили</h2>
+            </div>
+            <div class="card-body">
+                <div class="cars-hint">
+                    💡 Выберите автомобили — позиции инвойса создадутся автоматически из их услуг!
+                </div>
+                <select name="cars" id="cars_select" multiple="multiple" style="width: 100%;">
+                    {% for car in cars %}
+                    <option value="{{ car.pk }}" data-status="{{ car.status }}" {% if original and car.pk in selected_car_ids %}selected{% endif %}>{{ car.brand }} {{ car.year }} ({{ car.vin }}) {% if car.client %}- {{ car.client.name }}{% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        
+        <!-- Позиции инвойса -->
+        <div class="card">
+            <div class="card-header">
+                <span class="icon">📦</span>
+                <h2>Позиции инвойса</h2>
+            </div>
+            <div class="card-body">
+                {% if original and original.items.exists %}
+                <table class="items-table">
+                    <thead>
+                        <tr>
+                            <th>Описание</th>
+                            <th>Кол-во</th>
+                            <th>Цена</th>
+                            <th>Сумма</th>
+                        </tr>
+                    </thead>
+                    <tbody id="items-tbody">
+                        {% for item in original.items.all %}
+                        <tr>
+                            <td>{{ item.description }}{% if item.car %}<br><small style="color:#999;">🚗 {{ item.car.vin }}</small>{% endif %}</td>
+                            <td>{{ item.quantity }}</td>
+                            <td>{{ item.unit_price|floatformat:2 }} €</td>
+                            <td>{{ item.total_price|floatformat:2 }} €</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty-state">
+                    <div class="icon">📋</div>
+                    <p>Позиции создадутся автоматически после сохранения с выбранными автомобилями</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Примечания -->
+        <div class="card">
+            <div class="card-header">
+                <span class="icon">📝</span>
+                <h2>Примечания</h2>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <textarea name="notes" rows="3" placeholder="Дополнительная информация...">{% if original %}{{ original.notes }}{% endif %}</textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="sidebar">
+        {% if original %}
+        <div class="card">
+            <div class="card-body">
+                <div class="invoice-number-display">
+                    <div class="label">Номер инвойса</div>
+                    <div class="number">{{ original.number }}</div>
+                </div>
+                
+                <div class="financial-grid">
+                    <div class="financial-item highlight">
+                        <div class="label">Сумма к оплате</div>
+                        <div class="value">{{ original.total|floatformat:2 }} €</div>
+                    </div>
+                    <div class="financial-row">
+                        <div class="financial-item success">
+                            <div class="label">Оплачено</div>
+                            <div class="value">{{ original.paid_amount|floatformat:2 }} €</div>
+                        </div>
+                        <div class="financial-item {% if original.remaining_amount > 0 %}danger{% else %}success{% endif %}">
+                            <div class="label">Остаток</div>
+                            <div class="value">{{ original.remaining_amount|floatformat:2 }} €</div>
+                        </div>
+                    </div>
+                </div>
+                
+                {% if original.status in 'ISSUED,PARTIALLY_PAID,OVERDUE' %}
+                <a href="{% url 'admin:pay_invoice' original.pk %}" class="btn btn-success">💳 Провести оплату</a>
+                {% endif %}
+            </div>
+        </div>
+        
+        {% if original.transactions.exists %}
+        <div class="card">
+            <div class="card-header">
+                <span class="icon">💳</span>
+                <h2>История платежей</h2>
+            </div>
+            <div class="card-body">
+                {% for trx in original.transactions.all %}
+                <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--gray-100);">
+                    <div>
+                        <div style="font-size:12px;color:var(--gray-600);">{{ trx.date|date:"d.m.Y H:i" }}</div>
+                        <div style="font-weight:500;">{{ trx.get_method_display }}</div>
+                    </div>
+                    <div style="font-size:16px;font-weight:700;color:var(--success);">+{{ trx.amount|floatformat:2 }} €</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="card">
+            <div class="card-body">
+                <div class="invoice-number-display">
+                    <div class="label">Новый инвойс</div>
+                    <div class="number" style="font-size:18px;">Номер присвоится<br>автоматически</div>
+                </div>
+                <p style="text-align:center;color:var(--gray-600);font-size:14px;margin:0;">После сохранения можно проводить оплату</p>
+            </div>
+        </div>
+        {% endif %}
+        
+        <div class="card">
+            <div class="card-header">
+                <span class="icon">⚡</span>
+                <h2>Действия</h2>
+            </div>
+            <div class="card-body">
+                <div class="actions-buttons">
+                    <button type="submit" name="_save" value="1" class="btn btn-primary">💾 Сохранить</button>
+                    {% if original %}
+                    <button type="submit" name="_continue" value="1" class="btn btn-outline">💾 Сохранить и продолжить</button>
+                    {% else %}
+                    <button type="submit" name="_addanother" value="1" class="btn btn-outline">➕ Сохранить и добавить ещё</button>
+                    {% endif %}
+                    <a href="{% url 'admin:core_newinvoice_changelist' %}" class="btn btn-outline">✕ Отмена</a>
+                    {% if original %}
+                    <div class="actions-divider"></div>
+                    <a href="{% url 'admin:core_newinvoice_delete' original.pk %}" class="btn btn-danger btn-sm">🗑 Удалить</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden fields for financial data -->
+<input type="hidden" name="subtotal" value="{% if original %}{{ original.subtotal }}{% else %}0{% endif %}">
+<input type="hidden" name="discount" value="{% if original %}{{ original.discount }}{% else %}0{% endif %}">
+<input type="hidden" name="tax" value="{% if original %}{{ original.tax }}{% else %}0{% endif %}">
+<input type="hidden" name="total" value="{% if original %}{{ original.total }}{% else %}0{% endif %}">
+<input type="hidden" name="paid_amount" value="{% if original %}{{ original.paid_amount }}{% else %}0{% endif %}">
+
+<!-- Entity references are now handled via issuer/recipient fields with type prefixes -->
+
+</form>
+
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+// Используем django.jQuery если доступен, иначе обычный jQuery
+(function($) {
+    if (!$) {
+        console.error('jQuery not found!');
+        return;
+    }
+    
+    $(document).ready(function() {
+    // AJAX поиск для выставителя
+    $('#issuer_select').select2({
+        placeholder: 'Начните вводить название...',
+        allowClear: true,
+        minimumInputLength: 1,
+        ajax: {
+            url: '/core/api/search-counterparties/',
+            dataType: 'json',
+            delay: 250,
+            data: function(params) {
+                return { q: params.term };
+            },
+            processResults: function(data) {
+                return { results: data.results };
+            },
+            cache: true
+        }
+    });
+    
+    // AJAX поиск для получателя
+    $('#recipient_select').select2({
+        placeholder: 'Начните вводить название...',
+        allowClear: true,
+        minimumInputLength: 1,
+        ajax: {
+            url: '/core/api/search-counterparties/',
+            dataType: 'json',
+            delay: 250,
+            data: function(params) {
+                return { q: params.term };
+            },
+            processResults: function(data) {
+                return { results: data.results };
+            },
+            cache: true
+        }
+    });
+    
+    // Инициализация Select2 для автомобилей с цветами по статусу
+    $('#cars_select').select2({
+        placeholder: 'Введите VIN или марку для поиска...',
+        allowClear: true,
+        templateResult: function(state) {
+            if (!state.id) return state.text;
+            var status = $(state.element).data('status');
+            var statusLabels = {
+                'FLOATING': '🚢 В пути',
+                'IN_PORT': '⚓ В порту',
+                'UNLOADED': '✅ Разгружен',
+                'TRANSFERRED': '📦 Передан'
+            };
+            var statusLabel = statusLabels[status] || '';
+            return $('<span>' + state.text + (statusLabel ? ' <small style="opacity:0.7;">' + statusLabel + '</small>' : '') + '</span>');
+        },
+        templateSelection: function(state) {
+            if (!state.id) return state.text;
+            var status = $(state.element).data('status');
+            return $('<span data-status="' + status + '">' + state.text + '</span>');
+        }
+    });
+    
+    // Добавляем data-status к созданным тегам
+    $('#cars_select').on('select2:select', function(e) {
+        var status = $(e.params.data.element).data('status');
+        setTimeout(function() {
+            $('.select2-selection__choice').each(function() {
+                var $choice = $(this);
+                var $span = $choice.find('span[data-status]');
+                if ($span.length) {
+                    $choice.attr('data-status', $span.data('status'));
+                }
+            });
+        }, 10);
+    });
+    
+    // Инициализируем статусы для уже выбранных тегов
+    setTimeout(function() {
+        $('.select2-selection__choice').each(function() {
+            var $choice = $(this);
+            var $span = $choice.find('span[data-status]');
+            if ($span.length) {
+                $choice.attr('data-status', $span.data('status'));
+            }
+        });
+    }, 100);
+    
+    });
+})(django.jQuery || jQuery || $);
+</script>
+{% endblock %}
