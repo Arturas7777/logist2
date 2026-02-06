@@ -15,7 +15,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django import forms
 from decimal import Decimal
-from .models import Client, Warehouse, Car, Container, Line, Company, Carrier, LineService, CarrierService, WarehouseService, CompanyService, CarService, DeletedCarService, ClientTariff, ClientTariffTier
+from .models import Client, Warehouse, Car, Container, Line, Company, Carrier, LineService, CarrierService, WarehouseService, CompanyService, CarService, DeletedCarService
 from .forms import LineForm, CarrierForm, WarehouseForm
 from .admin_filters import MultiStatusFilter, MultiWarehouseFilter, ClientAutocompleteFilter
 
@@ -2322,66 +2322,14 @@ class WarehouseAdmin(admin.ModelAdmin):
 
 # @admin.register(PaymentOLD)  # Отключено
 
-class ClientTariffTierInline(admin.TabularInline):
-    """Ступени объёмного тарифа (внутри тарифа клиента)"""
-    model = ClientTariffTier
-    extra = 1
-    fields = ('min_cars', 'max_cars', 'price_per_car')
-    verbose_name = "Ступень тарифа"
-    verbose_name_plural = "Ступени тарифа (заполнять при типе 'Зависит от кол-ва ТС')"
-
-
-class ClientTariffInline(admin.StackedInline):
-    """Тариф клиента — встроен в карточку клиента"""
-    model = ClientTariff
-    extra = 0
-    max_num = 1
-    fields = ('tariff_type', 'fixed_price', 'is_active', 'notes')
-    verbose_name = "Тариф"
-    verbose_name_plural = "Тариф клиента"
-
-    def get_formset(self, request, obj=None, **kwargs):
-        formset = super().get_formset(request, obj, **kwargs)
-        for field in formset.form.base_fields.values():
-            field.help_text = field.help_text or ''
-        return formset
-
-
-@admin.register(ClientTariff)
-class ClientTariffAdmin(admin.ModelAdmin):
-    """Отдельная страница тарифа — для настройки ступеней объёмного тарифа"""
-    list_display = ('client', 'tariff_type', 'fixed_price', 'tiers_display', 'is_active')
-    list_filter = ('tariff_type', 'is_active')
-    search_fields = ('client__name',)
-    inlines = [ClientTariffTierInline]
-    fields = ('client', 'tariff_type', 'fixed_price', 'is_active', 'notes')
-    
-    def tiers_display(self, obj):
-        """Отображение ступеней тарифа"""
-        if obj.tariff_type == 'FIXED':
-            return format_html('<span style="color: #007bff;">{}</span>', f'{obj.fixed_price}€/авто')
-        tiers = obj.tiers.all()
-        if not tiers.exists():
-            return format_html('<span style="color: #dc3545;">Не заполнены</span>')
-        parts = []
-        for t in tiers:
-            if t.max_cars:
-                parts.append(f'{t.min_cars}-{t.max_cars} ТС: {t.price_per_car}€')
-            else:
-                parts.append(f'{t.min_cars}+ ТС: {t.price_per_car}€')
-        return ' | '.join(parts)
-    tiers_display.short_description = 'Ступени'
-
-
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
     change_form_template = 'admin/client_change.html'
-    list_display = ('name', 'tariff_display', 'emails_display', 'notification_enabled', 'new_balance_display', 'balance_status_new')
+    list_display = ('name', 'emails_display', 'notification_enabled', 'new_balance_display', 'balance_status_new')
     list_filter = ('name', 'notification_enabled')
     search_fields = ('name', 'email', 'email2', 'email3', 'email4')
     actions = ['reset_balances', 'recalculate_balance', 'reset_client_balance']
     readonly_fields = ('balance', 'balance_updated_at', 'new_invoices_display', 'new_transactions_display')
-    inlines = [ClientTariffInline]
 
     def get_queryset(self, request):
         """ОПТИМИЗАЦИЯ: Используем with_balance_info для предрасчета данных"""
@@ -2404,32 +2352,6 @@ class ClientAdmin(admin.ModelAdmin):
             'description': 'Единый баланс клиента с историей транзакций'
         }),
     )
-    
-    def tariff_display(self, obj):
-        """Отображение тарифа клиента в списке"""
-        try:
-            tariff = obj.tariff
-        except ClientTariff.DoesNotExist:
-            return format_html('<span style="color: #999;">—</span>')
-        
-        if not tariff.is_active:
-            return format_html('<span style="color: #999;">Неактивен</span>')
-        
-        if tariff.tariff_type == 'FIXED':
-            return format_html('<span style="color: #007bff;" title="Фиксированная цена за авто (без хранения)">Фикс. {}€</span>', tariff.fixed_price)
-        
-        # VOLUME
-        tiers = tariff.tiers.all()
-        if not tiers.exists():
-            return format_html('<span style="color: #dc3545;">Объём. (не настроен)</span>')
-        parts = []
-        for t in tiers:
-            if t.max_cars:
-                parts.append(f'{t.min_cars}-{t.max_cars}: {t.price_per_car}€')
-            else:
-                parts.append(f'{t.min_cars}+: {t.price_per_car}€')
-        return format_html('<span style="color: #28a745;" title="{}">{}</span>', ' | '.join(parts), 'Объёмный')
-    tariff_display.short_description = 'Тариф'
     
     def emails_display(self, obj):
         """Отображает количество email-адресов"""

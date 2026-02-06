@@ -577,12 +577,6 @@ class NewInvoice(models.Model):
         - Услуги с одинаковым short_name суммируются (напр. Разгрузка+Погрузка+Декларация → "Порт")
         - Хранение — отдельная группа "Хран"
         - description = short_name (для группировки в таблице)
-        
-        Система тарифов (06.02.2026):
-        - Если у клиента-получателя есть активный тариф, цена за авто (без хранения)
-          определяется тарифом, а не реальными ценами услуг
-        - Разница (тариф - себестоимость) распределяется пропорционально по группам
-        - Хранение всегда считается отдельно (не входит в тариф)
         """
         from collections import OrderedDict
         
@@ -595,16 +589,6 @@ class NewInvoice(models.Model):
         
         issuer_type = issuer.__class__.__name__
         is_company = (issuer_type == 'Company')
-        
-        # === Проверяем тариф клиента ===
-        client_tariff = None
-        if is_company and self.recipient_client:
-            try:
-                tariff = self.recipient_client.tariff
-                if tariff.is_active:
-                    client_tariff = tariff
-            except Exception:
-                pass
         
         order = 0
         for car in self.cars.all():
@@ -641,7 +625,7 @@ class NewInvoice(models.Model):
                 
                 short = service.get_service_short_name()
                 
-                # Рассчитываем цену (себестоимость + наценка для Company)
+                # Рассчитываем цену
                 if is_company:
                     price = (service.custom_price if service.custom_price is not None else service.get_default_price()) + (service.markup_amount or Decimal('0'))
                 else:
@@ -654,13 +638,7 @@ class NewInvoice(models.Model):
                 else:
                     groups[short] = amount
             
-            # === Применяем тариф клиента (если есть) ===
-            if client_tariff and groups:
-                agreed_price = self._get_tariff_price_for_car(car, client_tariff)
-                if agreed_price is not None:
-                    groups = self._adjust_groups_to_tariff(groups, agreed_price)
-            
-            # === Добавляем хранение как отдельную группу (не входит в тариф) ===
+            # === Добавляем хранение как отдельную группу ===
             if (is_company or issuer_type == 'Warehouse'):
                 if car.storage_cost and car.storage_cost > 0 and car.days and car.days > 0:
                     daily_rate = car._get_storage_daily_rate() if car.warehouse else Decimal('0')
@@ -682,62 +660,6 @@ class NewInvoice(models.Model):
         # Пересчитываем итоги
         self.calculate_totals()
         self.save(update_fields=['subtotal', 'total'])
-    
-    def _get_tariff_price_for_car(self, car, tariff):
-        """
-        Получает согласованную цену за авто по тарифу клиента.
-        Количество ТС считается по ВСЕМУ контейнеру (от всех клиентов).
-        
-        Returns: Decimal или None если тариф неприменим
-        """
-        total_cars = 1  # по умолчанию, если нет контейнера
-        if car.container:
-            total_cars = car.container.container_cars.count()
-        
-        return tariff.get_price_per_car(total_cars)
-    
-    @staticmethod
-    def _adjust_groups_to_tariff(groups, agreed_price):
-        """
-        Корректирует суммы групп услуг так, чтобы их итого = agreed_price.
-        Разница распределяется пропорционально текущим суммам.
-        
-        Пример: себестоимость = THS:90 + Порт:80 = 170, тариф = 280
-        Наценка 110 распределяется: THS → 90+58=148, Порт → 80+52=132, итого = 280
-        """
-        from collections import OrderedDict
-        
-        actual_total = sum(groups.values())
-        
-        if actual_total <= 0:
-            # Нет реальных расходов — всю сумму тарифа кладём в первую группу
-            if groups:
-                first_key = next(iter(groups))
-                new_groups = OrderedDict()
-                new_groups[first_key] = agreed_price
-                for key in groups:
-                    if key != first_key:
-                        new_groups[key] = Decimal('0')
-                return new_groups
-            return groups
-        
-        # Распределяем agreed_price пропорционально реальным расходам
-        new_groups = OrderedDict()
-        distributed = Decimal('0')
-        keys = list(groups.keys())
-        
-        for i, key in enumerate(keys):
-            if i < len(keys) - 1:
-                # Пропорциональное распределение
-                proportion = groups[key] / actual_total
-                adjusted = (agreed_price * proportion).quantize(Decimal('0.01'))
-                new_groups[key] = adjusted
-                distributed += adjusted
-            else:
-                # Последняя группа получает остаток (для точности)
-                new_groups[key] = agreed_price - distributed
-        
-        return new_groups
     
     def save(self, *args, **kwargs):
         """Переопределяем save для автоматической генерации номера и обновления статуса"""
