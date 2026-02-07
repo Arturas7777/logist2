@@ -237,6 +237,15 @@ logist2/
 - `LineService` и `CarrierService` также получили флаг `add_by_default`
 - Услуги с одинаковым `short_name` группируются в один столбец в инвойсе
 
+### ClientTariffRate (Тариф клиента)
+- `client` - связь с клиентом
+- `vehicle_type` - тип ТС
+- `min_cars` - от скольки ТС в контейнере
+- `max_cars` - до скольки ТС (NULL = и более)
+- `agreed_total_price` - согласованная общая цена за авто (все услуги кроме хранения)
+- **FIXED тариф:** одна ставка на тип ТС (min=1, max=NULL), цена не зависит от кол-ва авто
+- **FLEXIBLE тариф:** несколько ставок с диапазонами, цена зависит от общего числа ТС
+
 ### ContainerPhoto (Фотография контейнера)
 - `container` - связь с контейнером
 - `photo` - оригинальное фото
@@ -498,6 +507,27 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 ⚠️ **ВАЖНО:** После загрузки фотографий вручную (через команды от root) нужно исправить права доступа: `./fix_media_permissions.sh`
 
 ### Недавние изменения (февраль 2026):
+
+**07.02.2026 - Система тарифов клиентов:**
+1. **ТАРИФЫ КЛИЕНТОВ:** ⭐ НОВЫЙ ФУНКЦИОНАЛ
+   - ✅ Модель `ClientTariffRate` — согласованная общая цена за авто (все услуги кроме хранения)
+   - ✅ Два типа тарифов: FIXED (фикс. цена) и FLEXIBLE (цена зависит от кол-ва ТС в контейнере)
+   - ✅ Поля: `vehicle_type`, `min_cars`, `max_cars`, `agreed_total_price`
+   - ✅ Поле `tariff_type` в модели `Client` (NONE/FIXED/FLEXIBLE)
+   - ✅ Функция `apply_client_tariffs_for_container()` — автоматический расчёт наценки
+   - ✅ Inline-таблица ставок в карточке клиента
+   - ✅ Миграции: `0105`–`0108`
+
+**Новые модели:**
+- `ClientTariffRate` — тариф клиента по типу ТС и кол-ву авто в контейнере
+
+**Расширение Client:**
+- `tariff_type` — тип тарифа (NONE/FIXED/FLEXIBLE)
+
+**Файлы:**
+- `core/models.py` — модель `ClientTariffRate`, поле `tariff_type` в `Client`
+- `core/admin.py` — `ClientTariffRateInline` в `ClientAdmin`
+- `core/signals.py` — функция `apply_client_tariffs_for_container()`
 
 **06.02.2026 - Массовое действие "Выставить" для инвойсов:**
 1. **ДЕЙСТВИЕ "ВЫСТАВИТЬ":**
