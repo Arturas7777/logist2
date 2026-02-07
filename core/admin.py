@@ -15,7 +15,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django import forms
 from decimal import Decimal
-from .models import Client, Warehouse, Car, Container, Line, Company, Carrier, LineService, CarrierService, WarehouseService, CompanyService, CarService, DeletedCarService
+from .models import Client, Warehouse, Car, Container, Line, Company, Carrier, LineService, CarrierService, WarehouseService, CompanyService, CarService, DeletedCarService, ClientTariffRate
 from .forms import LineForm, CarrierForm, WarehouseForm
 from .admin_filters import MultiStatusFilter, MultiWarehouseFilter, ClientAutocompleteFilter
 
@@ -475,7 +475,7 @@ class ContainerAdmin(admin.ModelAdmin):
             line_start = time.time()
             try:
                 from django.db.models.signals import post_save, post_delete
-                from core.signals import update_related_on_car_save, create_car_services_on_car_save, create_ths_services_for_container, recalculate_invoices_on_car_service_save, recalculate_invoices_on_car_service_delete
+                from core.signals import update_related_on_car_save, create_car_services_on_car_save, create_ths_services_for_container, apply_client_tariffs_for_container, recalculate_invoices_on_car_service_save, recalculate_invoices_on_car_service_delete
                 from core.models import recalculate_car_price_on_service_save, recalculate_car_price_on_service_delete, LineService, WarehouseService
                 from core.models_billing import NewInvoice
                 
@@ -500,6 +500,8 @@ class ContainerAdmin(admin.ModelAdmin):
                     if obj.line and obj.ths:
                         created_count = create_ths_services_for_container(obj)
                         logger.info(f"[TIMING] Created {created_count} THS services with proportional distribution")
+                        # 2.1. Применяем тарифы клиентов
+                        apply_client_tariffs_for_container(obj)
                     else:
                         # Если линии нет или THS = 0, удаляем старые услуги THS
                         car_ids = list(obj.container_cars.values_list('id', flat=True))
@@ -681,7 +683,7 @@ class ContainerAdmin(admin.ModelAdmin):
         # ВСЕГДА пересчитываем THS если есть line и ths (даже без явных изменений)
         if parent.line and parent.ths:
             try:
-                from core.signals import create_ths_services_for_container
+                from core.signals import create_ths_services_for_container, apply_client_tariffs_for_container
                 from django.db import transaction
                 
                 # Принудительно обновляем данные контейнера из БД
@@ -698,6 +700,8 @@ class ContainerAdmin(admin.ModelAdmin):
                     if cars_in_container:
                         created = create_ths_services_for_container(parent)
                         logger.info(f"[FORMSET] Created/updated {created} THS services for container {parent.number}")
+                        # Применяем тарифы клиентов
+                        apply_client_tariffs_for_container(parent)
                         
                         # Пересчитываем цены ВСЕХ машин в контейнере после обновления THS
                         for car in cars_in_container:
@@ -2322,14 +2326,24 @@ class WarehouseAdmin(admin.ModelAdmin):
 
 # @admin.register(PaymentOLD)  # Отключено
 
+class ClientTariffRateInline(admin.TabularInline):
+    """Тарифы клиента: общая цена за авто по типам ТС и кол-ву"""
+    model = ClientTariffRate
+    extra = 1
+    fields = ('vehicle_type', 'min_cars', 'max_cars', 'agreed_total_price')
+    verbose_name = "Тариф"
+    verbose_name_plural = "Тарифы: тип ТС, кол-во авто в контейнере → общая цена за авто (без хранения)"
+
+
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
     change_form_template = 'admin/client_change.html'
-    list_display = ('name', 'emails_display', 'notification_enabled', 'new_balance_display', 'balance_status_new')
-    list_filter = ('name', 'notification_enabled')
+    list_display = ('name', 'tariff_display', 'emails_display', 'notification_enabled', 'new_balance_display', 'balance_status_new')
+    list_filter = ('name', 'notification_enabled', 'tariff_type')
     search_fields = ('name', 'email', 'email2', 'email3', 'email4')
     actions = ['reset_balances', 'recalculate_balance', 'reset_client_balance']
     readonly_fields = ('balance', 'balance_updated_at', 'new_invoices_display', 'new_transactions_display')
+    inlines = [ClientTariffRateInline]
 
     def get_queryset(self, request):
         """ОПТИМИЗАЦИЯ: Используем with_balance_info для предрасчета данных"""
@@ -2347,11 +2361,25 @@ class ClientAdmin(admin.ModelAdmin):
             'fields': ('email', 'email2', 'email3', 'email4'),
             'description': 'Уведомления о разгрузке контейнеров будут отправлены на все указанные адреса'
         }),
+        ('📊 Тариф', {
+            'fields': ('tariff_type',),
+            'description': 'NONE = обычные наценки. FIXED = фикс.общая цена за авто (не зависит от кол-ва). FLEXIBLE = общая цена зависит от кол-ва авто в контейнере. Цена = сумма ВСЕХ услуг кроме хранения. Ставки заполняются в таблице ниже.'
+        }),
         ('💰 Баланс', {
             'fields': ('balance', 'balance_updated_at', 'new_invoices_display', 'new_transactions_display'),
             'description': 'Единый баланс клиента с историей транзакций'
         }),
     )
+    
+    def tariff_display(self, obj):
+        """Отображение тарифа в списке клиентов"""
+        if obj.tariff_type == 'NONE':
+            return format_html('<span style="color: #999;">—</span>')
+        rates_count = obj.tariff_rates.count()
+        if obj.tariff_type == 'FIXED':
+            return format_html('<span style="color: #007bff;">Фикс. ({} ставок)</span>', rates_count)
+        return format_html('<span style="color: #28a745;">Гибкий ({} ставок)</span>', rates_count)
+    tariff_display.short_description = 'Тариф'
     
     def emails_display(self, obj):
         """Отображает количество email-адресов"""
@@ -3079,7 +3107,7 @@ class LineAdmin(admin.ModelAdmin):
         from django.shortcuts import redirect
         from django.db import transaction
         from core.models import Container, Car, Line
-        from core.signals import create_ths_services_for_container
+        from core.signals import create_ths_services_for_container, apply_client_tariffs_for_container
         import logging
         logger = logging.getLogger(__name__)
         
@@ -3114,6 +3142,8 @@ class LineAdmin(admin.ModelAdmin):
                         # Пересчитываем THS услуги
                         created = create_ths_services_for_container(container)
                         logger.info(f"[RECALC THS] Created {created} THS services")
+                        # Применяем тарифы клиентов
+                        apply_client_tariffs_for_container(container)
                         updated_containers += 1
 
                         # Пересчитываем цены машин

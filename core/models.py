@@ -21,6 +21,22 @@ from .managers import (
 
 logger = logging.getLogger('django')
 
+# === Общие типы ТС (используется в Car, LineTHSCoefficient, ClientTariffRate) ===
+VEHICLE_TYPE_CHOICES = [
+    ('SEDAN', 'Легковой'),
+    ('CROSSOVER', 'Кроссовер'),
+    ('SUV', 'Джип'),
+    ('PICKUP', 'Пикап'),
+    ('NEW_CAR', 'Новая машина'),
+    ('MOTO', 'Мотоцикл'),
+    ('BIG_MOTO', 'Большой мотоцикл'),
+    ('ATV', 'Квадроцикл/Багги'),
+    ('BOAT', 'Лодка'),
+    ('RV', 'Автодом (RV)'),
+    ('CONSTRUCTION', 'Стр. техника'),
+]
+
+
 def get_current_user():
     """Получить текущего пользователя"""
     from django.contrib.auth.models import AnonymousUser
@@ -199,6 +215,12 @@ class CarrierDriver(models.Model):
 
 
 class Client(models.Model):
+    TARIFF_CHOICES = [
+        ('NONE', 'Без тарифа'),
+        ('FIXED', 'Фикс. цена (не зависит от кол-ва)'),
+        ('FLEXIBLE', 'Гибкая цена (зависит от кол-ва авто)'),
+    ]
+    
     name = models.CharField(max_length=100, verbose_name="Имя клиента")
     email = models.EmailField(blank=True, null=True, verbose_name="Email 1",
                               help_text="Основной email для уведомлений о разгрузке контейнеров")
@@ -210,6 +232,11 @@ class Client(models.Model):
                                help_text="Дополнительный email для уведомлений")
     notification_enabled = models.BooleanField(default=True, verbose_name="Получать уведомления",
                                                help_text="Отправлять email-уведомления о контейнерах")
+    tariff_type = models.CharField(
+        max_length=10, choices=TARIFF_CHOICES, default='NONE',
+        verbose_name="Тип тарифа",
+        help_text="NONE=обычные наценки, FIXED=фикс.цена (не зависит от кол-ва), FLEXIBLE=цена зависит от кол-ва авто в контейнере"
+    )
 
     # Единый баланс (новая система)
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс", 
@@ -257,6 +284,51 @@ class Client(models.Model):
         elif self.balance < 0:
             return "#dc3545"  # красный для долга
         return "#6c757d"  # серый для нуля
+
+class ClientTariffRate(models.Model):
+    """
+    Тариф клиента: общая согласованная цена за авто (все услуги кроме хранения).
+    
+    FIXED: цена не зависит от кол-ва авто в контейнере.
+    FLEXIBLE: цена зависит от общего кол-ва ТС в контейнере (диапазоны min_cars/max_cars).
+    
+    Примеры:
+      FIXED:    (SEDAN, min=1, max=None, price=300) — легковой всегда 300€
+      FLEXIBLE: (SEDAN, min=3, max=3, price=290)    — легковой при 3 ТС → 290€
+                (SEDAN, min=4, max=4, price=265)    — легковой при 4 ТС → 265€
+                (SEDAN, min=5, max=None, price=240)  — легковой при 5+ ТС → 240€
+    """
+    client = models.ForeignKey(Client, on_delete=models.CASCADE,
+                               related_name='tariff_rates', verbose_name="Клиент")
+    vehicle_type = models.CharField(
+        max_length=20, choices=VEHICLE_TYPE_CHOICES,
+        verbose_name="Тип ТС"
+    )
+    min_cars = models.PositiveIntegerField(
+        default=1,
+        verbose_name="От (ТС в контейнере)"
+    )
+    max_cars = models.PositiveIntegerField(
+        null=True, blank=True,
+        verbose_name="До (пусто = и более)"
+    )
+    agreed_total_price = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        verbose_name="Цена за авто (€)",
+        help_text="Общая согласованная цена за все услуги (кроме хранения) для этого типа ТС"
+    )
+    
+    class Meta:
+        verbose_name = "Тариф"
+        verbose_name_plural = "Тарифы по типам ТС"
+        ordering = ['vehicle_type', 'min_cars']
+    
+    def __str__(self):
+        vtype = dict(VEHICLE_TYPE_CHOICES).get(self.vehicle_type, self.vehicle_type)
+        if self.max_cars:
+            return f"{vtype}, {self.min_cars}-{self.max_cars} ТС → {self.agreed_total_price}€"
+        return f"{vtype}, {self.min_cars}+ ТС → {self.agreed_total_price}€"
+
 
 class Warehouse(models.Model):
     name = models.CharField(max_length=100, verbose_name="Название склада")

@@ -1,5 +1,6 @@
 from django.db.models.signals import post_save, post_delete, pre_delete, pre_save, m2m_changed
 from django.dispatch import receiver
+from django.db import models as db_models
 from .models import Car, Container, WarehouseService, LineService, CarrierService, Company, CompanyService, CarService, DeletedCarService, LineTHSCoefficient
 from .models_billing import NewInvoice
 from django.db.models import Sum
@@ -411,6 +412,104 @@ def create_ths_services_for_container(container):
             logger.error(f"Error creating THS service for car {car_id}: {e}")
     
     return created_count
+
+
+def apply_client_tariffs_for_container(container):
+    """
+    Применяет тарифы клиентов к наценкам услуг после расчёта THS.
+    
+    Вызывается ПОСЛЕ create_ths_services_for_container().
+    
+    agreed_total_price — это ОБЩАЯ цена за авто (все услуги КРОМЕ хранения).
+    
+    Алгоритм:
+      1. Определяется agreed_total_price из ClientTariffRate
+         - FIXED: ставка по типу ТС (не зависит от кол-ва авто)
+         - FLEXIBLE: ставка по типу ТС + диапазону кол-ва авто в контейнере
+      2. actual_total = сумма custom_price ВСЕХ не-хранение услуг
+      3. diff = agreed_total_price - actual_total (это прибыль / наценка)
+      4. Распределяет diff ПОРОВНУ между всеми не-хранение услугами как markup_amount
+    """
+    if not container:
+        return
+    
+    from core.models import CarService, ClientTariffRate
+    
+    cars = list(container.container_cars.select_related('client').all())
+    if not cars:
+        return
+    
+    # Общее кол-во ТС в контейнере (нужно для FLEXIBLE)
+    total_cars_in_container = len(cars)
+    
+    for car in cars:
+        if not car.client or car.client.tariff_type == 'NONE':
+            continue
+        
+        client = car.client
+        
+        # Получаем согласованную общую цену
+        agreed_total = None
+        
+        if client.tariff_type == 'FIXED':
+            # FIXED: ищем ставку только по типу ТС (без учёта кол-ва)
+            rate = ClientTariffRate.objects.filter(
+                client=client, vehicle_type=car.vehicle_type
+            ).first()
+            if rate:
+                agreed_total = rate.agreed_total_price
+        
+        elif client.tariff_type == 'FLEXIBLE':
+            # FLEXIBLE: ищем ставку по типу ТС + диапазону кол-ва авто
+            rate = ClientTariffRate.objects.filter(
+                client=client,
+                vehicle_type=car.vehicle_type,
+                min_cars__lte=total_cars_in_container
+            ).filter(
+                db_models.Q(max_cars__gte=total_cars_in_container) | db_models.Q(max_cars__isnull=True)
+            ).first()
+            if rate:
+                agreed_total = rate.agreed_total_price
+        
+        if agreed_total is None:
+            logger.debug(
+                f"Нет тарифа для {client.name} ({client.tariff_type}), "
+                f"тип ТС: {car.vehicle_type}, кол-во авто: {total_cars_in_container}"
+            )
+            continue
+        
+        # Получаем ВСЕ услуги этого авто и фильтруем не-хранение
+        all_services = list(CarService.objects.filter(car=car))
+        non_storage = []
+        for svc in all_services:
+            svc_name = svc.get_service_name()
+            if svc_name and 'Хранение' not in svc_name:
+                non_storage.append(svc)
+        
+        if not non_storage:
+            continue
+        
+        # Сумма себестоимости всех не-хранение услуг
+        actual_total = sum((svc.custom_price or Decimal('0')) for svc in non_storage)
+        
+        # Разница = наценка (прибыль), которую нужно распределить
+        diff = agreed_total - actual_total
+        
+        # Распределяем diff поровну между не-хранение услугами
+        share = (diff / len(non_storage)).quantize(Decimal('0.01'))
+        remainder = diff - share * len(non_storage)
+        
+        for i, svc in enumerate(non_storage):
+            svc.markup_amount = share
+            if i == len(non_storage) - 1:
+                svc.markup_amount = share + remainder
+            svc.save(update_fields=['markup_amount'])
+        
+        logger.info(
+            f"📊 {client.tariff_type} тариф для {car.vin} ({client.name}): "
+            f"agreed={agreed_total}€, actual_cost={actual_total}€, наценка={diff}€, "
+            f"кол-во авто={total_cars_in_container}, распределено по {len(non_storage)} услугам"
+        )
 
 
 def find_warehouse_services_for_car(warehouse):
