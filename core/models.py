@@ -1388,7 +1388,7 @@ def recalculate_car_price_on_service_save(sender, instance, **kwargs):
             total_price=instance.car.total_price
         )
     except Exception as e:
-        print(f"Ошибка пересчета цены при сохранении услуги: {e}")
+        logger.error(f"Ошибка пересчета цены при сохранении услуги: {e}")
 
 
 @receiver(post_delete, sender=CarService)
@@ -1404,7 +1404,7 @@ def recalculate_car_price_on_service_delete(sender, instance, **kwargs):
             total_price=instance.car.total_price
         )
     except Exception as e:
-        print(f"Ошибка пересчета цены при удалении услуги: {e}")
+        logger.error(f"Ошибка пересчета цены при удалении услуги: {e}")
 
 
 @receiver(post_save, sender=Car)
@@ -1439,7 +1439,7 @@ def recalculate_car_price_on_car_save(sender, instance, **kwargs):
             instance._recalculating_price = False
             
     except Exception as e:
-        print(f"Ошибка пересчета цены при изменении автомобиля: {e}")
+        logger.error(f"Ошибка пересчета цены при изменении автомобиля: {e}")
 
 
 class AutoTransport(models.Model):

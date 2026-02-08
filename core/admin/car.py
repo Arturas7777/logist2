@@ -314,7 +314,7 @@ class CarAdmin(admin.ModelAdmin):
             storage_cost = obj.calculate_storage_cost()
             return f"{storage_cost:.2f}"
         except Exception as e:
-            print(f"Ошибка расчета стоимости хранения: {e}")
+            logger.error(f"Ошибка расчета стоимости хранения: {e}")
             return f"{obj.storage_cost:.2f}"  # Fallback to old field
     storage_cost_display.short_description = 'Хран'
     storage_cost_display.admin_order_field = 'storage_cost'
@@ -514,9 +514,9 @@ class CarAdmin(admin.ModelAdmin):
                         service_type='WAREHOUSE',
                         service_id=service_id
                     )
-                    print(f"Deleted warehouse service {service_id}: {deleted_count}")
+                    logger.debug(f"Deleted warehouse service {service_id}: {deleted_count}")
                 except Exception as e:
-                    print(f"Error deleting warehouse service {service_id}: {e}")
+                    logger.error(f"Error deleting warehouse service {service_id}: {e}")
             elif key.startswith('remove_line_service_') and value == '1':
                 service_id = key.replace('remove_line_service_', '')
                 removed_services.add(f'line_{service_id}')
@@ -531,9 +531,9 @@ class CarAdmin(admin.ModelAdmin):
                         service_type='LINE',
                         service_id=service_id
                     )
-                    print(f"Deleted line service {service_id}: {deleted_count}")
+                    logger.debug(f"Deleted line service {service_id}: {deleted_count}")
                 except Exception as e:
-                    print(f"Error deleting line service {service_id}: {e}")
+                    logger.error(f"Error deleting line service {service_id}: {e}")
             elif key.startswith('remove_carrier_service_') and value == '1':
                 service_id = key.replace('remove_carrier_service_', '')
                 removed_services.add(f'carrier_{service_id}')
@@ -548,9 +548,9 @@ class CarAdmin(admin.ModelAdmin):
                         service_type='CARRIER',
                         service_id=service_id
                     )
-                    print(f"Deleted carrier service {service_id}: {deleted_count}")
+                    logger.debug(f"Deleted carrier service {service_id}: {deleted_count}")
                 except Exception as e:
-                    print(f"Error deleting carrier service {service_id}: {e}")
+                    logger.error(f"Error deleting carrier service {service_id}: {e}")
             elif key.startswith('remove_company_service_') and value == '1':
                 service_id = key.replace('remove_company_service_', '')
                 removed_services.add(f'company_{service_id}')
@@ -565,11 +565,11 @@ class CarAdmin(admin.ModelAdmin):
                         service_type='COMPANY',
                         service_id=service_id
                     )
-                    print(f"Deleted company service {service_id}: {deleted_count}")
+                    logger.debug(f"Deleted company service {service_id}: {deleted_count}")
                 except Exception as e:
-                    print(f"Error deleting company service {service_id}: {e}")
+                    logger.error(f"Error deleting company service {service_id}: {e}")
 
-        print(f"Removed services: {removed_services}")
+        logger.debug(f"Removed services: {removed_services}")
 
         # Process warehouse service fields
         # First update ALL existing warehouse services
@@ -794,16 +794,16 @@ class CarAdmin(admin.ModelAdmin):
 
         # Recalculate storage cost and days when warehouse changes
         if change and form and 'warehouse' in getattr(form, 'changed_data', []):
-            print(f"Склад изменился для автомобиля {obj.vin}, пересчитываем стоимость хранения")
+            logger.debug(f"Склад изменился для автомобиля {obj.vin}, пересчитываем стоимость хранения")
             try:
                 # Update fields based on new warehouse
                 obj.update_days_and_storage()
                 obj.calculate_total_price()
                 # Save updated fields
                 obj.save(update_fields=['storage_cost', 'days', 'total_price'])
-                print(f"Обновлены поля: storage_cost={obj.storage_cost}, days={obj.days}")
+                logger.debug(f"Обновлены поля: storage_cost={obj.storage_cost}, days={obj.days}")
             except Exception as e:
-                print(f"Ошибка при пересчете стоимости хранения: {e}")
+                logger.error(f"Ошибка при пересчете стоимости хранения: {e}")
 
     def warehouse_services_display(self, obj):
         """Displays editable fields for all warehouse services"""
