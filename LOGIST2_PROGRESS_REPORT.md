@@ -1,6 +1,6 @@
 # Отчёт о проделанной работе по проекту Logist2
 
-**Дата последнего обновления:** 7 февраля 2026 г.
+**Дата последнего обновления:** 8 февраля 2026 г.
 
 ---
 
@@ -309,7 +309,17 @@ if hasattr(self, '_prefetched_objects_cache'):
 - **Новое:** `LineService.add_by_default`, `CarrierService.add_by_default`
 - **Новое:** `Car.get_company_services()` и учёт `company_total` в расчёте цены
 
-### Админка (`core/admin.py`)
+### Админка (`core/admin/` — пакет, ранее `core/admin.py`)
+
+**08.02.2026 — Разбиение на пакет:**
+- `core/admin.py` (3575 строк) → пакет `core/admin/`:
+  - `__init__.py` — импорт модулей
+  - `inlines.py` — все inline-классы
+  - `container.py` — ContainerAdmin
+  - `car.py` — CarAdmin (оптимизированный total_price_display, без побочных эффектов)
+  - `partners.py` — WarehouseAdmin, ClientAdmin, CompanyAdmin, LineAdmin, CarrierAdmin, AutoTransportAdmin
+
+**Функционал (сохранён из предыдущих версий):**
 - `LineTHSCoefficientInline` в LineAdmin (с полем coefficient вместо percent)
 - `LineAdmin.recalculate_ths_view()` - кнопка пересчёта THS
 - `LineAdmin.get_urls()` - кастомный URL для пересчёта
@@ -317,14 +327,14 @@ if hasattr(self, '_prefetched_objects_cache'):
 - `ContainerAdmin.save_formset()` - вызов THS после сохранения ТС
 - `WarehouseAdmin` - удалено поле rate
 - `CarAdmin.services_summary_display()` - улучшенная сводка
-- `CarAdmin.total_price_display()` - динамический расчёт цены
-- **Новое:** Жёлтые поля для ввода наценки рядом с каждой услугой
-- **Новое:** `save_model()` сохраняет markup_amount для услуг
-- **Новое:** Сводка показывает услуги линий с детализацией (включая THS через склад)
-- **Новое:** Сводка показывает общую сумму скрытой наценки
-- **Новое:** Инлайн `CompanyServiceInline` в `CompanyAdmin`
-- **Новое:** Блок "Услуги компании" в карточке ТС
-- **Новое:** Всегда показывается кнопка добавления услуг у линий/перевозчиков
+- `CarAdmin.total_price_display()` - динамический расчёт цены (оптимизирован 08.02.2026)
+- Жёлтые поля для ввода наценки рядом с каждой услугой
+- `save_model()` сохраняет markup_amount для услуг
+- Сводка показывает услуги линий с детализацией (включая THS через склад)
+- Сводка показывает общую сумму скрытой наценки
+- Инлайн `CompanyServiceInline` в `CompanyAdmin`
+- Блок "Услуги компании" в карточке ТС
+- Всегда показывается кнопка добавления услуг у линий/перевозчиков
 
 ### Сигналы (`core/signals.py`)
 - `calculate_ths_for_container()` - расчёт THS по коэффициентам
@@ -337,8 +347,23 @@ if hasattr(self, '_prefetched_objects_cache'):
 - **Новое:** Обновление существующих услуг при изменении справочников (без добавления всем)
 
 ### Биллинг (`core/models_billing.py`)
-- **Новое:** Наценка НЕ создаётся отдельной строкой в инвойсе
-- **Новое:** `invoice_price` используется для цены услуги (с наценкой)
+- Наценка НЕ создаётся отдельной строкой в инвойсе
+- `invoice_price` используется для цены услуги (с наценкой)
+- **08.02.2026:** `regenerate_items_from_cars()` обёрнут в `transaction.atomic()`
+- **08.02.2026:** Исправлен `or Decimal('0')` → `if is not None` при расчёте наценки
+- **08.02.2026:** Удалён дублированный `Transaction.save()` (super().save() вызывался дважды)
+
+### Утилиты (`core/utils.py`)
+- **08.02.2026:** Добавлена функция `round_up_to_5()` — округление Decimal вверх с шагом 5 EUR (чистая арифметика без float)
+- `WebSocketBatcher` — батчинг WebSocket уведомлений
+- `batch_update_queryset()` — массовое обновление
+- `optimize_queryset_for_list()` — оптимизация queryset
+- `log_slow_queries()` — декоратор для логирования медленных запросов
+
+### Тесты (`core/tests.py`)
+- **08.02.2026:** `RoundUpTo5Tests` — тесты округления (точные кратные, округление вверх, сохранение точности Decimal)
+- **08.02.2026:** `StorageCostCalculationTests` — расчёт хранения (без склада → 0, без даты → 0)
+- **08.02.2026:** `ServiceCacheTests` — кэш услуг (корректное имя, отсутствие повторных SQL запросов, обработка несуществующей услуги)
 
 ### Вьюхи (`core/views.py`)
 - **Новое:** `add_services()` копирует `default_price` и `default_markup` при добавлении услуги
@@ -781,6 +806,16 @@ total_markup_sum = queryset.aggregate(
 
 | Дата | Описание |
 |------|----------|
+| 08.02.2026 | Разбиение admin.py (3575 строк) на пакет admin/ из 4 модулей |
+| 08.02.2026 | Устранение N+1 запросов: кэш _service_obj_cache в CarService |
+| 08.02.2026 | Удаление побочных эффектов из display-методов (запись в БД при просмотре) |
+| 08.02.2026 | Исправление дублированного Transaction.save() |
+| 08.02.2026 | Добавление unit-тестов: round_up_to_5, расчёт хранения, кэш услуг |
+| 08.02.2026 | Вынос round_up_to_5 в core/utils.py для переиспользования |
+| 08.02.2026 | transaction.atomic() в regenerate_items_from_cars() — защита от битых инвойсов |
+| 08.02.2026 | Исправление or Decimal('0') → if is not None в расчёте наценки |
+| 08.02.2026 | round_up_to_5 на чистой Decimal-арифметике (без потери точности через float) |
+| 08.02.2026 | Оптимизация total_price_display — использование prefetched car_services |
 | 07.02.2026 | Система тарифов клиентов: фикс. и гибкая цена за авто, автоматический расчёт наценки |
 | 06.02.2026 | Массовое действие "Выставить" для инвойсов в админке |
 | 06.02.2026 | Табличный формат инвойсов: pivot-таблица (авто × услуги), short_name для всех услуг |
@@ -799,6 +834,101 @@ total_markup_sum = queryset.aggregate(
 | 24.01.2026 | Админ-агент, RAG индекс, контекст админки, быстрые действия |
 | 31.01.2026 | Столбец "Наценка" (Н) в списке ТС с оптимизацией через annotate + Sum |
 | 04.02.2026 | Система автовозов на загрузку: формирование автовозов, автоматическое создание инвойсов |
+
+---
+
+### 27. Исправление Decimal-точности, транзакционная безопасность, оптимизация запросов (08.02.2026)
+
+**Статус:** Завершено
+
+**Цель:** Исправить баги в вычислениях с Decimal, обеспечить атомарность критичных операций, оптимизировать запросы в админке.
+
+**Исправления:**
+
+1. **`transaction.atomic()` в `regenerate_items_from_cars()`:**
+   - Метод обёрнут в транзакцию — при ошибке во время генерации позиций инвойса данные не повредятся
+   - Создан внутренний метод `_regenerate_items_from_cars_inner()` для структурности
+   - **Файл:** `core/models_billing.py`
+
+2. **Исправление `or Decimal('0')` → `if is not None`:**
+   - **Проблема:** Паттерн `self.markup_amount or Decimal('0')` возвращал `Decimal('0')` когда `markup_amount = Decimal('0.00')` (потому что `Decimal('0.00')` — это falsy)
+   - **Решение:** Заменён на `self.markup_amount if self.markup_amount is not None else Decimal('0')`
+   - **Файлы:** `core/models.py` (свойство `invoice_price`), `core/models_billing.py` (расчёт в `regenerate_items_from_cars`)
+
+3. **`round_up_to_5()` на чистой Decimal-арифметике:**
+   - **Проблема:** Старая версия использовала `math.ceil(float(value) / 5) * 5` — потеря точности при больших числах
+   - **Решение:** `remainder = value % 5; return value + (5 - remainder)` — чистая Decimal
+   - **Файл:** `core/signals.py`
+
+4. **Оптимизация `total_price_display` в `CarAdmin`:**
+   - **Проблема:** Каждый вызов делал отдельный `CarService.objects.filter(car=obj)` и `aggregate(Sum)` — N+1 запросов
+   - **Решение:** Использует предзагруженные `obj.car_services.all()` и аннотацию `_total_markup`
+   - **Файл:** `core/admin.py` (позднее `core/admin/car.py`)
+
+---
+
+### 28. Устранение N+1 запросов, удаление побочных эффектов, разбиение admin.py (08.02.2026)
+
+**Статус:** Завершено
+
+**Цель:** Ускорить админку, убрать опасные побочные эффекты в display-методах, разбить монолитный admin.py на модули, добавить unit-тесты.
+
+**Изменения:**
+
+1. **Кэш объектов услуг (`_service_obj_cache`) в CarService:**
+   - **Проблема:** `get_service_name()`, `get_service_short_name()`, `get_default_price()` каждый делали отдельный `Model.objects.get(id=...)`. В `services_summary_display` это вызывалось в цикле — N+1 запросов.
+   - **Решение:** Добавлен словарь-кэш `_service_obj_cache` на уровне класса. Метод `_get_service_obj()` получает объект услуги один раз, последующие вызовы берут из кэша.
+   - Добавлен `SERVICE_MODEL_MAP` — маппинг service_type → модель
+   - Методы `get_service_name()`, `get_service_short_name()`, `get_default_price()` рефакторированы на использование `_get_service_obj()`
+   - Кэш сбрасывается при перезапуске gunicorn (при деплое)
+   - **Файл:** `core/models.py`
+
+2. **Удаление побочных эффектов из display-методов:**
+   - **Проблема:** `total_price_display` и `services_summary_display` вызывали `obj.update_days_and_storage()`, который ЗАПИСЫВАЛ в БД при каждом отображении списка ТС. Это и медленно, и потенциально опасно.
+   - **Решение:** Убраны вызовы `update_days_and_storage()` из display-методов
+   - **Файл:** `core/admin/car.py`
+
+3. **Исправление дублированного `Transaction.save()`:**
+   - **Проблема:** В `core/models_billing.py` метод `save()` класса `Transaction` содержал дублированный код — `super().save()` вызывался дважды
+   - **Решение:** Удалён дублированный блок (6 строк)
+   - **Файл:** `core/models_billing.py`
+
+4. **Вынос `round_up_to_5` в `core/utils.py`:**
+   - **Было:** Локальная функция внутри `calculate_ths_for_container()` в `core/signals.py`
+   - **Стало:** Модульная функция в `core/utils.py` — доступна для переиспользования и тестирования
+   - В `core/signals.py` заменён на `from core.utils import round_up_to_5`
+   - **Файлы:** `core/utils.py`, `core/signals.py`
+
+5. **Добавлены unit-тесты:**
+   - `RoundUpTo5Tests` (SimpleTestCase, без БД):
+     - Проверка точных кратных 5 (70 → 70, 0 → 0)
+     - Проверка округления вверх (73.12 → 75, 76 → 80)
+     - Проверка сохранения точности Decimal для больших чисел
+   - `StorageCostCalculationTests`:
+     - Проверка возврата 0 при отсутствии склада
+     - Проверка возврата 0 при отсутствии даты разгрузки
+   - `ServiceCacheTests`:
+     - Проверка корректного получения имени услуги через кэш
+     - Проверка что повторный вызов не делает SQL запрос
+     - Проверка обработки несуществующей услуги
+   - **Файл:** `core/tests.py`
+
+6. **Разбиение `admin.py` (3575 строк) на пакет `admin/`:**
+   - `core/admin.py` (3575 строк) **УДАЛЁН**
+   - Создан пакет `core/admin/` с файлами:
+     - `__init__.py` — импорт всех модулей для регистрации в Django Admin
+     - `inlines.py` — все inline-классы (CarInline, ContainerPhotoInline, LineTHSCoefficientInline и др.)
+     - `container.py` — ContainerAdmin
+     - `car.py` — CarAdmin (1046 строк)
+     - `partners.py` — WarehouseAdmin, ClientAdmin, CompanyAdmin, LineAdmin, CarrierAdmin, AutoTransportAdmin и др. (1431 строк)
+
+**Файлы:**
+- `core/models.py` — кэш `_service_obj_cache`, `SERVICE_MODEL_MAP`, метод `_get_service_obj()`
+- `core/models_billing.py` — удалён дублированный `Transaction.save()`
+- `core/signals.py` — импорт `round_up_to_5` из `core/utils`
+- `core/utils.py` — функция `round_up_to_5()`
+- `core/tests.py` — 3 новых тест-класса (115+ строк)
+- `core/admin/` — пакет из 5 файлов (вместо одного admin.py)
 
 ---
 

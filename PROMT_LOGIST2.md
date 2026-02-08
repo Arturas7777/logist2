@@ -1,6 +1,6 @@
 # ПОЛНОЕ ОПИСАНИЕ ПРОЕКТА LOGIST2
 
-**Версия документа:** 7 февраля 2026  
+**Версия документа:** 8 февраля 2026
 **Назначение:** Описание функционала для работы с AI-ассистентами
 
 ---
@@ -697,10 +697,17 @@ logist2/
 │   ├── models_billing.py           # Инвойсы и транзакции (NewInvoice, InvoiceItem)
 │   ├── models_website.py           # Модели для клиентского сайта
 │   │
-│   ├── admin.py                    # Django Admin (ContainerAdmin, CarAdmin, LineAdmin)
+│   ├── admin/                      # Django Admin (пакет, с 08.02.2026)
+│   │   ├── __init__.py             # Импорт всех модулей для регистрации
+│   │   ├── inlines.py              # Все inline-классы
+│   │   ├── container.py            # ContainerAdmin
+│   │   ├── car.py                  # CarAdmin (оптимизированный, без побочных эффектов)
+│   │   └── partners.py             # Warehouse, Client, Company, Line, Carrier, AutoTransport
 │   ├── admin_billing.py            # Admin для инвойсов
 │   ├── admin_website.py            # Admin для клиентского сайта
 │   │
+│   ├── utils.py                    # Утилиты (round_up_to_5, WebSocketBatcher)
+│   ├── tests.py                    # Unit-тесты (round_up_to_5, хранение, кэш)
 │   ├── signals.py                  # Сигналы (наследование данных, THS, email)
 │   ├── views.py                    # Views для админки
 │   ├── views_website.py            # Views для клиентского сайта
@@ -915,6 +922,14 @@ if hasattr(self, '_prefetched_objects_cache'):
     self._prefetched_objects_cache.pop('car_services', None)
 ```
 
+### 4a. Кэш объектов услуг (CarService._service_obj_cache)
+
+`CarService._service_obj_cache` — словарь-кэш для `get_service_name()` / `get_service_short_name()` / `get_default_price()`. Ключ: `(service_type, service_id)`. Сбрасывается при перезапуске процесса (gunicorn restart). Если меняются справочники услуг, может понадобиться перезапуск gunicorn.
+
+### 4b. Unit-тесты
+
+В проекте есть тесты в `core/tests.py`. Запуск: `python manage.py test core`. Используйте `settings_test.py` (SQLite) для быстрого выполнения.
+
 ### 5. Email через Brevo
 
 - Бесплатно: 300 писем/день
@@ -1020,6 +1035,66 @@ if hasattr(self, '_prefetched_objects_cache'):
 2. Синхронизация десктопа с сервером
 3. Синхронизация ноутбука с сервером
 4. Синхронизация только БД
+
+---
+
+## ⚡ ОПТИМИЗАЦИЯ И ТЕСТЫ (08.02.2026)
+
+### Кэш объектов услуг (N+1 fix)
+
+```python
+# Файл: core/models.py — класс CarService
+
+_service_obj_cache = {}  # Словарь-кэш на уровне класса
+
+SERVICE_MODEL_MAP = {
+    'LINE': LineService,
+    'CARRIER': CarrierService,
+    'WAREHOUSE': WarehouseService,
+    'COMPANY': CompanyService,
+}
+
+def _get_service_obj(self):
+    """Получает объект услуги с кэшированием (один запрос вместо N+1)"""
+    cache_key = (self.service_type, self.service_id)
+    if cache_key not in CarService._service_obj_cache:
+        model_class = CarService.SERVICE_MODEL_MAP.get(self.service_type)
+        if model_class:
+            CarService._service_obj_cache[cache_key] = model_class.objects.get(id=self.service_id)
+    return CarService._service_obj_cache.get(cache_key)
+```
+
+### Утилита round_up_to_5
+
+```python
+# Файл: core/utils.py
+def round_up_to_5(value):
+    """Округляет Decimal вверх с шагом 5 EUR (без float)"""
+    remainder = value % 5
+    if remainder == 0:
+        return value
+    return value + (5 - remainder)
+```
+
+### Unit-тесты
+
+```bash
+python manage.py test core.tests.RoundUpTo5Tests          # Округление
+python manage.py test core.tests.StorageCostCalculationTests  # Хранение
+python manage.py test core.tests.ServiceCacheTests         # Кэш услуг
+python manage.py test core                                 # Все тесты
+```
+
+### Структура admin/ пакета
+
+```
+core/admin/
+├── __init__.py     # Импорт всех модулей (регистрация в Django Admin)
+├── inlines.py      # CarInline, ContainerPhotoInline, LineTHSCoefficientInline и др.
+├── container.py    # ContainerAdmin (save_model, save_formset, THS логика)
+├── car.py          # CarAdmin (total_price_display, services_summary, markup_display)
+└── partners.py     # WarehouseAdmin, ClientAdmin, CompanyAdmin, LineAdmin, CarrierAdmin, AutoTransportAdmin
+```
 
 ---
 
