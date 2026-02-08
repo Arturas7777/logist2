@@ -524,6 +524,11 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 
 ### Недавние изменения (февраль 2026):
 
+**08.02.2026 - Оптимизация быстродействия:**
+1. **CONN_MAX_AGE = 600** в `settings_base.py` — переиспользование подключений к PostgreSQL (~20-30% снижение latency)
+2. **list_per_page = 50 + show_full_result_count = False** — в CarAdmin, ContainerAdmin, ClientAdmin, NewInvoiceAdmin, TransactionAdmin
+3. **Кэширование views сайта** — `@cache_page` на website_home (15мин), about/services/contact (1час), news_list (15мин)
+
 **08.02.2026 - Redis-кэширование, N+1 оптимизация, Rate Limiting, Celery, безопасность:**
 1. **REDIS-КЭШИРОВАНИЕ:** ⚡ ОПТИМИЗАЦИЯ
    - ✅ `_service_obj_cache` (dict на уровне класса) заменён на Django cache (`cache.get`/`cache.set`, ключи `svc:{type}:{id}`, TTL 300с)

@@ -253,6 +253,8 @@ class ClientAdmin(admin.ModelAdmin):
     list_filter = ('name', 'notification_enabled', 'tariff_type')
     search_fields = ('name', 'email', 'email2', 'email3', 'email4')
     actions = ['reset_balances', 'recalculate_balance', 'reset_client_balance']
+    list_per_page = 50
+    show_full_result_count = False
     readonly_fields = ('balance', 'balance_updated_at', 'new_invoices_display', 'new_transactions_display')
     inlines = [ClientTariffRateInline]
 

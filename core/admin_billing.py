@@ -57,8 +57,10 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     """
     Простая и понятная админка для инвойсов
     """
-    
+
     change_form_template = 'admin/core/newinvoice/change_form.html'
+    list_per_page = 50
+    show_full_result_count = False
     
     class Media:
         css = {
@@ -670,7 +672,9 @@ class TransactionAdmin(admin.ModelAdmin):
     """
     Простая админка для транзакций
     """
-    
+    list_per_page = 50
+    show_full_result_count = False
+
     list_display = (
         'number_display',
         'date',
