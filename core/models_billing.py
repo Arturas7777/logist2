@@ -1099,11 +1099,5 @@ class Transaction(models.Model):
         """Переопределяем save для автоматической генерации номера"""
         if not self.number:
             self.number = self.generate_number()
-        
-        super().save(*args, **kwargs)
 
-        """Переопределяем save для автоматической генерации номера"""
-        if not self.number:
-            self.number = self.generate_number()
-        
         super().save(*args, **kwargs)

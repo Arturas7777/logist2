@@ -1,11 +1,25 @@
 """
-Утилиты для оптимизации производительности
+Утилиты для оптимизации производительности и бизнес-логики
 """
+
+from decimal import Decimal
 
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from django.db import transaction
 import logging
+
+
+def round_up_to_5(value):
+    """Округляет Decimal в большую сторону с шагом 5 EUR.
+
+    Пример: 73.12 -> 75, 70.00 -> 70, 0 -> 0
+    Использует чистую Decimal-арифметику (без потери точности через float).
+    """
+    remainder = value % 5
+    if remainder == 0:
+        return value
+    return value + (5 - remainder)
 
 logger = logging.getLogger('django')
 
