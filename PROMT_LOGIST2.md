@@ -1065,7 +1065,7 @@ if hasattr(self, '_prefetched_objects_cache'):
 - **warning** — "не найдено" (услуга с ID не найдена)
 
 Файлы без print(): `signals.py`, `models.py`, `admin/car.py`, `admin/partners.py`, `forms.py`.
-Не затронуты: `models_BACKUP_BEFORE_DELETION.py`, миграции.
+Не затронуты: миграции. Backup-файлы удалены (08.02.2026).
 
 ### Индексы БД (уже реализованы)
 
