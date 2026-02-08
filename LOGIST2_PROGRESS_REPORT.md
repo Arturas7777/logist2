@@ -806,6 +806,7 @@ total_markup_sum = queryset.aggregate(
 
 | Дата | Описание |
 |------|----------|
+| 08.02.2026 | Чистка: удалены 2 backup-файла (1975 строк), заглушка PDF, 2 пустых метода, 3 legacy manager-а, исправлен placeholder телефона |
 | 08.02.2026 | Добавлены ещё 29 тестов: calculate_total_price, CarService цены, THS-сервисы, инвойс-статусы, хранение в инвойсах, дефолты склада |
 | 08.02.2026 | Добавлены 19 unit-тестов: THS расчёт, хранение (дни×ставка), regenerate_items_from_cars (markup, группировка) |
 | 08.02.2026 | Замена print() на logging во всём core/ (signals, models, admin, forms) |
@@ -932,6 +933,29 @@ total_markup_sum = queryset.aggregate(
 | `ApplyWarehouseDefaultsTests` | 4 | force=True перезаписывает, force=False сохраняет, заполнение пустых, без склада |
 
 **Результат:** 57 тестов, 57 OK, 0 ошибок, 0.567 секунды
+
+---
+
+### 33. Чистка кодовой базы: мёртвый код, заглушки, placeholder-ы (08.02.2026)
+
+**Статус:** Завершено
+
+**Удалено 2045 строк мёртвого кода:**
+
+| Что удалено | Файл | Строк |
+|---|---|---|
+| Backup моделей | `models_BACKUP_BEFORE_DELETION.py` | 1943 |
+| Backup моделей | `models_OLD_BACKUP.py` | 32 |
+| Заглушка PDF-экспорта | `admin_billing.py` | 4 |
+| Пустые методы `get_rates_by_provider()`, `get_parameters_by_provider()` | `models.py` | 29 |
+| Legacy managers: `BaseManager`, `ContainerManager`, `CarManager` | `models.py` | 15 |
+
+**Исправления:**
+- Placeholder телефона `+370 XXX XXXXX` → реальный номер из `settings.COMPANY_PHONE`
+- AI-чат теперь берёт телефон и email из Django settings (а не hardcode)
+- `settings.py`: `COMPANY_PHONE = '+37068830450'` (было `+370 XXX XXXXX`)
+
+**Тесты:** 57/57 OK после чистки
 
 ---
 

@@ -515,6 +515,14 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 
 ### Недавние изменения (февраль 2026):
 
+**08.02.2026 - Чистка кодовой базы (-2045 строк):**
+1. **УДАЛЁН МЁРТВЫЙ КОД:** 🧹 ЧИСТКА
+   - ✅ Удалены backup-файлы: `models_BACKUP_BEFORE_DELETION.py` (1943), `models_OLD_BACKUP.py` (32)
+   - ✅ Удалена заглушка PDF-экспорта из `admin_billing.py`
+   - ✅ Удалены пустые методы `get_rates_by_provider()`, `get_parameters_by_provider()`
+   - ✅ Удалены legacy managers: `BaseManager`, `ContainerManager`, `CarManager`
+   - ✅ Placeholder телефона `+370 XXX XXXXX` → `settings.COMPANY_PHONE`
+
 **08.02.2026 - Полное покрытие тестами (57 тестов):**
 1. **48 НОВЫХ UNIT-ТЕСТОВ за сессию:** ✅ ТЕСТИРОВАНИЕ
    - `CalculateTotalPriceTests` (5) — итоговая цена: услуги + markup, quantity, default/custom price
