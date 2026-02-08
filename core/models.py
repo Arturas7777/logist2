@@ -1288,77 +1288,52 @@ class CarService(models.Model):
     def __str__(self):
         return f"{self.car.vin} - {self.get_service_name()}: {self.final_price}"
     
+    # Кэш объектов услуг на уровне класса (избегает N+1 запросов).
+    # Сбрасывается при перезапуске процесса (gunicorn restart при деплое).
+    _service_obj_cache = {}
+
+    SERVICE_MODEL_MAP = {
+        'LINE': LineService,
+        'CARRIER': CarrierService,
+        'WAREHOUSE': WarehouseService,
+        'COMPANY': CompanyService,
+    }
+
+    def _get_service_obj(self):
+        """Получает объект услуги с кэшированием для избежания N+1 запросов."""
+        cache_key = (self.service_type, self.service_id)
+        if cache_key not in CarService._service_obj_cache:
+            model_class = CarService.SERVICE_MODEL_MAP.get(self.service_type)
+            if model_class:
+                try:
+                    CarService._service_obj_cache[cache_key] = model_class.objects.get(id=self.service_id)
+                except model_class.DoesNotExist:
+                    CarService._service_obj_cache[cache_key] = None
+            else:
+                CarService._service_obj_cache[cache_key] = None
+        return CarService._service_obj_cache.get(cache_key)
+
     def get_service_name(self):
         """Получает название услуги"""
-        if self.service_type == 'LINE':
-            try:
-                service = LineService.objects.get(id=self.service_id)
-                return service.name
-            except LineService.DoesNotExist:
-                return "Услуга не найдена"
-        elif self.service_type == 'CARRIER':
-            try:
-                service = CarrierService.objects.get(id=self.service_id)
-                return service.name
-            except CarrierService.DoesNotExist:
-                return "Услуга не найдена"
-        elif self.service_type == 'WAREHOUSE':
-            try:
-                service = WarehouseService.objects.get(id=self.service_id)
-                return service.name
-            except WarehouseService.DoesNotExist:
-                return "Услуга не найдена"
-        elif self.service_type == 'COMPANY':
-            try:
-                service = CompanyService.objects.get(id=self.service_id)
-                return service.name
-            except CompanyService.DoesNotExist:
-                return "Услуга не найдена"
+        service = self._get_service_obj()
+        if service:
+            return service.name
+        if self.service_type in CarService.SERVICE_MODEL_MAP:
+            return "Услуга не найдена"
         return "Неизвестная услуга"
-    
+
     def get_service_short_name(self):
         """Получает сокращённое название услуги (для инвойсов и таблиц)"""
-        model_map = {
-            'LINE': LineService,
-            'CARRIER': CarrierService,
-            'WAREHOUSE': WarehouseService,
-            'COMPANY': CompanyService,
-        }
-        model_class = model_map.get(self.service_type)
-        if model_class:
-            try:
-                service = model_class.objects.get(id=self.service_id)
-                return service.short_name or service.name[:10]
-            except model_class.DoesNotExist:
-                return "?"
+        service = self._get_service_obj()
+        if service:
+            return service.short_name or service.name[:10]
         return "?"
-    
+
     def get_default_price(self):
         """Получает цену по умолчанию"""
-        if self.service_type == 'LINE':
-            try:
-                service = LineService.objects.get(id=self.service_id)
-                return service.default_price
-            except LineService.DoesNotExist:
-                return 0
-        elif self.service_type == 'CARRIER':
-            try:
-                service = CarrierService.objects.get(id=self.service_id)
-                return service.default_price
-            except CarrierService.DoesNotExist:
-                return 0
-        elif self.service_type == 'WAREHOUSE':
-            try:
-                service = WarehouseService.objects.get(id=self.service_id)
-                return service.default_price
-            except WarehouseService.DoesNotExist:
-                return 0
-        elif self.service_type == 'COMPANY':
-            try:
-                service = CompanyService.objects.get(id=self.service_id)
-                return service.default_price
-            except CompanyService.DoesNotExist:
-                return 0
+        service = self._get_service_obj()
+        if service:
+            return service.default_price
         return 0
     
     @property
