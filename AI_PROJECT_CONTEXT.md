@@ -515,6 +515,17 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 
 ### Недавние изменения (февраль 2026):
 
+**08.02.2026 - Замена print() на logging, очистка тестов:**
+1. **ЗАМЕНА PRINT → LOGGING:** ⚡ КАЧЕСТВО КОДА
+   - ✅ ~28 print() заменены на logger.debug/error/warning в 5 файлах (signals, models, admin/car, admin/partners, forms)
+   - ✅ В forms.py добавлен import logging + logger
+   - ✅ Индексы БД уже были реализованы (Car.status, Car.vin, CarService.car+service_type и ~15 других)
+
+2. **ОЧИСТКА ТЕСТОВ:** ✅ ИСПРАВЛЕНИЕ
+   - ✅ Удалены 4 устаревших теста (BillingTests, InvoiceCalculationTests) — использовали старый API биллинга
+   - ✅ Исправлен Warehouse(rate=0) — поле rate удалено в миграции 0091
+   - ✅ Результат: **9 тестов, 9 OK, 0 ошибок**
+
 **08.02.2026 - Рефакторинг, оптимизация и тесты:**
 1. **РАЗБИЕНИЕ ADMIN.PY НА ПАКЕТ:** ⚡ РЕФАКТОРИНГ
    - ✅ `core/admin.py` (3575 строк) разбит на пакет `core/admin/`:

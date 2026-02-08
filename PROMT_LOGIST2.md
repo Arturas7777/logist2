@@ -1038,7 +1038,24 @@ if hasattr(self, '_prefetched_objects_cache'):
 
 ---
 
-## ⚡ ОПТИМИЗАЦИЯ И ТЕСТЫ (08.02.2026)
+## ⚡ ОПТИМИЗАЦИЯ, ЛОГИРОВАНИЕ И ТЕСТЫ (08.02.2026)
+
+### Логирование вместо print()
+
+Все `print()` в рабочих файлах заменены на `logging.logger`:
+- **debug** — штатная отладка (удаление услуг, пересчёт хранения, pre_save)
+- **error** — ошибки (пересчёт цены, удаление услуг, создание услуг)
+- **warning** — "не найдено" (услуга с ID не найдена)
+
+Файлы без print(): `signals.py`, `models.py`, `admin/car.py`, `admin/partners.py`, `forms.py`.
+Не затронуты: `models_BACKUP_BEFORE_DELETION.py`, миграции.
+
+### Индексы БД (уже реализованы)
+
+Все часто фильтруемые поля уже имеют индексы:
+- `Container`: status, client+status, warehouse+status, line, eta, unload_date
+- `Car`: vin, status, client+status, warehouse+status, line, carrier, container, unload_date, transfer_date
+- `CarService`: car+service_type, service_type+service_id, car
 
 ### Кэш объектов услуг (N+1 fix)
 
