@@ -944,6 +944,41 @@ total_markup_sum = queryset.aggregate(
 
 ---
 
+### 37. Glassmorphism-редизайн дашборда (08.02.2026)
+
+**Статус:** Завершено
+
+**Цель:** Модернизация визуального стиля дашборда `/admin/dashboard/` — переход от плоского белого дизайна к glassmorphism (стиль iOS/macOS) с frosted glass карточками, тёмным градиентным фоном и светящимися акцентами.
+
+**Файл:** `templates/admin/company_dashboard.html` — единственный изменённый файл.
+
+**Изменения в CSS (полная замена блока `<style>`):**
+
+| Элемент | Было | Стало |
+|---------|------|-------|
+| Фон страницы | Белый (дефолтный) | `linear-gradient(135deg, #0f0c29 → #1a1a3e → #24243e → #0f3460 → #1a1a2e)` |
+| Карточки KPI, графики, таблицы | `background: #fff`, `box-shadow: 0 2px 8px` | `background: rgba(255,255,255,0.07)`, `backdrop-filter: blur(12px)`, `border: 1px solid rgba(255,255,255,0.12)`, `box-shadow: 0 8px 32px` |
+| Левый бордер карточек | Цветной бордер | Цветной бордер + **glowing box-shadow** (напр. `-4px 0 15px rgba(...)`) |
+| Hover карточек | Нет эффекта | `translateY(-4px)` + усиленное свечение |
+| Текст KPI | Тёмный (`#777`, `#999`, `#333`) | Белый (`#fff`, `rgba(255,255,255,0.6)`, `rgba(255,255,255,0.5)`) |
+| Значения (positive/negative) | `#28a745` / `#dc3545` | `#4cdf72` / `#ff6b7a` (ярче для тёмного фона) |
+| Кнопки быстрых действий | Solid background | Glass base `rgba(255,255,255,0.1)` + colored tint + hover glow |
+| Статус-бейджи | Solid background, `PARTIALLY_PAID` с тёмным текстом | Semi-transparent + `box-shadow: 0 0 8px`, все белый текст |
+| Таблицы | Тёмный текст, белый фон | Белый текст 80%, translucent borders, ссылки `#64b5f6` |
+| Секции-заголовки | `color: #333`, `border-bottom: 2px solid #0f3460` | `color: rgba(255,255,255,0.9)`, `border-bottom: rgba(255,255,255,0.15)` |
+| Скроллбар таблиц | Стандартный | Custom webkit scrollbar (thin, translucent) |
+| Mobile (≤768px) | Базовый responsive | Reduced `backdrop-filter: blur(8px)` для производительности |
+
+**Изменения в HTML:**
+- Inline `style="color:#8B0000"` на карточке "В порту" заменён на `#e74c3c` (читаемость на тёмном фоне)
+
+**Изменения в Chart.js (JavaScript):**
+- Bar chart: `scales.y.ticks.color: '#aaa'`, `scales.x.ticks.color: '#aaa'`, `grid.color: 'rgba(255,255,255,0.06)'`, `legend.labels.color: '#ccc'`
+- Doughnut charts (обе): `legend.labels.color: '#ccc'`
+- `STATUS_COLORS.IN_PORT`: `#8B0000` → `#e74c3c`
+
+---
+
 ### 36. Дашборд компании — полная перестройка (08.02.2026)
 
 **Статус:** Завершено
@@ -1012,6 +1047,7 @@ total_markup_sum = queryset.aggregate(
 
 | Дата | Описание |
 |------|----------|
+| 08.02.2026 | Glassmorphism-редизайн дашборда: frosted glass карточки, тёмный градиент, glowing accents, светлые оси графиков |
 | 08.02.2026 | Дашборд компании: полная перестройка с Chart.js, KPI, DashboardService, исправление cache_utils |
 | 08.02.2026 | Оптимизация: CONN_MAX_AGE, пагинация админки (list_per_page=50), кэширование views сайта |
 | 08.02.2026 | Redis-кэширование, N+1 оптимизация, Rate Limiting, Celery для email, SESSION_COOKIE_HTTPONLY |

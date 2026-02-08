@@ -6,18 +6,35 @@
 {% block extrastyle %}
 {{ block.super }}
 <style>
+    /* ── Dark gradient page background ── */
+    #content {
+        background: linear-gradient(135deg, #0f0c29 0%, #1a1a3e 25%, #24243e 50%, #0f3460 75%, #1a1a2e 100%);
+        min-height: 100vh;
+    }
+
     .dashboard-container {
         max-width: 1500px;
         margin: 0 auto;
         padding: 20px;
     }
 
+    /* ── Glass mixin (shared by cards, charts, tables, header) ── */
+    .dashboard-header,
+    .kpi-card,
+    .chart-box,
+    .table-box {
+        background: rgba(255, 255, 255, 0.07);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        border-radius: 12px;
+    }
+
     /* ── Header banner ── */
     .dashboard-header {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
         color: #fff;
         padding: 28px 35px;
-        border-radius: 14px;
         margin-bottom: 28px;
         display: flex;
         justify-content: space-between;
@@ -31,10 +48,10 @@
     .section-title {
         font-size: 1.15em;
         font-weight: 600;
-        color: #333;
+        color: rgba(255, 255, 255, 0.9);
         margin: 28px 0 14px;
         padding-bottom: 8px;
-        border-bottom: 2px solid #0f3460;
+        border-bottom: 2px solid rgba(255, 255, 255, 0.15);
     }
 
     /* ── KPI cards grid ── */
@@ -47,48 +64,65 @@
     .kpi-grid.financial   { grid-template-columns: repeat(3, 1fr); }
 
     .kpi-card {
-        background: #fff;
         padding: 18px 20px;
-        border-radius: 10px;
-        box-shadow: 0 2px 8px rgba(0,0,0,.07);
         border-left: 4px solid #6c757d;
         position: relative;
+        transition: transform .25s ease, box-shadow .25s ease;
+    }
+    .kpi-card:hover {
+        transform: translateY(-4px);
     }
     .kpi-card .kpi-label {
         font-size: .82em;
         text-transform: uppercase;
         letter-spacing: .4px;
-        color: #777;
+        color: rgba(255, 255, 255, 0.6);
         margin-bottom: 6px;
     }
     .kpi-card .kpi-value {
         font-size: 1.7em;
         font-weight: 700;
         line-height: 1.2;
+        color: #fff;
     }
     .kpi-card .kpi-sub {
         font-size: .8em;
-        color: #999;
+        color: rgba(255, 255, 255, 0.5);
         margin-top: 4px;
     }
 
-    /* Status-colored borders */
-    .kpi-card.floating    { border-left-color: #2772a8; }
-    .kpi-card.in-port     { border-left-color: #8B0000; }
-    .kpi-card.unloaded    { border-left-color: #239f58; }
-    .kpi-card.transferred { border-left-color: #78458c; }
-    .kpi-card.storage     { border-left-color: #e67e22; }
-    .kpi-card.transport   { border-left-color: #2c3e50; }
-    .kpi-card.balance     { border-left-color: #0f3460; }
-    .kpi-card.revenue     { border-left-color: #28a745; }
-    .kpi-card.expense     { border-left-color: #dc3545; }
-    .kpi-card.profit      { border-left-color: #17a2b8; }
-    .kpi-card.outstanding { border-left-color: #ffc107; }
-    .kpi-card.overdue     { border-left-color: #dc3545; }
+    /* Status-colored borders + glowing left edge */
+    .kpi-card.floating    { border-left-color: #2772a8; box-shadow: 0 8px 32px rgba(0,0,0,0.2), -4px 0 15px rgba(39,114,168,0.3); }
+    .kpi-card.in-port     { border-left-color: #e74c3c; box-shadow: 0 8px 32px rgba(0,0,0,0.2), -4px 0 15px rgba(231,76,60,0.3); }
+    .kpi-card.unloaded    { border-left-color: #239f58; box-shadow: 0 8px 32px rgba(0,0,0,0.2), -4px 0 15px rgba(35,159,88,0.3); }
+    .kpi-card.transferred { border-left-color: #78458c; box-shadow: 0 8px 32px rgba(0,0,0,0.2), -4px 0 15px rgba(120,69,140,0.3); }
+    .kpi-card.storage     { border-left-color: #e67e22; box-shadow: 0 8px 32px rgba(0,0,0,0.2), -4px 0 15px rgba(230,126,34,0.3); }
+    .kpi-card.transport   { border-left-color: #5dade2; box-shadow: 0 8px 32px rgba(0,0,0,0.2), -4px 0 15px rgba(93,173,226,0.3); }
+    .kpi-card.balance     { border-left-color: #3498db; box-shadow: 0 8px 32px rgba(0,0,0,0.2), -4px 0 15px rgba(52,152,219,0.3); }
+    .kpi-card.revenue     { border-left-color: #28a745; box-shadow: 0 8px 32px rgba(0,0,0,0.2), -4px 0 15px rgba(40,167,69,0.3); }
+    .kpi-card.expense     { border-left-color: #dc3545; box-shadow: 0 8px 32px rgba(0,0,0,0.2), -4px 0 15px rgba(220,53,69,0.3); }
+    .kpi-card.profit      { border-left-color: #17a2b8; box-shadow: 0 8px 32px rgba(0,0,0,0.2), -4px 0 15px rgba(23,162,184,0.3); }
+    .kpi-card.outstanding { border-left-color: #ffc107; box-shadow: 0 8px 32px rgba(0,0,0,0.2), -4px 0 15px rgba(255,193,7,0.3); }
+    .kpi-card.overdue     { border-left-color: #dc3545; box-shadow: 0 8px 32px rgba(0,0,0,0.2), -4px 0 15px rgba(220,53,69,0.3); }
 
-    .val-positive { color: #28a745; }
-    .val-negative { color: #dc3545; }
-    .val-neutral  { color: #495057; }
+    /* Hover: stronger glow */
+    .kpi-card.floating:hover    { box-shadow: 0 12px 40px rgba(0,0,0,0.3), -6px 0 25px rgba(39,114,168,0.5); }
+    .kpi-card.in-port:hover     { box-shadow: 0 12px 40px rgba(0,0,0,0.3), -6px 0 25px rgba(231,76,60,0.5); }
+    .kpi-card.unloaded:hover    { box-shadow: 0 12px 40px rgba(0,0,0,0.3), -6px 0 25px rgba(35,159,88,0.5); }
+    .kpi-card.transferred:hover { box-shadow: 0 12px 40px rgba(0,0,0,0.3), -6px 0 25px rgba(120,69,140,0.5); }
+    .kpi-card.storage:hover     { box-shadow: 0 12px 40px rgba(0,0,0,0.3), -6px 0 25px rgba(230,126,34,0.5); }
+    .kpi-card.transport:hover   { box-shadow: 0 12px 40px rgba(0,0,0,0.3), -6px 0 25px rgba(93,173,226,0.5); }
+    .kpi-card.balance:hover     { box-shadow: 0 12px 40px rgba(0,0,0,0.3), -6px 0 25px rgba(52,152,219,0.5); }
+    .kpi-card.revenue:hover     { box-shadow: 0 12px 40px rgba(0,0,0,0.3), -6px 0 25px rgba(40,167,69,0.5); }
+    .kpi-card.expense:hover     { box-shadow: 0 12px 40px rgba(0,0,0,0.3), -6px 0 25px rgba(220,53,69,0.5); }
+    .kpi-card.profit:hover      { box-shadow: 0 12px 40px rgba(0,0,0,0.3), -6px 0 25px rgba(23,162,184,0.5); }
+    .kpi-card.outstanding:hover { box-shadow: 0 12px 40px rgba(0,0,0,0.3), -6px 0 25px rgba(255,193,7,0.5); }
+    .kpi-card.overdue:hover     { box-shadow: 0 12px 40px rgba(0,0,0,0.3), -6px 0 25px rgba(220,53,69,0.5); }
+
+    /* ── Value colors (brightened for dark bg) ── */
+    .val-positive { color: #4cdf72; }
+    .val-negative { color: #ff6b7a; }
+    .val-neutral  { color: rgba(255, 255, 255, 0.85); }
 
     /* ── Charts row ── */
     .charts-row {
@@ -98,15 +132,12 @@
         margin-bottom: 28px;
     }
     .chart-box {
-        background: #fff;
         padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 2px 8px rgba(0,0,0,.07);
     }
     .chart-box h3 {
         margin: 0 0 12px;
         font-size: 1em;
-        color: #333;
+        color: rgba(255, 255, 255, 0.9);
     }
     .chart-wrap { position: relative; height: 280px; }
 
@@ -118,42 +149,46 @@
         margin-bottom: 28px;
     }
     .table-box {
-        background: #fff;
         padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 2px 8px rgba(0,0,0,.07);
         overflow-x: auto;
     }
     .table-box h3 {
         margin: 0 0 12px;
         font-size: 1em;
-        color: #333;
+        color: rgba(255, 255, 255, 0.9);
     }
     .dash-table {
         width: 100%;
         border-collapse: collapse;
         font-size: .88em;
+        color: rgba(255, 255, 255, 0.8);
     }
     .dash-table th, .dash-table td {
         padding: 9px 10px;
         text-align: left;
-        border-bottom: 1px solid #eee;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         white-space: nowrap;
     }
     .dash-table th {
-        background: #f8f9fa;
+        background: rgba(255, 255, 255, 0.05);
         font-weight: 600;
-        color: #555;
+        color: rgba(255, 255, 255, 0.7);
         position: sticky;
         top: 0;
     }
-    .dash-table tr:hover td { background: #f8f9fa; }
-    .dash-table .amount-in  { color: #28a745; font-weight: 600; }
-    .dash-table .amount-out { color: #dc3545; font-weight: 600; }
+    .dash-table tr:hover td { background: rgba(255, 255, 255, 0.05); }
+    .dash-table .amount-in  { color: #4cdf72; font-weight: 600; }
+    .dash-table .amount-out { color: #ff6b7a; font-weight: 600; }
+    .dash-table a { color: #64b5f6; text-decoration: none; }
+    .dash-table a:hover { color: #90caf9; text-decoration: underline; }
 
     .table-scroll { max-height: 420px; overflow-y: auto; }
+    .table-scroll::-webkit-scrollbar { width: 6px; }
+    .table-scroll::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.03); }
+    .table-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 3px; }
+    .table-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.25); }
 
-    /* ── Status badges ── */
+    /* ── Status badges (semi-transparent + glow) ── */
     .status-badge {
         display: inline-block;
         padding: 2px 8px;
@@ -162,17 +197,17 @@
         font-weight: 600;
         color: #fff;
     }
-    .status-DRAFT          { background: #6c757d; }
-    .status-ISSUED         { background: #007bff; }
-    .status-PARTIALLY_PAID { background: #ffc107; color: #333; }
-    .status-PAID           { background: #28a745; }
-    .status-OVERDUE        { background: #dc3545; }
-    .status-CANCELLED      { background: #343a40; }
-    .status-PENDING        { background: #ffc107; color: #333; }
-    .status-COMPLETED      { background: #28a745; }
-    .status-FAILED         { background: #dc3545; }
+    .status-DRAFT          { background: rgba(108, 117, 125, 0.5); box-shadow: 0 0 8px rgba(108, 117, 125, 0.3); }
+    .status-ISSUED         { background: rgba(0, 123, 255, 0.5); box-shadow: 0 0 8px rgba(0, 123, 255, 0.3); }
+    .status-PARTIALLY_PAID { background: rgba(255, 193, 7, 0.5); box-shadow: 0 0 8px rgba(255, 193, 7, 0.3); color: #fff; }
+    .status-PAID           { background: rgba(40, 167, 69, 0.5); box-shadow: 0 0 8px rgba(40, 167, 69, 0.3); }
+    .status-OVERDUE        { background: rgba(220, 53, 69, 0.5); box-shadow: 0 0 8px rgba(220, 53, 69, 0.3); }
+    .status-CANCELLED      { background: rgba(52, 58, 64, 0.5); box-shadow: 0 0 8px rgba(52, 58, 64, 0.3); }
+    .status-PENDING        { background: rgba(255, 193, 7, 0.5); box-shadow: 0 0 8px rgba(255, 193, 7, 0.3); color: #fff; }
+    .status-COMPLETED      { background: rgba(40, 167, 69, 0.5); box-shadow: 0 0 8px rgba(40, 167, 69, 0.3); }
+    .status-FAILED         { background: rgba(220, 53, 69, 0.5); box-shadow: 0 0 8px rgba(220, 53, 69, 0.3); }
 
-    /* ── Quick actions ── */
+    /* ── Quick actions (glass + colored tint) ── */
     .quick-actions-bar {
         display: flex;
         gap: 12px;
@@ -187,14 +222,23 @@
         font-weight: 600;
         font-size: .9em;
         color: #fff;
-        transition: opacity .2s, transform .15s;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
     }
-    .qa-btn:hover { opacity: .85; transform: translateY(-1px); color: #fff; }
-    .qa-btn.primary   { background: #0f3460; }
-    .qa-btn.success   { background: #28a745; }
-    .qa-btn.info      { background: #17a2b8; }
-    .qa-btn.warning   { background: #e67e22; }
-    .qa-btn.secondary { background: #6c757d; }
+    .qa-btn:hover { transform: translateY(-2px); color: #fff; }
+    .qa-btn.primary   { background: rgba(15, 52, 96, 0.6); }
+    .qa-btn.primary:hover { box-shadow: 0 4px 20px rgba(15, 52, 96, 0.5); }
+    .qa-btn.success   { background: rgba(40, 167, 69, 0.45); }
+    .qa-btn.success:hover { box-shadow: 0 4px 20px rgba(40, 167, 69, 0.5); }
+    .qa-btn.info      { background: rgba(23, 162, 184, 0.45); }
+    .qa-btn.info:hover { box-shadow: 0 4px 20px rgba(23, 162, 184, 0.5); }
+    .qa-btn.warning   { background: rgba(230, 126, 34, 0.45); }
+    .qa-btn.warning:hover { box-shadow: 0 4px 20px rgba(230, 126, 34, 0.5); }
+    .qa-btn.secondary { background: rgba(108, 117, 125, 0.45); }
+    .qa-btn.secondary:hover { box-shadow: 0 4px 20px rgba(108, 117, 125, 0.5); }
 
     /* ── Responsive ── */
     @media (max-width: 1100px) {
@@ -209,6 +253,15 @@
         .kpi-grid.operational,
         .kpi-grid.financial { grid-template-columns: 1fr; }
         .quick-actions-bar { flex-direction: column; }
+        .dashboard-container { padding: 12px; }
+        /* Reduced blur on mobile for performance */
+        .dashboard-header,
+        .kpi-card,
+        .chart-box,
+        .table-box {
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
     }
 </style>
 {% endblock %}
@@ -249,7 +302,7 @@
         </div>
         <div class="kpi-card in-port">
             <div class="kpi-label">Авто — В порту</div>
-            <div class="kpi-value" style="color:#8B0000">{{ cars_by_status.IN_PORT }}</div>
+            <div class="kpi-value" style="color:#e74c3c">{{ cars_by_status.IN_PORT }}</div>
             <div class="kpi-sub">Конт: {{ containers_by_status.IN_PORT }}</div>
         </div>
         <div class="kpi-card unloaded">
@@ -428,7 +481,7 @@
     }
 
     var STATUS_COLORS = {
-        FLOATING: '#2772a8', IN_PORT: '#8B0000', UNLOADED: '#239f58', TRANSFERRED: '#78458c'
+        FLOATING: '#2772a8', IN_PORT: '#e74c3c', UNLOADED: '#239f58', TRANSFERRED: '#78458c'
     };
     var INV_COLORS = {
         DRAFT: '#6c757d', ISSUED: '#007bff', PARTIALLY_PAID: '#ffc107',
@@ -457,8 +510,18 @@
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { position: 'top' } },
-                scales: { y: { beginAtZero: true, ticks: { callback: function(v){ return v.toLocaleString() + ' €'; } } } }
+                plugins: { legend: { position: 'top', labels: { color: '#ccc' } } },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: '#aaa', callback: function(v){ return v.toLocaleString() + ' €'; } },
+                        grid: { color: 'rgba(255,255,255,0.06)' }
+                    },
+                    x: {
+                        ticks: { color: '#aaa' },
+                        grid: { color: 'rgba(255,255,255,0.06)' }
+                    }
+                }
             }
         });
     }
@@ -476,7 +539,7 @@
                     backgroundColor: carKeys.map(function(k){ return STATUS_COLORS[k] || '#ccc'; })
                 }]
             },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#ccc' } } } }
         });
     }
 
@@ -493,7 +556,7 @@
                     backgroundColor: invKeys.map(function(k){ return INV_COLORS[k] || '#ccc'; })
                 }]
             },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#ccc' } } } }
         });
     }
 })();
