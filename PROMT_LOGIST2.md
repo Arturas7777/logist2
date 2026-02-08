@@ -1086,6 +1086,8 @@ Email-уведомления отправляются через Celery зада
 
 **Сервис:** `core/services/dashboard_service.py` — `DashboardService`
 
+**Дизайн:** Glassmorphism (iOS/macOS стиль) — тёмный градиентный фон, frosted glass карточки с `backdrop-filter: blur(12px)`, glowing left edge по статусу, hover-анимации (`translateY(-4px)` + усиленное свечение), белый текст, ярче value-цвета для тёмного фона, glass-кнопки с colored tint, semi-transparent статус-бейджи, Chart.js со светлыми осями/легендами, custom webkit scrollbar, reduced blur на mobile.
+
 **Что показывает:**
 1. **Операционные KPI:** авто/контейнеры по статусам, авто на хранении, активные тралы
 2. **Финансовые KPI:** баланс компании (live), доходы/расходы/прибыль (месяц), outstanding, overdue

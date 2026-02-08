@@ -526,6 +526,20 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 
 ### Недавние изменения (февраль 2026):
 
+**08.02.2026 - Glassmorphism-редизайн дашборда:**
+1. **GLASSMORPHISM ДИЗАЙН:** ⭐ UI/UX
+   - ✅ Тёмный градиентный фон (`#0f0c29 → #1a1a3e → #24243e → #0f3460 → #1a1a2e`)
+   - ✅ Frosted glass карточки: `backdrop-filter: blur(12px)`, `rgba(255,255,255,0.07)`, translucent borders
+   - ✅ Glowing left edge на KPI-карточках (цветной `box-shadow` по статусу)
+   - ✅ Hover: `translateY(-4px)` + усиленное свечение
+   - ✅ Белый текст, ярче value-цвета (`#4cdf72`, `#ff6b7a`) для тёмного фона
+   - ✅ Glass-кнопки быстрых действий с colored tint и hover glow
+   - ✅ Semi-transparent статус-бейджи с `box-shadow` glow, все белый текст
+   - ✅ Таблицы: белый текст 80%, translucent borders, ссылки `#64b5f6`, custom scrollbar
+   - ✅ Chart.js: светлые оси (`#aaa`), translucent grid, светлые легенды (`#ccc`)
+   - ✅ Reduced blur на mobile (`8px`) для производительности
+   - ✅ Файл: `templates/admin/company_dashboard.html` (CSS + JS + 1 inline color)
+
 **08.02.2026 - Дашборд компании (полная перестройка):**
 1. **ДАШБОРД:** ⭐ НОВЫЙ ФУНКЦИОНАЛ
    - ✅ Старый дашборд `/company-dashboard/` был сломан (ссылался на удалённые поля) — перестроен с нуля
