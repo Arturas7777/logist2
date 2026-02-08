@@ -12,6 +12,7 @@
 
 <!-- Иконки быстрого доступа -->
 <div id="quick-nav" style="position: absolute; left: 50%; transform: translateX(-50%) translateY(-50%); top: 50%; display: flex; gap: 25px; align-items: center;">
+    <a href="{% url 'company_dashboard' %}" title="Dashboard" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">📊</a>
     <a href="{% url 'admin:core_container_changelist' %}" title="Контейнеры" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">📦</a>
     <a href="{% url 'admin:core_car_changelist' %}" title="Автомобили" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">🚗</a>
     <a href="{% url 'admin:core_client_changelist' %}" title="Клиенты" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">👥</a>

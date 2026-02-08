@@ -3,7 +3,8 @@
 """
 
 from django.core.cache import cache
-from django.db.models import Sum, Count, Avg
+from django.db import models
+from django.db.models import Sum, Count, Avg, Q
 from django.utils import timezone
 from datetime import timedelta
 from decimal import Decimal
@@ -48,9 +49,9 @@ def cache_company_stats():
         month_ago = timezone.now().date() - timedelta(days=30)
         
         monthly_invoices = Invoice.objects.filter(
-            issue_date__gte=month_ago
+            date__gte=month_ago
         ).aggregate(
-            total_amount=Sum('total_amount'),
+            total_amount=Sum('total'),
             count=Count('id')
         )
         
@@ -71,10 +72,8 @@ def cache_company_stats():
         stats = {
             'company': {
                 'name': company.name,
-                'invoice_balance': float(company.invoice_balance),
-                'cash_balance': float(company.cash_balance),
-                'card_balance': float(company.card_balance),
-                'total_balance': float(company.invoice_balance + company.cash_balance + company.card_balance),
+                'balance': float(company.balance),
+                'total_balance': float(company.balance),
             },
             'cars': {
                 'total': total_cars,
@@ -129,12 +128,11 @@ def cache_client_stats(client_id):
         
         # Статистика инвойсов
         invoices_stats = Invoice.objects.filter(
-            Q(from_entity_type='CLIENT', from_entity_id=client_id) |
-            Q(to_entity_type='CLIENT', to_entity_id=client_id)
+            recipient_client=client
         ).aggregate(
-            total_amount=Sum('total_amount'),
+            total_amount=Sum('total'),
             count=Count('id'),
-            paid_count=Count('id', filter=models.Q(paid=True))
+            paid_count=Count('id', filter=models.Q(status='PAID'))
         )
         
         # Статистика платежей
@@ -149,10 +147,8 @@ def cache_client_stats(client_id):
             'client': {
                 'id': client.id,
                 'name': client.name,
-                'invoice_balance': float(client.invoice_balance),
-                'cash_balance': float(client.cash_balance),
-                'card_balance': float(client.card_balance),
-                'total_balance': float(client.invoice_balance + client.cash_balance + client.card_balance),
+                'balance': float(client.balance),
+                'total_balance': float(client.balance),
             },
             'cars': {
                 'total': cars_stats['total'] or 0,
@@ -211,10 +207,9 @@ def cache_warehouse_stats(warehouse_id):
         
         # Статистика инвойсов
         invoices_stats = Invoice.objects.filter(
-            Q(from_entity_type='WAREHOUSE', from_entity_id=warehouse_id) |
-            Q(to_entity_type='WAREHOUSE', to_entity_id=warehouse_id)
+            Q(issuer_warehouse=warehouse) | Q(recipient_warehouse=warehouse)
         ).aggregate(
-            total_amount=Sum('total_amount'),
+            total_amount=Sum('total'),
             count=Count('id')
         )
         
@@ -230,10 +225,8 @@ def cache_warehouse_stats(warehouse_id):
             'warehouse': {
                 'id': warehouse.id,
                 'name': warehouse.name,
-                'invoice_balance': float(warehouse.invoice_balance),
-                'cash_balance': float(warehouse.cash_balance),
-                'card_balance': float(warehouse.card_balance),
-                'total_balance': float(warehouse.invoice_balance + warehouse.cash_balance + warehouse.card_balance),
+                'balance': float(warehouse.balance),
+                'total_balance': float(warehouse.balance),
             },
             'cars': {
                 'total': cars_stats['total'] or 0,
