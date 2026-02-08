@@ -9,7 +9,9 @@
 ### Технологии
 - **Backend:** Django 5.1.7 + Python 3.10-3.12
 - **Database:** PostgreSQL (тесты — SQLite через `settings_test.py`)
-- **API:** Django REST Framework
+- **API:** Django REST Framework + Rate Limiting (throttles)
+- **Кэширование:** Redis (db=1) на production, LocMemCache локально
+- **Очереди задач:** Celery + Redis (db=2) — фоновая отправка email
 - **Frontend:** Django templates + Bootstrap 5 + HTMX + кастомный JS
 - **WebSockets:** Channels + Daphne (Redis в `settings_base.py`, InMemory в `settings.py`)
 - **Web Server:** Nginx + Gunicorn, статика через WhiteNoise
@@ -49,6 +51,10 @@ systemctl status gunicorn
 # Daphne (WebSockets)
 systemctl restart daphne
 systemctl status daphne
+
+# Celery (фоновые задачи — email)
+# Запуск: celery -A logist2 worker --loglevel=info
+# Или через systemd (если настроен сервис celery)
 
 # Nginx
 systemctl reload nginx
@@ -170,6 +176,8 @@ logist2/
 │   │   ├── test_unload_date_inheritance.py
 │   │   └── update_container_statuses.py
 │   ├── utils.py                    # Утилиты (round_up_to_5, WebSocketBatcher, log_slow_queries)
+│   ├── throttles.py                # Rate limiting (TrackShipmentThrottle, AIChatThrottle)
+│   ├── tasks.py                    # Celery задачи (фоновая отправка email)
 │   ├── tests.py                    # 57 unit-тестов (цены, THS, инвойсы, хранение, статусы, дефолты)
 │   ├── services/                   # Бизнес-логика
 │   │   ├── ai_chat_service.py      # AI-помощник (контекст из БД)
@@ -186,11 +194,12 @@ logist2/
 │   ├── container_archives/         # ZIP архивы
 │   └── car_photos/                 # Фото ТС
 ├── logist2/                        # Настройки проекта
-│   ├── settings.py                 # Локальные настройки (InMemory Channels)
-│   ├── settings_base.py            # Базовые настройки (Redis Channels)
+│   ├── settings.py                 # Локальные настройки (InMemory Channels, LocMemCache, CELERY_TASK_ALWAYS_EAGER)
+│   ├── settings_base.py            # Базовые настройки (Redis Channels, RedisCache, Celery broker)
 │   ├── settings_dev.py             # Dev-профиль
 │   ├── settings_prod.py            # Prod-профиль
 │   ├── settings_test.py            # Test-профиль (SQLite)
+│   ├── celery.py                   # Celery app конфигурация
 │   ├── urls.py                     # URL routing
 │   └── wsgi.py / asgi.py           # WSGI/ASGI
 ├── requirements.txt                # Python зависимости
@@ -514,6 +523,32 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 ⚠️ **ВАЖНО:** После загрузки фотографий вручную (через команды от root) нужно исправить права доступа: `./fix_media_permissions.sh`
 
 ### Недавние изменения (февраль 2026):
+
+**08.02.2026 - Redis-кэширование, N+1 оптимизация, Rate Limiting, Celery, безопасность:**
+1. **REDIS-КЭШИРОВАНИЕ:** ⚡ ОПТИМИЗАЦИЯ
+   - ✅ `_service_obj_cache` (dict на уровне класса) заменён на Django cache (`cache.get`/`cache.set`, ключи `svc:{type}:{id}`, TTL 300с)
+   - ✅ Production: `RedisCache` (Redis db=1); Локально: `LocMemCache`
+   - ✅ Сигнал `invalidate_service_cache()` на `post_save`/`post_delete` всех 4 моделей услуг
+   - ✅ Тесты обновлены: `cache.clear()` вместо `_service_obj_cache.clear()`
+
+2. **УСТРАНЕНИЕ N+1 ЗАПРОСОВ (доп.):** ⚡ ОПТИМИЗАЦИЯ
+   - ✅ `CarAdmin.get_queryset()` — единый метод с `select_related` + `prefetch_related` + `annotate`
+   - ✅ `ContainerAdmin` — аннотация `Count('photos')` для `photos_count_display`
+   - ✅ `signals.py` — пакетная загрузка `Car.objects.filter(id__in=car_ids)` вместо цикла `get()`
+   - ✅ `calculate_total_price()` — один проход по `car_services.all()` вместо 5 запросов
+
+3. **RATE LIMITING:** 🔒 БЕЗОПАСНОСТЬ
+   - ✅ `core/throttles.py` — `TrackShipmentThrottle` (20/мин), `AIChatThrottle` (10/мин)
+   - ✅ Декораторы `@throttle_classes` на endpoints `track_shipment` и `ai_chat`
+
+4. **CELERY ДЛЯ ФОНОВЫХ ЗАДАЧ:** ⭐ НОВЫЙ ФУНКЦИОНАЛ
+   - ✅ `logist2/celery.py` — Celery app конфигурация
+   - ✅ `core/tasks.py` — `send_planned_notifications_task`, `send_unload_notifications_task` с retry-логикой
+   - ✅ Production: Redis db=2 как broker; Локально: `CELERY_TASK_ALWAYS_EAGER = True`
+   - ✅ Сигналы email заменены на `.delay()` с fallback на синхронную отправку
+
+5. **БЕЗОПАСНОСТЬ СЕССИЙ:**
+   - ✅ `SESSION_COOKIE_HTTPONLY = True` (было `False`)
 
 **08.02.2026 - Чистка кодовой базы (-2045 строк):**
 1. **УДАЛЁН МЁРТВЫЙ КОД:** 🧹 ЧИСТКА
@@ -1065,6 +1100,10 @@ ssh root@server "cd /path; source .venv/bin/activate; python manage.py showmigra
 15. **Синхронизация между машинами** - инструкция в `SYNC_GUIDE.md`, скрипты `sync_from_vps.ps1` и `vps_push.sh`
 16. **После работы на VPS** - обязательно `./vps_push.sh` перед переключением на другую машину
 17. **Перед работой на другой машине** - обязательно `git pull origin master` + синхронизация БД при необходимости
+18. **Redis используется для 3 целей** - Channels (WebSockets), Cache (db=1), Celery broker (db=2)
+19. **Celery** - на production нужен отдельный воркер: `celery -A logist2 worker --loglevel=info`; локально работает синхронно через `CELERY_TASK_ALWAYS_EAGER`
+20. **Rate Limiting** - track_shipment: 20/мин, ai_chat: 10/мин (настраивается в `REST_FRAMEWORK` settings)
+21. **SESSION_COOKIE_HTTPONLY** - включён (True) для защиты от XSS-доступа к сессионным cookie
 
 ## БЫСТРЫЕ КОМАНДЫ
 

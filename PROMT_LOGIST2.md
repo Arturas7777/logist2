@@ -16,13 +16,15 @@
 | Компонент | Технология |
 |-----------|------------|
 | Backend | Django 5.1.7, Python 3.10-3.12 |
-| API | Django REST Framework |
+| API | Django REST Framework + Rate Limiting (throttles) |
 | База данных | PostgreSQL (тесты — SQLite в `settings_test.py`) |
+| Кэширование | Redis (db=1) на production, LocMemCache локально |
+| Очереди задач | Celery + Redis (db=2) — фоновая отправка email |
 | Web-сервер | Nginx + Gunicorn, статика через WhiteNoise |
 | WebSockets | Django Channels + Daphne (Redis в `settings_base.py`, InMemory в `settings.py`) |
 | Интерактивность | HTMX + кастомный JS |
 | UI сайта | Bootstrap 5 |
-| Email | Brevo (SMTP) |
+| Email | Brevo (SMTP), отправка через Celery задачи |
 | Интеграции | Google Drive API |
 
 ### Сервер
@@ -707,10 +709,12 @@ logist2/
 │   ├── admin_website.py            # Admin для клиентского сайта
 │   │
 │   ├── utils.py                    # Утилиты (round_up_to_5, WebSocketBatcher)
+│   ├── throttles.py                # Rate limiting (TrackShipmentThrottle 20/мин, AIChatThrottle 10/мин)
+│   ├── tasks.py                    # Celery задачи (фоновая отправка email с retry-логикой)
 │   ├── tests.py                    # 57 unit-тестов (цены, THS, инвойсы, статусы, хранение, дефолты)
-│   ├── signals.py                  # Сигналы (наследование данных, THS, email)
+│   ├── signals.py                  # Сигналы (наследование данных, THS, email через Celery)
 │   ├── views.py                    # Views для админки
-│   ├── views_website.py            # Views для клиентского сайта
+│   ├── views_website.py            # Views для клиентского сайта (с rate limiting)
 │   │
 │   ├── google_drive_sync.py        # Интеграция с Google Drive
 │   │
@@ -736,11 +740,13 @@ logist2/
 │   └── website/                    # Клиентский сайт
 │
 ├── logist2/
-│   ├── settings.py                 # Локальные настройки (InMemory Channels)
-│   ├── settings_base.py            # Базовые настройки (Redis Channels)
+│   ├── settings.py                 # Локальные настройки (InMemory Channels, LocMemCache, CELERY_ALWAYS_EAGER)
+│   ├── settings_base.py            # Базовые настройки (Redis Channels, RedisCache db=1, Celery broker db=2)
 │   ├── settings_dev.py             # Dev-профиль
 │   ├── settings_prod.py            # Prod-профиль
 │   ├── settings_test.py            # Test-профиль (SQLite)
+│   ├── celery.py                   # Celery app конфигурация
+│   ├── __init__.py                 # Импорт celery app с fallback
 │   ├── urls.py                     # URL routing
 │   └── wsgi.py / asgi.py           # WSGI/ASGI
 │
@@ -868,6 +874,10 @@ source .venv/bin/activate
 systemctl restart gunicorn
 systemctl restart daphne
 
+# Celery воркер (фоновые задачи — email)
+celery -A logist2 worker --loglevel=info
+# Или через systemd (если настроен сервис celery)
+
 # Миграции
 python manage.py migrate
 
@@ -922,11 +932,31 @@ if hasattr(self, '_prefetched_objects_cache'):
     self._prefetched_objects_cache.pop('car_services', None)
 ```
 
-### 4a. Кэш объектов услуг (CarService._service_obj_cache)
+### 4a. Кэш объектов услуг (Django cache, ранее _service_obj_cache)
 
-`CarService._service_obj_cache` — словарь-кэш для `get_service_name()` / `get_service_short_name()` / `get_default_price()`. Ключ: `(service_type, service_id)`. Сбрасывается при перезапуске процесса (gunicorn restart). Если меняются справочники услуг, может понадобиться перезапуск gunicorn.
+Кэш услуг (`get_service_name()` / `get_service_short_name()` / `get_default_price()`) хранится в Django cache:
+- Ключи: `svc:{service_type}:{service_id}`, TTL = 300 секунд
+- Production: Redis (db=1), Локально: LocMemCache
+- Автоматическая инвалидация через сигнал `invalidate_service_cache()` при изменении/удалении услуг в справочниках
+- Ручная очистка не требуется (кэш обновляется автоматически через сигналы)
 
-### 4b. Unit-тесты (28 тестов)
+### 4b. Celery для фоновых задач
+
+Email-уведомления отправляются через Celery задачи (асинхронно):
+- Production: Redis db=2 как broker и result backend; нужен отдельный воркер: `celery -A logist2 worker --loglevel=info`
+- Локально: `CELERY_TASK_ALWAYS_EAGER = True` — задачи выполняются синхронно, воркер не нужен
+- При ошибке Celery — fallback на синхронную отправку
+
+### 4c. Rate Limiting (throttling)
+
+| Endpoint | Лимит | Класс |
+|----------|-------|-------|
+| `track_shipment` | 20/мин | `TrackShipmentThrottle` |
+| `ai_chat` | 10/мин | `AIChatThrottle` |
+
+Настраивается в `REST_FRAMEWORK.DEFAULT_THROTTLE_RATES` в settings.
+
+### 4d. Unit-тесты (57 тестов)
 
 В проекте **57 unit-тестов** в `core/tests.py`. Запуск: `python manage.py test core --settings=logist2.settings_test`.
 
@@ -1074,12 +1104,13 @@ if hasattr(self, '_prefetched_objects_cache'):
 - `Car`: vin, status, client+status, warehouse+status, line, carrier, container, unload_date, transfer_date
 - `CarService`: car+service_type, service_type+service_id, car
 
-### Кэш объектов услуг (N+1 fix)
+### Кэш объектов услуг (Django cache, ранее class-level dict)
 
 ```python
 # Файл: core/models.py — класс CarService
+# Кэш перенесён на Django cache (Redis на production, LocMemCache локально)
 
-_service_obj_cache = {}  # Словарь-кэш на уровне класса
+from django.core.cache import cache
 
 SERVICE_MODEL_MAP = {
     'LINE': LineService,
@@ -1089,13 +1120,18 @@ SERVICE_MODEL_MAP = {
 }
 
 def _get_service_obj(self):
-    """Получает объект услуги с кэшированием (один запрос вместо N+1)"""
-    cache_key = (self.service_type, self.service_id)
-    if cache_key not in CarService._service_obj_cache:
+    """Получает объект услуги с кэшированием через Django cache (TTL 300с)"""
+    cache_key = f"svc:{self.service_type}:{self.service_id}"
+    obj = cache.get(cache_key)
+    if obj is None:
         model_class = CarService.SERVICE_MODEL_MAP.get(self.service_type)
         if model_class:
-            CarService._service_obj_cache[cache_key] = model_class.objects.get(id=self.service_id)
-    return CarService._service_obj_cache.get(cache_key)
+            obj = model_class.objects.get(id=self.service_id)
+            cache.set(cache_key, obj, 300)
+    return obj
+
+# Инвалидация: сигнал invalidate_service_cache() в core/signals.py
+# подключён к post_save/post_delete всех 4 моделей услуг
 ```
 
 ### Утилита round_up_to_5
