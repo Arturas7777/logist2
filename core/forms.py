@@ -1,6 +1,10 @@
+import logging
+
 from django import forms
 from django.forms import ModelForm
 from core.models import Line, Carrier, Warehouse, LineService, CarrierService, WarehouseService
+
+logger = logging.getLogger('django')
 
 
 class LineForm(ModelForm):
@@ -111,22 +115,21 @@ class WarehouseForm(ModelForm):
         instance = super().save(commit=commit)
         
         if commit and instance.pk:
-            print("=== WAREHOUSE FORM SAVE ===")
-            print("cleaned_data:", self.cleaned_data)
-            print("=== КОНЕЦ WAREHOUSE FORM SAVE ===")
+            logger.debug("=== WAREHOUSE FORM SAVE ===")
+            logger.debug("cleaned_data: %s", self.cleaned_data)
             
             # Обрабатываем удаление услуг
             for field_name, value in self.cleaned_data.items():
                 if field_name.startswith('delete_service_'):
                     service_id = field_name.replace('delete_service_', '')
-                    print(f"Найдено поле удаления: {field_name} = {value}, service_id = {service_id}")
+                    logger.debug(f"Найдено поле удаления: {field_name} = {value}, service_id = {service_id}")
                     if service_id.isdigit():
                         try:
                             service = WarehouseService.objects.get(id=service_id, warehouse=instance)
-                            print(f"Удаляем услугу: {service.name}")
+                            logger.debug(f"Удаляем услугу: {service.name}")
                             service.delete()
                         except WarehouseService.DoesNotExist:
-                            print(f"Услуга с ID {service_id} не найдена")
+                            logger.warning(f"Услуга с ID {service_id} не найдена")
                             pass
             
             # Обрабатываем новые услуги
@@ -144,9 +147,9 @@ class WarehouseForm(ModelForm):
                                 name=name,
                                 default_price=float(price) if price else 0
                             )
-                            print(f"Создана новая услуга: {name} с ценой {price}")
+                            logger.debug(f"Создана новая услуга: {name} с ценой {price}")
                         except ValueError as e:
-                            print(f"Ошибка при создании услуги: {e}")
+                            logger.error(f"Ошибка при создании услуги: {e}")
                             pass
             
             # Сохраняем значения существующих услуг

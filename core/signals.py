@@ -19,13 +19,13 @@ _old_container_values = {}
 @receiver(pre_save, sender=Container)
 def save_old_container_values(sender, instance, **kwargs):
     """Сохраняем старые значения контейнера до сохранения"""
-    print(f"[PRE_SAVE] Container {instance.number} pk={instance.pk}", flush=True)
+    logger.debug(f"[PRE_SAVE] Container {instance.number} pk={instance.pk}")
     if instance.pk:
         try:
             old = Container.objects.filter(pk=instance.pk).values('status', 'unload_date').first()
             if old:
                 _old_container_values[instance.pk] = old
-                print(f"[PRE_SAVE] Saved old values: {old}", flush=True)
+                logger.debug(f"[PRE_SAVE] Saved old values: {old}")
 
                 # Фиксируем момент получения статуса UNLOADED
                 old_status = old.get('status')
@@ -36,7 +36,7 @@ def save_old_container_values(sender, instance, **kwargs):
                 ):
                     instance.unloaded_status_at = timezone.now()
         except Exception as e:
-            print(f"[PRE_SAVE] Error: {e}", flush=True)
+            logger.error(f"[PRE_SAVE] Error: {e}")
     else:
         # Новый контейнер: если сразу UNLOADED — сохраняем момент статуса
         if instance.status == 'UNLOADED' and not instance.unloaded_status_at:

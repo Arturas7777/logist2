@@ -1017,8 +1017,7 @@ class LineAdmin(admin.ModelAdmin):
         import logging
         logger = logging.getLogger(__name__)
 
-        print(f"=== RECALCULATE THS VIEW CALLED === object_id={object_id}")
-        logger.warning(f"=== RECALCULATE THS VIEW CALLED === object_id={object_id}")
+        logger.info(f"=== RECALCULATE THS VIEW CALLED === object_id={object_id}")
 
         # Get line directly by ID
         try:
@@ -1026,8 +1025,6 @@ class LineAdmin(admin.ModelAdmin):
         except Line.DoesNotExist:
             messages.error(request, 'Линия не найдена')
             return redirect('admin:core_line_changelist')
-        print(f"Line: {line}")
-
         logger.info(f"[RECALC THS] Starting for line {line.name}")
 
         # Find all containers of this line with cars in needed statuses
