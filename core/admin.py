@@ -1359,25 +1359,27 @@ class CarAdmin(admin.ModelAdmin):
         # Для не переданных авто рассчитываем цену динамически
         if obj.status != 'TRANSFERRED':
             from decimal import Decimal
-            from django.db.models import Sum
-            from core.models import CarService
-            
+
             # Обновляем платные дни
             obj.update_days_and_storage()
-            
-            # Рассчитываем сумму услуг (final_price = базовая цена)
+
+            # Рассчитываем сумму услуг из предзагруженных car_services (без лишних запросов)
             base_total = Decimal('0.00')
-            for cs in CarService.objects.filter(car=obj):
+            for cs in obj.car_services.all():
                 base_total += Decimal(str(cs.final_price))
-            
-            # Добавляем распределённую наценку из CarService
-            distributed_markup = CarService.objects.filter(car=obj).aggregate(
-                total=Sum('markup_amount')
-            )['total'] or Decimal('0.00')
-            
+
+            # Используем аннотацию _total_markup из get_queryset (если доступна)
+            if hasattr(obj, '_total_markup') and obj._total_markup is not None:
+                distributed_markup = obj._total_markup
+            else:
+                distributed_markup = sum(
+                    (cs.markup_amount for cs in obj.car_services.all() if cs.markup_amount),
+                    Decimal('0.00')
+                )
+
             total = base_total + distributed_markup
             return f"{total:.2f}"
-        
+
         return f"{obj.total_price:.2f}"
     total_price_display.short_description = 'Цена'
     total_price_display.admin_order_field = 'total_price'
