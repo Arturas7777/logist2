@@ -360,6 +360,17 @@ if hasattr(self, '_prefetched_objects_cache'):
 - `optimize_queryset_for_list()` — оптимизация queryset
 - `log_slow_queries()` — декоратор для логирования медленных запросов
 
+### Rate Limiting (`core/throttles.py`) — НОВЫЙ ФАЙЛ
+- **08.02.2026:** `TrackShipmentThrottle` — 20 запросов/минуту для отслеживания грузов
+- **08.02.2026:** `AIChatThrottle` — 10 запросов/минуту для AI-чата
+
+### Celery задачи (`core/tasks.py`) — НОВЫЙ ФАЙЛ
+- **08.02.2026:** `send_planned_notifications_task` — фоновая отправка email о планируемой разгрузке
+- **08.02.2026:** `send_unload_notifications_task` — фоновая отправка email о разгрузке
+
+### Celery конфигурация (`logist2/celery.py`) — НОВЫЙ ФАЙЛ
+- **08.02.2026:** Celery app с автообнаружением задач из `core.tasks`
+
 ### Тесты (`core/tests.py`)
 - **08.02.2026:** `RoundUpTo5Tests` — тесты округления (точные кратные, округление вверх, сохранение точности Decimal)
 - **08.02.2026:** `StorageCostCalculationTests` — расчёт хранения (без склада → 0, без даты → 0)
@@ -802,10 +813,93 @@ total_markup_sum = queryset.aggregate(
 
 ---
 
+### 34. Redis-кэширование, оптимизация N+1 запросов, Rate Limiting, Celery, безопасность (08.02.2026)
+
+**Статус:** Завершено
+
+**Цель:** Перевести кэш услуг на Redis, устранить оставшиеся N+1 запросы, добавить rate limiting для API, вынести отправку email в Celery, усилить безопасность сессий.
+
+**Изменения:**
+
+#### 1. Redis-кэширование (замена class-level dict → Django cache)
+
+**Проблема:** `CarService._service_obj_cache` — словарь на уровне класса. Не имел TTL, не сбрасывался между запросами, мог разрастаться бесконтрольно.
+
+**Решение:**
+- На production: `django.core.cache.backends.redis.RedisCache` (Redis db=1)
+- Локально: `django.core.cache.backends.locmem.LocMemCache`
+- Ключи кэша: `svc:{service_type}:{service_id}`, TTL = 300 секунд
+- Добавлен сигнал `invalidate_service_cache()` — подключён к `post_save`/`post_delete` всех 4 моделей услуг (LineService, WarehouseService, CarrierService, CompanyService)
+- Все тесты обновлены: `CarService._service_obj_cache.clear()` → `cache.clear()`
+
+**Файлы:**
+- `logist2/settings_base.py` — `CACHES` с RedisCache на db=1
+- `logist2/settings.py` — `CACHES` с LocMemCache для локальной разработки
+- `core/models.py` — `cache.get()`/`cache.set()` вместо словаря `_service_obj_cache`
+- `core/signals.py` — `invalidate_service_cache()` на post_save/post_delete
+- `core/tests.py` — обновлены 12 мест: `cache.clear()` вместо `_service_obj_cache.clear()`
+
+#### 2. Устранение N+1 запросов (дополнительная оптимизация)
+
+**Проблема:** Оставались N+1 в admin/car, admin/container и signals.
+
+**Решение:**
+- `CarAdmin.get_queryset()` — объединены два метода в один с `select_related` + `prefetch_related` + `annotate`; удалён неиспользуемый `list_prefetch_related`
+- `ContainerAdmin` — добавлена аннотация `Count('photos')`; `photos_count_display` использует `_photos_count` с `admin_order_field`
+- `core/signals.py` — пакетная загрузка `Car.objects.filter(id__in=car_ids)` вместо `Car.objects.get()` в цикле
+- `core/models.py` — `calculate_total_price()` делает один проход по `car_services.all()` вместо 5 отдельных запросов
+
+**Файлы:**
+- `core/admin/car.py` — единый `get_queryset()` с select_related + prefetch_related + annotate
+- `core/admin/container.py` — аннотация `Count('photos')`
+- `core/signals.py` — пакетная загрузка ТС
+- `core/models.py` — один проход в `calculate_total_price()`
+
+#### 3. Rate Limiting для API
+
+**Новый файл:** `core/throttles.py`
+
+| Endpoint | Класс | Лимит |
+|----------|-------|-------|
+| `track_shipment` | `TrackShipmentThrottle` | 20 запросов/минуту |
+| `ai_chat` | `AIChatThrottle` | 10 запросов/минуту |
+
+**Файлы:**
+- `core/throttles.py` — новый файл с `TrackShipmentThrottle` и `AIChatThrottle`
+- `logist2/settings.py`, `logist2/settings_base.py` — `DEFAULT_THROTTLE_CLASSES` и `DEFAULT_THROTTLE_RATES` в `REST_FRAMEWORK`
+- `core/views_website.py` — декораторы `@throttle_classes` на `track_shipment` и `ai_chat`
+
+#### 4. Celery для фоновых задач
+
+**Цель:** Вынести отправку email из синхронного сигнала в фоновую задачу.
+
+**Новые файлы:**
+- `logist2/celery.py` — конфигурация Celery app
+- `core/tasks.py` — задачи `send_planned_notifications_task` и `send_unload_notifications_task` с retry-логикой
+
+**Настройки:**
+- Production: Redis db=2 как broker и result backend
+- Локально: `CELERY_TASK_ALWAYS_EAGER = True` (выполняется синхронно без воркера)
+- `logist2/__init__.py` — импорт celery app с fallback
+
+**Логика:**
+- `core/signals.py` — синхронные вызовы email заменены на `.delay()` с fallback на синхронную отправку при ошибке
+
+**Зависимости:** `celery[redis]==5.4.0` добавлен в `requirements.txt`
+
+#### 5. Безопасность сессий
+
+- `SESSION_COOKIE_HTTPONLY = True` в `logist2/settings.py` и `logist2/settings_base.py` (было `False`)
+
+**Тесты:** 57/57 OK
+
+---
+
 ## ИСТОРИЯ ИЗМЕНЕНИЙ
 
 | Дата | Описание |
 |------|----------|
+| 08.02.2026 | Redis-кэширование, N+1 оптимизация, Rate Limiting, Celery для email, SESSION_COOKIE_HTTPONLY |
 | 08.02.2026 | Чистка: удалены 2 backup-файла (1975 строк), заглушка PDF, 2 пустых метода, 3 legacy manager-а, исправлен placeholder телефона |
 | 08.02.2026 | Добавлены ещё 29 тестов: calculate_total_price, CarService цены, THS-сервисы, инвойс-статусы, хранение в инвойсах, дефолты склада |
 | 08.02.2026 | Добавлены 19 unit-тестов: THS расчёт, хранение (дни×ставка), regenerate_items_from_cars (markup, группировка) |
