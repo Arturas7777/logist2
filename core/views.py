@@ -229,18 +229,17 @@ def register_payment(request):
 @staff_member_required
 def company_dashboard(request):
     """Дашборд для Caromoto Lithuania"""
-    import json
     from .services.dashboard_service import DashboardService
 
     service = DashboardService()
     context = service.get_full_dashboard_context()
 
-    # Serialize chart data for json_script template tag
-    context['revenue_expenses_chart_json'] = json.dumps(context['revenue_expenses_chart'])
-    context['invoices_by_status_json'] = json.dumps(context['invoices_by_status'])
-    context['cars_by_status_json'] = json.dumps({
+    # Pass raw Python dicts — json_script template tag handles serialization
+    context['revenue_expenses_chart_json'] = context['revenue_expenses_chart']
+    context['invoices_by_status_json'] = context['invoices_by_status']
+    context['cars_by_status_json'] = {
         k: v for k, v in context['cars_by_status'].items() if k != 'total'
-    })
+    }
 
     return render(request, 'admin/company_dashboard.html', context)
 

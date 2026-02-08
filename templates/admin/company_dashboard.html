@@ -5,390 +5,639 @@
 
 {% block extrastyle %}
 {{ block.super }}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
 <style>
-    /* ── Page background ── */
+    /* ── Reset & Base ── */
     #content {
-        background: #f1f5f9;
+        background: #f4f2ff;
         min-height: 100vh;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     }
+    #content-main { padding: 0; }
 
-    .dashboard-container {
-        max-width: 1500px;
+    .db {
+        max-width: 1480px;
         margin: 0 auto;
-        padding: 24px;
+        padding: 28px 32px;
     }
 
-    /* ── Header banner ── */
-    .dashboard-header {
-        background: linear-gradient(135deg, #1e293b 0%, #334155 50%, #475569 100%);
-        color: #fff;
-        padding: 28px 32px;
-        border-radius: 16px;
-        margin-bottom: 24px;
+    /* ── Header ── */
+    .db-header {
         display: flex;
         justify-content: space-between;
-        align-items: center;
+        align-items: flex-start;
+        margin-bottom: 28px;
     }
-    .dashboard-header h1 { margin: 0; font-size: 1.8em; font-weight: 600; letter-spacing: -0.02em; }
-    .dashboard-header p  { margin: 6px 0 0; opacity: .7; font-size: .95em; }
-    .dashboard-header .header-right { text-align: right; font-size: .9em; opacity: .6; }
-
-    /* ── Section titles ── */
-    .section-title {
-        font-size: 1.05em;
-        font-weight: 700;
-        color: #1e293b;
-        margin: 28px 0 14px;
-        padding-bottom: 8px;
-        border-bottom: 2px solid #e2e8f0;
-        text-transform: uppercase;
-        letter-spacing: .5px;
-    }
-
-    /* ── KPI cards grid ── */
-    .kpi-grid {
-        display: grid;
-        gap: 16px;
-        margin-bottom: 10px;
-    }
-    .kpi-grid.operational { grid-template-columns: repeat(5, 1fr); }
-    .kpi-grid.financial   { grid-template-columns: repeat(3, 1fr); }
-
-    .kpi-card {
-        background: #fff;
-        padding: 20px 22px;
-        border-radius: 14px;
-        box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.04);
-        border-top: 3px solid #cbd5e1;
-        position: relative;
-        transition: transform .2s ease, box-shadow .2s ease;
-    }
-    .kpi-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 4px 16px rgba(0,0,0,.1), 0 8px 24px rgba(0,0,0,.06);
-    }
-    .kpi-card .kpi-label {
-        font-size: .78em;
-        text-transform: uppercase;
-        letter-spacing: .6px;
-        color: #64748b;
-        margin-bottom: 8px;
-        font-weight: 600;
-    }
-    .kpi-card .kpi-value {
-        font-size: 1.75em;
+    .db-header h1 {
+        font-size: 1.65em;
         font-weight: 800;
-        line-height: 1.2;
-        color: #1e293b;
+        color: #1a1a2e;
+        margin: 0;
+        letter-spacing: -0.03em;
     }
-    .kpi-card .kpi-sub {
-        font-size: .8em;
-        color: #94a3b8;
-        margin-top: 6px;
+    .db-header .db-subtitle {
+        color: #7c7c9a;
+        font-size: .92em;
+        margin-top: 4px;
+        font-weight: 400;
     }
-
-    /* Status-colored top borders */
-    .kpi-card.floating    { border-top-color: #3b82f6; }
-    .kpi-card.in-port     { border-top-color: #ef4444; }
-    .kpi-card.unloaded    { border-top-color: #22c55e; }
-    .kpi-card.transferred { border-top-color: #a855f7; }
-    .kpi-card.storage     { border-top-color: #f59e0b; }
-    .kpi-card.transport   { border-top-color: #06b6d4; }
-    .kpi-card.balance     { border-top-color: #3b82f6; }
-    .kpi-card.revenue     { border-top-color: #22c55e; }
-    .kpi-card.expense     { border-top-color: #ef4444; }
-    .kpi-card.profit      { border-top-color: #06b6d4; }
-    .kpi-card.outstanding { border-top-color: #f59e0b; }
-    .kpi-card.overdue     { border-top-color: #ef4444; }
-
-    .val-positive { color: #16a34a; }
-    .val-negative { color: #dc2626; }
-    .val-neutral  { color: #334155; }
-
-    /* ── Charts row ── */
-    .charts-row {
-        display: grid;
-        grid-template-columns: 2fr 1fr 1fr;
-        gap: 18px;
-        margin-bottom: 24px;
-    }
-    .chart-box {
-        background: #fff;
-        padding: 22px;
-        border-radius: 14px;
-        box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.04);
-    }
-    .chart-box h3 {
-        margin: 0 0 14px;
-        font-size: .95em;
-        color: #334155;
-        font-weight: 700;
-    }
-    .chart-wrap { position: relative; height: 280px; }
-
-    /* ── Tables row ── */
-    .tables-row {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 18px;
-        margin-bottom: 24px;
-    }
-    .table-box {
-        background: #fff;
-        padding: 22px;
-        border-radius: 14px;
-        box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.04);
-        overflow-x: auto;
-    }
-    .table-box h3 {
-        margin: 0 0 14px;
-        font-size: .95em;
-        color: #334155;
-        font-weight: 700;
-    }
-    .dash-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: .86em;
-        color: #475569;
-    }
-    .dash-table th, .dash-table td {
-        padding: 10px 12px;
-        text-align: left;
-        border-bottom: 1px solid #f1f5f9;
-        white-space: nowrap;
-    }
-    .dash-table th {
-        background: #f8fafc;
-        font-weight: 700;
-        color: #64748b;
-        font-size: .8em;
-        text-transform: uppercase;
-        letter-spacing: .4px;
-        position: sticky;
-        top: 0;
-    }
-    .dash-table tbody tr { transition: background .15s; }
-    .dash-table tbody tr:hover td { background: #f8fafc; }
-    .dash-table .amount-in  { color: #16a34a; font-weight: 700; }
-    .dash-table .amount-out { color: #dc2626; font-weight: 700; }
-    .dash-table a { color: #3b82f6; text-decoration: none; font-weight: 600; }
-    .dash-table a:hover { color: #2563eb; text-decoration: underline; }
-
-    .table-scroll { max-height: 420px; overflow-y: auto; }
-    .table-scroll::-webkit-scrollbar { width: 5px; }
-    .table-scroll::-webkit-scrollbar-track { background: transparent; }
-    .table-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-    .table-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-
-    /* ── Status badges ── */
-    .status-badge {
-        display: inline-block;
-        padding: 3px 10px;
-        border-radius: 20px;
-        font-size: .75em;
-        font-weight: 700;
-        letter-spacing: .3px;
-    }
-    .status-DRAFT          { background: #f1f5f9; color: #64748b; }
-    .status-ISSUED         { background: #dbeafe; color: #1d4ed8; }
-    .status-PARTIALLY_PAID { background: #fef3c7; color: #b45309; }
-    .status-PAID           { background: #dcfce7; color: #15803d; }
-    .status-OVERDUE        { background: #fee2e2; color: #b91c1c; }
-    .status-CANCELLED      { background: #f1f5f9; color: #475569; }
-    .status-PENDING        { background: #fef3c7; color: #b45309; }
-    .status-COMPLETED      { background: #dcfce7; color: #15803d; }
-    .status-FAILED         { background: #fee2e2; color: #b91c1c; }
-
-    /* ── Quick actions ── */
-    .quick-actions-bar {
+    .db-header-right {
         display: flex;
+        align-items: center;
         gap: 10px;
-        flex-wrap: wrap;
-        margin-bottom: 24px;
     }
-    .qa-btn {
-        display: inline-block;
+    .db-date-badge {
+        background: #fff;
+        padding: 10px 18px;
+        border-radius: 12px;
+        font-size: .88em;
+        font-weight: 600;
+        color: #4a4a68;
+        box-shadow: 0 1px 4px rgba(108,92,231,.08);
+        border: 1px solid rgba(108,92,231,.08);
+    }
+
+    /* ── Quick Actions ── */
+    .db-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 28px;
+    }
+    .db-action {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
         padding: 9px 18px;
         border-radius: 10px;
         text-decoration: none;
         font-weight: 600;
-        font-size: .88em;
-        color: #fff;
-        transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+        font-size: .84em;
+        transition: all .2s ease;
         border: none;
+        cursor: pointer;
     }
-    .qa-btn:hover { transform: translateY(-1px); filter: brightness(1.1); color: #fff; }
-    .qa-btn.primary   { background: #3b82f6; }
-    .qa-btn.primary:hover { box-shadow: 0 4px 14px rgba(59,130,246,.35); }
-    .qa-btn.success   { background: #22c55e; }
-    .qa-btn.success:hover { box-shadow: 0 4px 14px rgba(34,197,94,.35); }
-    .qa-btn.info      { background: #06b6d4; }
-    .qa-btn.info:hover { box-shadow: 0 4px 14px rgba(6,182,212,.35); }
-    .qa-btn.warning   { background: #f59e0b; }
-    .qa-btn.warning:hover { box-shadow: 0 4px 14px rgba(245,158,11,.35); }
-    .qa-btn.secondary { background: #64748b; }
-    .qa-btn.secondary:hover { box-shadow: 0 4px 14px rgba(100,116,139,.35); }
+    .db-action.primary {
+        background: #6c5ce7;
+        color: #fff;
+    }
+    .db-action.primary:hover {
+        background: #5a4bd1;
+        box-shadow: 0 4px 14px rgba(108,92,231,.3);
+        transform: translateY(-1px);
+        color: #fff;
+    }
+    .db-action.outline {
+        background: #fff;
+        color: #6c5ce7;
+        border: 1.5px solid #e0dcf8;
+    }
+    .db-action.outline:hover {
+        background: #f4f2ff;
+        border-color: #6c5ce7;
+        color: #6c5ce7;
+    }
+    .db-action.ghost {
+        background: transparent;
+        color: #7c7c9a;
+    }
+    .db-action.ghost:hover {
+        background: #fff;
+        color: #6c5ce7;
+    }
+
+    /* ── Section Titles ── */
+    .db-section {
+        font-size: .78em;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+        color: #a29bcc;
+        margin: 32px 0 14px;
+    }
+
+    /* ── KPI Cards ── */
+    .kpi-row {
+        display: grid;
+        gap: 16px;
+        margin-bottom: 8px;
+    }
+    .kpi-row.five  { grid-template-columns: repeat(5, 1fr); }
+    .kpi-row.four  { grid-template-columns: repeat(4, 1fr); }
+    .kpi-row.three { grid-template-columns: repeat(3, 1fr); }
+    .kpi-row.six   { grid-template-columns: repeat(6, 1fr); }
+
+    .kpi {
+        background: #fff;
+        padding: 20px 22px;
+        border-radius: 16px;
+        box-shadow: 0 1px 3px rgba(108,92,231,.06), 0 6px 16px rgba(108,92,231,.04);
+        border: 1px solid rgba(108,92,231,.05);
+        position: relative;
+        transition: all .25s ease;
+        overflow: hidden;
+    }
+    .kpi:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 4px 12px rgba(108,92,231,.1), 0 12px 28px rgba(108,92,231,.07);
+    }
+    .kpi-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 14px;
+    }
+    .kpi-icon svg {
+        width: 22px;
+        height: 22px;
+        stroke-width: 1.8;
+    }
+    .kpi-icon i {
+        font-size: 22px;
+        line-height: 1;
+    }
+    .kpi-label {
+        font-size: .76em;
+        text-transform: uppercase;
+        letter-spacing: .6px;
+        color: #9898b0;
+        font-weight: 600;
+        margin-bottom: 6px;
+    }
+    .kpi-value {
+        font-size: 1.8em;
+        font-weight: 800;
+        line-height: 1.15;
+        color: #1a1a2e;
+        letter-spacing: -0.02em;
+    }
+    .kpi-sub {
+        font-size: .8em;
+        color: #b0b0c8;
+        margin-top: 6px;
+        font-weight: 500;
+    }
+
+    /* Icon backgrounds */
+    .kpi-icon.blue      { background: #eef2ff; color: #6366f1; }
+    .kpi-icon.red       { background: #fef2f2; color: #ef4444; }
+    .kpi-icon.green     { background: #f0fdf4; color: #22c55e; }
+    .kpi-icon.purple    { background: #f5f3ff; color: #8b5cf6; }
+    .kpi-icon.amber     { background: #fffbeb; color: #f59e0b; }
+    .kpi-icon.cyan      { background: #ecfeff; color: #06b6d4; }
+    .kpi-icon.indigo    { background: #eef2ff; color: #4f46e5; }
+    .kpi-icon.rose      { background: #fff1f2; color: #f43f5e; }
+
+    /* Colored accent strip at top of card */
+    .kpi::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        border-radius: 16px 16px 0 0;
+        background: #e2e0f0;
+    }
+    .kpi.accent-blue::before    { background: linear-gradient(90deg, #6366f1, #818cf8); }
+    .kpi.accent-red::before     { background: linear-gradient(90deg, #ef4444, #f87171); }
+    .kpi.accent-green::before   { background: linear-gradient(90deg, #22c55e, #4ade80); }
+    .kpi.accent-purple::before  { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+    .kpi.accent-amber::before   { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+    .kpi.accent-cyan::before    { background: linear-gradient(90deg, #06b6d4, #22d3ee); }
+    .kpi.accent-rose::before    { background: linear-gradient(90deg, #f43f5e, #fb7185); }
+    .kpi.accent-indigo::before  { background: linear-gradient(90deg, #4f46e5, #6366f1); }
+
+    /* Value colors */
+    .v-green  { color: #16a34a !important; }
+    .v-red    { color: #dc2626 !important; }
+    .v-blue   { color: #4f46e5 !important; }
+    .v-purple { color: #7c3aed !important; }
+    .v-amber  { color: #d97706 !important; }
+    .v-cyan   { color: #0891b2 !important; }
+
+    /* ── Charts ── */
+    .charts-bar-row {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 18px;
+        margin-bottom: 18px;
+    }
+    .charts-donut-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+        margin-bottom: 28px;
+    }
+    .chart-card {
+        background: #fff;
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 1px 3px rgba(108,92,231,.06), 0 6px 16px rgba(108,92,231,.04);
+        border: 1px solid rgba(108,92,231,.05);
+    }
+    .chart-card h3 {
+        margin: 0 0 16px;
+        font-size: .92em;
+        font-weight: 700;
+        color: #1a1a2e;
+    }
+    .chart-wrap {
+        position: relative;
+        height: 300px;
+    }
+    .chart-wrap-bar {
+        position: relative;
+        height: 280px;
+    }
+    .chart-center-label {
+        position: absolute;
+        top: 42%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        pointer-events: none;
+    }
+    .chart-center-label .ccl-num {
+        font-size: 1.8em;
+        font-weight: 800;
+        color: #1a1a2e;
+        line-height: 1.1;
+    }
+    .chart-center-label .ccl-text {
+        font-size: .78em;
+        color: #9898b0;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: .5px;
+    }
+
+    /* ── Tables ── */
+    .tables-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+        margin-bottom: 28px;
+    }
+    .tbl-card {
+        background: #fff;
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 1px 3px rgba(108,92,231,.06), 0 6px 16px rgba(108,92,231,.04);
+        border: 1px solid rgba(108,92,231,.05);
+        overflow: hidden;
+    }
+    .tbl-card h3 {
+        margin: 0 0 16px;
+        font-size: .92em;
+        font-weight: 700;
+        color: #1a1a2e;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .tbl-card h3 .tbl-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: .85em;
+    }
+
+    .tbl-scroll {
+        max-height: 440px;
+        overflow-y: auto;
+    }
+    .tbl-scroll::-webkit-scrollbar { width: 4px; }
+    .tbl-scroll::-webkit-scrollbar-track { background: transparent; }
+    .tbl-scroll::-webkit-scrollbar-thumb { background: #ddd8f3; border-radius: 4px; }
+    .tbl-scroll::-webkit-scrollbar-thumb:hover { background: #b5aee0; }
+
+    .dt {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: .84em;
+    }
+    .dt th, .dt td {
+        padding: 11px 14px;
+        text-align: left;
+        white-space: nowrap;
+    }
+    .dt th {
+        background: #f8f7fc;
+        font-weight: 700;
+        color: #9898b0;
+        font-size: .78em;
+        text-transform: uppercase;
+        letter-spacing: .5px;
+        border-bottom: 2px solid #eeecf6;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+    .dt td {
+        color: #4a4a68;
+        border-bottom: 1px solid #f3f1fa;
+    }
+    .dt tbody tr {
+        transition: background .15s;
+    }
+    .dt tbody tr:hover td {
+        background: #faf9ff;
+    }
+    .dt .amount-in  { color: #16a34a; font-weight: 700; }
+    .dt .amount-out { color: #dc2626; font-weight: 700; }
+    .dt a {
+        color: #6c5ce7;
+        text-decoration: none;
+        font-weight: 600;
+    }
+    .dt a:hover {
+        color: #4f3cc9;
+        text-decoration: underline;
+    }
+
+    /* ── Status Badges ── */
+    .badge {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-size: .73em;
+        font-weight: 700;
+        letter-spacing: .3px;
+    }
+    .badge-DRAFT          { background: #f3f1fa; color: #7c7c9a; }
+    .badge-ISSUED         { background: #eef2ff; color: #4f46e5; }
+    .badge-PARTIALLY_PAID { background: #fffbeb; color: #b45309; }
+    .badge-PAID           { background: #f0fdf4; color: #15803d; }
+    .badge-OVERDUE        { background: #fef2f2; color: #b91c1c; }
+    .badge-CANCELLED      { background: #f3f1fa; color: #7c7c9a; }
+    .badge-PENDING        { background: #fffbeb; color: #b45309; }
+    .badge-COMPLETED      { background: #f0fdf4; color: #15803d; }
+    .badge-FAILED         { background: #fef2f2; color: #b91c1c; }
+
+    /* ── Summary Row ── */
+    .summary-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+    .summary-card {
+        background: linear-gradient(135deg, #6c5ce7 0%, #a78bfa 100%);
+        color: #fff;
+        padding: 22px 24px;
+        border-radius: 16px;
+        box-shadow: 0 4px 18px rgba(108,92,231,.25);
+    }
+    .summary-card.green {
+        background: linear-gradient(135deg, #16a34a 0%, #4ade80 100%);
+        box-shadow: 0 4px 18px rgba(22,163,74,.2);
+    }
+    .summary-card.amber {
+        background: linear-gradient(135deg, #d97706 0%, #fbbf24 100%);
+        box-shadow: 0 4px 18px rgba(217,119,6,.2);
+    }
+    .summary-card .sc-label {
+        font-size: .78em;
+        text-transform: uppercase;
+        letter-spacing: .8px;
+        opacity: .85;
+        font-weight: 600;
+        margin-bottom: 6px;
+    }
+    .summary-card .sc-value {
+        font-size: 1.9em;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+    }
+    .summary-card .sc-sub {
+        font-size: .82em;
+        margin-top: 4px;
+        opacity: .75;
+    }
 
     /* ── Responsive ── */
     @media (max-width: 1100px) {
-        .charts-row { grid-template-columns: 1fr; }
-        .tables-row { grid-template-columns: 1fr; }
-        .kpi-grid.operational { grid-template-columns: repeat(3, 1fr); }
-        .kpi-grid.financial   { grid-template-columns: repeat(2, 1fr); }
+        .charts-donut-row { grid-template-columns: 1fr; }
+        .tables-grid { grid-template-columns: 1fr; }
+        .kpi-row.five  { grid-template-columns: repeat(3, 1fr); }
+        .kpi-row.six   { grid-template-columns: repeat(3, 1fr); }
+        .summary-row   { grid-template-columns: 1fr; }
     }
     @media (max-width: 768px) {
-        .dashboard-header { flex-direction: column; text-align: center; }
-        .dashboard-header .header-right { text-align: center; margin-top: 10px; }
-        .kpi-grid.operational,
-        .kpi-grid.financial { grid-template-columns: 1fr; }
-        .quick-actions-bar { flex-direction: column; }
-        .dashboard-container { padding: 14px; }
+        .db { padding: 16px; }
+        .db-header { flex-direction: column; gap: 12px; }
+        .kpi-row.five,
+        .kpi-row.four,
+        .kpi-row.three,
+        .kpi-row.six { grid-template-columns: repeat(2, 1fr); }
+        .db-actions { flex-direction: column; }
+        .summary-row { grid-template-columns: 1fr; }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="dashboard-container">
+<div class="db">
 
     <!-- ════════════════ HEADER ════════════════ -->
-    <div class="dashboard-header">
+    <div class="db-header">
         <div>
-            <h1>Caromoto Lithuania — Dashboard</h1>
-            <p>Оперативная сводка и финансы</p>
+            <h1>Dashboard</h1>
+            <div class="db-subtitle">Caromoto Lithuania — оперативная сводка</div>
         </div>
-        <div class="header-right">
-            {% now "d.m.Y H:i" %}
+        <div class="db-header-right">
+            <div class="db-date-badge">
+                <i class="bx bx-calendar" style="vertical-align:middle;margin-right:6px;font-size:1.2em;color:#6c5ce7"></i>{% now "d.m.Y, H:i" %}
+            </div>
         </div>
     </div>
 
     <!-- ════════════════ QUICK ACTIONS ════════════════ -->
-    <div class="quick-actions-bar">
-        <a href="{% url 'admin:core_newinvoice_add' %}" class="qa-btn success">+ Инвойс</a>
-        <a href="{% url 'admin:core_transaction_add' %}" class="qa-btn info">+ Транзакция</a>
-        <a href="{% url 'admin:core_newinvoice_changelist' %}" class="qa-btn primary">Все инвойсы</a>
-        <a href="{% url 'admin:core_transaction_changelist' %}" class="qa-btn primary">Все транзакции</a>
-        <a href="{% url 'comparison_dashboard' %}" class="qa-btn warning">Сравнение сумм</a>
+    <div class="db-actions">
+        <a href="{% url 'admin:core_newinvoice_add' %}" class="db-action primary">＋ Инвойс</a>
+        <a href="{% url 'admin:core_transaction_add' %}" class="db-action primary">＋ Транзакция</a>
+        <a href="{% url 'admin:core_newinvoice_changelist' %}" class="db-action outline">Все инвойсы</a>
+        <a href="{% url 'admin:core_transaction_changelist' %}" class="db-action outline">Все транзакции</a>
+        <a href="{% url 'comparison_dashboard' %}" class="db-action outline">Сравнение сумм</a>
         {% if company %}
-        <a href="{% url 'admin:core_company_change' company.pk %}" class="qa-btn secondary">Компания</a>
+        <a href="{% url 'admin:core_company_change' company.pk %}" class="db-action ghost">Компания →</a>
         {% endif %}
     </div>
 
-    <!-- ════════════════ OPERATIONAL KPIs ════════════════ -->
-    <div class="section-title">Операционные показатели</div>
-    <div class="kpi-grid operational">
-        <div class="kpi-card floating">
-            <div class="kpi-label">Авто — В пути</div>
-            <div class="kpi-value" style="color:#3b82f6">{{ cars_by_status.FLOATING }}</div>
-            <div class="kpi-sub">Конт: {{ containers_by_status.FLOATING }}</div>
+    <!-- ════════════════ TOP SUMMARY ════════════════ -->
+    <div class="summary-row">
+        <div class="summary-card">
+            <div class="sc-label">Баланс компании</div>
+            <div class="sc-value">{{ company_balance|floatformat:2 }} €</div>
+            <div class="sc-sub">Актуальный баланс</div>
         </div>
-        <div class="kpi-card in-port">
-            <div class="kpi-label">Авто — В порту</div>
-            <div class="kpi-value" style="color:#ef4444">{{ cars_by_status.IN_PORT }}</div>
-            <div class="kpi-sub">Конт: {{ containers_by_status.IN_PORT }}</div>
+        <div class="summary-card green">
+            <div class="sc-label">Прибыль за месяц</div>
+            <div class="sc-value">{{ monthly_profit|floatformat:2 }} €</div>
+            <div class="sc-sub">Доход {{ monthly_revenue|floatformat:0 }} € − Расход {{ monthly_expenses|floatformat:0 }} €</div>
         </div>
-        <div class="kpi-card unloaded">
-            <div class="kpi-label">Авто — Разгружены</div>
-            <div class="kpi-value" style="color:#22c55e">{{ cars_by_status.UNLOADED }}</div>
-            <div class="kpi-sub">Конт: {{ containers_by_status.UNLOADED }}</div>
-        </div>
-        <div class="kpi-card transferred">
-            <div class="kpi-label">Авто — Переданы</div>
-            <div class="kpi-value" style="color:#a855f7">{{ cars_by_status.TRANSFERRED }}</div>
-            <div class="kpi-sub">Конт: {{ containers_by_status.TRANSFERRED }}</div>
-        </div>
-        <div class="kpi-card storage">
-            <div class="kpi-label">На хранении</div>
-            <div class="kpi-value val-neutral">{{ cars_on_storage.count }}</div>
-            <div class="kpi-sub">Хранение: {{ cars_on_storage.total_storage_cost|floatformat:2 }} €</div>
+        <div class="summary-card amber">
+            <div class="sc-label">К получению</div>
+            <div class="sc-value">{{ outstanding_invoices.total|floatformat:2 }} €</div>
+            <div class="sc-sub">{{ outstanding_invoices.count }} активных инвойсов</div>
         </div>
     </div>
-    <div class="kpi-grid" style="grid-template-columns: repeat(5,1fr); margin-bottom:24px;">
-        <div class="kpi-card transport">
+
+    <!-- ════════════════ OPERATIONAL KPIs ════════════════ -->
+    <div class="db-section">Операционные показатели</div>
+    <div class="kpi-row five">
+        <div class="kpi accent-blue">
+            <div class="kpi-icon blue"><i class="bx bxs-ship"></i></div>
+            <div class="kpi-label">В пути</div>
+            <div class="kpi-value v-blue">{{ cars_by_status.FLOATING }}</div>
+            <div class="kpi-sub">Конт: {{ containers_by_status.FLOATING }}</div>
+        </div>
+        <div class="kpi accent-red">
+            <div class="kpi-icon red"><i class="bx bxs-flag-alt"></i></div>
+            <div class="kpi-label">В порту</div>
+            <div class="kpi-value v-red">{{ cars_by_status.IN_PORT }}</div>
+            <div class="kpi-sub">Конт: {{ containers_by_status.IN_PORT }}</div>
+        </div>
+        <div class="kpi accent-green">
+            <div class="kpi-icon green"><i class="bx bxs-package"></i></div>
+            <div class="kpi-label">Разгружены</div>
+            <div class="kpi-value v-green">{{ cars_by_status.UNLOADED }}</div>
+            <div class="kpi-sub">Конт: {{ containers_by_status.UNLOADED }}</div>
+        </div>
+        <div class="kpi accent-purple">
+            <div class="kpi-icon purple"><i class="bx bxs-check-circle"></i></div>
+            <div class="kpi-label">Переданы</div>
+            <div class="kpi-value v-purple">{{ cars_by_status.TRANSFERRED }}</div>
+            <div class="kpi-sub">Конт: {{ containers_by_status.TRANSFERRED }}</div>
+        </div>
+        <div class="kpi accent-amber">
+            <div class="kpi-icon amber"><i class="bx bxs-buildings"></i></div>
+            <div class="kpi-label">На хранении</div>
+            <div class="kpi-value">{{ cars_on_storage.count }}</div>
+            <div class="kpi-sub">{{ cars_on_storage.total_storage_cost|floatformat:2 }} €</div>
+        </div>
+    </div>
+
+    <div class="kpi-row five" style="margin-bottom:28px">
+        <div class="kpi accent-cyan">
+            <div class="kpi-icon cyan"><i class="bx bxs-truck"></i></div>
             <div class="kpi-label">Активные тралы</div>
-            <div class="kpi-value val-neutral">{{ active_auto_transports }}</div>
+            <div class="kpi-value v-cyan">{{ active_auto_transports }}</div>
         </div>
-        <div class="kpi-card" style="border-top-color:#3b82f6">
+        <div class="kpi accent-indigo">
+            <div class="kpi-icon indigo"><i class="bx bxs-car"></i></div>
             <div class="kpi-label">Всего авто</div>
-            <div class="kpi-value val-neutral">{{ cars_by_status.total }}</div>
+            <div class="kpi-value">{{ cars_by_status.total }}</div>
         </div>
-        <div class="kpi-card" style="border-top-color:#3b82f6">
+        <div class="kpi accent-indigo">
+            <div class="kpi-icon indigo"><i class="bx bxs-cube"></i></div>
             <div class="kpi-label">Всего контейнеров</div>
-            <div class="kpi-value val-neutral">{{ containers_by_status.total }}</div>
+            <div class="kpi-value">{{ containers_by_status.total }}</div>
         </div>
-        <div class="kpi-card" style="visibility:hidden"></div>
-        <div class="kpi-card" style="visibility:hidden"></div>
+        <div class="kpi" style="visibility:hidden;box-shadow:none;border:none"></div>
+        <div class="kpi" style="visibility:hidden;box-shadow:none;border:none"></div>
     </div>
 
     <!-- ════════════════ FINANCIAL KPIs ════════════════ -->
-    <div class="section-title">Финансовые показатели</div>
-    <div class="kpi-grid financial">
-        <div class="kpi-card balance">
-            <div class="kpi-label">Баланс компании</div>
-            <div class="kpi-value {% if company_balance >= 0 %}val-positive{% else %}val-negative{% endif %}">
+    <div class="db-section">Финансовые показатели</div>
+    <div class="kpi-row six" style="margin-bottom:28px">
+        <div class="kpi accent-indigo">
+            <div class="kpi-icon indigo"><i class="bx bxs-wallet"></i></div>
+            <div class="kpi-label">Баланс</div>
+            <div class="kpi-value {% if company_balance >= 0 %}v-green{% else %}v-red{% endif %}">
                 {{ company_balance|floatformat:2 }} €
             </div>
         </div>
-        <div class="kpi-card revenue">
-            <div class="kpi-label">Доходы (месяц)</div>
-            <div class="kpi-value val-positive">+{{ monthly_revenue|floatformat:2 }} €</div>
+        <div class="kpi accent-green">
+            <div class="kpi-icon green"><i class="bx bx-trending-up"></i></div>
+            <div class="kpi-label">Доходы (мес.)</div>
+            <div class="kpi-value v-green">+{{ monthly_revenue|floatformat:2 }} €</div>
         </div>
-        <div class="kpi-card expense">
-            <div class="kpi-label">Расходы (месяц)</div>
-            <div class="kpi-value val-negative">-{{ monthly_expenses|floatformat:2 }} €</div>
+        <div class="kpi accent-red">
+            <div class="kpi-icon red"><i class="bx bx-trending-down"></i></div>
+            <div class="kpi-label">Расходы (мес.)</div>
+            <div class="kpi-value v-red">−{{ monthly_expenses|floatformat:2 }} €</div>
         </div>
-        <div class="kpi-card profit">
-            <div class="kpi-label">Прибыль (месяц)</div>
-            <div class="kpi-value {% if monthly_profit >= 0 %}val-positive{% else %}val-negative{% endif %}">
+        <div class="kpi accent-cyan">
+            <div class="kpi-icon cyan"><i class="bx bxs-bar-chart-alt-2"></i></div>
+            <div class="kpi-label">Прибыль (мес.)</div>
+            <div class="kpi-value {% if monthly_profit >= 0 %}v-green{% else %}v-red{% endif %}">
                 {{ monthly_profit|floatformat:2 }} €
             </div>
         </div>
-        <div class="kpi-card outstanding">
+        <div class="kpi accent-amber">
+            <div class="kpi-icon amber"><i class="bx bxs-receipt"></i></div>
             <div class="kpi-label">К получению</div>
-            <div class="kpi-value val-neutral">{{ outstanding_invoices.total|floatformat:2 }} €</div>
+            <div class="kpi-value v-amber">{{ outstanding_invoices.total|floatformat:2 }} €</div>
             <div class="kpi-sub">{{ outstanding_invoices.count }} инвойсов</div>
         </div>
-        <div class="kpi-card overdue">
+        <div class="kpi accent-rose">
+            <div class="kpi-icon rose"><i class="bx bxs-error-circle"></i></div>
             <div class="kpi-label">Просроченные</div>
-            <div class="kpi-value {% if overdue_invoices_count > 0 %}val-negative{% else %}val-positive{% endif %}">
+            <div class="kpi-value {% if overdue_invoices_count > 0 %}v-red{% else %}v-green{% endif %}">
                 {{ overdue_invoices_count }}
             </div>
         </div>
     </div>
 
     <!-- ════════════════ CHARTS ════════════════ -->
-    <div class="section-title">Графики</div>
-    <div class="charts-row">
-        <div class="chart-box">
-            <h3>Доходы и расходы (6 мес.)</h3>
-            <div class="chart-wrap"><canvas id="revenueExpensesChart"></canvas></div>
+    <div class="db-section">Аналитика</div>
+    <div class="charts-bar-row">
+        <div class="chart-card">
+            <h3><i class="bx bx-bar-chart" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#6c5ce7"></i>Доходы и расходы (6 мес.)</h3>
+            <div class="chart-wrap-bar"><canvas id="revenueExpensesChart"></canvas></div>
         </div>
-        <div class="chart-box">
-            <h3>Авто по статусам</h3>
-            <div class="chart-wrap"><canvas id="carsChart"></canvas></div>
+    </div>
+    <div class="charts-donut-row">
+        <div class="chart-card">
+            <h3><i class="bx bxs-car" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#6c5ce7"></i>Авто по статусам</h3>
+            <div class="chart-wrap">
+                <canvas id="carsChart"></canvas>
+                <div class="chart-center-label">
+                    <div class="ccl-num">{{ cars_by_status.total }}</div>
+                    <div class="ccl-text">всего</div>
+                </div>
+            </div>
         </div>
-        <div class="chart-box">
-            <h3>Инвойсы по статусам</h3>
-            <div class="chart-wrap"><canvas id="invoicesChart"></canvas></div>
+        <div class="chart-card">
+            <h3><i class="bx bxs-file" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#6c5ce7"></i>Инвойсы по статусам</h3>
+            <div class="chart-wrap">
+                <canvas id="invoicesChart"></canvas>
+                <div class="chart-center-label">
+                    <div class="ccl-num" id="invoices-total">0</div>
+                    <div class="ccl-text">всего</div>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- ════════════════ RECENT TABLES ════════════════ -->
-    <div class="section-title">Последние операции</div>
-    <div class="tables-row">
-        <!-- Recent Transactions -->
-        <div class="table-box">
-            <h3>Транзакции (последние 15)</h3>
-            <div class="table-scroll">
-                <table class="dash-table">
+    <!-- ════════════════ TABLES ════════════════ -->
+    <div class="db-section">Последние операции</div>
+    <div class="tables-grid">
+        <!-- Transactions -->
+        <div class="tbl-card">
+            <h3>
+                <span class="tbl-icon" style="background:#eef2ff;color:#4f46e5"><i class="bx bxs-credit-card"></i></span>
+                Транзакции
+            </h3>
+            <div class="tbl-scroll">
+                <table class="dt">
                     <thead>
                         <tr>
                             <th>Дата</th>
                             <th>Номер</th>
                             <th>Тип</th>
                             <th>Сумма</th>
-                            <th>Отправитель</th>
-                            <th>Получатель</th>
+                            <th>Откуда</th>
+                            <th>Куда</th>
                             <th>Статус</th>
                         </tr>
                     </thead>
@@ -401,21 +650,24 @@
                             <td class="amount-in">{{ t.amount|floatformat:2 }} €</td>
                             <td>{{ t.sender_name }}</td>
                             <td>{{ t.recipient_name }}</td>
-                            <td><span class="status-badge status-{{ t.status }}">{{ t.get_status_display }}</span></td>
+                            <td><span class="badge badge-{{ t.status }}">{{ t.get_status_display }}</span></td>
                         </tr>
                     {% empty %}
-                        <tr><td colspan="7" style="text-align:center;color:#999;padding:20px">Нет транзакций</td></tr>
+                        <tr><td colspan="7" style="text-align:center;color:#b0b0c8;padding:28px">Нет транзакций</td></tr>
                     {% endfor %}
                     </tbody>
                 </table>
             </div>
         </div>
 
-        <!-- Recent Invoices -->
-        <div class="table-box">
-            <h3>Инвойсы (последние 15)</h3>
-            <div class="table-scroll">
-                <table class="dash-table">
+        <!-- Invoices -->
+        <div class="tbl-card">
+            <h3>
+                <span class="tbl-icon" style="background:#f0fdf4;color:#16a34a"><i class="bx bxs-file-doc"></i></span>
+                Инвойсы
+            </h3>
+            <div class="tbl-scroll">
+                <table class="dt">
                     <thead>
                         <tr>
                             <th>Дата</th>
@@ -434,10 +686,10 @@
                             <td>{{ inv.recipient_name }}</td>
                             <td>{{ inv.total|floatformat:2 }} €</td>
                             <td>{{ inv.paid_amount|floatformat:2 }} €</td>
-                            <td><span class="status-badge status-{{ inv.status }}">{{ inv.get_status_display }}</span></td>
+                            <td><span class="badge badge-{{ inv.status }}">{{ inv.get_status_display }}</span></td>
                         </tr>
                     {% empty %}
-                        <tr><td colspan="6" style="text-align:center;color:#999;padding:20px">Нет инвойсов</td></tr>
+                        <tr><td colspan="6" style="text-align:center;color:#b0b0c8;padding:28px">Нет инвойсов</td></tr>
                     {% endfor %}
                     </tbody>
                 </table>
@@ -456,18 +708,22 @@
 
 <script>
 (function() {
-    /* ── helpers ── */
+    'use strict';
+
     function parseJSON(id) {
         var el = document.getElementById(id);
-        return el ? JSON.parse(el.textContent) : {};
+        if (!el) return {};
+        try { return JSON.parse(el.textContent); }
+        catch(e) { console.error('Dashboard JSON parse error for #' + id, e); return {}; }
     }
 
+    /* ── Palette ── */
     var STATUS_COLORS = {
-        FLOATING: '#3b82f6', IN_PORT: '#ef4444', UNLOADED: '#22c55e', TRANSFERRED: '#a855f7'
+        FLOATING: '#6366f1', IN_PORT: '#ef4444', UNLOADED: '#22c55e', TRANSFERRED: '#a78bfa'
     };
     var INV_COLORS = {
-        DRAFT: '#94a3b8', ISSUED: '#3b82f6', PARTIALLY_PAID: '#f59e0b',
-        PAID: '#22c55e', OVERDUE: '#ef4444', CANCELLED: '#64748b'
+        DRAFT: '#cbd5e1', ISSUED: '#6366f1', PARTIALLY_PAID: '#f59e0b',
+        PAID: '#22c55e', OVERDUE: '#ef4444', CANCELLED: '#94a3b8'
     };
     var INV_LABELS = {
         DRAFT: 'Черновик', ISSUED: 'Выставлен', PARTIALLY_PAID: 'Част. оплачен',
@@ -477,69 +733,205 @@
         FLOATING: 'В пути', IN_PORT: 'В порту', UNLOADED: 'Разгружен', TRANSFERRED: 'Передан'
     };
 
-    /* ── Revenue / Expenses bar chart ── */
-    var reData = parseJSON('rev-exp-data');
-    if (reData.labels) {
-        new Chart(document.getElementById('revenueExpensesChart'), {
-            type: 'bar',
-            data: {
-                labels: reData.labels,
-                datasets: [
-                    { label: 'Доходы', data: reData.revenue, backgroundColor: '#22c55e', borderRadius: 6 },
-                    { label: 'Расходы', data: reData.expenses, backgroundColor: '#ef4444', borderRadius: 6 }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { position: 'top', labels: { color: '#64748b', usePointStyle: true, pointStyle: 'circle', padding: 16 } } },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: { color: '#94a3b8', callback: function(v){ return v.toLocaleString() + ' €'; } },
-                        grid: { color: '#f1f5f9' }
-                    },
-                    x: {
-                        ticks: { color: '#94a3b8' },
-                        grid: { display: false }
-                    }
-                }
+    /* ── Helpers ── */
+    function filterNonZero(dataObj, colorMap, labelMap) {
+        var keys = [], labels = [], data = [], colors = [];
+        Object.keys(dataObj).forEach(function(k) {
+            if (dataObj[k] > 0) {
+                keys.push(k);
+                labels.push(labelMap[k] || k);
+                data.push(dataObj[k]);
+                colors.push(colorMap[k] || '#ccc');
             }
         });
+        return { keys: keys, labels: labels, data: data, colors: colors };
     }
 
-    /* ── Cars doughnut ── */
-    var carsData = parseJSON('cars-data');
-    var carKeys = Object.keys(carsData);
-    if (carKeys.length) {
-        new Chart(document.getElementById('carsChart'), {
-            type: 'doughnut',
-            data: {
-                labels: carKeys.map(function(k){ return CAR_LABELS[k] || k; }),
-                datasets: [{
-                    data: carKeys.map(function(k){ return carsData[k]; }),
-                    backgroundColor: carKeys.map(function(k){ return STATUS_COLORS[k] || '#ccc'; })
-                }]
-            },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#64748b', usePointStyle: true, pointStyle: 'circle', padding: 14 } } } }
-        });
+    function percentTooltip(context) {
+        var total = context.dataset.data.reduce(function(a, b) { return a + b; }, 0);
+        var val = context.parsed;
+        var pct = total > 0 ? ((val / total) * 100).toFixed(1) : '0';
+        return context.label + ': ' + val + ' (' + pct + '%)';
     }
 
-    /* ── Invoices doughnut ── */
-    var invData = parseJSON('invoices-data');
-    var invKeys = Object.keys(invData);
-    if (invKeys.length) {
-        new Chart(document.getElementById('invoicesChart'), {
-            type: 'doughnut',
-            data: {
-                labels: invKeys.map(function(k){ return INV_LABELS[k] || k; }),
-                datasets: [{
-                    data: invKeys.map(function(k){ return invData[k]; }),
-                    backgroundColor: invKeys.map(function(k){ return INV_COLORS[k] || '#ccc'; })
-                }]
+    var DONUT_OPTIONS = {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '62%',
+        layout: { padding: { top: 4, bottom: 4 } },
+        plugins: {
+            legend: {
+                position: 'bottom',
+                labels: {
+                    color: '#7c7c9a',
+                    usePointStyle: true,
+                    pointStyle: 'circle',
+                    padding: 16,
+                    font: { size: 12, weight: '600' }
+                }
             },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#64748b', usePointStyle: true, pointStyle: 'circle', padding: 14 } } } }
+            tooltip: {
+                backgroundColor: '#1a1a2e',
+                titleColor: '#fff',
+                bodyColor: '#e0e0f0',
+                titleFont: { size: 13, weight: '700' },
+                bodyFont: { size: 12 },
+                padding: 12,
+                cornerRadius: 10,
+                callbacks: { label: percentTooltip }
+            }
+        }
+    };
+
+    /* ── Wait for Chart.js to load ── */
+    function initCharts() {
+        if (typeof Chart === 'undefined') {
+            console.error('Dashboard: Chart.js not loaded');
+            return;
+        }
+
+        Chart.defaults.font.family = "'Inter', -apple-system, BlinkMacSystemFont, sans-serif";
+
+        /* ── Revenue / Expenses bar chart ── */
+        var reData = parseJSON('rev-exp-data');
+        var barCanvas = document.getElementById('revenueExpensesChart');
+        if (reData.labels && reData.labels.length && barCanvas) {
+            new Chart(barCanvas, {
+                type: 'bar',
+                data: {
+                    labels: reData.labels,
+                    datasets: [
+                        {
+                            label: 'Доходы',
+                            data: reData.revenue,
+                            backgroundColor: 'rgba(108,92,231,.75)',
+                            hoverBackgroundColor: '#6c5ce7',
+                            borderRadius: 8,
+                            borderSkipped: false
+                        },
+                        {
+                            label: 'Расходы',
+                            data: reData.expenses,
+                            backgroundColor: 'rgba(239,68,68,.65)',
+                            hoverBackgroundColor: '#ef4444',
+                            borderRadius: 8,
+                            borderSkipped: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                color: '#7c7c9a',
+                                usePointStyle: true,
+                                pointStyle: 'circle',
+                                padding: 20,
+                                font: { weight: '600', size: 12 }
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: '#1a1a2e',
+                            titleColor: '#fff',
+                            bodyColor: '#e0e0f0',
+                            padding: 12,
+                            cornerRadius: 10,
+                            callbacks: {
+                                label: function(ctx) {
+                                    return ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString() + ' €';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            border: { display: false },
+                            ticks: {
+                                color: '#b0b0c8',
+                                font: { size: 11 },
+                                callback: function(v) { return v.toLocaleString() + ' €'; }
+                            },
+                            grid: { color: '#f3f1fa' }
+                        },
+                        x: {
+                            border: { display: false },
+                            ticks: { color: '#b0b0c8', font: { size: 11 } },
+                            grid: { display: false }
+                        }
+                    }
+                }
+            });
+        }
+
+        /* ── Cars doughnut ── */
+        var carsRaw = parseJSON('cars-data');
+        var carsCanvas = document.getElementById('carsChart');
+        var carsFiltered = filterNonZero(carsRaw, STATUS_COLORS, CAR_LABELS);
+
+        if (carsFiltered.data.length > 0 && carsCanvas) {
+            new Chart(carsCanvas, {
+                type: 'doughnut',
+                data: {
+                    labels: carsFiltered.labels,
+                    datasets: [{
+                        data: carsFiltered.data,
+                        backgroundColor: carsFiltered.colors,
+                        borderWidth: 2,
+                        borderColor: '#fff',
+                        hoverOffset: 8,
+                        hoverBorderWidth: 0
+                    }]
+                },
+                options: DONUT_OPTIONS
+            });
+        } else if (carsCanvas) {
+            carsCanvas.parentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#b0b0c8;font-size:.9em">Нет данных</div>';
+        }
+
+        /* ── Invoices doughnut ── */
+        var invRaw = parseJSON('invoices-data');
+        var invCanvas = document.getElementById('invoicesChart');
+        var invFiltered = filterNonZero(invRaw, INV_COLORS, INV_LABELS);
+
+        /* Set center total */
+        var invTotalEl = document.getElementById('invoices-total');
+        if (invTotalEl) {
+            var invTotal = invFiltered.data.reduce(function(a, b) { return a + b; }, 0);
+            invTotalEl.textContent = invTotal;
+        }
+
+        if (invFiltered.data.length > 0 && invCanvas) {
+            new Chart(invCanvas, {
+                type: 'doughnut',
+                data: {
+                    labels: invFiltered.labels,
+                    datasets: [{
+                        data: invFiltered.data,
+                        backgroundColor: invFiltered.colors,
+                        borderWidth: 2,
+                        borderColor: '#fff',
+                        hoverOffset: 8,
+                        hoverBorderWidth: 0
+                    }]
+                },
+                options: DONUT_OPTIONS
+            });
+        } else if (invCanvas) {
+            invCanvas.parentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#b0b0c8;font-size:.9em">Нет данных</div>';
+        }
+    }
+
+    /* Run when DOM ready */
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(initCharts, 100);
         });
+    } else {
+        setTimeout(initCharts, 100);
     }
 })();
 </script>

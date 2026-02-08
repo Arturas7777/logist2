@@ -18,7 +18,7 @@
 | Backend | Django 5.1.7, Python 3.10-3.12 |
 | API | Django REST Framework + Rate Limiting (throttles) |
 | База данных | PostgreSQL (тесты — SQLite в `settings_test.py`) |
-| Кэширование | Redis (db=1) на production, LocMemCache локально |
+| Кэширование | Redis (db=1) на production и локально (с fallback на FileBasedCache) |
 | Очереди задач | Celery + Redis (db=2) — фоновая отправка email |
 | Web-сервер | Nginx + Gunicorn, статика через WhiteNoise |
 | WebSockets | Django Channels + Daphne (Redis в `settings_base.py`, InMemory в `settings.py`) |
@@ -741,7 +741,7 @@ logist2/
 │   └── website/                    # Клиентский сайт
 │
 ├── logist2/
-│   ├── settings.py                 # Локальные настройки (InMemory Channels, LocMemCache, CELERY_ALWAYS_EAGER)
+│   ├── settings.py                 # Локальные настройки (InMemory Channels, Redis cache с fallback на FileBasedCache, CELERY_ALWAYS_EAGER)
 │   ├── settings_base.py            # Базовые настройки (Redis Channels, RedisCache db=1, Celery broker db=2)
 │   ├── settings_dev.py             # Dev-профиль
 │   ├── settings_prod.py            # Prod-профиль
@@ -937,7 +937,7 @@ if hasattr(self, '_prefetched_objects_cache'):
 
 Кэш услуг (`get_service_name()` / `get_service_short_name()` / `get_default_price()`) хранится в Django cache:
 - Ключи: `svc:{service_type}:{service_id}`, TTL = 300 секунд
-- Production: Redis (db=1), Локально: LocMemCache
+- Production: Redis (db=1), Локально: Redis с fallback на FileBasedCache
 - Автоматическая инвалидация через сигнал `invalidate_service_cache()` при изменении/удалении услуг в справочниках
 - Ручная очистка не требуется (кэш обновляется автоматически через сигналы)
 
@@ -1086,7 +1086,7 @@ Email-уведомления отправляются через Celery зада
 
 **Сервис:** `core/services/dashboard_service.py` — `DashboardService`
 
-**Дизайн:** Glassmorphism (iOS/macOS стиль) — тёмный градиентный фон, frosted glass карточки с `backdrop-filter: blur(12px)`, glowing left edge по статусу, hover-анимации (`translateY(-4px)` + усиленное свечение), белый текст, ярче value-цвета для тёмного фона, glass-кнопки с colored tint, semi-transparent статус-бейджи, Chart.js со светлыми осями/легендами, custom webkit scrollbar, reduced blur на mobile.
+**Дизайн:** Современный светлый стиль — фон `#f4f2ff`, белые карточки с subtle тенями и фиолетовыми акцентами (`#6c5ce7`), шрифт Inter (Google Fonts), gradient summary cards, Boxicons (CDN) для всех иконок (KPI, графики, таблицы), Chart.js с цветными doughnut-графиками и bar chart, hover-анимации (`translateY(-3px)`), responsive layout.
 
 **Что показывает:**
 1. **Операционные KPI:** авто/контейнеры по статусам, авто на хранении, активные тралы
@@ -1097,8 +1097,9 @@ Email-уведомления отправляются через Celery зада
 
 **Кэширование:**
 - KPI: 5 минут
-- Графики: 30 минут
+- Графики: 30 минут (оптимизированы: 2 запроса с `TruncMonth` вместо 12)
 - Баланс компании: **НЕ кэшируется** (всегда fresh, `refresh_from_db()`)
+- Бенчмарк: холодный кэш 46 мс, горячий (Redis) 3 мс
 
 **Файлы:**
 - `core/services/dashboard_service.py` — сервис агрегации данных
@@ -1154,7 +1155,7 @@ Email-уведомления отправляются через Celery зада
 
 ```python
 # Файл: core/models.py — класс CarService
-# Кэш перенесён на Django cache (Redis на production, LocMemCache локально)
+# Кэш перенесён на Django cache (Redis на production и локально, fallback на FileBasedCache)
 
 from django.core.cache import cache
 
