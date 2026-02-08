@@ -707,7 +707,7 @@ logist2/
 │   ├── admin_website.py            # Admin для клиентского сайта
 │   │
 │   ├── utils.py                    # Утилиты (round_up_to_5, WebSocketBatcher)
-│   ├── tests.py                    # 28 unit-тестов (THS, хранение, инвойсы, кэш, API)
+│   ├── tests.py                    # 57 unit-тестов (цены, THS, инвойсы, статусы, хранение, дефолты)
 │   ├── signals.py                  # Сигналы (наследование данных, THS, email)
 │   ├── views.py                    # Views для админки
 │   ├── views_website.py            # Views для клиентского сайта
@@ -928,7 +928,7 @@ if hasattr(self, '_prefetched_objects_cache'):
 
 ### 4b. Unit-тесты (28 тестов)
 
-В проекте 28 unit-тестов в `core/tests.py`. Запуск: `python manage.py test core --settings=logist2.settings_test`.
+В проекте **57 unit-тестов** в `core/tests.py`. Запуск: `python manage.py test core --settings=logist2.settings_test`.
 
 | Тест-класс | Тестов | Что проверяет |
 |---|---|---|
@@ -938,7 +938,14 @@ if hasattr(self, '_prefetched_objects_cache'):
 | `ServiceCacheTests` | 3 | Кэш _service_obj_cache, отсутствие повторных SQL |
 | `THSCalculationTests` | 8 | Пропорциональное распределение THS, округление, edge cases |
 | `StorageCostFullTests` | 5 | Дни×ставка, free days, transfer_date, update_days_and_storage |
-| `RegenerateItemsTests` | 6 | Позиции инвойса: markup для Company, группировка short_name, повторный вызов |
+| `RegenerateItemsTests` | 6 | Позиции инвойса: markup для Company, группировка short_name |
+| `CalculateTotalPriceTests` | 5 | Итоговая цена: услуги + markup, quantity, default/custom price |
+| `CarServicePriceTests` | 4 | final_price (без markup) vs invoice_price (с markup) |
+| `CreateTHSServicesTests` | 5 | Создание CarService для LINE/WAREHOUSE, удаление старых THS |
+| `InvoiceCalculateTotalsTests` | 3 | subtotal из позиций, discount, пустой инвойс |
+| `InvoiceStatusTests` | 5 | PAID/PARTIALLY_PAID/OVERDUE/DRAFT переходы статусов |
+| `RegenerateStorageItemTests` | 3 | Группа 'Хран' для склада/компании, исключена для линии |
+| `ApplyWarehouseDefaultsTests` | 4 | force=True/False, заполнение пустых полей, без склада |
 
 ### 5. Email через Brevo
 
