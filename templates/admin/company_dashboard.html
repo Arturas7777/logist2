@@ -108,7 +108,7 @@
         font-size: 1em;
         color: #333;
     }
-    .chart-box canvas { width: 100% !important; }
+    .chart-wrap { position: relative; height: 280px; }
 
     /* ── Tables row ── */
     .tables-row {
@@ -326,15 +326,15 @@
     <div class="charts-row">
         <div class="chart-box">
             <h3>Доходы и расходы (6 мес.)</h3>
-            <canvas id="revenueExpensesChart" height="260"></canvas>
+            <div class="chart-wrap"><canvas id="revenueExpensesChart"></canvas></div>
         </div>
         <div class="chart-box">
             <h3>Авто по статусам</h3>
-            <canvas id="carsChart" height="260"></canvas>
+            <div class="chart-wrap"><canvas id="carsChart"></canvas></div>
         </div>
         <div class="chart-box">
             <h3>Инвойсы по статусам</h3>
-            <canvas id="invoicesChart" height="260"></canvas>
+            <div class="chart-wrap"><canvas id="invoicesChart"></canvas></div>
         </div>
     </div>
 
