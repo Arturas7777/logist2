@@ -271,8 +271,10 @@ def calculate_ths_for_container(container):
     # Функция округления в большую сторону с шагом 5 EUR
     def round_up_to_5(value):
         """Округляет в большую сторону с шагом 5 EUR. Пример: 73.12 -> 75"""
-        import math
-        return Decimal(str(math.ceil(float(value) / 5) * 5))
+        remainder = value % 5
+        if remainder == 0:
+            return value
+        return value + (5 - remainder)
     
     # Если сумма коэффициентов = 0, делим поровну
     if total_coefficient == 0:

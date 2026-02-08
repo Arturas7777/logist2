@@ -571,7 +571,7 @@ class NewInvoice(models.Model):
     def regenerate_items_from_cars(self):
         """
         Автоматически создает позиции инвойса из услуг выбранных автомобилей.
-        
+
         Табличный формат (06.02.2026):
         - Одна позиция на каждую группу услуг (по short_name) для каждого авто
         - Услуги с одинаковым short_name суммируются (напр. Разгрузка+Погрузка+Декларация → "Порт")
@@ -579,7 +579,14 @@ class NewInvoice(models.Model):
         - description = short_name (для группировки в таблице)
         """
         from collections import OrderedDict
-        
+        from django.db import transaction
+
+        with transaction.atomic():
+            self._regenerate_items_from_cars_inner()
+
+    def _regenerate_items_from_cars_inner(self):
+        from collections import OrderedDict
+
         # Удаляем старые позиции
         self.items.all().delete()
         
@@ -627,7 +634,7 @@ class NewInvoice(models.Model):
                 
                 # Рассчитываем цену
                 if is_company:
-                    price = (service.custom_price if service.custom_price is not None else service.get_default_price()) + (service.markup_amount or Decimal('0'))
+                    price = (service.custom_price if service.custom_price is not None else service.get_default_price()) + (service.markup_amount if service.markup_amount is not None else Decimal('0'))
                 else:
                     price = service.custom_price if service.custom_price is not None else service.get_default_price()
                 

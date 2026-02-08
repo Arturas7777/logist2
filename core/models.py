@@ -1373,7 +1373,7 @@ class CarService(models.Model):
         """Цена для инвойса (С учётом скрытой наценки)"""
         # Используем custom_price если он задан (даже если 0), иначе default_price
         base_price = self.custom_price if self.custom_price is not None else self.get_default_price()
-        markup = self.markup_amount or Decimal('0')
+        markup = self.markup_amount if self.markup_amount is not None else Decimal('0')
         return (base_price + markup) * self.quantity
     
     def get_total_distributed_markup(self):
