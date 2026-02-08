@@ -588,6 +588,28 @@
         </div>
     </div>
 
+    <!-- ════════════════ BANK ACCOUNTS ════════════════ -->
+    {% if bank_accounts %}
+    <div class="db-section"><i class="bx bxs-bank" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Банковские счета</div>
+    <div class="kpi-row {% if bank_accounts|length <= 3 %}three{% elif bank_accounts|length == 4 %}four{% else %}five{% endif %}" style="margin-bottom:28px">
+        {% for acc in bank_accounts %}
+        <div class="kpi accent-indigo">
+            <div class="kpi-icon indigo"><i class="bx bxs-bank"></i></div>
+            <div class="kpi-label">{{ acc.connection__name }} — {{ acc.currency }}</div>
+            <div class="kpi-value {% if acc.balance >= 0 %}v-green{% else %}v-red{% endif %}">
+                {{ acc.balance|floatformat:2 }} {{ acc.currency }}
+            </div>
+            <div class="kpi-sub">
+                {{ acc.name }}
+                {% if acc.connection__last_synced_at %}
+                · обновлено {{ acc.connection__last_synced_at|timesince }} назад
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     <!-- ════════════════ CHARTS ════════════════ -->
     <div class="db-section">Аналитика</div>
     <div class="charts-bar-row">
@@ -696,6 +718,51 @@
             </div>
         </div>
     </div>
+
+    <!-- ════════════════ BANK TRANSACTIONS TABLE ════════════════ -->
+    {% if recent_bank_transactions %}
+    <div class="db-section"><i class="bx bxs-bank" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Банковские операции</div>
+    <div class="tables-grid" style="grid-template-columns:1fr">
+        <div class="tbl-card">
+            <h3>
+                <span class="tbl-icon" style="background:#eef2ff;color:#4f46e5"><i class="bx bxs-bank"></i></span>
+                Последние операции из банков
+            </h3>
+            <div class="tbl-scroll">
+                <table class="dt">
+                    <thead>
+                        <tr>
+                            <th>Дата</th>
+                            <th>Банк</th>
+                            <th>Тип</th>
+                            <th>Сумма</th>
+                            <th>Валюта</th>
+                            <th>Контрагент</th>
+                            <th>Описание</th>
+                            <th>Статус</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for bt in recent_bank_transactions %}
+                        <tr>
+                            <td>{{ bt.created_at|date:"d.m.Y" }}</td>
+                            <td>{{ bt.connection.name }}</td>
+                            <td>{{ bt.get_transaction_type_display }}</td>
+                            <td class="{% if bt.amount >= 0 %}amount-in{% else %}amount-out{% endif %}">
+                                {% if bt.amount >= 0 %}+{% endif %}{{ bt.amount|floatformat:2 }}
+                            </td>
+                            <td>{{ bt.currency }}</td>
+                            <td>{{ bt.counterparty_name|default:"—" }}</td>
+                            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">{{ bt.description|truncatechars:50 }}</td>
+                            <td><span class="badge badge-{{ bt.state|upper }}">{{ bt.state }}</span></td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
 </div>
 
