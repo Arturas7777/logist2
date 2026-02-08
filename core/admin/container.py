@@ -53,8 +53,11 @@ class ContainerAdmin(admin.ModelAdmin):
         js = ('js/htmx.min.js',)
 
     def get_queryset(self, request):
+        from django.db.models import Count
         qs = super().get_queryset(request)
-        return qs.select_related('line', 'client', 'warehouse').prefetch_related('container_cars')
+        return qs.select_related('line', 'client', 'warehouse').prefetch_related(
+            'container_cars'
+        ).annotate(_photos_count=Count('photos'))
 
     def save_model(self, request, obj, form, change):
         start_time = time.time()
@@ -428,8 +431,10 @@ class ContainerAdmin(admin.ModelAdmin):
     colored_status.short_description = 'Статус'
 
     def photos_count_display(self, obj):
-        """Displays count of container photos"""
-        count = obj.photos.count()
+        """Displays count of container photos (uses annotation when available)"""
+        count = getattr(obj, '_photos_count', None)
+        if count is None:
+            count = obj.photos.count()
         if count > 0:
             return format_html(
                 '<span style="background-color: #4285f4; color: white; padding: 2px 8px; border-radius: 10px;">📷 {}</span>',
@@ -437,6 +442,7 @@ class ContainerAdmin(admin.ModelAdmin):
             )
         return '-'
     photos_count_display.short_description = 'Фото'
+    photos_count_display.admin_order_field = '_photos_count'
 
     def set_status_floating(self, request, queryset):
         updated = queryset.update(status='FLOATING')

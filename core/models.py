@@ -725,31 +725,26 @@ class Car(models.Model):
         """Пересчитывает цену используя систему услуг CarService.
 
         Цена = сумма всех услуг + сумма всех скрытых наценок.
-        
+
         ВАЖНО: total_price включает скрытую наценку (markup_amount)!
         Это полная сумма, которую заплатит клиент.
+
+        Оптимизация: один проход по car_services вместо 5 отдельных запросов.
         """
-        from django.db.models import Sum
-        
         # Сбрасываем кэш related objects чтобы получить актуальные услуги из БД
         if hasattr(self, '_prefetched_objects_cache'):
             self._prefetched_objects_cache.pop('car_services', None)
-        
+
         # Сначала обновляем дни и цену услуги "Хранение"
         self.update_days_and_storage()
 
-        # Получаем суммы по поставщикам из CarService (final_price = базовая цена БЕЗ наценки)
-        line_total = self.get_services_total_by_provider('LINE')
-        carrier_total = self.get_services_total_by_provider('CARRIER')
-        warehouse_total = self.get_warehouse_services_total()  # Включает услугу "Хранение"
-        company_total = self.get_services_total_by_provider('COMPANY')
-        
-        # Сумма всех скрытых наценок
-        distributed_markup = self.car_services.aggregate(total=Sum('markup_amount'))['total'] or Decimal('0')
+        total = Decimal('0.00')
+        markup = Decimal('0.00')
+        for svc in self.car_services.all():
+            total += Decimal(str(svc.final_price))
+            markup += svc.markup_amount if svc.markup_amount is not None else Decimal('0')
 
-        # Общая сумма = услуги + скрытые наценки
-        self.total_price = line_total + warehouse_total + carrier_total + company_total + distributed_markup
-
+        self.total_price = total + markup
         return self.total_price
 
     def update_days_and_storage(self):
@@ -1230,10 +1225,6 @@ class CarService(models.Model):
     def __str__(self):
         return f"{self.car.vin} - {self.get_service_name()}: {self.final_price}"
     
-    # Кэш объектов услуг на уровне класса (избегает N+1 запросов).
-    # Сбрасывается при перезапуске процесса (gunicorn restart при деплое).
-    _service_obj_cache = {}
-
     SERVICE_MODEL_MAP = {
         'LINE': LineService,
         'CARRIER': CarrierService,
@@ -1242,18 +1233,23 @@ class CarService(models.Model):
     }
 
     def _get_service_obj(self):
-        """Получает объект услуги с кэшированием для избежания N+1 запросов."""
-        cache_key = (self.service_type, self.service_id)
-        if cache_key not in CarService._service_obj_cache:
-            model_class = CarService.SERVICE_MODEL_MAP.get(self.service_type)
-            if model_class:
-                try:
-                    CarService._service_obj_cache[cache_key] = model_class.objects.get(id=self.service_id)
-                except model_class.DoesNotExist:
-                    CarService._service_obj_cache[cache_key] = None
-            else:
-                CarService._service_obj_cache[cache_key] = None
-        return CarService._service_obj_cache.get(cache_key)
+        """Получает объект услуги с кэшированием через Django cache."""
+        from django.core.cache import cache
+        cache_key = f"svc:{self.service_type}:{self.service_id}"
+        result = cache.get(cache_key)
+        if result is not None:
+            return result if result != '_none_' else None
+        model_class = CarService.SERVICE_MODEL_MAP.get(self.service_type)
+        if model_class:
+            try:
+                obj = model_class.objects.get(id=self.service_id)
+                cache.set(cache_key, obj, 300)
+                return obj
+            except model_class.DoesNotExist:
+                cache.set(cache_key, '_none_', 300)
+                return None
+        cache.set(cache_key, '_none_', 300)
+        return None
 
     def get_service_name(self):
         """Получает название услуги"""

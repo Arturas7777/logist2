@@ -85,8 +85,9 @@ class ServiceCacheTests(TestCase):
 
     def setUp(self):
         from core.models import CarService, Warehouse, WarehouseService
+        from django.core.cache import cache
         # Очищаем кэш перед каждым тестом
-        CarService._service_obj_cache.clear()
+        cache.clear()
 
         self.client_obj = Client.objects.create(name="Cache Test Client")
         self.warehouse = Warehouse.objects.create(name="WH-Cache", free_days=0)
@@ -117,8 +118,9 @@ class ServiceCacheTests(TestCase):
         )
         # Первый вызов — кэширует
         cs.get_service_name()
-        cache_key = ('WAREHOUSE', self.wh_service.id)
-        self.assertIn(cache_key, CarService._service_obj_cache)
+        from django.core.cache import cache
+        cached = cache.get(f"svc:{cs.service_type}:{cs.service_id}")
+        self.assertIsNotNone(cached)
 
         # Второй вызов — берёт из кэша (не делает запрос)
         from django.test.utils import override_settings
@@ -140,7 +142,7 @@ class ServiceCacheTests(TestCase):
 
     def tearDown(self):
         from core.models import CarService
-        CarService._service_obj_cache.clear()
+        from django.core.cache import cache; cache.clear()
 
 
 class THSCalculationTests(TestCase):
@@ -344,7 +346,7 @@ class RegenerateItemsTests(TestCase):
     """Тесты генерации позиций инвойса из услуг автомобилей"""
 
     def setUp(self):
-        CarService._service_obj_cache.clear()
+        from django.core.cache import cache; cache.clear()
         self.client_obj = Client.objects.create(name="Regen Test Client")
         self.warehouse = Warehouse.objects.create(name="WH-Regen", free_days=0)
         self.line = Line.objects.create(name="Regen Line")
@@ -483,14 +485,14 @@ class RegenerateItemsTests(TestCase):
         self.assertEqual(invoice.items.count(), 1)
 
     def tearDown(self):
-        CarService._service_obj_cache.clear()
+        from django.core.cache import cache; cache.clear()
 
 
 class CalculateTotalPriceTests(TestCase):
     """Тесты Car.calculate_total_price() — итоговая цена авто"""
 
     def setUp(self):
-        CarService._service_obj_cache.clear()
+        from django.core.cache import cache; cache.clear()
         self.client_obj = Client.objects.create(name="TotalPrice Client")
         self.line = Line.objects.create(name="TP Line")
         self.warehouse = Warehouse.objects.create(name="WH-TP", free_days=0)
@@ -567,14 +569,14 @@ class CalculateTotalPriceTests(TestCase):
         self.assertEqual(result, Decimal('30.00'))
 
     def tearDown(self):
-        CarService._service_obj_cache.clear()
+        from django.core.cache import cache; cache.clear()
 
 
 class CarServicePriceTests(TestCase):
     """Тесты свойств final_price и invoice_price в CarService"""
 
     def setUp(self):
-        CarService._service_obj_cache.clear()
+        from django.core.cache import cache; cache.clear()
         self.client_obj = Client.objects.create(name="Price Client")
         self.warehouse = Warehouse.objects.create(name="WH-Price", free_days=0)
         self.container = Container.objects.create(number="CONT-PRICE")
@@ -627,14 +629,14 @@ class CarServicePriceTests(TestCase):
         self.assertEqual(cs.final_price, Decimal('100.00'))
 
     def tearDown(self):
-        CarService._service_obj_cache.clear()
+        from django.core.cache import cache; cache.clear()
 
 
 class CreateTHSServicesTests(TestCase):
     """Тесты create_ths_services_for_container() — создание CarService записей THS"""
 
     def setUp(self):
-        CarService._service_obj_cache.clear()
+        from django.core.cache import cache; cache.clear()
         self.client_obj = Client.objects.create(name="CTS Client")
         self.line = Line.objects.create(name="CTS Line")
         self.warehouse = Warehouse.objects.create(name="WH-CTS", free_days=0)
@@ -700,7 +702,7 @@ class CreateTHSServicesTests(TestCase):
         self.assertEqual(create_ths_services_for_container(self.container), 0)
 
     def tearDown(self):
-        CarService._service_obj_cache.clear()
+        from django.core.cache import cache; cache.clear()
 
 
 class InvoiceCalculateTotalsTests(TestCase):
@@ -812,7 +814,7 @@ class RegenerateStorageItemTests(TestCase):
     """Тесты генерации позиции 'Хран' в инвойсе"""
 
     def setUp(self):
-        CarService._service_obj_cache.clear()
+        from django.core.cache import cache; cache.clear()
         self.client_obj = Client.objects.create(name="StorItem Client")
         self.warehouse = Warehouse.objects.create(name="WH-StorItem", free_days=0)
         self.container = Container.objects.create(
@@ -922,7 +924,7 @@ class RegenerateStorageItemTests(TestCase):
         self.assertNotIn('Хран', descriptions)
 
     def tearDown(self):
-        CarService._service_obj_cache.clear()
+        from django.core.cache import cache; cache.clear()
 
 
 class ApplyWarehouseDefaultsTests(TestCase):
