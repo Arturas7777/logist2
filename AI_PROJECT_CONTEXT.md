@@ -170,7 +170,7 @@ logist2/
 │   │   ├── test_unload_date_inheritance.py
 │   │   └── update_container_statuses.py
 │   ├── utils.py                    # Утилиты (round_up_to_5, WebSocketBatcher, log_slow_queries)
-│   ├── tests.py                    # 28 unit-тестов (THS, StorageCost, Regenerate, Cache, API)
+│   ├── tests.py                    # 57 unit-тестов (цены, THS, инвойсы, хранение, статусы, дефолты)
 │   ├── services/                   # Бизнес-логика
 │   │   ├── ai_chat_service.py      # AI-помощник (контекст из БД)
 │   │   ├── admin_ai_agent.py       # AI-агент для админки (контекст + диагностика)
@@ -515,12 +515,19 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 
 ### Недавние изменения (февраль 2026):
 
-**08.02.2026 - Расширение покрытия тестами (THS, хранение, инвойсы):**
-1. **19 НОВЫХ UNIT-ТЕСТОВ:** ✅ ТЕСТИРОВАНИЕ
-   - `THSCalculationTests` (8) — пропорциональное распределение THS, округление до 5, дефолтный коэфф, edge cases
-   - `StorageCostFullTests` (5) — дни×ставка, free days, transfer_date, нет услуги→0, update_days_and_storage
-   - `RegenerateItemsTests` (6) — позиции от склада, markup для Company, группировка short_name, нет issuer, повторный вызов
-   - **Итого: 28 тестов, 28 OK, 0.277 секунды**
+**08.02.2026 - Полное покрытие тестами (57 тестов):**
+1. **48 НОВЫХ UNIT-ТЕСТОВ за сессию:** ✅ ТЕСТИРОВАНИЕ
+   - `CalculateTotalPriceTests` (5) — итоговая цена: услуги + markup, quantity, default/custom price
+   - `CarServicePriceTests` (4) — final_price БЕЗ markup vs invoice_price С markup
+   - `CreateTHSServicesTests` (5) — создание CarService для LINE/WAREHOUSE, удаление старых
+   - `InvoiceCalculateTotalsTests` (3) — subtotal, discount, пустой инвойс
+   - `InvoiceStatusTests` (5) — PAID/PARTIALLY_PAID/OVERDUE/DRAFT переходы
+   - `RegenerateStorageItemTests` (3) — группа 'Хран' для склада/компании, не для линии
+   - `ApplyWarehouseDefaultsTests` (4) — force=True/False, пустые поля, без склада
+   - `THSCalculationTests` (8) — пропорциональное распределение THS, округление до 5
+   - `StorageCostFullTests` (5) — дни×ставка, free days, transfer_date
+   - `RegenerateItemsTests` (6) — позиции от склада, markup для Company, группировка short_name
+   - **Итого: 57 тестов, 57 OK, 0.567 секунды**
 
 **08.02.2026 - Замена print() на logging, очистка тестов:**
 1. **ЗАМЕНА PRINT → LOGGING:** ⚡ КАЧЕСТВО КОДА
@@ -573,7 +580,7 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 - `core/models_billing.py` — `transaction.atomic()`, исправление Decimal, удалён дубль `Transaction.save()`
 - `core/signals.py` — импорт `round_up_to_5` из `core/utils`
 - `core/utils.py` — функция `round_up_to_5()`
-- `core/tests.py` — 7 тест-классов (28 тестов): API, RoundUp, StorageCost, ServiceCache, THS, StorageFull, RegenerateItems
+- `core/tests.py` — 14 тест-классов (57 тестов): цены, THS, инвойсы, статусы, хранение, дефолты, кэш, API
 - `core/admin/` — пакет из 5 файлов (вместо monolithic admin.py)
 
 **07.02.2026 - Система тарифов клиентов:**

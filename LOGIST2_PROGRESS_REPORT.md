@@ -806,6 +806,7 @@ total_markup_sum = queryset.aggregate(
 
 | Дата | Описание |
 |------|----------|
+| 08.02.2026 | Добавлены ещё 29 тестов: calculate_total_price, CarService цены, THS-сервисы, инвойс-статусы, хранение в инвойсах, дефолты склада |
 | 08.02.2026 | Добавлены 19 unit-тестов: THS расчёт, хранение (дни×ставка), regenerate_items_from_cars (markup, группировка) |
 | 08.02.2026 | Замена print() на logging во всём core/ (signals, models, admin, forms) |
 | 08.02.2026 | Очистка тестов: удалены 4 устаревших теста (старый API биллинга), 9/9 pass |
@@ -909,6 +910,28 @@ total_markup_sum = queryset.aggregate(
 - `_regenerate_items_from_cars_inner()` — `core/models_billing.py:587`
 
 **Результат:** 28 тестов, 28 OK, 0 ошибок, 0.277 секунды
+
+---
+
+### 32. Полное покрытие критичных бизнес-функций тестами (08.02.2026)
+
+**Статус:** Завершено
+
+**Цель:** Покрыть все оставшиеся критичные функции (деньги, расчёты, статусы).
+
+**Добавлено 29 новых тестов** (было 28, стало 57):
+
+| Тест-класс | Тестов | Что проверяет |
+|---|---|---|
+| `CalculateTotalPriceTests` | 5 | Сумма услуг + markup, quantity множитель, default vs custom price, zero price |
+| `CarServicePriceTests` | 4 | final_price (без markup) vs invoice_price (с markup), zero markup ≠ None, fallback на default |
+| `CreateTHSServicesTests` | 5 | Создание CarService для LINE/WAREHOUSE payer, удаление старых THS, edge cases |
+| `InvoiceCalculateTotalsTests` | 3 | subtotal из позиций, discount, пустой инвойс |
+| `InvoiceStatusTests` | 5 | PAID (полная/переплата), PARTIALLY_PAID, OVERDUE (просроченный), DRAFT не меняется |
+| `RegenerateStorageItemTests` | 3 | Группа 'Хран' для склада/компании, исключена для линии |
+| `ApplyWarehouseDefaultsTests` | 4 | force=True перезаписывает, force=False сохраняет, заполнение пустых, без склада |
+
+**Результат:** 57 тестов, 57 OK, 0 ошибок, 0.567 секунды
 
 ---
 
