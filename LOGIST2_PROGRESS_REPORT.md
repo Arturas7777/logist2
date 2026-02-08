@@ -1457,3 +1457,59 @@ total_markup_sum = queryset.aggregate(
 - Клиентский чат теперь ищет фото по номеру контейнера, а не только по VIN
 - Защита от ProxyError при запросах к API
 - Исправлена ошибка `logger is not defined` в `ai_chat`
+
+---
+
+### 39. Исправление CSP для Boxicons на production (08.02.2026)
+
+**Статус:** Завершено
+
+**Проблема:** Иконки Boxicons не отображались на production-сервере. Причина — Content Security Policy (CSP) не разрешала загрузку стилей и шрифтов с `unpkg.com`.
+
+**Решение:** Добавлен `https://unpkg.com` в `style-src` и `font-src` директивы CSP.
+
+**Дополнительно найдено:** На сервере было два каталога проекта — `/var/www/logist2/` и `/var/www/www-root/data/www/logist2/`. Gunicorn работал из второго, а `git pull` первоначально обновлял первый. Исправлено — все операции деплоя теперь направлены в `/var/www/www-root/data/www/logist2/`.
+
+**Файлы:**
+- `logist2/settings_security.py` — добавлен `https://unpkg.com` в CSP
+
+---
+
+### 40. Интеграция Revolut Business API — банковские счета на дашборде (08.02.2026)
+
+**Статус:** Завершено
+
+**Функционал:**
+- Подключение к Revolut Business API (Production) с автоматическим обновлением токенов
+- Отображение балансов банковских счетов на дашборде компании (KPI-карточки)
+- Отображение последних банковских транзакций в отдельной таблице на дашборде
+- Зашифрованное хранение токенов в БД (Fernet, ключ из Django SECRET_KEY)
+- Автоматическая синхронизация каждые 15 минут через cron
+- Management-команда `setup_revolut` для первоначальной настройки (генерация JWT, обмен токенов)
+- Management-команда `sync_bank_accounts` для ручной/cron синхронизации
+- Django Admin с кнопкой "Синхронизировать сейчас"
+- Расширяемая архитектура — BankConnection поддерживает разные типы банков
+
+**Результат первой синхронизации:**
+- 5 счетов (основной EUR: 863.97 €, + GBP, USD)
+- 17 транзакций за последний месяц
+
+**Новые файлы:**
+- `core/models_banking.py` — модели BankConnection, BankAccount, BankTransaction
+- `core/services/revolut_service.py` — API-клиент Revolut (авторизация, счета, транзакции)
+- `core/admin_banking.py` — Django Admin для банковских моделей
+- `core/management/commands/setup_revolut.py` — помощник настройки Revolut API
+- `core/management/commands/sync_bank_accounts.py` — команда синхронизации для cron
+
+**Изменённые файлы:**
+- `core/models.py` — импорт моделей banking
+- `core/services/dashboard_service.py` — методы `get_bank_balances()`, `get_recent_bank_transactions()`
+- `templates/admin/company_dashboard.html` — секция банковских счетов + таблица транзакций
+- `core/admin/__init__.py` — регистрация banking admin
+
+**Миграция:** `0109_add_banking_models.py`
+
+**Конфигурация на сервере:**
+- Сертификаты: `/var/www/www-root/data/www/logist2/certs/` (privatecert.pem, publiccert.cer)
+- Cron: `*/15 * * * *` — `sync_bank_accounts`
+- Лог: `/var/log/logist2/bank_sync.log`
