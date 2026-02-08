@@ -146,8 +146,8 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     
     filter_horizontal = ('cars',)
     
-    actions = ['mark_as_issued', 'mark_as_paid', 'cancel_invoices', 'export_to_pdf', 'regenerate_items']
-    
+    actions = ['mark_as_issued', 'mark_as_paid', 'cancel_invoices', 'regenerate_items']
+
     def add_view(self, request, form_url='', extra_context=None):
         """Кастомная обработка добавления инвойса"""
         from core.models import Company, Client, Car
@@ -342,8 +342,8 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             form.instance.regenerate_items_from_cars()
             messages.success(request, f"✅ Автоматически создано {form.instance.items.count()} позиций из услуг автомобилей!")
     
-    actions = ['mark_as_issued', 'mark_as_paid', 'cancel_invoices', 'export_to_pdf', 'regenerate_items']
-    
+    actions = ['mark_as_issued', 'mark_as_paid', 'cancel_invoices', 'regenerate_items']
+
     # ========================================================================
     # ОТОБРАЖЕНИЕ ПОЛЕЙ В СПИСКЕ
     # ========================================================================
@@ -587,11 +587,6 @@ class NewInvoiceAdmin(admin.ModelAdmin):
         if errors > 0:
             self.message_user(request, f'Ошибок: {errors} инвойсов (возможно, уже были платежи)', messages.WARNING)
     cancel_invoices.short_description = "✗ Отменить инвойсы"
-    
-    def export_to_pdf(self, request, queryset):
-        """Экспорт в PDF (заглушка)"""
-        self.message_user(request, 'Экспорт в PDF будет реализован в следующей версии', messages.INFO)
-    export_to_pdf.short_description = "📄 Экспорт в PDF"
     
     def regenerate_items(self, request, queryset):
         """Пересоздать позиции из автомобилей"""

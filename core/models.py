@@ -51,14 +51,6 @@ def get_current_user():
         return 'system'
 
 # Базовый менеджер для управления обновлениями
-class BaseManager(models.Manager):
-    def update_related(self, instance):
-        pass
-
-# Новые модели для системы балансов
-
-
-
 # Справочники
 class Line(models.Model):
     name = models.CharField(max_length=100, verbose_name="Название линии")
@@ -361,17 +353,6 @@ class Warehouse(models.Model):
     def __str__(self):
         return self.name
 
-# Контейнеры
-class ContainerManager(BaseManager):
-    def update_related(self, instance):
-        cars = instance.container_cars.all()
-        if not cars:
-            return
-        ths_per_car = (instance.ths or 0) / cars.count()
-        for car in cars:
-            car.sync_with_container(instance, ths_per_car)
-            car.save()
-
 class Container(models.Model):
     STATUS_CHOICES = [
         ('FLOATING', 'В пути'),
@@ -435,8 +416,6 @@ class Container(models.Model):
                                                help_text="Прямая ссылка на папку с фотографиями контейнера в Google Drive")
 
     objects = OptimizedContainerManager()
-    # Сохраняем старый менеджер для совместимости
-    legacy_objects = ContainerManager()
 
     def update_days_and_storage(self):
         if self.status == 'UNLOADED' and self.unload_date:
@@ -559,11 +538,6 @@ class Container(models.Model):
             models.Index(fields=['unload_date']),
         ]
 
-# Автомобили
-class CarManager(BaseManager):
-    pass
-
-
 class Car(models.Model):
     # Типы транспортных средств (расширенный список)
     VEHICLE_TYPE_CHOICES = [
@@ -632,8 +606,6 @@ class Car(models.Model):
     additional_expenses = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Дополнительные расходы", validators=[MinValueValidator(0)])
 
     objects = OptimizedCarManager()
-    # Сохраняем старый менеджер для совместимости
-    legacy_objects = CarManager()
 
     def get_status_color(self):
         return STATUS_COLORS.get(self.status, '#3a8c3d')
@@ -986,36 +958,6 @@ class Car(models.Model):
         storage_cost = daily_rate * chargeable_days
         
         return storage_cost
-
-    def get_rates_by_provider(self, provider_type):
-        """Получает ставки по типу поставщика"""
-        rates = []
-        if provider_type == 'LINE' and self.line:
-            services = self.get_line_services()
-        elif provider_type == 'CARRIER' and self.carrier:
-            services = self.get_carrier_services()
-        elif provider_type == 'WAREHOUSE' and self.warehouse:
-            services = self.get_warehouse_services()
-        else:
-            return rates
-            
-        # Пока возвращаем пустой список (когда добавим service_type, изменим логику)
-        return rates
-
-    def get_parameters_by_provider(self, provider_type):
-        """Получает параметры расчета по типу поставщика"""
-        parameters = []
-        if provider_type == 'LINE' and self.line:
-            services = self.get_line_services()
-        elif provider_type == 'CARRIER' and self.carrier:
-            services = self.get_carrier_services()
-        elif provider_type == 'WAREHOUSE' and self.warehouse:
-            services = self.get_warehouse_services()
-        else:
-            return parameters
-            
-        # Пока возвращаем пустой список (когда добавим service_type, изменим логику)
-        return parameters
 
     def save(self, *args, **kwargs):
         # подхватить данные с контейнера ДО копирования дефолтов

@@ -231,6 +231,6 @@ AI_REQUEST_TIMEOUT = int(os.getenv('AI_REQUEST_TIMEOUT', '40'))
 
 # Company info for email templates
 COMPANY_NAME = 'Caromoto Lithuania'
-COMPANY_PHONE = '+370 XXX XXXXX'
+COMPANY_PHONE = '+37068830450'
 COMPANY_EMAIL = 'info@caromoto-lt.com'
 COMPANY_WEBSITE = 'https://caromoto-lt.com'
