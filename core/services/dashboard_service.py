@@ -253,6 +253,50 @@ class DashboardService:
         return result
 
     # ========================================================================
+    # BANK ACCOUNTS (Revolut и др.)
+    # ========================================================================
+
+    def get_bank_balances(self):
+        """Возвращает список активных банковских счетов с балансами."""
+        cache_key = get_cache_key('dashboard', 'bank_balances')
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        from ..models_banking import BankAccount
+        accounts = list(
+            BankAccount.objects.filter(
+                connection__is_active=True,
+                state='active',
+            ).select_related('connection').order_by('currency', 'name')
+            .values(
+                'id', 'name', 'currency', 'balance', 'last_updated_at',
+                'connection__name', 'connection__bank_type',
+                'connection__last_synced_at',
+            )
+        )
+
+        cache.set(cache_key, accounts, CACHE_TIMEOUTS['short'])
+        return accounts
+
+    def get_recent_bank_transactions(self, limit=10):
+        """Возвращает последние банковские транзакции."""
+        cache_key = get_cache_key('dashboard', 'bank_transactions', limit)
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        from ..models_banking import BankTransaction
+        txs = list(
+            BankTransaction.objects.filter(
+                connection__is_active=True,
+            ).select_related('connection').order_by('-created_at')[:limit]
+        )
+
+        cache.set(cache_key, txs, CACHE_TIMEOUTS['short'])
+        return txs
+
+    # ========================================================================
     # RECENT OPERATIONS
     # ========================================================================
 
@@ -299,6 +343,9 @@ class DashboardService:
             # Charts
             'revenue_expenses_chart': self.get_revenue_expenses_by_month(),
             'invoices_by_status': self.get_invoices_by_status(),
+            # Bank accounts (Revolut и др.)
+            'bank_accounts': self.get_bank_balances(),
+            'recent_bank_transactions': self.get_recent_bank_transactions(),
             # Recent operations
             'recent_transactions': self.get_recent_transactions(),
             'recent_invoices': self.get_recent_invoices(),

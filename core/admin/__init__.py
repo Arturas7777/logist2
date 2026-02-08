@@ -17,3 +17,11 @@ except ImportError as e:
     logger = logging.getLogger('django')
     logger.warning(f"Could not load new billing admin: {e}")
     logger.warning("Make sure admin_billing.py and models_billing.py exist")
+
+# Import banking admin (Revolut и др.)
+try:
+    from core.admin_banking import BankConnectionAdmin, BankAccountAdmin, BankTransactionAdmin
+except ImportError as e:
+    import logging
+    logger = logging.getLogger('django')
+    logger.warning(f"Could not load banking admin: {e}")

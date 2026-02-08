@@ -1565,3 +1565,13 @@ from .models_website import (
     ContactMessage,
     TrackingRequest
 )
+
+# ==============================================================================
+# 🏦 МОДЕЛИ ДЛЯ БАНКОВСКИХ ИНТЕГРАЦИЙ
+# ==============================================================================
+
+from .models_banking import (
+    BankConnection,
+    BankAccount,
+    BankTransaction,
+)
