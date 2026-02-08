@@ -33,6 +33,8 @@ class ContainerAdmin(admin.ModelAdmin):
     list_filter = (MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter)
     search_fields = ('number',)
     ordering = ['-unload_date', '-id']
+    list_per_page = 50
+    show_full_result_count = False
     inlines = [CarInline, ContainerPhotoInline]
     fieldsets = (
         ('Основные данные', {

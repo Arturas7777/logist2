@@ -10,6 +10,7 @@ from django.shortcuts import render, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import authenticate, login, logout
 from django.http import JsonResponse, FileResponse, Http404, HttpResponse
+from django.views.decorators.cache import cache_page
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.db.models import Q, Count, Prefetch
@@ -46,6 +47,7 @@ class CsrfExemptSessionAuthentication(SessionAuthentication):
 # Главная страница и информационные страницы
 # ============================================================================
 
+@cache_page(60 * 15)
 def website_home(request):
     """Главная страница сайта"""
     latest_news = NewsPost.objects.filter(published=True).order_by('-published_at')[:3]
@@ -57,6 +59,7 @@ def website_home(request):
     return render(request, 'website/home.html', context)
 
 
+@cache_page(60 * 60)
 def about_page(request):
     """Страница о компании"""
     context = {
@@ -65,16 +68,19 @@ def about_page(request):
     return render(request, 'website/about.html', context)
 
 
+@cache_page(60 * 60)
 def services_page(request):
     """Страница услуг"""
     return render(request, 'website/services.html')
 
 
+@cache_page(60 * 60)
 def contact_page(request):
     """Страница контактов"""
     return render(request, 'website/contact.html')
 
 
+@cache_page(60 * 15)
 def news_list(request):
     """Список новостей"""
     news = NewsPost.objects.filter(published=True).order_by('-published_at')

@@ -956,7 +956,23 @@ Email-уведомления отправляются через Celery зада
 
 Настраивается в `REST_FRAMEWORK.DEFAULT_THROTTLE_RATES` в settings.
 
-### 4d. Unit-тесты (57 тестов)
+### 4d. Оптимизация БД и админки (08.02.2026)
+
+- **CONN_MAX_AGE = 600** в `settings_base.py` — переиспользование PostgreSQL-соединений (10 мин), `connect_timeout: 10`
+- **list_per_page = 50** + **show_full_result_count = False** в крупных таблицах админки:
+  - `CarAdmin`, `ContainerAdmin`, `ClientAdmin`, `NewInvoiceAdmin`, `TransactionAdmin`
+  - Отключение `SELECT COUNT(*)` на больших таблицах ускоряет отрисовку списков
+
+### 4e. Кэширование views клиентского сайта (08.02.2026)
+
+```python
+# Файл: core/views_website.py
+@cache_page(60 * 15)   # 15 минут — website_home, news_list
+@cache_page(60 * 60)   # 1 час — about_page, services_page, contact_page
+# news_detail НЕ кэшируется (инкремент счётчика просмотров)
+```
+
+### 4f. Unit-тесты (57 тестов)
 
 В проекте **57 unit-тестов** в `core/tests.py`. Запуск: `python manage.py test core --settings=logist2.settings_test`.
 

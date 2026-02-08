@@ -27,6 +27,8 @@ class CarAdmin(admin.ModelAdmin):
     list_editable = ('has_title',)
     list_filter = (MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter)
     search_fields = ('vin', 'brand')
+    list_per_page = 50
+    show_full_result_count = False
     # OPTIMIZATION: Preload related objects for list view
     list_select_related = ('client', 'warehouse', 'line', 'carrier', 'container')
 
