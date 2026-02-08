@@ -10,7 +10,7 @@
 - **Backend:** Django 5.1.7 + Python 3.10-3.12
 - **Database:** PostgreSQL (тесты — SQLite через `settings_test.py`)
 - **API:** Django REST Framework + Rate Limiting (throttles)
-- **Кэширование:** Redis (db=1) на production, LocMemCache локально
+- **Кэширование:** Redis (db=1) на production и локально (с fallback на FileBasedCache)
 - **Очереди задач:** Celery + Redis (db=2) — фоновая отправка email
 - **Frontend:** Django templates + Bootstrap 5 + HTMX + кастомный JS
 - **WebSockets:** Channels + Daphne (Redis в `settings_base.py`, InMemory в `settings.py`)
@@ -195,7 +195,7 @@ logist2/
 │   ├── container_archives/         # ZIP архивы
 │   └── car_photos/                 # Фото ТС
 ├── logist2/                        # Настройки проекта
-│   ├── settings.py                 # Локальные настройки (InMemory Channels, LocMemCache, CELERY_TASK_ALWAYS_EAGER)
+│   ├── settings.py                 # Локальные настройки (InMemory Channels, Redis cache с fallback на FileBasedCache, CELERY_TASK_ALWAYS_EAGER)
 │   ├── settings_base.py            # Базовые настройки (Redis Channels, RedisCache, Celery broker)
 │   ├── settings_dev.py             # Dev-профиль
 │   ├── settings_prod.py            # Prod-профиль
@@ -526,19 +526,23 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 
 ### Недавние изменения (февраль 2026):
 
-**08.02.2026 - Glassmorphism-редизайн дашборда:**
-1. **GLASSMORPHISM ДИЗАЙН:** ⭐ UI/UX
-   - ✅ Тёмный градиентный фон (`#0f0c29 → #1a1a3e → #24243e → #0f3460 → #1a1a2e`)
-   - ✅ Frosted glass карточки: `backdrop-filter: blur(12px)`, `rgba(255,255,255,0.07)`, translucent borders
-   - ✅ Glowing left edge на KPI-карточках (цветной `box-shadow` по статусу)
-   - ✅ Hover: `translateY(-4px)` + усиленное свечение
-   - ✅ Белый текст, ярче value-цвета (`#4cdf72`, `#ff6b7a`) для тёмного фона
-   - ✅ Glass-кнопки быстрых действий с colored tint и hover glow
-   - ✅ Semi-transparent статус-бейджи с `box-shadow` glow, все белый текст
-   - ✅ Таблицы: белый текст 80%, translucent borders, ссылки `#64b5f6`, custom scrollbar
-   - ✅ Chart.js: светлые оси (`#aaa`), translucent grid, светлые легенды (`#ccc`)
-   - ✅ Reduced blur на mobile (`8px`) для производительности
-   - ✅ Файл: `templates/admin/company_dashboard.html` (CSS + JS + 1 inline color)
+**08.02.2026 - Редизайн дашборда: светлая тема + Boxicons + оптимизация:**
+1. **СВЕТЛЫЙ ДИЗАЙН + BOXICONS:** ⭐ UI/UX
+   - ✅ Светлый фон `#f4f2ff`, белые карточки с subtle тенями и фиолетовыми акцентами
+   - ✅ Шрифт Inter (Google Fonts), скруглённые углы, gradient summary cards
+   - ✅ **Boxicons** (CDN) вместо emoji и самодельных SVG — 14 KPI + 3 графика + 2 таблицы + бейдж даты
+   - ✅ Исправлены doughnut-графики (были серые из-за двойной JSON-сериализации)
+   - ✅ Фильтрация нулевых сегментов, центральные метки, tooltips с процентами
+   - ✅ Удалён `json.dumps()` из `core/views.py` (данные передаются как dict → `json_script`)
+   - ✅ Файлы: `templates/admin/company_dashboard.html`, `core/views.py`
+
+2. **ОПТИМИЗАЦИЯ ПРОИЗВОДИТЕЛЬНОСТИ ДАШБОРДА:** ⚡
+   - ✅ **Redis кэш локально** — `settings.py` автоматически определяет Redis (socket probe), fallback на `FileBasedCache`
+   - ✅ Redis установлен как служба Windows (`StartType: Automatic`)
+   - ✅ `get_revenue_expenses_by_month()` оптимизирован: 12 запросов → 2 с `TruncMonth`
+   - ✅ `ANALYZE` на PostgreSQL после импорта БД с VPS
+   - ✅ Бенчмарк: холодный кэш **46 мс**, горячий **3 мс** (ускорение 17.7x)
+   - ✅ Файлы: `logist2/settings.py`, `core/services/dashboard_service.py`
 
 **08.02.2026 - Дашборд компании (полная перестройка):**
 1. **ДАШБОРД:** ⭐ НОВЫЙ ФУНКЦИОНАЛ
@@ -562,7 +566,7 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 **08.02.2026 - Redis-кэширование, N+1 оптимизация, Rate Limiting, Celery, безопасность:**
 1. **REDIS-КЭШИРОВАНИЕ:** ⚡ ОПТИМИЗАЦИЯ
    - ✅ `_service_obj_cache` (dict на уровне класса) заменён на Django cache (`cache.get`/`cache.set`, ключи `svc:{type}:{id}`, TTL 300с)
-   - ✅ Production: `RedisCache` (Redis db=1); Локально: `LocMemCache`
+   - ✅ Production: `RedisCache` (Redis db=1); Локально: Redis с fallback на `FileBasedCache`
    - ✅ Сигнал `invalidate_service_cache()` на `post_save`/`post_delete` всех 4 моделей услуг
    - ✅ Тесты обновлены: `cache.clear()` вместо `_service_obj_cache.clear()`
 

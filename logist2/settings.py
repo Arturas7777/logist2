@@ -93,13 +93,36 @@ CHANNEL_LAYERS = {
     },
 }
 
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'logist2-local',
-        'TIMEOUT': 300,
-    }
-}
+# Cache — Redis (как на VPS), с fallback на FileBasedCache если Redis недоступен
+def _get_cache_config():
+    """Пробуем подключиться к Redis; если недоступен — файловый кэш."""
+    redis_url = f"redis://{os.getenv('REDIS_HOST', '127.0.0.1')}:{os.getenv('REDIS_PORT', '6379')}/1"
+    try:
+        import socket
+        host = os.getenv('REDIS_HOST', '127.0.0.1')
+        port = int(os.getenv('REDIS_PORT', '6379'))
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(1)
+        s.connect((host, port))
+        s.close()
+        return {
+            'default': {
+                'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+                'LOCATION': redis_url,
+                'TIMEOUT': 300,
+                'KEY_PREFIX': 'logist2',
+            }
+        }
+    except (ConnectionRefusedError, OSError, socket.timeout):
+        return {
+            'default': {
+                'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+                'LOCATION': BASE_DIR / '.cache',
+                'TIMEOUT': 300,
+            }
+        }
+
+CACHES = _get_cache_config()
 
 # Celery: tasks run synchronously in dev (no Redis broker needed)
 CELERY_TASK_ALWAYS_EAGER = True

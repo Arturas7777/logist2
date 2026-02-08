@@ -4,6 +4,7 @@
 
 from django.core.cache import cache
 from django.db.models import Sum, Count, Q, F
+from django.db.models.functions import TruncMonth
 from django.utils import timezone
 from datetime import timedelta
 from decimal import Decimal
@@ -188,37 +189,51 @@ class DashboardService:
 
         from ..models_billing import Transaction
         now = timezone.now()
+
+        # Начало периода — первый день (months-1) месяцев назад
+        start_dt = (now - timedelta(days=(months - 1) * 30)).replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+
+        # 1 запрос: доходы по месяцам (вместо 6 отдельных)
+        rev_qs = (
+            Transaction.objects.filter(
+                to_company=self.company,
+                status='COMPLETED',
+                date__gte=start_dt,
+            )
+            .annotate(month=TruncMonth('date'))
+            .values('month')
+            .annotate(total=Sum('amount'))
+            .order_by('month')
+        )
+        rev_map = {row['month'].strftime('%m/%Y'): float(row['total']) for row in rev_qs}
+
+        # 2-й запрос: расходы по месяцам
+        exp_qs = (
+            Transaction.objects.filter(
+                from_company=self.company,
+                status='COMPLETED',
+                date__gte=start_dt,
+            )
+            .annotate(month=TruncMonth('date'))
+            .values('month')
+            .annotate(total=Sum('amount'))
+            .order_by('month')
+        )
+        exp_map = {row['month'].strftime('%m/%Y'): float(row['total']) for row in exp_qs}
+
+        # Собираем результат по всем месяцам периода
         labels = []
         revenue = []
         expenses = []
-
         for i in range(months - 1, -1, -1):
-            # Calculate month start/end
             dt = now - timedelta(days=i * 30)
             month_start = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-            if month_start.month == 12:
-                month_end = month_start.replace(year=month_start.year + 1, month=1)
-            else:
-                month_end = month_start.replace(month=month_start.month + 1)
-
-            labels.append(month_start.strftime('%m/%Y'))
-
-            rev = Transaction.objects.filter(
-                to_company=self.company,
-                status='COMPLETED',
-                date__gte=month_start,
-                date__lt=month_end
-            ).aggregate(total=Sum('amount'))['total'] or 0
-
-            exp = Transaction.objects.filter(
-                from_company=self.company,
-                status='COMPLETED',
-                date__gte=month_start,
-                date__lt=month_end
-            ).aggregate(total=Sum('amount'))['total'] or 0
-
-            revenue.append(float(rev))
-            expenses.append(float(exp))
+            label = month_start.strftime('%m/%Y')
+            labels.append(label)
+            revenue.append(rev_map.get(label, 0))
+            expenses.append(exp_map.get(label, 0))
 
         data = {'labels': labels, 'revenue': revenue, 'expenses': expenses}
         cache.set(cache_key, data, CACHE_TIMEOUTS['medium'])
