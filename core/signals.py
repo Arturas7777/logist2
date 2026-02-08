@@ -13,6 +13,25 @@ import logging
 
 logger = logging.getLogger('django')
 
+
+# ============================================================================
+# ИНВАЛИДАЦИЯ КЭША УСЛУГ ПРИ ИЗМЕНЕНИИ СПРАВОЧНИКОВ
+# ============================================================================
+
+def invalidate_service_cache(sender, instance, **kwargs):
+    from django.core.cache import cache
+    type_map = {LineService: 'LINE', WarehouseService: 'WAREHOUSE',
+                CarrierService: 'CARRIER', CompanyService: 'COMPANY'}
+    svc_type = type_map.get(sender)
+    if svc_type:
+        cache.delete(f"svc:{svc_type}:{instance.id}")
+
+
+for _model in (LineService, WarehouseService, CarrierService, CompanyService):
+    post_save.connect(invalidate_service_cache, sender=_model)
+    post_delete.connect(invalidate_service_cache, sender=_model)
+
+
 # Сохраняем старые значения контейнера для определения что изменилось
 _old_container_values = {}
 
@@ -351,11 +370,18 @@ def create_ths_services_for_container(container):
             )
     
     created_count = 0
-    
+
+    # Batch-fetch all cars at once to avoid N+1
+    car_ids = list(ths_distribution.keys())
+    cars_by_id = {c.id: c for c in Car.objects.filter(id__in=car_ids)}
+
     for car_id, ths_amount in ths_distribution.items():
         try:
-            car = Car.objects.get(id=car_id)
-            
+            car = cars_by_id.get(car_id)
+            if not car:
+                logger.warning(f"Car {car_id} not found when creating THS service")
+                continue
+
             # Удаляем старые услуги THS для этого авто
             # Удаляем от линии
             CarService.objects.filter(
@@ -366,7 +392,7 @@ def create_ths_services_for_container(container):
                     name__icontains='THS'
                 ).values_list('id', flat=True)
             ).delete()
-            
+
             # Удаляем от склада
             CarService.objects.filter(
                 car=car,
@@ -376,7 +402,7 @@ def create_ths_services_for_container(container):
                     name__icontains='THS'
                 ).values_list('id', flat=True)
             ).delete()
-            
+
             # Создаем новую услугу THS
             if service_type == 'LINE' and line_service:
                 CarService.objects.create(
@@ -389,7 +415,7 @@ def create_ths_services_for_container(container):
                 )
                 logger.info(f"🚢 THS {ths_amount} EUR для {car.vin} (тип: {car.get_vehicle_type_display()}) от линии")
                 created_count += 1
-                
+
             elif service_type == 'WAREHOUSE' and warehouse_service:
                 CarService.objects.create(
                     car=car,
@@ -401,9 +427,7 @@ def create_ths_services_for_container(container):
                 )
                 logger.info(f"🏭 THS {ths_amount} EUR для {car.vin} (тип: {car.get_vehicle_type_display()}) от склада")
                 created_count += 1
-                
-        except Car.DoesNotExist:
-            logger.warning(f"Car {car_id} not found when creating THS service")
+
         except Exception as e:
             logger.error(f"Error creating THS service for car {car_id}: {e}")
     
@@ -1015,38 +1039,32 @@ def send_container_notifications_on_save(sender, instance, created, **kwargs):
             # Дата разгрузки была установлена впервые
             should_notify_unload = True
     
-    # Отправляем уведомления асинхронно после коммита транзакции
+    # Отправляем уведомления асинхронно через Celery после коммита транзакции
     if should_notify_planned:
-        def send_planned_notifications():
+        def _enqueue_planned():
             try:
+                from core.tasks import send_planned_notifications_task
+                send_planned_notifications_task.delay(instance.pk)
+            except Exception:
+                # Fallback: synchronous send if Celery unavailable
                 from core.services.email_service import ContainerNotificationService
-                
                 if not ContainerNotificationService.was_planned_notification_sent(instance):
-                    sent, failed = ContainerNotificationService.send_planned_to_all_clients(instance)
-                    if sent > 0:
-                        logger.info(f"📧 Auto-sent planned unload notifications for {instance.number}: {sent} sent, {failed} failed")
-                else:
-                    logger.debug(f"Planned unload notifications already sent for {instance.number}")
-            except Exception as e:
-                logger.error(f"Failed to send planned unload notifications for {instance.number}: {e}")
-        
-        transaction.on_commit(send_planned_notifications)
-    
+                    ContainerNotificationService.send_planned_to_all_clients(instance)
+
+        transaction.on_commit(_enqueue_planned)
+
     if should_notify_unload:
-        def send_unload_notifications():
+        def _enqueue_unload():
             try:
+                from core.tasks import send_unload_notifications_task
+                send_unload_notifications_task.delay(instance.pk)
+            except Exception:
+                # Fallback: synchronous send if Celery unavailable
                 from core.services.email_service import ContainerNotificationService
-                
                 if not ContainerNotificationService.was_unload_notification_sent(instance):
-                    sent, failed = ContainerNotificationService.send_unload_to_all_clients(instance)
-                    if sent > 0:
-                        logger.info(f"📧 Auto-sent unload notifications for {instance.number}: {sent} sent, {failed} failed")
-                else:
-                    logger.debug(f"Unload notifications already sent for {instance.number}")
-            except Exception as e:
-                logger.error(f"Failed to send unload notifications for {instance.number}: {e}")
-        
-        transaction.on_commit(send_unload_notifications)
+                    ContainerNotificationService.send_unload_to_all_clients(instance)
+
+        transaction.on_commit(_enqueue_unload)
 
 
 # Сигнал для автоматической синхронизации фотографий с Google Drive

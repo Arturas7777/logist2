@@ -29,25 +29,16 @@ class CarAdmin(admin.ModelAdmin):
     search_fields = ('vin', 'brand')
     # OPTIMIZATION: Preload related objects for list view
     list_select_related = ('client', 'warehouse', 'line', 'carrier', 'container')
-    list_prefetch_related = ('car_services',)
 
     def get_queryset(self, request):
-        """Optimized queryset with total markup annotation.
+        """Optimized queryset with select_related, prefetch_related, and annotation."""
+        from django.db.models import Sum
 
-        Uses annotate + Sum to calculate total markup in single query,
-        avoiding N+1 problem when displaying car list.
-        """
-        from django.db.models import Sum, F
-        from decimal import Decimal
-
-        queryset = super().get_queryset(request)
-
-        # Annotate total markup from CarService
-        queryset = queryset.annotate(
-            _total_markup=Sum('car_services__markup_amount')
-        )
-
-        return queryset
+        qs = super().get_queryset(request)
+        qs = qs.select_related('client', 'warehouse', 'line', 'carrier', 'container')
+        qs = qs.prefetch_related('car_services')
+        qs = qs.annotate(_total_markup=Sum('car_services__markup_amount'))
+        return qs
     readonly_fields = (
         'default_warehouse_prices_display', 'total_price', 'storage_cost', 'days', 'warehouse_payment_display',
         'free_days_display', 'rate_display', 'services_summary_display', 'warehouse_services_display', 'line_services_display', 'carrier_services_display', 'company_services_display'
@@ -487,10 +478,6 @@ class CarAdmin(admin.ModelAdmin):
             )
         }
         js = ('js/htmx.min.js', 'js/logist2_htmx.js')
-
-    def get_queryset(self, request):
-        qs = super().get_queryset(request)
-        return qs.select_related('client', 'warehouse', 'container')
 
     def save_model(self, request, obj, form, change):
         """Saves model with service field processing"""

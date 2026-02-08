@@ -15,7 +15,8 @@ from django.views.decorators.http import require_http_methods
 from django.db.models import Q, Count, Prefetch
 from django.utils import timezone
 from rest_framework import viewsets, permissions, status
-from rest_framework.decorators import api_view, permission_classes, action, authentication_classes
+from rest_framework.decorators import api_view, permission_classes, action, authentication_classes, throttle_classes
+from core.throttles import TrackShipmentThrottle, AIChatThrottle
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.authentication import SessionAuthentication
@@ -231,6 +232,7 @@ class ContactMessageViewSet(viewsets.ModelViewSet):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([TrackShipmentThrottle])
 def track_shipment(request):
     """Отследить груз по номеру VIN или контейнера"""
     import logging
@@ -541,6 +543,7 @@ def get_ai_response_openai(message, user=None, client=None):
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
 @permission_classes([AllowAny])
+@throttle_classes([AIChatThrottle])
 def ai_chat(request):
     """Эндпоинт для чата с ИИ-помощником"""
     logger = logging.getLogger(__name__)

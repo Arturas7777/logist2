@@ -4,6 +4,7 @@ autobahn==24.4.2
 Automat==25.4.16
 certifi==2025.8.3
 cffi==1.17.1
+celery[redis]==5.4.0
 channels==4.2.0
 channels_redis==4.2.1
 charset-normalizer==3.4.3
