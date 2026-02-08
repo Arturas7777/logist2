@@ -707,7 +707,7 @@ logist2/
 │   ├── admin_website.py            # Admin для клиентского сайта
 │   │
 │   ├── utils.py                    # Утилиты (round_up_to_5, WebSocketBatcher)
-│   ├── tests.py                    # Unit-тесты (round_up_to_5, хранение, кэш)
+│   ├── tests.py                    # 28 unit-тестов (THS, хранение, инвойсы, кэш, API)
 │   ├── signals.py                  # Сигналы (наследование данных, THS, email)
 │   ├── views.py                    # Views для админки
 │   ├── views_website.py            # Views для клиентского сайта
@@ -926,9 +926,19 @@ if hasattr(self, '_prefetched_objects_cache'):
 
 `CarService._service_obj_cache` — словарь-кэш для `get_service_name()` / `get_service_short_name()` / `get_default_price()`. Ключ: `(service_type, service_id)`. Сбрасывается при перезапуске процесса (gunicorn restart). Если меняются справочники услуг, может понадобиться перезапуск gunicorn.
 
-### 4b. Unit-тесты
+### 4b. Unit-тесты (28 тестов)
 
-В проекте есть тесты в `core/tests.py`. Запуск: `python manage.py test core`. Используйте `settings_test.py` (SQLite) для быстрого выполнения.
+В проекте 28 unit-тестов в `core/tests.py`. Запуск: `python manage.py test core --settings=logist2.settings_test`.
+
+| Тест-класс | Тестов | Что проверяет |
+|---|---|---|
+| `APIPermissionsTests` | 1 | API требует staff-авторизацию |
+| `RoundUpTo5Tests` | 3 | Округление вверх до кратного 5 (Decimal) |
+| `StorageCostCalculationTests` | 2 | Edge cases: нет склада/даты → 0 |
+| `ServiceCacheTests` | 3 | Кэш _service_obj_cache, отсутствие повторных SQL |
+| `THSCalculationTests` | 8 | Пропорциональное распределение THS, округление, edge cases |
+| `StorageCostFullTests` | 5 | Дни×ставка, free days, transfer_date, update_days_and_storage |
+| `RegenerateItemsTests` | 6 | Позиции инвойса: markup для Company, группировка short_name, повторный вызов |
 
 ### 5. Email через Brevo
 

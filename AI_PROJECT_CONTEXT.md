@@ -170,7 +170,7 @@ logist2/
 │   │   ├── test_unload_date_inheritance.py
 │   │   └── update_container_statuses.py
 │   ├── utils.py                    # Утилиты (round_up_to_5, WebSocketBatcher, log_slow_queries)
-│   ├── tests.py                    # Unit-тесты (RoundUpTo5, StorageCost, ServiceCache)
+│   ├── tests.py                    # 28 unit-тестов (THS, StorageCost, Regenerate, Cache, API)
 │   ├── services/                   # Бизнес-логика
 │   │   ├── ai_chat_service.py      # AI-помощник (контекст из БД)
 │   │   ├── admin_ai_agent.py       # AI-агент для админки (контекст + диагностика)
@@ -515,6 +515,13 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 
 ### Недавние изменения (февраль 2026):
 
+**08.02.2026 - Расширение покрытия тестами (THS, хранение, инвойсы):**
+1. **19 НОВЫХ UNIT-ТЕСТОВ:** ✅ ТЕСТИРОВАНИЕ
+   - `THSCalculationTests` (8) — пропорциональное распределение THS, округление до 5, дефолтный коэфф, edge cases
+   - `StorageCostFullTests` (5) — дни×ставка, free days, transfer_date, нет услуги→0, update_days_and_storage
+   - `RegenerateItemsTests` (6) — позиции от склада, markup для Company, группировка short_name, нет issuer, повторный вызов
+   - **Итого: 28 тестов, 28 OK, 0.277 секунды**
+
 **08.02.2026 - Замена print() на logging, очистка тестов:**
 1. **ЗАМЕНА PRINT → LOGGING:** ⚡ КАЧЕСТВО КОДА
    - ✅ ~28 print() заменены на logger.debug/error/warning в 5 файлах (signals, models, admin/car, admin/partners, forms)
@@ -566,7 +573,7 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 - `core/models_billing.py` — `transaction.atomic()`, исправление Decimal, удалён дубль `Transaction.save()`
 - `core/signals.py` — импорт `round_up_to_5` из `core/utils`
 - `core/utils.py` — функция `round_up_to_5()`
-- `core/tests.py` — 3 новых тест-класса
+- `core/tests.py` — 7 тест-классов (28 тестов): API, RoundUp, StorageCost, ServiceCache, THS, StorageFull, RegenerateItems
 - `core/admin/` — пакет из 5 файлов (вместо monolithic admin.py)
 
 **07.02.2026 - Система тарифов клиентов:**
