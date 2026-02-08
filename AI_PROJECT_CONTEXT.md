@@ -136,7 +136,12 @@ logist2/
 │   ├── models.py                   # Основные модели (Container, Car, Client, etc)
 │   ├── models_website.py           # Модели для клиентского сайта
 │   ├── models_billing.py           # Биллинг система
-│   ├── admin.py                    # Django Admin конфигурация
+│   ├── admin/                      # Django Admin конфигурация (пакет, с 08.02.2026)
+│   │   ├── __init__.py             # Импорт всех модулей
+│   │   ├── inlines.py              # Все inline-классы
+│   │   ├── container.py            # ContainerAdmin
+│   │   ├── car.py                  # CarAdmin
+│   │   └── partners.py             # Warehouse, Client, Company, Line, Carrier, AutoTransport
 │   ├── admin_website.py            # Admin для клиентского сайта
 │   ├── views.py                    # Views для админки
 │   ├── views_website.py            # Views для клиентского сайта
@@ -164,6 +169,8 @@ logist2/
 │   │   ├── test_invoice_markup.py
 │   │   ├── test_unload_date_inheritance.py
 │   │   └── update_container_statuses.py
+│   ├── utils.py                    # Утилиты (round_up_to_5, WebSocketBatcher, log_slow_queries)
+│   ├── tests.py                    # Unit-тесты (RoundUpTo5, StorageCost, ServiceCache)
 │   ├── services/                   # Бизнес-логика
 │   │   ├── ai_chat_service.py      # AI-помощник (контекст из БД)
 │   │   ├── admin_ai_agent.py       # AI-агент для админки (контекст + диагностика)
@@ -507,6 +514,49 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 ⚠️ **ВАЖНО:** После загрузки фотографий вручную (через команды от root) нужно исправить права доступа: `./fix_media_permissions.sh`
 
 ### Недавние изменения (февраль 2026):
+
+**08.02.2026 - Рефакторинг, оптимизация и тесты:**
+1. **РАЗБИЕНИЕ ADMIN.PY НА ПАКЕТ:** ⚡ РЕФАКТОРИНГ
+   - ✅ `core/admin.py` (3575 строк) разбит на пакет `core/admin/`:
+     - `__init__.py` — хаб импортов
+     - `inlines.py` — все inline-классы
+     - `container.py` — ContainerAdmin
+     - `car.py` — CarAdmin
+     - `partners.py` — WarehouseAdmin, ClientAdmin, CompanyAdmin, LineAdmin, CarrierAdmin, AutoTransportAdmin
+
+2. **УСТРАНЕНИЕ N+1 ЗАПРОСОВ:** ⚡ ОПТИМИЗАЦИЯ
+   - ✅ Кэш `_service_obj_cache` в CarService — запрос к БД делается один раз, далее из памяти
+   - ✅ `SERVICE_MODEL_MAP` + `_get_service_obj()` — единая точка получения объектов услуг
+   - ✅ Рефакторинг `get_service_name()`, `get_service_short_name()`, `get_default_price()`
+   - ✅ Оптимизация `total_price_display` — использует prefetched car_services и аннотацию `_total_markup`
+
+3. **УДАЛЕНИЕ ПОБОЧНЫХ ЭФФЕКТОВ:** ⚠️ ИСПРАВЛЕНИЕ
+   - ✅ Убраны вызовы `update_days_and_storage()` из display-методов админки
+   - Ранее: каждый просмотр списка ТС записывал данные в БД
+
+4. **ТРАНЗАКЦИОННАЯ БЕЗОПАСНОСТЬ:**
+   - ✅ `regenerate_items_from_cars()` обёрнут в `transaction.atomic()`
+
+5. **ИСПРАВЛЕНИЯ ВЫЧИСЛЕНИЙ:**
+   - ✅ `or Decimal('0')` → `if is not None` (баг: Decimal('0.00') — falsy)
+   - ✅ `round_up_to_5()` на чистой Decimal-арифметике (без float)
+   - ✅ Удалён дублированный `Transaction.save()`
+
+6. **UNIT-ТЕСТЫ:** ✅ НОВЫЙ ФУНКЦИОНАЛ
+   - `RoundUpTo5Tests` — округление (точные кратные, вверх, Decimal-точность)
+   - `StorageCostCalculationTests` — расчёт хранения
+   - `ServiceCacheTests` — кэш услуг (корректность, отсутствие повторных SQL)
+
+7. **ВЫНОС УТИЛИТ:**
+   - ✅ `round_up_to_5()` вынесена из `signals.py` в `core/utils.py`
+
+**Файлы:**
+- `core/models.py` — кэш `_service_obj_cache`, `SERVICE_MODEL_MAP`, `_get_service_obj()`
+- `core/models_billing.py` — `transaction.atomic()`, исправление Decimal, удалён дубль `Transaction.save()`
+- `core/signals.py` — импорт `round_up_to_5` из `core/utils`
+- `core/utils.py` — функция `round_up_to_5()`
+- `core/tests.py` — 3 новых тест-класса
+- `core/admin/` — пакет из 5 файлов (вместо monolithic admin.py)
 
 **07.02.2026 - Система тарифов клиентов:**
 1. **ТАРИФЫ КЛИЕНТОВ:** ⭐ НОВЫЙ ФУНКЦИОНАЛ
