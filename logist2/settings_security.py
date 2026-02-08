@@ -17,10 +17,10 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
             csp = (
                 "default-src 'self' https:; "
                 "img-src 'self' data: https:; "
-                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com; "
                 "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
                 "connect-src 'self' ws: wss: https:; "
-                "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net;"
+                "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net https://unpkg.com;"
             )
             response.setdefault('Content-Security-Policy', csp)
         return response
