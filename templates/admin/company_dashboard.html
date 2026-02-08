@@ -1,500 +1,501 @@
 {% extends "admin/base_site.html" %}
-{% load static i18n admin_extras %}
+{% load static i18n %}
 
-{% block title %}Дашборд Caromoto Lithuania{% endblock %}
+{% block title %}Dashboard — Caromoto Lithuania{% endblock %}
 
 {% block extrastyle %}
-    {{ block.super }}
-    <style>
-        .dashboard-container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        
-        .dashboard-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px;
-            border-radius: 15px;
-            margin-bottom: 30px;
-            text-align: center;
-        }
-        
-        .dashboard-header h1 {
-            margin: 0;
-            font-size: 2.5em;
-            font-weight: 300;
-        }
-        
-        .dashboard-header p {
-            margin: 10px 0 0 0;
-            font-size: 1.2em;
-            opacity: 0.9;
-        }
-        
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        
-        .stat-card {
-            background: white;
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            border-left: 5px solid #667eea;
-        }
-        
-        .stat-card h3 {
-            margin: 0 0 15px 0;
-            color: #333;
-            font-size: 1.1em;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        .stat-value {
-            font-size: 2.5em;
-            font-weight: bold;
-            margin: 0;
-        }
-        
-        .stat-positive { color: #28a745; }
-        .stat-negative { color: #dc3545; }
-        .stat-neutral { color: #6c757d; }
-        
-        .main-content {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 30px;
-            margin-bottom: 30px;
-        }
-        
-        .content-section {
-            background: white;
-            padding: 25px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        
-        .content-section h2 {
-            margin: 0 0 20px 0;
-            color: #333;
-            border-bottom: 2px solid #667eea;
-            padding-bottom: 10px;
-        }
-        
-        .transaction-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
-        }
-        
-        .transaction-table th,
-        .transaction-table td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #eee;
-        }
-        
-        .transaction-table th {
-            background-color: #f8f9fa;
-            font-weight: 600;
-            color: #495057;
-        }
-        
-        .transaction-table tr:hover {
-            background-color: #f8f9fa;
-        }
-        
-        .amount-positive { color: #28a745; font-weight: bold; }
-        .amount-negative { color: #dc3545; font-weight: bold; }
-        
-        .quick-actions {
-            display: grid;
-            gap: 15px;
-        }
-        
-        .action-btn {
-            display: block;
-            width: 100%;
-            padding: 15px;
-            background: #667eea;
-            color: white;
-            text-decoration: none;
-            border-radius: 8px;
-            text-align: center;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            border: 2px solid transparent;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-        }
-        
-        .action-btn:hover {
-            background: #5a6fd8;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-            border-color: rgba(255, 255, 255, 0.3);
-        }
-        
-        .action-btn.success { 
-            background: #28a745; 
-            color: white;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-        }
-        .action-btn.success:hover { 
-            background: #218838; 
-            color: white;
-        }
-        
-        .action-btn.warning { 
-            background: #ffc107; 
-            color: #212529; 
-            text-shadow: 0 1px 2px rgba(255, 255, 255, 0.5);
-        }
-        .action-btn.warning:hover { 
-            background: #e0a800; 
-            color: #212529;
-        }
-        
-        .action-btn.danger { 
-            background: #dc3545; 
-            color: white;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-        }
-        .action-btn.danger:hover { 
-            background: #c82333; 
-            color: white;
-        }
-        
-        /* Дополнительные стили для кнопок */
-        .action-btn.info { 
-            background: #17a2b8; 
-            color: white;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-        }
-        .action-btn.info:hover { 
-            background: #138496; 
-            color: white;
-        }
-        
-        .action-btn.secondary { 
-            background: #6c757d; 
-            color: white;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-        }
-        .action-btn.secondary:hover { 
-            background: #5a6268; 
-            color: white;
-        }
-        
-        /* Улучшенная типографика для кнопок */
-        .action-btn {
-            font-size: 14px;
-            letter-spacing: 0.5px;
-            line-height: 1.4;
-        }
-        
-        .balance-summary {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            color: white;
-            padding: 20px;
-            border-radius: 12px;
-            margin-bottom: 20px;
-        }
-        
-        .balance-summary h3 {
-            margin: 0 0 15px 0;
-            text-align: center;
-        }
-        
-        .balance-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 15px;
-        }
-        
-        .balance-item {
-            text-align: center;
-            padding: 15px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-        }
-        
-        .balance-item .amount {
-            font-size: 1.5em;
-            font-weight: bold;
-            margin: 5px 0;
-        }
-        
-        .balance-item .label {
-            font-size: 0.9em;
-            opacity: 0.9;
-        }
-        
-        .chart-container {
-            height: 300px;
-            background: #f8f9fa;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #6c757d;
-            font-style: italic;
-        }
-        
-        .recent-activity {
-            max-height: 400px;
-            overflow-y: auto;
-        }
-        
-        .activity-item {
-            padding: 12px;
-            border-bottom: 1px solid #eee;
-            display: flex;
-            align-items: center;
-        }
-        
-        .activity-item:last-child {
-            border-bottom: none;
-        }
-        
-        .activity-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: #667eea;
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 15px;
-            font-size: 1.2em;
-        }
-        
-        .activity-content h4 {
-            margin: 0 0 5px 0;
-            font-size: 1em;
-        }
-        
-        .activity-content p {
-            margin: 0;
-            color: #6c757d;
-            font-size: 0.9em;
-        }
-        
-        .activity-time {
-            margin-left: auto;
-            color: #999;
-            font-size: 0.8em;
-        }
-        
-        @media (max-width: 768px) {
-            .main-content {
-                grid-template-columns: 1fr;
-            }
-            
-            .stats-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .balance-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
+{{ block.super }}
+<style>
+    .dashboard-container {
+        max-width: 1500px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    /* ── Header banner ── */
+    .dashboard-header {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        color: #fff;
+        padding: 28px 35px;
+        border-radius: 14px;
+        margin-bottom: 28px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .dashboard-header h1 { margin: 0; font-size: 1.9em; font-weight: 400; }
+    .dashboard-header p  { margin: 5px 0 0; opacity: .8; font-size: 1.05em; }
+    .dashboard-header .header-right { text-align: right; font-size: .95em; opacity: .75; }
+
+    /* ── Section titles ── */
+    .section-title {
+        font-size: 1.15em;
+        font-weight: 600;
+        color: #333;
+        margin: 28px 0 14px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #0f3460;
+    }
+
+    /* ── KPI cards grid ── */
+    .kpi-grid {
+        display: grid;
+        gap: 16px;
+        margin-bottom: 10px;
+    }
+    .kpi-grid.operational { grid-template-columns: repeat(5, 1fr); }
+    .kpi-grid.financial   { grid-template-columns: repeat(3, 1fr); }
+
+    .kpi-card {
+        background: #fff;
+        padding: 18px 20px;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,.07);
+        border-left: 4px solid #6c757d;
+        position: relative;
+    }
+    .kpi-card .kpi-label {
+        font-size: .82em;
+        text-transform: uppercase;
+        letter-spacing: .4px;
+        color: #777;
+        margin-bottom: 6px;
+    }
+    .kpi-card .kpi-value {
+        font-size: 1.7em;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+    .kpi-card .kpi-sub {
+        font-size: .8em;
+        color: #999;
+        margin-top: 4px;
+    }
+
+    /* Status-colored borders */
+    .kpi-card.floating    { border-left-color: #2772a8; }
+    .kpi-card.in-port     { border-left-color: #8B0000; }
+    .kpi-card.unloaded    { border-left-color: #239f58; }
+    .kpi-card.transferred { border-left-color: #78458c; }
+    .kpi-card.storage     { border-left-color: #e67e22; }
+    .kpi-card.transport   { border-left-color: #2c3e50; }
+    .kpi-card.balance     { border-left-color: #0f3460; }
+    .kpi-card.revenue     { border-left-color: #28a745; }
+    .kpi-card.expense     { border-left-color: #dc3545; }
+    .kpi-card.profit      { border-left-color: #17a2b8; }
+    .kpi-card.outstanding { border-left-color: #ffc107; }
+    .kpi-card.overdue     { border-left-color: #dc3545; }
+
+    .val-positive { color: #28a745; }
+    .val-negative { color: #dc3545; }
+    .val-neutral  { color: #495057; }
+
+    /* ── Charts row ── */
+    .charts-row {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr;
+        gap: 20px;
+        margin-bottom: 28px;
+    }
+    .chart-box {
+        background: #fff;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,.07);
+    }
+    .chart-box h3 {
+        margin: 0 0 12px;
+        font-size: 1em;
+        color: #333;
+    }
+    .chart-box canvas { width: 100% !important; }
+
+    /* ── Tables row ── */
+    .tables-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-bottom: 28px;
+    }
+    .table-box {
+        background: #fff;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,.07);
+        overflow-x: auto;
+    }
+    .table-box h3 {
+        margin: 0 0 12px;
+        font-size: 1em;
+        color: #333;
+    }
+    .dash-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: .88em;
+    }
+    .dash-table th, .dash-table td {
+        padding: 9px 10px;
+        text-align: left;
+        border-bottom: 1px solid #eee;
+        white-space: nowrap;
+    }
+    .dash-table th {
+        background: #f8f9fa;
+        font-weight: 600;
+        color: #555;
+        position: sticky;
+        top: 0;
+    }
+    .dash-table tr:hover td { background: #f8f9fa; }
+    .dash-table .amount-in  { color: #28a745; font-weight: 600; }
+    .dash-table .amount-out { color: #dc3545; font-weight: 600; }
+
+    .table-scroll { max-height: 420px; overflow-y: auto; }
+
+    /* ── Status badges ── */
+    .status-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: .8em;
+        font-weight: 600;
+        color: #fff;
+    }
+    .status-DRAFT          { background: #6c757d; }
+    .status-ISSUED         { background: #007bff; }
+    .status-PARTIALLY_PAID { background: #ffc107; color: #333; }
+    .status-PAID           { background: #28a745; }
+    .status-OVERDUE        { background: #dc3545; }
+    .status-CANCELLED      { background: #343a40; }
+    .status-PENDING        { background: #ffc107; color: #333; }
+    .status-COMPLETED      { background: #28a745; }
+    .status-FAILED         { background: #dc3545; }
+
+    /* ── Quick actions ── */
+    .quick-actions-bar {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 28px;
+    }
+    .qa-btn {
+        display: inline-block;
+        padding: 10px 20px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: .9em;
+        color: #fff;
+        transition: opacity .2s, transform .15s;
+    }
+    .qa-btn:hover { opacity: .85; transform: translateY(-1px); color: #fff; }
+    .qa-btn.primary   { background: #0f3460; }
+    .qa-btn.success   { background: #28a745; }
+    .qa-btn.info      { background: #17a2b8; }
+    .qa-btn.warning   { background: #e67e22; }
+    .qa-btn.secondary { background: #6c757d; }
+
+    /* ── Responsive ── */
+    @media (max-width: 1100px) {
+        .charts-row { grid-template-columns: 1fr; }
+        .tables-row { grid-template-columns: 1fr; }
+        .kpi-grid.operational { grid-template-columns: repeat(3, 1fr); }
+        .kpi-grid.financial   { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 768px) {
+        .dashboard-header { flex-direction: column; text-align: center; }
+        .dashboard-header .header-right { text-align: center; margin-top: 10px; }
+        .kpi-grid.operational,
+        .kpi-grid.financial { grid-template-columns: 1fr; }
+        .quick-actions-bar { flex-direction: column; }
+    }
+</style>
 {% endblock %}
 
 {% block content %}
 <div class="dashboard-container">
-    <!-- Заголовок дашборда -->
+
+    <!-- ════════════════ HEADER ════════════════ -->
     <div class="dashboard-header">
-        <h1>🏢 Caromoto Lithuania</h1>
-        <p>Дашборд управления компанией</p>
-    </div>
-    
-    <!-- Основная статистика -->
-    <div class="stats-grid">
-        <div class="stat-card">
-            <h3>Общий баланс</h3>
-            <p class="stat-value {% if company_total_balance >= 0 %}stat-positive{% else %}stat-negative{% endif %}">
-                {% if company_total_balance >= 0 %}+{% endif %}{{ company_total_balance|floatformat:2 }} €
-            </p>
+        <div>
+            <h1>Caromoto Lithuania — Dashboard</h1>
+            <p>Оперативная сводка и финансы</p>
         </div>
-        
-        <div class="stat-card">
-            <h3>Прибыль за месяц</h3>
-            <p class="stat-value {% if monthly_profit >= 0 %}stat-positive{% else %}stat-negative{% endif %}">
-                {% if monthly_profit >= 0 %}+{% endif %}{{ monthly_profit|floatformat:2 }} €
-            </p>
-        </div>
-        
-        <div class="stat-card">
-            <h3>Расходы за месяц</h3>
-            <p class="stat-value stat-negative">
-                {{ monthly_expenses|floatformat:2 }} €
-            </p>
-        </div>
-        
-        <div class="stat-card">
-            <h3>Активные инвойсы</h3>
-            <p class="stat-value stat-neutral">
-                {{ active_invoices_count }}
-            </p>
+        <div class="header-right">
+            {% now "d.m.Y H:i" %}
         </div>
     </div>
-    
-    <!-- Основной контент -->
-    <div class="main-content">
-        <!-- Левая колонка -->
-        <div class="content-section">
-            <h2>📊 Сводка по балансам</h2>
-            <div class="balance-summary">
-                <h3>Текущие балансы</h3>
-                <div class="balance-grid">
-                    <div class="balance-item">
-                        <div class="amount {% if company.invoice_balance >= 0 %}stat-positive{% else %}stat-negative{% endif %}">
-                            {% if company.invoice_balance >= 0 %}+{% endif %}{{ company.invoice_balance|floatformat:2 }}
-                        </div>
-                        <div class="label">Инвойс-баланс</div>
-                    </div>
-                    <div class="balance-item">
-                        <div class="amount {% if company.cash_balance >= 0 %}stat-positive{% else %}stat-negative{% endif %}">
-                            {% if company.cash_balance >= 0 %}+{% endif %}{{ company.cash_balance|floatformat:2 }}
-                        </div>
-                        <div class="label">Наличные</div>
-                    </div>
-                    <div class="balance-item">
-                        <div class="amount {% if company.card_balance >= 0 %}stat-positive{% else %}stat-negative{% endif %}">
-                            {% if company.card_balance >= 0 %}+{% endif %}{{ company.card_balance|floatformat:2 }}
-                        </div>
-                        <div class="label">Безнал</div>
-                    </div>
-                </div>
-            </div>
-            
-            <h2>📈 График доходов и расходов</h2>
-            <div class="chart-container">
-                График будет добавлен в следующем обновлении
-            </div>
-            
-            <h2>💳 Последние транзакции</h2>
-            <div class="recent-activity">
-                {% if recent_transactions %}
-                    <table class="transaction-table">
-                        <thead>
-                            <tr>
-                                <th>Дата</th>
-                                <th>Тип</th>
-                                <th>Сумма</th>
-                                <th>От кого</th>
-                                <th>Кому</th>
-                                <th>Описание</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for transaction in recent_transactions %}
-                            <tr>
-                                <td>{{ transaction.created_at|date:"d.m.Y" }}</td>
-                                <td>{{ transaction.get_transaction_type_display }}</td>
-                                <td class="{% if transaction.amount > 0 %}amount-positive{% else %}amount-negative{% endif %}">
-                                    {% if transaction.amount > 0 %}+{% endif %}{{ transaction.amount|floatformat:2 }}
-                                </td>
-                                <td>{{ transaction.sender }}</td>
-                                <td>{{ transaction.recipient }}</td>
-                                <td>{{ transaction.description|default:"-" }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                {% else %}
-                    <p style="text-align: center; color: #6c757d; padding: 20px;">
-                        Пока нет транзакций
-                    </p>
-                {% endif %}
+
+    <!-- ════════════════ QUICK ACTIONS ════════════════ -->
+    <div class="quick-actions-bar">
+        <a href="{% url 'admin:core_newinvoice_add' %}" class="qa-btn success">+ Инвойс</a>
+        <a href="{% url 'admin:core_transaction_add' %}" class="qa-btn info">+ Транзакция</a>
+        <a href="{% url 'admin:core_newinvoice_changelist' %}" class="qa-btn primary">Все инвойсы</a>
+        <a href="{% url 'admin:core_transaction_changelist' %}" class="qa-btn primary">Все транзакции</a>
+        <a href="{% url 'comparison_dashboard' %}" class="qa-btn warning">Сравнение сумм</a>
+        {% if company %}
+        <a href="{% url 'admin:core_company_change' company.pk %}" class="qa-btn secondary">Компания</a>
+        {% endif %}
+    </div>
+
+    <!-- ════════════════ OPERATIONAL KPIs ════════════════ -->
+    <div class="section-title">Операционные показатели</div>
+    <div class="kpi-grid operational">
+        <div class="kpi-card floating">
+            <div class="kpi-label">Авто — В пути</div>
+            <div class="kpi-value" style="color:#2772a8">{{ cars_by_status.FLOATING }}</div>
+            <div class="kpi-sub">Конт: {{ containers_by_status.FLOATING }}</div>
+        </div>
+        <div class="kpi-card in-port">
+            <div class="kpi-label">Авто — В порту</div>
+            <div class="kpi-value" style="color:#8B0000">{{ cars_by_status.IN_PORT }}</div>
+            <div class="kpi-sub">Конт: {{ containers_by_status.IN_PORT }}</div>
+        </div>
+        <div class="kpi-card unloaded">
+            <div class="kpi-label">Авто — Разгружены</div>
+            <div class="kpi-value" style="color:#239f58">{{ cars_by_status.UNLOADED }}</div>
+            <div class="kpi-sub">Конт: {{ containers_by_status.UNLOADED }}</div>
+        </div>
+        <div class="kpi-card transferred">
+            <div class="kpi-label">Авто — Переданы</div>
+            <div class="kpi-value" style="color:#78458c">{{ cars_by_status.TRANSFERRED }}</div>
+            <div class="kpi-sub">Конт: {{ containers_by_status.TRANSFERRED }}</div>
+        </div>
+        <div class="kpi-card storage">
+            <div class="kpi-label">На хранении</div>
+            <div class="kpi-value val-neutral">{{ cars_on_storage.count }}</div>
+            <div class="kpi-sub">Хранение: {{ cars_on_storage.total_storage_cost|floatformat:2 }} €</div>
+        </div>
+    </div>
+    <div class="kpi-grid" style="grid-template-columns: repeat(5,1fr); margin-bottom:24px;">
+        <div class="kpi-card transport">
+            <div class="kpi-label">Активные тралы</div>
+            <div class="kpi-value val-neutral">{{ active_auto_transports }}</div>
+        </div>
+        <div class="kpi-card" style="border-left-color:#2772a8">
+            <div class="kpi-label">Всего авто</div>
+            <div class="kpi-value val-neutral">{{ cars_by_status.total }}</div>
+        </div>
+        <div class="kpi-card" style="border-left-color:#2772a8">
+            <div class="kpi-label">Всего контейнеров</div>
+            <div class="kpi-value val-neutral">{{ containers_by_status.total }}</div>
+        </div>
+        <div class="kpi-card" style="visibility:hidden"></div>
+        <div class="kpi-card" style="visibility:hidden"></div>
+    </div>
+
+    <!-- ════════════════ FINANCIAL KPIs ════════════════ -->
+    <div class="section-title">Финансовые показатели</div>
+    <div class="kpi-grid financial">
+        <div class="kpi-card balance">
+            <div class="kpi-label">Баланс компании</div>
+            <div class="kpi-value {% if company_balance >= 0 %}val-positive{% else %}val-negative{% endif %}">
+                {{ company_balance|floatformat:2 }} €
             </div>
         </div>
-        
-        <!-- Правая колонка -->
-        <div class="content-section">
-            <h2>⚡ Быстрые действия</h2>
-            <div class="quick-actions">
-                <a href="{% url 'admin:core_payment_add' %}?sender_content_type={{ company_content_type_id }}&sender_object_id={{ company.id }}" class="action-btn success">
-                    💰 Создать платеж
-                </a>
-                
-                <a href="{% url 'admin:core_invoice_add' %}" class="action-btn info">
-                    📄 Создать инвойс
-                </a>
-                
-                <a href="{% url 'admin:core_company_change' company.id %}" class="action-btn warning">
-                    ⚙️ Редактировать компанию
-                </a>
-                
-                <a href="{% url 'admin:core_payment_changelist' %}" class="action-btn secondary">
-                    📋 Все платежи
-                </a>
-                
-                <a href="{% url 'admin:core_invoice_changelist' %}" class="action-btn secondary">
-                    📊 Все инвойсы
-                </a>
-                
-                <a href="{% url 'admin:core_payment_changelist' %}" class="action-btn secondary">
-                    💳 Все платежи
-                </a>
-                
-                <a href="{% url 'comparison_dashboard' %}" class="action-btn primary">
-                    🔍 Сравнение сумм
-                </a>
+        <div class="kpi-card revenue">
+            <div class="kpi-label">Доходы (месяц)</div>
+            <div class="kpi-value val-positive">+{{ monthly_revenue|floatformat:2 }} €</div>
+        </div>
+        <div class="kpi-card expense">
+            <div class="kpi-label">Расходы (месяц)</div>
+            <div class="kpi-value val-negative">-{{ monthly_expenses|floatformat:2 }} €</div>
+        </div>
+        <div class="kpi-card profit">
+            <div class="kpi-label">Прибыль (месяц)</div>
+            <div class="kpi-value {% if monthly_profit >= 0 %}val-positive{% else %}val-negative{% endif %}">
+                {{ monthly_profit|floatformat:2 }} €
             </div>
-            
-                                    <h2 style="margin-top: 30px;">📋 Активные инвойсы</h2>
-                        <div class="recent-activity">
-                            {% if active_invoices %}
-                                {% for invoice in active_invoices %}
-                                <div class="activity-item">
-                                    <div class="activity-icon">📄</div>
-                                    <div class="activity-content">
-                                        <h4>{{ invoice.number }}</h4>
-                                        <p>{% if invoice.client %}{{ invoice.client.name }}{% else %}Склад{% endif %} - {{ invoice.total_amount|floatformat:2 }} €</p>
-                                    </div>
-                                    <div class="activity-time">
-                                        {{ invoice.issue_date|date:"d.m" }}
-                                    </div>
-                                </div>
-                                {% endfor %}
-                            {% else %}
-                                <p style="text-align: center; color: #6c757d; padding: 20px;">
-                                    Нет активных инвойсов
-                                </p>
-                            {% endif %}
-                        </div>
-            
-            <h2 style="margin-top: 30px;">🔔 Последние действия</h2>
-            <div class="recent-activity">
-                {% if recent_activities %}
-                    {% for activity in recent_activities %}
-                    <div class="activity-item">
-                        <div class="activity-icon">{{ activity.icon }}</div>
-                        <div class="activity-content">
-                            <h4>{{ activity.title }}</h4>
-                            <p>{{ activity.description }}</p>
-                        </div>
-                        <div class="activity-time">
-                            {{ activity.time|date:"H:i" }}
-                        </div>
-                    </div>
+        </div>
+        <div class="kpi-card outstanding">
+            <div class="kpi-label">К получению</div>
+            <div class="kpi-value val-neutral">{{ outstanding_invoices.total|floatformat:2 }} €</div>
+            <div class="kpi-sub">{{ outstanding_invoices.count }} инвойсов</div>
+        </div>
+        <div class="kpi-card overdue">
+            <div class="kpi-label">Просроченные</div>
+            <div class="kpi-value {% if overdue_invoices_count > 0 %}val-negative{% else %}val-positive{% endif %}">
+                {{ overdue_invoices_count }}
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════ CHARTS ════════════════ -->
+    <div class="section-title">Графики</div>
+    <div class="charts-row">
+        <div class="chart-box">
+            <h3>Доходы и расходы (6 мес.)</h3>
+            <canvas id="revenueExpensesChart" height="260"></canvas>
+        </div>
+        <div class="chart-box">
+            <h3>Авто по статусам</h3>
+            <canvas id="carsChart" height="260"></canvas>
+        </div>
+        <div class="chart-box">
+            <h3>Инвойсы по статусам</h3>
+            <canvas id="invoicesChart" height="260"></canvas>
+        </div>
+    </div>
+
+    <!-- ════════════════ RECENT TABLES ════════════════ -->
+    <div class="section-title">Последние операции</div>
+    <div class="tables-row">
+        <!-- Recent Transactions -->
+        <div class="table-box">
+            <h3>Транзакции (последние 15)</h3>
+            <div class="table-scroll">
+                <table class="dash-table">
+                    <thead>
+                        <tr>
+                            <th>Дата</th>
+                            <th>Номер</th>
+                            <th>Тип</th>
+                            <th>Сумма</th>
+                            <th>Отправитель</th>
+                            <th>Получатель</th>
+                            <th>Статус</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for t in recent_transactions %}
+                        <tr>
+                            <td>{{ t.date|date:"d.m.Y" }}</td>
+                            <td>{{ t.number }}</td>
+                            <td>{{ t.get_type_display }}</td>
+                            <td class="amount-in">{{ t.amount|floatformat:2 }} €</td>
+                            <td>{{ t.sender_name }}</td>
+                            <td>{{ t.recipient_name }}</td>
+                            <td><span class="status-badge status-{{ t.status }}">{{ t.get_status_display }}</span></td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="7" style="text-align:center;color:#999;padding:20px">Нет транзакций</td></tr>
                     {% endfor %}
-                {% else %}
-                    <p style="text-align: center; color: #6c757d; padding: 20px;">
-                        Нет последних действий
-                    </p>
-                {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Recent Invoices -->
+        <div class="table-box">
+            <h3>Инвойсы (последние 15)</h3>
+            <div class="table-scroll">
+                <table class="dash-table">
+                    <thead>
+                        <tr>
+                            <th>Дата</th>
+                            <th>Номер</th>
+                            <th>Получатель</th>
+                            <th>Сумма</th>
+                            <th>Оплачено</th>
+                            <th>Статус</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for inv in recent_invoices %}
+                        <tr>
+                            <td>{{ inv.date|date:"d.m.Y" }}</td>
+                            <td><a href="{% url 'admin:core_newinvoice_change' inv.pk %}">{{ inv.number }}</a></td>
+                            <td>{{ inv.recipient_name }}</td>
+                            <td>{{ inv.total|floatformat:2 }} €</td>
+                            <td>{{ inv.paid_amount|floatformat:2 }} €</td>
+                            <td><span class="status-badge status-{{ inv.status }}">{{ inv.get_status_display }}</span></td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="6" style="text-align:center;color:#999;padding:20px">Нет инвойсов</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
+
 </div>
+
+<!-- Chart.js 4.x CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+
+{{ revenue_expenses_chart_json|json_script:"rev-exp-data" }}
+{{ cars_by_status_json|json_script:"cars-data" }}
+{{ invoices_by_status_json|json_script:"invoices-data" }}
+
+<script>
+(function() {
+    /* ── helpers ── */
+    function parseJSON(id) {
+        var el = document.getElementById(id);
+        return el ? JSON.parse(el.textContent) : {};
+    }
+
+    var STATUS_COLORS = {
+        FLOATING: '#2772a8', IN_PORT: '#8B0000', UNLOADED: '#239f58', TRANSFERRED: '#78458c'
+    };
+    var INV_COLORS = {
+        DRAFT: '#6c757d', ISSUED: '#007bff', PARTIALLY_PAID: '#ffc107',
+        PAID: '#28a745', OVERDUE: '#dc3545', CANCELLED: '#343a40'
+    };
+    var INV_LABELS = {
+        DRAFT: 'Черновик', ISSUED: 'Выставлен', PARTIALLY_PAID: 'Част. оплачен',
+        PAID: 'Оплачен', OVERDUE: 'Просрочен', CANCELLED: 'Отменён'
+    };
+    var CAR_LABELS = {
+        FLOATING: 'В пути', IN_PORT: 'В порту', UNLOADED: 'Разгружен', TRANSFERRED: 'Передан'
+    };
+
+    /* ── Revenue / Expenses bar chart ── */
+    var reData = parseJSON('rev-exp-data');
+    if (reData.labels) {
+        new Chart(document.getElementById('revenueExpensesChart'), {
+            type: 'bar',
+            data: {
+                labels: reData.labels,
+                datasets: [
+                    { label: 'Доходы', data: reData.revenue, backgroundColor: 'rgba(40,167,69,.7)', borderRadius: 4 },
+                    { label: 'Расходы', data: reData.expenses, backgroundColor: 'rgba(220,53,69,.7)', borderRadius: 4 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'top' } },
+                scales: { y: { beginAtZero: true, ticks: { callback: function(v){ return v.toLocaleString() + ' €'; } } } }
+            }
+        });
+    }
+
+    /* ── Cars doughnut ── */
+    var carsData = parseJSON('cars-data');
+    var carKeys = Object.keys(carsData);
+    if (carKeys.length) {
+        new Chart(document.getElementById('carsChart'), {
+            type: 'doughnut',
+            data: {
+                labels: carKeys.map(function(k){ return CAR_LABELS[k] || k; }),
+                datasets: [{
+                    data: carKeys.map(function(k){ return carsData[k]; }),
+                    backgroundColor: carKeys.map(function(k){ return STATUS_COLORS[k] || '#ccc'; })
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+        });
+    }
+
+    /* ── Invoices doughnut ── */
+    var invData = parseJSON('invoices-data');
+    var invKeys = Object.keys(invData);
+    if (invKeys.length) {
+        new Chart(document.getElementById('invoicesChart'), {
+            type: 'doughnut',
+            data: {
+                labels: invKeys.map(function(k){ return INV_LABELS[k] || k; }),
+                datasets: [{
+                    data: invKeys.map(function(k){ return invData[k]; }),
+                    backgroundColor: invKeys.map(function(k){ return INV_COLORS[k] || '#ccc'; })
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+        });
+    }
+})();
+</script>
 {% endblock %}

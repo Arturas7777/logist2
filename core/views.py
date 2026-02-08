@@ -228,104 +228,20 @@ def register_payment(request):
 
 @staff_member_required
 def company_dashboard(request):
-    """Дашборд для Caromoto Lithuania с кэшированием"""
-    
-    # Получаем кэшированную статистику компании
-    stats = cache_company_stats()
-    
-    if not stats:
-        # Fallback к прямому запросу если кэш недоступен
-        company = get_object_or_404(Company, name="Caromoto Lithuania")
-        
-        # Получаем текущий месяц
-        now = timezone.now()
-        start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        
-        # Общий баланс компании
-        company_total_balance = company.invoice_balance + company.cash_balance + company.card_balance
-        
-        # Прибыль за месяц (входящие платежи)
-        monthly_income = Payment.objects.filter(
-            to_company=company,
-            date__gte=start_of_month
-        ).aggregate(total=Sum('amount'))['total'] or 0
-        
-        # Расходы за месяц (исходящие платежи)
-        monthly_expenses = Payment.objects.filter(
-            from_company=company,
-            date__gte=start_of_month
-        ).aggregate(total=Sum('amount'))['total'] or 0
-        
-        # Прибыль за месяц
-        monthly_profit = monthly_income - monthly_expenses
-        
-        # Количество активных инвойсов (неоплаченные и частично оплаченные)
-        active_invoices_count = Invoice.objects.filter(
-            paid=False
-        ).count()
-        
-        # Последние транзакции (последние 20)
-        recent_transactions = Payment.objects.filter(
-            Q(from_company=company) | Q(to_company=company)
-        ).order_by('-date')[:20]
-        
-        # Активные инвойсы (неоплаченные и частично оплаченные)
-        active_invoices = Invoice.objects.filter(
-            paid=False
-        ).order_by('-issue_date')[:10]
-    else:
-        # Используем кэшированные данные
-        company_total_balance = stats['company']['total_balance']
-        monthly_profit = stats['monthly']['payments']['total_amount'] - stats['monthly']['invoices']['total_amount']
-        monthly_expenses = stats['monthly']['invoices']['total_amount']
-        active_invoices_count = stats['monthly']['invoices']['count']
-        
-        # Получаем компанию для дополнительных данных
-        company = get_object_or_404(Company, name="Caromoto Lithuania")
-        
-        # Последние транзакции (последние 20) - не кэшируем для актуальности
-        recent_transactions = Payment.objects.filter(
-            Q(from_company=company) | Q(to_company=company)
-        ).order_by('-date')[:20]
-        
-        # Активные инвойсы (неоплаченные и частично оплаченные) - не кэшируем для актуальности
-        active_invoices = Invoice.objects.filter(
-            paid=False
-        ).order_by('-issue_date')[:10]
-    
-    # Последние действия (имитация)
-    recent_activities = [
-        {
-            'icon': '💰',
-            'title': 'Платеж получен',
-            'description': f'От клиента на сумму {monthly_income:.2f} €',
-            'time': now
-        },
-        {
-            'icon': '📄',
-            'title': 'Инвойс создан',
-            'description': f'Новый инвойс #{active_invoices_count + 1}',
-            'time': now - timedelta(hours=2)
-        },
-        {
-            'icon': '💳',
-            'title': 'Транзакция баланса',
-            'description': 'Обновление баланса компании',
-            'time': now - timedelta(hours=4)
-        }
-    ]
-    
-    context = {
-        'company': company,
-        'company_total_balance': company_total_balance,
-        'monthly_profit': monthly_profit,
-        'monthly_expenses': monthly_expenses,
-        'active_invoices_count': active_invoices_count,
-        'recent_transactions': recent_transactions,
-        'active_invoices': active_invoices,
-        'recent_activities': recent_activities,
-    }
-    
+    """Дашборд для Caromoto Lithuania"""
+    import json
+    from .services.dashboard_service import DashboardService
+
+    service = DashboardService()
+    context = service.get_full_dashboard_context()
+
+    # Serialize chart data for json_script template tag
+    context['revenue_expenses_chart_json'] = json.dumps(context['revenue_expenses_chart'])
+    context['invoices_by_status_json'] = json.dumps(context['invoices_by_status'])
+    context['cars_by_status_json'] = json.dumps({
+        k: v for k, v in context['cars_by_status'].items() if k != 'total'
+    })
+
     return render(request, 'admin/company_dashboard.html', context)
 
 @staff_member_required
