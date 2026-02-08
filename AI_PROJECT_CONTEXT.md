@@ -1143,6 +1143,24 @@ ssh root@server "cd /path; source .venv/bin/activate; python manage.py showmigra
 19. **Celery** - на production нужен отдельный воркер: `celery -A logist2 worker --loglevel=info`; локально работает синхронно через `CELERY_TASK_ALWAYS_EAGER`
 20. **Rate Limiting** - track_shipment: 20/мин, ai_chat: 10/мин (настраивается в `REST_FRAMEWORK` settings)
 21. **SESSION_COOKIE_HTTPONLY** - включён (True) для защиты от XSS-доступа к сессионным cookie
+22. **Revolut API** - токены зашифрованы в БД (Fernet), access_token обновляется автоматически каждые ~40 мин
+23. **Банковская синхронизация** - cron `*/15 * * * *` запускает `sync_bank_accounts`, лог в `/var/log/logist2/bank_sync.log`
+24. **Пути на VPS** - рабочий каталог gunicorn: `/var/www/www-root/data/www/logist2/` (НЕ `/var/www/logist2/`!)
+25. **JWT для Revolut** - истекает через 90 дней, пересоздать: `python manage.py setup_revolut --private-key certs/privatecert.pem`
+26. **CSP заголовки** - настроены в `logist2/settings_security.py`, при добавлении новых CDN нужно добавить домен в CSP
+
+## БАНКОВСКИЕ ИНТЕГРАЦИИ
+
+### Revolut Business API
+- **Статус:** Подключён (Production)
+- **Модели:** `core/models_banking.py` — BankConnection, BankAccount, BankTransaction
+- **Сервис:** `core/services/revolut_service.py` — RevolutService (авторизация, sync)
+- **Admin:** `core/admin_banking.py` — управление подключениями, кнопка "Синхронизировать"
+- **Дашборд:** секция "Банковские счета" (KPI) + таблица "Банковские операции"
+- **Cron:** `*/15 * * * *` → `sync_bank_accounts` → лог `/var/log/logist2/bank_sync.log`
+- **Сертификаты:** `/var/www/www-root/data/www/logist2/certs/` (в .gitignore)
+- **Настройка:** `python manage.py setup_revolut` (интерактивный помощник)
+- **Ручной sync:** `python manage.py sync_bank_accounts` или через Django Admin
 
 ## БЫСТРЫЕ КОМАНДЫ
 
