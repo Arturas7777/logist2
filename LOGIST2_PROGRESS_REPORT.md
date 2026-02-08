@@ -806,6 +806,7 @@ total_markup_sum = queryset.aggregate(
 
 | Дата | Описание |
 |------|----------|
+| 08.02.2026 | Добавлены 19 unit-тестов: THS расчёт, хранение (дни×ставка), regenerate_items_from_cars (markup, группировка) |
 | 08.02.2026 | Замена print() на logging во всём core/ (signals, models, admin, forms) |
 | 08.02.2026 | Очистка тестов: удалены 4 устаревших теста (старый API биллинга), 9/9 pass |
 | 08.02.2026 | Разбиение admin.py (3575 строк) на пакет admin/ из 4 модулей |
@@ -885,6 +886,29 @@ total_markup_sum = queryset.aggregate(
 | `StorageCostCalculationTests` | 2 | Без склада → 0, без даты разгрузки → 0 |
 | `ServiceCacheTests` | 3 | Корректное имя, кэш без повторных SQL, несуществующая услуга |
 | `APIPermissionsTests` | 1 | API требует авторизацию staff |
+
+---
+
+### 31. Расширение покрытия тестами: THS, хранение, инвойсы (08.02.2026)
+
+**Статус:** Завершено
+
+**Цель:** Покрыть тестами критические бизнес-функции, которые ранее не были протестированы.
+
+**Добавлено 19 новых тестов** (было 9, стало 28):
+
+| Тест-класс | Тестов | Что проверяет |
+|---|---|---|
+| `THSCalculationTests` | 8 | Пропорциональное распределение THS по коэффициентам типов ТС, округление до 5, дефолтный коэффициент 1.0, edge cases (нет контейнера/линии/THS/машин), одна машина |
+| `StorageCostFullTests` | 5 | Расчёт платных дней × ставка из услуги "Хранение", бесплатные дни, transfer_date для TRANSFERRED, нет услуги → 0, update_days_and_storage |
+| `RegenerateItemsTests` | 6 | Создание позиций от склада, markup для Company (+10 EUR), исключение markup для склада, группировка по short_name, нет issuer → 0 позиций, повторный вызов удаляет старые |
+
+**Покрытые функции:**
+- `calculate_ths_for_container()` — `core/signals.py:222`
+- `calculate_storage_cost()` / `update_days_and_storage()` — `core/models.py:965` / `core/models.py:783`
+- `_regenerate_items_from_cars_inner()` — `core/models_billing.py:587`
+
+**Результат:** 28 тестов, 28 OK, 0 ошибок, 0.277 секунды
 
 ---
 
