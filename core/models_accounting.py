@@ -43,6 +43,16 @@ class SiteProConnection(models.Model):
         blank=True, default='', db_column='sp_password',
         verbose_name='Password (encrypted)',
     )
+    _api_key = models.TextField(
+        blank=True, default='', db_column='sp_api_key',
+        verbose_name='API Key (encrypted)',
+        help_text='API raktas из настроек site.pro',
+    )
+    _private_key = models.TextField(
+        blank=True, default='', db_column='sp_private_key',
+        verbose_name='Private Key (encrypted)',
+        help_text='Privatus raktas из настроек site.pro',
+    )
     _access_token = models.TextField(
         blank=True, default='', db_column='sp_access_token',
         verbose_name='Access Token (encrypted)',
@@ -117,6 +127,22 @@ class SiteProConnection(models.Model):
         self._password = encrypt_value(value)
 
     @property
+    def api_key(self):
+        return decrypt_value(self._api_key)
+
+    @api_key.setter
+    def api_key(self, value):
+        self._api_key = encrypt_value(value)
+
+    @property
+    def private_key(self):
+        return decrypt_value(self._private_key)
+
+    @private_key.setter
+    def private_key(self, value):
+        self._private_key = encrypt_value(value)
+
+    @property
     def access_token(self):
         return decrypt_value(self._access_token)
 
@@ -132,7 +158,8 @@ class SiteProConnection(models.Model):
 
     @property
     def base_url(self):
-        return 'https://api.sitepro.com'
+        """Accounting API base URL (не путать с api.sitepro.com — это builder API)."""
+        return 'https://site.pro/My-Accounting/api'
 
 
 # ============================================================================

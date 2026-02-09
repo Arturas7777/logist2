@@ -2,17 +2,22 @@
 Сервис для работы с site.pro (b1.lt) Accounting API
 ====================================================
 
-Основные возможности:
-- Аутентификация через username/password → access_token
-- Создание/синхронизация клиентов
-- Отправка инвойсов (sales.create / orders.create-sale)
-- Получение PDF-ссылки на инвойс
+Реальный API: https://site.pro/My-Accounting/api/
+Аутентификация: заголовок B1-Api-Key
 
-API Reference: https://api.sitepro.com/docs/index
+Основные возможности:
+- Создание/поиск клиентов (client/clients)
+- Создание продаж / инвойсов (sale/sales)
+- Добавление позиций (sale/sale-items)
+- Получение PDF инвойсов
+- Банковские операции (bank/sale-invoice/payment)
+
+Документация: https://site.pro/My-Accounting/doc/api
 """
 
 import requests
 import logging
+import json
 from datetime import timedelta
 from decimal import Decimal
 from django.utils import timezone
@@ -30,17 +35,51 @@ class SiteProAPIError(Exception):
 
 
 class SiteProService:
-    """Клиент для site.pro Accounting API."""
+    """
+    Клиент для site.pro Accounting API.
+    
+    Аутентификация через B1-Api-Key заголовок.
+    Base URL: https://site.pro/My-Accounting/api
+    """
 
-    TOKEN_ENDPOINT = '/token'
-    RECORD_TOKEN_ENDPOINT = '/Account/RecordToken'
+    # ─── Эндпоинты ───────────────────────────────────────────────────────
+    # Продажи (инвойсы) — через warehouse module
+    SALES_CREATE = '/warehouse/sales/create'
+    SALES_UPDATE = '/warehouse/sales/update'
+    SALES_LIST = '/warehouse/sales/list'
+    SALES_DELETE = '/warehouse/sales/delete'
+    SALE_ITEMS_CREATE = '/warehouse/sale-items/create'
+    SALE_ITEMS_CREATE_SIMPLE = '/warehouse/sale-items/create-simple'
+    SALE_ITEMS_LIST = '/warehouse/sale-items/list'
+    SALE_ITEMS_UPDATE = '/warehouse/sale-items/update'
+    SALE_ITEMS_DELETE = '/warehouse/sale-items/delete'
+    SALE_INVOICE_GET = '/warehouse/invoices/get-sale'
+    SALE_REPORT_GENERATE = '/warehouse/sale-reports/generate'
 
-    # Эндпоинты для работы с данными (Custom API)
-    SALES_CREATE_ENDPOINT = '/api/sales/create'
-    ORDERS_CREATE_SALE_ENDPOINT = '/api/orders/create-sale'
-    CLIENT_CREATE_ENDPOINT = '/api/client/create'
-    INVOICES_GET_ENDPOINT = '/api/invoices/get'
-    ITEMS_CREATE_ENDPOINT = '/api/items/create'
+    # Клиенты
+    CLIENTS_CREATE = '/clients/create'
+    CLIENTS_UPDATE = '/clients/update'
+    CLIENTS_LIST = '/clients/list'
+    CLIENTS_DELETE = '/clients/delete'
+    CLIENT_BALANCE = '/client/sales/balance'
+
+    # Банковские операции
+    BANK_SALE_PAYMENT = '/bank/sale-invoice/payment'
+
+    # Товары/услуги (справочник)
+    ITEMS_CREATE = '/reference-book/items/create'
+    ITEMS_LIST = '/reference-book/items/list'
+
+    # Файлы
+    FILE_UPLOAD = '/account/file-storage/upload'
+
+    # Справочники
+    VAT_RATES_LIST = '/reference-book/vat-rates/list'
+    CURRENCIES_LIST = '/reference-book/currencies/list'
+    SERIES_LIST = '/reference-book/series/list'
+
+    # E-commerce (альтернативный путь создания)
+    ECOMMERCE_ORDERS_CREATE_SALE = '/e-commerce/orders/create-sale'
 
     def __init__(self, connection):
         """
@@ -52,171 +91,59 @@ class SiteProService:
         self._session = requests.Session()
 
     # ========================================================================
-    # TOKEN MANAGEMENT
+    # AUTHENTICATION — B1-Api-Key header
     # ========================================================================
 
-    def _get_valid_token(self) -> str:
-        """
-        Возвращает валидный access_token.
-        Если текущий истёк — получает новый через username/password.
-        """
-        if not self.connection.is_token_expired:
-            return self.connection.access_token
+    def _get_api_key(self) -> str:
+        """Возвращает API ключ для заголовка B1-Api-Key."""
+        api_key = self.connection.api_key
+        if not api_key:
+            raise SiteProAPIError(
+                'API ключ не задан. Введите API raktas в настройках подключения site.pro.'
+            )
+        return api_key
 
-        logger.info(f'[SitePro] Access token истёк для {self.connection}, обновляем...')
-        return self._authenticate()
-
-    def _authenticate(self) -> str:
-        """
-        Аутентификация через username/password.
-        
-        Шаг 1: POST /token → получаем access_token
-        Шаг 2: POST /Account/RecordToken → регистрируем токен
-        """
-        url = f'{self.base_url}{self.TOKEN_ENDPOINT}'
-
-        data = {
-            'grant_type': 'password',
-            'NeedsUserProfile': '0',
-            'UserName': self.connection.username,
-            'Password': self.connection.password,
+    def _get_headers(self) -> dict:
+        """Формирует стандартные заголовки для API запроса."""
+        return {
+            'B1-Api-Key': self._get_api_key(),
+            'Content-Type': 'application/json',
         }
 
-        try:
-            resp = self._session.post(
-                url,
-                data=data,
-                headers={'Content-Type': 'application/x-www-form-urlencoded'},
-                timeout=30,
-            )
-            resp.raise_for_status()
-        except requests.RequestException as e:
-            error_msg = f'Ошибка аутентификации: {e}'
-            if hasattr(e, 'response') and e.response is not None:
-                error_msg += f' | Response: {e.response.text[:500]}'
-            logger.error(f'[SitePro] {error_msg}')
-            self.connection.last_error = error_msg[:500]
-            self.connection.save(update_fields=['last_error', 'updated_at'])
-            raise SiteProAPIError(error_msg, getattr(e.response, 'status_code', None))
+    # ========================================================================
+    # HTTP METHODS
+    # ========================================================================
 
-        body = resp.json()
-        new_token = body.get('access_token', '')
-        expires_in = body.get('expires_in', 3600)
-
-        if not new_token:
-            error_msg = f'Пустой access_token в ответе: {body}'
-            logger.error(f'[SitePro] {error_msg}')
-            raise SiteProAPIError(error_msg)
-
-        # Сохраняем данные пользователя из ответа
-        sitepro_user_id = str(body.get('siteprouserid', ''))
-        sitepro_company_id = str(body.get('spcoid', ''))
-
-        # Регистрируем токен (шаг 2)
-        self._record_token(new_token)
-
-        # Сохраняем токен в БД
-        self.connection.access_token = new_token
-        self.connection.access_token_expires_at = timezone.now() + timedelta(seconds=expires_in - 60)
-        if sitepro_user_id:
-            self.connection.sitepro_user_id = sitepro_user_id
-        if sitepro_company_id:
-            self.connection.sitepro_company_id = sitepro_company_id
-        self.connection.last_error = ''
-        self.connection.save(update_fields=[
-            '_access_token', 'access_token_expires_at',
-            'sitepro_user_id', 'sitepro_company_id',
-            'last_error', 'updated_at',
-        ])
-
-        logger.info(f'[SitePro] Аутентификация успешна, токен истекает через {expires_in}с')
-        return new_token
-
-    def _record_token(self, token: str):
-        """Регистрирует токен в site.pro (обязательный шаг после получения)."""
-        url = f'{self.base_url}{self.RECORD_TOKEN_ENDPOINT}'
-
-        try:
-            resp = self._session.post(
-                url,
-                headers={'Authorization': f'bearer {token}'},
-                timeout=30,
-            )
-            resp.raise_for_status()
-            logger.debug(f'[SitePro] Токен зарегистрирован')
-        except requests.RequestException as e:
-            # Не фатально — логируем предупреждение
-            logger.warning(f'[SitePro] Ошибка регистрации токена: {e}')
-
-    def _get_auth_headers(self) -> dict:
-        token = self._get_valid_token()
-        return {'Authorization': f'bearer {token}'}
-
-    def _api_get(self, endpoint: str, params: dict = None) -> dict | list:
-        """Выполняет GET-запрос к site.pro API с авторизацией."""
+    def _api_post(self, endpoint: str, json_data: dict = None) -> dict:
+        """
+        Выполняет POST-запрос к site.pro Accounting API.
+        
+        Args:
+            endpoint: путь к API (например '/sale/sales/create')
+            json_data: данные для отправки
+            
+        Returns:
+            dict с ответом API
+        """
         url = f'{self.base_url}{endpoint}'
-        try:
-            resp = self._session.get(
-                url,
-                headers=self._get_auth_headers(),
-                params=params,
-                timeout=30,
-            )
-            # При 401 — пробуем переаутентифицироваться
-            if resp.status_code == 401:
-                logger.warning('[SitePro] 401 Unauthorized, пробуем переаутентифицироваться...')
-                self.connection.access_token_expires_at = None
-                self.connection.save(update_fields=['access_token_expires_at'])
-                resp = self._session.get(
-                    url,
-                    headers=self._get_auth_headers(),
-                    params=params,
-                    timeout=30,
-                )
-            resp.raise_for_status()
-            return resp.json()
-        except requests.RequestException as e:
-            status = getattr(e.response, 'status_code', None) if hasattr(e, 'response') else None
-            body = None
-            if hasattr(e, 'response') and e.response is not None:
-                try:
-                    body = e.response.json()
-                except Exception:
-                    body = e.response.text
-            error_msg = f'API GET {endpoint} ошибка: {e}'
-            logger.error(f'[SitePro] {error_msg}')
-            raise SiteProAPIError(error_msg, status, body)
+        payload = json.dumps(json_data or {})
 
-    def _api_post(self, endpoint: str, json_data: dict = None) -> dict | list:
-        """Выполняет POST-запрос к site.pro API с авторизацией."""
-        url = f'{self.base_url}{endpoint}'
         try:
-            headers = self._get_auth_headers()
-            headers['Content-Type'] = 'application/json'
             resp = self._session.post(
                 url,
-                headers=headers,
-                json=json_data,
+                headers={
+                    **self._get_headers(),
+                    'Content-Length': str(len(payload)),
+                },
+                data=payload,
                 timeout=30,
             )
-            # При 401 — пробуем переаутентифицироваться
-            if resp.status_code == 401:
-                logger.warning('[SitePro] 401 Unauthorized, пробуем переаутентифицироваться...')
-                self.connection.access_token_expires_at = None
-                self.connection.save(update_fields=['access_token_expires_at'])
-                headers = self._get_auth_headers()
-                headers['Content-Type'] = 'application/json'
-                resp = self._session.post(
-                    url,
-                    headers=headers,
-                    json=json_data,
-                    timeout=30,
-                )
             resp.raise_for_status()
-            # Некоторые эндпоинты могут возвращать пустой ответ
+
             if resp.content:
                 return resp.json()
             return {}
+
         except requests.RequestException as e:
             status = getattr(e.response, 'status_code', None) if hasattr(e, 'response') else None
             body = None
@@ -224,8 +151,10 @@ class SiteProService:
                 try:
                     body = e.response.json()
                 except Exception:
-                    body = e.response.text
+                    body = e.response.text[:500] if e.response.text else None
             error_msg = f'API POST {endpoint} ошибка: {e}'
+            if body:
+                error_msg += f' | Response: {body}'
             logger.error(f'[SitePro] {error_msg}')
             raise SiteProAPIError(error_msg, status, body)
 
@@ -236,38 +165,92 @@ class SiteProService:
     def test_connection(self) -> dict:
         """
         Проверяет подключение к site.pro.
-        Возвращает dict с результатом.
+        Делает простой запрос к /sale/vat-rates/list для проверки.
+        
+        Returns:
+            dict с результатом: success, error, details
         """
         result = {
             'success': False,
-            'user_id': '',
-            'company_id': '',
+            'auth_method': 'B1-Api-Key',
             'error': None,
+            'details': {},
         }
 
+        api_key = self.connection.api_key
+        if not api_key:
+            result['error'] = 'API ключ не задан'
+            return result
+
         try:
-            token = self._authenticate()
-            result['success'] = bool(token)
-            result['user_id'] = self.connection.sitepro_user_id
-            result['company_id'] = self.connection.sitepro_company_id
+            # Попробуем получить список ставок НДС — простой запрос
+            data = self._api_post(self.VAT_RATES_LIST, {
+                'page': 1,
+                'rows': 10,
+            })
+
+            result['success'] = True
+            result['details'] = {
+                'vat_rates_count': len(data.get('data', [])) if isinstance(data, dict) else 0,
+                'response_keys': list(data.keys()) if isinstance(data, dict) else [],
+            }
+
+            # Обновляем статус подключения
+            self.connection.last_error = ''
+            self.connection.last_synced_at = timezone.now()
+            self.connection.save(update_fields=['last_error', 'last_synced_at', 'updated_at'])
+
+            logger.info(f'[SitePro] Подключение успешно. Ответ: {data}')
+
         except SiteProAPIError as e:
             result['error'] = str(e)
+            self.connection.last_error = str(e)[:500]
+            self.connection.save(update_fields=['last_error', 'updated_at'])
 
         return result
 
     # ========================================================================
-    # CLIENT SYNC
+    # CLIENT OPERATIONS
     # ========================================================================
 
-    def create_or_update_client(self, client) -> dict:
+    def search_clients(self, name: str = None, code: str = None) -> list:
         """
-        Создает или обновляет клиента в site.pro.
+        Поиск клиентов в site.pro.
+        
+        Args:
+            name: имя клиента (частичное совпадение)
+            code: код компании (точное совпадение)
+            
+        Returns:
+            список клиентов
+        """
+        rules = []
+        if name:
+            rules.append({'field': 'name', 'op': 'cn', 'data': name})
+        if code:
+            rules.append({'field': 'code', 'op': 'eq', 'data': code})
+
+        data = {
+            'page': 1,
+            'rows': 50,
+            'filters': {
+                'groupOp': 'AND',
+                'rules': rules,
+            },
+        }
+
+        result = self._api_post(self.CLIENTS_LIST, data)
+        return result.get('data', []) if isinstance(result, dict) else []
+
+    def create_client(self, client) -> dict:
+        """
+        Создаёт клиента в site.pro.
         
         Args:
             client: экземпляр core.Client
             
         Returns:
-            dict с результатом из API
+            dict с данными созданного клиента
         """
         data = {
             'name': client.name or '',
@@ -276,26 +259,51 @@ class SiteProService:
             'address': getattr(client, 'address', '') or '',
             'email': getattr(client, 'email', '') or '',
             'phone': getattr(client, 'phone', '') or '',
-            'country': getattr(client, 'country', 'LT') or 'LT',
         }
 
-        logger.info(f'[SitePro] Создание/обновление клиента: {client.name}')
+        # Удаляем пустые значения
+        data = {k: v for k, v in data.items() if v}
 
-        try:
-            result = self._api_post(self.CLIENT_CREATE_ENDPOINT, data)
-            logger.info(f'[SitePro] Клиент {client.name} успешно синхронизирован')
-            return result
-        except SiteProAPIError as e:
-            logger.error(f'[SitePro] Ошибка при создании клиента {client.name}: {e}')
-            raise
+        logger.info(f'[SitePro] Создание клиента: {client.name}')
+        result = self._api_post(self.CLIENTS_CREATE, data)
+        logger.info(f'[SitePro] Клиент создан: {result}')
+        return result
+
+    def get_or_create_client(self, client) -> int:
+        """
+        Находит или создаёт клиента в site.pro.
+        
+        Returns:
+            ID клиента в site.pro
+        """
+        # Сначала ищем по коду компании
+        company_code = getattr(client, 'company_code', '') or ''
+        if company_code:
+            existing = self.search_clients(code=company_code)
+            if existing:
+                return existing[0].get('id')
+
+        # Ищем по имени
+        existing = self.search_clients(name=client.name)
+        if existing:
+            return existing[0].get('id')
+
+        # Создаём нового
+        result = self.create_client(client)
+        return result.get('id')
 
     # ========================================================================
-    # INVOICE PUSH
+    # INVOICE / SALE OPERATIONS
     # ========================================================================
 
     def push_invoice(self, invoice) -> dict:
         """
-        Отправляет инвойс в site.pro как продажу.
+        Отправляет инвойс в site.pro как продажу (sale).
+        
+        Процесс:
+        1. Находим или создаём клиента
+        2. Создаём продажу (sale)
+        3. Добавляем позиции (sale-items)
         
         Args:
             invoice: экземпляр NewInvoice
@@ -330,79 +338,64 @@ class SiteProService:
             defaults={'sync_status': 'PENDING'},
         )
 
-        # Формируем данные для API
-        items_data = self._build_invoice_items(invoice)
-        recipient = invoice.recipient
-
-        # Данные получателя (клиент)
-        billing_data = {}
-        if invoice.recipient_client:
-            client = invoice.recipient_client
-            billing_data = {
-                'billingName': client.name or '',
-                'billingCompanyCode': getattr(client, 'company_code', '') or '',
-                'billingVatCode': getattr(client, 'vat_code', '') or '',
-                'billingAddress': getattr(client, 'address', '') or '',
-                'billingCity': getattr(client, 'city', '') or '',
-                'billingCountry': getattr(client, 'country', 'LT') or 'LT',
-                'billingPostcode': getattr(client, 'postal_code', '') or '',
-                'billingEmail': getattr(client, 'email', '') or '',
-                'billingIsLegal': bool(getattr(client, 'company_code', '')),
-            }
-        elif recipient:
-            billing_data = {
-                'billingName': str(recipient),
-            }
-
-        # Серия и номер инвойса
-        series = self.connection.invoice_series or ''
-        inv_number = invoice.number or ''
-
-        order_data = {
-            'orderDate': invoice.date.isoformat() if invoice.date else timezone.now().date().isoformat(),
-            'currency': self.connection.default_currency,
-            'total': str(invoice.total),
-            **billing_data,
-            'items': items_data,
-        }
-
-        # Добавляем серию и номер если заданы
-        if series:
-            order_data['customSeries'] = series
-        if inv_number:
-            order_data['customNumber'] = inv_number
-
-        logger.info(
-            f'[SitePro] Отправка инвойса {invoice.number} '
-            f'(получатель: {invoice.recipient_name}, сумма: {invoice.total})'
-        )
-
         try:
-            result = self._api_post(self.ORDERS_CREATE_SALE_ENDPOINT, order_data)
+            # Шаг 1: Находим или создаём клиента
+            client_id = None
+            if invoice.recipient_client:
+                try:
+                    client_id = self.get_or_create_client(invoice.recipient_client)
+                except SiteProAPIError as e:
+                    logger.warning(f'[SitePro] Ошибка создания клиента, продолжаем без ID: {e}')
+
+            # Шаг 2: Создаём продажу (sale)
+            sale_data = self._build_sale_data(invoice, client_id)
+            logger.info(
+                f'[SitePro] Отправка инвойса {invoice.number} '
+                f'(получатель: {invoice.recipient_name}, сумма: {invoice.total})'
+            )
+            sale_result = self._api_post(self.SALES_CREATE, sale_data)
+
+            sale_id = sale_result.get('id') or sale_result.get('saleId')
+            sale_number = sale_result.get('number') or sale_result.get('invoiceNumber') or ''
+
+            if not sale_id:
+                raise SiteProAPIError(
+                    f'API не вернул ID продажи. Ответ: {sale_result}'
+                )
+
+            # Шаг 3: Добавляем позиции
+            items_errors = []
+            for item_data in self._build_sale_items(invoice, sale_id):
+                try:
+                    self._api_post(self.SALE_ITEMS_CREATE, item_data)
+                except SiteProAPIError as e:
+                    items_errors.append(str(e)[:200])
+                    logger.error(f'[SitePro] Ошибка создания позиции: {e}')
 
             # Обновляем запись синхронизации
-            sync.external_id = str(result.get('id', '') or result.get('orderId', '') or '')
-            sync.external_number = str(result.get('number', '') or result.get('invoiceNumber', '') or '')
+            sync.external_id = str(sale_id)
+            sync.external_number = str(sale_number)
             sync.sync_status = 'SENT'
-            sync.error_message = ''
+            sync.error_message = '; '.join(items_errors) if items_errors else ''
             sync.last_synced_at = timezone.now()
             sync.save()
 
-            # Обновляем время синхронизации подключения
+            # Обновляем подключение
             self.connection.last_synced_at = timezone.now()
             self.connection.last_error = ''
             self.connection.save(update_fields=['last_synced_at', 'last_error', 'updated_at'])
 
             logger.info(
                 f'[SitePro] Инвойс {invoice.number} успешно отправлен '
-                f'(external_id={sync.external_id})'
+                f'(sale_id={sale_id}, items_errors={len(items_errors)})'
             )
 
             return {
                 'success': True,
-                'external_id': sync.external_id,
-                'external_number': sync.external_number,
-                'response': result,
+                'external_id': str(sale_id),
+                'external_number': str(sale_number),
+                'items_errors': items_errors,
+                'response': sale_result,
             }
 
         except SiteProAPIError as e:
@@ -417,8 +410,51 @@ class SiteProService:
             logger.error(f'[SitePro] Ошибка отправки инвойса {invoice.number}: {e}')
             raise
 
-    def _build_invoice_items(self, invoice) -> list:
-        """Формирует список позиций инвойса для site.pro API."""
+    def _build_sale_data(self, invoice, client_id: int = None) -> dict:
+        """
+        Формирует данные для создания продажи в site.pro.
+        
+        Args:
+            invoice: экземпляр NewInvoice
+            client_id: ID клиента в site.pro (опционально)
+        """
+        sale_data = {
+            'date': invoice.date.strftime('%Y-%m-%d') if invoice.date else timezone.now().strftime('%Y-%m-%d'),
+            'currencyCode': self.connection.default_currency,
+        }
+
+        # Номер инвойса
+        if invoice.number:
+            sale_data['number'] = invoice.number
+
+        # Серия
+        if self.connection.invoice_series:
+            sale_data['series'] = self.connection.invoice_series
+
+        # Клиент
+        if client_id:
+            sale_data['clientId'] = client_id
+
+        # Имя получателя
+        if invoice.recipient_name:
+            sale_data['clientName'] = invoice.recipient_name
+
+        return sale_data
+
+    def _build_sale_items(self, invoice, sale_id: int) -> list:
+        """
+        Формирует список позиций для добавления к продаже.
+        
+        Суммы в site.pro API хранятся как есть (не умножать на 100,
+        это только для банковских операций).
+        
+        Args:
+            invoice: экземпляр NewInvoice
+            sale_id: ID продажи в site.pro
+            
+        Returns:
+            список dict для каждой позиции
+        """
         items = []
         vat_rate = float(self.connection.default_vat_rate)
 
@@ -428,14 +464,47 @@ class SiteProService:
                 item_name = f'{item.description} ({item.car.vin})'
 
             items.append({
-                'itemName': item_name,
-                'quantity': str(item.quantity),
-                'price': str(item.unit_price),
-                'sum': str(item.total_price),
-                'vatRate': str(vat_rate),
+                'saleId': sale_id,
+                'name': item_name,
+                'quantity': float(item.quantity),
+                'price': float(item.unit_price),
+                'vatPercent': vat_rate,
             })
 
         return items
+
+    # ========================================================================
+    # SEARCH SALES
+    # ========================================================================
+
+    def search_sales(self, number: str = None, date_from: str = None, date_to: str = None) -> list:
+        """
+        Поиск продаж в site.pro.
+        
+        Args:
+            number: номер инвойса
+            date_from: дата с (yyyy-MM-dd)
+            date_to: дата по (yyyy-MM-dd)
+        """
+        rules = []
+        if number:
+            rules.append({'field': 'number', 'op': 'eq', 'data': number})
+        if date_from:
+            rules.append({'field': 'date', 'op': 'ge', 'data': date_from})
+        if date_to:
+            rules.append({'field': 'date', 'op': 'le', 'data': date_to})
+
+        data = {
+            'page': 1,
+            'rows': 50,
+            'filters': {
+                'groupOp': 'AND',
+                'rules': rules,
+            },
+        }
+
+        result = self._api_post(self.SALES_LIST, data)
+        return result.get('data', []) if isinstance(result, dict) else []
 
     # ========================================================================
     # GET INVOICE PDF
@@ -464,10 +533,9 @@ class SiteProService:
             return ''
 
         try:
-            params = {'id': sync.external_id}
-            result = self._api_get(self.INVOICES_GET_ENDPOINT, params)
+            result = self._api_post(self.SALE_PDF, {'id': int(sync.external_id)})
 
-            pdf_url = result.get('pdfUrl', '') or result.get('pdf_url', '') or ''
+            pdf_url = result.get('url', '') or result.get('pdfUrl', '') or ''
 
             if pdf_url:
                 sync.pdf_url = pdf_url
@@ -480,6 +548,25 @@ class SiteProService:
         except SiteProAPIError as e:
             logger.error(f'[SitePro] Ошибка получения PDF для инвойса {invoice.number}: {e}')
             return ''
+
+    # ========================================================================
+    # REFERENCE DATA
+    # ========================================================================
+
+    def get_vat_rates(self) -> list:
+        """Получает список ставок НДС из site.pro."""
+        result = self._api_post(self.VAT_RATES_LIST, {'page': 1, 'rows': 100})
+        return result.get('data', []) if isinstance(result, dict) else []
+
+    def get_currencies(self) -> list:
+        """Получает список валют из site.pro."""
+        result = self._api_post(self.CURRENCIES_LIST, {'page': 1, 'rows': 100})
+        return result.get('data', []) if isinstance(result, dict) else []
+
+    def get_series(self) -> list:
+        """Получает список серий нумерации из site.pro."""
+        result = self._api_post(self.SERIES_LIST, {'page': 1, 'rows': 100})
+        return result.get('data', []) if isinstance(result, dict) else []
 
     # ========================================================================
     # BULK OPERATIONS
