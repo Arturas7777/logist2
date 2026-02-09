@@ -1,0 +1,174 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block title %}Массовое создание расходов{% endblock %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+    .bulk-form {
+        max-width: 700px;
+        margin: 0 auto;
+    }
+    .info-box {
+        background: #f0f4ff;
+        border: 1px solid #c7d2fe;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 24px;
+    }
+    .info-box h3 {
+        margin: 0 0 12px 0;
+        color: #3730a3;
+        font-size: 16px;
+    }
+    .trx-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    .trx-list li {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid #e0e7ff;
+        font-size: 14px;
+    }
+    .trx-list li:last-child {
+        border-bottom: none;
+    }
+    .trx-amount {
+        font-weight: 700;
+        color: #dc2626;
+    }
+    .trx-total {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 2px solid #6366f1;
+        display: flex;
+        justify-content: space-between;
+        font-weight: 700;
+        font-size: 16px;
+        color: #1e293b;
+    }
+    .form-section {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 24px;
+    }
+    .form-section h3 {
+        margin: 0 0 16px 0;
+        color: #1e293b;
+        font-size: 16px;
+        border-bottom: 1px solid #e5e7eb;
+        padding-bottom: 10px;
+    }
+    .form-row {
+        margin-bottom: 16px;
+    }
+    .form-row label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 4px;
+        color: #374151;
+        font-size: 13px;
+    }
+    .form-row .hint {
+        font-size: 11px;
+        color: #9ca3af;
+        margin-top: 2px;
+    }
+    .form-row select {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 14px;
+        box-sizing: border-box;
+    }
+    .required-mark {
+        color: #dc2626;
+    }
+    .action-buttons {
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+        margin-top: 20px;
+    }
+    .btn {
+        display: inline-block;
+        padding: 10px 24px;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: #4f46e5; color: #fff; }
+    .btn-cancel { background: #e5e7eb; color: #374151; }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Главная</a>
+    &rsaquo; <a href="{% url 'admin:core_banktransaction_changelist' %}">Банковские транзакции</a>
+    &rsaquo; Массовое создание расходов
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="bulk-form">
+
+    <div class="info-box">
+        <h3>🏦 Выбрано {{ transactions|length }} операций</h3>
+        <ul class="trx-list">
+            {% for trx in transactions %}
+            <li>
+                <span>{{ trx.created_at|date:"d.m.Y" }} — {{ trx.counterparty_name|default:"Без контрагента" }}</span>
+                <span class="trx-amount">{{ trx.expense_amount }} {{ trx.currency }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+        <div class="trx-total">
+            <span>Итого:</span>
+            <span>{{ total_amount }} EUR</span>
+        </div>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="create_expenses_bulk">
+        <input type="hidden" name="confirm" value="yes">
+        {% for trx in transactions %}
+        <input type="hidden" name="_selected_action" value="{{ trx.pk }}">
+        {% endfor %}
+
+        <div class="form-section">
+            <h3>📝 Категория для всех расходов</h3>
+            <div class="form-row">
+                <label>Категория расхода <span class="required-mark">*</span></label>
+                <select name="category" required>
+                    <option value="">— Выберите категорию —</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat.pk }}">
+                        {{ cat.name }}{% if cat.short_name %} ({{ cat.short_name }}){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+                <div class="hint">Одна категория будет назначена всем выбранным операциям</div>
+            </div>
+        </div>
+
+        <div class="action-buttons">
+            <a href="{% url 'admin:core_banktransaction_changelist' %}" class="btn btn-cancel">Отмена</a>
+            <button type="submit" class="btn btn-primary">💰 Создать {{ transactions|length }} расходов</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
