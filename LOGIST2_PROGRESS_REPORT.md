@@ -1,6 +1,6 @@
 # Отчёт о проделанной работе по проекту Logist2
 
-**Дата последнего обновления:** 8 февраля 2026 г.
+**Дата последнего обновления:** 9 февраля 2026 г.
 
 ---
 
@@ -1121,6 +1121,7 @@ total_markup_sum = queryset.aggregate(
 
 | Дата | Описание |
 |------|----------|
+| 09.02.2026 | Интеграция site.pro (b1.lt) Accounting API — бухгалтерские инвойсы (B1-Api-Key, /My-Accounting/api) |
 | 08.02.2026 | Редизайн дашборда: светлая тема, Boxicons, исправление графиков, Redis локально, TruncMonth оптимизация |
 | 08.02.2026 | Glassmorphism-редизайн дашборда: frosted glass карточки, тёмный градиент, glowing accents, светлые оси графиков |
 | 08.02.2026 | Дашборд компании: полная перестройка с Chart.js, KPI, DashboardService, исправление cache_utils |
@@ -1513,3 +1514,90 @@ total_markup_sum = queryset.aggregate(
 - Сертификаты: `/var/www/www-root/data/www/logist2/certs/` (privatecert.pem, publiccert.cer)
 - Cron: `*/15 * * * *` — `sync_bank_accounts`
 - Лог: `/var/log/logist2/bank_sync.log`
+
+---
+
+### 41. Интеграция site.pro (b1.lt) Accounting API — бухгалтерские инвойсы (09.02.2026)
+
+**Статус:** Завершено (ожидает активации API-плана в site.pro)
+
+**Цель:** Автоматическая отправка инвойсов из logist2 в бухгалтерскую систему site.pro (бывший b1.lt) для учёта и налоговой отчётности в Литве.
+
+**Реальный API:**
+- **Base URL:** `https://site.pro/My-Accounting/api`
+- **Аутентификация:** заголовок `B1-Api-Key` (НЕ bearer token, НЕ api.sitepro.com)
+- **Формат:** все запросы POST, Content-Type: application/json
+- **Документация:** https://site.pro/My-Accounting/doc/api
+- **Postman collection:** https://site.pro/My-Accounting/doc/api/api_data.json
+
+**Новые модели (`core/models_accounting.py`):**
+
+1. **SiteProConnection** — подключение к site.pro API
+   - `company` — FK → Company
+   - `_api_key`, `_private_key` — API-ключи (зашифрованы Fernet)
+   - `_username`, `_password` — альтернативная аутентификация (зашифрованы)
+   - `is_active`, `auto_push_on_issue` — настройки
+   - `default_vat_rate`, `default_currency`, `invoice_series` — параметры инвойсов
+   - `last_synced_at`, `last_error` — статус синхронизации
+
+2. **SiteProInvoiceSync** — лог синхронизации инвойсов
+   - `connection`, `invoice` — связи
+   - `external_id`, `external_number` — ID/номер в site.pro
+   - `pdf_url` — ссылка на PDF
+   - `sync_status` — PENDING, SENT, FAILED, PDF_READY
+   - `error_message` — ошибка последней попытки
+
+**Сервис (`core/services/sitepro_service.py`):**
+- `SiteProService` — полный API-клиент для site.pro Accounting API
+- Аутентификация через заголовок `B1-Api-Key`
+- `test_connection()` — проверка подключения (GET VAT rates)
+- `push_invoice()` — отправка инвойса (создание sale + sale items + client)
+- `search_clients()`, `create_client()`, `get_or_create_client()` — управление клиентами
+- `search_sales()` — поиск продаж
+- `get_invoice_pdf_url()` — получение ссылки на PDF
+- `push_invoices()` — массовая отправка
+- `get_vat_rates()`, `get_currencies()`, `get_series()` — справочники
+
+**Ключевые эндпоинты site.pro:**
+- `/warehouse/sales/create`, `/warehouse/sales/list` — продажи
+- `/warehouse/sale-items/create` — позиции продажи
+- `/clients/create`, `/clients/list` — клиенты
+- `/warehouse/invoices/get-sale` — PDF инвойса
+- `/reference-book/vat-rates/list` — ставки НДС
+- `/reference-book/currencies/list` — валюты
+- `/reference-book/series/list` — серии нумерации
+- `/bank/sale-invoice/payment` — запись оплаты
+
+**Админка (`core/admin_accounting.py`):**
+- `SiteProConnectionAdmin` — управление подключением, действия "Проверить" и "Sync Now"
+- `SiteProInvoiceSyncAdmin` — логи синхронизации с PDF-ссылками и повтором
+
+**Действие в инвойсах (`core/admin_billing.py`):**
+- "Отправить в site.pro" — массовая отправка выбранных инвойсов
+
+**Автоматическая отправка (`core/signals.py`):**
+- При смене статуса инвойса на ISSUED — авто-push если `auto_push_on_issue` включён
+- Защита от рекурсии (`_pushing_to_sitepro` флаг)
+- `transaction.on_commit()` для надёжности
+
+**Management команда:**
+- `python manage.py setup_sitepro` — интерактивная настройка (ввод API ключа, тест, параметры)
+
+**Миграции:**
+- `0110_sitepro_integration.py` — модели SiteProConnection и SiteProInvoiceSync
+- `0111_add_sitepro_api_keys.py` — поля _api_key и _private_key
+
+**Текущий статус:**
+- API ключ валиден и принят системой site.pro
+- API заморожен: "Company does not have enough funds"
+- Требуется: оплатить/активировать API-план в site.pro
+- Инфо: https://site.pro/faq/54436 | https://site.pro/Accounting-Prices/
+
+**Файлы:**
+- `core/models_accounting.py` — модели SiteProConnection, SiteProInvoiceSync
+- `core/services/sitepro_service.py` — SiteProService (API-клиент)
+- `core/admin_accounting.py` — Django Admin для site.pro
+- `core/admin_billing.py` — действие "Отправить в site.pro" в инвойсах
+- `core/admin/__init__.py` — регистрация admin-классов site.pro
+- `core/signals.py` — авто-push при ISSUED
+- `core/management/commands/setup_sitepro.py` — помощник настройки
