@@ -1,6 +1,6 @@
 # ПОЛНОЕ ОПИСАНИЕ ПРОЕКТА LOGIST2
 
-**Версия документа:** 8 февраля 2026
+**Версия документа:** 9 февраля 2026
 **Назначение:** Описание функционала для работы с AI-ассистентами
 
 ---
@@ -25,7 +25,7 @@
 | Интерактивность | HTMX + кастомный JS |
 | UI сайта | Bootstrap 5 |
 | Email | Brevo (SMTP), отправка через Celery задачи |
-| Интеграции | Google Drive API |
+| Интеграции | Google Drive API, Revolut Business API, site.pro Accounting API |
 
 ### Сервер
 
@@ -329,6 +329,39 @@ Client:
 | Легковой | 3 | 3 | 290 |
 | Легковой | 4 | 4 | 265 |
 | Легковой | 5 | — | 240 |
+
+### SiteProConnection (Подключение к site.pro) ⭐ НОВОЕ (09.02.2026)
+
+```python
+# Файл: core/models_accounting.py
+
+SiteProConnection:
+    company             # FK → Company
+    _api_key            # API Key (зашифрован Fernet)
+    _private_key        # Private Key (зашифрован Fernet)
+    _username           # Альтернатива: логин (зашифрован)
+    _password           # Альтернатива: пароль (зашифрован)
+    is_active           # Активно ли подключение
+    auto_push_on_issue  # Авто-отправка при статусе ISSUED
+    default_vat_rate    # Ставка НДС по умолчанию (0 или 21)
+    default_currency    # Валюта (EUR, USD, GBP)
+    invoice_series      # Серия нумерации инвойсов
+    last_synced_at      # Последняя синхронизация
+    last_error          # Последняя ошибка
+    
+    # Property: base_url → 'https://site.pro/My-Accounting/api'
+    # Property: api_key → расшифрованный _api_key
+
+SiteProInvoiceSync:
+    connection          # FK → SiteProConnection
+    invoice             # FK → NewInvoice
+    external_id         # ID продажи в site.pro
+    external_number     # Номер в site.pro
+    pdf_url             # Ссылка на PDF инвойса
+    sync_status         # PENDING, SENT, FAILED, PDF_READY
+    error_message       # Ошибка последней попытки
+    synced_at           # Время синхронизации
+```
 
 ### LineTHSCoefficient (Коэффициенты THS)
 
@@ -697,6 +730,7 @@ logist2/
 ├── core/                           # Основное приложение
 │   ├── models.py                   # Главные модели (Container, Car, CarService и др.)
 │   ├── models_billing.py           # Инвойсы и транзакции (NewInvoice, InvoiceItem)
+│   ├── models_accounting.py        # Site.pro интеграция (SiteProConnection, SiteProInvoiceSync)
 │   ├── models_website.py           # Модели для клиентского сайта
 │   │
 │   ├── admin/                      # Django Admin (пакет, с 08.02.2026)
@@ -705,7 +739,8 @@ logist2/
 │   │   ├── container.py            # ContainerAdmin
 │   │   ├── car.py                  # CarAdmin (оптимизированный, без побочных эффектов)
 │   │   └── partners.py             # Warehouse, Client, Company, Line, Carrier, AutoTransport
-│   ├── admin_billing.py            # Admin для инвойсов
+│   ├── admin_billing.py            # Admin для инвойсов (+ действие "Отправить в site.pro")
+│   ├── admin_accounting.py         # Admin для site.pro (SiteProConnectionAdmin, SiteProInvoiceSyncAdmin)
 │   ├── admin_website.py            # Admin для клиентского сайта
 │   │
 │   ├── utils.py                    # Утилиты (round_up_to_5, WebSocketBatcher)
@@ -720,6 +755,7 @@ logist2/
 │   │
 │   ├── services/
 │   │   ├── dashboard_service.py    # DashboardService — KPI, графики, таблицы для /admin/dashboard/
+│   │   ├── sitepro_service.py      # SiteProService — API-клиент site.pro Accounting
 │   │   ├── email_service.py        # Email-уведомления
 │   │   ├── ai_chat_service.py      # AI-помощник (контекст из БД)
 │   │   ├── admin_ai_agent.py       # AI-агент для админки (контекст + диагностика)
@@ -1215,7 +1251,7 @@ core/admin/
 
 ---
 
-## 🏦 БАНКОВСКИЕ ИНТЕГРАЦИИ (Revolut и др.)
+## 🏦 ВНЕШНИЕ ИНТЕГРАЦИИ (Revolut, Site.pro и др.)
 
 ### Архитектура
 
@@ -1258,6 +1294,32 @@ value = conn.client_id             # расшифровывает из _client_i
 - Секция "Банковские счета" — KPI-карточки с балансами по каждому счёту
 - Таблица "Банковские операции" — последние 10 транзакций из банка
 - Данные кэшируются на 5 минут (CACHE_TIMEOUTS['short'])
+
+### Site.pro (b1.lt) Accounting API
+
+Интеграция для отправки инвойсов в бухгалтерскую систему site.pro (Литва).
+
+```
+core/models_accounting.py              # SiteProConnection, SiteProInvoiceSync
+core/services/sitepro_service.py       # SiteProService — API-клиент
+core/admin_accounting.py               # Django Admin для site.pro
+core/management/commands/setup_sitepro.py  # Помощник настройки
+```
+
+- **API Base URL:** `https://site.pro/My-Accounting/api`
+- **Auth:** заголовок `B1-Api-Key` (НЕ bearer token)
+- **Endpoints:**
+  - `/warehouse/sales/create` — создание продажи
+  - `/warehouse/sale-items/create` — позиции продажи
+  - `/clients/create`, `/clients/list` — клиенты
+  - `/warehouse/invoices/get-sale` — PDF инвойса
+  - `/reference-book/vat-rates/list`, `/reference-book/currencies/list`, `/reference-book/series/list` — справочники
+  - `/bank/sale-invoice/payment` — запись оплаты
+- **Настройка:** `python manage.py setup_sitepro`
+- **Авто-push:** при смене статуса инвойса на ISSUED (если `auto_push_on_issue` включён)
+- **Ключи:** зашифрованы Fernet в `_api_key`, `_private_key` (аналогично Revolut)
+- **Миграции:** `0110_sitepro_integration.py`, `0111_add_sitepro_api_keys.py`
+- **Текущий статус (февраль 2026):** API ключ валиден, но заморожен (нужно оплатить API-план)
 
 ### CSP (Content Security Policy)
 

@@ -25,6 +25,7 @@
 - **Google Drive интеграция** - автозагрузка фотографий контейнеров
 - **Система услуг компаний** - услуги Company (Caromoto Lithuania) как отдельный тип
 - **AI-ассистент** - отдельный агент для админки + RAG контекст по коду/докам
+- **Site.pro (b1.lt) интеграция** - отправка инвойсов в бухгалтерскую систему через API
 
 ## VPS СЕРВЕР
 
@@ -142,17 +143,20 @@ logist2/
 │   ├── models.py                   # Основные модели (Container, Car, Client, etc)
 │   ├── models_website.py           # Модели для клиентского сайта
 │   ├── models_billing.py           # Биллинг система
+│   ├── models_accounting.py        # Site.pro интеграция (SiteProConnection, SiteProInvoiceSync)
 │   ├── admin/                      # Django Admin конфигурация (пакет, с 08.02.2026)
 │   │   ├── __init__.py             # Импорт всех модулей
 │   │   ├── inlines.py              # Все inline-классы
 │   │   ├── container.py            # ContainerAdmin
 │   │   ├── car.py                  # CarAdmin
 │   │   └── partners.py             # Warehouse, Client, Company, Line, Carrier, AutoTransport
+│   ├── admin_accounting.py          # Admin для site.pro (SiteProConnectionAdmin, SiteProInvoiceSyncAdmin)
 │   ├── admin_website.py            # Admin для клиентского сайта
 │   ├── views.py                    # Views для админки
 │   ├── views_website.py            # Views для клиентского сайта
 │   ├── google_drive_sync.py        # Интеграция с Google Drive
 │   ├── management/commands/        # Management команды
+│   │   ├── setup_sitepro.py            # Настройка подключения к site.pro
 │   │   ├── add_performance_indexes.py
 │   │   ├── apply_optimizations.py
 │   │   ├── check_photo_environment.py
@@ -181,6 +185,7 @@ logist2/
 │   ├── tests.py                    # 57 unit-тестов (цены, THS, инвойсы, хранение, статусы, дефолты)
 │   ├── services/                   # Бизнес-логика
 │   │   ├── dashboard_service.py    # DashboardService — агрегация KPI, графиков, таблиц для дашборда
+│   │   ├── sitepro_service.py      # SiteProService — API-клиент site.pro Accounting
 │   │   ├── ai_chat_service.py      # AI-помощник (контекст из БД)
 │   │   ├── admin_ai_agent.py       # AI-агент для админки (контекст + диагностика)
 │   │   └── ai_rag.py               # RAG индекс и поиск по документации/коду
@@ -517,6 +522,8 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 ✅ Автоматическое создание миниатюр
 ✅ Email уведомления клиентам (через Brevo SMTP)
 ✅ Дашборд компании (`/admin/dashboard/`) — KPI, Chart.js графики, таблицы
+✅ Revolut Business API (банковские счета и транзакции на дашборде)
+⏳ Site.pro Accounting API (интеграция готова, ожидает активации API-плана)
 
 ### Известные проблемы:
 ⚠️ SSH connection timeout при длительных операциях
@@ -525,6 +532,31 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 ⚠️ **ВАЖНО:** После загрузки фотографий вручную (через команды от root) нужно исправить права доступа: `./fix_media_permissions.sh`
 
 ### Недавние изменения (февраль 2026):
+
+**09.02.2026 - Интеграция site.pro (b1.lt) Accounting API:**
+1. **БУХГАЛТЕРСКАЯ ИНТЕГРАЦИЯ:** ⭐ НОВЫЙ ФУНКЦИОНАЛ
+   - ✅ Полная интеграция с site.pro Accounting API для отправки инвойсов
+   - ✅ Аутентификация через заголовок `B1-Api-Key` (Base URL: `https://site.pro/My-Accounting/api`)
+   - ✅ Модели: `SiteProConnection` (зашифрованные API-ключи), `SiteProInvoiceSync` (логи)
+   - ✅ Сервис `SiteProService`: push_invoice, create_client, test_connection, get_vat_rates и др.
+   - ✅ Django Admin: управление подключением, проверка, логи синхронизации с PDF-ссылками
+   - ✅ Действие "Отправить в site.pro" в списке инвойсов
+   - ✅ Авто-push при смене статуса на ISSUED (если `auto_push_on_issue` включён)
+   - ✅ Management команда `setup_sitepro` — интерактивная настройка
+   - ✅ Миграции: `0110_sitepro_integration.py`, `0111_add_sitepro_api_keys.py`
+   - ⏳ **Статус:** API ключ валиден, но заморожен (нужно оплатить API-план в site.pro)
+
+**Новые файлы:**
+- `core/models_accounting.py` — модели SiteProConnection, SiteProInvoiceSync
+- `core/services/sitepro_service.py` — SiteProService (API-клиент)
+- `core/admin_accounting.py` — Django Admin для site.pro
+- `core/management/commands/setup_sitepro.py` — помощник настройки
+
+**Изменённые файлы:**
+- `core/admin_billing.py` — действие "Отправить в site.pro"
+- `core/admin/__init__.py` — регистрация admin-классов site.pro
+- `core/signals.py` — авто-push при ISSUED
+- `CREDENTIALS.md` — API ключи и документация site.pro
 
 **08.02.2026 - Редизайн дашборда: светлая тема + Boxicons + оптимизация:**
 1. **СВЕТЛЫЙ ДИЗАЙН + BOXICONS:** ⭐ UI/UX
@@ -1148,8 +1180,10 @@ ssh root@server "cd /path; source .venv/bin/activate; python manage.py showmigra
 24. **Пути на VPS** - рабочий каталог gunicorn: `/var/www/www-root/data/www/logist2/` (НЕ `/var/www/logist2/`!)
 25. **JWT для Revolut** - истекает через 90 дней, пересоздать: `python manage.py setup_revolut --private-key certs/privatecert.pem`
 26. **CSP заголовки** - настроены в `logist2/settings_security.py`, при добавлении новых CDN нужно добавить домен в CSP
+27. **Site.pro API** - `B1-Api-Key` заголовок, base URL `https://site.pro/My-Accounting/api`, ключи зашифрованы в `SiteProConnection`
+28. **Site.pro setup** - `python manage.py setup_sitepro` (интерактивная настройка, тест подключения)
 
-## БАНКОВСКИЕ ИНТЕГРАЦИИ
+## ВНЕШНИЕ ИНТЕГРАЦИИ
 
 ### Revolut Business API
 - **Статус:** Подключён (Production)
@@ -1161,6 +1195,22 @@ ssh root@server "cd /path; source .venv/bin/activate; python manage.py showmigra
 - **Сертификаты:** `/var/www/www-root/data/www/logist2/certs/` (в .gitignore)
 - **Настройка:** `python manage.py setup_revolut` (интерактивный помощник)
 - **Ручной sync:** `python manage.py sync_bank_accounts` или через Django Admin
+
+### Site.pro (b1.lt) Accounting API
+- **Статус:** Интеграция готова, ожидает активации API-плана
+- **Сайт:** https://site.pro (бывший b1.lt)
+- **API Base URL:** `https://site.pro/My-Accounting/api`
+- **Аутентификация:** заголовок `B1-Api-Key`
+- **Документация:** https://site.pro/My-Accounting/doc/api
+- **Postman collection:** https://site.pro/My-Accounting/doc/api/api_data.json
+- **Модели:** `core/models_accounting.py` — SiteProConnection, SiteProInvoiceSync
+- **Сервис:** `core/services/sitepro_service.py` — SiteProService (push инвойсов, клиенты, справочники)
+- **Admin:** `core/admin_accounting.py` — управление подключением, логи синхронизации
+- **Настройка:** `python manage.py setup_sitepro` (интерактивный помощник)
+- **Авто-push:** при смене статуса инвойса на ISSUED (если `auto_push_on_issue` включён)
+- **Ключи:** зашифрованы Fernet в `_api_key`, `_private_key` (аналогично Revolut)
+- **Миграции:** `0110_sitepro_integration.py`, `0111_add_sitepro_api_keys.py`
+- **Текущий статус:** API ключ валиден, но заморожен (нужно оплатить API-план в site.pro)
 
 ## БЫСТРЫЕ КОМАНДЫ
 
