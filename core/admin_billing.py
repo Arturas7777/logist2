@@ -344,7 +344,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             form.instance.regenerate_items_from_cars()
             messages.success(request, f"✅ Автоматически создано {form.instance.items.count()} позиций из услуг автомобилей!")
     
-    actions = ['mark_as_issued', 'mark_as_paid', 'cancel_invoices', 'regenerate_items']
+    actions = ['mark_as_issued', 'mark_as_paid', 'cancel_invoices', 'regenerate_items', 'push_to_sitepro']
 
     # ========================================================================
     # ОТОБРАЖЕНИЕ ПОЛЕЙ В СПИСКЕ
@@ -603,6 +603,58 @@ class NewInvoiceAdmin(admin.ModelAdmin):
         else:
             self.message_user(request, '⚠ Выберите инвойсы с автомобилями', messages.WARNING)
     regenerate_items.short_description = "🔄 Пересоздать позиции из автомобилей"
+    
+    def push_to_sitepro(self, request, queryset):
+        """Отправить выбранные инвойсы в site.pro (бухгалтерия)"""
+        from .models_accounting import SiteProConnection
+        
+        # Находим активное подключение к site.pro
+        connection = SiteProConnection.objects.filter(is_active=True).first()
+        if not connection:
+            self.message_user(
+                request,
+                'Нет активного подключения к site.pro. '
+                'Настройте подключение в разделе "Подключения site.pro".',
+                messages.ERROR
+            )
+            return
+        
+        from .services.sitepro_service import SiteProService, SiteProAPIError
+        service = SiteProService(connection)
+        
+        # Отправляем только выставленные инвойсы
+        eligible = queryset.filter(status__in=['ISSUED', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'])
+        if not eligible.exists():
+            self.message_user(
+                request,
+                'Выберите инвойсы со статусом "Выставлен", "Частично оплачен", '
+                '"Оплачен" или "Просрочен".',
+                messages.WARNING
+            )
+            return
+        
+        result = service.push_invoices(eligible)
+        
+        if result['sent'] > 0:
+            self.message_user(
+                request,
+                f'Отправлено в site.pro: {result["sent"]} инвойсов',
+                messages.SUCCESS
+            )
+        if result['skipped'] > 0:
+            self.message_user(
+                request,
+                f'Пропущено (уже отправлены): {result["skipped"]}',
+                messages.INFO
+            )
+        if result['failed'] > 0:
+            error_details = '; '.join(result['errors'][:3])
+            self.message_user(
+                request,
+                f'Ошибок: {result["failed"]}. {error_details}',
+                messages.ERROR
+            )
+    push_to_sitepro.short_description = "📤 Отправить в site.pro (бухгалтерия)"
     
     # ========================================================================
     # КАСТОМНЫЕ УРЛЫ
