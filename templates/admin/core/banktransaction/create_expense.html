@@ -1,0 +1,233 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block title %}Создать расход из банковской операции{% endblock %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+    .expense-form {
+        max-width: 700px;
+        margin: 0 auto;
+    }
+    .bank-info {
+        background: #f0f4ff;
+        border: 1px solid #c7d2fe;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 24px;
+    }
+    .bank-info h3 {
+        margin: 0 0 12px 0;
+        color: #3730a3;
+        font-size: 16px;
+    }
+    .bank-info-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+    .bank-info-item {
+        display: flex;
+        flex-direction: column;
+    }
+    .bank-info-item .label {
+        font-size: 11px;
+        color: #6b7280;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 2px;
+    }
+    .bank-info-item .value {
+        font-size: 15px;
+        font-weight: 600;
+        color: #1e293b;
+    }
+    .bank-info-item.full-width {
+        grid-column: 1 / -1;
+    }
+    .amount-highlight {
+        font-size: 22px !important;
+        color: #dc2626 !important;
+    }
+    .form-section {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 24px;
+    }
+    .form-section h3 {
+        margin: 0 0 16px 0;
+        color: #1e293b;
+        font-size: 16px;
+        border-bottom: 1px solid #e5e7eb;
+        padding-bottom: 10px;
+    }
+    .form-row {
+        margin-bottom: 16px;
+    }
+    .form-row label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 4px;
+        color: #374151;
+        font-size: 13px;
+    }
+    .form-row .hint {
+        font-size: 11px;
+        color: #9ca3af;
+        margin-top: 2px;
+    }
+    .form-row select,
+    .form-row input[type="text"],
+    .form-row textarea {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 14px;
+        box-sizing: border-box;
+    }
+    .form-row select:focus,
+    .form-row input:focus,
+    .form-row textarea:focus {
+        border-color: #6366f1;
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+    }
+    .form-row textarea {
+        min-height: 60px;
+        resize: vertical;
+    }
+    .required-mark {
+        color: #dc2626;
+    }
+    .action-buttons {
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+        margin-top: 20px;
+    }
+    .btn {
+        display: inline-block;
+        padding: 10px 24px;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        transition: opacity 0.2s;
+    }
+    .btn:hover {
+        opacity: 0.85;
+    }
+    .btn-primary {
+        background: #4f46e5;
+        color: #fff;
+    }
+    .btn-cancel {
+        background: #e5e7eb;
+        color: #374151;
+    }
+    .error-msg {
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        color: #991b1b;
+        padding: 12px 16px;
+        border-radius: 6px;
+        margin-bottom: 16px;
+        font-size: 14px;
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Главная</a>
+    &rsaquo; <a href="{% url 'admin:core_banktransaction_changelist' %}">Банковские транзакции</a>
+    &rsaquo; Создать расход
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="expense-form">
+
+    {% if error %}
+    <div class="error-msg">{{ error }}</div>
+    {% endif %}
+
+    <!-- Данные из банка (read-only) -->
+    <div class="bank-info">
+        <h3>🏦 Банковская операция</h3>
+        <div class="bank-info-grid">
+            <div class="bank-info-item">
+                <span class="label">Дата</span>
+                <span class="value">{{ bank_trx.created_at|date:"d.m.Y H:i" }}</span>
+            </div>
+            <div class="bank-info-item">
+                <span class="label">Сумма</span>
+                <span class="value amount-highlight">{{ expense_amount }} {{ bank_trx.currency }}</span>
+            </div>
+            <div class="bank-info-item">
+                <span class="label">Контрагент</span>
+                <span class="value">{{ bank_trx.counterparty_name|default:"—" }}</span>
+            </div>
+            <div class="bank-info-item">
+                <span class="label">Тип</span>
+                <span class="value">{{ bank_trx.get_transaction_type_display }}</span>
+            </div>
+            <div class="bank-info-item full-width">
+                <span class="label">Описание</span>
+                <span class="value">{{ bank_trx.description|default:"—" }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Форма -->
+    <form method="post">
+        {% csrf_token %}
+
+        <div class="form-section">
+            <h3>📝 Оформление расхода</h3>
+
+            <div class="form-row">
+                <label>Категория расхода <span class="required-mark">*</span></label>
+                <select name="category" required>
+                    <option value="">— Выберите категорию —</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat.pk }}" {% if selected_category == cat.pk %}selected{% endif %}>
+                        {{ cat.name }}{% if cat.short_name %} ({{ cat.short_name }}){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+                <div class="hint">Обязательное поле</div>
+            </div>
+
+            <div class="form-row">
+                <label>Контрагент (компания)</label>
+                <select name="company">
+                    <option value="">— Не указан —</option>
+                    {% for comp in companies %}
+                    <option value="{{ comp.pk }}" {% if suggested_company == comp.pk %}selected{% endif %}>
+                        {{ comp.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <div class="hint">Компания-поставщик услуги/товара. Необязательно.</div>
+            </div>
+
+            <div class="form-row">
+                <label>Описание</label>
+                <textarea name="description">{{ default_description }}</textarea>
+                <div class="hint">Будет указано в позиции инвойса</div>
+            </div>
+        </div>
+
+        <div class="action-buttons">
+            <a href="{% url 'admin:core_banktransaction_changelist' %}" class="btn btn-cancel">Отмена</a>
+            <button type="submit" class="btn btn-primary">💰 Создать расход</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
