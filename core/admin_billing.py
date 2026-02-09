@@ -20,8 +20,46 @@ from django.db.models import Sum, Q
 from django.utils import timezone
 from decimal import Decimal
 
-from .models_billing import NewInvoice, InvoiceItem, Transaction
+from .models_billing import NewInvoice, InvoiceItem, Transaction, ExpenseCategory
 from .services.billing_service import BillingService
+
+
+# ============================================================================
+# АДМИНКА ДЛЯ КАТЕГОРИЙ РАСХОДОВ
+# ============================================================================
+
+@admin.register(ExpenseCategory)
+class ExpenseCategoryAdmin(admin.ModelAdmin):
+    """Управление категориями расходов/доходов"""
+    
+    list_display = ('name', 'short_name', 'category_type', 'order', 'is_active')
+    list_editable = ('short_name', 'order', 'is_active')
+    list_filter = ('category_type', 'is_active')
+    search_fields = ('name', 'short_name')
+    ordering = ('order', 'name')
+
+
+# ============================================================================
+# ФИЛЬТР ПО НАПРАВЛЕНИЮ ИНВОЙСА
+# ============================================================================
+
+class InvoiceDirectionFilter(admin.SimpleListFilter):
+    """Фильтр входящих/исходящих инвойсов"""
+    title = 'Направление'
+    parameter_name = 'direction'
+    
+    def lookups(self, request, model_admin):
+        return [
+            ('outgoing', 'Исходящие (мы выставили)'),
+            ('incoming', 'Входящие (нам выставили)'),
+        ]
+    
+    def queryset(self, request, queryset):
+        if self.value() == 'outgoing':
+            return queryset.filter(issuer_company_id=1)
+        if self.value() == 'incoming':
+            return queryset.filter(recipient_company_id=1)
+        return queryset
 
 
 # ============================================================================
@@ -70,6 +108,8 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     
     list_display = (
         'number_display',
+        'direction_badge',
+        'category_display',
         'notes_display',
         'recipient_display',
         'total_display',
@@ -80,7 +120,9 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     )
     
     list_filter = (
+        InvoiceDirectionFilter,
         'status',
+        'category',
         'date',
         'recipient_client',
     )
@@ -105,18 +147,19 @@ class NewInvoiceAdmin(admin.ModelAdmin):
         ('📋 Основная информация', {
             'fields': (
                 ('date', 'due_date', 'status'),
+                'category',
             )
         }),
         ('🏢 Выставитель инвойса', {
             'fields': ('issuer_company',),
-            'description': 'По умолчанию: Caromoto Lithuania'
+            'description': 'По умолчанию: Caromoto Lithuania. Для входящих инвойсов — укажите контрагента ниже.'
         }),
         ('👤 Получатель инвойса', {
             'fields': ('recipient_client',),
         }),
         ('🚗 Автомобили', {
             'fields': ('cars',),
-            'description': 'Выберите автомобили - позиции создадутся автоматически из их услуг'
+            'description': 'Выберите автомобили - позиции создадутся автоматически из их услуг. Для общих расходов (аренда и т.д.) оставьте пустым.'
         }),
         ('💰 Финансы', {
             'fields': (
@@ -125,9 +168,8 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             ),
             'classes': ('collapse',),
         }),
-        ('📝 Дополнительно', {
-            'fields': ('notes',),
-            'classes': ('collapse',),
+        ('📎 Дополнительно', {
+            'fields': ('notes', 'attachment'),
         }),
         ('⚙️ Прочие получатели (если не клиент)', {
             'fields': (
@@ -135,6 +177,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
                 ('recipient_carrier', 'recipient_company'),
             ),
             'classes': ('collapse',),
+            'description': 'Для входящих инвойсов: укажите Caromoto Lithuania как получателя-компанию'
         }),
         ('⚙️ Прочие выставители (если не компания)', {
             'fields': (
@@ -226,6 +269,17 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             
             invoice.status = request.POST.get('status', 'ISSUED')
             invoice.notes = request.POST.get('notes', '')
+            
+            # Категория
+            category_id = request.POST.get('category')
+            if category_id:
+                invoice.category = ExpenseCategory.objects.filter(pk=category_id).first()
+            else:
+                invoice.category = None
+            
+            # Вложение
+            if 'attachment' in request.FILES:
+                invoice.attachment = request.FILES['attachment']
             
             # Очищаем все поля выставителя и получателя перед установкой новых
             invoice.issuer_company = None
@@ -356,6 +410,33 @@ class NewInvoiceAdmin(admin.ModelAdmin):
         return format_html('<a href="{}" style="font-weight: bold;">{}</a>', url, obj.number)
     number_display.short_description = 'Номер'
     number_display.admin_order_field = 'number'
+    
+    def direction_badge(self, obj):
+        """Бейдж направления: Исходящий / Входящий / Внутренний"""
+        direction = obj.direction
+        styles = {
+            'OUTGOING': ('background:#007bff;', '↗ Исх'),
+            'INCOMING': ('background:#fd7e14;', '↙ Вх'),
+            'INTERNAL': ('background:#6c757d;', '↔ Внутр'),
+        }
+        style, label = styles.get(direction, ('background:#6c757d;', '?'))
+        return format_html(
+            '<span style="{}color:white;padding:2px 6px;border-radius:3px;font-size:0.85em;white-space:nowrap;">{}</span>',
+            style, label
+        )
+    direction_badge.short_description = 'Напр.'
+    
+    def category_display(self, obj):
+        """Категория расхода/дохода"""
+        if obj.category:
+            return format_html(
+                '<span style="color:#555;" title="{}">{}</span>',
+                obj.category.get_category_type_display(),
+                obj.category.short_name or obj.category.name
+            )
+        return format_html('<span style="color:#ccc;">—</span>')
+    category_display.short_description = 'Кат.'
+    category_display.admin_order_field = 'category'
     
     def notes_display(self, obj):
         """Примечания инвойса"""
@@ -735,6 +816,7 @@ class TransactionAdmin(admin.ModelAdmin):
         'sender_display',
         'recipient_display',
         'amount_display',
+        'trx_category_display',
         'status_display',
         'invoice_link',
     )
@@ -743,6 +825,7 @@ class TransactionAdmin(admin.ModelAdmin):
         'type',
         'method',
         'status',
+        'category',
         'date',
     )
     
@@ -790,6 +873,8 @@ class TransactionAdmin(admin.ModelAdmin):
                 'amount',
                 'invoice',
                 'description',
+                'category',
+                'attachment',
             )
         }),
         ('Метаданные', {
@@ -882,6 +967,17 @@ class TransactionAdmin(admin.ModelAdmin):
     status_display.short_description = 'Статус'
     status_display.admin_order_field = 'status'
     
+    def trx_category_display(self, obj):
+        """Категория транзакции"""
+        if obj.category:
+            return format_html(
+                '<span style="color:#555;">{}</span>',
+                obj.category.short_name or obj.category.name
+            )
+        return format_html('<span style="color:#ccc;">—</span>')
+    trx_category_display.short_description = 'Кат.'
+    trx_category_display.admin_order_field = 'category'
+    
     def invoice_link(self, obj):
         """Ссылка на инвойс"""
         if obj.invoice:
@@ -889,6 +985,12 @@ class TransactionAdmin(admin.ModelAdmin):
             return format_html('<a href="{}">{}</a>', url, obj.invoice.number)
         return '-'
     invoice_link.short_description = 'Инвойс'
+    
+    def save_model(self, request, obj, form, change):
+        """Автозаполнение категории из связанного инвойса"""
+        if not obj.category and obj.invoice and obj.invoice.category:
+            obj.category = obj.invoice.category
+        super().save_model(request, obj, form, change)
     
     def sender_info_display(self, obj):
         """Детальная информация об отправителе"""

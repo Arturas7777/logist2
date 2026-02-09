@@ -641,6 +641,48 @@
         </div>
     </div>
 
+    <!-- ════════════════ P&L ПО КАТЕГОРИЯМ ════════════════ -->
+    {% if expenses_by_category or income_by_category %}
+    <div class="db-section"><i class="bx bxs-pie-chart-alt-2" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> P&L по категориям (текущий месяц)</div>
+    <div class="charts-donut-row">
+        <!-- Doughnut: структура расходов -->
+        <div class="chart-card">
+            <h3><i class="bx bx-trending-down" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#ef4444"></i>Структура расходов</h3>
+            {% if expenses_by_category %}
+            <div class="chart-wrap">
+                <canvas id="expensesCategoryChart"></canvas>
+            </div>
+            {% else %}
+            <div style="display:flex;align-items:center;justify-content:center;height:200px;color:#b0b0c8;font-size:.9em">Нет расходов за этот месяц</div>
+            {% endif %}
+        </div>
+        <!-- Таблица: расходы по категориям -->
+        <div class="chart-card" style="display:flex;flex-direction:column;">
+            <h3><i class="bx bxs-spreadsheet" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#6c5ce7"></i>Детализация расходов</h3>
+            {% if expenses_by_category %}
+            <div class="tbl-scroll" style="flex:1">
+                <table class="dt">
+                    <thead>
+                        <tr><th>Категория</th><th style="text-align:right">Сумма</th><th style="text-align:right">%</th></tr>
+                    </thead>
+                    <tbody>
+                    {% for item in expenses_by_category %}
+                        <tr>
+                            <td>{{ item.category_name }}</td>
+                            <td class="amount-out" style="text-align:right">{{ item.amount|floatformat:2 }} €</td>
+                            <td style="text-align:right;color:#9898b0;font-weight:600">{{ item.percent }}%</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div style="display:flex;align-items:center;justify-content:center;flex:1;color:#b0b0c8;font-size:.9em">Нет данных</div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
     <!-- ════════════════ TABLES ════════════════ -->
     <div class="db-section">Последние операции</div>
     <div class="tables-grid">
@@ -772,6 +814,7 @@
 {{ revenue_expenses_chart_json|json_script:"rev-exp-data" }}
 {{ cars_by_status_json|json_script:"cars-data" }}
 {{ invoices_by_status_json|json_script:"invoices-data" }}
+{{ expenses_by_category_json|json_script:"expenses-cat-data" }}
 
 <script>
 (function() {
@@ -989,6 +1032,66 @@
             });
         } else if (invCanvas) {
             invCanvas.parentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#b0b0c8;font-size:.9em">Нет данных</div>';
+        }
+
+        /* ── Expenses by category doughnut ── */
+        var expCatRaw = parseJSON('expenses-cat-data');
+        var expCatCanvas = document.getElementById('expensesCategoryChart');
+        if (expCatRaw && expCatRaw.length > 0 && expCatCanvas) {
+            var EXP_CAT_PALETTE = [
+                '#6366f1', '#ef4444', '#f59e0b', '#22c55e', '#06b6d4',
+                '#8b5cf6', '#f43f5e', '#14b8a6', '#e879f9', '#fb923c'
+            ];
+            var catLabels = expCatRaw.map(function(r) { return r.category_name; });
+            var catData = expCatRaw.map(function(r) { return r.amount; });
+            var catColors = expCatRaw.map(function(_, i) { return EXP_CAT_PALETTE[i % EXP_CAT_PALETTE.length]; });
+            var catTotal = catData.reduce(function(a, b) { return a + b; }, 0);
+
+            new Chart(expCatCanvas, {
+                type: 'doughnut',
+                data: {
+                    labels: catLabels,
+                    datasets: [{
+                        data: catData,
+                        backgroundColor: catColors,
+                        borderWidth: 2,
+                        borderColor: '#fff',
+                        hoverOffset: 8,
+                        hoverBorderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '60%',
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: '#7c7c9a',
+                                usePointStyle: true,
+                                pointStyle: 'circle',
+                                padding: 14,
+                                font: { size: 11, weight: '600' }
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: '#1a1a2e',
+                            titleColor: '#fff',
+                            bodyColor: '#e0e0f0',
+                            padding: 12,
+                            cornerRadius: 10,
+                            callbacks: {
+                                label: function(ctx) {
+                                    var val = ctx.parsed;
+                                    var pct = catTotal > 0 ? ((val / catTotal) * 100).toFixed(1) : '0';
+                                    return ctx.label + ': ' + val.toLocaleString() + ' € (' + pct + '%)';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
         }
     }
 

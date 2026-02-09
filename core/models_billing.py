@@ -25,6 +25,59 @@ User = get_user_model()
 
 
 # ============================================================================
+# КАТЕГОРИИ РАСХОДОВ/ДОХОДОВ
+# ============================================================================
+
+class ExpenseCategory(models.Model):
+    """Категория расхода/дохода для классификации инвойсов и транзакций"""
+    
+    CATEGORY_TYPE_CHOICES = [
+        ('OPERATIONAL', 'Операционные'),       # склады, линии, перевозчики
+        ('ADMINISTRATIVE', 'Административные'), # аренда, коммунальные
+        ('SALARY', 'Зарплаты'),
+        ('MARKETING', 'Маркетинг'),
+        ('TAX', 'Налоги и сборы'),
+        ('OTHER', 'Прочие'),
+    ]
+    
+    name = models.CharField(
+        max_length=100,
+        unique=True,
+        verbose_name="Название",
+        help_text="Название категории (напр. Аренда, Логистика)"
+    )
+    short_name = models.CharField(
+        max_length=20,
+        blank=True,
+        verbose_name="Сокращение",
+        help_text="Короткое название для отчётов"
+    )
+    category_type = models.CharField(
+        max_length=20,
+        choices=CATEGORY_TYPE_CHOICES,
+        default='OTHER',
+        verbose_name="Тип категории"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Активна"
+    )
+    order = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Порядок",
+        help_text="Порядок отображения в списке (меньше = выше)"
+    )
+    
+    class Meta:
+        verbose_name = "Категория расходов"
+        verbose_name_plural = "Категории расходов"
+        ordering = ['order', 'name']
+    
+    def __str__(self):
+        return self.name
+
+
+# ============================================================================
 # БАЗОВЫЙ МИКСИН ДЛЯ БАЛАНСОВ
 # ============================================================================
 
@@ -342,6 +395,28 @@ class NewInvoice(models.Model):
         help_text="Автовоз, для которого создан этот инвойс"
     )
     
+    # ========================================================================
+    # КАТЕГОРИЗАЦИЯ И ВЛОЖЕНИЯ
+    # ========================================================================
+    
+    category = models.ForeignKey(
+        ExpenseCategory,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='invoices',
+        verbose_name="Категория",
+        help_text="Категория для учёта доходов/расходов (напр. Логистика, Аренда)"
+    )
+    
+    attachment = models.FileField(
+        upload_to='invoices/attachments/%Y/%m/',
+        null=True,
+        blank=True,
+        verbose_name="Вложение",
+        help_text="PDF или фото счёта/инвойса"
+    )
+    
     # Аудит
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
@@ -400,6 +475,35 @@ class NewInvoice(models.Model):
         """Получить имя выставителя"""
         issuer = self.issuer
         return str(issuer) if issuer else "Не указан"
+    
+    DIRECTION_OUTGOING = 'OUTGOING'
+    DIRECTION_INCOMING = 'INCOMING'
+    DIRECTION_INTERNAL = 'INTERNAL'
+    
+    @property
+    def direction(self):
+        """
+        Определить направление инвойса:
+        - OUTGOING: мы (Caromoto Lithuania, Company id=1) выставили кому-то
+        - INCOMING: нам выставили (мы получатель)
+        - INTERNAL: прочие комбинации
+        """
+        # Caromoto Lithuania — Company с id=1
+        if self.issuer_company_id == 1:
+            return self.DIRECTION_OUTGOING
+        if self.recipient_company_id == 1:
+            return self.DIRECTION_INCOMING
+        return self.DIRECTION_INTERNAL
+    
+    @property
+    def direction_display(self):
+        """Отображение направления для админки"""
+        labels = {
+            self.DIRECTION_OUTGOING: 'Исходящий',
+            self.DIRECTION_INCOMING: 'Входящий',
+            self.DIRECTION_INTERNAL: 'Внутренний',
+        }
+        return labels.get(self.direction, 'Неизвестно')
     
     @property
     def recipient(self):
@@ -984,6 +1088,28 @@ class Transaction(models.Model):
     description = models.TextField(
         verbose_name="Описание",
         help_text="Подробное описание операции"
+    )
+    
+    # ========================================================================
+    # КАТЕГОРИЗАЦИЯ И ВЛОЖЕНИЯ
+    # ========================================================================
+    
+    category = models.ForeignKey(
+        ExpenseCategory,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transactions',
+        verbose_name="Категория",
+        help_text="Категория расхода/дохода. При привязке к инвойсу берётся автоматически."
+    )
+    
+    attachment = models.FileField(
+        upload_to='transactions/attachments/%Y/%m/',
+        null=True,
+        blank=True,
+        verbose_name="Вложение",
+        help_text="Чек, квитанция или подтверждение оплаты"
     )
     
     # ========================================================================

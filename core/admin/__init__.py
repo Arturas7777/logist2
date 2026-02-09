@@ -11,7 +11,7 @@ from core.admin_website import (
 
 # Import billing admin (new system)
 try:
-    from core.admin_billing import NewInvoiceAdmin, TransactionAdmin
+    from core.admin_billing import NewInvoiceAdmin, TransactionAdmin, ExpenseCategoryAdmin
 except ImportError as e:
     import logging
     logger = logging.getLogger('django')

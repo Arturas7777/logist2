@@ -240,6 +240,8 @@ def company_dashboard(request):
     context['cars_by_status_json'] = {
         k: v for k, v in context['cars_by_status'].items() if k != 'total'
     }
+    context['expenses_by_category_json'] = context.get('expenses_by_category', [])
+    context['income_by_category_json'] = context.get('income_by_category', [])
 
     return render(request, 'admin/company_dashboard.html', context)
 
