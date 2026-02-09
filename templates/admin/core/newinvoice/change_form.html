@@ -576,6 +576,29 @@
                     </div>
                 </div>
                 
+                <div class="form-row-2" style="margin-bottom: 20px;">
+                    <div class="form-group">
+                        <label>🏷️ Категория</label>
+                        <select name="category" id="category_select">
+                            <option value="">— без категории —</option>
+                            {% for cat in expense_categories %}
+                            <option value="{{ cat.pk }}" {% if original and original.category_id == cat.pk %}selected{% endif %}>{{ cat.name }} ({{ cat.get_category_type_display }})</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-hint">Для логистических инвойсов (склад, линия, перевозчик) ставится автоматически</div>
+                    </div>
+                    <div class="form-group">
+                        <label>📎 Вложение</label>
+                        {% if original and original.attachment %}
+                        <div style="margin-bottom: 8px;">
+                            <a href="{{ original.attachment.url }}" target="_blank" style="color: var(--primary); font-weight: 500; text-decoration: none;">📄 {{ original.attachment.name|truncatechars:40 }}</a>
+                        </div>
+                        {% endif %}
+                        <input type="file" name="attachment" accept=".pdf,.jpg,.jpeg,.png,.gif" style="height: auto; padding: 10px 16px;">
+                        <div class="form-hint">PDF или фото счёта/инвойса</div>
+                    </div>
+                </div>
+                
                 <div class="form-row-2">
                     <div class="form-group">
                         <label>🏢 Выставитель</label>

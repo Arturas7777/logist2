@@ -221,6 +221,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
         extra_context['companies'] = Company.objects.all().order_by('name')
         extra_context['clients'] = Client.objects.all().order_by('name')
         extra_context['cars'] = Car.objects.all().select_related('client').order_by('-id')[:500]
+        extra_context['expense_categories'] = ExpenseCategory.objects.filter(is_active=True).order_by('order', 'name')
         
         # Определяем Caromoto Lithuania по умолчанию
         try:
