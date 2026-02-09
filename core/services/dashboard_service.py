@@ -253,6 +253,82 @@ class DashboardService:
         return result
 
     # ========================================================================
+    # P&L ПО КАТЕГОРИЯМ
+    # ========================================================================
+
+    def get_expenses_by_category(self):
+        """Расходы текущего месяца по категориям"""
+        cache_key = get_cache_key('dashboard', 'expenses_by_category')
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        from ..models_billing import Transaction
+        now = timezone.now()
+        start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        qs = (
+            Transaction.objects.filter(
+                from_company=self.company,
+                status='COMPLETED',
+                date__gte=start_of_month,
+            )
+            .values('category__name', 'category__short_name')
+            .annotate(total=Sum('amount'))
+            .order_by('-total')
+        )
+
+        grand_total = sum(float(row['total'] or 0) for row in qs)
+        result = []
+        for row in qs:
+            amount = float(row['total'] or 0)
+            result.append({
+                'category_name': row['category__name'] or 'Без категории',
+                'short_name': row['category__short_name'] or '—',
+                'amount': amount,
+                'percent': round(amount / grand_total * 100, 1) if grand_total else 0,
+            })
+
+        cache.set(cache_key, result, CACHE_TIMEOUTS['short'])
+        return result
+
+    def get_income_by_category(self):
+        """Доходы текущего месяца по категориям"""
+        cache_key = get_cache_key('dashboard', 'income_by_category')
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        from ..models_billing import Transaction
+        now = timezone.now()
+        start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        qs = (
+            Transaction.objects.filter(
+                to_company=self.company,
+                status='COMPLETED',
+                date__gte=start_of_month,
+            )
+            .values('category__name', 'category__short_name')
+            .annotate(total=Sum('amount'))
+            .order_by('-total')
+        )
+
+        grand_total = sum(float(row['total'] or 0) for row in qs)
+        result = []
+        for row in qs:
+            amount = float(row['total'] or 0)
+            result.append({
+                'category_name': row['category__name'] or 'Без категории',
+                'short_name': row['category__short_name'] or '—',
+                'amount': amount,
+                'percent': round(amount / grand_total * 100, 1) if grand_total else 0,
+            })
+
+        cache.set(cache_key, result, CACHE_TIMEOUTS['short'])
+        return result
+
+    # ========================================================================
     # BANK ACCOUNTS (Revolut и др.)
     # ========================================================================
 
@@ -343,6 +419,9 @@ class DashboardService:
             # Charts
             'revenue_expenses_chart': self.get_revenue_expenses_by_month(),
             'invoices_by_status': self.get_invoices_by_status(),
+            # P&L по категориям
+            'expenses_by_category': self.get_expenses_by_category(),
+            'income_by_category': self.get_income_by_category(),
             # Bank accounts (Revolut и др.)
             'bank_accounts': self.get_bank_balances(),
             'recent_bank_transactions': self.get_recent_bank_transactions(),
