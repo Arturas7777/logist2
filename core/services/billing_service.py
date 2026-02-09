@@ -671,6 +671,203 @@ class BillingService:
         return trx
     
     # ========================================================================
+    # АВТОМАТИЧЕСКОЕ СОПОСТАВЛЕНИЕ С БАНКОМ (AUTO-RECONCILIATION)
+    # ========================================================================
+    
+    @classmethod
+    def auto_reconcile_bank_transactions(cls) -> Dict:
+        """
+        Автоматическое сопоставление банковских транзакций с инвойсами.
+        
+        Логика:
+        1. Берём все НЕсопоставленные, ЗАВЕРШЁННЫЕ банковские транзакции (исходящие, amount < 0)
+        2. Для каждой проверяем, содержит ли description номер external_number
+           какого-либо неоплаченного ВХОДЯЩЕГО инвойса
+        3. Если найдено совпадение и сумма банковской транзакции >= remaining_amount
+           → автоматически проводим оплату через pay_invoice()
+        4. Если сумма не совпадает точно — только привязываем банк. транзакцию к инвойсу
+           (без авто-оплаты), чтобы оператор разобрался вручную
+        
+        Returns:
+            dict: {'auto_paid': [...], 'linked_only': [...], 'errors': [...]}
+        """
+        from core.models_banking import BankTransaction
+        from core.models_billing import NewInvoice
+        from core.models import Company
+        
+        result = {
+            'auto_paid': [],      # Инвойсы, автоматически оплаченные
+            'linked_only': [],    # Только привязано (сумма не совпала)
+            'errors': [],         # Ошибки
+        }
+        
+        # 1. Все несопоставленные исходящие (amount < 0) завершённые банковские транзакции
+        #    Исключаем помеченные как "не требует привязки"
+        unmatched_bank_txns = BankTransaction.objects.filter(
+            state='completed',
+            matched_invoice__isnull=True,
+            matched_transaction__isnull=True,
+            reconciliation_skipped=False,
+            amount__lt=0,  # Исходящие платежи (мы заплатили)
+        ).exclude(
+            description=''
+        ).select_related('connection__company')
+        
+        if not unmatched_bank_txns.exists():
+            logger.debug('[AutoReconcile] Нет несопоставленных банковских транзакций')
+            return result
+        
+        # 2. Все неоплаченные ВХОДЯЩИЕ инвойсы с external_number
+        #    (INCOMING = recipient_company_id == 1, т.е. нам выставили)
+        unpaid_invoices = NewInvoice.objects.filter(
+            status__in=['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'],
+            recipient_company_id=1,  # Caromoto Lithuania — получатель (нам выставили)
+        ).exclude(
+            external_number=''
+        )
+        
+        if not unpaid_invoices.exists():
+            logger.debug('[AutoReconcile] Нет неоплаченных входящих инвойсов с external_number')
+            return result
+        
+        # Строим индекс: external_number → invoice (для быстрого поиска)
+        ext_num_to_invoices = {}
+        for inv in unpaid_invoices:
+            key = inv.external_number.strip()
+            if key:
+                ext_num_to_invoices.setdefault(key, []).append(inv)
+        
+        # 3. Сопоставляем
+        caromoto = Company.objects.filter(id=1).first()
+        if not caromoto:
+            logger.error('[AutoReconcile] Company id=1 (Caromoto Lithuania) не найдена')
+            return result
+        
+        for bank_trx in unmatched_bank_txns:
+            desc = bank_trx.description.strip()
+            if not desc:
+                continue
+            
+            # Ищем совпадение: external_number содержится в description банковской транзакции
+            matched_invoice = None
+            for ext_num, invoices in ext_num_to_invoices.items():
+                if ext_num in desc:
+                    # Берём первый неоплаченный инвойс с таким номером
+                    for inv in invoices:
+                        if inv.status not in ['PAID', 'CANCELLED']:
+                            matched_invoice = inv
+                            break
+                    if matched_invoice:
+                        break
+            
+            if not matched_invoice:
+                continue
+            
+            bank_amount = abs(bank_trx.amount)  # Банковская сумма (положительная)
+            remaining = matched_invoice.remaining_amount
+            
+            logger.info(
+                f'[AutoReconcile] Совпадение: банк "{desc}" ({bank_amount} {bank_trx.currency}) '
+                f'↔ инвойс {matched_invoice.number} (external: {matched_invoice.external_number}, '
+                f'remaining: {remaining})'
+            )
+            
+            # Определяем плательщика: тот, кому выставлен инвойс (Caromoto Lithuania)
+            payer = matched_invoice.recipient  # Company id=1
+            if not payer:
+                logger.warning(f'[AutoReconcile] У инвойса {matched_invoice.number} нет получателя, пропускаем')
+                result['errors'].append({
+                    'bank_trx': str(bank_trx),
+                    'invoice': matched_invoice.number,
+                    'error': 'Нет получателя у инвойса',
+                })
+                continue
+            
+            # Проверяем совпадение сумм (допускаем разницу до 0.02 € на округление)
+            tolerance = Decimal('0.02')
+            amounts_match = abs(bank_amount - remaining) <= tolerance
+            
+            if amounts_match or bank_amount >= remaining:
+                # Суммы совпадают (или переплата) → автоматическая оплата
+                pay_amount = min(bank_amount, remaining)  # Не платим больше, чем остаток
+                try:
+                    pay_result = cls.pay_invoice(
+                        invoice=matched_invoice,
+                        amount=pay_amount,
+                        method='TRANSFER',
+                        payer=payer,
+                        description=f'Авто-оплата по банковской операции: {desc}',
+                        bank_transaction_id=bank_trx.pk,
+                    )
+                    # Добавляем reconciliation_note
+                    bank_trx.refresh_from_db()
+                    bank_trx.reconciliation_note = (
+                        f'Авто-сопоставлено: external_number "{matched_invoice.external_number}" '
+                        f'найден в описании банковской операции'
+                    )
+                    bank_trx.save(update_fields=['reconciliation_note'])
+                    
+                    result['auto_paid'].append({
+                        'invoice': matched_invoice.number,
+                        'external_number': matched_invoice.external_number,
+                        'amount': str(pay_amount),
+                        'bank_trx': str(bank_trx),
+                        'new_status': matched_invoice.status,
+                    })
+                    
+                    # Убираем инвойс из индекса (уже оплачен)
+                    ext_key = matched_invoice.external_number.strip()
+                    if ext_key in ext_num_to_invoices:
+                        ext_num_to_invoices[ext_key] = [
+                            i for i in ext_num_to_invoices[ext_key]
+                            if i.pk != matched_invoice.pk
+                        ]
+                    
+                    logger.info(
+                        f'[AutoReconcile] ✅ Авто-оплата: инвойс {matched_invoice.number} '
+                        f'оплачен на {pay_amount} € → статус {matched_invoice.status}'
+                    )
+                    
+                except Exception as e:
+                    logger.error(f'[AutoReconcile] Ошибка авто-оплаты инвойса {matched_invoice.number}: {e}')
+                    result['errors'].append({
+                        'bank_trx': str(bank_trx),
+                        'invoice': matched_invoice.number,
+                        'error': str(e),
+                    })
+            else:
+                # Суммы НЕ совпадают (банковская < остаток) → только привязка, без оплаты
+                bank_trx.matched_invoice = matched_invoice
+                bank_trx.reconciliation_note = (
+                    f'Авто-привязано (суммы не совпали): банк {bank_amount} € ≠ остаток {remaining} €. '
+                    f'Требуется ручная обработка.'
+                )
+                bank_trx.save(update_fields=['matched_invoice', 'reconciliation_note'])
+                
+                result['linked_only'].append({
+                    'invoice': matched_invoice.number,
+                    'external_number': matched_invoice.external_number,
+                    'bank_amount': str(bank_amount),
+                    'invoice_remaining': str(remaining),
+                    'bank_trx': str(bank_trx),
+                })
+                
+                logger.info(
+                    f'[AutoReconcile] ⚠️ Привязано без оплаты: инвойс {matched_invoice.number} '
+                    f'(банк {bank_amount} ≠ остаток {remaining})'
+                )
+        
+        total = len(result['auto_paid']) + len(result['linked_only'])
+        if total:
+            logger.info(
+                f'[AutoReconcile] Итого: {len(result["auto_paid"])} авто-оплачено, '
+                f'{len(result["linked_only"])} привязано без оплаты, '
+                f'{len(result["errors"])} ошибок'
+            )
+        
+        return result
+    
+    # ========================================================================
     # ОТЧЕТЫ И АНАЛИТИКА
     # ========================================================================
     
