@@ -545,6 +545,18 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 
 ### Недавние изменения (февраль 2026):
 
+**09.02.2026 - Ручной ввод суммы и позиций для входящих инвойсов:**
+1. **РУЧНОЙ ВВОД СУММЫ И ПОЗИЦИЙ:** ⭐ НОВЫЙ ФУНКЦИОНАЛ
+   - ✅ Поле "Сумма к оплате" вынесено наверх, рядом с "Номер счёта контрагента"
+   - ✅ При выбранных авто — readonly + AJAX авторасчёт из услуг (endpoint `calc-cars-total/`)
+   - ✅ При отсутствии авто — ручной ввод суммы (учитывается как долг)
+   - ✅ Блок "Позиции вручную" — динамические строки (описание, кол-во, цена, удалить)
+   - ✅ Данные ручных позиций передаются через `manual_items_json` (JSON)
+   - ✅ Метод `_handle_manual_items()` в `NewInvoiceAdmin` — парсинг и создание InvoiceItem
+   - ✅ AJAX endpoint `calc_cars_total_view()` — расчёт total из car_ids + issuer
+   - ✅ Автоматический пересчёт суммы при добавлении/удалении позиций
+   - ✅ Файлы: `core/admin_billing.py`, `templates/admin/core/newinvoice/change_form.html`
+
 **09.02.2026 - Интеграция site.pro (b1.lt) Accounting API:**
 1. **БУХГАЛТЕРСКАЯ ИНТЕГРАЦИЯ:** ⭐ НОВЫЙ ФУНКЦИОНАЛ
    - ✅ Полная интеграция с site.pro Accounting API для отправки инвойсов
@@ -1200,6 +1212,8 @@ ssh root@server "cd /path; source .venv/bin/activate; python manage.py showmigra
 32. **Тесты** - запуск: `.venv\Scripts\python.exe run_all_tests.py` (67 тестов, безопасный rollback через atomic)
 33. **Старые тесты удалены** - `core/tests.py` был сломан (устаревшая модель), заменён на `run_all_tests.py`
 34. **Кастомная форма инвойса** - `templates/admin/core/newinvoice/change_form.html` — при добавлении полей в NewInvoice надо добавлять их и в этот шаблон
+35. **Ручной ввод суммы** - для инвойсов без авто (аренда, коммуналка) сумма вводится через `manual_total`, позиции через `manual_items_json`
+36. **AJAX calc-cars-total** - при выборе авто сумма автоматически обновляется через AJAX (`/admin/core/newinvoice/calc-cars-total/`)
 
 ## ВНЕШНИЕ ИНТЕГРАЦИИ
 

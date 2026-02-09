@@ -11,6 +11,8 @@
 Дата: 30 сентября 2025
 """
 
+import json
+
 from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse, path
@@ -18,7 +20,7 @@ from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.db.models import Sum, Q
 from django.utils import timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from .models_billing import NewInvoice, InvoiceItem, Transaction, ExpenseCategory
 from .services.billing_service import BillingService
@@ -348,7 +350,9 @@ class NewInvoiceAdmin(admin.ModelAdmin):
                 messages.success(request, f'✅ Инвойс {invoice.number} сохранен! Создано {invoice.items.count()} позиций.')
             else:
                 invoice.cars.clear()
-                messages.success(request, f'✅ Инвойс {invoice.number} сохранен!')
+                # Ручной ввод суммы и позиций (для инвойсов без автомобилей)
+                self._handle_manual_items(request, invoice)
+                messages.success(request, f'✅ Инвойс {invoice.number} сохранен! Сумма: {invoice.total:.2f} €')
             
             # Определяем куда редиректить
             if '_save' in request.POST:
@@ -369,6 +373,87 @@ class NewInvoiceAdmin(admin.ModelAdmin):
                 return redirect('admin:core_newinvoice_change', object_id)
             else:
                 return redirect('admin:core_newinvoice_add')
+    
+    def _handle_manual_items(self, request, invoice):
+        """
+        Обработка ручного ввода суммы и позиций (для инвойсов без автомобилей).
+        
+        Логика:
+        1. Если переданы ручные позиции (manual_items_json) — создаём InvoiceItem для каждой,
+           пересчитываем total из позиций.
+        2. Если нет позиций, но задан manual_total > 0 — создаём одну позицию
+           "Оплата по счёту {номер}" с указанной суммой.
+        3. Если manual_total = 0 и нет позиций — ничего не делаем (total остаётся 0).
+        """
+        manual_total_str = request.POST.get('manual_total', '0')
+        manual_items_raw = request.POST.get('manual_items_json', '[]')
+        
+        # Парсим manual_total
+        try:
+            manual_total = Decimal(manual_total_str)
+        except (InvalidOperation, ValueError, TypeError):
+            manual_total = Decimal('0')
+        
+        # Парсим ручные позиции
+        manual_items = []
+        try:
+            manual_items = json.loads(manual_items_raw)
+            if not isinstance(manual_items, list):
+                manual_items = []
+        except (json.JSONDecodeError, TypeError):
+            manual_items = []
+        
+        # Удаляем старые ручные позиции (без привязки к авто)
+        invoice.items.filter(car__isnull=True).delete()
+        
+        if manual_items:
+            # Создаём позиции из ручного ввода
+            order = 0
+            for item_data in manual_items:
+                desc = str(item_data.get('description', '')).strip()
+                if not desc:
+                    continue
+                try:
+                    qty = Decimal(str(item_data.get('quantity', 1)))
+                    price = Decimal(str(item_data.get('unit_price', 0)))
+                except (InvalidOperation, ValueError, TypeError):
+                    continue
+                
+                if qty <= 0 and price <= 0:
+                    continue
+                
+                total_price = qty * price
+                InvoiceItem.objects.create(
+                    invoice=invoice,
+                    description=desc,
+                    quantity=qty,
+                    unit_price=price,
+                    total_price=total_price,
+                    order=order,
+                )
+                order += 1
+            
+            # Пересчитываем total из позиций
+            invoice.calculate_totals()
+            invoice.save(update_fields=['subtotal', 'total'])
+        
+        elif manual_total > 0:
+            # Нет ручных позиций, но задана сумма — создаём одну позицию
+            ext_num = invoice.external_number or invoice.number
+            description = f"Оплата по счёту {ext_num}"
+            
+            InvoiceItem.objects.create(
+                invoice=invoice,
+                description=description,
+                quantity=Decimal('1'),
+                unit_price=manual_total,
+                total_price=manual_total,
+                order=0,
+            )
+            
+            # Устанавливаем total
+            invoice.calculate_totals()
+            invoice.save(update_fields=['subtotal', 'total'])
     
     def save_model(self, request, obj, form, change):
         """Сохраняем инвойс и автоматически генерируем позиции из автомобилей"""
@@ -748,8 +833,90 @@ class NewInvoiceAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         custom_urls = [
             path('<int:invoice_id>/pay/', self.admin_site.admin_view(self.pay_invoice_view), name='pay_invoice'),
+            path('calc-cars-total/', self.admin_site.admin_view(self.calc_cars_total_view), name='calc_cars_total'),
         ]
         return custom_urls + urls
+    
+    def calc_cars_total_view(self, request):
+        """AJAX: расчёт предварительной суммы по выбранным автомобилям и выставителю."""
+        from django.http import JsonResponse
+        from core.models import Car, Company, Warehouse, Line, Carrier
+        from collections import OrderedDict
+        
+        car_ids = request.GET.getlist('car_ids[]') or request.GET.getlist('car_ids')
+        issuer_value = request.GET.get('issuer', '')
+        
+        if not car_ids:
+            return JsonResponse({'total': '0.00', 'count': 0})
+        
+        # Определяем выставителя
+        issuer = None
+        issuer_type = ''
+        if issuer_value and '_' in issuer_value:
+            itype, iid = issuer_value.rsplit('_', 1)
+            try:
+                if itype == 'company':
+                    issuer = Company.objects.get(pk=iid)
+                    issuer_type = 'Company'
+                elif itype == 'warehouse':
+                    issuer = Warehouse.objects.get(pk=iid)
+                    issuer_type = 'Warehouse'
+                elif itype == 'line':
+                    issuer = Line.objects.get(pk=iid)
+                    issuer_type = 'Line'
+                elif itype == 'carrier':
+                    issuer = Carrier.objects.get(pk=iid)
+                    issuer_type = 'Carrier'
+            except Exception:
+                pass
+        
+        if not issuer:
+            # По умолчанию Caromoto Lithuania
+            try:
+                issuer = Company.objects.get(name="Caromoto Lithuania")
+                issuer_type = 'Company'
+            except Company.DoesNotExist:
+                return JsonResponse({'total': '0.00', 'count': 0})
+        
+        is_company = (issuer_type == 'Company')
+        cars = Car.objects.filter(pk__in=car_ids)
+        grand_total = Decimal('0')
+        
+        for car in cars:
+            car.update_days_and_storage()
+            car.calculate_total_price()
+            
+            if issuer_type == 'Warehouse':
+                services = car.get_warehouse_services()
+            elif issuer_type == 'Line':
+                services = car.get_line_services()
+            elif issuer_type == 'Carrier':
+                services = car.get_carrier_services()
+            elif issuer_type == 'Company':
+                services = car.car_services.all()
+            else:
+                continue
+            
+            for service in services:
+                sname = service.get_service_name()
+                if sname in ("Услуга не найдена", "Хранение"):
+                    continue
+                if is_company:
+                    price = (service.custom_price if service.custom_price is not None else service.get_default_price()) + (service.markup_amount if service.markup_amount is not None else Decimal('0'))
+                else:
+                    price = service.custom_price if service.custom_price is not None else service.get_default_price()
+                grand_total += price * service.quantity
+            
+            # Хранение
+            if (is_company or issuer_type == 'Warehouse'):
+                if car.storage_cost and car.storage_cost > 0 and car.days and car.days > 0:
+                    daily_rate = car._get_storage_daily_rate() if car.warehouse else Decimal('0')
+                    grand_total += daily_rate * car.days
+        
+        return JsonResponse({
+            'total': str(grand_total.quantize(Decimal('0.01'))),
+            'count': cars.count(),
+        })
     
     def pay_invoice_view(self, request, invoice_id):
         """Форма оплаты инвойса"""
