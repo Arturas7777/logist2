@@ -386,11 +386,15 @@ ExpenseCategory:
 # Файл: core/models_banking.py (добавленные поля)
 
 BankTransaction (дополнительные поля):
-    matched_transaction  # FK → Transaction (nullable) — привязка к внутренней транзакции
-    matched_invoice      # FK → NewInvoice (nullable) — привязка к инвойсу
-    reconciliation_note  # CharField(255) — заметка о сопоставлении
+    matched_transaction   # FK → Transaction (nullable) — привязка к внутренней транзакции
+    matched_invoice       # FK → NewInvoice (nullable) — привязка к инвойсу
+    reconciliation_note   # CharField(255) — заметка о сопоставлении
+    reconciliation_skipped # BooleanField(default=False) — "не требует привязки" (комиссии, обмены и т.д.)
     
-    # Property: is_reconciled → True если есть matched_transaction или matched_invoice
+    # Property: is_reconciled → True если matched_transaction ИЛИ matched_invoice ИЛИ reconciliation_skipped
+    
+    # Авто-пропуск при синхронизации Revolut:
+    # Новые транзакции типа fee/exchange/tax автоматически помечаются reconciliation_skipped=True
 ```
 
 ### NewInvoice (расширение — учёт расходов и reconciliation)
@@ -1401,9 +1405,22 @@ core/management/commands/setup_sitepro.py  # Помощник настройки
 Сопоставление инвойсов с банковскими операциями:
 - `NewInvoice.external_number` — номер счёта контрагента (для поиска в банковских выписках)
 - `BankTransaction.matched_invoice` / `matched_transaction` — FK-привязки
-- `BankTransaction.is_reconciled` — computed property
-- Фильтр "Сопоставлено/Не сопоставлено" в BankTransactionAdmin
+- `BankTransaction.reconciliation_skipped` — пометка "не требует привязки" (fee/exchange/tax)
+- `BankTransaction.is_reconciled` — computed property (matched ИЛИ skipped)
+- Фильтр: "Сопоставлены" / "Не требует привязки" / "Не сопоставлены" в BankTransactionAdmin
 - `BillingService.pay_invoice(bank_transaction_id=...)` — авто-привязка при оплате
+- `BillingService.auto_reconcile_bank_transactions()` — авто-сопоставление по external_number (вызывается из sync_bank_accounts)
+- Авто-пропуск: при синхронизации Revolut транзакции типа fee/exchange/tax автоматически помечаются как не требующие привязки
+
+### Быстрое создание расхода из банковской транзакции
+
+Для покупок по карте (топливо, канцтовары) без счёта от контрагента:
+- Кнопка "💰 Расход" в списке банковских транзакций → кастомная форма
+- Форма: категория (обязательное), компания (авто-подбор по counterparty_name), описание
+- Авто-создание NewInvoice (входящий, PAID) + InvoiceItem + привязка к BankTransaction
+- Mass action "Создать расходы (массово)" — промежуточная страница с выбором категории
+- URL: `admin/core/banktransaction/<pk>/create-expense/`
+- Шаблоны: `templates/admin/core/banktransaction/create_expense.html`, `create_expenses_bulk.html`
 
 ### Группировка сайдбара админки (LogistAdminSite)
 
