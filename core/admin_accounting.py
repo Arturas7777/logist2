@@ -43,15 +43,27 @@ class SiteProConnectionAdmin(admin.ModelAdmin):
                 'is_active',
             ),
         }),
-        ('Учётные данные site.pro', {
+        ('API ключи site.pro (рекомендуется)', {
+            'fields': (
+                '_api_key',
+                '_private_key',
+            ),
+            'description': (
+                'Введите API raktas и Privatus raktas из настроек site.pro. '
+                'Ключи используются для аутентификации через API. '
+                'Данные хранятся в зашифрованном виде (Fernet).'
+            ),
+        }),
+        ('Логин/пароль site.pro (альтернатива)', {
             'fields': (
                 '_username',
                 '_password',
             ),
             'description': (
-                'Введите логин и пароль от site.pro аккаунта. '
+                'Если API ключи не заданы — используются логин и пароль. '
                 'Данные хранятся в зашифрованном виде (Fernet).'
             ),
+            'classes': ('collapse',),
         }),
         ('Настройки инвойсов', {
             'fields': (
@@ -117,10 +129,12 @@ class SiteProConnectionAdmin(admin.ModelAdmin):
             result = service.test_connection()
 
             if result['success']:
+                details = result.get('details', {})
                 messages.success(
                     request,
                     f'{conn.name}: подключение успешно! '
-                    f'User ID: {result["user_id"]}, Company ID: {result["company_id"]}'
+                    f'Метод: {result["auth_method"]}. '
+                    f'Деталі: {details}'
                 )
             else:
                 messages.error(request, f'{conn.name}: ошибка — {result["error"]}')

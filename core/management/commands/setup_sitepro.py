@@ -2,9 +2,9 @@
 Помощник для настройки подключения к site.pro (b1.lt) Accounting API.
 
 Этапы:
-1. Ввод учётных данных (username/password от site.pro)
-2. Тестовая аутентификация через API
-3. Сохранение credentials в SiteProConnection (зашифрованные)
+1. Ввод API raktas (ключа) из настроек site.pro
+2. Тестовая аутентификация через API (B1-Api-Key header)
+3. Сохранение ключа в SiteProConnection (зашифрован)
 4. Опциональная настройка параметров инвойсов
 
 Использование:
@@ -25,28 +25,25 @@ class Command(BaseCommand):
             '\n  Настройка site.pro (b1.lt) Accounting API\n'
         ))
 
-        # ── Шаг 1: Запрашиваем учётные данные ──
-        self.stdout.write(self.style.MIGRATE_HEADING('Шаг 1: Учётные данные site.pro'))
+        # ── Шаг 1: API ключ ──
+        self.stdout.write(self.style.MIGRATE_HEADING('Шаг 1: API ключ site.pro'))
         self.stdout.write(
-            '  Введите логин и пароль от вашего аккаунта site.pro.\n'
+            '  Введите API raktas из настроек вашей компании в site.pro.\n'
+            '  Ключ можно найти: site.pro -> Моя бухгалтерия -> Параметры -> API.\n'
             '  Данные будут зашифрованы и сохранены в базе данных.\n'
         )
 
-        username = input('  Email/Username: ').strip()
-        if not username:
-            self.stdout.write(self.style.ERROR('Username обязателен!'))
+        api_key = input('  API raktas: ').strip()
+        if not api_key:
+            self.stdout.write(self.style.ERROR('API raktas обязателен!'))
             return
 
-        password = input('  Password: ').strip()
-        if not password:
-            self.stdout.write(self.style.ERROR('Password обязателен!'))
-            return
+        private_key = input('  Privatus raktas (необязательно, Enter чтобы пропустить): ').strip()
 
         # ── Шаг 2: Тестовая аутентификация ──
         self.stdout.write(self.style.MIGRATE_HEADING('\nШаг 2: Тестовая аутентификация'))
-        self.stdout.write('  Проверяем подключение к https://api.sitepro.com...\n')
+        self.stdout.write('  Проверяем подключение к https://site.pro/My-Accounting/api...\n')
 
-        # Создаём временный объект для теста
         from core.models_accounting import SiteProConnection
         from core.models import Company
 
@@ -80,34 +77,50 @@ class Command(BaseCommand):
             }
         )
 
-        # Устанавливаем зашифрованные credentials
-        conn.username = username
-        conn.password = password
+        # Устанавливаем зашифрованный API ключ
+        conn.api_key = api_key
+        if private_key:
+            conn.private_key = private_key
         conn.save()
 
         action = 'создано' if created else 'обновлено'
         self.stdout.write(self.style.SUCCESS(f'  Подключение {action}: {conn}\n'))
 
-        # Тестируем аутентификацию
+        # Тестируем
         from core.services.sitepro_service import SiteProService
         service = SiteProService(conn)
         result = service.test_connection()
 
         if result['success']:
             self.stdout.write(self.style.SUCCESS(
-                f'  Аутентификация успешна!\n'
-                f'  SitePro User ID: {result["user_id"]}\n'
-                f'  SitePro Company ID: {result["company_id"]}\n'
+                f'  Подключение успешно!\n'
+                f'  Метод: {result["auth_method"]}\n'
+                f'  Детали: {result.get("details", {})}\n'
             ))
         else:
             self.stdout.write(self.style.ERROR(
-                f'  Ошибка аутентификации: {result["error"]}\n'
-                f'  Проверьте логин/пароль и наличие API-доступа в тарифе.\n'
+                f'  Ошибка подключения: {result["error"]}\n'
+                f'  Проверьте ключ и наличие API-доступа в тарифе site.pro.\n'
             ))
-            return
+            cont = input('  Продолжить настройку? (y/n, по умолчанию n): ').strip().lower()
+            if cont != 'y':
+                return
 
-        # ── Шаг 3: Настройки инвойсов ──
-        self.stdout.write(self.style.MIGRATE_HEADING('Шаг 3: Настройки инвойсов'))
+        # ── Шаг 3: Получаем справочные данные ──
+        self.stdout.write(self.style.MIGRATE_HEADING('Шаг 3: Справочные данные'))
+        
+        if result['success']:
+            try:
+                vat_rates = service.get_vat_rates()
+                if vat_rates:
+                    self.stdout.write('  Ставки НДС в site.pro:')
+                    for vr in vat_rates[:10]:
+                        self.stdout.write(f'    - {vr}')
+            except Exception as e:
+                self.stdout.write(self.style.WARNING(f'  Не удалось получить ставки НДС: {e}'))
+
+        # ── Шаг 4: Настройки инвойсов ──
+        self.stdout.write(self.style.MIGRATE_HEADING('\nШаг 4: Настройки инвойсов'))
 
         vat_rate = input('  Ставка НДС по умолчанию в % (по умолчанию 0): ').strip()
         if vat_rate:
@@ -134,6 +147,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f'\n  Настройка завершена!\n'
             f'  Подключение: {conn.name}\n'
+            f'  Base URL: {conn.base_url}\n'
             f'  НДС: {conn.default_vat_rate}%\n'
             f'  Валюта: {conn.default_currency}\n'
             f'  Серия: {conn.invoice_series or "(не задана)"}\n'
@@ -142,6 +156,6 @@ class Command(BaseCommand):
 
         self.stdout.write(
             '  Для отправки инвойсов используйте:\n'
-            '  - Админка → Инвойсы → Выбрать → "Отправить в site.pro"\n'
+            '  - Админка -> Инвойсы -> Выбрать -> "Отправить в site.pro"\n'
             '  - Или включите авто-отправку для автоматической синхронизации\n'
         )
