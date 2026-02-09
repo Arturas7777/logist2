@@ -1121,6 +1121,10 @@ total_markup_sum = queryset.aggregate(
 
 | Дата | Описание |
 |------|----------|
+| 09.02.2026 | Комплексные тесты: run_all_tests.py — 67 тестов, 15 секций, удалены 4 устаревших теста, исправлена миграция 0059 |
+| 09.02.2026 | Invoice-bank reconciliation: external_number, matched_transaction/invoice на BankTransaction, BillingService |
+| 09.02.2026 | Группировка сайдбара админки: LogistAdminSite — 6 логических групп вместо плоского списка |
+| 09.02.2026 | Полный учёт расходов: ExpenseCategory, category/attachment на инвойсах и транзакциях, P&L на дашборде |
 | 09.02.2026 | Интеграция site.pro (b1.lt) Accounting API — бухгалтерские инвойсы (B1-Api-Key, /My-Accounting/api) |
 | 08.02.2026 | Редизайн дашборда: светлая тема, Boxicons, исправление графиков, Redis локально, TruncMonth оптимизация |
 | 08.02.2026 | Glassmorphism-редизайн дашборда: frosted glass карточки, тёмный градиент, glowing accents, светлые оси графиков |
@@ -1601,3 +1605,156 @@ total_markup_sum = queryset.aggregate(
 - `core/admin/__init__.py` — регистрация admin-классов site.pro
 - `core/signals.py` — авто-push при ISSUED
 - `core/management/commands/setup_sitepro.py` — помощник настройки
+
+---
+
+### 42. Полный учёт расходов — категории, вложения, P&L дашборд (09.02.2026)
+
+**Статус:** Завершено
+
+**Цель:** Полноценный учёт доходов/расходов прямо из Django Admin, без зависимости от внешних систем.
+
+**Новая модель `ExpenseCategory` (`core/models_billing.py`):**
+- `name` — название (Логистика, Аренда, Коммунальные, Зарплаты, Маркетинг, Налоги, Прочие)
+- `short_name` — сокращение для отчётов
+- `category_type` — OPERATIONAL, ADMINISTRATIVE, SALARY, MARKETING, TAX, OTHER
+- `is_active`, `order` — управление отображением
+
+**Расширение `NewInvoice`:**
+- `category` — FK → ExpenseCategory (авто-категоризация через сигнал)
+- `attachment` — FileField (PDF/фото счёта)
+- Computed property `direction`: OUTGOING (мы выставили), INCOMING (нам выставили), INTERNAL
+
+**Расширение `Transaction`:**
+- `category` — FK → ExpenseCategory (авто-заполнение из инвойса)
+- `attachment` — FileField (чек/квитанция)
+
+**Авто-категоризация (`core/signals.py`):**
+- `pre_save` на NewInvoice: если выставитель — склад/линия/перевозчик → категория "Логистика"
+- Не перезаписывает вручную установленную категорию
+
+**Дашборд P&L (`core/services/dashboard_service.py`):**
+- `get_expenses_by_category()` — агрегация расходов текущего месяца по категориям
+- `get_income_by_category()` — агрегация доходов
+- Doughnut-график "Структура расходов" на дашборде
+
+**Admin-интеграции:**
+- `ExpenseCategoryAdmin` — управление категориями
+- `InvoiceDirectionFilter` — фильтр по направлению (Исходящий/Входящий)
+- `direction_badge`, `category_display` в списке инвойсов
+- Поля category и attachment в кастомной форме инвойса
+
+**Миграция:** `0112_expense_categories.py` (модель + 7 базовых категорий через data migration)
+
+**Файлы:**
+- `core/models_billing.py` — ExpenseCategory, расширения NewInvoice и Transaction
+- `core/admin_billing.py` — ExpenseCategoryAdmin, InvoiceDirectionFilter, обновления формы
+- `core/signals.py` — auto_categorize_invoice
+- `core/services/dashboard_service.py` — P&L по категориям
+- `core/views.py` — передача данных P&L в шаблон дашборда
+- `templates/admin/company_dashboard.html` — doughnut-график расходов
+- `templates/admin/core/newinvoice/change_form.html` — поля category, attachment, external_number
+
+---
+
+### 43. Группировка сайдбара админки — LogistAdminSite (09.02.2026)
+
+**Статус:** Завершено
+
+**Цель:** Навигация по админке через логические группы вместо одного плоского списка.
+
+**Реализация:**
+- Кастомный `LogistAdminSite` (наследует `AdminSite`)
+- Переопределение `get_app_list()` — группировка моделей core по категориям
+- Monkey-patch в `logist2/__init__.py` для глобального применения
+
+**6 групп в сайдбаре:**
+1. **Логистика** — Car, Container, AutoTransport
+2. **Партнёры** — Warehouse, Client, Company, Line, Carrier
+3. **Финансы** — NewInvoice, Transaction, InvoiceItem, ExpenseCategory
+4. **Банкинг** — BankConnection, BankAccount, BankTransaction
+5. **Сайт** — ClientUser, AIChat, NewsPost, CarPhoto, ContainerPhoto
+6. **Site.pro** — SiteProConnection, SiteProInvoiceSync
++ Системные модели Django (auth, sessions) остаются отдельно
+
+**Файлы:**
+- `logist2/admin_site.py` — LogistAdminSite, ADMIN_GROUPS
+- `logist2/__init__.py` — monkey-patch для admin.site
+
+---
+
+### 44. Invoice-bank reconciliation — сопоставление инвойсов с банком (09.02.2026)
+
+**Статус:** Завершено
+
+**Цель:** Связать внутренние финансовые операции (инвойсы, транзакции) с банковскими операциями из Revolut.
+
+**Расширение `NewInvoice`:**
+- `external_number` — CharField(100) — номер счёта от контрагента (с бумажного/PDF инвойса)
+
+**Расширение `BankTransaction` (`core/models_banking.py`):**
+- `matched_transaction` — FK → Transaction (nullable)
+- `matched_invoice` — FK → NewInvoice (nullable)
+- `reconciliation_note` — CharField(255)
+- `is_reconciled` — computed property (True если есть любая привязка)
+
+**Admin-интеграции (`core/admin_banking.py`):**
+- Fieldset "Сопоставление с внутренними операциями" в BankTransactionAdmin
+- `autocomplete_fields` для matched_invoice и matched_transaction
+- `BankReconciliationFilter` — фильтр Сопоставлено/Не сопоставлено
+- `display_reconciled` — бейдж статуса в списке
+
+**BillingService (`core/services/billing_service.py`):**
+- `pay_invoice()` принимает опциональный `bank_transaction_id`
+- При указании — привязывает BankTransaction к созданным Transaction и NewInvoice
+
+**Миграция:** `0113_invoice_bank_reconciliation.py`
+
+---
+
+### 45. Комплексное тестирование — run_all_tests.py (09.02.2026)
+
+**Статус:** Завершено
+
+**Цель:** Единый тестовый скрипт, покрывающий все подсистемы проекта.
+
+**Результат:** 67 тестов, 15 секций, все проходят.
+
+**Секции:**
+1. Создание инвойсов (4 теста)
+2. Категории расходов (9)
+3. Направление инвойса (4)
+4. External number (4)
+5. Category & attachment (6)
+6. Bank reconciliation (7)
+7. NewInvoiceAdmin config (3)
+8. BankTransactionAdmin config (4)
+9. TransactionAdmin config (2)
+10. Sidebar groups (7)
+11. BillingService signature (2)
+12. Dashboard service (6)
+13. Auto-categorize signal (2)
+14. API permissions (2)
+15. Site.pro models (4)
+
+**Особенности:**
+- Запуск на рабочей БД через `transaction.atomic()` + `RollbackException` — данные НЕ сохраняются
+- Безопасен для production
+- Запуск: `.venv\Scripts\python.exe run_all_tests.py`
+
+**Удалённые устаревшие тесты:**
+- `core/tests.py` — сломан после рефакторинга (client → recipient_client, total_amount → total, Payment → Transaction)
+- `test_settings.py` — VPS-only скрипт
+- `core/management/commands/test_unload_date_inheritance.py` — тест на реальных данных
+- `core/management/commands/test_invoice_markup.py` — тест на реальных данных
+
+**Обнаружены предшествующие баги (не наши):**
+- `CarSerializer` ссылается на удалённое поле `current_price`
+- Цепочка миграций конфликтует при создании тестовой БД с нуля (0059)
+
+**Исправлено:**
+- Миграция `0059_restore_company_balance_fields.py` — заменена на идемпотентный RunPython
+
+**Файлы:**
+- `run_all_tests.py` — основной тестовый скрипт (67 тестов)
+- `core/migrations/0059_restore_company_balance_fields.py` — исправлена

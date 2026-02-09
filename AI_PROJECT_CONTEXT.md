@@ -26,6 +26,9 @@
 - **Система услуг компаний** - услуги Company (Caromoto Lithuania) как отдельный тип
 - **AI-ассистент** - отдельный агент для админки + RAG контекст по коду/докам
 - **Site.pro (b1.lt) интеграция** - отправка инвойсов в бухгалтерскую систему через API
+- **Учёт расходов** - категории расходов (ExpenseCategory), P&L по категориям на дашборде
+- **Группировка админки** - LogistAdminSite (6 логических групп в сайдбаре)
+- **Invoice-bank reconciliation** - сопоставление инвойсов и транзакций с банковскими операциями
 
 ## VPS СЕРВЕР
 
@@ -142,7 +145,8 @@ logist2/
 ├── core/                           # Основное приложение
 │   ├── models.py                   # Основные модели (Container, Car, Client, etc)
 │   ├── models_website.py           # Модели для клиентского сайта
-│   ├── models_billing.py           # Биллинг система
+│   ├── models_billing.py           # Биллинг (NewInvoice, Transaction, ExpenseCategory)
+│   ├── models_banking.py           # Банкинг (BankConnection, BankAccount, BankTransaction + reconciliation)
 │   ├── models_accounting.py        # Site.pro интеграция (SiteProConnection, SiteProInvoiceSync)
 │   ├── admin/                      # Django Admin конфигурация (пакет, с 08.02.2026)
 │   │   ├── __init__.py             # Импорт всех модулей
@@ -150,6 +154,8 @@ logist2/
 │   │   ├── container.py            # ContainerAdmin
 │   │   ├── car.py                  # CarAdmin
 │   │   └── partners.py             # Warehouse, Client, Company, Line, Carrier, AutoTransport
+│   ├── admin_billing.py             # Admin для инвойсов, транзакций, категорий расходов
+│   ├── admin_banking.py            # Admin для банковских моделей (+ reconciliation)
 │   ├── admin_accounting.py          # Admin для site.pro (SiteProConnectionAdmin, SiteProInvoiceSyncAdmin)
 │   ├── admin_website.py            # Admin для клиентского сайта
 │   ├── views.py                    # Views для админки
@@ -199,12 +205,14 @@ logist2/
 │   │   └── thumbnails/             # Миниатюры
 │   ├── container_archives/         # ZIP архивы
 │   └── car_photos/                 # Фото ТС
+├── run_all_tests.py                # Комплексные тесты (67 тестов, 15 секций, atomic rollback)
 ├── logist2/                        # Настройки проекта
 │   ├── settings.py                 # Локальные настройки (InMemory Channels, Redis cache с fallback на FileBasedCache, CELERY_TASK_ALWAYS_EAGER)
 │   ├── settings_base.py            # Базовые настройки (Redis Channels, RedisCache, Celery broker)
 │   ├── settings_dev.py             # Dev-профиль
 │   ├── settings_prod.py            # Prod-профиль
-│   ├── settings_test.py            # Test-профиль (SQLite)
+│   ├── admin_site.py               # LogistAdminSite — группировка моделей в сайдбаре (6 групп)
+│   ├── __init__.py                 # Monkey-patch для admin.site
 │   ├── celery.py                   # Celery app конфигурация
 │   ├── urls.py                     # URL routing
 │   └── wsgi.py / asgi.py           # WSGI/ASGI
@@ -523,6 +531,10 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 ✅ Email уведомления клиентам (через Brevo SMTP)
 ✅ Дашборд компании (`/admin/dashboard/`) — KPI, Chart.js графики, таблицы
 ✅ Revolut Business API (банковские счета и транзакции на дашборде)
+✅ Учёт расходов — ExpenseCategory, category/attachment на инвойсах, P&L дашборд
+✅ Группировка сайдбара — LogistAdminSite, 6 логических групп
+✅ Invoice-bank reconciliation — external_number, matched_transaction/invoice
+✅ Комплексные тесты — run_all_tests.py (67 тестов, 15 секций)
 ⏳ Site.pro Accounting API (интеграция готова, ожидает активации API-плана)
 
 ### Известные проблемы:
@@ -1182,6 +1194,12 @@ ssh root@server "cd /path; source .venv/bin/activate; python manage.py showmigra
 26. **CSP заголовки** - настроены в `logist2/settings_security.py`, при добавлении новых CDN нужно добавить домен в CSP
 27. **Site.pro API** - `B1-Api-Key` заголовок, base URL `https://site.pro/My-Accounting/api`, ключи зашифрованы в `SiteProConnection`
 28. **Site.pro setup** - `python manage.py setup_sitepro` (интерактивная настройка, тест подключения)
+29. **Учёт расходов** - `ExpenseCategory` модель, категории на инвойсах, авто-категоризация складов/линий → "Логистика"
+30. **Группировка админки** - `logist2/admin_site.py` (LogistAdminSite), `logist2/__init__.py` (monkey-patch). НЕ менять порядок регистрации!
+31. **Invoice-bank reconciliation** - `external_number` на NewInvoice, `matched_transaction`/`matched_invoice` на BankTransaction
+32. **Тесты** - запуск: `.venv\Scripts\python.exe run_all_tests.py` (67 тестов, безопасный rollback через atomic)
+33. **Старые тесты удалены** - `core/tests.py` был сломан (устаревшая модель), заменён на `run_all_tests.py`
+34. **Кастомная форма инвойса** - `templates/admin/core/newinvoice/change_form.html` — при добавлении полей в NewInvoice надо добавлять их и в этот шаблон
 
 ## ВНЕШНИЕ ИНТЕГРАЦИИ
 

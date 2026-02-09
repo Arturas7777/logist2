@@ -233,6 +233,33 @@ class BankTransaction(models.Model):
     created_at = models.DateTimeField(verbose_name='Дата транзакции')
     fetched_at = models.DateTimeField(auto_now=True, verbose_name='Загружено')
 
+    # ── Сопоставление с внутренними операциями ──
+    matched_transaction = models.ForeignKey(
+        'core.Transaction',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='bank_transactions',
+        verbose_name='Связанная транзакция',
+        help_text='Внутренняя транзакция (оплата), соответствующая этой банковской операции'
+    )
+    matched_invoice = models.ForeignKey(
+        'core.NewInvoice',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='bank_transactions',
+        verbose_name='Связанный инвойс',
+        help_text='Инвойс, к которому относится эта банковская операция'
+    )
+    reconciliation_note = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        verbose_name='Заметка сопоставления',
+        help_text='Комментарий при ручном сопоставлении'
+    )
+
     class Meta:
         verbose_name = 'Банковская транзакция'
         verbose_name_plural = 'Банковские транзакции'
@@ -242,3 +269,8 @@ class BankTransaction(models.Model):
     def __str__(self):
         sign = '+' if self.amount >= 0 else ''
         return f'{self.created_at:%d.%m.%Y} {sign}{self.amount} {self.currency} — {self.description[:50]}'
+
+    @property
+    def is_reconciled(self):
+        """Сопоставлена ли банковская операция с инвойсом или транзакцией"""
+        return self.matched_transaction_id is not None or self.matched_invoice_id is not None

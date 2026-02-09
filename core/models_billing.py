@@ -210,6 +210,14 @@ class NewInvoice(models.Model):
         help_text="Уникальный номер инвойса (генерируется автоматически)"
     )
     
+    external_number = models.CharField(
+        max_length=100,
+        blank=True,
+        default='',
+        verbose_name="Номер счёта контрагента",
+        help_text="Номер с бумажного/PDF счёта от поставщика (для входящих инвойсов)"
+    )
+    
     date = models.DateField(
         default=timezone.now,
         verbose_name="Дата выставления"
