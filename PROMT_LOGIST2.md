@@ -363,6 +363,50 @@ SiteProInvoiceSync:
     synced_at           # Время синхронизации
 ```
 
+### ExpenseCategory (Категории расходов/доходов)
+
+```python
+# Файл: core/models_billing.py
+
+ExpenseCategory:
+    name                # Логистика, Аренда, Коммунальные, Зарплаты, Маркетинг, Налоги, Прочие
+    short_name          # Лог, Аренда, Комм, ЗП, Марк, Налог, Проч
+    category_type       # OPERATIONAL, ADMINISTRATIVE, SALARY, MARKETING, TAX, OTHER
+    is_active           # bool
+    order               # Порядок отображения
+    
+    # Связи:
+    # NewInvoice.category → FK → ExpenseCategory
+    # Transaction.category → FK → ExpenseCategory
+```
+
+### BankTransaction (расширение — reconciliation)
+
+```python
+# Файл: core/models_banking.py (добавленные поля)
+
+BankTransaction (дополнительные поля):
+    matched_transaction  # FK → Transaction (nullable) — привязка к внутренней транзакции
+    matched_invoice      # FK → NewInvoice (nullable) — привязка к инвойсу
+    reconciliation_note  # CharField(255) — заметка о сопоставлении
+    
+    # Property: is_reconciled → True если есть matched_transaction или matched_invoice
+```
+
+### NewInvoice (расширение — учёт расходов и reconciliation)
+
+```python
+# Файл: core/models_billing.py (добавленные поля)
+
+NewInvoice (дополнительные поля):
+    category             # FK → ExpenseCategory (nullable) — категория расхода/дохода
+    attachment           # FileField — PDF/фото счёта
+    external_number      # CharField(100) — номер счёта контрагента (для сопоставления с банком)
+    
+    # Property: direction → OUTGOING (issuer=Caromoto), INCOMING (recipient=Caromoto), INTERNAL
+    # Property: direction_display → 'Исходящий', 'Входящий', 'Внутренний'
+```
+
 ### LineTHSCoefficient (Коэффициенты THS)
 
 ```python
@@ -729,7 +773,8 @@ NO_PROXY=localhost,127.0.0.1
 logist2/
 ├── core/                           # Основное приложение
 │   ├── models.py                   # Главные модели (Container, Car, CarService и др.)
-│   ├── models_billing.py           # Инвойсы и транзакции (NewInvoice, InvoiceItem)
+│   ├── models_billing.py           # Инвойсы, транзакции, ExpenseCategory
+│   ├── models_banking.py           # BankConnection, BankAccount, BankTransaction (+ reconciliation)
 │   ├── models_accounting.py        # Site.pro интеграция (SiteProConnection, SiteProInvoiceSync)
 │   ├── models_website.py           # Модели для клиентского сайта
 │   │
@@ -739,14 +784,15 @@ logist2/
 │   │   ├── container.py            # ContainerAdmin
 │   │   ├── car.py                  # CarAdmin (оптимизированный, без побочных эффектов)
 │   │   └── partners.py             # Warehouse, Client, Company, Line, Carrier, AutoTransport
-│   ├── admin_billing.py            # Admin для инвойсов (+ действие "Отправить в site.pro")
+│   ├── admin_billing.py            # Admin для инвойсов, транзакций, ExpenseCategory
+│   ├── admin_banking.py            # Admin для банковских моделей (+ reconciliation фильтры)
 │   ├── admin_accounting.py         # Admin для site.pro (SiteProConnectionAdmin, SiteProInvoiceSyncAdmin)
 │   ├── admin_website.py            # Admin для клиентского сайта
 │   │
 │   ├── utils.py                    # Утилиты (round_up_to_5, WebSocketBatcher)
 │   ├── throttles.py                # Rate limiting (TrackShipmentThrottle 20/мин, AIChatThrottle 10/мин)
 │   ├── tasks.py                    # Celery задачи (фоновая отправка email с retry-логикой)
-│   ├── tests.py                    # 57 unit-тестов (цены, THS, инвойсы, статусы, хранение, дефолты)
+│   ├── # tests.py удалён (устаревший). Тесты: run_all_tests.py (67 тестов)
 │   ├── signals.py                  # Сигналы (наследование данных, THS, email через Celery)
 │   ├── views.py                    # Views для админки
 │   ├── views_website.py            # Views для клиентского сайта (с rate limiting)
@@ -754,7 +800,7 @@ logist2/
 │   ├── google_drive_sync.py        # Интеграция с Google Drive
 │   │
 │   ├── services/
-│   │   ├── dashboard_service.py    # DashboardService — KPI, графики, таблицы для /admin/dashboard/
+│   │   ├── dashboard_service.py    # DashboardService — KPI, графики, P&L по категориям
 │   │   ├── sitepro_service.py      # SiteProService — API-клиент site.pro Accounting
 │   │   ├── email_service.py        # Email-уведомления
 │   │   ├── ai_chat_service.py      # AI-помощник (контекст из БД)
@@ -776,12 +822,14 @@ logist2/
 │   ├── email/                      # Шаблоны email
 │   └── website/                    # Клиентский сайт
 │
+├── run_all_tests.py                # 67 тестов, 15 секций, atomic rollback
 ├── logist2/
 │   ├── settings.py                 # Локальные настройки (InMemory Channels, Redis cache с fallback на FileBasedCache, CELERY_ALWAYS_EAGER)
 │   ├── settings_base.py            # Базовые настройки (Redis Channels, RedisCache db=1, Celery broker db=2)
 │   ├── settings_dev.py             # Dev-профиль
 │   ├── settings_prod.py            # Prod-профиль
-│   ├── settings_test.py            # Test-профиль (SQLite)
+│   ├── admin_site.py               # LogistAdminSite — 6 логических групп в сайдбаре
+│   ├── __init__.py                 # Monkey-patch admin.site для LogistAdminSite
 │   ├── celery.py                   # Celery app конфигурация
 │   ├── __init__.py                 # Импорт celery app с fallback
 │   ├── urls.py                     # URL routing
@@ -1270,7 +1318,7 @@ core/management/commands/
 
 - **BankConnection** — подключение к банку (тип, компания, зашифрованные токены, статус)
 - **BankAccount** — кэш данных счетов (external_id, баланс, валюта, состояние)
-- **BankTransaction** — кэш последних транзакций (тип, сумма, контрагент, описание)
+- **BankTransaction** — кэш последних транзакций (тип, сумма, контрагент, описание) + reconciliation поля (matched_transaction, matched_invoice)
 
 ### Шифрование токенов
 
@@ -1320,6 +1368,36 @@ core/management/commands/setup_sitepro.py  # Помощник настройки
 - **Ключи:** зашифрованы Fernet в `_api_key`, `_private_key` (аналогично Revolut)
 - **Миграции:** `0110_sitepro_integration.py`, `0111_add_sitepro_api_keys.py`
 - **Текущий статус (февраль 2026):** API ключ валиден, но заморожен (нужно оплатить API-план)
+
+### Учёт расходов (Expense Tracking)
+
+Полноценный учёт доходов/расходов из Django Admin:
+- **ExpenseCategory** — 7 базовых категорий (Логистика, Аренда, Коммунальные, Зарплаты, Маркетинг, Налоги, Прочие)
+- **Направление инвойса** — computed property `direction`: OUTGOING/INCOMING/INTERNAL
+- **Авто-категоризация** — `pre_save` сигнал: если выставитель склад/линия/перевозчик → "Логистика"
+- **P&L на дашборде** — doughnut-график "Структура расходов" + таблица по категориям
+- **Вложения** — `attachment` FileField на NewInvoice и Transaction (PDF/фото)
+
+### Invoice-Bank Reconciliation
+
+Сопоставление инвойсов с банковскими операциями:
+- `NewInvoice.external_number` — номер счёта контрагента (для поиска в банковских выписках)
+- `BankTransaction.matched_invoice` / `matched_transaction` — FK-привязки
+- `BankTransaction.is_reconciled` — computed property
+- Фильтр "Сопоставлено/Не сопоставлено" в BankTransactionAdmin
+- `BillingService.pay_invoice(bank_transaction_id=...)` — авто-привязка при оплате
+
+### Группировка сайдбара админки (LogistAdminSite)
+
+`logist2/admin_site.py` → `LogistAdminSite` (наследует `AdminSite`):
+- Логистика (Car, Container, AutoTransport)
+- Партнёры (Warehouse, Client, Company, Line, Carrier)
+- Финансы (NewInvoice, Transaction, InvoiceItem, ExpenseCategory)
+- Банкинг (BankConnection, BankAccount, BankTransaction)
+- Сайт (ClientUser, AIChat, NewsPost, CarPhoto, ContainerPhoto)
+- Site.pro (SiteProConnection, SiteProInvoiceSync)
+
+Monkey-patch в `logist2/__init__.py` для глобального применения.
 
 ### CSP (Content Security Policy)
 

@@ -140,19 +140,60 @@ class BankAccountAdmin(admin.ModelAdmin):
 # BANK TRANSACTION (read-only)
 # ============================================================================
 
+class BankReconciliationFilter(admin.SimpleListFilter):
+    """Фильтр: сопоставлена ли банковская операция с инвойсом/транзакцией"""
+    title = 'Сопоставление'
+    parameter_name = 'reconciled'
+
+    def lookups(self, request, model_admin):
+        return [
+            ('yes', 'Сопоставлены'),
+            ('no', 'Не сопоставлены'),
+        ]
+
+    def queryset(self, request, queryset):
+        from django.db.models import Q
+        if self.value() == 'yes':
+            return queryset.filter(
+                Q(matched_transaction__isnull=False) | Q(matched_invoice__isnull=False)
+            )
+        if self.value() == 'no':
+            return queryset.filter(
+                matched_transaction__isnull=True, matched_invoice__isnull=True
+            )
+        return queryset
+
+
 @admin.register(BankTransaction)
 class BankTransactionAdmin(admin.ModelAdmin):
     list_display = (
         'created_at', 'connection', 'transaction_type',
-        'display_amount', 'currency', 'counterparty_name', 'state',
+        'display_amount', 'currency', 'counterparty_name',
+        'display_reconciled', 'state',
     )
-    list_filter = ('transaction_type', 'state', 'currency', 'connection')
+    list_filter = (BankReconciliationFilter, 'transaction_type', 'state', 'currency', 'connection')
     search_fields = ('description', 'counterparty_name', 'external_id')
     readonly_fields = (
         'connection', 'external_id', 'transaction_type', 'amount', 'currency',
         'description', 'counterparty_name', 'state', 'created_at', 'fetched_at',
     )
+    autocomplete_fields = ['matched_invoice', 'matched_transaction']
     date_hierarchy = 'created_at'
+
+    fieldsets = (
+        ('Банковская операция', {
+            'fields': (
+                'connection', 'external_id', 'transaction_type',
+                ('amount', 'currency'), 'description',
+                'counterparty_name', 'state',
+                ('created_at', 'fetched_at'),
+            ),
+        }),
+        ('Сопоставление с внутренними операциями', {
+            'fields': ('matched_invoice', 'matched_transaction', 'reconciliation_note'),
+            'description': 'Привяжите банковскую операцию к инвойсу и/или транзакции для сверки',
+        }),
+    )
 
     def has_add_permission(self, request):
         return False
@@ -169,3 +210,18 @@ class BankTransactionAdmin(admin.ModelAdmin):
         )
     display_amount.short_description = 'Сумма'
     display_amount.admin_order_field = 'amount'
+
+    def display_reconciled(self, obj):
+        if obj.is_reconciled:
+            parts = []
+            if obj.matched_invoice:
+                parts.append(f'Инв: {obj.matched_invoice.number}')
+            if obj.matched_transaction:
+                parts.append(f'Трх: {obj.matched_transaction.number}')
+            label = ', '.join(parts)
+            return format_html(
+                '<span style="color:#16a34a;font-weight:600" title="{}">✓ Сопоставлено</span>',
+                label
+            )
+        return format_html('<span style="color:#9898b0;">—</span>')
+    display_reconciled.short_description = 'Сверка'

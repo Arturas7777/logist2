@@ -290,7 +290,8 @@ class BillingService:
         method: str,
         payer,
         description: str = "",
-        created_by=None
+        created_by=None,
+        bank_transaction_id=None
     ):
         """
         Оплатить инвойс
@@ -302,6 +303,7 @@ class BillingService:
             payer: Кто платит (обычно получатель инвойса)
             description: Описание платежа
             created_by: Пользователь, создавший платеж
+            bank_transaction_id: ID банковской транзакции для сопоставления (опционально)
         
         Returns:
             dict: Информация о результате платежа
@@ -378,6 +380,20 @@ class BillingService:
             invoice.issuer.save(update_fields=['balance', 'balance_updated_at'])
         
         logger.info(f"Invoice {invoice.number} payment processed: paid={invoice.paid_amount}, total={invoice.total}, remaining={remaining}")
+        
+        # Привязываем банковскую транзакцию, если указана
+        if bank_transaction_id:
+            try:
+                from core.models_banking import BankTransaction as BankTrx
+                bank_trx = BankTrx.objects.get(pk=bank_transaction_id)
+                bank_trx.matched_transaction = trx
+                bank_trx.matched_invoice = invoice
+                bank_trx.save(update_fields=['matched_transaction', 'matched_invoice'])
+                logger.info(f"Linked bank transaction {bank_trx.external_id} to payment {trx.number}")
+            except BankTrx.DoesNotExist:
+                logger.warning(f"Bank transaction {bank_transaction_id} not found for linking")
+            except Exception as e:
+                logger.error(f"Error linking bank transaction: {e}")
         
         return {
             'transaction': trx,

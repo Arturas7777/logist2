@@ -576,6 +576,12 @@
                     </div>
                 </div>
                 
+                <div class="form-group" style="margin-bottom: 20px;">
+                    <label>🔢 Номер счёта контрагента</label>
+                    <input type="text" name="external_number" value="{% if original %}{{ original.external_number }}{% endif %}" placeholder="Номер с бумажного/PDF счёта от поставщика">
+                    <div class="form-hint">Для входящих инвойсов: номер, указанный на счёте контрагента (для сверки с банком)</div>
+                </div>
+                
                 <div class="form-row-2" style="margin-bottom: 20px;">
                     <div class="form-group">
                         <label>🏷️ Категория</label>

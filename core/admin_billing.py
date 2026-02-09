@@ -129,6 +129,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     
     search_fields = (
         'number',
+        'external_number',
         'recipient_client__name',
         'notes',
     )
@@ -270,6 +271,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             
             invoice.status = request.POST.get('status', 'ISSUED')
             invoice.notes = request.POST.get('notes', '')
+            invoice.external_number = request.POST.get('external_number', '')
             
             # Категория
             category_id = request.POST.get('category')
