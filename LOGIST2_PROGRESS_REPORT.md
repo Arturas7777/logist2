@@ -1121,6 +1121,7 @@ total_markup_sum = queryset.aggregate(
 
 | Дата | Описание |
 |------|----------|
+| 09.02.2026 | Ручной ввод суммы и позиций для входящих инвойсов: manual_total, manual_items_json, AJAX calc-cars-total |
 | 09.02.2026 | Комплексные тесты: run_all_tests.py — 67 тестов, 15 секций, удалены 4 устаревших теста, исправлена миграция 0059 |
 | 09.02.2026 | Invoice-bank reconciliation: external_number, matched_transaction/invoice на BankTransaction, BillingService |
 | 09.02.2026 | Группировка сайдбара админки: LogistAdminSite — 6 логических групп вместо плоского списка |
@@ -1605,6 +1606,61 @@ total_markup_sum = queryset.aggregate(
 - `core/admin/__init__.py` — регистрация admin-классов site.pro
 - `core/signals.py` — авто-push при ISSUED
 - `core/management/commands/setup_sitepro.py` — помощник настройки
+
+---
+
+### 46. Ручной ввод суммы и позиций для входящих инвойсов (09.02.2026)
+
+**Статус:** Завершено
+
+**Цель:** Возможность задать сумму и позиции для инвойсов без автомобилей (аренда, коммунальные, прочие расходы). Автоматический учёт суммы как долга компании.
+
+**Проблема:** Инвойсы без автомобилей (аренда, коммуналка) не имели способа задать сумму: `total` рассчитывался только из `Car.services`. Долг (`remaining_amount = total - paid_amount`) уже работал, но `total` всегда был 0.
+
+**Изменения в шаблоне (`templates/admin/core/newinvoice/change_form.html`):**
+
+1. **Поле "Сумма к оплате"** — вынесено вверх, в блок основной информации рядом с "Номер счёта контрагента"
+   - `input[type=number]` с `id="manual_total_input"`, шаг 0.01
+   - Крупный шрифт (20px), фиолетовый цвет, выравнивание вправо
+   - При выбранных авто — readonly (сумма считается автоматически), при отсутствии — editable
+
+2. **Блок "Позиции вручную"** — отдельная карточка ниже автомобилей
+   - Кнопка "Добавить позицию" — динамические строки (описание + кол-во + цена + удалить)
+   - Автоматический пересчёт суммы вверху при изменении позиций
+   - Данные передаются через hidden field `manual_items_json` (JSON)
+   - Показывается только когда нет выбранных автомобилей
+
+3. **AJAX расчёт суммы из автомобилей** — при выборе/удалении авто или смене выставителя
+   - JS отправляет запрос на `/admin/core/newinvoice/calc-cars-total/`
+   - Бэкенд считает по той же логике, что `regenerate_items_from_cars` (услуги, наценки, хранение)
+   - Предыдущий запрос отменяется при быстром клике (abort)
+   - Подсказка "Расчёт из N авто" обновляется
+
+**Изменения в обработчике (`core/admin_billing.py`):**
+
+1. **Метод `_handle_manual_items()`** в `NewInvoiceAdmin`:
+   - Парсит `manual_total` и `manual_items_json` из POST
+   - Если есть ручные позиции → создаёт `InvoiceItem` для каждой, пересчитывает total
+   - Если нет позиций, но задан `manual_total > 0` → создаёт одну позицию "Оплата по счёту {номер}"
+   - Вызывает `invoice.calculate_totals()` + `save()`
+
+2. **AJAX endpoint `calc_cars_total_view()`**:
+   - Принимает `car_ids[]` и `issuer` через GET
+   - Определяет тип выставителя (Company/Warehouse/Line/Carrier)
+   - Считает сумму услуг + наценки + хранение для каждого авто
+   - Возвращает JSON `{total: "500.00", count: 3}`
+
+**Учёт долга (уже работал из коробки):**
+- `NewInvoice.total` — теперь заполняется для любого инвойса
+- `NewInvoice.remaining_amount` = `total - paid_amount` — показывает долг
+- `NewInvoice.status` — автоматически обновляется (ISSUED → PARTIALLY_PAID → PAID)
+- Оплата через "Провести оплату" в сайдбаре работает для любого инвойса
+
+**Тесты:** 3 теста пройдены (manual_total only, manual_items_json, empty input)
+
+**Файлы:**
+- `templates/admin/core/newinvoice/change_form.html` — UI: поле суммы, ручные позиции, AJAX
+- `core/admin_billing.py` — `_handle_manual_items()`, `calc_cars_total_view()`, URL registration
 
 ---
 
