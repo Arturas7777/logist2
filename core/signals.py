@@ -862,6 +862,72 @@ def update_cars_on_company_service_change(sender, instance, **kwargs):
 
 
 # ============================================================================
+# СИГНАЛ ДЛЯ АВТО-ОТПРАВКИ ИНВОЙСА В SITE.PRO
+# ============================================================================
+
+# Сохраняем старый статус инвойса для определения смены на ISSUED
+_old_invoice_status = {}
+
+@receiver(pre_save, sender=NewInvoice)
+def save_old_invoice_status(sender, instance, **kwargs):
+    """Сохраняет старый статус инвойса перед сохранением."""
+    if instance.pk:
+        try:
+            old = NewInvoice.objects.filter(pk=instance.pk).values('status').first()
+            if old:
+                _old_invoice_status[instance.pk] = old['status']
+        except Exception:
+            pass
+
+
+@receiver(post_save, sender=NewInvoice)
+def auto_push_invoice_to_sitepro(sender, instance, created, **kwargs):
+    """
+    Автоматически отправляет инвойс в site.pro при смене статуса на ISSUED.
+    Работает только если есть активное подключение с auto_push_on_issue=True.
+    """
+    if not instance.pk:
+        return
+
+    # Проверяем, что статус сменился на ISSUED
+    old_status = _old_invoice_status.pop(instance.pk, None)
+    if instance.status != 'ISSUED':
+        return
+    if old_status == 'ISSUED':
+        return  # Статус не изменился
+
+    # Защита от рекурсии
+    if getattr(instance, '_pushing_to_sitepro', False):
+        return
+
+    def _do_push():
+        try:
+            from core.models_accounting import SiteProConnection
+            connection = SiteProConnection.objects.filter(
+                is_active=True,
+                auto_push_on_issue=True,
+            ).first()
+
+            if not connection:
+                return
+
+            instance._pushing_to_sitepro = True
+            try:
+                from core.services.sitepro_service import SiteProService
+                service = SiteProService(connection)
+                service.push_invoice(instance)
+                logger.info(f'[SitePro] Авто-отправка инвойса {instance.number} при статусе ISSUED')
+            finally:
+                instance._pushing_to_sitepro = False
+
+        except Exception as e:
+            logger.error(f'[SitePro] Ошибка авто-отправки инвойса {instance.number}: {e}')
+
+    # Выполняем после коммита транзакции
+    transaction.on_commit(_do_push)
+
+
+# ============================================================================
 # СИГНАЛЫ ДЛЯ ПЕРЕСЧЕТА ИНВОЙСОВ ПРИ ИЗМЕНЕНИИ УСЛУГ АВТОМОБИЛЯ
 # ============================================================================
 
