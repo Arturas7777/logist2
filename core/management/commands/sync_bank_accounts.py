@@ -81,3 +81,47 @@ class Command(BaseCommand):
             f'Итого: {total_accounts} счетов, {total_transactions} транзакций'
             f'{f", {errors} ошибок" if errors else ""}'
         ))
+
+        # ── Автоматическое сопоставление с инвойсами ──
+        if total_transactions > 0 and errors == 0:
+            self.stdout.write('')
+            self.stdout.write('Запуск авто-сопоставления банковских транзакций с инвойсами...')
+            try:
+                from core.services.billing_service import BillingService
+                reconcile_result = BillingService.auto_reconcile_bank_transactions()
+
+                n_paid = len(reconcile_result['auto_paid'])
+                n_linked = len(reconcile_result['linked_only'])
+                n_errors = len(reconcile_result['errors'])
+
+                if n_paid:
+                    for item in reconcile_result['auto_paid']:
+                        self.stdout.write(self.style.SUCCESS(
+                            f'  ✅ Авто-оплата: инвойс {item["invoice"]} '
+                            f'(ext: {item["external_number"]}) на {item["amount"]} € → {item["new_status"]}'
+                        ))
+
+                if n_linked:
+                    for item in reconcile_result['linked_only']:
+                        self.stdout.write(self.style.WARNING(
+                            f'  ⚠️ Привязано: инвойс {item["invoice"]} '
+                            f'(банк {item["bank_amount"]} € ≠ остаток {item["invoice_remaining"]} €)'
+                        ))
+
+                if n_errors:
+                    for item in reconcile_result['errors']:
+                        self.stdout.write(self.style.ERROR(
+                            f'  ❌ Ошибка: инвойс {item["invoice"]} — {item["error"]}'
+                        ))
+
+                if n_paid or n_linked:
+                    self.stdout.write(self.style.SUCCESS(
+                        f'Авто-сопоставление: {n_paid} оплачено, {n_linked} привязано'
+                        f'{f", {n_errors} ошибок" if n_errors else ""}'
+                    ))
+                else:
+                    self.stdout.write('  Новых совпадений не найдено.')
+
+            except Exception as e:
+                self.stdout.write(self.style.ERROR(f'Ошибка авто-сопоставления: {e}'))
+                logger.error(f'[sync_bank_accounts] Ошибка auto_reconcile: {e}')

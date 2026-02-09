@@ -259,6 +259,11 @@ class BankTransaction(models.Model):
         verbose_name='Заметка сопоставления',
         help_text='Комментарий при ручном сопоставлении'
     )
+    reconciliation_skipped = models.BooleanField(
+        default=False,
+        verbose_name='Не требует привязки',
+        help_text='Отметьте для операций, не связанных с инвойсами (комиссии, обмены валют и т.д.)'
+    )
 
     class Meta:
         verbose_name = 'Банковская транзакция'
@@ -272,5 +277,9 @@ class BankTransaction(models.Model):
 
     @property
     def is_reconciled(self):
-        """Сопоставлена ли банковская операция с инвойсом или транзакцией"""
-        return self.matched_transaction_id is not None or self.matched_invoice_id is not None
+        """Сопоставлена ли банковская операция с инвойсом, транзакцией, или помечена как не требующая привязки"""
+        return (
+            self.matched_transaction_id is not None
+            or self.matched_invoice_id is not None
+            or self.reconciliation_skipped
+        )

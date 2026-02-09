@@ -141,25 +141,30 @@ class BankAccountAdmin(admin.ModelAdmin):
 # ============================================================================
 
 class BankReconciliationFilter(admin.SimpleListFilter):
-    """Фильтр: сопоставлена ли банковская операция с инвойсом/транзакцией"""
+    """Фильтр: статус сопоставления банковской операции"""
     title = 'Сопоставление'
     parameter_name = 'reconciled'
 
     def lookups(self, request, model_admin):
         return [
-            ('yes', 'Сопоставлены'),
-            ('no', 'Не сопоставлены'),
+            ('matched', 'Сопоставлены (привязан инвойс)'),
+            ('skipped', 'Не требует привязки'),
+            ('unmatched', 'Не сопоставлены'),
         ]
 
     def queryset(self, request, queryset):
         from django.db.models import Q
-        if self.value() == 'yes':
+        if self.value() == 'matched':
             return queryset.filter(
                 Q(matched_transaction__isnull=False) | Q(matched_invoice__isnull=False)
             )
-        if self.value() == 'no':
+        if self.value() == 'skipped':
+            return queryset.filter(reconciliation_skipped=True)
+        if self.value() == 'unmatched':
             return queryset.filter(
-                matched_transaction__isnull=True, matched_invoice__isnull=True
+                matched_transaction__isnull=True,
+                matched_invoice__isnull=True,
+                reconciliation_skipped=False,
             )
         return queryset
 
@@ -169,7 +174,7 @@ class BankTransactionAdmin(admin.ModelAdmin):
     list_display = (
         'created_at', 'connection', 'transaction_type',
         'display_amount', 'currency', 'counterparty_name',
-        'display_reconciled', 'state',
+        'display_reconciled', 'display_action', 'state',
     )
     list_filter = (BankReconciliationFilter, 'transaction_type', 'state', 'currency', 'connection')
     search_fields = ('description', 'counterparty_name', 'external_id')
@@ -179,6 +184,7 @@ class BankTransactionAdmin(admin.ModelAdmin):
     )
     autocomplete_fields = ['matched_invoice', 'matched_transaction']
     date_hierarchy = 'created_at'
+    actions = ['mark_skip_reconciliation', 'unmark_skip_reconciliation']
 
     fieldsets = (
         ('Банковская операция', {
@@ -190,7 +196,10 @@ class BankTransactionAdmin(admin.ModelAdmin):
             ),
         }),
         ('Сопоставление с внутренними операциями', {
-            'fields': ('matched_invoice', 'matched_transaction', 'reconciliation_note'),
+            'fields': (
+                'matched_invoice', 'matched_transaction',
+                'reconciliation_skipped', 'reconciliation_note',
+            ),
             'description': 'Привяжите банковскую операцию к инвойсу и/или транзакции для сверки',
         }),
     )
@@ -212,7 +221,8 @@ class BankTransactionAdmin(admin.ModelAdmin):
     display_amount.admin_order_field = 'amount'
 
     def display_reconciled(self, obj):
-        if obj.is_reconciled:
+        # 1. Привязано к инвойсу/транзакции
+        if obj.matched_invoice_id or obj.matched_transaction_id:
             parts = []
             if obj.matched_invoice:
                 parts.append(f'Инв: {obj.matched_invoice.number}')
@@ -223,5 +233,48 @@ class BankTransactionAdmin(admin.ModelAdmin):
                 '<span style="color:#16a34a;font-weight:600" title="{}">✓ Сопоставлено</span>',
                 label
             )
-        return format_html('<span style="color:#9898b0;">—</span>')
+        # 2. Помечено как "не требует привязки"
+        if obj.reconciliation_skipped:
+            note = obj.reconciliation_note or 'Не требует привязки'
+            return format_html(
+                '<span style="color:#9898b0;" title="{}">⊘ Пропуск</span>',
+                note
+            )
+        # 3. Не сопоставлено — требует внимания
+        return format_html(
+            '<span style="color:#dc2626;font-weight:600;">✗ Не привязано</span>'
+        )
     display_reconciled.short_description = 'Сверка'
+
+    def display_action(self, obj):
+        from django.urls import reverse
+        # Привязано — ссылка на инвойс
+        if obj.matched_invoice_id:
+            url = reverse('admin:core_newinvoice_change', args=[obj.matched_invoice_id])
+            return format_html(
+                '<a href="{}" style="color:#2563eb;text-decoration:none;">📄 {}</a>',
+                url, obj.matched_invoice.number
+            )
+        # Не привязано и не пропущено — кнопка "Привязать"
+        if not obj.reconciliation_skipped:
+            url = reverse('admin:core_banktransaction_change', args=[obj.pk])
+            return format_html(
+                '<a href="{}" style="color:#7c3aed;font-weight:600;text-decoration:none;">'
+                '🔗 Привязать</a>',
+                url
+            )
+        return format_html('<span style="color:#9898b0;">—</span>')
+    display_action.short_description = 'Действие'
+
+    @admin.action(description='Пометить: не требует привязки')
+    def mark_skip_reconciliation(self, request, queryset):
+        count = queryset.update(
+            reconciliation_skipped=True,
+            reconciliation_note='Помечено вручную: не требует привязки'
+        )
+        messages.success(request, f'{count} операций помечены как не требующие привязки.')
+
+    @admin.action(description='Снять пометку "не требует привязки"')
+    def unmark_skip_reconciliation(self, request, queryset):
+        count = queryset.update(reconciliation_skipped=False)
+        messages.success(request, f'Пометка снята с {count} операций.')

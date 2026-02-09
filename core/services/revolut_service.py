@@ -269,6 +269,15 @@ class RevolutService:
                     'created_at': created_at,
                 },
             )
+
+            # Авто-пропуск служебных операций (комиссии, обмены, налоги)
+            if created and tx_type in ('fee', 'exchange', 'tax'):
+                type_labels = {'fee': 'Комиссия банка', 'exchange': 'Обмен валют', 'tax': 'Налог'}
+                tx.reconciliation_skipped = True
+                tx.reconciliation_note = f'Авто-пропуск: {type_labels.get(tx_type, tx_type)}'
+                tx.save(update_fields=['reconciliation_skipped', 'reconciliation_note'])
+                logger.debug(f'[Revolut] Авто-пропуск: {tx_type} {ext_id}')
+
             updated_transactions.append(tx)
 
         # Удаляем старые транзакции (старше 90 дней) для экономии места
