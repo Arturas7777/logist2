@@ -90,6 +90,30 @@ class CarAdmin(admin.ModelAdmin):
     )
     actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'set_transferred_today', 'set_title_with_us']
 
+    def change_view(self, request, object_id, form_url='', extra_context=None):
+        """Auto-update storage days and CarService price when viewing car detail.
+        
+        Платные дни растут каждый день, но CarService.custom_price для «Хранения»
+        обновляется только при save(). Здесь пересчитываем при открытии карточки,
+        чтобы сводка и услуги показывали актуальные данные.
+        """
+        if object_id:
+            try:
+                obj = self.get_object(request, object_id)
+                if obj and obj.status != 'TRANSFERRED' and obj.warehouse and obj.unload_date:
+                    old_days = obj.days
+                    obj.update_days_and_storage()
+                    if obj.days != old_days:
+                        obj.calculate_total_price()
+                        Car.objects.filter(pk=obj.pk).update(
+                            days=obj.days,
+                            storage_cost=obj.storage_cost,
+                            total_price=obj.total_price,
+                        )
+            except Exception as e:
+                logger.warning(f"Auto-update storage failed for car {object_id}: {e}")
+        return super().change_view(request, object_id, form_url, extra_context)
+
     def set_transferred_today(self, request, queryset):
         """Sets status to 'Transferred' and transfer date to today"""
         from django.utils import timezone
