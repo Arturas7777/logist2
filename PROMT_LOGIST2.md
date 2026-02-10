@@ -1007,6 +1007,11 @@ python manage.py collectstatic --noinput
 # Синхронизация фото
 python manage.py sync_photos_gdrive --no-photos
 
+# Пересчёт хранения (дни + цена CarService) — cron каждый день в 06:00
+python manage.py recalculate_storage          # только активные
+python manage.py recalculate_storage --verbose # с деталями
+python manage.py recalculate_storage --all     # включая переданные
+
 # Права на media файлы
 ./fix_media_permissions.sh
 ```
