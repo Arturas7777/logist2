@@ -188,7 +188,11 @@ logist2/
 │   ├── utils.py                    # Утилиты (round_up_to_5, WebSocketBatcher, log_slow_queries)
 │   ├── throttles.py                # Rate limiting (TrackShipmentThrottle, AIChatThrottle)
 │   ├── tasks.py                    # Celery задачи (фоновая отправка email)
-│   ├── tests.py                    # 57 unit-тестов (цены, THS, инвойсы, хранение, статусы, дефолты)
+│   ├── tests/                      # Стандартные Django TestCase тесты (18 тестов)
+│   │   ├── __init__.py
+│   │   ├── test_models.py          # Модели: Company.get_default(), Container/Car валидация
+│   │   ├── test_signals.py         # Сигналы: thread-safe instance attrs
+│   │   └── test_billing.py         # Биллинг: NewInvoice валидация, автогенерация номеров
 │   ├── services/                   # Бизнес-логика
 │   │   ├── dashboard_service.py    # DashboardService — агрегация KPI, графиков, таблиц для дашборда
 │   │   ├── sitepro_service.py      # SiteProService — API-клиент site.pro Accounting
@@ -205,9 +209,9 @@ logist2/
 │   │   └── thumbnails/             # Миниатюры
 │   ├── container_archives/         # ZIP архивы
 │   └── car_photos/                 # Фото ТС
-├── run_all_tests.py                # Комплексные тесты (67 тестов, 15 секций, atomic rollback)
+├── run_all_tests.py                # Legacy тесты (67 тестов, atomic rollback на рабочей БД)
 ├── logist2/                        # Настройки проекта
-│   ├── settings.py                 # Локальные настройки (InMemory Channels, Redis cache с fallback на FileBasedCache, CELERY_TASK_ALWAYS_EAGER)
+│   ├── settings.py                 # Локальные настройки (InMemory Channels, Redis cache, ENCRYPTION_KEY, SQLite для тестов)
 │   ├── settings_base.py            # Базовые настройки (Redis Channels, RedisCache, Celery broker)
 │   ├── settings_dev.py             # Dev-профиль
 │   ├── settings_prod.py            # Prod-профиль
@@ -742,6 +746,56 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 - `core/tests.py` — 14 тест-классов (57 тестов): цены, THS, инвойсы, статусы, хранение, дефолты, кэш, API
 - `core/admin/` — пакет из 5 файлов (вместо monolithic admin.py)
 
+**10.02.2026 - 10 архитектурных улучшений (рефакторинг):**
+1. **THREAD-SAFETY В SIGNALS:** 🔒 БЕЗОПАСНОСТЬ
+   - ✅ Заменены 4 глобальных dict на instance attrs: `_pre_save_values`, `_pre_save_contractors`, `_pre_save_notification`, `_pre_save_status`
+   - ✅ Устранены race conditions при параллельных запросах
+
+2. **TRANSACTION.ATOMIC() В ADMIN:** 🔒 ЦЕЛОСТНОСТЬ ДАННЫХ
+   - ✅ `ContainerAdmin.save_model()` и `CarAdmin.save_model()` обёрнуты в `transaction.atomic()`
+   - ✅ Логика вынесена в `_save_model_inner()` — при ошибке откат всех изменений
+
+3. **COMPANY.GET_DEFAULT():** ⚡ РЕФАКТОРИНГ
+   - ✅ Classmethod `Company.get_default()` — берёт имя из `settings.COMPANY_NAME`
+   - ✅ Заменены 5 мест с hardcoded `Company.objects.get(pk=1)` / `filter(name='Caromoto Lithuania')`
+
+4. **SECRET_KEY ВАЛИДАЦИЯ:** 🔒 БЕЗОПАСНОСТЬ
+   - ✅ При `DEBUG=False` + дефолтный SECRET_KEY → `ValueError` при старте
+   - ✅ В `settings.py` и `settings_base.py`
+
+5. **ENCRYPTION_KEY ДЛЯ FERNET:** 🔒 БЕЗОПАСНОСТЬ
+   - ✅ Отдельная переменная `ENCRYPTION_KEY` из `.env` (fallback на SECRET_KEY)
+   - ✅ Позволяет ротировать SECRET_KEY без потери зашифрованных банковских токенов
+
+6. **VEHICLE_TYPE_CHOICES DEDUP:** 🧹 ЧИСТКА
+   - ✅ Удалены 2 дубликата (LineTHSCoefficient, Car) → единый модульный `VEHICLE_TYPE_CHOICES`
+
+7. **CAR.SAVE() РЕФАКТОРИНГ:** ⚡ ОПТИМИЗАЦИЯ
+   - ✅ Выделены методы `_inherit_from_container()`, `_sync_status_and_dates()`
+   - ✅ Устранён двойной `super().save()` → `Car.objects.filter(pk=...).update(total_price=...)`
+
+8. **MODEL VALIDATION:** ✅ КАЧЕСТВО КОДА
+   - ✅ `Container.clean()` — обязательные поля для UNLOADED, дата vs ETA
+   - ✅ `Car.clean()` — VIN 17 символов, диапазон года, transfer_date >= unload_date
+   - ✅ `NewInvoice.clean()` — выставитель/получатель, запрет совпадения, due_date >= date
+   - ✅ DB constraint `container_unloaded_requires_warehouse_and_date`
+
+9. **ТЕСТОВАЯ ИНФРАСТРУКТУРА:** ✅ ТЕСТИРОВАНИЕ
+   - ✅ Модуль `core/tests/` с 18 тестами на стандартном `django.test.TestCase`
+   - ✅ SQLite для тестов: `if 'test' in sys.argv` в `settings.py`
+   - ✅ Запуск: `python manage.py test core.tests`
+
+10. **API VERSIONING:** ⚡ АРХИТЕКТУРА
+    - ✅ Все API эндпоинты перенесены в `/api/v1/`
+    - ✅ Старые `/api/` пути сохранены как deprecated-алиасы (обратная совместимость)
+
+**Файлы:**
+- `core/signals.py`, `core/models.py`, `core/models_billing.py`, `core/models_banking.py`
+- `core/admin/container.py`, `core/admin/car.py`, `core/admin_banking.py`
+- `core/services/billing_service.py`, `logist2/settings.py`, `logist2/settings_base.py`
+- `logist2/urls.py`, `run_all_tests.py`
+- `core/tests/` — новый модуль (test_models.py, test_signals.py, test_billing.py)
+
 **07.02.2026 - Система тарифов клиентов:**
 1. **ТАРИФЫ КЛИЕНТОВ:** ⭐ НОВЫЙ ФУНКЦИОНАЛ
    - ✅ Модель `ClientTariffRate` — согласованная общая цена за авто (все услуги кроме хранения)
@@ -1132,6 +1186,14 @@ AI_RAG_MAX_AGE_HOURS=72
 HTTP_PROXY=
 HTTPS_PROXY=
 NO_PROXY=localhost,127.0.0.1
+```
+
+### Безопасность (в `.env`)
+```
+SECRET_KEY=your-secret-key          # ОБЯЗАТЕЛЬНО для production (не 'changeme-in-env')
+ENCRYPTION_KEY=your-encryption-key  # Отдельный ключ для Fernet-шифрования банковских токенов
+                                    # Если не задан — fallback на SECRET_KEY
+                                    # ВАЖНО: не менять после установки!
 ```
 
 ### Права на файлы

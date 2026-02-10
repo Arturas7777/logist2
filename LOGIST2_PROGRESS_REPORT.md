@@ -1,6 +1,6 @@
 # Отчёт о проделанной работе по проекту Logist2
 
-**Дата последнего обновления:** 9 февраля 2026 г.
+**Дата последнего обновления:** 10 февраля 2026 г.
 
 ---
 
@@ -1900,3 +1900,106 @@ total_markup_sum = queryset.aggregate(
 **Файлы:**
 - `run_all_tests.py` — основной тестовый скрипт (67 тестов)
 - `core/migrations/0059_restore_company_balance_fields.py` — исправлена
+
+---
+
+### 46. Рефакторинг: 10 архитектурных улучшений (10.02.2026)
+
+**Статус:** Завершено
+
+**Цель:** Комплексное улучшение безопасности, производительности, качества кода и тестируемости.
+
+#### 1. Thread-safety в signals.py
+
+Заменены 4 глобальных словаря на атрибуты экземпляра (thread-safe):
+- `_old_container_values` → `instance._pre_save_values`
+- `_old_contractors` → `instance._pre_save_contractors`
+- `_old_notification_values` → `instance._pre_save_notification`
+- `_old_invoice_status` → `instance._pre_save_status`
+
+**Проблема:** Глобальные dict могут перезаписываться при параллельных запросах (race condition).
+**Решение:** Хранение на экземпляре модели — каждый request работает со своим объектом.
+
+#### 2. transaction.atomic() в save_model
+
+`ContainerAdmin.save_model()` и `CarAdmin.save_model()` обёрнуты в `transaction.atomic()`.
+Логика вынесена в `_save_model_inner()`. При ошибке — откат всех изменений.
+
+#### 3. Company.get_default() — убран hardcoded pk=1
+
+Добавлен classmethod `Company.get_default()`, который берёт имя из `settings.COMPANY_NAME`.
+Заменены все 5 мест с `Company.objects.get(pk=1)` / `filter(name='Caromoto Lithuania')`:
+- `core/signals.py` — `get_main_company()`
+- `core/models.py` — `AutoTransport.generate_invoices()`
+- `core/admin_banking.py` — создание расходов (2 места)
+- `core/services/billing_service.py` — авто-reconciliation
+- `run_all_tests.py` — setup
+
+#### 4. SECRET_KEY валидация в продакшене
+
+При `DEBUG=False` — если `SECRET_KEY` равен `'changeme-in-env'`, `''` или `'django-insecure'`, приложение бросает `ValueError` при старте.
+
+**Файлы:** `logist2/settings.py`, `logist2/settings_base.py`
+
+#### 5. Отдельный ENCRYPTION_KEY для Fernet
+
+Добавлена переменная `ENCRYPTION_KEY` (из `.env`). Если не задана — fallback на `SECRET_KEY` (обратная совместимость).
+Позволяет ротировать `SECRET_KEY` без потери зашифрованных банковских токенов.
+
+**Файлы:** `logist2/settings.py`, `core/models_banking.py`
+
+#### 6. Дедупликация VEHICLE_TYPE_CHOICES
+
+Удалены 2 дубликата списка типов ТС (в `LineTHSCoefficient` и `Car`).
+Оба теперь ссылаются на единый модульный `VEHICLE_TYPE_CHOICES` (11 типов).
+
+**Файл:** `core/models.py`
+
+#### 7. Рефакторинг Car.save()
+
+- Выделены методы `_inherit_from_container()` и `_sync_status_and_dates()`
+- Устранён двойной `super().save()` — пересчитанная цена записывается через `Car.objects.filter(pk=...).update()` вместо повторного `save()`
+- WebSocket closure использует локальные переменные (не `self`)
+
+#### 8. Валидация моделей (clean + DB constraints)
+
+Добавлены `clean()` методы:
+- `Container.clean()` — обязательные поля для UNLOADED, дата разгрузки vs ETA
+- `Car.clean()` — длина VIN (17 символов), диапазон года, transfer_date >= unload_date
+- `NewInvoice.clean()` — наличие выставителя/получателя, запрет совпадения, due_date >= date
+
+DB constraint: `container_unloaded_requires_warehouse_and_date` (CHECK на уровне БД)
+
+**Файлы:** `core/models.py`, `core/models_billing.py`
+
+#### 9. Тестовая инфраструктура (Django TestCase)
+
+Создан модуль `core/tests/` с 18 тестами на стандартном `django.test.TestCase`:
+- `test_models.py` — Company.get_default(), Container/Car валидация, VEHICLE_TYPE_CHOICES
+- `test_signals.py` — thread-safe хранение старых значений
+- `test_billing.py` — NewInvoice валидация, автогенерация номеров
+
+SQLite для тестов: `if 'test' in sys.argv` в `settings.py`.
+Запуск: `python manage.py test core.tests`
+
+#### 10. API Versioning
+
+Все API эндпоинты перенесены в `/api/v1/`.
+Старые `/api/` пути сохранены как deprecated-алиасы (суффикс `_legacy` в именах) для обратной совместимости.
+
+**Файл:** `logist2/urls.py`
+
+**Все изменённые файлы:**
+- `core/signals.py` — thread-safe instance attrs
+- `core/models.py` — Company.get_default(), VEHICLE_TYPE_CHOICES dedup, Car.save() refactor, Container.clean(), Car.clean(), DB constraint
+- `core/models_billing.py` — NewInvoice.clean()
+- `core/models_banking.py` — ENCRYPTION_KEY для Fernet
+- `core/admin/container.py` — transaction.atomic()
+- `core/admin/car.py` — transaction.atomic()
+- `core/admin_banking.py` — Company.get_default()
+- `core/services/billing_service.py` — Company.get_default()
+- `logist2/settings.py` — SECRET_KEY валидация, ENCRYPTION_KEY, SQLite для тестов
+- `logist2/settings_base.py` — SECRET_KEY валидация
+- `logist2/urls.py` — API versioning /api/v1/
+- `run_all_tests.py` — Company.get_default()
+- `core/tests/__init__.py`, `core/tests/test_models.py`, `core/tests/test_signals.py`, `core/tests/test_billing.py` — новые тесты

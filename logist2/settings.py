@@ -11,8 +11,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('SECRET_KEY', 'changeme-in-env')
 
+# Отдельный ключ для шифрования данных в БД (Fernet).
+# Если не задан, используется SECRET_KEY (обратная совместимость).
+# ВАЖНО: после установки ENCRYPTION_KEY не меняйте его — иначе зашифрованные
+# банковские токены в БД станут нечитаемыми.
+ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY', '')
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = str(os.getenv('DEBUG', 'False')).lower() == 'true'
+
+# Проверка SECRET_KEY в продакшене
+if not DEBUG and SECRET_KEY in ('changeme-in-env', '', 'django-insecure'):
+    raise ValueError(
+        "SECRET_KEY не задан или использует дефолтное значение! "
+        "Установите переменную окружения SECRET_KEY для продакшена."
+    )
 
 # ALLOWED_HOSTS из .env, разделённые запятыми
 ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h.strip()]
@@ -85,6 +98,14 @@ DATABASES = {
         }
     }
 }
+
+# Для тестов используем SQLite (быстрее, не требует PostgreSQL)
+import sys
+if 'test' in sys.argv or 'pytest' in sys.modules:
+    DATABASES['default'] = {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'test_db.sqlite3',
+    }
 
 # Channels
 CHANNEL_LAYERS = {

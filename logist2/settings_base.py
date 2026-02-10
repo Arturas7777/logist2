@@ -8,6 +8,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'changeme-in-env')
 DEBUG = str(os.getenv('DEBUG', 'False')).lower() == 'true'
+
+# Проверка SECRET_KEY в продакшене
+if not DEBUG and SECRET_KEY in ('changeme-in-env', '', 'django-insecure'):
+    raise ValueError(
+        "SECRET_KEY не задан или использует дефолтное значение! "
+        "Установите переменную окружения SECRET_KEY для продакшена."
+    )
 ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h.strip()]
 
 INSTALLED_APPS = [
