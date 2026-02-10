@@ -148,8 +148,14 @@ class CarAdmin(admin.ModelAdmin):
             elif service.service_type == 'WAREHOUSE':
                 warehouse_total += price  # Warehouse services without THS
 
-        # Paid days for display
-        paid_days = obj.days or 0
+        # Paid days for display — динамический расчёт (как в days_display)
+        if obj.warehouse and obj.unload_date:
+            end_date = obj.transfer_date if obj.status == 'TRANSFERRED' and obj.transfer_date else timezone.now().date()
+            total_days = (end_date - obj.unload_date).days + 1
+            free_days_count = obj.warehouse.free_days or 0
+            paid_days = max(0, total_days - free_days_count)
+        else:
+            paid_days = obj.days or 0
 
         # Sum of distributed markups (from services)
         distributed_markup = obj.car_services.aggregate(total=Sum('markup_amount'))['total'] or Decimal('0')
