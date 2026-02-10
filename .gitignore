@@ -61,6 +61,15 @@ htmlcov/
 # Pytest
 .pytest_cache/
 
+# Django file-based cache
+.cache/
+
+# Temp commit message
+.git_commit_msg.txt
+
+# Test database
+test_db.sqlite3
+
 # Node (если используется для frontend)
 node_modules/
 npm-debug.log
