@@ -271,10 +271,6 @@ STATICFILES_DIRS = [
     BASE_DIR / 'static',
 ]
 
-# Media files (Uploaded content)
-MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
-
 # Email settings for notifications
 # Для тестирования используем console backend (письма выводятся в терминал)
 # На production установите EMAIL_BACKEND в .env

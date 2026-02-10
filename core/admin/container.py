@@ -14,7 +14,7 @@ from core.models import (
     CarrierService, CompanyService,
 )
 from core.admin_filters import MultiStatusFilter, MultiWarehouseFilter, ClientAutocompleteFilter
-from core.admin.inlines import CarInline, ContainerPhotoInline
+from core.admin.inlines import CarInline
 
 logger = logging.getLogger('django')
 
@@ -36,7 +36,7 @@ class ContainerAdmin(admin.ModelAdmin):
     ordering = ['-unload_date', '-id']
     list_per_page = 50
     show_full_result_count = False
-    inlines = [CarInline, ContainerPhotoInline]
+    inlines = [CarInline]
     fieldsets = (
         ('Основные данные', {
             'classes': ('collapse',),
