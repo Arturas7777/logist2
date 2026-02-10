@@ -1,6 +1,6 @@
 # ПОЛНОЕ ОПИСАНИЕ ПРОЕКТА LOGIST2
 
-**Версия документа:** 10 февраля 2026
+**Версия документа:** 10 февраля 2026 (вечер)
 **Назначение:** Описание функционала для работы с AI-ассистентами
 
 ---
@@ -850,7 +850,7 @@ logist2/
 ├── run_all_tests.py                # Legacy тесты (67, atomic rollback на рабочей БД)
 ├── logist2/
 │   ├── settings.py                 # Локальные (InMemory Channels, Redis cache, ENCRYPTION_KEY, SQLite для тестов)
-│   ├── settings_base.py            # Базовые настройки (Redis Channels, RedisCache db=1, Celery broker db=2)
+│   ├── settings_base.py            # Базовые настройки (Redis Channels, RedisCache db=1, Celery broker db=2, MEDIA_URL/MEDIA_ROOT)
 │   ├── settings_dev.py             # Dev-профиль
 │   ├── settings_prod.py            # Prod-профиль
 │   ├── admin_site.py               # LogistAdminSite — 6 логических групп в сайдбаре
@@ -916,7 +916,7 @@ delete_car_services_on_company_service_delete() # Удаляет Company CarServ
 
 **Инлайны:**
 - `CarInline` — список ТС в контейнере
-- `ContainerPhotoInline` — фотографии
+- ~~`ContainerPhotoInline`~~ — **удалён** (10.02.2026). Фотографии отображаются через кастомную AJAX-галерею (`photos_gallery.html`), загружаемую по клику из `/core/container/<id>/photos-json/`
 
 **Actions:**
 - Установка статусов (В пути, В порту, Разгружен, Передан)
@@ -1331,7 +1331,7 @@ python manage.py test core.tests.test_billing             # Биллинг
 ```
 core/admin/
 ├── __init__.py     # Импорт всех модулей (регистрация в Django Admin)
-├── inlines.py      # CarInline, ContainerPhotoInline, LineTHSCoefficientInline и др.
+├── inlines.py      # CarInline, LineTHSCoefficientInline и др. (ContainerPhotoInline удалён — фото через AJAX-галерею)
 ├── container.py    # ContainerAdmin (save_model, save_formset, THS логика)
 ├── car.py          # CarAdmin (total_price_display, services_summary, markup_display)
 └── partners.py     # WarehouseAdmin, ClientAdmin, CompanyAdmin, LineAdmin, CarrierAdmin, AutoTransportAdmin

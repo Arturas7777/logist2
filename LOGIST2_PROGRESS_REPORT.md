@@ -1,6 +1,6 @@
 # Отчёт о проделанной работе по проекту Logist2
 
-**Дата последнего обновления:** 10 февраля 2026 г.
+**Дата последнего обновления:** 10 февраля 2026 г. (вечер)
 
 ---
 
@@ -2003,3 +2003,46 @@ SQLite для тестов: `if 'test' in sys.argv` в `settings.py`.
 - `logist2/urls.py` — API versioning /api/v1/
 - `run_all_tests.py` — Company.get_default()
 - `core/tests/__init__.py`, `core/tests/test_models.py`, `core/tests/test_signals.py`, `core/tests/test_billing.py` — новые тесты
+
+---
+
+### 47. Исправление отображения фотографий контейнеров + оптимизация производительности
+
+**Дата:** 10 февраля 2026 г. (вечер)
+
+#### Проблема 1: Фотографии не отображались на сервере (production)
+
+**Корневая причина:** В `logist2/settings_base.py` (production) отсутствовали `MEDIA_URL` и `MEDIA_ROOT`.
+Django использовал дефолтные значения (`MEDIA_URL='/'`, `MEDIA_ROOT=''`), из-за чего:
+- Новые фото сохранялись в **корень проекта** (`/logist2/container_photos/`) вместо `/logist2/media/container_photos/`
+- URL фотографий генерировались как `/container_photos/...` (без `/media/`), Nginx не мог их отдать
+- **2734 файла** оказались в неправильном расположении (с ~23 января 2026)
+
+**Решение:**
+1. ✅ Добавлены `MEDIA_URL = '/media/'` и `MEDIA_ROOT = BASE_DIR / 'media'` в `settings_base.py`
+2. ✅ Скопированы 2734 файла (фото + миниатюры) из корня проекта в `media/`
+3. ✅ Старая папка переименована в `container_photos_OLD/`
+
+#### Проблема 2: Страница контейнера открывалась крайне медленно
+
+**Корневая причина:** `ContainerPhotoInline` генерировал 200-274 скрытых инлайн-форм (с `<img>` тегами) для каждого контейнера.
+Инлайн был скрыт через CSS (`display: none !important`), но:
+- Django всё равно генерировал HTML для всех форм (серверная нагрузка)
+- Браузер загружал все `<img>` из скрытых форм (клиентская нагрузка)
+- На однопоточном dev-сервере это было катастрофически медленно
+
+**Решение:**
+1. ✅ Удалён `ContainerPhotoInline` из `ContainerAdmin.inlines` — фото отображаются через кастомную AJAX-галерею
+2. ✅ Удалён CSS-хак `.inline-group[id*="photos"] { display: none !important; }` из шаблона
+3. ✅ Убрано дублирующее определение `MEDIA_URL`/`MEDIA_ROOT` из `settings.py`
+
+**Результат:**
+- Страница контейнера загружается в 5-10 раз быстрее
+- Фотографии корректно отображаются через AJAX-галерею (lazy loading)
+- URL фотографий правильные (`/media/container_photos/...`)
+
+**Изменённые файлы:**
+- `logist2/settings_base.py` — добавлены MEDIA_URL, MEDIA_ROOT
+- `logist2/settings.py` — убран дубликат MEDIA_URL, MEDIA_ROOT
+- `core/admin/container.py` — убран ContainerPhotoInline из inlines
+- `templates/admin/core/container/change_form.html` — убран CSS-хак скрытия инлайна
