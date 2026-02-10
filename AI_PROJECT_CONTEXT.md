@@ -746,6 +746,14 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 - `core/tests.py` — 14 тест-классов (57 тестов): цены, THS, инвойсы, статусы, хранение, дефолты, кэш, API
 - `core/admin/` — пакет из 5 файлов (вместо monolithic admin.py)
 
+**10.02.2026 (ночь) - Автопересчёт платных дней хранения:**
+1. ✅ `services_summary_display()` — динамический расчёт дней (было: устаревшее `obj.days`)
+2. ✅ `CarAdmin.change_view()` — автообновление `CarService.custom_price` при открытии карточки
+3. ✅ Улучшена команда `recalculate_storage` — только активные машины, обновляет CarService
+4. ✅ Cron `0 6 * * *` — ежедневный пересчёт хранения (дни + цена)
+
+**Файлы:** `core/admin/car.py`, `core/management/commands/recalculate_storage.py`
+
 **10.02.2026 (вечер) - Исправление фотографий + оптимизация производительности:**
 1. ✅ Добавлены `MEDIA_URL`/`MEDIA_ROOT` в `settings_base.py` (отсутствовали в production!)
 2. ✅ Перемещены 2734 фото из корня проекта в `media/` на VPS
