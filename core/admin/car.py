@@ -1,6 +1,7 @@
 import logging
 
 from django.contrib import admin
+from django.db import transaction
 from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
@@ -482,7 +483,12 @@ class CarAdmin(admin.ModelAdmin):
         js = ('js/htmx.min.js', 'js/logist2_htmx.js')
 
     def save_model(self, request, obj, form, change):
-        """Saves model with service field processing"""
+        """Saves model with service field processing (wrapped in transaction)"""
+        with transaction.atomic():
+            self._save_model_inner(request, obj, form, change)
+
+    def _save_model_inner(self, request, obj, form, change):
+        """Внутренний метод save_model, выполняемый внутри transaction.atomic()"""
         super().save_model(request, obj, form, change)
 
         # First handle service deletions

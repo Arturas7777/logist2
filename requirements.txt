@@ -31,7 +31,7 @@ pycparser==2.22
 pyOpenSSL==25.1.0
 python-dotenv==1.0.1
 python-slugify==8.0.4
-redis==6.1.0
+redis>=4.6,<6.0.0
 requests==2.32.5
 google-api-python-client>=2.100.0
 google-auth>=2.23.0

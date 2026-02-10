@@ -1,6 +1,6 @@
 # ПОЛНОЕ ОПИСАНИЕ ПРОЕКТА LOGIST2
 
-**Версия документа:** 9 февраля 2026
+**Версия документа:** 10 февраля 2026
 **Назначение:** Описание функционала для работы с AI-ассистентами
 
 ---
@@ -814,8 +814,11 @@ logist2/
 │   ├── utils.py                    # Утилиты (round_up_to_5, WebSocketBatcher)
 │   ├── throttles.py                # Rate limiting (TrackShipmentThrottle 20/мин, AIChatThrottle 10/мин)
 │   ├── tasks.py                    # Celery задачи (фоновая отправка email с retry-логикой)
-│   ├── # tests.py удалён (устаревший). Тесты: run_all_tests.py (67 тестов)
-│   ├── signals.py                  # Сигналы (наследование данных, THS, email через Celery)
+│   ├── tests/                      # Стандартные Django TestCase тесты (18 тестов)
+│   │   ├── test_models.py          # Модели: Company.get_default(), Container/Car валидация
+│   │   ├── test_signals.py         # Сигналы: thread-safe instance attrs
+│   │   └── test_billing.py         # Биллинг: NewInvoice валидация
+│   ├── signals.py                  # Сигналы (thread-safe instance attrs, THS, email через Celery)
 │   ├── views.py                    # Views для админки
 │   ├── views_website.py            # Views для клиентского сайта (с rate limiting)
 │   │
@@ -844,9 +847,9 @@ logist2/
 │   ├── email/                      # Шаблоны email
 │   └── website/                    # Клиентский сайт
 │
-├── run_all_tests.py                # 67 тестов, 15 секций, atomic rollback
+├── run_all_tests.py                # Legacy тесты (67, atomic rollback на рабочей БД)
 ├── logist2/
-│   ├── settings.py                 # Локальные настройки (InMemory Channels, Redis cache с fallback на FileBasedCache, CELERY_ALWAYS_EAGER)
+│   ├── settings.py                 # Локальные (InMemory Channels, Redis cache, ENCRYPTION_KEY, SQLite для тестов)
 │   ├── settings_base.py            # Базовые настройки (Redis Channels, RedisCache db=1, Celery broker db=2)
 │   ├── settings_dev.py             # Dev-профиль
 │   ├── settings_prod.py            # Prod-профиль
@@ -854,7 +857,7 @@ logist2/
 │   ├── __init__.py                 # Monkey-patch admin.site для LogistAdminSite
 │   ├── celery.py                   # Celery app конфигурация
 │   ├── __init__.py                 # Импорт celery app с fallback
-│   ├── urls.py                     # URL routing
+│   ├── urls.py                     # URL routing (API v1 + legacy aliases)
 │   └── wsgi.py / asgi.py           # WSGI/ASGI
 │
 ├── requirements.txt                # Python зависимости
@@ -871,16 +874,22 @@ logist2/
 ### Файл: core/signals.py
 
 ```python
-# При сохранении Container
-save_old_container_values()          # Сохраняет старые значения для сравнения
+# При сохранении Container (thread-safe: старые значения на instance._pre_save_*)
+save_old_container_values()          # Сохраняет старые значения НА ЭКЗЕМПЛЯРЕ (не в глобальном dict!)
 update_related_on_container_save()   # Обновляет ТС при изменении контейнера
+save_old_notification_values()       # Сохраняет planned_unload_date/unload_date НА ЭКЗЕМПЛЯРЕ
 send_container_notifications_on_save()  # Отправляет email-уведомления
 auto_sync_photos_on_container_change()  # Синхронизирует фото с Google Drive
 
-# При сохранении Car
-save_old_contractors()               # Сохраняет старые контрагенты
+# При сохранении Car (thread-safe: старые контрагенты на instance._pre_save_contractors)
+save_old_contractors()               # Сохраняет старые контрагенты НА ЭКЗЕМПЛЯРЕ
 update_related_on_car_save()         # Обновляет инвойсы
 create_car_services_on_car_save()    # Создаёт услуги (склад, перевозчик)
+
+# При сохранении NewInvoice (thread-safe: instance._pre_save_status)
+save_old_invoice_status()            # Сохраняет старый статус НА ЭКЗЕМПЛЯРЕ
+auto_push_invoice_to_sitepro()       # Авто-push в site.pro при ISSUED
+auto_categorize_invoice()            # Авто-категория "Логистика" для склад/линия/перевозчик
 
 # При изменении CarService
 apply_client_tariffs_for_container()  # Применяет тарифы клиентов к наценкам услуг
@@ -894,6 +903,10 @@ update_cars_on_carrier_service_change()    # Обновляет CarService
 update_cars_on_company_service_change()    # Обновляет CarService (Company)
 delete_car_services_on_company_service_delete() # Удаляет Company CarService
 ```
+
+> **ВАЖНО:** Все pre_save сигналы сохраняют старые значения НА ЭКЗЕМПЛЯРЕ модели
+> (напр. `instance._pre_save_values`), а НЕ в глобальных словарях. Это обеспечивает
+> thread-safety при параллельных запросах.
 
 ---
 
@@ -1079,26 +1092,27 @@ Email-уведомления отправляются через Celery зада
 # news_detail НЕ кэшируется (инкремент счётчика просмотров)
 ```
 
-### 4f. Unit-тесты (57 тестов)
+### 4f. Unit-тесты
 
-В проекте **57 unit-тестов** в `core/tests.py`. Запуск: `python manage.py test core --settings=logist2.settings_test`.
+В проекте **две системы тестов:**
 
-| Тест-класс | Тестов | Что проверяет |
+**1. Стандартные Django TestCase** (`core/tests/`, 18 тестов):
+```bash
+python manage.py test core.tests           # Все тесты (SQLite)
+python manage.py test core.tests.test_models   # Только модели
+python manage.py test core.tests.test_billing  # Только биллинг
+```
+
+| Файл | Тестов | Что проверяет |
 |---|---|---|
-| `APIPermissionsTests` | 1 | API требует staff-авторизацию |
-| `RoundUpTo5Tests` | 3 | Округление вверх до кратного 5 (Decimal) |
-| `StorageCostCalculationTests` | 2 | Edge cases: нет склада/даты → 0 |
-| `ServiceCacheTests` | 3 | Кэш _service_obj_cache, отсутствие повторных SQL |
-| `THSCalculationTests` | 8 | Пропорциональное распределение THS, округление, edge cases |
-| `StorageCostFullTests` | 5 | Дни×ставка, free days, transfer_date, update_days_and_storage |
-| `RegenerateItemsTests` | 6 | Позиции инвойса: markup для Company, группировка short_name |
-| `CalculateTotalPriceTests` | 5 | Итоговая цена: услуги + markup, quantity, default/custom price |
-| `CarServicePriceTests` | 4 | final_price (без markup) vs invoice_price (с markup) |
-| `CreateTHSServicesTests` | 5 | Создание CarService для LINE/WAREHOUSE, удаление старых THS |
-| `InvoiceCalculateTotalsTests` | 3 | subtotal из позиций, discount, пустой инвойс |
-| `InvoiceStatusTests` | 5 | PAID/PARTIALLY_PAID/OVERDUE/DRAFT переходы статусов |
-| `RegenerateStorageItemTests` | 3 | Группа 'Хран' для склада/компании, исключена для линии |
-| `ApplyWarehouseDefaultsTests` | 4 | force=True/False, заполнение пустых полей, без склада |
+| `test_models.py` | 10 | Company.get_default(), Container.clean(), Car.clean(), VEHICLE_TYPE_CHOICES |
+| `test_signals.py` | 3 | Thread-safe instance attrs, unloaded_status_at |
+| `test_billing.py` | 5 | NewInvoice.clean() (выставитель/получатель/due_date), auto-number |
+
+**2. Legacy-тесты** (`run_all_tests.py`, 67 тестов на рабочей БД):
+```bash
+.\.venv\Scripts\python.exe run_all_tests.py
+```
 
 ### 5. Email через Brevo
 
@@ -1302,10 +1316,14 @@ def round_up_to_5(value):
 ### Unit-тесты
 
 ```bash
-python manage.py test core.tests.RoundUpTo5Tests          # Округление
-python manage.py test core.tests.StorageCostCalculationTests  # Хранение
-python manage.py test core.tests.ServiceCacheTests         # Кэш услуг
-python manage.py test core                                 # Все тесты
+# Стандартные Django TestCase (SQLite, быстрые):
+python manage.py test core.tests                          # Все тесты (18)
+python manage.py test core.tests.test_models              # Модели
+python manage.py test core.tests.test_signals             # Сигналы
+python manage.py test core.tests.test_billing             # Биллинг
+
+# Legacy-тесты (рабочая БД, atomic rollback):
+.\.venv\Scripts\python.exe run_all_tests.py               # 67 тестов
 ```
 
 ### Структура admin/ пакета
@@ -1344,7 +1362,10 @@ core/management/commands/
 
 ### Шифрование токенов
 
-Все чувствительные поля (client_id, refresh_token, access_token, jwt_assertion) зашифрованы Fernet (ключ из Django SECRET_KEY). Доступ через Python property:
+Все чувствительные поля (client_id, refresh_token, access_token, jwt_assertion) зашифрованы Fernet.
+Ключ берётся из `ENCRYPTION_KEY` (env), если не задан — fallback на `SECRET_KEY`.
+**ВАЖНО:** не меняйте ENCRYPTION_KEY после установки — зашифрованные токены станут нечитаемыми.
+Доступ через Python property:
 
 ```python
 conn.client_id = "plain_text"     # шифрует и сохраняет в _client_id

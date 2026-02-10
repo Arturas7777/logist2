@@ -738,9 +738,9 @@ class BillingService:
                 ext_num_to_invoices.setdefault(key, []).append(inv)
         
         # 3. Сопоставляем
-        caromoto = Company.objects.filter(id=1).first()
+        caromoto = Company.get_default()
         if not caromoto:
-            logger.error('[AutoReconcile] Company id=1 (Caromoto Lithuania) не найдена')
+            logger.error('[AutoReconcile] Компания по умолчанию не найдена (проверьте settings.COMPANY_NAME)')
             return result
         
         for bank_trx in unmatched_bank_txns:
