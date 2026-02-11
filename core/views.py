@@ -832,7 +832,8 @@ def get_available_services(request, car_id):
             ).values_list('service_id', flat=True)
             
             available_services = CompanyService.objects.filter(
-                company=company
+                company=company,
+                is_active=True
             ).exclude(id__in=existing_service_ids)
             
             services = [{
@@ -872,6 +873,8 @@ def add_services(request, car_id):
         
         car = Car.objects.get(id=car_id)
         added_count = 0
+        skipped_count = 0
+        errors = []
         
         for service_id in service_ids:
             service_type_upper = service_type.upper()
@@ -903,6 +906,18 @@ def add_services(request, car_id):
                 else:
                     continue
                 
+                # Check if already exists (unique_together: car, service_type, service_id)
+                existing = CarService.objects.filter(
+                    car=car,
+                    service_type=service_type_upper,
+                    service_id=service_id
+                ).exists()
+                
+                if existing:
+                    skipped_count += 1
+                    logger.info(f"Service {service_id} ({service_type_upper}) already exists for car {car_id}, skipping")
+                    continue
+                
                 CarService.objects.create(
                     car=car,
                     service_type=service_type_upper,
@@ -913,13 +928,33 @@ def add_services(request, car_id):
                 added_count += 1
             except Exception as e:
                 logger.error(f"Error adding service {service_id} ({service_type_upper}) to car {car_id}: {e}")
+                errors.append(str(e))
         
-        return JsonResponse({
-            'success': True,
-            'message': f'Добавлено {added_count} услуг',
-            'added_count': added_count
-        })
+        if added_count > 0:
+            return JsonResponse({
+                'success': True,
+                'message': f'Добавлено {added_count} услуг',
+                'added_count': added_count,
+                'skipped_count': skipped_count
+            })
+        elif skipped_count > 0:
+            return JsonResponse({
+                'success': False,
+                'already_exists': True,
+                'message': f'Все выбранные услуги ({skipped_count}) уже добавлены к этому авто',
+                'added_count': 0,
+                'skipped_count': skipped_count
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'message': 'Не удалось добавить услуги' + (f': {"; ".join(errors)}' if errors else ''),
+                'added_count': 0
+            })
+    except Car.DoesNotExist:
+        return JsonResponse({'error': f'Автомобиль с ID {car_id} не найден'}, status=404)
     except Exception as e:
+        logger.error(f"Error in add_services for car {car_id}: {e}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
 
 

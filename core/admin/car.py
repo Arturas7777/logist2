@@ -75,8 +75,7 @@ class CarAdmin(admin.ModelAdmin):
                 'carrier_services_display',
             )
         }),
-        ('Услуги', {
-            'classes': ('collapse',),
+        ('Услуги компании', {
             'fields': (
                 'company_services_display',
             )
@@ -573,6 +572,11 @@ class CarAdmin(admin.ModelAdmin):
                 continue
 
             field_name = f'warehouse_service_{car_service.service_id}'
+
+            # Only update if the field was actually present in the form
+            if field_name not in request.POST:
+                continue
+
             value = request.POST.get(field_name)
 
             if value:
@@ -583,11 +587,12 @@ class CarAdmin(admin.ModelAdmin):
 
             # Save hidden markup
             markup_field = f'markup_warehouse_service_{car_service.service_id}'
-            markup_value = request.POST.get(markup_field, '0')
-            try:
-                car_service.markup_amount = float(markup_value) if markup_value else 0
-            except (ValueError, TypeError):
-                car_service.markup_amount = 0
+            markup_value = request.POST.get(markup_field)
+            if markup_value is not None:
+                try:
+                    car_service.markup_amount = float(markup_value) if markup_value else 0
+                except (ValueError, TypeError):
+                    car_service.markup_amount = 0
             car_service.save()
 
         # Then create new services from catalog (if needed)
@@ -641,6 +646,11 @@ class CarAdmin(admin.ModelAdmin):
                 continue
 
             field_name = f'line_service_{car_service.service_id}'
+
+            # Only update if the field was actually present in the form
+            if field_name not in request.POST:
+                continue
+
             value = request.POST.get(field_name)
 
             if value:
@@ -651,11 +661,12 @@ class CarAdmin(admin.ModelAdmin):
 
             # Save hidden markup
             markup_field = f'markup_line_service_{car_service.service_id}'
-            markup_value = request.POST.get(markup_field, '0')
-            try:
-                car_service.markup_amount = float(markup_value) if markup_value else 0
-            except (ValueError, TypeError):
-                car_service.markup_amount = 0
+            markup_value = request.POST.get(markup_field)
+            if markup_value is not None:
+                try:
+                    car_service.markup_amount = float(markup_value) if markup_value else 0
+                except (ValueError, TypeError):
+                    car_service.markup_amount = 0
             car_service.save()
 
         # Then create new services from catalog (if needed)
@@ -704,6 +715,11 @@ class CarAdmin(admin.ModelAdmin):
                 continue
 
             field_name = f'carrier_service_{car_service.service_id}'
+
+            # Only update if the field was actually present in the form
+            if field_name not in request.POST:
+                continue
+
             value = request.POST.get(field_name)
 
             if value:
@@ -713,11 +729,12 @@ class CarAdmin(admin.ModelAdmin):
                     pass
 
             markup_field = f'markup_carrier_service_{car_service.service_id}'
-            markup_value = request.POST.get(markup_field, '0')
-            try:
-                car_service.markup_amount = float(markup_value) if markup_value else 0
-            except (ValueError, TypeError):
-                car_service.markup_amount = 0
+            markup_value = request.POST.get(markup_field)
+            if markup_value is not None:
+                try:
+                    car_service.markup_amount = float(markup_value) if markup_value else 0
+                except (ValueError, TypeError):
+                    car_service.markup_amount = 0
             car_service.save()
 
         # Then create new services from catalog (if needed)
@@ -767,6 +784,11 @@ class CarAdmin(admin.ModelAdmin):
             field_name = f'company_service_{car_service.service_id}'
             value = request.POST.get(field_name)
 
+            # Only update if the field was actually present in the form
+            # (prevents resetting values for services added via AJAX without page reload)
+            if field_name not in request.POST:
+                continue
+
             if value:
                 try:
                     car_service.custom_price = float(value)
@@ -774,11 +796,12 @@ class CarAdmin(admin.ModelAdmin):
                     pass
 
             markup_field = f'markup_company_service_{car_service.service_id}'
-            markup_value = request.POST.get(markup_field, '0')
-            try:
-                car_service.markup_amount = float(markup_value) if markup_value else 0
-            except (ValueError, TypeError):
-                car_service.markup_amount = 0
+            markup_value = request.POST.get(markup_field)
+            if markup_value is not None:
+                try:
+                    car_service.markup_amount = float(markup_value) if markup_value else 0
+                except (ValueError, TypeError):
+                    car_service.markup_amount = 0
             car_service.save()
 
         # Recalculate storage cost and days when warehouse changes

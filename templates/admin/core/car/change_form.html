@@ -379,17 +379,19 @@
       })
       .then(response => response.json())
       .then(data => {
-        if (data.success) {
-          alert('Услуги успешно добавлены!');
+        if (data.success && data.added_count > 0) {
+          alert('Услуги успешно добавлены! (' + data.added_count + ')');
           closeModal(serviceType + 'ServicesModal');
-          location.reload(); // Перезагружаем страницу для обновления данных
+          location.reload();
+        } else if (data.already_exists) {
+          alert(data.message || 'Эти услуги уже добавлены к данному автомобилю.');
         } else {
-          alert('Ошибка при добавлении услуг: ' + (data.error || 'Неизвестная ошибка'));
+          alert('Ошибка при добавлении услуг: ' + (data.message || data.error || 'Неизвестная ошибка'));
         }
       })
       .catch(error => {
         console.error('Error adding services:', error);
-        alert('Ошибка при добавлении услуг');
+        alert('Ошибка при добавлении услуг: ' + error.message);
       });
     }
 
