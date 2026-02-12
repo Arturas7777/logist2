@@ -1263,6 +1263,8 @@ class AutoTransportAdmin(admin.ModelAdmin):
         'created_at',
     )
 
+    actions = ['mark_delivered']
+
     search_fields = (
         'number',
         'carrier__name',
@@ -1324,6 +1326,33 @@ class AutoTransportAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+
+    def changelist_view(self, request, extra_context=None):
+        """По умолчанию скрываем доставленные автовозы"""
+        if 'status' not in request.GET and 'status__exact' not in request.GET:
+            q = request.GET.copy()
+            q['_hide_delivered'] = '1'
+            request.GET = q
+        return super().changelist_view(request, extra_context)
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        if request.GET.get('_hide_delivered') == '1':
+            qs = qs.exclude(status='DELIVERED')
+        return qs
+
+    def mark_delivered(self, request, queryset):
+        """Массовое присвоение статуса 'Доставлен'"""
+        updated = 0
+        for at in queryset.exclude(status='DELIVERED'):
+            at.status = 'DELIVERED'
+            if not at.actual_delivery_date:
+                at.actual_delivery_date = timezone.now().date()
+            at._transfer_date_override = at.actual_delivery_date or timezone.now().date()
+            at.save()
+            updated += 1
+        messages.success(request, f'Статус "Доставлен" присвоен {updated} автовозам.')
+    mark_delivered.short_description = '🚛 Присвоить статус "Доставлен"'
 
     def get_urls(self):
         custom_urls = [
