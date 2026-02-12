@@ -1327,18 +1327,21 @@ class AutoTransportAdmin(admin.ModelAdmin):
         }),
     )
 
-    def changelist_view(self, request, extra_context=None):
-        """По умолчанию скрываем доставленные автовозы"""
+    def get_changelist_instance(self, request):
+        """Скрываем доставленные автовозы по умолчанию (только в списке, не в форме)"""
+        # Подменяем queryset только если пользователь не выбрал фильтр по статусу
         if 'status' not in request.GET and 'status__exact' not in request.GET:
-            q = request.GET.copy()
-            q['_hide_delivered'] = '1'
-            request.GET = q
-        return super().changelist_view(request, extra_context)
+            self._exclude_delivered = True
+        else:
+            self._exclude_delivered = False
+        return super().get_changelist_instance(request)
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
-        if request.GET.get('_hide_delivered') == '1':
+        # Применяем фильтр только для changelist (флаг ставится в get_changelist_instance)
+        if getattr(self, '_exclude_delivered', False):
             qs = qs.exclude(status='DELIVERED')
+            self._exclude_delivered = False
         return qs
 
     def mark_delivered(self, request, queryset):
