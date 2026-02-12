@@ -1,20 +1,22 @@
 import logging
 
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
-from django.http import HttpResponseRedirect
+from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import render
-from django.urls import reverse
+from django.urls import reverse, path
 from django.db import models
 from decimal import Decimal
+from datetime import datetime
 
 from core.models import (
     Client, Warehouse, Car, Container, Line, Company, Carrier,
     LineService, CarrierService, WarehouseService, CompanyService,
     CarService, AutoTransport, CarrierTruck, CarrierDriver,
 )
+from core.models_billing import NewInvoice
 from core.forms import LineForm, CarrierForm, WarehouseForm
 from core.admin.inlines import (
     WarehouseServiceInline, LineServiceInline, LineTHSCoefficientInline,
@@ -1241,6 +1243,7 @@ class AutoTransportAdmin(admin.ModelAdmin):
     """
 
     change_form_template = 'admin/core/autotransport/change_form.html'
+    change_list_template = 'admin/core/autotransport/change_list.html'
 
     list_display = (
         'number',
@@ -1322,27 +1325,86 @@ class AutoTransportAdmin(admin.ModelAdmin):
         }),
     )
 
+    def get_urls(self):
+        custom_urls = [
+            path(
+                '<int:pk>/mark-loaded/',
+                self.admin_site.admin_view(self.mark_loaded_view),
+                name='core_autotransport_mark_loaded',
+            ),
+        ]
+        return custom_urls + super().get_urls()
+
+    def mark_loaded_view(self, request, pk):
+        """AJAX endpoint: пометить автовоз как Загружен, авто → Передан"""
+        if request.method != 'POST':
+            return JsonResponse({'error': 'POST only'}, status=405)
+
+        try:
+            obj = AutoTransport.objects.get(pk=pk)
+        except AutoTransport.DoesNotExist:
+            return JsonResponse({'error': 'Автовоз не найден'}, status=404)
+
+        if obj.status not in ('FORMED', 'DRAFT'):
+            return JsonResponse({
+                'error': f'Нельзя загрузить автовоз в статусе "{obj.get_status_display()}"'
+            }, status=400)
+
+        # Определяем дату передачи
+        date_str = request.POST.get('transfer_date', '').strip()
+        transfer_date = None
+        if date_str:
+            try:
+                transfer_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            except ValueError:
+                return JsonResponse({'error': 'Неверный формат даты'}, status=400)
+        else:
+            transfer_date = timezone.now().date()
+
+        # Меняем статус автовоза
+        obj.status = 'LOADED'
+        obj.loading_date = transfer_date
+        # Передаём дату в сигнал через атрибут экземпляра
+        obj._transfer_date_override = transfer_date
+        obj.save()
+
+        cars_count = obj.cars.filter(status='TRANSFERRED').count()
+        return JsonResponse({
+            'success': True,
+            'message': f'Автовоз {obj.number} загружен. {cars_count} авто переданы ({transfer_date}).',
+            'new_status': 'LOADED',
+            'new_status_display': 'Загружен',
+        })
+
     def save_model(self, request, obj, form, change):
         """Save auto-transport with auto-fill fields"""
-        # Save who created
         if not change:
             obj.created_by = request.user.username
 
-        # Save object
+        # Если статус меняется на LOADED/IN_TRANSIT/DELIVERED — передаём дату
+        if change and obj.status in ('LOADED', 'IN_TRANSIT', 'DELIVERED'):
+            if not hasattr(obj, '_transfer_date_override'):
+                obj._transfer_date_override = obj.loading_date or timezone.now().date()
+
         super().save_model(request, obj, form, change)
 
-        # If status is "Formed" - create/update invoices
         if obj.status == 'FORMED':
             try:
                 invoices = obj.generate_invoices()
-                from django.contrib import messages
                 messages.success(
                     request,
                     f'Автовоз сформирован. Создано/обновлено инвойсов: {len(invoices)}'
                 )
             except Exception as e:
-                from django.contrib import messages
                 messages.error(request, f'Ошибка при создании инвойсов: {e}')
+
+        if obj.status in ('LOADED', 'IN_TRANSIT', 'DELIVERED'):
+            transferred_count = obj.cars.filter(status='TRANSFERRED').count()
+            if transferred_count:
+                messages.info(
+                    request,
+                    f'{transferred_count} авто переданы (статус TRANSFERRED)'
+                )
 
     def truck_display(self, obj):
         """Display truck number"""
@@ -1381,23 +1443,91 @@ class AutoTransportAdmin(admin.ModelAdmin):
     status_display.short_description = 'Статус'
 
     def actions_display(self, obj):
-        """Action buttons"""
+        """Action buttons: Сформировать, Загружен + дата, Инвойсы (цветная)"""
         html = []
 
+        # Кнопка "Сформировать" для черновиков
         if obj.status == 'DRAFT':
             html.append(format_html(
-                '<a class="button" href="{}">Сформировать</a>',
+                '<a class="button" href="{}" style="margin:2px;">Сформировать</a>',
                 reverse('admin:core_autotransport_change', args=[obj.id])
             ))
 
-        if obj.id:
+        # Кнопка "Загружен" + поле даты для FORMED (и DRAFT)
+        if obj.status in ('DRAFT', 'FORMED'):
+            mark_loaded_url = reverse('admin:core_autotransport_mark_loaded', args=[obj.id])
             html.append(format_html(
-                '<a class="button" href="{}">Инвойсы</a>',
-                reverse('admin:core_newinvoice_changelist') + f'?auto_transport__id__exact={obj.id}'
+                '<span class="at-load-group" style="display:inline-flex;align-items:center;gap:3px;margin:2px;">'
+                '<input type="date" class="at-load-date" data-at-id="{}" '
+                '  style="padding:2px 4px;font-size:11px;border:1px solid #ccc;border-radius:3px;width:120px;">'
+                '<button type="button" class="button at-load-btn" data-at-id="{}" data-url="{}" '
+                '  style="padding:3px 8px;font-size:11px;background:#17a2b8;color:#fff;border:none;'
+                '  border-radius:3px;cursor:pointer;" title="Изменить статус на Загружен">'
+                '🚛 Загружен</button>'
+                '</span>',
+                obj.id, obj.id, mark_loaded_url
             ))
 
-        return format_html(' '.join(html))
+        # Кнопка "Инвойсы" с цветовой индикацией
+        if obj.id:
+            invoice_url = reverse('admin:core_newinvoice_changelist') + f'?auto_transport__id__exact={obj.id}'
+            invoices = NewInvoice.objects.filter(auto_transport=obj).exclude(status='CANCELLED')
+
+            if not invoices.exists():
+                # Нет инвойсов — серая
+                html.append(format_html(
+                    '<a class="button" href="{}" '
+                    'style="margin:2px;padding:3px 8px;font-size:11px;background:#6c757d;color:#fff;'
+                    'border:none;border-radius:3px;text-decoration:none;">Инвойсы</a>',
+                    invoice_url
+                ))
+            else:
+                # Собираем статусы для мульти-цвета
+                statuses = list(invoices.values_list('status', flat=True))
+                segments = self._get_invoice_color_segments(statuses)
+
+                if len(segments) == 1:
+                    # Один цвет — простая кнопка
+                    html.append(format_html(
+                        '<a class="button" href="{}" '
+                        'style="margin:2px;padding:3px 8px;font-size:11px;background:{};color:#fff;'
+                        'border:none;border-radius:3px;text-decoration:none;">Инвойсы</a>',
+                        invoice_url, segments[0][1]
+                    ))
+                else:
+                    # Несколько цветов — градиентная кнопка
+                    gradient_parts = []
+                    step = 100 / len(segments)
+                    for i, (_, color) in enumerate(segments):
+                        start = round(i * step)
+                        end = round((i + 1) * step)
+                        gradient_parts.append(f'{color} {start}%, {color} {end}%')
+                    gradient = f'linear-gradient(90deg, {", ".join(gradient_parts)})'
+                    html.append(format_html(
+                        '<a class="button" href="{}" '
+                        'style="margin:2px;padding:3px 8px;font-size:11px;background:{};color:#fff;'
+                        'border:none;border-radius:3px;text-decoration:none;">Инвойсы</a>',
+                        invoice_url, gradient
+                    ))
+
+        return format_html(''.join(html))
     actions_display.short_description = 'Действия'
+
+    @staticmethod
+    def _get_invoice_color_segments(statuses):
+        """Возвращает список (label, color) сегментов для инвойс-кнопки"""
+        color_map = {
+            'PAID': '#28a745',           # зеленый — оплачен
+            'PARTIALLY_PAID': '#ffc107', # желтый — частично оплачен
+            'ISSUED': '#dc3545',         # красный — выставлен, не оплачен
+            'OVERDUE': '#dc3545',        # красный — просрочен
+            'DRAFT': '#6c757d',          # серый — черновик
+        }
+        segments = []
+        for s in statuses:
+            color = color_map.get(s, '#6c757d')
+            segments.append((s, color))
+        return segments
 
     def add_view(self, request, form_url='', extra_context=None):
         """Custom add view processing"""

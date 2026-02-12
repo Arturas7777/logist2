@@ -1,0 +1,79 @@
+{% extends "admin/change_list.html" %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+    .at-load-group {
+        white-space: nowrap;
+    }
+    .at-load-btn:hover {
+        opacity: 0.85;
+    }
+    /* Плавное исчезновение кнопки после успеха */
+    .at-load-group.success {
+        opacity: 0.5;
+        pointer-events: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{{ block.super }}
+
+{% csrf_token %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Делегирование кликов на кнопки "Загружен"
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('.at-load-btn');
+        if (!btn) return;
+
+        e.preventDefault();
+        var atId = btn.dataset.atId;
+        var url = btn.dataset.url;
+        var group = btn.closest('.at-load-group');
+        var dateInput = group.querySelector('.at-load-date');
+        var dateValue = dateInput ? dateInput.value : '';
+
+        if (!confirm('Пометить автовоз как "Загружен"' + 
+                     (dateValue ? ' (дата: ' + dateValue + ')' : ' (дата: сегодня)') + '?')) {
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = '⏳...';
+
+        var formData = new FormData();
+        formData.append('transfer_date', dateValue);
+        formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]')?.value || '{{ csrf_token }}');
+
+        fetch(url, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || '{{ csrf_token }}'
+            }
+        })
+        .then(function(resp) { return resp.json(); })
+        .then(function(data) {
+            if (data.success) {
+                group.classList.add('success');
+                btn.textContent = '✓ Загружен';
+                btn.style.background = '#28a745';
+                // Перезагрузка через 1 сек чтобы увидеть обновлённые статусы
+                setTimeout(function() { location.reload(); }, 1000);
+            } else {
+                alert(data.error || 'Ошибка');
+                btn.disabled = false;
+                btn.textContent = '🚛 Загружен';
+            }
+        })
+        .catch(function(err) {
+            alert('Ошибка сети: ' + err.message);
+            btn.disabled = false;
+            btn.textContent = '🚛 Загружен';
+        });
+    });
+});
+</script>
+{% endblock %}

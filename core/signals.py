@@ -1190,16 +1190,43 @@ def auto_sync_photos_on_container_change(sender, instance, created, **kwargs):
 @receiver(post_save, sender='core.AutoTransport')
 def autotransport_post_save(sender, instance, created, **kwargs):
     """
-    При сохранении автовоза со статусом FORMED создаем/обновляем инвойсы
+    При сохранении автовоза:
+    - FORMED: создаем/обновляем инвойсы
+    - LOADED/IN_TRANSIT/DELIVERED: все авто → статус TRANSFERRED + дата передачи
     """
     if instance.status == 'FORMED':
         try:
-            # Создаем/обновляем инвойсы для клиентов
             invoices = instance.generate_invoices()
             if invoices:
                 logger.info(f"🚛 Автовоз {instance.number}: создано/обновлено инвойсов: {len(invoices)}")
         except Exception as e:
             logger.error(f"🚛 Ошибка при создании инвойсов для автовоза {instance.number}: {e}")
+
+    # При переходе в LOADED/IN_TRANSIT/DELIVERED — передать все авто
+    if instance.status in ('LOADED', 'IN_TRANSIT', 'DELIVERED'):
+        transfer_date = getattr(instance, '_transfer_date_override', None)
+        _mark_cars_as_transferred(instance, transfer_date)
+
+
+def _mark_cars_as_transferred(autotransport, transfer_date=None):
+    """Помечает все авто автовоза как переданные с указанной датой"""
+    from django.utils import timezone as tz
+    if transfer_date is None:
+        transfer_date = tz.now().date()
+
+    cars = autotransport.cars.exclude(status='TRANSFERRED')
+    count = 0
+    for car in cars:
+        car.status = 'TRANSFERRED'
+        car.transfer_date = transfer_date
+        car.save(update_fields=['status', 'transfer_date'])
+        count += 1
+
+    if count:
+        logger.info(
+            f"🚛 Автовоз {autotransport.number}: {count} авто → TRANSFERRED "
+            f"(дата передачи: {transfer_date})"
+        )
 
 
 # Сигнал для изменения автомобилей в автовозе будет подключен после инициализации моделей
