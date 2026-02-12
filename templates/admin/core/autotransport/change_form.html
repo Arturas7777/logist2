@@ -6,6 +6,11 @@
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
 <link href="{% static 'css/autotransport.css' %}?v=4" rel="stylesheet">
+<style>
+    .select2-selection__choice a {
+        pointer-events: auto;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -399,6 +404,8 @@ console.log('✅ jQuery мост установлен, версия:', window.jQ
         // ============================================
         // 5. ИНИЦИАЛИЗАЦИЯ SELECT2 ДЛЯ АВТОМОБИЛЕЙ (БЕЗ AJAX, КАК В ИНВОЙСАХ)
         // ============================================
+        var carAdminBaseUrl = '/admin/core/car/';
+        
         $('#cars_select').select2({
             placeholder: 'Введите VIN или марку для поиска...',
             allowClear: true,
@@ -417,34 +424,30 @@ console.log('✅ jQuery мост установлен, версия:', window.jQ
             templateSelection: function(state) {
                 if (!state.id) return state.text;
                 var status = $(state.element).data('status');
-                return $('<span data-status="' + status + '">' + state.text + '</span>');
+                var link = carAdminBaseUrl + state.id + '/change/';
+                return $('<a href="' + link + '" target="_blank" data-status="' + status + '" ' +
+                    'onclick="event.stopPropagation();" ' +
+                    'style="color:inherit;text-decoration:none;cursor:pointer;">' + state.text + '</a>');
             }
         });
         
         // Добавляем data-status к созданным тегам
-        $('#cars_select').on('select2:select', function(e) {
-            var status = $(e.params.data.element).data('status');
-            setTimeout(function() {
-                $('.select2-selection__choice').each(function() {
-                    var $choice = $(this);
-                    var $span = $choice.find('span[data-status]');
-                    if ($span.length) {
-                        $choice.attr('data-status', $span.data('status'));
-                    }
-                });
-            }, 10);
+        function applyStatusColors() {
+            $('.select2-selection__choice').each(function() {
+                var $choice = $(this);
+                var $el = $choice.find('[data-status]');
+                if ($el.length) {
+                    $choice.attr('data-status', $el.data('status'));
+                }
+            });
+        }
+        
+        $('#cars_select').on('select2:select select2:unselect', function() {
+            setTimeout(applyStatusColors, 10);
         });
         
         // Инициализируем статусы для уже выбранных тегов
-        setTimeout(function() {
-            $('.select2-selection__choice').each(function() {
-                var $choice = $(this);
-                var $span = $choice.find('span[data-status]');
-                if ($span.length) {
-                    $choice.attr('data-status', $span.data('status'));
-                }
-            });
-        }, 100);
+        setTimeout(applyStatusColors, 100);
 
         console.log('✅ Все обработчики AutoTransport подключены');
     });
