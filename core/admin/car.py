@@ -424,9 +424,13 @@ class CarAdmin(admin.ModelAdmin):
             # Get filtered queryset (cars being displayed)
             queryset = cl.get_queryset(request)
 
-            # Calculate total markup sum for displayed cars
+            # Calculate total markup sum for displayed cars.
+            # IMPORTANT: queryset already has annotation _total_markup from get_queryset().
+            # We must aggregate on the annotation, NOT on 'car_services__markup_amount',
+            # because aggregate() on the same relation as an existing annotation
+            # generates a broken subquery that halves the result.
             total_markup_sum = queryset.aggregate(
-                total=Sum('car_services__markup_amount')
+                total=Sum('_total_markup')
             )['total'] or Decimal('0.00')
 
             # Add to context
