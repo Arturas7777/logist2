@@ -3,6 +3,7 @@ import logging
 import time
 
 from django.contrib import admin
+from django.db import transaction
 from django.db.models import Q
 from django.contrib.admin import SimpleListFilter
 from django.utils.html import format_html
@@ -13,7 +14,7 @@ from core.models import (
     CarrierService, CompanyService,
 )
 from core.admin_filters import MultiStatusFilter, MultiWarehouseFilter, ClientAutocompleteFilter
-from core.admin.inlines import CarInline, ContainerPhotoInline
+from core.admin.inlines import CarInline
 
 logger = logging.getLogger('django')
 
@@ -35,7 +36,7 @@ class ContainerAdmin(admin.ModelAdmin):
     ordering = ['-unload_date', '-id']
     list_per_page = 50
     show_full_result_count = False
-    inlines = [CarInline, ContainerPhotoInline]
+    inlines = [CarInline]
     fieldsets = (
         ('Основные данные', {
             'classes': ('collapse',),
@@ -65,6 +66,13 @@ class ContainerAdmin(admin.ModelAdmin):
         start_time = time.time()
         logger.info(f"[TIMING] Container save_model started for {obj.number}")
 
+        with transaction.atomic():
+            self._save_model_inner(request, obj, form, change)
+
+        logger.info(f"[TIMING] Container save_model completed in {time.time() - start_time:.2f}s")
+
+    def _save_model_inner(self, request, obj, form, change):
+        """Внутренний метод save_model, выполняемый внутри transaction.atomic()"""
         # If new object without pk, save it
         if not change and not obj.pk:
             super().save_model(request, obj, form, change)
@@ -72,7 +80,7 @@ class ContainerAdmin(admin.ModelAdmin):
             # For existing objects save as usual
             super().save_model(request, obj, form, change)
 
-        logger.info(f"[TIMING] Container saved in {time.time() - start_time:.2f}s")
+        logger.info(f"[TIMING] Container saved to DB")
 
         # If warehouse changed - sync warehouse to all cars
         if change and form and 'warehouse' in getattr(form, 'changed_data', []):

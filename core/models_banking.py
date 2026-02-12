@@ -22,13 +22,17 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Encryption helpers — используем SECRET_KEY для Fernet-шифрования токенов
+# Encryption helpers — используем отдельный ENCRYPTION_KEY для Fernet-шифрования токенов.
+# Если ENCRYPTION_KEY не задан, fallback на SECRET_KEY (обратная совместимость).
+# ВАЖНО: задайте ENCRYPTION_KEY в .env и НЕ меняйте его, иначе зашифрованные
+# данные в БД станут нечитаемыми.
 # ---------------------------------------------------------------------------
 
 def _get_fernet():
-    """Создаёт Fernet-ключ из Django SECRET_KEY (детерминированно)."""
+    """Создаёт Fernet-ключ из ENCRYPTION_KEY (или SECRET_KEY как fallback)."""
     import hashlib
-    key = hashlib.sha256(settings.SECRET_KEY.encode()).digest()
+    encryption_key = getattr(settings, 'ENCRYPTION_KEY', None) or settings.SECRET_KEY
+    key = hashlib.sha256(encryption_key.encode()).digest()
     return Fernet(base64.urlsafe_b64encode(key))
 
 

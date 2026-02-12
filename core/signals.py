@@ -32,18 +32,22 @@ for _model in (LineService, WarehouseService, CarrierService, CompanyService):
     post_delete.connect(invalidate_service_cache, sender=_model)
 
 
-# Сохраняем старые значения контейнера для определения что изменилось
-_old_container_values = {}
+# ============================================================================
+# СОХРАНЕНИЕ СТАРЫХ ЗНАЧЕНИЙ НА ЭКЗЕМПЛЯРЕ (thread-safe)
+# ============================================================================
+# Вместо глобальных словарей _old_container_values / _old_contractors / etc.
+# храним старые значения на self._pre_save_* атрибутах экземпляра.
+# Это безопасно при параллельных запросах (каждый request работает со своим экземпляром).
 
 @receiver(pre_save, sender=Container)
 def save_old_container_values(sender, instance, **kwargs):
-    """Сохраняем старые значения контейнера до сохранения"""
+    """Сохраняем старые значения контейнера до сохранения (на экземпляре)"""
     logger.debug(f"[PRE_SAVE] Container {instance.number} pk={instance.pk}")
     if instance.pk:
         try:
             old = Container.objects.filter(pk=instance.pk).values('status', 'unload_date').first()
             if old:
-                _old_container_values[instance.pk] = old
+                instance._pre_save_values = old
                 logger.debug(f"[PRE_SAVE] Saved old values: {old}")
 
                 # Фиксируем момент получения статуса UNLOADED
@@ -57,6 +61,7 @@ def save_old_container_values(sender, instance, **kwargs):
         except Exception as e:
             logger.error(f"[PRE_SAVE] Error: {e}")
     else:
+        instance._pre_save_values = None
         # Новый контейнер: если сразу UNLOADED — сохраняем момент статуса
         if instance.status == 'UNLOADED' and not instance.unloaded_status_at:
             instance.unloaded_status_at = timezone.now()
@@ -71,7 +76,8 @@ def update_related_on_container_save(sender, instance, created, **kwargs):
     - form.changed_data не распознал изменение
     - Сохранение произошло не через админку (API, shell, management command)
     """
-    old_values = _old_container_values.pop(instance.pk, None)
+    old_values = getattr(instance, '_pre_save_values', None)
+    instance._pre_save_values = None  # очищаем после использования
     
     if not instance.pk:
         return
@@ -164,22 +170,22 @@ def update_related_on_car_save(sender, instance, **kwargs):
 
 
 # Сигналы для автоматического создания CarService при изменении контрагентов
-# Сохраняем старые значения контрагентов перед сохранением
-_old_contractors = {}
 
 @receiver(pre_save, sender=Car)
 def save_old_contractors(sender, instance, **kwargs):
-    """Сохраняет старые значения контрагентов перед сохранением"""
+    """Сохраняет старые значения контрагентов на экземпляре (thread-safe)"""
     if instance.pk:
         try:
             old_instance = Car.objects.get(pk=instance.pk)
-            _old_contractors[instance.pk] = {
+            instance._pre_save_contractors = {
                 'warehouse_id': old_instance.warehouse_id,
                 'line_id': old_instance.line_id,
                 'carrier_id': old_instance.carrier_id
             }
         except Car.DoesNotExist:
-            pass
+            instance._pre_save_contractors = None
+    else:
+        instance._pre_save_contractors = None
 
 def find_line_service_by_container_count(line, container, vehicle_type):
     """
@@ -576,8 +582,8 @@ def find_carrier_services_for_car(carrier):
 
 
 def get_main_company():
-    """Возвращает главную компанию (Caromoto Lithuania), если есть."""
-    return Company.objects.filter(name="Caromoto Lithuania").first()
+    """Возвращает главную компанию (из settings.COMPANY_NAME)."""
+    return Company.get_default()
 
 
 def find_company_services_for_car(company):
@@ -614,7 +620,8 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
     created = kwargs.get('created', False)
     if not created:
         # Если это не создание, проверяем, изменились ли контрагенты
-        old_contractors = _old_contractors.get(instance.pk, {})
+        old_contractors = getattr(instance, '_pre_save_contractors', None)
+        instance._pre_save_contractors = None  # очищаем после использования
         if old_contractors:
             warehouse_changed = old_contractors.get('warehouse_id') != instance.warehouse_id
             line_changed = old_contractors.get('line_id') != instance.line_id
@@ -622,15 +629,10 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
             
             # Если контрагенты не изменились, не обновляем услуги
             if not (warehouse_changed or line_changed or carrier_changed):
-                # Очищаем сохраненные значения
-                _old_contractors.pop(instance.pk, None)
                 return
         else:
             # Нет сохранённых значений - значит контрагенты не менялись
             return
-        
-        # Очищаем сохраненные значения
-        _old_contractors.pop(instance.pk, None)
     
     # Устанавливаем флаг для защиты от рекурсии
     instance._creating_services = True
@@ -892,18 +894,20 @@ def auto_categorize_invoice(sender, instance, **kwargs):
             logger.warning(f"Не удалось назначить категорию: {e}")
 
 
-_old_invoice_status = {}
-
 @receiver(pre_save, sender=NewInvoice)
 def save_old_invoice_status(sender, instance, **kwargs):
-    """Сохраняет старый статус инвойса перед сохранением."""
+    """Сохраняет старый статус инвойса на экземпляре (thread-safe)."""
     if instance.pk:
         try:
             old = NewInvoice.objects.filter(pk=instance.pk).values('status').first()
             if old:
-                _old_invoice_status[instance.pk] = old['status']
+                instance._pre_save_status = old['status']
+            else:
+                instance._pre_save_status = None
         except Exception:
-            pass
+            instance._pre_save_status = None
+    else:
+        instance._pre_save_status = None
 
 
 @receiver(post_save, sender=NewInvoice)
@@ -916,7 +920,8 @@ def auto_push_invoice_to_sitepro(sender, instance, created, **kwargs):
         return
 
     # Проверяем, что статус сменился на ISSUED
-    old_status = _old_invoice_status.pop(instance.pk, None)
+    old_status = getattr(instance, '_pre_save_status', None)
+    instance._pre_save_status = None  # очищаем после использования
     if instance.status != 'ISSUED':
         return
     if old_status == 'ISSUED':
@@ -1080,22 +1085,23 @@ def delete_car_services_on_company_service_delete(sender, instance, **kwargs):
 # СИГНАЛЫ ДЛЯ EMAIL-УВЕДОМЛЕНИЙ КЛИЕНТОВ
 # ============================================================================
 
-# Храним старые значения для определения изменений
-_old_notification_values = {}
-
 @receiver(pre_save, sender=Container)
 def save_old_notification_values(sender, instance, **kwargs):
-    """Сохраняем старые значения planned_unload_date и unload_date перед сохранением"""
+    """Сохраняем старые значения planned_unload_date и unload_date на экземпляре (thread-safe)"""
     if instance.pk:
         try:
             old = Container.objects.filter(pk=instance.pk).values('planned_unload_date', 'unload_date').first()
             if old:
-                _old_notification_values[instance.pk] = {
+                instance._pre_save_notification = {
                     'planned_unload_date': old.get('planned_unload_date'),
                     'unload_date': old.get('unload_date')
                 }
+            else:
+                instance._pre_save_notification = None
         except Exception:
-            pass
+            instance._pre_save_notification = None
+    else:
+        instance._pre_save_notification = None
 
 
 @receiver(post_save, sender=Container)
@@ -1108,8 +1114,9 @@ def send_container_notifications_on_save(sender, instance, created, **kwargs):
     if not instance.pk:
         return
     
-    # Получаем старые значения
-    old_values = _old_notification_values.pop(instance.pk, {})
+    # Получаем старые значения с экземпляра
+    old_values = getattr(instance, '_pre_save_notification', None) or {}
+    instance._pre_save_notification = None  # очищаем после использования
     old_planned_unload_date = old_values.get('planned_unload_date')
     old_unload_date = old_values.get('unload_date')
     
