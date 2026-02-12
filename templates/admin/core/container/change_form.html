@@ -5,11 +5,6 @@
   {{ block.super }}
   <link rel="stylesheet" type="text/css" href="{% static 'css/logist2_custom_admin.css' %}">
   <style>
-    /* Скрываем стандартный inline фотографий - используем кастомную галерею */
-    .inline-group[id*="photos"] {
-      display: none !important;
-    }
-    
     /* Кнопка синхронизации с Google Drive */
     #sync-gdrive-btn {
       background: linear-gradient(135deg, #4285f4 0%, #2962ff 100%);

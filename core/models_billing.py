@@ -780,6 +780,39 @@ class NewInvoice(models.Model):
         self.calculate_totals()
         self.save(update_fields=['subtotal', 'total'])
     
+    def clean(self):
+        """Валидация инвойса перед сохранением."""
+        from django.core.exceptions import ValidationError
+        errors = {}
+        
+        # Проверяем, что указан хотя бы один выставитель
+        issuers = [
+            self.issuer_company_id, self.issuer_warehouse_id,
+            self.issuer_line_id, self.issuer_carrier_id,
+        ]
+        if not any(issuers):
+            errors['__all__'] = "Необходимо указать хотя бы одного выставителя инвойса."
+        
+        # Проверяем, что указан хотя бы один получатель
+        recipients = [
+            self.recipient_company_id, self.recipient_client_id,
+            self.recipient_warehouse_id, self.recipient_line_id,
+            self.recipient_carrier_id,
+        ]
+        if not any(recipients):
+            errors['__all__'] = "Необходимо указать хотя бы одного получателя инвойса."
+        
+        # Проверяем, что выставитель и получатель не совпадают
+        if self.issuer_company_id and self.recipient_company_id:
+            if self.issuer_company_id == self.recipient_company_id:
+                errors['recipient_company'] = "Выставитель и получатель не могут быть одной компанией."
+        
+        if self.due_date and self.date and self.due_date < self.date:
+            errors['due_date'] = "Срок оплаты не может быть раньше даты выставления."
+        
+        if errors:
+            raise ValidationError(errors)
+
     def save(self, *args, **kwargs):
         """Переопределяем save для автоматической генерации номера и обновления статуса"""
         # Генерируем номер для новых инвойсов

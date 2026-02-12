@@ -350,7 +350,9 @@ class BankTransactionAdmin(admin.ModelAdmin):
 
             try:
                 with transaction.atomic():
-                    caromoto = Company.objects.get(pk=1)
+                    caromoto = Company.get_default()
+                    if not caromoto:
+                        raise Company.DoesNotExist("Компания по умолчанию не найдена")
 
                     # Создаём входящий инвойс (расход)
                     invoice = NewInvoice(
@@ -457,7 +459,9 @@ class BankTransactionAdmin(admin.ModelAdmin):
 
             try:
                 category = ExpenseCategory.objects.get(pk=category_id)
-                caromoto = Company.objects.get(pk=1)
+                caromoto = Company.get_default()
+                if not caromoto:
+                    raise Company.DoesNotExist("Компания по умолчанию не найдена")
             except (ExpenseCategory.DoesNotExist, Company.DoesNotExist) as e:
                 messages.error(request, f'Ошибка: {e}')
                 return None

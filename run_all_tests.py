@@ -60,7 +60,7 @@ try:
         client_obj = Client.objects.create(name=f"_TST_{uid}_CLIENT")
         warehouse = Warehouse.objects.create(name=f"_TST_{uid}_WH")
         container = Container.objects.create(number=f"TST-{uid}")
-        caromoto = Company.objects.filter(id=1).first()
+        caromoto = Company.get_default()
         if not caromoto:
             caromoto = Company.objects.create(name=f"_TST_{uid}_Caromoto")
         partner_company = Company.objects.create(name=f"_TST_{uid}_PARTNER")

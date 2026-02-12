@@ -87,21 +87,6 @@ class LineTHSCoefficient(models.Model):
     - Джип: 500 × (2.0/3.5) = 286 EUR  
     - Мото: 500 × (0.5/3.5) = 71 EUR
     """
-    # Типы ТС дублируем здесь чтобы избежать циклического импорта
-    VEHICLE_TYPE_CHOICES = [
-        ('SEDAN', 'Легковой'),
-        ('CROSSOVER', 'Кроссовер'),
-        ('SUV', 'Джип'),
-        ('PICKUP', 'Пикап'),
-        ('NEW_CAR', 'Новая машина'),
-        ('MOTO', 'Мотоцикл'),
-        ('BIG_MOTO', 'Большой мотоцикл'),
-        ('ATV', 'Квадроцикл/Багги'),
-        ('BOAT', 'Лодка'),
-        ('RV', 'Автодом (RV)'),
-        ('CONSTRUCTION', 'Стр. техника'),
-    ]
-    
     line = models.ForeignKey(Line, on_delete=models.CASCADE, related_name='ths_coefficients', verbose_name="Линия")
     vehicle_type = models.CharField(max_length=20, choices=VEHICLE_TYPE_CHOICES, verbose_name="Тип ТС")
     coefficient = models.DecimalField(max_digits=5, decimal_places=2, default=1.00, 
@@ -430,7 +415,22 @@ class Container(models.Model):
         self.update_days_and_storage()
         Container.objects.update_related(self)
 
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        errors = {}
+        if self.status == 'UNLOADED':
+            if not self.warehouse:
+                errors['warehouse'] = "Для статуса 'Разгружен' обязателен склад."
+            if not self.unload_date:
+                errors['unload_date'] = "Для статуса 'Разгружен' обязательна дата разгрузки."
+        if self.unload_date and self.eta and self.unload_date < self.eta:
+            errors['unload_date'] = "Дата разгрузки не может быть раньше ETA."
+        if errors:
+            raise ValidationError(errors)
+
     def save(self, *args, **kwargs):
+        # Валидация перед сохранением (clean() из админки вызывается автоматически,
+        # но при сохранении через код — проверяем здесь)
         if self.status == 'UNLOADED' and (not self.warehouse or not self.unload_date):
             raise ValueError("Для статуса 'Разгружен' обязательны поля 'Склад' и 'Дата разгрузки'")
         super().save(*args, **kwargs)
@@ -537,22 +537,16 @@ class Container(models.Model):
             models.Index(fields=['eta']),
             models.Index(fields=['unload_date']),
         ]
+        constraints = [
+            models.CheckConstraint(
+                check=~models.Q(status='UNLOADED') | (models.Q(warehouse__isnull=False) & models.Q(unload_date__isnull=False)),
+                name='container_unloaded_requires_warehouse_and_date',
+            ),
+        ]
 
 class Car(models.Model):
-    # Типы транспортных средств (расширенный список)
-    VEHICLE_TYPE_CHOICES = [
-        ('SEDAN', 'Легковой'),
-        ('CROSSOVER', 'Кроссовер'),
-        ('SUV', 'Джип'),
-        ('PICKUP', 'Пикап'),
-        ('NEW_CAR', 'Новая машина'),
-        ('MOTO', 'Мотоцикл'),
-        ('BIG_MOTO', 'Большой мотоцикл'),
-        ('ATV', 'Квадроцикл/Багги'),
-        ('BOAT', 'Лодка'),
-        ('RV', 'Автодом (RV)'),
-        ('CONSTRUCTION', 'Стр. техника'),
-    ]
+    # Ссылка на единый список типов ТС (определён на уровне модуля)
+    VEHICLE_TYPE_CHOICES = VEHICLE_TYPE_CHOICES
     
     year = models.PositiveIntegerField(verbose_name="Год выпуска")
     brand = models.CharField(max_length=50, verbose_name="Марка")
@@ -954,58 +948,81 @@ class Car(models.Model):
         
         return storage_cost
 
-    def save(self, *args, **kwargs):
-        # подхватить данные с контейнера ДО копирования дефолтов
-        # Проверяем, что у контейнера есть первичный ключ
-        if not self.warehouse and self.container and self.container.pk and self.container.warehouse:
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        errors = {}
+        if self.vin and len(self.vin) != 17:
+            errors['vin'] = "VIN должен содержать ровно 17 символов."
+        if self.year and (self.year < 1900 or self.year > timezone.now().year + 2):
+            errors['year'] = f"Год выпуска должен быть между 1900 и {timezone.now().year + 2}."
+        if self.transfer_date and self.unload_date and self.transfer_date < self.unload_date:
+            errors['transfer_date'] = "Дата передачи не может быть раньше даты разгрузки."
+        if errors:
+            raise ValidationError(errors)
+
+    def _inherit_from_container(self):
+        """Наследует данные из контейнера (склад, дату разгрузки)."""
+        if not self.container or not self.container.pk:
+            return
+        if not self.warehouse and self.container.warehouse:
             self.warehouse = self.container.warehouse
-        
-        # Дата разгрузки ВСЕГДА берется из контейнера (принудительное наследование)
-        if self.container and self.container.pk and self.container.unload_date:
+        if self.container.unload_date:
             self.unload_date = self.container.unload_date
 
+    def _sync_status_and_dates(self):
+        """Синхронизирует статус и даты передачи."""
         if self.transfer_date and self.status != 'TRANSFERRED':
             self.status = 'TRANSFERRED'
+        if self.status == 'TRANSFERRED' and not self.transfer_date:
+            self.transfer_date = timezone.now().date()
 
-        # на создании — тянем дефолты склада (в т.ч. rate/free_days) ДО первого save()
-        if self.pk is None and self.warehouse:
+    def save(self, *args, **kwargs):
+        # Шаг 1: наследуем данные контейнера
+        self._inherit_from_container()
+        
+        # Шаг 2: синхронизируем статус/даты
+        self._sync_status_and_dates()
+
+        # Шаг 3: на создании — тянем дефолты склада ДО первого save()
+        is_new = self.pk is None
+        if is_new and self.warehouse:
             try:
                 self.set_initial_warehouse_values()
             except Exception as e:
                 logger.error(f"Failed to set initial warehouse values for car {self.vin}: {e}")
 
-        if self.status == 'TRANSFERRED' and not self.transfer_date:
-            from django.utils import timezone
-            self.transfer_date = timezone.now().date()
-
-        # Сохраняем объект сначала, чтобы получить pk
+        # Шаг 4: сохраняем объект
         super().save(*args, **kwargs)
         
-        # пересчёт ПОСЛЕ сохранения, когда у объекта уже есть pk
+        # Шаг 5: пересчёт цены ПОСЛЕ сохранения (нужен pk для запросов CarService)
+        # Используем update() вместо повторного save() — избегаем двойного сохранения
         try:
             old_total_price = self.total_price
-            
             self.calculate_total_price()
-            
-            # Сохраняем еще раз с пересчитанной ценой, только если цена изменилась
             if self.total_price != old_total_price:
-                super().save(update_fields=['total_price'])
+                Car.objects.filter(pk=self.pk).update(total_price=self.total_price)
         except Exception as e:
             logger.error(f"Failed to calculate total price for car {self.vin}: {e}")
 
-        # Обновляем связанные объекты только если у автомобиля есть первичный ключ
+        # Шаг 6: обновляем связанные объекты
         if self.pk:
             try:
                 Car.objects.update_related(self)
             except Exception as e:
                 logger.error(f"Failed to update related objects for car {self.id}: {e}")
             
-            # Проверяем и обновляем статус контейнера, если все автомобили переданы
             if self.container and self.container.pk:
                 try:
                     self.container.check_and_update_status_from_cars()
                 except Exception as e:
                     logger.error(f"Failed to check container status for car {self.id}: {e}")
+
+        # Шаг 7: WebSocket-уведомление (после коммита транзакции)
+        car_id = self.pk
+        car_status = self.status
+        car_storage = str(self.storage_cost)
+        car_days = self.days
+        car_price = str(self.total_price)
 
         def _notify():
             try:
@@ -1016,16 +1033,16 @@ class Car(models.Model):
                         "type": "data_update",
                         "data": {
                             "model": "Car",
-                            "id": self.id,
-                            "status": self.status,
-                            "storage_cost": str(self.storage_cost),
-                            "days": self.days,
-                            "price": str(self.total_price),
+                            "id": car_id,
+                            "status": car_status,
+                            "storage_cost": car_storage,
+                            "days": car_days,
+                            "price": car_price,
                         },
                     },
                 )
             except Exception as e:
-                logger.error(f"Failed to send WebSocket notification for car {self.id}: {e}")
+                logger.error(f"Failed to send WebSocket notification for car {car_id}: {e}")
         transaction.on_commit(_notify)
 
     def __str__(self):
@@ -1071,6 +1088,17 @@ class Company(models.Model):
     
     def __str__(self):
         return self.name
+
+    @classmethod
+    def get_default(cls):
+        """Возвращает компанию по умолчанию (из settings.COMPANY_NAME).
+        
+        Используйте вместо Company.objects.get(pk=1) или
+        Company.objects.filter(name='Caromoto Lithuania').first()
+        """
+        from django.conf import settings
+        name = getattr(settings, 'COMPANY_NAME', 'Caromoto Lithuania')
+        return cls.objects.filter(name=name).first()
 
 
 class CompanyService(models.Model):
@@ -1522,7 +1550,7 @@ class AutoTransport(models.Model):
             else:
                 # Создаем новый инвойс
                 from .models import Company
-                company = Company.objects.filter(name='Caromoto Lithuania').first()
+                company = Company.get_default()
                 
                 if company:
                     invoice = NewInvoice.objects.create(

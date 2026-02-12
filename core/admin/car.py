@@ -1,6 +1,7 @@
 import logging
 
 from django.contrib import admin
+from django.db import transaction
 from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
@@ -88,6 +89,30 @@ class CarAdmin(admin.ModelAdmin):
     )
     actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'set_transferred_today', 'set_title_with_us']
 
+    def change_view(self, request, object_id, form_url='', extra_context=None):
+        """Auto-update storage days and CarService price when viewing car detail.
+        
+        Платные дни растут каждый день, но CarService.custom_price для «Хранения»
+        обновляется только при save(). Здесь пересчитываем при открытии карточки,
+        чтобы сводка и услуги показывали актуальные данные.
+        """
+        if object_id:
+            try:
+                obj = self.get_object(request, object_id)
+                if obj and obj.status != 'TRANSFERRED' and obj.warehouse and obj.unload_date:
+                    old_days = obj.days
+                    obj.update_days_and_storage()
+                    if obj.days != old_days:
+                        obj.calculate_total_price()
+                        Car.objects.filter(pk=obj.pk).update(
+                            days=obj.days,
+                            storage_cost=obj.storage_cost,
+                            total_price=obj.total_price,
+                        )
+            except Exception as e:
+                logger.warning(f"Auto-update storage failed for car {object_id}: {e}")
+        return super().change_view(request, object_id, form_url, extra_context)
+
     def set_transferred_today(self, request, queryset):
         """Sets status to 'Transferred' and transfer date to today"""
         from django.utils import timezone
@@ -146,8 +171,14 @@ class CarAdmin(admin.ModelAdmin):
             elif service.service_type == 'WAREHOUSE':
                 warehouse_total += price  # Warehouse services without THS
 
-        # Paid days for display
-        paid_days = obj.days or 0
+        # Paid days for display — динамический расчёт (как в days_display)
+        if obj.warehouse and obj.unload_date:
+            end_date = obj.transfer_date if obj.status == 'TRANSFERRED' and obj.transfer_date else timezone.now().date()
+            total_days = (end_date - obj.unload_date).days + 1
+            free_days_count = obj.warehouse.free_days or 0
+            paid_days = max(0, total_days - free_days_count)
+        else:
+            paid_days = obj.days or 0
 
         # Sum of distributed markups (from services)
         distributed_markup = obj.car_services.aggregate(total=Sum('markup_amount'))['total'] or Decimal('0')
@@ -481,7 +512,12 @@ class CarAdmin(admin.ModelAdmin):
         js = ('js/htmx.min.js', 'js/logist2_htmx.js')
 
     def save_model(self, request, obj, form, change):
-        """Saves model with service field processing"""
+        """Saves model with service field processing (wrapped in transaction)"""
+        with transaction.atomic():
+            self._save_model_inner(request, obj, form, change)
+
+    def _save_model_inner(self, request, obj, form, change):
+        """Внутренний метод save_model, выполняемый внутри transaction.atomic()"""
         super().save_model(request, obj, form, change)
 
         # First handle service deletions
