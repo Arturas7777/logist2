@@ -534,6 +534,8 @@ input:focus, textarea:focus, select:focus,
 select {
     appearance: auto !important;
     cursor: pointer !important;
+    line-height: 1.4 !important;
+    height: auto !important;
 }
 
 /* ===== BUTTONS ===== */
@@ -1117,13 +1119,13 @@ ul.messagelist li.info {
     display: none !important;
 }
 
-/* Table: fixed layout, scrollable wrapper */
+/* Table: scrollable wrapper, auto layout for natural column sizing */
 .inline-group .tabular {
     overflow-x: auto;
 }
 .inline-group .tabular table {
-    width: 100%;
-    table-layout: fixed;
+    width: 100% !important;
+    table-layout: auto;
 }
 
 /* Reduce fieldset padding inside all inline groups */
@@ -1509,6 +1511,26 @@ body.popup #footer {
     background: var(--cm-text-muted);
 }
 
+/* ===== ALL CHANGE FORMS — full-width layout ===== */
+/* Override Django's float: left on #content-main which can constrain width */
+#content-main {
+    float: none !important;
+}
+
+/* All admin forms: full width */
+#content-main form {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+/* The <div> wrapper inside form (contains fieldsets + inlines + submit-row) */
+#content-main form > div {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+
 /* ===== CONTAINER FORM COMPAT (from logist2_custom_admin) ===== */
 #container_form {
     width: 100%;
@@ -1521,23 +1543,57 @@ body.popup #footer {
     display: none !important;
 }
 
-/* Container form field layout */
-.cm-form-main #container_form .form-row .fieldBox {
-    display: inline-block;
-    width: calc(25% - 16px);
-    min-width: 160px;
-    margin-right: 12px;
-    margin-bottom: 15px;
-    vertical-align: top;
+/* ===== Form field layout inside cm-form-main (Car, Container, etc.) ===== */
+
+/* Remove overflow:hidden from form-row (prevents select text clipping) */
+.cm-form-main .form-row {
+    overflow: visible !important;
 }
-.cm-form-main #container_form .form-row .fieldBox label {
-    display: block;
-    margin-bottom: 5px;
-    font-weight: bold;
+
+/* Multi-field rows: add gap and size field wrappers evenly */
+.cm-form-main .form-row .form-multiline {
+    gap: 8px 16px !important;
 }
-.cm-form-main #container_form .form-row .fieldBox input,
-.cm-form-main #container_form .form-row .fieldBox select,
-.cm-form-main #container_form .form-row .fieldBox .readonly {
+.cm-form-main .form-row .form-multiline > div {
+    flex: 1 1 0 !important;
+    min-width: 120px !important;
+}
+
+/* Stack label ABOVE input (override Django flex-direction: row on flex-container) */
+/* Exclude .form-multiline — it should stay horizontal to display fields in a row */
+.cm-form-main .form-row .flex-container:not(.form-multiline) {
+    flex-direction: column !important;
+    align-items: stretch !important;
+}
+/* Exception: checkboxes stay horizontal (checkbox + label side by side) */
+.cm-form-main .form-row .checkbox-row {
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 8px !important;
+}
+
+/* Labels: override Django .aligned defaults — proper spacing above fields */
+.cm-form-main .form-row label {
+    width: auto !important;
+    min-width: auto !important;
+    margin-bottom: 5px !important;
+    font-weight: 600 !important;
+    padding: 0 !important;
+}
+
+/* Inputs/selects/readonly: full width inside field containers */
+.cm-form-main .form-row .fieldBox input,
+.cm-form-main .form-row .fieldBox select,
+.cm-form-main .form-row .fieldBox .readonly,
+.cm-form-main .form-row .fieldBox .related-widget-wrapper {
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+/* Single-field rows (no .fieldBox): also full width inputs */
+.cm-form-main .form-row .flex-container:not(.form-multiline) input:not([type="checkbox"]):not([type="hidden"]),
+.cm-form-main .form-row .flex-container:not(.form-multiline) select,
+.cm-form-main .form-row .flex-container:not(.form-multiline) .related-widget-wrapper {
     width: 100% !important;
     box-sizing: border-box !important;
 }
@@ -1569,7 +1625,7 @@ body.popup #footer {
 .cm-form-main .form-row .fieldBox .related-widget-wrapper {
     overflow: visible !important;
 }
-.cm-form-main #container_form .form-row .fieldBox select {
+.cm-form-main .form-row .fieldBox select {
     height: auto !important;
     min-height: 36px !important;
     padding: 8px 12px !important;
@@ -1598,8 +1654,8 @@ body.popup #footer {
     display: none !important;
 }
 
-/* Container form checkboxes */
-#container_form input[type="checkbox"] {
+/* Form checkboxes inside grid layout */
+.cm-form-main input[type="checkbox"] {
     width: 22px;
     height: 22px;
     cursor: pointer;
@@ -1634,8 +1690,8 @@ body.popup #footer {
     display: none !important;
 }
 
-/* Reset #container_form centering/padding when inside grid layout */
-.cm-form-main #container_form {
+/* Reset form centering/padding when inside grid layout */
+.cm-form-main form {
     padding: 0;
 }
 

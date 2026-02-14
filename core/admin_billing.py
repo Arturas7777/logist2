@@ -216,6 +216,8 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     
     def _get_extra_context(self, object_id, extra_context=None):
         """Получаем контекст для шаблона"""
+        import os
+        from django.conf import settings
         from core.models import Company, Client, Car
         
         extra_context = extra_context or {}
@@ -241,6 +243,12 @@ class NewInvoiceAdmin(admin.ModelAdmin):
                 selected_car_ids = list(invoice.cars.values_list('pk', flat=True))
                 # Данные для pivot-таблицы
                 extra_context['pivot_table'] = invoice.get_items_pivot_table()
+                # Проверяем существование файла вложения
+                if invoice.attachment:
+                    file_path = os.path.join(settings.MEDIA_ROOT, str(invoice.attachment))
+                    extra_context['attachment_exists'] = os.path.isfile(file_path)
+                else:
+                    extra_context['attachment_exists'] = False
             except NewInvoice.DoesNotExist:
                 pass
         extra_context['selected_car_ids'] = selected_car_ids

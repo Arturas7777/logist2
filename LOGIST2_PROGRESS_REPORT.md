@@ -1205,6 +1205,7 @@ total_markup_sum = queryset.aggregate(
 
 | Дата | Описание |
 |------|----------|
+| 14.02.2026 | Редизайн Phase 3: UX-полировка — labels над полями, fix select clipping, инвойс attachment в sidebar, блок наценки redesign |
 | 14.02.2026 | Редизайн Phase 2: change_form шаблоны + Design System — form grid, sidebar, modals, компактные инлайны, миграция цветов на --cm-* переменные (17 файлов, +1574/-754) |
 | 14.02.2026 | Редизайн Phase 1: sidebar + topbar layout, unified toolbar, floating blocks, CSS design system |
 | 09.02.2026 | Быстрое создание расхода из банковской транзакции: кнопка "Расход", массовое создание, авто-подбор компании |
@@ -2322,3 +2323,65 @@ Django использовал дефолтные значения (`MEDIA_URL='/
 - `templates/admin/invoice_change.html` — cm-green
 - `templates/admin/invoice_edit.html` — cm-green
 - `templates/admin/register_payment.html` — cm-green
+
+---
+
+### Редизайн Django Admin — Phase 3: UX-полировка форм и инвойсов (14.02.2026)
+
+**Статус:** Завершено
+
+#### 1. Labels над полями (как в карточке контейнера)
+
+В карточке автомобиля и других формах внутри `.cm-form-main` labels полей отображались СЛЕВА от полей (Django default). В контейнере labels были НАД полями. Обобщено для всех форм:
+
+**CSS (`dashboard_admin.css`):**
+- `.cm-form-main .form-row .flex-container:not(.form-multiline)` → `flex-direction: column` (label сверху, input снизу)
+- `.cm-form-main .form-row .form-multiline > div` → `flex: 1 1 0` (поля в строку одинаковой ширины)
+- `.cm-form-main .form-row .checkbox-row` → `flex-direction: row` (исключение для чекбоксов)
+- `.cm-form-main .form-row label` → `width: auto; padding: 0` (override Django `.aligned`)
+- Правила обобщены с `#container_form` на все формы `.cm-form-main`
+
+#### 2. Обрезка текста в select-полях
+
+Текст выбранного значения в dropdown-полях обрезался снизу (нижняя часть букв).
+
+**Исправлено:**
+- `select { line-height: 1.4; height: auto; }` — глобально
+- `.cm-form-main .form-row { overflow: visible; }` — убран `overflow: hidden` Django
+- `.cm-form-main .form-row .fieldBox select { height: auto; min-height: 36px; }` — обобщено с `#container_form`
+
+#### 3. Инвойс: вложение в sidebar + проверка файла
+
+Ссылка на вложение в форме инвойса нарушала симметрию. Перенесена в правую панель.
+
+**Изменения:**
+- Убрана ссылка на файл из секции "Дополнительно" основной формы
+- Добавлена карточка "Инвойс" в sidebar с кнопкой "Открыть файл"
+- Проверка существования файла на диске через `os.path.isfile()` в `_get_extra_context()`
+- Если файл не найден — показывается предупреждение вместо битой ссылки
+- Создана директория `media/invoices/attachments/` для будущих загрузок
+
+#### 4. Блок наценки на странице списка авто
+
+Редизайн блока "Общая скрытая наценка" под таблицей списка ТС:
+
+**Изменения (`car/change_list.html`):**
+- Добавлен `margin-bottom: 16px` (промежуток до кнопки сохранения)
+- Удалён текст "X ТС с учётом фильтров"
+- Текст "Общая скрытая наценка (отображаемые ТС)" — на левой стороне
+- Сумма с € — на правой стороне (под столбцом "Н")
+- Убрана иконка евро в кружке
+- `justify-content: space-between` для flex-layout
+
+#### 5. Прочие CSS-улучшения
+
+- Обобщён `#container_form input[type="checkbox"]` → `.cm-form-main input[type="checkbox"]`
+- Обобщён `.cm-form-main #container_form { padding: 0 }` → `.cm-form-main form { padding: 0 }`
+- CSS version bump: `dashboard_admin.css?v=3` → `?v=4`
+
+**Изменённые файлы:**
+- `core/static/css/dashboard_admin.css` — обобщение CSS правил, fix select clipping, flex-direction column
+- `templates/admin/base_site.html` — CSS cache bust v=4
+- `templates/admin/core/newinvoice/change_form.html` — attachment в sidebar
+- `templates/admin/core/car/change_list.html` — редизайн блока наценки
+- `core/admin_billing.py` — проверка attachment_exists
