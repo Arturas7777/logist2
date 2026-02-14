@@ -114,11 +114,15 @@ main#content-start, main.content {
     flex: 1;
     padding: 28px 32px !important;
     max-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
 }
 
 #content {
     max-width: 100% !important;
+    width: 100% !important;
     padding: 0 !important;
+    box-sizing: border-box !important;
 }
 
 /* ===== SIDEBAR ===== */
@@ -1075,8 +1079,11 @@ ul.messagelist li.info {
     border: none !important;
     border-radius: var(--cm-radius) !important;
     margin: 16px 0 !important;
-    overflow: hidden !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
     box-shadow: var(--cm-shadow-card) !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
 }
 .inline-group h2 {
     font-size: .92rem !important;
@@ -1084,13 +1091,16 @@ ul.messagelist li.info {
     color: var(--cm-text) !important;
     padding: 16px 24px !important;
     margin: 0 !important;
-    background: #fafafc !important;
+    background: #ededf2 !important;
     border-bottom: 1px solid rgba(0,0,0,.06) !important;
 }
+/* Compact inline table cells */
 .inline-group .tabular td, .inline-group .tabular th {
-    padding: 10px 14px !important;
-    font-size: .85rem !important;
+    padding: 7px 6px !important;
+    font-size: .82rem !important;
     border-bottom: 1px solid var(--cm-border) !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .inline-group .tabular th {
     background: var(--cm-bg) !important;
@@ -1099,6 +1109,113 @@ ul.messagelist li.info {
     text-transform: uppercase !important;
     letter-spacing: .5px !important;
     color: var(--cm-text-muted) !important;
+}
+
+/* Hide the "original" column globally (verbose object name) */
+.inline-group .tabular th.original,
+.inline-group .tabular td.original {
+    display: none !important;
+}
+
+/* Table: fixed layout, scrollable wrapper */
+.inline-group .tabular {
+    overflow-x: auto;
+}
+.inline-group .tabular table {
+    width: 100%;
+    table-layout: fixed;
+}
+
+/* Reduce fieldset padding inside all inline groups */
+.inline-group fieldset.module {
+    padding: 6px !important;
+}
+.inline-group fieldset.module > h2 {
+    margin: -6px -6px 6px -6px !important;
+    padding: 12px 10px !important;
+}
+
+/* Inputs/selects inside inlines: fill cell, compact */
+.inline-group .tabular td input[type="text"],
+.inline-group .tabular td input[type="number"],
+.inline-group .tabular td input[type="url"] {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    font-size: .82rem !important;
+    padding: 5px 6px !important;
+}
+.inline-group .tabular td select {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    font-size: .82rem !important;
+    padding: 5px 6px !important;
+    height: auto !important;
+}
+.inline-group .tabular td textarea {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    font-size: .82rem !important;
+    padding: 5px 6px !important;
+    min-height: 30px !important;
+    resize: vertical;
+}
+
+/* Related widget wrapper in inlines: no wrap */
+.inline-group .tabular td .related-widget-wrapper {
+    flex-wrap: nowrap !important;
+    gap: 2px !important;
+}
+.inline-group .tabular td .related-widget-wrapper select {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Delete checkbox column: compact */
+.inline-group .tabular td.delete,
+.inline-group .tabular th:last-child {
+    text-align: center !important;
+    width: 4% !important;
+}
+
+/* Boolean/checkbox columns: narrow */
+.inline-group .tabular th.column-is_active,
+.inline-group .tabular td.field-is_active,
+.inline-group .tabular th.column-add_by_default,
+.inline-group .tabular td.field-add_by_default,
+.inline-group .tabular th.column-has_title,
+.inline-group .tabular td.field-has_title,
+.inline-group .tabular th.column-is_public,
+.inline-group .tabular td.field-is_public,
+.inline-group .tabular th.column-is_active_driver,
+.inline-group .tabular td.field-is_active_driver,
+.inline-group .tabular th.column-notification_enabled,
+.inline-group .tabular td.field-notification_enabled {
+    width: 5% !important;
+    text-align: center !important;
+}
+
+/* Numeric/price columns */
+.inline-group .tabular th.column-default_price,
+.inline-group .tabular td.field-default_price,
+.inline-group .tabular th.column-default_markup,
+.inline-group .tabular td.field-default_markup,
+.inline-group .tabular th.column-coefficient,
+.inline-group .tabular td.field-coefficient,
+.inline-group .tabular th.column-agreed_total_price,
+.inline-group .tabular td.field-agreed_total_price,
+.inline-group .tabular th.column-total_price,
+.inline-group .tabular td.field-total_price,
+.inline-group .tabular th.column-min_cars,
+.inline-group .tabular td.field-min_cars,
+.inline-group .tabular th.column-max_cars,
+.inline-group .tabular td.field-max_cars {
+    width: 8% !important;
+}
+
+/* Short name / short text columns */
+.inline-group .tabular th.column-short_name,
+.inline-group .tabular td.field-short_name {
+    width: 10% !important;
 }
 .inline-related {
     border: none !important;
@@ -1312,11 +1429,16 @@ body.popup #footer {
     border-spacing: 0 !important;
 }
 
-/* ===== MISC DJANGO ADMIN OVERRIDES ===== */
+/* Misc DJANGO ADMIN OVERRIDES ===== */
 /* Ensure the content column stretches — override Django colMS 2-column layout */
 #content.colM { max-width: none !important; }
 #content.colMS {
     max-width: none !important;
+}
+#content-main {
+    max-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
 }
 /* Django puts content-related as a separate right column in colMS —
    we don't need it since #changelist-filter is inside #changelist as flex child */
@@ -1389,37 +1511,68 @@ body.popup #footer {
 
 /* ===== CONTAINER FORM COMPAT (from logist2_custom_admin) ===== */
 #container_form {
-    max-width: 1600px;
-    margin: 0 auto;
     width: 100%;
-    padding: 0 20px;
+    padding: 0;
     box-sizing: border-box;
 }
 
-/* Hide ForeignKey icons in container form */
-#container_form .related-widget-wrapper-link,
-#container_form .inline-group .inline-related .related-widget-wrapper-link {
+/* Hide ForeignKey add/change/delete/view icons globally */
+.related-widget-wrapper-link {
     display: none !important;
 }
 
 /* Container form field layout */
-#container_form .form-row .fieldBox {
+.cm-form-main #container_form .form-row .fieldBox {
     display: inline-block;
-    width: 280px;
-    margin-right: 20px;
+    width: calc(25% - 16px);
+    min-width: 160px;
+    margin-right: 12px;
     margin-bottom: 15px;
     vertical-align: top;
 }
-#container_form .form-row .fieldBox label {
+.cm-form-main #container_form .form-row .fieldBox label {
     display: block;
     margin-bottom: 5px;
     font-weight: bold;
 }
-#container_form .form-row .fieldBox input,
-#container_form .form-row .fieldBox select,
-#container_form .form-row .fieldBox .readonly {
-    width: 100%;
-    box-sizing: border-box;
+.cm-form-main #container_form .form-row .fieldBox input,
+.cm-form-main #container_form .form-row .fieldBox select,
+.cm-form-main #container_form .form-row .fieldBox .readonly {
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+/* Hide "Currently: URL" text but keep the input inside p.url */
+.cm-form-main p.url {
+    font-size: 0 !important;
+    line-height: 0 !important;
+    color: transparent !important;
+}
+.cm-form-main p.url a {
+    display: none !important;
+}
+.cm-form-main p.url br {
+    display: none !important;
+}
+.cm-form-main p.url input {
+    font-size: .88rem !important;
+    line-height: normal !important;
+    color: var(--cm-text) !important;
+}
+
+/* Hide help text in form grid */
+.cm-form-main .help {
+    display: none !important;
+}
+
+/* Fix select clipping inside fieldBox — ensure wrapper doesn't constrain height */
+.cm-form-main .form-row .fieldBox .related-widget-wrapper {
+    overflow: visible !important;
+}
+.cm-form-main #container_form .form-row .fieldBox select {
+    height: auto !important;
+    min-height: 36px !important;
+    padding: 8px 12px !important;
 }
 
 /* Container/Car detail cards */
@@ -1461,6 +1614,467 @@ body.popup #footer {
     vertical-align: middle;
     margin-right: 6px;
     accent-color: var(--cm-purple);
+}
+
+/* ===== FORM GRID LAYOUT (Car, Container, etc. change_form) ===== */
+.cm-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 270px;
+    gap: 16px;
+    align-items: start;
+}
+
+.cm-form-main {
+    min-width: 0;
+    overflow: visible;
+}
+
+/* Hide object-tools inside grid form (History etc.) */
+.cm-form-main .object-tools {
+    display: none !important;
+}
+
+/* Reset #container_form centering/padding when inside grid layout */
+.cm-form-main #container_form {
+    padding: 0;
+}
+
+/* Hide submit row when sidebar is visible */
+.cm-form-grid .submit-row {
+    display: none !important;
+}
+
+/* ===== Hide default Django page title on custom change forms ===== */
+body.model-car.change-form #content > h1,
+body.model-car.change-form #content > h2,
+body.model-container.change-form #content > h1,
+body.model-container.change-form #content > h2,
+body.model-autotransport.change-form #content > h1,
+body.model-autotransport.change-form #content > h2,
+body.model-newinvoice.change-form #content > h1,
+body.model-newinvoice.change-form #content > h2 {
+    display: none !important;
+}
+
+/* ===== Fieldset headers in form grid ===== */
+.cm-form-main fieldset > h2,
+.cm-form-main fieldset > .fieldset-heading {
+    background: #ededf2 !important;
+}
+
+/* Collapsible fieldset: make <summary> look like regular fieldset header */
+.cm-form-main fieldset.collapse > details > summary {
+    background: #ededf2 !important;
+    border: none !important;
+    border-bottom: 1px solid rgba(0,0,0,.06) !important;
+    border-radius: var(--cm-radius) var(--cm-radius) 0 0 !important;
+    margin: -24px -24px 16px -24px !important;
+    padding: 16px 24px !important;
+    cursor: pointer !important;
+    list-style: none !important;
+}
+
+/* Hide default disclosure triangle */
+.cm-form-main fieldset.collapse > details > summary::-webkit-details-marker {
+    display: none !important;
+}
+.cm-form-main fieldset.collapse > details > summary::marker {
+    display: none !important;
+    content: "" !important;
+}
+
+/* Collapse summary: flex column to place chevron below title */
+.cm-form-main fieldset.collapse > details > summary {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+}
+
+/* Chevron indicator below title */
+.cm-form-main fieldset.collapse > details > summary::after {
+    content: "" !important;
+    display: block !important;
+    width: 10px !important;
+    height: 10px !important;
+    border-right: 2px solid var(--cm-text-muted, #9ca3af) !important;
+    border-bottom: 2px solid var(--cm-text-muted, #9ca3af) !important;
+    transform: rotate(45deg) !important;
+    transition: transform .25s ease, border-color .25s ease !important;
+    margin-top: 4px !important;
+}
+
+/* Rotate chevron up when expanded */
+.cm-form-main fieldset.collapse > details[open] > summary::after {
+    transform: rotate(-135deg) !important;
+    margin-top: 8px !important;
+    border-color: var(--cm-purple, #6c5ce7) !important;
+}
+
+/* Collapsed state: round all corners, no bottom border */
+.cm-form-main fieldset.collapse > details:not([open]) > summary {
+    border-bottom: none !important;
+    border-radius: var(--cm-radius) !important;
+    margin-bottom: 0 !important;
+}
+
+/* h2 inside summary: match regular fieldset heading */
+.cm-form-main fieldset.collapse summary .fieldset-heading {
+    font-size: .92rem !important;
+    font-weight: 700 !important;
+    color: var(--cm-text) !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    display: block !important;
+}
+
+/* ===== Select fields in form grid: prevent truncation ===== */
+.cm-form-main .form-row .related-widget-wrapper {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    width: 100% !important;
+}
+
+.cm-form-main .form-row .related-widget-wrapper select {
+    flex: 1 !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+}
+
+.cm-form-main .form-row select {
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+/* ===== CarInline inside Container form: fixed layout with specific column widths ===== */
+
+/* Reduce fieldset padding inside inline groups in form grid */
+.cm-form-main .inline-group fieldset.module {
+    padding: 6px !important;
+}
+
+.cm-form-main .inline-group fieldset.module > h2,
+.cm-form-main .inline-group .inline-heading {
+    margin: -6px -6px 6px -6px !important;
+    padding: 12px 10px !important;
+}
+
+/* CarInline: fixed layout for predictable column widths */
+.cm-form-main .inline-group .tabular table {
+    table-layout: fixed;
+}
+
+/* CarInline column widths */
+.cm-form-main .inline-group .tabular th.column-year,
+.cm-form-main .inline-group .tabular td.field-year { width: 7%; }
+
+.cm-form-main .inline-group .tabular th.column-brand,
+.cm-form-main .inline-group .tabular td.field-brand { width: 13%; }
+
+.cm-form-main .inline-group .tabular th.column-vehicle_type,
+.cm-form-main .inline-group .tabular td.field-vehicle_type { width: 14%; }
+
+.cm-form-main .inline-group .tabular th.column-vin,
+.cm-form-main .inline-group .tabular td.field-vin { width: 22%; }
+
+.cm-form-main .inline-group .tabular th.column-client,
+.cm-form-main .inline-group .tabular td.field-client { width: 22%; }
+
+.cm-form-main .inline-group .tabular th.column-total_price,
+.cm-form-main .inline-group .tabular td.field-total_price { width: 9%; }
+
+.cm-form-main .inline-group .tabular th.column-has_title,
+.cm-form-main .inline-group .tabular td.field-has_title { width: 5%; text-align: center; }
+
+.cm-form-main .inline-group .tabular td.delete,
+.cm-form-main .inline-group .tabular th:last-child { width: 5%; text-align: center; }
+
+.cm-form-sidebar-col {
+    position: sticky;
+    top: 16px;
+}
+
+/* Page header for change_form */
+.cm-page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.cm-page-header h1 {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--cm-text);
+    margin: 0;
+    letter-spacing: -0.03em;
+}
+
+.cm-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--cm-text-secondary);
+    text-decoration: none;
+    font-size: .85rem;
+    font-weight: 600;
+    padding: 8px 16px;
+    background: var(--cm-card);
+    border-radius: var(--cm-radius-xs);
+    box-shadow: var(--cm-shadow-card);
+    transition: all .15s;
+}
+
+.cm-back-link:hover {
+    color: var(--cm-purple);
+    background: var(--cm-purple-bg);
+    text-decoration: none;
+}
+
+/* Sidebar card */
+.cm-sidebar-card {
+    background: var(--cm-card);
+    border-radius: var(--cm-radius);
+    box-shadow: var(--cm-shadow-card);
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+
+.cm-sidebar-card-header {
+    padding: 14px 20px;
+    background: #fafafc;
+    border-bottom: 1px solid rgba(0,0,0,.06);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.cm-sidebar-card-header h3 {
+    font-size: .88rem;
+    font-weight: 700;
+    color: var(--cm-text);
+    margin: 0;
+}
+
+.cm-sidebar-card-body {
+    padding: 20px;
+}
+
+/* Sidebar info rows */
+.cm-sidebar-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--cm-border);
+    font-size: .85rem;
+}
+
+.cm-sidebar-info-row:last-child {
+    border-bottom: none;
+}
+
+.cm-sidebar-info-label {
+    color: var(--cm-text-secondary);
+    font-weight: 500;
+}
+
+.cm-sidebar-info-value {
+    color: var(--cm-text);
+    font-weight: 700;
+    text-align: right;
+}
+
+.cm-sidebar-info-value a {
+    text-decoration: none;
+}
+
+/* Large status badge */
+.cm-status-badge-lg {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    border-radius: 100px;
+    font-size: .85rem;
+    font-weight: 700;
+    color: white;
+    text-decoration: none;
+}
+
+.cm-status-badge-lg:hover {
+    color: white;
+}
+
+/* Sidebar highlight block (finance totals etc.) */
+.cm-sidebar-highlight {
+    background: linear-gradient(135deg, var(--cm-purple) 0%, var(--cm-purple-dark) 100%);
+    color: white;
+    padding: 20px;
+    border-radius: var(--cm-radius-sm);
+    text-align: center;
+    margin-bottom: 16px;
+}
+
+.cm-sidebar-highlight .cm-hl-label {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    opacity: .8;
+    margin-bottom: 4px;
+}
+
+.cm-sidebar-highlight .cm-hl-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+}
+
+/* Sidebar actions */
+.cm-sidebar-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.cm-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 11px 20px;
+    border-radius: var(--cm-radius-sm);
+    font-size: .85rem;
+    font-weight: 600;
+    text-decoration: none !important;
+    cursor: pointer;
+    border: none;
+    width: 100%;
+    box-sizing: border-box;
+    transition: all .2s;
+    font-family: var(--cm-font);
+    line-height: 1.4;
+}
+
+.cm-btn-save {
+    background: var(--cm-purple) !important;
+    color: white !important;
+    box-shadow: 0 4px 15px rgba(108, 92, 231, 0.3);
+}
+
+.cm-btn-save:hover {
+    background: var(--cm-purple-dark) !important;
+    box-shadow: 0 6px 20px rgba(108, 92, 231, 0.4);
+    color: white !important;
+}
+
+.cm-btn-outline-action {
+    background: var(--cm-card) !important;
+    color: var(--cm-text-secondary) !important;
+    border: 2px solid var(--cm-border) !important;
+}
+
+.cm-btn-outline-action:hover {
+    border-color: var(--cm-purple-light) !important;
+    color: var(--cm-purple) !important;
+    background: var(--cm-purple-bg) !important;
+}
+
+.cm-btn-delete {
+    background: var(--cm-red) !important;
+    color: white !important;
+    font-size: .82rem;
+    padding: 9px 16px;
+}
+
+.cm-btn-delete:hover {
+    background: #dc2626 !important;
+    color: white !important;
+}
+
+.cm-sidebar-divider {
+    height: 1px;
+    background: var(--cm-border);
+    margin: 6px 0;
+}
+
+/* Photo badge in sidebar */
+.cm-photos-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 100px;
+    font-size: .82rem;
+    font-weight: 600;
+}
+
+.cm-photos-badge.has-photos {
+    background: var(--cm-green-bg);
+    color: var(--cm-green);
+}
+
+.cm-photos-badge.no-photos {
+    background: var(--cm-bg);
+    color: var(--cm-text-muted);
+}
+
+/* Google Drive sync button (sidebar version) */
+.cm-gdrive-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    background: var(--cm-purple);
+    border: none;
+    color: white;
+    padding: 9px 16px;
+    border-radius: var(--cm-radius-xs);
+    font-family: var(--cm-font);
+    font-size: .82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s;
+    box-sizing: border-box;
+}
+
+.cm-gdrive-btn:hover {
+    background: var(--cm-purple-dark);
+    box-shadow: var(--cm-shadow-md);
+}
+
+.cm-gdrive-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Responsive for form grid */
+@media (max-width: 1100px) {
+    .cm-form-grid {
+        grid-template-columns: 1fr;
+    }
+    .cm-form-sidebar-col {
+        position: static;
+    }
+}
+
+/* Popup mode: hide form grid sidebar */
+body.popup .cm-form-grid {
+    display: block;
+}
+
+body.popup .cm-form-sidebar-col {
+    display: none;
+}
+
+body.popup .cm-page-header {
+    display: none;
+}
+
+body.popup .cm-form-grid .submit-row {
+    display: flex !important;
 }
 
 /* ===== TRANSITION ===== */

@@ -59,7 +59,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.success) {
                 group.classList.add('success');
                 btn.textContent = '✓ Загружен';
-                btn.style.background = '#28a745';
+                btn.style.background = 'var(--cm-green, #10b981)';
                 // Перезагрузка через 1 сек чтобы увидеть обновлённые статусы
                 setTimeout(function() { location.reload(); }, 1000);
             } else {

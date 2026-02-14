@@ -13,12 +13,12 @@
 </style>
 {% endblock %}
 
+{% block content_title %}{% endblock %}
+
 {% block content %}
-<div class="autotransport-page-header">
-    <h1>
-        {% if add %}🚛 Новый автовоз{% else %}🚛 Автовоз {{ original.number }}{% endif %}
-    </h1>
-    <a href="{% url 'admin:core_autotransport_changelist' %}" class="back-link">← Назад к списку</a>
+<div class="cm-page-header">
+    <h1>{% if add %}Новый автовоз{% else %}Автовоз {{ original.number }}{% endif %}</h1>
+    <a href="{% url 'admin:core_autotransport_changelist' %}" class="cm-back-link">← Назад к списку</a>
 </div>
 
 <form method="post" id="{{ opts.model_name }}_form" enctype="multipart/form-data" novalidate>

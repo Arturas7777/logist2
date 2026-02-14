@@ -10,7 +10,7 @@
 
 /* Общие стили для формы */
 #container_form {
-    max-width: 95%;
+    max-width: 100%;
     width: 100%;
     margin: 0 auto;
     padding: 0 20px;
@@ -48,8 +48,10 @@
 
 /* Стили для CarInline (не трогаем ширину полей) */
 .inline-group {
-    width: 100%;
+    width: 100% !important;
+    max-width: 100% !important;
     overflow-x: auto;
+    box-sizing: border-box !important;
 }
 
 .inline-group table {
@@ -126,7 +128,7 @@
 }
 /* Общая ширина формы и шапки */
 #container_form {
-    max-width: 1600px;
+    max-width: 100%;
     margin: 0 auto;
 }
 

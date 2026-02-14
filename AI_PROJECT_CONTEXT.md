@@ -30,7 +30,7 @@
 - **Группировка админки** - LogistAdminSite (6 логических групп в сайдбаре)
 - **Invoice-bank reconciliation** - сопоставление инвойсов и транзакций с банковскими операциями
 - **Автовозы (AutoTransport)** - автопередача авто при смене статуса, кнопка "Загружен" с датой, цветная индикация инвойсов, скрытие доставленных по умолчанию
-- **Редизайн админки (14.02.2026)** - sidebar + topbar layout, unified toolbar (search+actions+add), floating cards, CSS design system
+- **Редизайн админки Phase 1+2 (14.02.2026)** - sidebar + topbar layout, unified toolbar, floating cards, CSS design system, form grid + sidebar для change_form, компактные инлайны, миграция всех шаблонов на --cm-* переменные
 
 ## VPS СЕРВЕР
 
@@ -234,7 +234,7 @@ logist2/
 
 ## РЕДИЗАЙН DJANGO ADMIN (14.02.2026)
 
-### Новый layout: Sidebar + Topbar
+### Phase 1: Sidebar + Topbar
 
 Стандартный Django Admin header заменён на кастомный layout:
 
@@ -263,6 +263,29 @@ logist2/
 - Все блоки changelist (results, actions, paginator, filter) — белые карточки с тенью
 - `#changelist` — прозрачный flex-контейнер
 - Обход WhiteNoise caching — стили через `element.style.setProperty(prop, val, 'important')`
+
+### Phase 2: change_form шаблоны + Design System
+
+Применение дизайн-системы Caromoto (`--cm-*`) ко всем кастомным change_form страницам:
+
+**Новые компоненты Design System (`dashboard_admin.css`, +654 строк):**
+- Form Grid (`.cm-form-grid`) — двухколоночный layout: форма + sidebar 270px
+- Page Header (`.cm-page-header`, `.cm-back-link`) — заголовок с кнопкой «Назад»
+- Sidebar Card (`.cm-sidebar-card`) — информационные карточки
+- Buttons (`.cm-btn-save`, `.cm-btn-delete`, `.cm-btn-outline-action`)
+- Modal (`.cm-modal-overlay`, `.cm-modal`) — модальные окна
+- Photos Badge, Google Drive Button, Sidebar Highlight, Sidebar Actions
+- Компактные inline-таблицы: padding 7px 6px, скрыта колонка "original", точные ширины
+- Responsive (@media 1100px) и popup mode
+
+**Переработанные шаблоны:**
+- `car/change_form.html` — cm-modal, cm-service-item, page header, form grid
+- `container/change_form.html` — form grid + sidebar (статус, фото, Google Drive)
+- `newinvoice/change_form.html` — `--cm-*` переменные, sidebar 270px
+- `autotransport/change_form.html` + CSS — cm-page-header, `--cm-*` переменные
+- 11 прочих шаблонов — замена hardcoded цветов → CSS-переменные
+
+**Итого Phase 2:** 17 файлов, +1574/-754 строк
 
 ## КЛЮЧЕВЫЕ МОДЕЛИ
 
@@ -588,8 +611,21 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 
 ### Недавние изменения (февраль 2026):
 
-**14.02.2026 - Редизайн Django Admin: sidebar + topbar layout:**
-1. **ADMIN UI REDESIGN:** ⭐ UI/UX
+**14.02.2026 - Редизайн Django Admin Phase 2: change_form шаблоны + Design System:**
+1. **ADMIN UI REDESIGN Phase 2:** ⭐ UI/UX
+   - ✅ Расширение CSS Design System (+654 строк): form grid, sidebar cards, modals, buttons, badges, highlight blocks
+   - ✅ Компактные inline-таблицы: уменьшен padding, скрыта колонка "original", fixed layout, точные ширины колонок
+   - ✅ Full-width контент: `#content`, `#content-main`, `#container_form` — `width: 100%`
+   - ✅ `car/change_form.html` — полная переработка: cm-modal, cm-service-item, cm-page-header, form grid
+   - ✅ `container/change_form.html` — полная переработка: form grid + sidebar (статус, фото, Google Drive)
+   - ✅ `newinvoice/change_form.html` — миграция на `--cm-*` переменные, sidebar 270px
+   - ✅ `autotransport/change_form.html` + `autotransport.css` — cm-page-header, `--cm-*` переменные
+   - ✅ 11 шаблонов: замена hardcoded цветов (#28a745, #667eea, #6c757d) → CSS-переменные (--cm-green, --cm-purple, --cm-text-secondary)
+   - ✅ Responsive (@media 1100px) и popup mode для form grid
+   - ✅ Итого: 17 файлов, +1574/-754 строк
+
+**14.02.2026 - Редизайн Django Admin Phase 1: sidebar + topbar layout:**
+1. **ADMIN UI REDESIGN Phase 1:** ⭐ UI/UX
    - ✅ Кастомный sidebar: аватар/имя/роль вверху, навигация по группам, иконки действий
    - ✅ Кастомный topbar: логотип Caromoto (SVG) слева, навигационные иконки справа
    - ✅ Unified toolbar: поиск + действия + кнопка «Добавить» в одной строке-карточке

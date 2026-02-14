@@ -1205,6 +1205,8 @@ total_markup_sum = queryset.aggregate(
 
 | Дата | Описание |
 |------|----------|
+| 14.02.2026 | Редизайн Phase 2: change_form шаблоны + Design System — form grid, sidebar, modals, компактные инлайны, миграция цветов на --cm-* переменные (17 файлов, +1574/-754) |
+| 14.02.2026 | Редизайн Phase 1: sidebar + topbar layout, unified toolbar, floating blocks, CSS design system |
 | 09.02.2026 | Быстрое создание расхода из банковской транзакции: кнопка "Расход", массовое создание, авто-подбор компании |
 | 09.02.2026 | Улучшение сверки: reconciliation_skipped, авто-пропуск fee/exchange/tax, 3-уровневый фильтр, mass actions |
 | 09.02.2026 | Ручной ввод суммы и позиций для входящих инвойсов: manual_total, manual_items_json, AJAX calc-cars-total |
@@ -2209,3 +2211,114 @@ Django использовал дефолтные значения (`MEDIA_URL='/
 - `core/static/css/dashboard_admin.css` — CSS design system
 - `static/website/images/logo_caromoto.svg` — логотип для topbar
 - `logist2/admin_site.py` — LogistAdminSite с группировкой навигации
+
+---
+
+### Редизайн Django Admin — Phase 2: change_form шаблоны + Design System (14.02.2026)
+
+**Статус:** Завершено
+
+**Цель:** Применить дизайн-систему Caromoto (`--cm-*` CSS-переменные) ко всем кастомным change_form страницам и дочерним шаблонам. Унифицировать цветовую палитру, компоненты и layout всех страниц админки.
+
+#### Расширение CSS Design System (`dashboard_admin.css`, +654 строк)
+
+**Новые компоненты:**
+- ✅ **Form Grid** (`.cm-form-grid`, `.cm-form-sidebar-col`) — двухколоночный layout для change_form: основная форма + sidebar 270px
+- ✅ **Page Header** (`.cm-page-header`, `.cm-back-link`) — заголовок страницы с кнопкой «Назад»
+- ✅ **Sidebar Card** (`.cm-sidebar-card`, `.cm-sidebar-info`, `.cm-sidebar-info-row`) — информационные карточки в правом сайдбаре
+- ✅ **Status Badge Large** (`.cm-status-badge-lg`) — большой статус-бейдж (скруглённая капсула)
+- ✅ **Buttons** (`.cm-btn`, `.cm-btn-save`, `.cm-btn-delete`, `.cm-btn-outline-action`) — унифицированные кнопки действий
+- ✅ **Modal** (`.cm-modal-overlay`, `.cm-modal`, `.cm-modal-header`, `.cm-modal-body`, `.cm-modal-footer`) — модальные окна в стиле дизайн-системы
+- ✅ **Photos Badge** (`.cm-photos-badge`, `.has-photos`, `.no-photos`) — бейдж количества фото
+- ✅ **Google Drive Button** (`.cm-gdrive-btn`) — кнопка синхронизации с Google Drive
+- ✅ **Sidebar Highlight** (`.cm-sidebar-highlight`) — gradient-блок для важных метрик
+- ✅ **Sidebar Actions** (`.cm-sidebar-actions`) — вертикальная группа кнопок действий
+
+**Inline-таблицы (компактные):**
+- ✅ Уменьшен padding ячеек (7px 6px вместо 10px 14px), шрифт 0.82rem
+- ✅ Скрыта колонка "original" (verbose object name) через `display: none`
+- ✅ `table-layout: fixed` + `overflow-x: auto` для горизонтальной прокрутки
+- ✅ Точные ширины колонок: boolean (5%), numeric/price (8%), short_name (10%), delete (4%)
+- ✅ Инпуты/селекты внутри инлайнов: `width: 100%`, `box-sizing: border-box`
+
+**Full-width content:**
+- ✅ `#content`, `#content-main`, `main#content-start` — `width: 100% !important; box-sizing: border-box`
+- ✅ `#container_form` — `max-width: 100%` (был 1600px)
+
+**Responsive и popup:**
+- ✅ `@media (max-width: 1100px)` — form grid → одна колонка
+- ✅ `body.popup` — скрытие sidebar, page header, показ submit-row
+
+#### Переработка change_form шаблонов
+
+**`car/change_form.html`** (487 ins, 325 del):
+- ✅ Модальные окна: `.modal` → `.cm-modal-overlay` + `.cm-modal` с header/body/footer
+- ✅ Элементы услуг: `.service-item` → `.cm-service-item`
+- ✅ Page header (`cm-page-header`) с кнопкой «← Назад к списку»
+- ✅ Убран `{% block content_title %}` (заголовок в page header)
+
+**`container/change_form.html`** (189 ins, 118 del):
+- ✅ Полная переработка — grid layout (`.cm-form-grid`) с sidebar
+- ✅ Sidebar: статус-бейдж, заметки, количество фото, Google Drive синхронизация
+- ✅ Убраны старые inline-стили кнопок (gradient backgrounds, custom shadows)
+- ✅ Page header с номером контейнера и кнопкой «Назад»
+
+**`newinvoice/change_form.html`** (176 changes):
+- ✅ Миграция CSS-переменных: `--primary: #667eea` → `var(--cm-purple, #6c5ce7)` и т.д.
+- ✅ Уменьшен sidebar: 350px → 270px
+- ✅ Убраны кастомный background body и скрытие breadcrumbs (уже в base_site)
+
+**`autotransport/change_form.html`**:
+- ✅ `.autotransport-page-header` → `.cm-page-header`
+- ✅ `.back-link` → `.cm-back-link`
+- ✅ Убран `{% block content_title %}` (заголовок в page header)
+
+**`autotransport.css`** (239 changes):
+- ✅ Все цвета мигрированы на `--cm-*` переменные: `--primary: var(--cm-purple)`, `--success: var(--cm-green)` и т.д.
+- ✅ Grid gap: 30px → 16px, sidebar: 350px → 270px
+- ✅ Card styles: border-radius/shadow через `var(--cm-radius)` / `var(--cm-shadow-card)`
+
+#### Миграция цветов в остальных шаблонах (11 файлов)
+
+Замена hardcoded цветов на CSS-переменные дизайн-системы:
+
+| Шаблон | Изменения |
+|--------|-----------|
+| `client_change.html` | `#28a745` → `var(--cm-green)`, `#dc3545` → `var(--cm-red)`, `#667eea` → `#6c5ce7` |
+| `client_cars_in_warehouse.html` | Все цвета → `--cm-*` переменные, фон → `var(--cm-bg)` |
+| `client_topup.html` | Цвета, border, background → `--cm-*` переменные |
+| `company_change.html` | `.positive` цвет → `var(--cm-green)` |
+| `comparison_dashboard.html` | `#007cba` → `var(--cm-purple)`, `.status-match` → `var(--cm-green)` |
+| `invoice_change.html` | `.car-costs`, `.summary-value`, `.btn-success` → `var(--cm-green)` |
+| `invoice_edit.html` | `.car-cost` → `var(--cm-green)` |
+| `register_payment.html` | Button background → `var(--cm-green)`, hover → `filter: brightness(0.9)` |
+| `car/change_list.html` | Блок суммы наценок → дизайн-система (иконка Euro, flex-layout, `--cm-*` цвета) |
+| `autotransport/change_list.html` | Кнопка «Загружен» success → `var(--cm-green)` |
+| `logist2_custom_admin.css` | `max-width: 95%/1600px` → `100%`, inline-group → `!important` ширины |
+
+#### Вспомогательные файлы (не для коммита)
+
+- `design_concepts/` — 4 HTML-концепта дизайна (Neo SaaS, Dark Ops, Glass, DriverGo)
+- `design_proposals/` — 4 HTML-предложения (Ocean Blue, Modern Minimal, Dark Premium, Dashboard Portal)
+- `_check_html.py` — скрипт проверки применения CSS-стилей в rendered HTML
+
+**Итого Phase 2:** 17 изменённых файлов, +1574 / -754 строк
+
+**Файлы:**
+- `core/static/css/dashboard_admin.css` — расширение Design System (+654 строк)
+- `core/static/css/autotransport.css` — миграция на `--cm-*` переменные
+- `core/static/css/logist2_custom_admin.css` — full-width для форм
+- `templates/admin/core/car/change_form.html` — полная переработка
+- `templates/admin/core/container/change_form.html` — полная переработка
+- `templates/admin/core/newinvoice/change_form.html` — миграция переменных
+- `templates/admin/core/autotransport/change_form.html` — cm-page-header
+- `templates/admin/core/autotransport/change_list.html` — cm-green
+- `templates/admin/core/car/change_list.html` — redesign суммы наценок
+- `templates/admin/client_change.html` — cm-* цвета
+- `templates/admin/client_cars_in_warehouse.html` — cm-* цвета
+- `templates/admin/client_topup.html` — cm-* цвета
+- `templates/admin/company_change.html` — cm-green
+- `templates/admin/comparison_dashboard.html` — cm-purple
+- `templates/admin/invoice_change.html` — cm-green
+- `templates/admin/invoice_edit.html` — cm-green
+- `templates/admin/register_payment.html` — cm-green
