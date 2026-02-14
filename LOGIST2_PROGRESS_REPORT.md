@@ -1,6 +1,6 @@
 # Отчёт о проделанной работе по проекту Logist2
 
-**Дата последнего обновления:** 12 февраля 2026 г.
+**Дата последнего обновления:** 14 февраля 2026 г.
 
 ---
 
@@ -2156,3 +2156,56 @@ Django использовал дефолтные значения (`MEDIA_URL='/
 - `templates/admin/core/autotransport/change_list.html` — новый шаблон
 - `templates/admin/core/autotransport/change_form.html` — кликабельные авто
 - `templates/admin/core/newinvoice/change_form.html` — кликабельные авто и VIN
+
+---
+
+### Редизайн Django Admin — Phase 1 (14.02.2026)
+
+**Статус:** Завершено
+
+#### Новый layout: Sidebar + Topbar
+
+- ✅ Кастомный `base_site.html` — полностью переписан
+- ✅ Боковая панель (sidebar) с навигацией по группам моделей
+- ✅ Верхняя панель (topbar) с логотипом Caromoto (`logo_caromoto.svg`)
+- ✅ Информация о пользователе (аватар, имя, роль) — вверху sidebar
+- ✅ Кнопки «Сменить пароль» и «Выйти» — рядом с именем пользователя
+- ✅ `LogistAdminSite` (`logist2/admin_site.py`) — группировка моделей в sidebar
+
+#### CSS Design System (`dashboard_admin.css`)
+
+- ✅ CSS-переменные (`:root`) — цвета, тени, радиусы
+- ✅ Inter шрифт (Google Fonts), Bootstrap Icons CDN
+- ✅ Стили для sidebar, topbar, форм, таблиц, кнопок, бейджей, фильтров
+- ✅ «Плавающий» дизайн — блоки с `box-shadow` и `border-radius`, прозрачный фон контейнеров
+- ✅ Скрытие стандартного Django header, breadcrumbs, дублирующего `<h1>`
+
+#### Кастомный `change_list.html`
+
+- ✅ Переопределён шаблон `templates/admin/change_list.html`
+- ✅ `.object-tools` (кнопка «Добавить») вынесена в скрытый контейнер — JS переносит в unified toolbar
+- ✅ Обход проблемы `float: right; margin-top: -48px` из Django default CSS
+
+#### Unified Toolbar — поиск + действия + кнопка «Добавить» в одну строку
+
+- ✅ JS создаёт `#cm-unified-toolbar` — одна карточка (белый фон, тень, скруглённые углы)
+- ✅ `#toolbar` (поиск) и `.actions` (действие) переносятся в unified toolbar
+- ✅ Кнопка «Добавить автомобиль» — справа в том же ряду
+- ✅ `form="changelist-form"` на элементах `.actions` — POST-форма работает после DOM-переноса
+- ✅ Скрыты подсказки: «5 результатов (Показать все)», «Действие:», «Выбрано 0 из 5»
+- ✅ Унифицированные размеры полей и кнопок (поиск, действие, добавить)
+
+#### Changelist floating blocks (через JS `setProperty`)
+
+- ✅ `#changelist` — прозрачный flex-контейнер (строка: форма + фильтры)
+- ✅ `.results` — floating card (белый фон, тень)
+- ✅ `.paginator` — floating card
+- ✅ `#changelist-filter` — floating card, sticky, фиксированная ширина 220px
+- ✅ WhiteNoise caching workaround — критические стили через JS `setProperty` с `!important`
+
+**Файлы:**
+- `templates/admin/base_site.html` — sidebar + topbar + JS-стилизация changelist
+- `templates/admin/change_list.html` — кастомный шаблон (object-tools → hidden, unified toolbar)
+- `core/static/css/dashboard_admin.css` — CSS design system
+- `static/website/images/logo_caromoto.svg` — логотип для topbar
+- `logist2/admin_site.py` — LogistAdminSite с группировкой навигации

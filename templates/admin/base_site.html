@@ -1,60 +1,338 @@
 {% extends "admin/base.html" %}
-{% load static %}
+{% load static i18n %}
+
+{# ============================================================
+   CAROMOTO ADMIN — base_site.html
+   Custom admin shell: sidebar + topbar layout
+   Design: Dashboard Portal #4 (purple accent, Inter font)
+   ============================================================ #}
 
 {% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | Caromoto CRM{% endblock %}
 
-{% block branding %}
-<h1 id="site-name">
-    <a href="{% url 'admin:index' %}">
-        <img src="{% static 'website/images/caromoto_logo.png' %}" alt="Caromoto" style="height: 55px; vertical-align: middle; margin-left: -20px;">
-    </a>
-</h1>
-
-<!-- Иконки быстрого доступа -->
-<div id="quick-nav" style="position: absolute; left: 50%; transform: translateX(-50%) translateY(-50%); top: 50%; display: flex; gap: 25px; align-items: center;">
-    <a href="{% url 'company_dashboard' %}" title="Dashboard" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">📊</a>
-    <a href="{% url 'admin:core_container_changelist' %}" title="Контейнеры" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">📦</a>
-    <a href="{% url 'admin:core_car_changelist' %}" title="Автомобили" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">🚗</a>
-    <a href="{% url 'admin:core_client_changelist' %}" title="Клиенты" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">👥</a>
-    <a href="{% url 'admin:core_newinvoice_changelist' %}" title="Инвойсы" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">📄</a>
-    <a href="{% url 'admin:core_warehouse_changelist' %}" title="Склады" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">🏭</a>
-    <a href="{% url 'admin:core_line_changelist' %}" title="Линии" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">🚢</a>
-    <a href="{% url 'admin:core_carrier_changelist' %}" title="Перевозчики" style="text-decoration: none; font-size: 32px; transition: transform 0.2s;">🚚</a>
-</div>
-{% endblock %}
-
-{% block welcome-msg %}{% endblock %}
-
-{% block userlinks %}
-<a href="/" target="_blank">САЙТ</a> /
-<a href="{% url 'admin:password_change' %}">ИЗМ.ПАРОЛЬ</a> /
-<a href="{% url 'admin:logout' %}">Выйти</a>
-{% endblock %}
-
 {% block extrastyle %}
 {{ block.super }}
-<link rel="stylesheet" type="text/css" href="{% static 'css/logist2_custom_admin.css' %}">
+{# — Fonts — #}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+{# — Icons — #}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+{# — Design System — #}
+<link rel="stylesheet" type="text/css" href="{% static 'css/dashboard_admin.css' %}?v=2">
+{# — AI Chat — #}
 <link rel="stylesheet" type="text/css" href="{% static 'admin/css/ai-chat.css' %}">
-<style>
-    #header {
-        position: relative;
-    }
-    #quick-nav a:hover {
-        transform: scale(1.2);
-    }
-    /* Принудительно светлая тема */
-    :root {
-        color-scheme: light !important;
-    }
-</style>
 <script>
-    // Принудительно устанавливаем светлую тему
+    // Force light theme
     document.documentElement.dataset.theme = 'light';
+</script>
+{# — Changelist floating blocks — applied via JS (setProperty) — #}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    function s(el, props) {
+        for (var k in props) el.style.setProperty(k, props[k], 'important');
+    }
+    // .object-tools — hidden in template, JS will extract the Add button
+    // #changelist (.module) — transparent flex container with gap
+    var cl = document.getElementById('changelist');
+    if (cl) {
+        s(cl, {
+            background:'transparent', 'box-shadow':'none', border:'none',
+            'border-radius':'0', padding:'0', margin:'0',
+            display:'flex', 'flex-direction':'row', gap:'24px',
+            'align-items':'flex-start', 'justify-content':'flex-start'
+        });
+    }
+    // #toolbar — transparent wrapper
+    var tb = document.getElementById('toolbar');
+    if (tb) {
+        s(tb, {background:'transparent', border:'none', padding:'0', margin:'0'});
+    }
+
+    // === Merge search + actions into one card row ===
+    var cs = document.getElementById('changelist-search');
+    var actions = document.querySelector('#changelist .actions');
+    if (cs && actions) {
+        // 1. Create unified card wrapper
+        var unified = document.createElement('div');
+        unified.id = 'cm-unified-toolbar';
+        s(unified, {
+            background:'#fff', border:'none', 'border-radius':'14px',
+            padding:'8px 16px', margin:'0 0 16px 0',
+            display:'flex', 'align-items':'center', gap:'16px',
+            'flex-wrap':'wrap',
+            'box-shadow':'0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08)'
+        });
+        // 2. Insert wrapper before #toolbar
+        tb.parentNode.insertBefore(unified, tb);
+        // 3. Move #toolbar into wrapper
+        unified.appendChild(tb);
+        // 4. Set form attribute on all form controls inside .actions
+        //    so they still submit with #changelist-form
+        actions.querySelectorAll('select, button, input').forEach(function(inp) {
+            inp.setAttribute('form', 'changelist-form');
+        });
+        // 5. Move .actions into wrapper
+        unified.appendChild(actions);
+        // 6a. Move "Add" button into wrapper (from hidden .object-tools)
+        var addBtn = document.querySelector('#cm-object-tools-src .object-tools a');
+        if (addBtn) {
+            // Remove any ::before content from Django
+            var fixStyle = document.getElementById('cm-add-fix');
+            if (!fixStyle) {
+                fixStyle = document.createElement('style');
+                fixStyle.id = 'cm-add-fix';
+                fixStyle.textContent = '#cm-unified-toolbar .cm-add-btn::before,#cm-unified-toolbar .cm-add-btn::after{display:none!important;content:none!important;}';
+                document.head.appendChild(fixStyle);
+            }
+            addBtn.className = 'cm-add-btn';
+            s(addBtn, {
+                padding:'7px 16px', 'font-size':'0.85rem', 'font-weight':'600',
+                'border-radius':'8px', 'line-height':'1.4',
+                display:'inline-flex', 'align-items':'center', 'justify-content':'center',
+                float:'none', background:'#6c5ce7', color:'#fff',
+                'text-decoration':'none', 'white-space':'nowrap', 'flex-shrink':'0',
+                border:'none', cursor:'pointer'
+            });
+            // Spacer pushes Add button to the right
+            var spacer = document.createElement('div');
+            s(spacer, {flex:'1'});
+            unified.appendChild(spacer);
+            unified.appendChild(addBtn);
+        }
+        // 6. Style search form — transparent, flex:1
+        s(cs, {
+            background:'transparent', border:'none', 'border-radius':'0',
+            padding:'0', margin:'0',
+            display:'flex', 'align-items':'center', gap:'12px',
+            'box-shadow':'none', 'min-width':'200px'
+        });
+        // 7. Style .actions — transparent, no card, shrink
+        s(actions, {
+            background:'transparent', border:'none', 'border-radius':'0',
+            'box-shadow':'none', margin:'0', padding:'0',
+            width:'auto', display:'flex', 'align-items':'center', gap:'8px',
+            'flex-shrink':'0'
+        });
+    } else if (cs) {
+        // Fallback: no actions on page — just style search as card
+        s(cs, {
+            background:'#fff', border:'none', 'border-radius':'14px',
+            padding:'16px 20px', margin:'0 0 16px 0',
+            display:'flex', 'align-items':'center', gap:'12px',
+            'box-shadow':'0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08)'
+        });
+    }
+    // .changelist-form-container — flex child, takes remaining space
+    document.querySelectorAll('.changelist-form-container').forEach(function(el) {
+        s(el, {background:'transparent', flex:'1', 'min-width':'0'});
+    });
+    // #changelist-form — transparent
+    var cf = document.getElementById('changelist-form');
+    if (cf) {
+        s(cf, {background:'transparent'});
+    }
+    // .results — floating card
+    document.querySelectorAll('.results').forEach(function(el) {
+        s(el, {
+            background:'#fff', border:'none', 'border-radius':'14px',
+            overflow:'hidden',
+            'box-shadow':'0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08)',
+            'margin-bottom':'16px'
+        });
+    });
+    // #result_list — no own shadow
+    var rl = document.getElementById('result_list');
+    if (rl) {
+        s(rl, {'box-shadow':'none', 'border-radius':'0'});
+    }
+    // Style search input — reduce padding by 4px
+    document.querySelectorAll('#searchbar').forEach(function(el) {
+        s(el, {padding:'5px 14px'});
+    });
+    // Style search form inner div — flex stretch so button matches input height
+    document.querySelectorAll('#changelist-search > div').forEach(function(el) {
+        s(el, {
+            display:'flex', 'align-items':'stretch', gap:'8px', width:'100%'
+        });
+    });
+    // Style search submit button to match actions button
+    document.querySelectorAll('#changelist-search input[type="submit"]').forEach(function(el) {
+        s(el, {
+            background:'#6c5ce7', color:'#fff', border:'none',
+            padding:'0 14px', 'border-radius':'8px',
+            'font-size':'0.85rem', 'font-weight':'600',
+            cursor:'pointer', 'line-height':'1',
+            display:'inline-flex', 'align-items':'center', 'justify-content':'center'
+        });
+    });
+    // Hide helper texts in search and actions
+    // "5 результатов (Показать все)"
+    document.querySelectorAll('#changelist-search .small.quiet, #changelist-search .help').forEach(function(el) {
+        s(el, {display:'none'});
+    });
+    // "Действие:" — hide label text but keep the <select> inside visible
+    document.querySelectorAll('.actions label').forEach(function(lbl) {
+        s(lbl, {'font-size':'0', 'color':'transparent', display:'flex', 'align-items':'stretch', gap:'0'});
+        // Restore font-size on the select inside
+        lbl.querySelectorAll('select').forEach(function(sel) {
+            s(sel, {'font-size':'.88rem', 'color':'#1e293b'});
+        });
+    });
+    // "Выбрано 0 из 5", etc.
+    document.querySelectorAll('.actions .action-counter, .actions .all, .actions .question, .actions .clear').forEach(function(el) {
+        s(el, {display:'none'});
+    });
+    // Style action <select> to match search input exactly
+    document.querySelectorAll('.actions select').forEach(function(el) {
+        s(el, {
+            flex:'1', border:'1px solid #e2e8f0', 'border-radius':'8px',
+            padding:'7px 14px', 'font-size':'.88rem', background:'#f8f9fb',
+            height:'auto', 'min-width':'180px', 'box-sizing':'border-box'
+        });
+    });
+    // .actions .button — same height as search submit (stretch from parent)
+    document.querySelectorAll('#changelist .actions .button, #cm-unified-toolbar .actions .button').forEach(function(el) {
+        s(el, {
+            height:'auto', 'line-height':'1', padding:'0 16px',
+            display:'inline-flex', 'align-items':'center', 'justify-content':'center',
+            'border-radius':'8px', 'font-size':'0.85rem', 'font-weight':'600',
+            'box-shadow':'none'
+        });
+    });
+    // Make .actions stretch children to same height as search row
+    document.querySelectorAll('.actions').forEach(function(el) {
+        s(el, {'align-items':'stretch'});
+    });
+    // .paginator — floating card
+    document.querySelectorAll('.paginator, .pagination').forEach(function(el) {
+        s(el, {
+            background:'#fff', border:'none', 'border-radius':'14px',
+            'box-shadow':'0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08)',
+            margin:'0 0 16px 0', padding:'12px 20px'
+        });
+    });
+    // #changelist-filter — floating card, fixed width, sticky
+    var flt = document.getElementById('changelist-filter');
+    if (flt) {
+        s(flt, {
+            background:'#fff', border:'none', 'border-radius':'14px',
+            'box-shadow':'0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08)',
+            padding:'16px', margin:'0',
+            width:'220px', 'min-width':'220px', flex:'0 0 220px',
+            position:'sticky', top:'76px',
+            'max-height':'calc(100vh - 100px)', 'overflow-y':'auto'
+        });
+    }
+});
 </script>
 {% endblock %}
 
+{% block extrahead %}
+{{ block.super }}
+<meta name="color-scheme" content="light">
+{% endblock %}
+
+{# ============================================================
+   HEADER BLOCK — полностью заменяем стандартный Django header
+   на sidebar + topbar
+   ============================================================ #}
+{% block header %}
+{% if not is_popup %}
+
+{# ——— SIDEBAR ——— #}
+<aside class="cm-sidebar" id="cm-sidebar">
+    {# User info + actions — at the top instead of brand #}
+    <div class="cm-sidebar-brand" style="cursor:default; text-decoration:none;">
+        <div class="avatar" style="background:#1e293b; color:#fff; font-weight:700; display:flex; align-items:center; justify-content:center; font-size:0.95rem; border-radius:10px; width:38px; height:38px; min-width:38px;">
+            {% if user.first_name and user.last_name %}
+                {{ user.first_name.0 }}{{ user.last_name.0 }}
+            {% elif user.username %}
+                {{ user.username.0|upper }}
+            {% else %}
+                ?
+            {% endif %}
+        </div>
+        <div style="display:flex; flex-direction:column; overflow:hidden; flex:1;">
+            <span class="logo-text" style="font-size:0.92rem; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                {% if user.get_full_name %}{{ user.get_full_name }}{% else %}{{ user.username }}{% endif %}
+            </span>
+            <span style="font-size:0.75rem; color:#94a3b8; font-weight:400;">
+                {% if user.is_superuser %}Администратор{% elif user.is_staff %}Менеджер{% else %}Пользователь{% endif %}
+            </span>
+        </div>
+        <div style="display:flex; gap:6px; align-items:center; margin-left:auto;">
+            <a href="{% url 'admin:password_change' %}" title="Сменить пароль" style="color:#a78bfa; font-size:1.05rem; display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:8px; background:rgba(167,139,250,0.12); transition:all .2s;"><i class="bi bi-key"></i></a>
+            <a href="{% url 'admin:logout' %}" title="Выйти" style="color:#a78bfa; font-size:1.05rem; display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:8px; background:rgba(167,139,250,0.12); transition:all .2s;"><i class="bi bi-box-arrow-right"></i></a>
+        </div>
+    </div>
+
+    {# Dashboard link #}
+    <div class="cm-sidebar-section">Навигация</div>
+    <ul class="cm-sidebar-nav">
+        <li>
+            <a href="{% url 'company_dashboard' %}" class="{% if current_path == '/admin/dashboard/' %}active{% endif %}">
+                <i class="bi bi-grid-1x2-fill"></i> Dashboard
+            </a>
+        </li>
+    </ul>
+
+    {# Dynamic navigation from sidebar_nav #}
+    {% for group in sidebar_nav %}
+    <div class="cm-sidebar-section">{{ group.name }}</div>
+    <ul class="cm-sidebar-nav">
+        {% for item in group.items %}
+        <li>
+            <a href="{{ item.url }}" class="{% if item.active %}active{% endif %}">
+                <i class="bi {{ item.icon }}"></i> {{ item.name }}
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endfor %}
+
+</aside>
+
+{# ——— SIDEBAR OVERLAY (mobile) ——— #}
+<div class="cm-sidebar-overlay" id="cm-sidebar-overlay"></div>
+
+{# ——— TOPBAR ——— #}
+<header class="cm-topbar">
+    <div class="cm-topbar-left">
+        <button class="cm-sidebar-toggle" id="cm-sidebar-toggle" aria-label="Toggle sidebar">
+            <i class="bi bi-list"></i>
+        </button>
+        <a href="{% url 'admin:index' %}" style="display:flex; align-items:center; text-decoration:none;">
+            <img src="{% static 'website/images/logo_caromoto.svg' %}" alt="Caromoto" style="height:34px; width:auto;">
+        </a>
+    </div>
+    <div class="cm-topbar-right">
+        <a href="/" target="_blank" class="icon-btn" title="Открыть сайт">
+            <i class="bi bi-globe"></i>
+        </a>
+        <a href="{% url 'admin:index' %}" class="icon-btn" title="Главная">
+            <i class="bi bi-house"></i>
+        </a>
+    </div>
+</header>
+
+{% else %}
+{# Popup mode — minimal header #}
+<div id="header" style="display:none"></div>
+{% endif %}
+{% endblock %}
+
+{# Hide default Django nav sidebar — we use cm-sidebar #}
+{% block nav-sidebar %}{% endblock %}
+
+{# Hide breadcrumbs — replaced by topbar title #}
+{% block nav-breadcrumbs %}{% endblock %}
+
+{# ============================================================
+   FOOTER — AI Chat widget + page context
+   ============================================================ #}
 {% block footer %}
 {{ block.super }}
+{% if not is_popup %}
 <div id="ai-chat-widget">
     <button class="ai-chat-button" id="ai-chat-toggle" title="AI помощник">AI</button>
     <div class="ai-chat-window" id="ai-chat-window" style="display: none;">
@@ -75,6 +353,8 @@
         </div>
     </div>
 </div>
+{% endif %}
+
 <script>
     window.__adminPageContext = {
         is_admin: true,
@@ -89,5 +369,31 @@
     };
 </script>
 <script src="{% static 'website/js/ai-chat.js' %}"></script>
-{% endblock %}
 
+{% if not is_popup %}
+<script>
+(function() {
+    'use strict';
+
+    // Sidebar toggle (mobile)
+    var toggle = document.getElementById('cm-sidebar-toggle');
+    var sidebar = document.getElementById('cm-sidebar');
+    var overlay = document.getElementById('cm-sidebar-overlay');
+
+    if (toggle && sidebar && overlay) {
+        toggle.addEventListener('click', function() {
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('active');
+        });
+        overlay.addEventListener('click', function() {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('active');
+        });
+    }
+
+    // Mark body as loaded (enable transitions)
+    document.body.classList.add('loaded');
+})();
+</script>
+{% endif %}
+{% endblock %}
