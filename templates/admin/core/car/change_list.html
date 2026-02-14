@@ -5,22 +5,12 @@
   {{ block.super }}
   
   {% if total_markup_sum is not None %}
-  <div style="margin-top: 16px; padding: 18px 24px; background: var(--cm-card, #fff); border-radius: var(--cm-radius, 14px); box-shadow: var(--cm-shadow-card, 0 2px 8px rgba(0,0,0,.06));">
-    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-      <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--cm-radius-sm, 10px); background: var(--cm-green-bg, #ecfdf5); color: var(--cm-green, #10b981); font-size: 1.1rem;">
-        <i class="bi bi-currency-euro"></i>
-      </span>
-      <div>
-        <div style="font-size: .78rem; font-weight: 600; color: var(--cm-text-secondary, #6b7280); text-transform: uppercase; letter-spacing: .5px;">
-          Общая скрытая наценка (отображаемые ТС)
-        </div>
-        <div style="font-size: 1.3rem; font-weight: 800; color: var(--cm-text, #1a1a2e); letter-spacing: -0.03em;">
-          {{ total_markup_sum|floatformat:2 }} EUR
-        </div>
-      </div>
-      <span style="margin-left: auto; font-size: .78rem; color: var(--cm-text-muted, #9ca3af);">
-        {{ cl.result_count }} ТС с учётом фильтров
-      </span>
+  <div style="margin: 16px 0; padding: 14px 24px; background: var(--cm-card, #fff); border-radius: var(--cm-radius, 14px); box-shadow: var(--cm-shadow-card, 0 2px 8px rgba(0,0,0,.06)); display: flex; align-items: center; justify-content: space-between;">
+    <div style="font-size: .78rem; font-weight: 600; color: var(--cm-text-secondary, #6b7280); text-transform: uppercase; letter-spacing: .5px;">
+      Общая скрытая наценка (отображаемые ТС)
+    </div>
+    <div style="font-size: 1.15rem; font-weight: 800; color: var(--cm-green, #10b981); letter-spacing: -0.03em; padding-right: 40px;">
+      {{ total_markup_sum|floatformat:2 }} €
     </div>
   </div>
   {% endif %}

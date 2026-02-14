@@ -590,13 +590,8 @@
                     </div>
                     <div class="form-group">
                         <label>📎 Вложение</label>
-                        {% if original and original.attachment %}
-                        <div style="margin-bottom: 8px;">
-                            <a href="{{ original.attachment.url }}" target="_blank" style="color: var(--primary); font-weight: 500; text-decoration: none;">📄 {{ original.attachment.name|truncatechars:40 }}</a>
-                        </div>
-                        {% endif %}
                         <input type="file" name="attachment" accept=".pdf,.jpg,.jpeg,.png,.gif" style="height: auto; padding: 10px 16px;">
-                        <div class="form-hint">PDF или фото счёта/инвойса</div>
+                        <div class="form-hint">PDF или фото счёта/инвойса{% if original and original.attachment %} (текущий файл — в правой панели){% endif %}</div>
                     </div>
                 </div>
                 
@@ -849,6 +844,29 @@
                     <div style="font-size:16px;font-weight:700;color:var(--success);">+{{ trx.amount|floatformat:2 }} €</div>
                 </div>
                 {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if original.attachment %}
+        <div class="card">
+            <div class="card-header">
+                <span class="icon">📄</span>
+                <h2>Инвойс</h2>
+            </div>
+            <div class="card-body" style="text-align: center;">
+                {% if attachment_exists %}
+                <a href="{{ original.attachment.url }}" target="_blank" class="btn btn-outline" style="gap: 8px;">
+                    📎 Открыть файл
+                </a>
+                {% else %}
+                <div style="padding: 10px; background: #fff3cd; border-radius: 8px; color: #856404; font-size: 13px;">
+                    ⚠ Файл не найден на диске
+                </div>
+                {% endif %}
+                <div style="margin-top: 8px; font-size: 12px; color: var(--gray-600); word-break: break-all;">
+                    {{ original.attachment.name|truncatechars:50 }}
+                </div>
             </div>
         </div>
         {% endif %}

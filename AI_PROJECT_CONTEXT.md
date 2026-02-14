@@ -30,7 +30,7 @@
 - **Группировка админки** - LogistAdminSite (6 логических групп в сайдбаре)
 - **Invoice-bank reconciliation** - сопоставление инвойсов и транзакций с банковскими операциями
 - **Автовозы (AutoTransport)** - автопередача авто при смене статуса, кнопка "Загружен" с датой, цветная индикация инвойсов, скрытие доставленных по умолчанию
-- **Редизайн админки Phase 1+2 (14.02.2026)** - sidebar + topbar layout, unified toolbar, floating cards, CSS design system, form grid + sidebar для change_form, компактные инлайны, миграция всех шаблонов на --cm-* переменные
+- **Редизайн админки Phase 1+2+3 (14.02.2026)** - sidebar + topbar layout, unified toolbar, floating cards, CSS design system, form grid + sidebar для change_form, компактные инлайны, миграция всех шаблонов на --cm-* переменные, labels над полями, fix select clipping, инвойс attachment в sidebar
 
 ## VPS СЕРВЕР
 
@@ -263,6 +263,14 @@ logist2/
 - Все блоки changelist (results, actions, paginator, filter) — белые карточки с тенью
 - `#changelist` — прозрачный flex-контейнер
 - Обход WhiteNoise caching — стили через `element.style.setProperty(prop, val, 'important')`
+
+### Phase 3: UX-полировка форм и инвойсов (14.02.2026)
+
+- Labels над полями (не слева) — обобщены CSS правила для всех форм `.cm-form-main`
+- Fix select clipping — `line-height: 1.4`, `overflow: visible` на `.form-row`
+- Инвойс: attachment перенесён из формы в sidebar, проверка существования файла
+- Блок наценки на car changelist: label слева, сумма € справа
+- CSS version: `dashboard_admin.css?v=4`
 
 ### Phase 2: change_form шаблоны + Design System
 
@@ -610,6 +618,14 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 ⚠️ **ВАЖНО:** После загрузки фотографий вручную (через команды от root) нужно исправить права доступа: `./fix_media_permissions.sh`
 
 ### Недавние изменения (февраль 2026):
+
+**14.02.2026 - Редизайн Django Admin Phase 3: UX-полировка форм и инвойсов:**
+1. **ADMIN UI REDESIGN Phase 3:** ⭐ UI/UX
+   - ✅ Labels над полями: обобщение CSS с `#container_form` на все формы `.cm-form-main` (flex-direction: column)
+   - ✅ Fix select clipping: `line-height: 1.4`, `height: auto`, `overflow: visible` на `.form-row`
+   - ✅ Инвойс attachment: ссылка из формы перенесена в sidebar, проверка `os.path.isfile()` на существование файла
+   - ✅ Блок наценки (car changelist): label слева, сумма € справа, убран текст "X ТС с учётом фильтров"
+   - ✅ CSS version bump: `dashboard_admin.css?v=4`
 
 **14.02.2026 - Редизайн Django Admin Phase 2: change_form шаблоны + Design System:**
 1. **ADMIN UI REDESIGN Phase 2:** ⭐ UI/UX
