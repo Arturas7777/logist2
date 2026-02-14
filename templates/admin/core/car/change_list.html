@@ -5,14 +5,23 @@
   {{ block.super }}
   
   {% if total_markup_sum is not None %}
-  <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border: 2px solid #28a745; border-radius: 8px;">
-    <h3 style="margin: 0; color: #28a745; font-size: 18px;">
-      <strong>Общая скрытая наценка (отображаемые ТС):</strong>
-      <span style="color: #007bff; font-size: 22px; margin-left: 15px;">{{ total_markup_sum|floatformat:2 }} EUR</span>
-    </h3>
-    <p style="margin: 5px 0 0 0; font-size: 13px; color: #6c757d;">
-      Сумма рассчитана для {{ cl.result_count }} ТС, отображаемых на текущей странице с учётом фильтров.
-    </p>
+  <div style="margin-top: 16px; padding: 18px 24px; background: var(--cm-card, #fff); border-radius: var(--cm-radius, 14px); box-shadow: var(--cm-shadow-card, 0 2px 8px rgba(0,0,0,.06));">
+    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+      <span style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--cm-radius-sm, 10px); background: var(--cm-green-bg, #ecfdf5); color: var(--cm-green, #10b981); font-size: 1.1rem;">
+        <i class="bi bi-currency-euro"></i>
+      </span>
+      <div>
+        <div style="font-size: .78rem; font-weight: 600; color: var(--cm-text-secondary, #6b7280); text-transform: uppercase; letter-spacing: .5px;">
+          Общая скрытая наценка (отображаемые ТС)
+        </div>
+        <div style="font-size: 1.3rem; font-weight: 800; color: var(--cm-text, #1a1a2e); letter-spacing: -0.03em;">
+          {{ total_markup_sum|floatformat:2 }} EUR
+        </div>
+      </div>
+      <span style="margin-left: auto; font-size: .78rem; color: var(--cm-text-muted, #9ca3af);">
+        {{ cl.result_count }} ТС с учётом фильтров
+      </span>
+    </div>
   </div>
   {% endif %}
 {% endblock %}

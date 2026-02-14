@@ -3,136 +3,207 @@
 
 {% block extrastyle %}
   {{ block.super }}
-  {# dashboard_admin.css loaded globally via base_site.html #}
-  <style>
-    /* Кнопка синхронизации с Google Drive */
-    #sync-gdrive-btn {
-      background: linear-gradient(135deg, #4285f4 0%, #2962ff 100%);
-      border: none;
-      color: white;
-      padding: 10px 20px;
-      border-radius: 6px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      box-shadow: 0 2px 8px rgba(66, 133, 244, 0.3);
-    }
-    
-    #sync-gdrive-btn:hover {
-      background: linear-gradient(135deg, #2962ff 0%, #1565c0 100%);
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(66, 133, 244, 0.4);
-    }
-    
-    #sync-gdrive-btn:disabled {
-      opacity: 0.7;
-      cursor: not-allowed;
-      transform: none;
-    }
-    
-    /* Статус синхронизации */
-    #sync-status {
-      display: inline-block;
-      padding: 5px 10px;
-      border-radius: 4px;
-      font-weight: 500;
-    }
-    
-    /* Контейнер для информации о фото */
-    .photos-info {
-      display: inline-block;
-      margin-left: 15px;
-      padding: 8px 15px;
-      background: #f0f7ff;
-      border-radius: 20px;
-      font-size: 14px;
-      color: #1565c0;
-    }
-    
-    .photos-info.has-photos {
-      background: #e8f5e9;
-      color: #2e7d32;
-    }
-  </style>
 {% endblock %}
 
+{% block content_title %}{% endblock %}
+
 {% block content %}
-  <div class="container-details" style="margin-bottom: 15px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
-    <p style="margin: 0 0 15px 0;">
-      <span class="status-highlight"
-            style="background-color: {{ original.get_status_color }}; color: white; padding: 8px 16px; border-radius: 5px; font-weight: 600;">
-        {{ original.get_status_display }}
-      </span>
-      {% if original.notes %}
-        <span style="margin-left: 20px; color: #666;">
-          {{ original.notes }}
-        </span>
-      {% endif %}
-    </p>
-    
-    {% if original.pk %}
-    <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
-      <button type="button" id="sync-gdrive-btn">
-        📥 Загрузить фото с Google Drive
-      </button>
-      <span id="sync-status"></span>
-      
-      {% with photos_count=original.photos.count %}
-      <span class="photos-info {% if photos_count > 0 %}has-photos{% endif %}">
-        📷 Фотографий: <strong>{{ photos_count }}</strong>
-      </span>
-      {% endwith %}
-      
-      {% if original.google_drive_folder_url %}
-      <a href="{{ original.google_drive_folder_url }}" target="_blank" 
-         style="color: #4285f4; text-decoration: none; font-size: 14px;">
-        🔗 Открыть папку Google Drive
-      </a>
-      {% endif %}
-    </div>
-    
-    <script>
-    document.getElementById('sync-gdrive-btn').addEventListener('click', function() {
-      const btn = this;
-      const status = document.getElementById('sync-status');
-      
-      btn.disabled = true;
-      btn.innerHTML = '⏳ Синхронизация...';
-      status.textContent = '';
-      
-      fetch('{% url "core:sync_container_photos_gdrive" original.pk %}', {
-        method: 'POST',
-        headers: {
-          'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-        }
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          status.innerHTML = '<span style="color: #2e7d32; background: #e8f5e9; padding: 5px 10px; border-radius: 4px;">✓ ' + data.message + '</span>';
-          setTimeout(() => location.reload(), 2000);
-        } else {
-          status.innerHTML = '<span style="color: #c62828; background: #ffebee; padding: 5px 10px; border-radius: 4px;">✗ ' + data.error + '</span>';
-          btn.disabled = false;
-          btn.innerHTML = '📥 Загрузить фото с Google Drive';
-        }
-      })
-      .catch(error => {
-        status.innerHTML = '<span style="color: #c62828; background: #ffebee; padding: 5px 10px; border-radius: 4px;">✗ Ошибка: ' + error + '</span>';
-        btn.disabled = false;
-        btn.innerHTML = '📥 Загрузить фото с Google Drive';
-      });
-    });
-    </script>
-    {% endif %}
+<div class="cm-page-header">
+  <h1>{% if original %}{{ original.number }}{% else %}Новый контейнер{% endif %}</h1>
+  <a href="{% url 'admin:core_container_changelist' %}" class="cm-back-link">← Назад к списку</a>
+</div>
+
+<div class="cm-form-grid" {% if original %}style="--cm-status-color: {{ original.get_status_color }};"{% endif %}>
+  <div class="cm-form-main">
+    {{ block.super }}
   </div>
-  
-  {{ block.super }}
+
+  <div class="cm-form-sidebar-col">
+    {% if original %}
+    {# ── Status Card ── #}
+    <div class="cm-sidebar-card">
+      <div class="cm-sidebar-card-body" style="text-align: center;">
+        <div class="cm-status-badge-lg" style="background-color: {{ original.get_status_color }};">
+          {{ original.get_status_display }}
+        </div>
+        {% if original.notes %}
+        <p style="margin: 12px 0 0; color: var(--cm-text-secondary); font-size: .85rem;">
+          {{ original.notes }}
+        </p>
+        {% endif %}
+      </div>
+    </div>
+
+    {# ── Photos & Google Drive Card ── #}
+    {% if original.pk %}
+    <div class="cm-sidebar-card">
+      <div class="cm-sidebar-card-header">
+        <h3>Фотографии</h3>
+      </div>
+      <div class="cm-sidebar-card-body">
+        {% with photos_count=original.photos.count %}
+        <div style="text-align: center; margin-bottom: 14px;">
+          <span class="cm-photos-badge {% if photos_count > 0 %}has-photos{% else %}no-photos{% endif %}">
+            Фотографий: <strong>{{ photos_count }}</strong>
+          </span>
+        </div>
+        {% endwith %}
+
+        <button type="button" id="sync-gdrive-btn" class="cm-gdrive-btn">
+          Загрузить фото с Google Drive
+        </button>
+        <div id="sync-status" style="margin-top: 8px; text-align: center;"></div>
+
+        {% if original.google_drive_folder_url %}
+        <div style="margin-top: 10px; text-align: center;">
+          <a href="{{ original.google_drive_folder_url }}" target="_blank"
+             style="color: var(--cm-purple); text-decoration: none; font-size: .82rem; font-weight: 600;">
+            Открыть Google Drive →
+          </a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── Info Card ── #}
+    <div class="cm-sidebar-card">
+      <div class="cm-sidebar-card-header">
+        <h3>Информация</h3>
+      </div>
+      <div class="cm-sidebar-card-body">
+        {% if original.line %}
+        <div class="cm-sidebar-info-row">
+          <span class="cm-sidebar-info-label">Линия</span>
+          <span class="cm-sidebar-info-value">{{ original.line }}</span>
+        </div>
+        {% endif %}
+        {% if original.warehouse %}
+        <div class="cm-sidebar-info-row">
+          <span class="cm-sidebar-info-label">Склад</span>
+          <span class="cm-sidebar-info-value">{{ original.warehouse }}</span>
+        </div>
+        {% endif %}
+        {% if original.ths %}
+        <div class="cm-sidebar-info-row">
+          <span class="cm-sidebar-info-label">THS</span>
+          <span class="cm-sidebar-info-value">{{ original.ths|floatformat:2 }} €</span>
+        </div>
+        {% endif %}
+        {% if original.ths_payer %}
+        <div class="cm-sidebar-info-row">
+          <span class="cm-sidebar-info-label">THS плательщик</span>
+          <span class="cm-sidebar-info-value">{{ original.get_ths_payer_display }}</span>
+        </div>
+        {% endif %}
+        {% if original.eta %}
+        <div class="cm-sidebar-info-row">
+          <span class="cm-sidebar-info-label">ETA</span>
+          <span class="cm-sidebar-info-value">{{ original.eta|date:"d.m.Y" }}</span>
+        </div>
+        {% endif %}
+        {% if original.unload_date %}
+        <div class="cm-sidebar-info-row">
+          <span class="cm-sidebar-info-label">Дата разгрузки</span>
+          <span class="cm-sidebar-info-value">{{ original.unload_date|date:"d.m.Y" }}</span>
+        </div>
+        {% endif %}
+        <div class="cm-sidebar-info-row">
+          <span class="cm-sidebar-info-label">Авто в контейнере</span>
+          <span class="cm-sidebar-info-value">{{ original.container_cars.count }}</span>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── Actions Card ── #}
+    <div class="cm-sidebar-card">
+      <div class="cm-sidebar-card-header">
+        <h3>Действия</h3>
+      </div>
+      <div class="cm-sidebar-card-body">
+        <div class="cm-sidebar-actions">
+          <button type="button" class="cm-btn cm-btn-save" onclick="cmSubmitForm('container_form', '_save')">
+            Сохранить
+          </button>
+          {% if original %}
+          <button type="button" class="cm-btn cm-btn-outline-action" onclick="cmSubmitForm('container_form', '_continue')">
+            Сохранить и продолжить
+          </button>
+          {% else %}
+          <button type="button" class="cm-btn cm-btn-outline-action" onclick="cmSubmitForm('container_form', '_addanother')">
+            Сохранить и добавить ещё
+          </button>
+          {% endif %}
+          <a href="{% url 'admin:core_container_changelist' %}" class="cm-btn cm-btn-outline-action">
+            Отмена
+          </a>
+          {% if original and has_delete_permission %}
+          <div class="cm-sidebar-divider"></div>
+          <a href="{% url 'admin:core_container_delete' original.pk %}" class="cm-btn cm-btn-delete">
+            Удалить
+          </a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* ── Form submission from sidebar ── */
+  function cmSubmitForm(formId, action) {
+    var form = document.getElementById(formId);
+    if (!form) return;
+    var btn = document.createElement('input');
+    btn.type = 'submit';
+    btn.name = action;
+    btn.value = '1';
+    btn.style.display = 'none';
+    form.appendChild(btn);
+    btn.click();
+  }
+
+  {% if original and original.pk %}
+  /* ── Google Drive sync ── */
+  document.getElementById('sync-gdrive-btn').addEventListener('click', function() {
+    var btn = this;
+    var status = document.getElementById('sync-status');
+
+    btn.disabled = true;
+    btn.textContent = 'Синхронизация...';
+    status.textContent = '';
+
+    fetch('{% url "core:sync_container_photos_gdrive" original.pk %}', {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+      }
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
+      if (data.success) {
+        status.innerHTML = '<span style="color: var(--cm-green); background: var(--cm-green-bg); padding: 5px 12px; border-radius: 6px; font-weight:600; font-size:.82rem;">✓ ' + data.message + '</span>';
+        setTimeout(function() { location.reload(); }, 2000);
+      } else {
+        status.innerHTML = '<span style="color: var(--cm-red); background: var(--cm-red-bg); padding: 5px 12px; border-radius: 6px; font-weight:600; font-size:.82rem;">✗ ' + data.error + '</span>';
+        btn.disabled = false;
+        btn.textContent = 'Загрузить фото с Google Drive';
+      }
+    })
+    .catch(function(error) {
+      status.innerHTML = '<span style="color: var(--cm-red); background: var(--cm-red-bg); padding: 5px 12px; border-radius: 6px; font-weight:600; font-size:.82rem;">✗ Ошибка: ' + error + '</span>';
+      btn.disabled = false;
+      btn.textContent = 'Загрузить фото с Google Drive';
+    });
+  });
+  {% endif %}
+</script>
 {% endblock %}
 
 {% block after_related_objects %}
   {{ block.super }}
-  {# Галерея фотографий - отдельный блок под всеми inline #}
+  {# Photo gallery — separate block under all inlines #}
   {% if original.pk %}
   {% include "admin/core/container/photos_gallery.html" with photos_json=photos_json %}
   {% endif %}

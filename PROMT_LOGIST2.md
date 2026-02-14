@@ -962,6 +962,8 @@ delete_car_services_on_company_service_delete() # Удаляет Company CarServ
 
 ### Редизайн админки — UI/UX (14.02.2026)
 
+#### Phase 1: Sidebar + Topbar
+
 **Новый layout:** Sidebar + Topbar (вместо стандартного Django header)
 
 **Ключевые файлы:**
@@ -989,6 +991,28 @@ delete_car_services_on_company_service_delete() # Удаляет Company CarServ
 - `.results`, `.paginator`, `#changelist-filter` — белые карточки с тенью
 - `#changelist` — прозрачный flex-контейнер (строка: форма + фильтры)
 - Обход WhiteNoise caching — критические стили через `element.style.setProperty(prop, val, 'important')`
+
+#### Phase 2: change_form шаблоны + Design System
+
+**Дизайн-система Caromoto (`--cm-*`)** применена ко всем кастомным change_form страницам.
+
+**Компоненты Design System (`dashboard_admin.css`):**
+- `.cm-form-grid` + `.cm-form-sidebar-col` — двухколоночный layout: форма + sidebar 270px
+- `.cm-page-header` + `.cm-back-link` — заголовок страницы с кнопкой «Назад»
+- `.cm-sidebar-card` + `.cm-sidebar-info` — информационные карточки в правом сайдбаре
+- `.cm-status-badge-lg` — большой статус-бейдж (капсула)
+- `.cm-btn-save`, `.cm-btn-delete`, `.cm-btn-outline-action` — унифицированные кнопки
+- `.cm-modal-overlay` + `.cm-modal` — модальные окна с header/body/footer
+- `.cm-photos-badge`, `.cm-gdrive-btn` — бейдж фото, кнопка Google Drive
+- Компактные inline-таблицы: уменьшенный padding, скрыта колонка "original", точные ширины
+
+**Переработанные шаблоны:**
+- `car/change_form.html` — cm-modal, cm-service-item, cm-page-header
+- `container/change_form.html` — form grid + sidebar (статус, фото, Google Drive)
+- `newinvoice/change_form.html` — `--cm-*` переменные, sidebar 270px
+- `autotransport/change_form.html` + CSS — cm-page-header, `--cm-*` переменные
+- 11 прочих шаблонов — замена hardcoded цветов → CSS-переменные
+- Responsive (@media 1100px) и popup mode
 
 ---
 
@@ -1518,7 +1542,7 @@ core/management/commands/setup_sitepro.py  # Помощник настройки
 
 Monkey-patch в `logist2/__init__.py` для глобального применения.
 
-**Кастомный layout (14.02.2026):** sidebar + topbar реализованы в `base_site.html`, группы навигации рендерятся из `LogistAdminSite.get_app_list()`, unified toolbar на changelist через `change_list.html` + JS DOM-манипуляции.
+**Кастомный layout (14.02.2026):** Phase 1 — sidebar + topbar в `base_site.html`, unified toolbar на changelist через `change_list.html` + JS DOM-манипуляции. Phase 2 — form grid + sidebar для change_form, компактные инлайны, все шаблоны мигрированы на `--cm-*` CSS-переменные дизайн-системы.
 
 ### CSP (Content Security Policy)
 

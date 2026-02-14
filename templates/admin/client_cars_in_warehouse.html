@@ -9,22 +9,22 @@
     
     <div style="margin: 20px 0; display: flex; gap: 15px; flex-wrap: wrap;">
         <a href="{% url 'admin:core_client_change' client.pk %}" 
-           style="background: #6c757d; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none;">
+           style="background: var(--cm-text-secondary, #6b7280); color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none;">
             ← Назад к клиенту
         </a>
         <button onclick="copyToClipboard()" 
-                style="background: #28a745; color: white; padding: 10px 20px; border-radius: 6px; border: none; cursor: pointer; font-size: 14px;">
+                style="background: var(--cm-green, #10b981); color: white; padding: 10px 20px; border-radius: 6px; border: none; cursor: pointer; font-size: 14px;">
             📋 Скопировать список
         </button>
     </div>
     
     {% if total_count == 0 %}
-        <div style="padding: 40px; text-align: center; background: #f8f9fa; border-radius: 8px; margin: 20px 0;">
-            <p style="font-size: 18px; color: #6c757d;">У клиента нет авто на складе</p>
-            <p style="color: #999;">Здесь отображаются только авто со статусом "Разгружен"</p>
+        <div style="padding: 40px; text-align: center; background: var(--cm-bg, #f5f6fa); border-radius: 8px; margin: 20px 0;">
+            <p style="font-size: 18px; color: var(--cm-text-secondary, #6b7280);">У клиента нет авто на складе</p>
+            <p style="color: var(--cm-text-secondary, #6b7280);">Здесь отображаются только авто со статусом "Разгружен"</p>
         </div>
     {% else %}
-        <div style="background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
+        <div style="background: linear-gradient(135deg, #6c5ce7, #5a4bd1); color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
             <div style="font-size: 2em; font-weight: bold;">{{ total_count }} авто</div>
             <div style="opacity: 0.9;">на складе</div>
         </div>
@@ -34,20 +34,20 @@
             <div style="background: #f8f9fa; padding: 15px; border-bottom: 1px solid #dee2e6;">
                 <h3 style="margin: 0; display: flex; align-items: center; gap: 10px;">
                     📍 {{ wh_name }}
-                    <span style="background: #007bff; color: white; padding: 3px 10px; border-radius: 12px; font-size: 14px;">
+                    <span style="background: var(--cm-purple, #6c5ce7); color: white; padding: 3px 10px; border-radius: 12px; font-size: 14px;">
                         {{ wh_cars|length }} авто
                     </span>
                 </h3>
             </div>
             <table style="width: 100%; border-collapse: collapse;">
                 <thead>
-                    <tr style="background: #f8f9fa;">
-                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6;">VIN</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6;">Марка</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6;">Год</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6;">Контейнер</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6;">Дата разгрузки</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6;">Дней на складе</th>
+                    <tr style="background: var(--cm-bg, #f5f6fa);">
+                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--cm-border, #ebebf0);">VIN</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--cm-border, #ebebf0);">Марка</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--cm-border, #ebebf0);">Год</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--cm-border, #ebebf0);">Контейнер</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--cm-border, #ebebf0);">Дата разгрузки</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--cm-border, #ebebf0);">Дней на складе</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -76,7 +76,7 @@
                         </td>
                         <td style="padding: 12px;">
                             {% if car.days %}
-                                <span style="{% if car.days > 14 %}color: #dc3545;{% elif car.days > 7 %}color: #ffc107;{% else %}color: #28a745;{% endif %} font-weight: bold;">
+                                <span style="{% if car.days > 14 %}color: var(--cm-red, #ef4444);{% elif car.days > 7 %}color: var(--cm-orange, #f59e0b);{% else %}color: var(--cm-green, #10b981);{% endif %} font-weight: bold;">
                                     {{ car.days }} дн.
                                 </span>
                             {% else %}

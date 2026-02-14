@@ -1,94 +1,60 @@
 /* ============================================
    🚛 АВТОВОЗЫ - КАСТОМНЫЙ ИНТЕРФЕЙС
+   Uses Caromoto Design System (--cm-*) variables
+   from dashboard_admin.css
    ============================================ */
 
 :root {
-    --primary: #667eea;
-    --primary-dark: #5a67d8;
-    --success: #28a745;
-    --danger: #dc3545;
-    --warning: #ffc107;
-    --info: #17a2b8;
-    --gray-100: #f8f9fa;
-    --gray-200: #e9ecef;
+    --primary: var(--cm-purple, #6c5ce7);
+    --primary-dark: var(--cm-purple-dark, #5a4bd1);
+    --success: var(--cm-green, #10b981);
+    --danger: var(--cm-red, #ef4444);
+    --warning: var(--cm-orange, #f59e0b);
+    --info: var(--cm-blue, #3b82f6);
+    --gray-100: var(--cm-bg, #f5f6fa);
+    --gray-200: var(--cm-border, #ebebf0);
     --gray-300: #dee2e6;
-    --gray-600: #6c757d;
-    --gray-800: #343a40;
-    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    --gray-600: var(--cm-text-secondary, #6b7280);
+    --gray-800: var(--cm-text, #1a1a2e);
+    --shadow: var(--cm-shadow-card, 0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08));
+    --shadow-lg: var(--cm-shadow-md, 0 4px 16px rgba(0,0,0,.08));
 }
 
-body { 
-    background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%); 
-    min-height: 100vh; 
-}
-
-.breadcrumbs { display: none; }
-#content { padding: 30px; max-width: 1400px; margin: 0 auto; }
-
-/* Заголовок страницы */
-.autotransport-page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 30px;
-}
-
-.autotransport-page-header h1 {
-    font-size: 28px;
-    font-weight: 700;
-    color: var(--gray-800);
-    margin: 0;
-}
-
-.back-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--gray-600);
-    text-decoration: none;
-    font-size: 14px;
-    padding: 8px 16px;
-    background: white;
-    border-radius: 8px;
-    box-shadow: var(--shadow);
-}
-
-.back-link:hover { color: var(--primary); }
-
-/* Сетка страницы */
+/* Сетка страницы — единый стиль с Car/Container */
 .autotransport-grid {
     display: grid;
-    grid-template-columns: 1fr 350px;
-    gap: 30px;
+    grid-template-columns: 1fr 270px;
+    gap: 16px;
+    align-items: start;
 }
 
 /* Карточки */
 .card {
-    background: white;
-    border-radius: 16px;
-    box-shadow: var(--shadow);
+    background: var(--cm-card, #fff);
+    border-radius: var(--cm-radius, 14px);
+    box-shadow: var(--cm-shadow-card);
     overflow: hidden;
-    margin-bottom: 25px;
+    margin-bottom: 16px;
 }
 
 .card-header {
-    padding: 20px 25px;
-    border-bottom: 1px solid var(--gray-200);
+    padding: 16px 24px;
+    background: #ededf2;
+    border-bottom: 1px solid rgba(0,0,0,.06);
     display: flex;
     align-items: center;
     gap: 12px;
 }
 
 .card-header h2 {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--gray-800);
+    font-size: .95rem;
+    font-weight: 700;
+    color: var(--cm-text, #1a1a2e);
     margin: 0;
 }
 
-.card-header .icon { font-size: 24px; }
-.card-body { padding: 25px; }
+.card-header .icon { font-size: 1.1rem; }
+.card-body { padding: 24px; }
 
 /* Статусы */
 .status-badge {
@@ -104,27 +70,27 @@ body {
 .status-loading { background: #fff3cd; color: #856404; }
 .status-formed { background: #d4edda; color: #155724; }
 .status-in_transit { background: #cce5ff; color: #004085; }
-.status-delivered { background: #28a745; color: white; }
+.status-delivered { background: var(--cm-green, #10b981); color: white; }
 .status-cancelled { background: #f8d7da; color: #721c24; }
 
 .cars-count-badge {
     display: inline-flex;
     padding: 6px 14px;
-    border-radius: 20px;
-    font-size: 13px;
-    font-weight: 600;
+    border-radius: 100px;
+    font-size: .78rem;
+    font-weight: 700;
     margin-left: auto;
-    background: linear-gradient(135deg, var(--primary) 0%, #764ba2 100%);
-    color: white;
+    background: var(--cm-purple-bg, #f0edff);
+    color: var(--cm-purple, #6c5ce7);
 }
 
 /* Номер автовоза */
 .autotransport-number-display {
-    background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
+    background: linear-gradient(135deg, var(--cm-purple, #6c5ce7) 0%, var(--cm-purple-dark, #5a4bd1) 100%);
     color: white;
-    padding: 25px;
+    padding: 24px;
     text-align: center;
-    margin: -25px -25px 25px -25px;
+    margin: -24px -24px 24px -24px;
 }
 
 .autotransport-number-display .label {
@@ -145,9 +111,9 @@ body {
 .info-grid { display: grid; gap: 12px; margin-bottom: 20px; }
 
 .info-item {
-    background: var(--gray-100);
+    background: var(--cm-bg, #f5f6fa);
     padding: 15px;
-    border-radius: 10px;
+    border-radius: var(--cm-radius-sm, 10px);
     text-align: center;
 }
 
@@ -206,15 +172,15 @@ body {
     justify-content: center;
     width: 30px;
     height: 30px;
-    background: var(--primary);
+    background: var(--cm-purple, #6c5ce7);
     color: white;
-    border-radius: 6px;
+    border-radius: var(--cm-radius-xs, 8px);
     text-decoration: none;
     font-size: 16px;
 }
 
 .invoice-link-btn:hover {
-    background: var(--primary-dark);
+    background: var(--cm-purple-dark, #5a4bd1);
     color: white;
 }
 
@@ -235,30 +201,32 @@ body {
 .form-group select,
 .form-group textarea {
     width: 100%;
-    padding: 12px 16px;
-    border: 2px solid var(--gray-200);
-    border-radius: 10px;
-    font-size: 15px;
+    padding: 9px 14px;
+    border: 1px solid var(--cm-border, #ebebf0);
+    border-radius: var(--cm-radius-xs, 8px);
+    font-size: .88rem;
+    font-family: var(--cm-font, 'Inter', sans-serif);
+    color: var(--cm-text, #1a1a2e);
     box-sizing: border-box;
+    background: var(--cm-white, #fff);
 }
 
 .form-group input,
 .form-group select {
-    height: 48px;
+    height: 42px;
 }
 
 .form-group select {
-    appearance: none;
-    background: white url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E") no-repeat right 16px center;
-    padding-right: 40px;
+    appearance: auto;
+    cursor: pointer;
 }
 
 .form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus {
     outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+    border-color: var(--cm-purple, #6c5ce7);
+    box-shadow: 0 0 0 3px var(--cm-purple-bg, #f0edff);
 }
 
 .form-group textarea { min-height: 100px; height: auto; }
@@ -312,14 +280,14 @@ body {
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
+    background: var(--cm-purple, #6c5ce7);
     color: white;
-    box-shadow: 0 4px 15px rgba(255, 107, 53, 0.35);
+    box-shadow: 0 4px 15px rgba(108, 92, 231, 0.3);
 }
 
 .btn-primary:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(255, 107, 53, 0.45);
+    background: var(--cm-purple-dark, #5a4bd1);
+    box-shadow: 0 6px 20px rgba(108, 92, 231, 0.4);
     color: white;
 }
 
@@ -337,11 +305,12 @@ body {
 }
 
 .btn-outline:hover {
-    border-color: var(--primary);
-    color: var(--primary);
+    border-color: var(--cm-purple-light, #a29bfe);
+    color: var(--cm-purple, #6c5ce7);
+    background: var(--cm-purple-bg, #f0edff);
 }
 
-.btn-danger { background: var(--danger); color: white; }
+.btn-danger { background: var(--cm-red, #ef4444); color: white; }
 .btn-sm { padding: 10px 16px; font-size: 13px; }
 
 .actions-buttons {
@@ -361,11 +330,11 @@ body {
 .form-group .vTextField,
 .form-group .vDateField {
     width: 100% !important;
-    padding: 12px 16px !important;
-    border: 2px solid var(--gray-200) !important;
-    border-radius: 10px !important;
-    font-size: 15px !important;
-    height: 48px !important;
+    padding: 9px 14px !important;
+    border: 1px solid var(--cm-border, #ebebf0) !important;
+    border-radius: var(--cm-radius-xs, 8px) !important;
+    font-size: .88rem !important;
+    height: 42px !important;
     box-sizing: border-box !important;
 }
 
@@ -376,10 +345,10 @@ body {
 .form-group .vManyToManyRawIdAdminField {
     width: 100% !important;
     min-height: 80px !important;
-    padding: 12px 16px !important;
-    border: 2px solid var(--gray-200) !important;
-    border-radius: 10px !important;
-    font-size: 15px !important;
+    padding: 9px 14px !important;
+    border: 1px solid var(--cm-border, #ebebf0) !important;
+    border-radius: var(--cm-radius-xs, 8px) !important;
+    font-size: .88rem !important;
     box-sizing: border-box !important;
 }
 
@@ -387,8 +356,8 @@ body {
 .select2-container { width: 100% !important; }
 
 .select2-container--default .select2-selection--multiple {
-    border: 2px solid var(--gray-200) !important;
-    border-radius: 10px !important;
+    border: 1px solid var(--cm-border, #ebebf0) !important;
+    border-radius: var(--cm-radius-xs, 8px) !important;
     padding: 10px 12px !important;
     min-height: 120px !important;
     max-height: 400px !important;
@@ -433,7 +402,7 @@ body {
 }
 /* По умолчанию если статус не определен */
 .select2-selection__choice:not([data-status]) {
-    background: linear-gradient(135deg, var(--primary) 0%, #764ba2 100%) !important;
+    background: var(--cm-purple, #6c5ce7) !important;
 }
 
 /* Цвета в выпадающем списке */
@@ -476,34 +445,46 @@ body {
 }
 
 .select2-dropdown {
-    border: 2px solid var(--gray-200) !important;
-    border-radius: 10px !important;
-    box-shadow: var(--shadow-lg) !important;
+    border: 1px solid var(--cm-border, #ebebf0) !important;
+    border-radius: var(--cm-radius-xs, 8px) !important;
+    box-shadow: var(--cm-shadow-md) !important;
 }
 
 .select2-results__option--highlighted { 
-    background-color: var(--primary) !important; 
+    background-color: var(--cm-purple, #6c5ce7) !important; 
 }
 
 .select2-container--default .select2-selection--single {
-    height: 48px !important;
-    border: 2px solid var(--gray-200) !important;
-    border-radius: 10px !important;
-    padding: 8px 16px !important;
+    height: 42px !important;
+    border: 1px solid var(--cm-border, #ebebf0) !important;
+    border-radius: var(--cm-radius-xs, 8px) !important;
+    padding: 6px 14px !important;
 }
 
 .select2-container--default .select2-selection--single .select2-selection__rendered {
-    line-height: 30px !important;
+    line-height: 28px !important;
     padding-left: 0 !important;
 }
 
 .select2-container--default .select2-selection--single .select2-selection__arrow {
-    height: 46px !important;
+    height: 40px !important;
+}
+
+/* Sidebar: sticky */
+.autotransport-grid > .sidebar {
+    position: sticky;
+    top: 16px;
+}
+
+/* Main content: prevent overflow */
+.autotransport-grid > .main-content {
+    min-width: 0;
 }
 
 /* Адаптивность */
-@media (max-width: 1200px) {
+@media (max-width: 1100px) {
     .autotransport-grid { grid-template-columns: 1fr; }
+    .autotransport-grid > .sidebar { position: static; }
 }
 
 @media (max-width: 768px) {
@@ -522,22 +503,22 @@ body {
 .border-suggestions {
     position: absolute;
     z-index: 1000;
-    background: white;
-    border: 2px solid var(--gray-200);
-    border-radius: 10px;
-    box-shadow: var(--shadow-lg);
+    background: var(--cm-card, #fff);
+    border: 1px solid var(--cm-border, #ebebf0);
+    border-radius: var(--cm-radius-xs, 8px);
+    box-shadow: var(--cm-shadow-md);
     max-height: 250px;
     overflow-y: auto;
     margin-top: 5px;
-    width: calc(100% - 4px);
+    width: calc(100% - 2px);
 }
 
 .border-suggestion-item {
-    padding: 12px 16px;
+    padding: 10px 16px;
     cursor: pointer;
-    border-bottom: 1px solid var(--gray-100);
-    font-size: 14px;
-    color: var(--gray-800);
+    border-bottom: 1px solid var(--cm-border, #ebebf0);
+    font-size: .85rem;
+    color: var(--cm-text, #1a1a2e);
 }
 
 .border-suggestion-item:last-child {
@@ -545,8 +526,8 @@ body {
 }
 
 .border-suggestion-item:hover {
-    background: var(--primary);
-    color: white;
+    background: var(--cm-purple-bg, #f0edff);
+    color: var(--cm-purple, #6c5ce7);
 }
 
 /* Позиционирование для родителя подсказок */

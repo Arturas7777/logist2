@@ -28,7 +28,7 @@
             background-color: #f2f2f2;
         }
         .error-message {
-            color: #dc3545;
+            color: var(--cm-red, #ef4444);
             font-size: 14px;
             margin-top: 10px;
         }
@@ -57,7 +57,7 @@
             background: white;
             padding: 15px;
             border-radius: 6px;
-            border: 1px solid #dee2e6;
+            border: 1px solid var(--cm-border, #ebebf0);
             text-align: center;
         }
         .balance-item .amount {
@@ -66,21 +66,21 @@
             margin: 10px 0;
         }
         .balance-item .label {
-            color: #6c757d;
+            color: var(--cm-text-secondary, #6b7280);
             font-size: 12px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
-        .positive { color: #28a745; }
-        .negative { color: #dc3545; }
-        .neutral { color: #6c757d; }
+        .positive { color: var(--cm-green, #10b981); }
+        .negative { color: var(--cm-red, #ef4444); }
+        .neutral { color: var(--cm-text-secondary, #6b7280); }
     </style>
 {% endblock %}
 
 {% block content %}
     <!-- Панель управления балансом -->
     {% if original %}
-    <div style="margin-bottom: 20px; padding: 20px; background: linear-gradient(135deg, {% if original.balance > 0 %}#11998e, #38ef7d{% elif original.balance < 0 %}#eb3349, #f45c43{% else %}#667eea, #764ba2{% endif %}); border-radius: 12px; color: white;">
+    <div style="margin-bottom: 20px; padding: 20px; background: linear-gradient(135deg, {% if original.balance > 0 %}#11998e, #38ef7d{% elif original.balance < 0 %}#eb3349, #f45c43{% else %}#6c5ce7, #5a4bd1{% endif %}); border-radius: 12px; color: white;">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
             <div>
                 <div style="font-size: 2em; font-weight: bold;">
