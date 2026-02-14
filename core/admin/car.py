@@ -507,12 +507,7 @@ class CarAdmin(admin.ModelAdmin):
     set_title_with_us.short_description = "Тайтл у нас"
 
     class Media:
-        css = {
-            'all': (
-                'css/logist2_custom_admin.css',
-                'style',
-            )
-        }
+        css = {'all': ('css/dashboard_admin.css',)}
         js = ('js/htmx.min.js', 'js/logist2_htmx.js')
 
     def save_model(self, request, obj, form, change):

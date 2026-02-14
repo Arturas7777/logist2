@@ -52,7 +52,7 @@ class ContainerAdmin(admin.ModelAdmin):
     actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'check_container_status', 'bulk_update_container_statuses', 'sync_photos_from_gdrive', 'resend_planned_notifications', 'resend_unload_notifications']
 
     class Media:
-        css = {'all': ('css/logist2_custom_admin.css',)}
+        css = {'all': ('css/dashboard_admin.css',)}
         js = ('js/htmx.min.js',)
 
     def get_queryset(self, request):

@@ -1,52 +1,85 @@
 """
-Кастомный AdminSite с группировкой моделей по категориям
-========================================================
+Кастомный AdminSite с группировкой моделей по категориям + sidebar навигация
+============================================================================
 
 Вместо одного плоского списка "Core" — 6 логических разделов:
-  🚛 Логистика       — Car, Container, AutoTransport
-  🤝 Партнёры        — Client, Company, Warehouse, Line, Carrier
-  💰 Финансы         — NewInvoice, Transaction, ExpenseCategory
-  🏦 Банкинг         — BankConnection, BankAccount, BankTransaction
-  📊 Бухгалтерия     — SiteProConnection, SiteProInvoiceSync
-  🌐 Сайт            — ClientUser, AIChat, NewsPost, ContactMessage,
-                        TrackingRequest, NotificationLog
+  Логистика       — Car, Container, AutoTransport
+  Партнёры        — Client, Company, Warehouse, Line, Carrier
+  Финансы         — NewInvoice, Transaction, ExpenseCategory
+  Банкинг         — BankConnection, BankAccount, BankTransaction
+  Бухгалтерия     — SiteProConnection, SiteProInvoiceSync
+  Сайт            — ClientUser, AIChat, NewsPost, ContactMessage,
+                    TrackingRequest, NotificationLog
 """
 
 from django.contrib.admin import AdminSite as BaseAdminSite
+from django.urls import reverse, NoReverseMatch
 from collections import OrderedDict
 
 
-# ── Конфигурация групп ──────────────────────────────────────────────────────
-# Ключ = название группы в сайдбаре
-# model_names = verbose_name_plural моделей, которые попадут в группу
-# (берётся из model._meta.verbose_name_plural)
+# ── Иконки моделей (Bootstrap Icons) ────────────────────────────────────────
+MODEL_ICONS = {
+    'car': 'bi-car-front-fill',
+    'container': 'bi-box-seam-fill',
+    'autotransport': 'bi-truck',
+    'client': 'bi-people-fill',
+    'company': 'bi-building',
+    'warehouse': 'bi-geo-alt-fill',
+    'line': 'bi-water',
+    'carrier': 'bi-truck-front-fill',
+    'newinvoice': 'bi-receipt',
+    'transaction': 'bi-wallet2',
+    'expensecategory': 'bi-tags',
+    'bankconnection': 'bi-bank2',
+    'bankaccount': 'bi-credit-card',
+    'banktransaction': 'bi-arrow-left-right',
+    'siteproconnection': 'bi-plug-fill',
+    'siteproinvoicesync': 'bi-arrow-repeat',
+    'clientuser': 'bi-person-badge',
+    'aichat': 'bi-chat-dots-fill',
+    'newspost': 'bi-newspaper',
+    'contactmessage': 'bi-envelope-fill',
+    'trackingrequest': 'bi-search',
+    'notificationlog': 'bi-bell-fill',
+    # auth models
+    'user': 'bi-person-fill',
+    'group': 'bi-people',
+}
 
+
+# ── Конфигурация групп ──────────────────────────────────────────────────────
 ADMIN_GROUPS = OrderedDict([
-    ('🚛 Логистика', {
+    ('Логистика', {
         'models': ['car', 'container', 'autotransport'],
+        'icon': 'bi-truck',
         'order': 1,
     }),
-    ('🤝 Партнёры', {
+    ('Партнёры', {
         'models': ['client', 'company', 'warehouse', 'line', 'carrier'],
+        'icon': 'bi-people-fill',
         'order': 2,
     }),
-    ('💰 Финансы', {
+    ('Финансы', {
         'models': ['newinvoice', 'transaction', 'expensecategory'],
+        'icon': 'bi-cash-stack',
         'order': 3,
     }),
-    ('🏦 Банкинг', {
+    ('Банкинг', {
         'models': ['bankconnection', 'bankaccount', 'banktransaction'],
+        'icon': 'bi-bank',
         'order': 4,
     }),
-    ('📊 Бухгалтерия', {
+    ('Бухгалтерия', {
         'models': ['siteproconnection', 'siteproinvoicesync'],
+        'icon': 'bi-journal-text',
         'order': 5,
     }),
-    ('🌐 Сайт', {
+    ('Сайт', {
         'models': [
             'clientuser', 'aichat', 'newspost',
             'contactmessage', 'trackingrequest', 'notificationlog',
         ],
+        'icon': 'bi-globe',
         'order': 6,
     }),
 ])
@@ -68,6 +101,84 @@ class LogistAdminSite(BaseAdminSite):
     site_header = 'Caromoto Lithuania'
     site_title = 'Caromoto Admin'
     index_title = 'Панель управления'
+
+    # ────────────────────────────────────────────────────────────────────────
+    def each_context(self, request):
+        """
+        Расширяем контекст каждой страницы:
+        - sidebar_nav: структура навигации для sidebar
+        - current_path: текущий URL для подсветки active
+        """
+        context = super().each_context(request)
+        context['sidebar_nav'] = self._build_sidebar_nav(request)
+        context['current_path'] = request.path
+        return context
+
+    # ────────────────────────────────────────────────────────────────────────
+    def _build_sidebar_nav(self, request):
+        """
+        Формирует структуру навигации для sidebar.
+        Возвращает список групп:
+        [
+            {
+                'name': 'Логистика',
+                'icon': 'bi-truck',
+                'items': [
+                    {'name': 'Автомобили', 'url': '/admin/core/car/', 'icon': 'bi-car-front-fill', 'active': True},
+                    ...
+                ],
+                'is_open': True  # если есть активный item
+            },
+            ...
+        ]
+        """
+        app_list = self.get_app_list(request)
+        current_path = request.path
+        nav = []
+
+        for app in app_list:
+            app_name = app.get('name', '')
+
+            # Определяем иконку группы
+            group_conf = ADMIN_GROUPS.get(app_name)
+            group_icon = group_conf['icon'] if group_conf else 'bi-gear'
+
+            # Специальные случаи для стандартных Django app-ов
+            if app.get('app_label') == 'auth':
+                group_icon = 'bi-shield-lock'
+            elif app_name == '⚙️ Прочее':
+                group_icon = 'bi-gear'
+
+            items = []
+            is_open = False
+
+            for model in app.get('models', []):
+                model_name = model.get('object_name', '').lower()
+                model_icon = MODEL_ICONS.get(model_name, 'bi-circle')
+                model_url = model.get('admin_url', '')
+                is_active = current_path.startswith(model_url) if model_url else False
+
+                if is_active:
+                    is_open = True
+
+                items.append({
+                    'name': model.get('name', ''),
+                    'url': model_url,
+                    'icon': model_icon,
+                    'active': is_active,
+                    'add_url': model.get('add_url', ''),
+                    'view_only': not model.get('add_url'),
+                })
+
+            if items:
+                nav.append({
+                    'name': app_name,
+                    'icon': group_icon,
+                    'items': items,
+                    'is_open': is_open,
+                })
+
+        return nav
 
     # ────────────────────────────────────────────────────────────────────────
     def get_app_list(self, request, app_label=None):
