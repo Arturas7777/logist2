@@ -30,6 +30,7 @@
 - **Группировка админки** - LogistAdminSite (6 логических групп в сайдбаре)
 - **Invoice-bank reconciliation** - сопоставление инвойсов и транзакций с банковскими операциями
 - **Автовозы (AutoTransport)** - автопередача авто при смене статуса, кнопка "Загружен" с датой, цветная индикация инвойсов, скрытие доставленных по умолчанию
+- **Редизайн админки (14.02.2026)** - sidebar + topbar layout, unified toolbar (search+actions+add), floating cards, CSS design system
 
 ## VPS СЕРВЕР
 
@@ -204,6 +205,9 @@ logist2/
 │   └── templates/                  # Шаблоны админки
 ├── templates/                      # Общие шаблоны
 │   ├── admin/                      # Кастомные админ шаблоны
+│   │   ├── base_site.html          # Sidebar + Topbar layout + JS стилизация
+│   │   ├── change_list.html        # Unified toolbar (search + actions + add)
+│   │   └── ...                     # Фильтры, change_form оверрайды
 │   └── website/                    # Клиентский сайт
 ├── media/                          # Загружаемые файлы
 │   ├── container_photos/           # Фото контейнеров
@@ -227,6 +231,38 @@ logist2/
 ├── sync_from_vps.ps1               # PowerShell-скрипт синхронизации с VPS
 └── vps_push.sh                     # Bash-скрипт коммита/пуша с VPS
 ```
+
+## РЕДИЗАЙН DJANGO ADMIN (14.02.2026)
+
+### Новый layout: Sidebar + Topbar
+
+Стандартный Django Admin header заменён на кастомный layout:
+
+**Файлы:**
+- `templates/admin/base_site.html` — sidebar + topbar + JS-стилизация changelist blocks
+- `templates/admin/change_list.html` — кастомный шаблон (unified toolbar)
+- `core/static/css/dashboard_admin.css` — CSS design system (переменные, Inter шрифт, Bootstrap Icons)
+- `static/website/images/logo_caromoto.svg` — SVG-логотип для topbar
+- `logist2/admin_site.py` — LogistAdminSite с группировкой навигации
+
+**Sidebar (`.cm-sidebar`):**
+- Аватар + имя пользователя + роль (вверху, вместо логотипа)
+- Навигация по группам: Логистика, Партнёры, Финансы, Банкинг и т.д.
+- Кнопки «Сменить пароль» / «Выйти» рядом с именем
+
+**Topbar (`.cm-topbar`):**
+- Логотип Caromoto (SVG) слева
+- Иконки навигации справа
+
+**Unified Toolbar (`#cm-unified-toolbar`):**
+- Поиск + Действия + кнопка «Добавить» — всё в одной строке-карточке
+- JS переносит `#toolbar`, `.actions` и кнопку «Добавить» в единый контейнер
+- `form="changelist-form"` на перенесённых элементах для сохранения POST-формы
+
+**Floating blocks (JS `setProperty`):**
+- Все блоки changelist (results, actions, paginator, filter) — белые карточки с тенью
+- `#changelist` — прозрачный flex-контейнер
+- Обход WhiteNoise caching — стили через `element.style.setProperty(prop, val, 'important')`
 
 ## КЛЮЧЕВЫЕ МОДЕЛИ
 
@@ -538,6 +574,7 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 ✅ Revolut Business API (банковские счета и транзакции на дашборде)
 ✅ Учёт расходов — ExpenseCategory, category/attachment на инвойсах, P&L дашборд
 ✅ Группировка сайдбара — LogistAdminSite, 6 логических групп
+✅ Редизайн админки — sidebar + topbar layout, unified toolbar, floating cards
 ✅ Invoice-bank reconciliation — external_number, matched_transaction/invoice, reconciliation_skipped
 ✅ Быстрое создание расхода из банковской транзакции — кнопка "Расход", mass action, авто-создание NewInvoice
 ✅ Комплексные тесты — run_all_tests.py (67 тестов, 15 секций)
@@ -550,6 +587,18 @@ COMPANY_WEBSITE = 'https://caromoto-lt.com'
 ⚠️ **ВАЖНО:** После загрузки фотографий вручную (через команды от root) нужно исправить права доступа: `./fix_media_permissions.sh`
 
 ### Недавние изменения (февраль 2026):
+
+**14.02.2026 - Редизайн Django Admin: sidebar + topbar layout:**
+1. **ADMIN UI REDESIGN:** ⭐ UI/UX
+   - ✅ Кастомный sidebar: аватар/имя/роль вверху, навигация по группам, иконки действий
+   - ✅ Кастомный topbar: логотип Caromoto (SVG) слева, навигационные иконки справа
+   - ✅ Unified toolbar: поиск + действия + кнопка «Добавить» в одной строке-карточке
+   - ✅ Floating blocks: `.results`, `.paginator`, `#changelist-filter` — белые карточки с тенью
+   - ✅ CSS design system: переменные, Inter шрифт, скругления, shadows
+   - ✅ JS-стилизация через `setProperty` (обход WhiteNoise кэша)
+   - ✅ `change_list.html` — кастомный шаблон с DOM-реструктуризацией
+   - ✅ `form="changelist-form"` на перенесённых элементах для работы POST
+   - ✅ Файлы: `base_site.html`, `change_list.html`, `dashboard_admin.css`, `admin_site.py`, `logo_caromoto.svg`
 
 **09.02.2026 - Быстрое создание расхода из банковской транзакции:**
 1. **БЫСТРЫЙ РАСХОД ИЗ БАНКА:** ⭐ НОВЫЙ ФУНКЦИОНАЛ

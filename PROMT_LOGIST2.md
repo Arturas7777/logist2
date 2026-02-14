@@ -1,6 +1,6 @@
 # ПОЛНОЕ ОПИСАНИЕ ПРОЕКТА LOGIST2
 
-**Версия документа:** 12 февраля 2026
+**Версия документа:** 14 февраля 2026
 **Назначение:** Описание функционала для работы с AI-ассистентами
 
 ---
@@ -841,11 +841,17 @@ logist2/
 │
 ├── templates/
 │   ├── admin/                      # Кастомные шаблоны админки
+│   │   ├── base_site.html          # Sidebar + Topbar layout + JS стилизация changelist
+│   │   ├── change_list.html        # Unified toolbar (search + actions + add)
 │   │   ├── line_change.html        # Кнопка "Пересчитать THS"
-│   │   ├── base_site.html          # Вставка AI-виджета в админке
-│   │   └── core/container/         # Шаблоны контейнера
+│   │   ├── multi_status_filter.html        # Фильтр по статусам
+│   │   ├── multi_warehouse_filter.html     # Фильтр по складам
+│   │   └── core/                   # Шаблоны моделей (container, car change_form)
 │   ├── email/                      # Шаблоны email
 │   └── website/                    # Клиентский сайт
+│
+├── static/website/images/
+│   └── logo_caromoto.svg           # SVG-логотип для topbar админки
 │
 ├── run_all_tests.py                # Legacy тесты (67, atomic rollback на рабочей БД)
 ├── logist2/
@@ -953,6 +959,36 @@ delete_car_services_on_company_service_delete() # Удаляет Company CarServ
 **Кнопка "Пересчитать THS":**
 - Пересчитывает THS для всех ТС во всех контейнерах этой линии
 - Используется после изменения коэффициентов
+
+### Редизайн админки — UI/UX (14.02.2026)
+
+**Новый layout:** Sidebar + Topbar (вместо стандартного Django header)
+
+**Ключевые файлы:**
+- `templates/admin/base_site.html` — sidebar, topbar, JS-стилизация changelist
+- `templates/admin/change_list.html` — кастомный шаблон (unified toolbar)
+- `core/static/css/dashboard_admin.css` — CSS design system (переменные, шрифты, карточки)
+- `static/website/images/logo_caromoto.svg` — логотип для topbar
+
+**Sidebar (`cm-sidebar`):**
+- Аватар + имя пользователя + роль — вверху (вместо логотипа)
+- Кнопки «Сменить пароль» / «Выйти» — рядом с именем
+- Навигация по группам: Логистика, Партнёры, Финансы, Банкинг и т.д.
+
+**Topbar (`cm-topbar`):**
+- Логотип Caromoto (SVG) слева
+- Иконки «Сайт» и «Главная» справа
+
+**Unified Toolbar (`#cm-unified-toolbar`):**
+- Поиск + Действия + кнопка «Добавить» в одной строке-карточке
+- JS создаёт обёртку, переносит `#toolbar` и `.actions` внутрь
+- `form="changelist-form"` на элементах `.actions` — POST-форма работает после DOM-переноса
+- Скрыты подсказки: «5 результатов», «Действие:», «Выбрано 0 из 5»
+
+**Floating blocks (через JS `setProperty`):**
+- `.results`, `.paginator`, `#changelist-filter` — белые карточки с тенью
+- `#changelist` — прозрачный flex-контейнер (строка: форма + фильтры)
+- Обход WhiteNoise caching — критические стили через `element.style.setProperty(prop, val, 'important')`
 
 ---
 
@@ -1481,6 +1517,8 @@ core/management/commands/setup_sitepro.py  # Помощник настройки
 - Site.pro (SiteProConnection, SiteProInvoiceSync)
 
 Monkey-patch в `logist2/__init__.py` для глобального применения.
+
+**Кастомный layout (14.02.2026):** sidebar + topbar реализованы в `base_site.html`, группы навигации рендерятся из `LogistAdminSite.get_app_list()`, unified toolbar на changelist через `change_list.html` + JS DOM-манипуляции.
 
 ### CSP (Content Security Policy)
 
