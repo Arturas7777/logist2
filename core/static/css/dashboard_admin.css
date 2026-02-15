@@ -807,6 +807,35 @@ input[name="_continue"], input[name="_addanother"] {
     accent-color: var(--cm-purple) !important;
 }
 
+/* ===== Changelist column width hints ===== */
+/* Boolean/checkbox columns (has_title "Т") — narrow, centered */
+#result_list th.column-has_title {
+    width: 50px !important;
+    text-align: center !important;
+}
+/* Compact numeric columns */
+#result_list th.column-markup_display {
+    width: 55px !important;
+}
+#result_list th.column-days_display {
+    width: 70px !important;
+}
+#result_list th.column-storage_cost_display {
+    width: 70px !important;
+}
+#result_list th.column-total_price_display {
+    width: 70px !important;
+}
+#result_list th.column-year_display {
+    width: 55px !important;
+}
+/* Last column: extra right padding so checkbox doesn't hug the edge */
+#result_list thead th:last-child,
+#result_list tbody td:last-child {
+    text-align: center !important;
+    padding-right: 20px !important;
+}
+
 /* Pagination */
 .paginator, .pagination {
     background: var(--cm-card) !important;
@@ -1517,18 +1546,24 @@ body.popup #footer {
     float: none !important;
 }
 
-/* All admin forms: full width */
-#content-main form {
+/* All admin forms: full width (except changelist — handled by flex layout) */
+#content-main form:not(#changelist-form) {
     width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
 }
 
 /* The <div> wrapper inside form (contains fieldsets + inlines + submit-row) */
-#content-main form > div {
+#content-main form:not(#changelist-form) > div {
     width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
+}
+
+/* Changelist form: respect flex layout, don't force 100% width */
+#changelist-form {
+    min-width: 0 !important;
+    flex: 1 1 0 !important;
 }
 
 /* ===== CONTAINER FORM COMPAT (from logist2_custom_admin) ===== */
