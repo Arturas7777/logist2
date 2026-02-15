@@ -118,6 +118,106 @@ main#content-start, main.content {
     box-sizing: border-box !important;
 }
 
+/* ===== No-sidebar pages (login, logout) ===== */
+body.cm-no-sidebar div.main#main,
+body.cm-no-sidebar div.main {
+    margin-left: 0 !important;
+}
+body.cm-no-sidebar .cm-topbar {
+    margin-left: 0 !important;
+}
+body.cm-no-sidebar main#content-start,
+body.cm-no-sidebar main.content {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    padding: 40px 16px !important;
+}
+/* ===== Login page — override Django login.css completely ===== */
+body.login #container {
+    border: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    background: var(--cm-bg) !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+    height: auto !important;
+}
+body.cm-no-sidebar #content {
+    max-width: 380px !important;
+    width: 100% !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    border: none !important;
+    background: transparent !important;
+}
+/* Login form card */
+body.cm-no-sidebar #content-main {
+    background: var(--cm-card, #fff) !important;
+    border-radius: var(--cm-radius, 14px) !important;
+    box-shadow: 0 2px 12px rgba(0,0,0,.08) !important;
+    padding: 32px !important;
+}
+body.login #content {
+    padding: 0 !important;
+}
+body.login #login-form {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+/* Labels */
+body.login .form-row label {
+    font-size: .82rem !important;
+    font-weight: 600 !important;
+    color: var(--cm-text-secondary, #6b7280) !important;
+    margin-bottom: 4px !important;
+}
+/* Inputs */
+body.login .form-row #id_username,
+body.login .form-row #id_password {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 10px 14px !important;
+    border: 1px solid var(--cm-border, #e2e8f0) !important;
+    border-radius: 8px !important;
+    font-size: .9rem !important;
+    background: var(--cm-bg, #f4f6fb) !important;
+}
+body.login .form-row #id_username:focus,
+body.login .form-row #id_password:focus {
+    border-color: var(--cm-purple, #6c5ce7) !important;
+    box-shadow: 0 0 0 3px rgba(108,92,231,.12) !important;
+    background: #fff !important;
+    outline: none !important;
+}
+/* Submit row on login — kill ALL styling from global .submit-row */
+body.login .submit-row {
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 20px 0 0 !important;
+    margin: 0 !important;
+    text-align: center !important;
+    display: block !important;
+    position: static !important;
+}
+body.login .submit-row input[type="submit"] {
+    background: var(--cm-purple, #6c5ce7) !important;
+    color: #fff !important;
+    border: none !important;
+    padding: 12px 48px !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    font-size: .9rem !important;
+    cursor: pointer !important;
+    width: auto !important;
+}
+body.login .submit-row input[type="submit"]:hover {
+    background: var(--cm-purple-dark, #5a4bd1) !important;
+}
+
 #content {
     max-width: 100% !important;
     width: 100% !important;
@@ -597,7 +697,7 @@ input[name="_continue"], input[name="_addanother"] {
 }
 
 /* ===== SUBMIT ROW ===== */
-.submit-row {
+body:not(.login) .submit-row {
     background: var(--cm-card) !important;
     border: none !important;
     border-radius: var(--cm-radius) !important;
@@ -745,11 +845,11 @@ input[name="_continue"], input[name="_addanother"] {
 }
 
 #result_list thead th, .results table thead th {
-    padding: 12px 16px !important;
-    font-size: .72rem !important;
+    padding: 8px 8px !important;
+    font-size: .68rem !important;
     font-weight: 700 !important;
     text-transform: uppercase !important;
-    letter-spacing: .8px !important;
+    letter-spacing: .5px !important;
     color: var(--cm-text-muted) !important;
     background: #fafafc !important;
     border-bottom: 1px solid rgba(0,0,0,.06) !important;
@@ -770,8 +870,8 @@ input[name="_continue"], input[name="_addanother"] {
 }
 
 #result_list tbody td, .results table tbody td {
-    padding: 12px 16px !important;
-    font-size: .85rem !important;
+    padding: 8px 8px !important;
+    font-size: .8rem !important;
     border-bottom: 1px solid var(--cm-border) !important;
     color: var(--cm-text-secondary) !important;
     vertical-align: middle !important;
@@ -797,7 +897,8 @@ input[name="_continue"], input[name="_addanother"] {
 /* Row selection checkbox */
 #result_list td.action-checkbox,
 #result_list th.action-checkbox-column {
-    width: 40px !important;
+    width: 32px !important;
+    padding: 8px 4px !important;
     text-align: center !important;
 }
 #result_list input[type="checkbox"] {
@@ -833,7 +934,7 @@ input[name="_continue"], input[name="_addanother"] {
 #result_list thead th:last-child,
 #result_list tbody td:last-child {
     text-align: center !important;
-    padding-right: 20px !important;
+    padding-right: 12px !important;
 }
 
 /* Pagination */

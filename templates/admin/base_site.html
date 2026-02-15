@@ -9,6 +9,8 @@
 
 {% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | Caromoto CRM{% endblock %}
 
+{% block bodyclass %}{{ block.super }}{% if not has_permission %} cm-no-sidebar{% endif %}{% endblock %}
+
 {% block extrastyle %}
 {{ block.super }}
 {# — Fonts — #}
@@ -237,7 +239,7 @@ document.addEventListener('DOMContentLoaded', function() {
    на sidebar + topbar
    ============================================================ #}
 {% block header %}
-{% if not is_popup %}
+{% if not is_popup and has_permission %}
 
 {# ——— SIDEBAR ——— #}
 <aside class="cm-sidebar" id="cm-sidebar">
@@ -262,7 +264,7 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
         <div style="display:flex; gap:6px; align-items:center; margin-left:auto;">
             <a href="{% url 'admin:password_change' %}" title="Сменить пароль" style="color:#a78bfa; font-size:1.05rem; display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:8px; background:rgba(167,139,250,0.12); transition:all .2s;"><i class="bi bi-key"></i></a>
-            <a href="{% url 'admin:logout' %}" title="Выйти" style="color:#a78bfa; font-size:1.05rem; display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:8px; background:rgba(167,139,250,0.12); transition:all .2s;"><i class="bi bi-box-arrow-right"></i></a>
+            <form method="post" action="{% url 'admin:logout' %}" style="margin:0; padding:0; display:inline;">{% csrf_token %}<button type="submit" title="Выйти" style="color:#a78bfa; font-size:1.05rem; display:flex; align-items:center; justify-content:center; width:30px; height:30px; border-radius:8px; background:rgba(167,139,250,0.12); transition:all .2s; border:none; cursor:pointer;"><i class="bi bi-box-arrow-right"></i></button></form>
         </div>
     </div>
 
@@ -315,6 +317,13 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </header>
 
+{% elif not is_popup %}
+{# Login/logout page — simple centered header #}
+<header style="padding:32px 24px 0; text-align:center;">
+    <a href="{% url 'admin:index' %}" style="text-decoration:none;">
+        <img src="{% static 'website/images/logo_caromoto.svg' %}" alt="Caromoto" style="height:40px; width:auto;">
+    </a>
+</header>
 {% else %}
 {# Popup mode — minimal header #}
 <div id="header" style="display:none"></div>
@@ -332,7 +341,7 @@ document.addEventListener('DOMContentLoaded', function() {
    ============================================================ #}
 {% block footer %}
 {{ block.super }}
-{% if not is_popup %}
+{% if not is_popup and has_permission %}
 <div id="ai-chat-widget">
     <button class="ai-chat-button" id="ai-chat-toggle" title="AI помощник">AI</button>
     <div class="ai-chat-window" id="ai-chat-window" style="display: none;">
