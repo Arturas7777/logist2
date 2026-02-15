@@ -229,10 +229,16 @@ def register_payment(request):
 @staff_member_required
 def company_dashboard(request):
     """Дашборд для Caromoto Lithuania"""
+    from django.contrib import admin
     from .services.dashboard_service import DashboardService
 
     service = DashboardService()
-    context = service.get_full_dashboard_context()
+    dashboard_data = service.get_full_dashboard_context()
+
+    # Start with admin site context (sidebar_nav, user, site_header, etc.)
+    context = admin.site.each_context(request)
+    # Then overlay dashboard data (preserving admin keys like sidebar_nav)
+    context.update(dashboard_data)
 
     # Pass raw Python dicts — json_script template tag handles serialization
     context['revenue_expenses_chart_json'] = context['revenue_expenses_chart']

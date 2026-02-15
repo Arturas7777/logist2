@@ -9,7 +9,7 @@
 
 {% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | Caromoto CRM{% endblock %}
 
-{% block bodyclass %}{{ block.super }}{% if not has_permission %} cm-no-sidebar{% endif %}{% endblock %}
+{% block bodyclass %}{{ block.super }}{% if not user.is_staff %} cm-no-sidebar{% endif %}{% endblock %}
 
 {% block extrastyle %}
 {{ block.super }}
@@ -239,7 +239,7 @@ document.addEventListener('DOMContentLoaded', function() {
    на sidebar + topbar
    ============================================================ #}
 {% block header %}
-{% if not is_popup and has_permission %}
+{% if not is_popup and user.is_staff %}
 
 {# ——— SIDEBAR ——— #}
 <aside class="cm-sidebar" id="cm-sidebar">
@@ -341,7 +341,7 @@ document.addEventListener('DOMContentLoaded', function() {
    ============================================================ #}
 {% block footer %}
 {{ block.super }}
-{% if not is_popup and has_permission %}
+{% if not is_popup and user.is_staff %}
 <div id="ai-chat-widget">
     <button class="ai-chat-button" id="ai-chat-toggle" title="AI помощник">AI</button>
     <div class="ai-chat-window" id="ai-chat-window" style="display: none;">
