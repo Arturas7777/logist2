@@ -20,7 +20,7 @@
 {# — Icons — #}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
 {# — Design System — #}
-<link rel="stylesheet" type="text/css" href="{% static 'css/dashboard_admin.css' %}?v=4">
+<link rel="stylesheet" type="text/css" href="{% static 'css/dashboard_admin.css' %}?v=6">
 {# — AI Chat — #}
 <link rel="stylesheet" type="text/css" href="{% static 'admin/css/ai-chat.css' %}">
 <script>
@@ -133,19 +133,36 @@ document.addEventListener('DOMContentLoaded', function() {
     if (cf) {
         s(cf, {background:'transparent'});
     }
-    // .results — floating card
+    // .results — floating card with horizontal scroll for wide tables
     document.querySelectorAll('.results').forEach(function(el) {
         s(el, {
             background:'#fff', border:'none', 'border-radius':'14px',
-            overflow:'hidden',
+            'overflow-x':'auto', 'overflow-y':'hidden',
             'box-shadow':'0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08)',
-            'margin-bottom':'16px'
+            'margin-bottom':'16px',
+            width:'100%', 'max-width':'100%', 'box-sizing':'border-box'
         });
+        // Scroll to the right on page load so financial columns are visible
+        (function(target) {
+            requestAnimationFrame(function() {
+                target.scrollLeft = target.scrollWidth;
+            });
+        })(el);
     });
     // #result_list — no own shadow
     var rl = document.getElementById('result_list');
     if (rl) {
         s(rl, {'box-shadow':'none', 'border-radius':'0'});
+        // Wide table only for pages with many columns (e.g. car list)
+        var colCount = rl.querySelectorAll('thead th').length;
+        if (colCount > 10) {
+            s(rl, {
+                'min-width':'1600px', 'width':'100%',
+                'table-layout':'auto'
+            });
+        } else {
+            s(rl, {'width':'100%', 'table-layout':'auto'});
+        }
     }
     // Style search input — reduce padding by 4px
     document.querySelectorAll('#searchbar').forEach(function(el) {

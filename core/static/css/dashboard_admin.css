@@ -823,13 +823,26 @@ body:not(.login) .submit-row {
 }
 
 /* Results wrapper — the floating card */
-.results {
+/* Override Django's .filtered .results { width: auto } which prevents overflow scroll */
+.results,
+.change-list .filtered .results,
+#changelist-form .results {
     background: var(--cm-card) !important;
     border: none !important;
     border-radius: var(--cm-radius) !important;
-    overflow: hidden !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
     box-shadow: var(--cm-shadow-card) !important;
     margin-bottom: 16px !important;
+    box-sizing: border-box !important;
+}
+
+/* Firefox scrollbar for .results */
+.results {
+    scrollbar-width: auto !important;
+    scrollbar-color: #ececf0 #fafafb !important;
 }
 
 /* Results table — inside the .results card */
@@ -840,9 +853,11 @@ body:not(.login) .submit-row {
     background: var(--cm-card) !important;
     border: none !important;
     border-radius: 0 !important;
-    overflow: hidden !important;
+    overflow: visible !important;
     box-shadow: none !important;
+    table-layout: auto !important;
 }
+/* Wide table for car list (many columns) — JS adds min-width/width dynamically */
 
 #result_list thead th, .results table thead th {
     padding: 8px 8px !important;
@@ -869,15 +884,23 @@ body:not(.login) .submit-row {
     color: var(--cm-purple) !important;
 }
 
-#result_list tbody td, .results table tbody td {
+#result_list tbody td,
+#result_list tbody th,
+.results table tbody td,
+.results table tbody th {
     padding: 8px 8px !important;
     font-size: .8rem !important;
     border-bottom: 1px solid var(--cm-border) !important;
     color: var(--cm-text-secondary) !important;
     vertical-align: middle !important;
+    white-space: nowrap !important;
+    line-height: 1.4 !important;
+    height: 40px !important;
+    box-sizing: border-box !important;
 }
 #result_list tbody tr {
     transition: background .15s !important;
+    height: 40px !important;
 }
 #result_list tbody tr:hover {
     background: #fafaff !important;
@@ -906,6 +929,65 @@ body:not(.login) .submit-row {
     height: 18px !important;
     cursor: pointer !important;
     accent-color: var(--cm-purple) !important;
+}
+
+/* ===== Sticky first columns (checkbox + VIN + Brand) for horizontal scroll ===== */
+/* Col 1: Checkbox — left: 0, width: 32px */
+#result_list th.action-checkbox-column,
+#result_list td.action-checkbox {
+    position: sticky !important;
+    left: 0 !important;
+    z-index: 3 !important;
+    background: inherit !important;
+}
+/* Col 2: VIN — left: 32px, fixed width: 160px */
+#result_list thead th:nth-child(2),
+#result_list tbody th:nth-child(2) {
+    position: sticky !important;
+    left: 32px !important;
+    z-index: 3 !important;
+    background: inherit !important;
+    width: 160px !important;
+    min-width: 160px !important;
+    max-width: 160px !important;
+}
+/* Col 3: Brand — left: 192px (32 + 160) */
+/* In tbody: child(1)=td.checkbox, child(2)=th.VIN, child(3)=td.Brand */
+#result_list thead th:nth-child(3),
+#result_list tbody td:nth-child(3) {
+    position: sticky !important;
+    left: 192px !important;
+    z-index: 3 !important;
+    background: inherit !important;
+}
+/* Sticky column backgrounds — match zebra striping exactly */
+#result_list thead th.action-checkbox-column,
+#result_list thead th:nth-child(2),
+#result_list thead th:nth-child(3) {
+    background: #fafafc !important;
+}
+/* Odd rows (1st, 3rd, 5th...) — white */
+#result_list tbody tr:nth-child(odd) td.action-checkbox,
+#result_list tbody tr:nth-child(odd) th:nth-child(2),
+#result_list tbody tr:nth-child(odd) td:nth-child(3) {
+    background: #fff !important;
+}
+/* Even rows (2nd, 4th, 6th...) — light gray */
+#result_list tbody tr:nth-child(even) td.action-checkbox,
+#result_list tbody tr:nth-child(even) th:nth-child(2),
+#result_list tbody tr:nth-child(even) td:nth-child(3) {
+    background: #f8f8f8 !important;
+}
+/* Hover — same for both */
+#result_list tbody tr:hover td.action-checkbox,
+#result_list tbody tr:hover th:nth-child(2),
+#result_list tbody tr:hover td:nth-child(3) {
+    background: #fafaff !important;
+}
+/* No visible border between sticky and scrollable columns */
+#result_list thead th:nth-child(3),
+#result_list tbody td:nth-child(3) {
+    box-shadow: none !important;
 }
 
 /* ===== Changelist column width hints ===== */
@@ -1471,6 +1553,8 @@ body.popup #footer {
 }
 
 /* ===== RESPONSIVE ===== */
+
+
 @media (max-width: 1200px) {
     .cm-kpi-row { grid-template-columns: repeat(2, 1fr); }
     .cm-grid-3 { grid-template-columns: 1fr; }
@@ -1638,7 +1722,27 @@ body.popup #footer {
     border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--cm-text-muted);
+    background: #d0d0d8;
+}
+
+/* Override global scrollbar for .results — must be AFTER global rules */
+.results::-webkit-scrollbar {
+    height: 12px !important;
+}
+.results::-webkit-scrollbar-track {
+    background: #fafafb !important;
+    border-radius: 6px !important;
+}
+.results::-webkit-scrollbar-thumb {
+    background: #ececf0 !important;
+    border-radius: 6px !important;
+    border: 2px solid #fafafb !important;
+}
+.results::-webkit-scrollbar-thumb:hover {
+    background: #efeff2 !important;
+}
+.results::-webkit-scrollbar-thumb:active {
+    background: #ebebee !important;
 }
 
 /* ===== ALL CHANGE FORMS — full-width layout ===== */
