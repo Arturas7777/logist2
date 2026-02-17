@@ -89,6 +89,14 @@ class CarAdmin(admin.ModelAdmin):
     )
     actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'set_transferred_today', 'set_title_with_us']
 
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        if 'has_title' in form.base_fields:
+            form.base_fields['has_title'].label = 'Тайтл получен'
+        if 'title_notes' in form.base_fields:
+            form.base_fields['title_notes'].widget.attrs['placeholder'] = 'Примечания к тайтлу...'
+        return form
+
     def change_view(self, request, object_id, form_url='', extra_context=None):
         """Auto-update storage days and CarService price when viewing car detail.
         
