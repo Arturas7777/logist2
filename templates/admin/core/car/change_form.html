@@ -155,18 +155,37 @@
   </style>
 {% endblock %}
 
+{% block topbar_title %}
+  <span>{% if original %}{{ original.vin }}{% else %}Новый автомобиль{% endif %}</span>
+{% endblock %}
+
 {% block content_title %}{% endblock %}
 
 {% block content %}
-<div class="cm-page-header">
-  <h1>{% if original %}{{ original.vin }}{% else %}Новый автомобиль{% endif %}</h1>
-  <a href="{% url 'admin:core_car_changelist' %}" class="cm-back-link">← Назад к списку</a>
-</div>
 
 <div class="cm-form-grid" {% if original %}style="--cm-status-color: {{ original.get_status_color }};"{% endif %}>
   <div class="cm-form-main">
+    {% if original %}
+    <img src="{% if car_header_image %}{{ car_header_image }}{% else %}{% static 'icons/car_unknown.png' %}{% endif %}"
+         id="cm-car-photo-el" class="cm-car-photo" alt="{{ original.brand }}">
+    {% endif %}
     {{ block.super }}
   </div>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', function() {
+    var img = document.getElementById('cm-car-photo-el');
+    if (!img) return;
+    var fieldset = document.querySelector('.cm-form-main fieldset.module');
+    if (!fieldset) return;
+    var heading = fieldset.querySelector('.fieldset-heading');
+    if (heading) {
+      heading.after(img);
+    } else {
+      fieldset.prepend(img);
+    }
+  });
+  </script>
 
   <div class="cm-form-sidebar-col">
     {% if original %}

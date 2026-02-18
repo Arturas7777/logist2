@@ -324,6 +324,9 @@ document.addEventListener('DOMContentLoaded', function() {
             <img src="{% static 'website/images/logo_caromoto.svg' %}" alt="Caromoto" style="height:34px; width:auto;">
         </a>
     </div>
+    <div class="cm-topbar-center">
+        {% block topbar_title %}{% endblock %}
+    </div>
     <div class="cm-topbar-right">
         <a href="/" target="_blank" class="icon-btn" title="Открыть сайт">
             <i class="bi bi-globe"></i>

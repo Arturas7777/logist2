@@ -1,11 +1,14 @@
 import logging
+import os
 
 from django.contrib import admin
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.db import models
+from django.templatetags.static import static
 from decimal import Decimal
 
 from core.models import (
@@ -15,6 +18,43 @@ from core.models import (
 from core.admin_filters import MultiStatusFilter, MultiWarehouseFilter, ClientAutocompleteFilter
 
 logger = logging.getLogger('django')
+
+CAR_MODELS_DIR = os.path.join(settings.BASE_DIR, 'core', 'static', 'icons', 'car_models')
+
+
+def find_car_image(year, brand):
+    """Find best matching image for a car by year+brand.
+    
+    Priority: exact match "2018 BMW 430I.png" > brand-only match > fallback.
+    Matching is case-insensitive.
+    """
+    if not brand:
+        return None
+
+    try:
+        files = os.listdir(CAR_MODELS_DIR)
+    except FileNotFoundError:
+        return None
+
+    files_lower = {f.lower(): f for f in files if f.endswith('.png')}
+
+    exact = f"{year} {brand}.png".lower()
+    if exact in files_lower:
+        return f"icons/car_models/{files_lower[exact]}"
+
+    brand_lower = brand.lower()
+    for fname_lower, fname in files_lower.items():
+        name = fname_lower.rsplit('.', 1)[0]
+        parts = name.split(' ', 1)
+        if len(parts) == 2 and parts[1] == brand_lower:
+            return f"icons/car_models/{fname}"
+
+    for fname_lower, fname in files_lower.items():
+        name = fname_lower.rsplit('.', 1)[0]
+        if brand_lower in name:
+            return f"icons/car_models/{fname}"
+
+    return None
 
 
 @admin.register(Car)
@@ -119,6 +159,20 @@ class CarAdmin(admin.ModelAdmin):
                         )
             except Exception as e:
                 logger.warning(f"Auto-update storage failed for car {object_id}: {e}")
+
+        if object_id:
+            try:
+                obj = obj if 'obj' in dir() else self.get_object(request, object_id)
+                if obj:
+                    extra_context = extra_context or {}
+                    img_path = find_car_image(obj.year, obj.brand)
+                    if img_path:
+                        extra_context['car_header_image'] = static(img_path)
+                    else:
+                        extra_context['car_header_image'] = static('icons/car_unknown.png')
+            except Exception as e:
+                logger.warning(f"Car image lookup failed for {object_id}: {e}")
+
         return super().change_view(request, object_id, form_url, extra_context)
 
     def set_transferred_today(self, request, queryset):
