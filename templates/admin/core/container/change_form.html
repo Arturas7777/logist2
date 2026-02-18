@@ -5,13 +5,14 @@
   {{ block.super }}
 {% endblock %}
 
+{% block topbar_title %}
+  <img src="{% static 'icons/container.png' %}" class="cm-page-icon" alt="">
+  <span>{% if original %}{{ original.number }}{% else %}Новый контейнер{% endif %}</span>
+{% endblock %}
+
 {% block content_title %}{% endblock %}
 
 {% block content %}
-<div class="cm-page-header">
-  <h1>{% if original %}{{ original.number }}{% else %}Новый контейнер{% endif %}</h1>
-  <a href="{% url 'admin:core_container_changelist' %}" class="cm-back-link">← Назад к списку</a>
-</div>
 
 <div class="cm-form-grid" {% if original %}style="--cm-status-color: {{ original.get_status_color }};"{% endif %}>
   <div class="cm-form-main">
