@@ -308,9 +308,26 @@ class ClientTariffRate(models.Model):
 
 
 class Warehouse(models.Model):
+    SITE_CHOICES = [
+        (1, 'Площадка 1'),
+        (2, 'Площадка 2'),
+        (3, 'Площадка 3'),
+    ]
+
     name = models.CharField(max_length=100, verbose_name="Название склада")
-    address = models.CharField(max_length=300, blank=True, verbose_name="Адрес склада")
-    
+
+    # Площадка 1
+    address_name = models.CharField(max_length=100, blank=True, verbose_name="Название площадки 1")
+    address = models.CharField(max_length=300, blank=True, verbose_name="Адрес площадки 1")
+
+    # Площадка 2
+    address2_name = models.CharField(max_length=100, blank=True, verbose_name="Название площадки 2")
+    address2 = models.CharField(max_length=300, blank=True, verbose_name="Адрес площадки 2")
+
+    # Площадка 3
+    address3_name = models.CharField(max_length=100, blank=True, verbose_name="Название площадки 3")
+    address3 = models.CharField(max_length=300, blank=True, verbose_name="Адрес площадки 3")
+
     # Единый баланс (новая система)
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс",
                                   help_text="Положительный = нам должны, отрицательный = мы должны")
@@ -319,7 +336,6 @@ class Warehouse(models.Model):
     # Цены на услуги
     default_unloading_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Цена за разгрузку")
     free_days = models.PositiveIntegerField(default=0, verbose_name="Бесплатные дни")
-    # УДАЛЕНО: rate - ставка за хранение теперь берётся из услуги "Хранение" (WarehouseService)
     complex_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Комплекс",validators=[MinValueValidator(0)])
     delivery_to_warehouse = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Доставка до склада")
     loading_on_trawl = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Погрузка на трал")
@@ -337,6 +353,25 @@ class Warehouse(models.Model):
 
     def __str__(self):
         return self.name
+
+    def get_site_address(self, site_number):
+        """Возвращает (name, address) для площадки 1/2/3"""
+        if site_number == 2:
+            return (self.address2_name, self.address2)
+        elif site_number == 3:
+            return (self.address3_name, self.address3)
+        return (self.address_name, self.address)
+
+    def get_available_sites(self):
+        """Возвращает список (number, address) площадок с заполненным адресом"""
+        sites = []
+        if self.address:
+            sites.append((1, self.address))
+        if self.address2:
+            sites.append((2, self.address2))
+        if self.address3:
+            sites.append((3, self.address3))
+        return sites
 
 class Container(models.Model):
     STATUS_CHOICES = [
@@ -380,6 +415,7 @@ class Container(models.Model):
     proft = models.DecimalField(max_digits=10, decimal_places=2, default=20, verbose_name="Наценка",
                                 validators=[MinValueValidator(0)])
     warehouse = models.ForeignKey('Warehouse', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Склад")
+    unload_site = models.SmallIntegerField(choices=Warehouse.SITE_CHOICES, default=1, verbose_name="Адрес")
     planned_unload_date = models.DateField(null=True, blank=True, verbose_name="Будем разгружать",
                                            help_text="Укажите когда планируете разгружать контейнер (клиенты получат уведомление)")
     unload_date = models.DateField(null=True, blank=True, verbose_name="Дата разгрузки")
@@ -523,6 +559,12 @@ class Container(models.Model):
             self.save(update_fields=['status'])
             logger.info(f"Container {self.number} status automatically changed to TRANSFERRED")
 
+    def get_unload_address(self):
+        """Возвращает (name, address) выбранной площадки разгрузки"""
+        if self.warehouse:
+            return self.warehouse.get_site_address(self.unload_site)
+        return ('', '')
+
     def __str__(self):
         return self.number
 
@@ -555,6 +597,7 @@ class Car(models.Model):
     client = models.ForeignKey('Client', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Клиент")
     status = models.CharField(max_length=20, choices=Container.STATUS_CHOICES, verbose_name="Статус")
     warehouse = models.ForeignKey('Warehouse', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Склад")
+    unload_site = models.SmallIntegerField(choices=Warehouse.SITE_CHOICES, default=1, verbose_name="Адрес")
     line = models.ForeignKey('Line', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Линия")
     carrier = models.ForeignKey('Carrier', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Перевозчик")
     unload_date = models.DateField(null=True, blank=True, verbose_name="Дата разгрузки")
@@ -603,6 +646,12 @@ class Car(models.Model):
 
     def get_status_color(self):
         return STATUS_COLORS.get(self.status, '#3a8c3d')
+
+    def get_unload_address(self):
+        """Возвращает (name, address) выбранной площадки разгрузки"""
+        if self.warehouse:
+            return self.warehouse.get_site_address(self.unload_site)
+        return ('', '')
 
     def apply_warehouse_defaults(self, force: bool = False):
         """

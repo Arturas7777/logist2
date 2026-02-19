@@ -44,7 +44,14 @@ class WarehouseAdmin(admin.ModelAdmin):
     inlines = [WarehouseServiceInline]
     fieldsets = (
         ('Основные данные', {
-            'fields': ('name', 'address')
+            'fields': ('name',)
+        }),
+        ('Площадки', {
+            'fields': (
+                ('address_name', 'address'),
+                ('address2_name', 'address2'),
+                ('address3_name', 'address3'),
+            )
         }),
         ('Настройки хранения', {
             'fields': ('free_days',),
@@ -55,6 +62,24 @@ class WarehouseAdmin(admin.ModelAdmin):
             'description': 'Баланс склада'
         }),
     )
+
+    def get_urls(self):
+        custom_urls = [
+            path('<int:warehouse_id>/addresses/',
+                 self.admin_site.admin_view(self.addresses_api),
+                 name='core_warehouse_addresses'),
+        ]
+        return custom_urls + super().get_urls()
+
+    def addresses_api(self, request, warehouse_id):
+        try:
+            warehouse = Warehouse.objects.get(pk=warehouse_id)
+            sites = warehouse.get_available_sites()
+            return JsonResponse({
+                'addresses': [{'value': num, 'label': label} for num, label in sites]
+            })
+        except Warehouse.DoesNotExist:
+            return JsonResponse({'addresses': []})
 
     def balance_display(self, obj):
         """Shows warehouse balance"""
