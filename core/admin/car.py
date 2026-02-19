@@ -90,9 +90,10 @@ class CarAdmin(admin.ModelAdmin):
     fieldsets = (
         ('Основные данные', {
             'fields': (
-                ('year', 'brand', 'vin', 'vehicle_type', 'client', 'status', 'warehouse'),
-                ('unload_date', 'transfer_date'),
+                ('year', 'brand', 'vin', 'vehicle_type'),
+                ('client', 'warehouse', 'unload_site', 'status'),
                 ('has_title', 'title_notes'),
+                ('unload_date', 'transfer_date'),
             )
         }),
         ('Линии', {
@@ -600,7 +601,7 @@ class CarAdmin(admin.ModelAdmin):
 
     class Media:
         css = {'all': ('css/dashboard_admin.css',)}
-        js = ('js/htmx.min.js', 'js/logist2_htmx.js')
+        js = ('js/htmx.min.js', 'js/logist2_htmx.js', 'js/warehouse_address.js')
 
     def save_model(self, request, obj, form, change):
         """Saves model with service field processing (wrapped in transaction)"""

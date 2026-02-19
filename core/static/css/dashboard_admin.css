@@ -1815,9 +1815,10 @@ body.popup #footer {
 
 /* ===== Form field layout inside cm-form-main (Car, Container, etc.) ===== */
 
-/* Remove overflow:hidden from form-row (prevents select text clipping) */
+/* Remove overflow:hidden and border separators from form rows */
 .cm-form-main .form-row {
     overflow: visible !important;
+    border-bottom: none !important;
 }
 
 /* Multi-field rows: add gap and size field wrappers evenly */
@@ -1969,6 +1970,10 @@ body.popup #footer {
     content: '';
     display: table;
     clear: both;
+}
+
+.cm-form-main .form-row.field-has_title {
+    clear: left;
 }
 
 /* Hide object-tools inside grid form (History etc.) */
@@ -2482,33 +2487,12 @@ body.popup .cm-form-grid .submit-row {
     display: flex !important;
 }
 
-/* ===== Car form: compact fields row (year, brand, type, vin, client, status, warehouse) ===== */
-/* Order: 1=year, 2=brand, 3=vin, 4=vehicle_type, 5=client, 6=status, 7=warehouse */
+/* ===== Car form: row 1 (year, brand, vin, vehicle_type) ===== */
 .cm-form-main .form-row.field-year .form-multiline > div:nth-child(1) {
     flex: 0 0 100px !important;
     min-width: 0 !important;
 }
-.cm-form-main .form-row.field-year .form-multiline > div:nth-child(2) {
-    flex: 1.5 1 0 !important;
-    min-width: 100px !important;
-}
-.cm-form-main .form-row.field-year .form-multiline > div:nth-child(3) {
-    flex: 1.5 1 0 !important;
-    min-width: 100px !important;
-}
 .cm-form-main .form-row.field-year .form-multiline > div:nth-child(4) {
-    flex: 0 0 auto !important;
-    min-width: 0 !important;
-}
-.cm-form-main .form-row.field-year .form-multiline > div:nth-child(5) {
-    flex: 1.5 1 0 !important;
-    min-width: 100px !important;
-}
-.cm-form-main .form-row.field-year .form-multiline > div:nth-child(6) {
-    flex: 0 0 auto !important;
-    min-width: 0 !important;
-}
-.cm-form-main .form-row.field-year .form-multiline > div:nth-child(7) {
     flex: 0 0 auto !important;
     min-width: 0 !important;
 }
@@ -2516,14 +2500,32 @@ body.popup .cm-form-grid .submit-row {
 .cm-form-main .fieldBox.field-year input {
     width: 100px !important;
 }
-.cm-form-main .fieldBox.field-vehicle_type select,
-.cm-form-main .fieldBox.field-status select,
-.cm-form-main .fieldBox.field-warehouse select {
+.cm-form-main .fieldBox.field-vehicle_type select {
     width: auto !important;
 }
 
-/* ===== Container form: compact fields row (number, status, line, warehouse, ths, ths_payer) ===== */
-/* Order: 1=number, 2=line, 3=ths, 4=ths_payer, 5=warehouse, 6=status */
+/* ===== Car form: row 2 (client, warehouse, unload_site, status) ===== */
+.cm-form-main .form-row.field-client .form-multiline > div:nth-child(2) {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+}
+.cm-form-main .form-row.field-client .form-multiline > div:nth-child(3) {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+}
+.cm-form-main .form-row.field-client .form-multiline > div:nth-child(4) {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+}
+
+.cm-form-main .fieldBox.field-status select,
+.cm-form-main .fieldBox.field-warehouse select,
+.cm-form-main .fieldBox.field-unload_site select {
+    width: auto !important;
+}
+
+/* ===== Container form: compact fields row ===== */
+/* Order: 1=number, 2=line, 3=ths, 4=ths_payer, 5=warehouse, 6=unload_site, 7=status */
 .cm-form-main .form-row.field-number .form-multiline > div:nth-child(1) {
     flex: 0 0 auto !important;
     min-width: 0 !important;
@@ -2548,6 +2550,10 @@ body.popup .cm-form-grid .submit-row {
     flex: 0 0 auto !important;
     min-width: 0 !important;
 }
+.cm-form-main .form-row.field-number .form-multiline > div:nth-child(7) {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+}
 
 .cm-form-main .fieldBox.field-number input {
     width: auto !important;
@@ -2558,7 +2564,8 @@ body.popup .cm-form-grid .submit-row {
 .cm-form-main .fieldBox.field-status select,
 .cm-form-main .fieldBox.field-ths_payer select,
 .cm-form-main .fieldBox.field-line select,
-.cm-form-main .fieldBox.field-warehouse select {
+.cm-form-main .fieldBox.field-warehouse select,
+.cm-form-main .fieldBox.field-unload_site select {
     width: auto !important;
 }
 

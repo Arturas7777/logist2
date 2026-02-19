@@ -48,10 +48,13 @@ class ContainerNotificationService:
         
         cars_list = [{'vin': car.vin, 'brand': car.brand, 'year': car.year} for car in cars]
         
+        _site_name, site_address = container.get_unload_address()
+        
         context = {
             'container_number': container.number,
             'planned_date': container.planned_unload_date,
             'warehouse': container.warehouse.name if container.warehouse else 'Не указан',
+            'warehouse_address': site_address,
             'cars': cars_list,
             'client_name': client.name,
             'company_name': getattr(settings, 'COMPANY_NAME', 'Caromoto Lithuania'),
@@ -103,11 +106,13 @@ class ContainerNotificationService:
         
         cars_list = [{'vin': car.vin, 'brand': car.brand, 'year': car.year} for car in cars]
         
+        _site_name, site_address = container.get_unload_address()
+        
         context = {
             'container_number': container.number,
             'unload_date': container.unload_date,
             'warehouse': container.warehouse.name if container.warehouse else 'Не указан',
-            'warehouse_address': container.warehouse.address if container.warehouse else '',
+            'warehouse_address': site_address,
             'cars': cars_list,
             'client_name': client.name,
             'company_name': getattr(settings, 'COMPANY_NAME', 'Caromoto Lithuania'),
@@ -347,14 +352,13 @@ class CarNotificationService:
         
         car_info = {'vin': car.vin, 'brand': car.brand, 'year': car.year}
         
-        warehouse_name = car.warehouse.name if car.warehouse else 'Не указан'
-        warehouse_address = car.warehouse.address if car.warehouse else ''
+        _site_name, site_address = car.get_unload_address()
         
         context = {
             'car': car_info,
             'unload_date': car.unload_date,
-            'warehouse': warehouse_name,
-            'warehouse_address': warehouse_address,
+            'warehouse': car.warehouse.name if car.warehouse else 'Не указан',
+            'warehouse_address': site_address,
             'client_name': client.name,
             'company_name': getattr(settings, 'COMPANY_NAME', 'Caromoto Lithuania'),
             'company_phone': getattr(settings, 'COMPANY_PHONE', ''),

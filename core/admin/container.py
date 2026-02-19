@@ -41,7 +41,7 @@ class ContainerAdmin(admin.ModelAdmin):
         ('Основные данные', {
             'classes': ('collapse',),
             'fields': (
-                ('number', 'line', 'ths', 'ths_payer', 'warehouse', 'status'),
+                ('number', 'line', 'ths', 'ths_payer', 'warehouse', 'unload_site', 'status'),
                 ('eta', 'planned_unload_date', 'unload_date'),
                 'google_drive_folder_url',
             )
@@ -52,7 +52,7 @@ class ContainerAdmin(admin.ModelAdmin):
 
     class Media:
         css = {'all': ('css/dashboard_admin.css',)}
-        js = ('js/htmx.min.js',)
+        js = ('js/htmx.min.js', 'js/warehouse_address.js')
 
     def get_queryset(self, request):
         from django.db.models import Count
