@@ -1,5 +1,5 @@
 """
-Сервис отправки email-уведомлений клиентам о контейнерах
+Сервис отправки email-уведомлений клиентам о контейнерах и отдельных ТС
 """
 import json
 import logging
@@ -314,6 +314,152 @@ class ContainerNotificationService:
         return NotificationLog.objects.filter(
             container=container,
             notification_type='PLANNED',
+            success=True
+        ).exists()
+
+
+class CarNotificationService:
+    """
+    Сервис для отправки уведомлений клиентам о разгрузке отдельных ТС (без контейнера).
+    """
+    
+    @staticmethod
+    def send_car_unload_notification(car, user=None):
+        """
+        Отправляет уведомление о разгрузке ТС (без контейнера) на все email клиента.
+        
+        Returns:
+            bool: True если хотя бы одно письмо отправлено успешно
+        """
+        if not car.client:
+            logger.warning(f"Cannot send car unload notification for {car.vin}: no client")
+            return False
+        
+        client = car.client
+        
+        if not client.has_notification_emails() or not client.notification_enabled:
+            logger.warning(f"Cannot send car unload notification to {client.name}: no emails or notifications disabled")
+            return False
+        
+        if not car.unload_date:
+            logger.warning(f"Cannot send car unload notification for {car.vin}: no unload_date set")
+            return False
+        
+        car_info = {'vin': car.vin, 'brand': car.brand, 'year': car.year}
+        
+        warehouse_name = car.warehouse.name if car.warehouse else 'Не указан'
+        warehouse_address = car.warehouse.address if car.warehouse else ''
+        
+        context = {
+            'car': car_info,
+            'unload_date': car.unload_date,
+            'warehouse': warehouse_name,
+            'warehouse_address': warehouse_address,
+            'client_name': client.name,
+            'company_name': getattr(settings, 'COMPANY_NAME', 'Caromoto Lithuania'),
+            'company_phone': getattr(settings, 'COMPANY_PHONE', ''),
+            'company_email': getattr(settings, 'COMPANY_EMAIL', ''),
+            'company_website': getattr(settings, 'COMPANY_WEBSITE', ''),
+        }
+        
+        subject = f"Ваш автомобиль {car.brand} ({car.vin}) разгружен"
+        
+        return CarNotificationService._send_notification_to_all_emails(
+            car=car,
+            client=client,
+            subject=subject,
+            template_name='email/car_unload_notification.html',
+            context=context,
+            car_info=car_info,
+            user=user
+        )
+    
+    @staticmethod
+    def _send_notification_to_all_emails(car, client, subject, template_name, context, car_info, user=None):
+        """
+        Отправляет уведомление на все email-адреса клиента.
+        """
+        emails = client.get_notification_emails()
+        
+        if not emails:
+            logger.warning(f"No emails found for client {client.name}")
+            return False
+        
+        html_content = render_to_string(template_name, context)
+        text_content = strip_tags(html_content)
+        
+        success_count = 0
+        
+        for email_to in emails:
+            success = CarNotificationService._send_single_email(
+                car=car,
+                client=client,
+                email_to=email_to,
+                subject=subject,
+                html_content=html_content,
+                text_content=text_content,
+                car_info=car_info,
+                user=user
+            )
+            if success:
+                success_count += 1
+        
+        logger.info(f"Sent {success_count}/{len(emails)} car unload emails for {car.vin} to {client.name}")
+        return success_count > 0
+    
+    @staticmethod
+    def _send_single_email(car, client, email_to, subject, html_content, text_content, car_info, user=None):
+        """
+        Отправляет одно письмо и логирует результат.
+        """
+        from core.models_website import NotificationLog
+        
+        error_message = ''
+        success = False
+        
+        try:
+            email = EmailMultiAlternatives(
+                subject=subject,
+                body=text_content,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[email_to]
+            )
+            email.attach_alternative(html_content, "text/html")
+            email.send(fail_silently=False)
+            
+            success = True
+            logger.info(f"Email sent: CAR_UNLOADED for {car.vin} to {email_to}")
+            
+        except Exception as e:
+            error_message = str(e)
+            logger.error(f"Failed to send email: CAR_UNLOADED for {car.vin} to {email_to}: {e}")
+        
+        try:
+            NotificationLog.objects.create(
+                car=car,
+                client=client,
+                notification_type='CAR_UNLOADED',
+                email_to=email_to,
+                subject=subject,
+                cars_info=json.dumps([car_info], ensure_ascii=False),
+                success=success,
+                error_message=error_message,
+                created_by=user
+            )
+        except Exception as e:
+            logger.error(f"Failed to create notification log: {e}")
+        
+        return success
+    
+    @staticmethod
+    def was_car_unload_notification_sent(car):
+        """
+        Проверяет, было ли уже отправлено уведомление о разгрузке для этого ТС
+        """
+        from core.models_website import NotificationLog
+        return NotificationLog.objects.filter(
+            car=car,
+            notification_type='CAR_UNLOADED',
             success=True
         ).exists()
 

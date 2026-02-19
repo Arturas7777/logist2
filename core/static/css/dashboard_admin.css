@@ -2482,6 +2482,86 @@ body.popup .cm-form-grid .submit-row {
     display: flex !important;
 }
 
+/* ===== Car form: compact fields row (year, brand, type, vin, client, status, warehouse) ===== */
+/* Order: 1=year, 2=brand, 3=vin, 4=vehicle_type, 5=client, 6=status, 7=warehouse */
+.cm-form-main .form-row.field-year .form-multiline > div:nth-child(1) {
+    flex: 0 0 100px !important;
+    min-width: 0 !important;
+}
+.cm-form-main .form-row.field-year .form-multiline > div:nth-child(2) {
+    flex: 1.5 1 0 !important;
+    min-width: 100px !important;
+}
+.cm-form-main .form-row.field-year .form-multiline > div:nth-child(3) {
+    flex: 1.5 1 0 !important;
+    min-width: 100px !important;
+}
+.cm-form-main .form-row.field-year .form-multiline > div:nth-child(4) {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+}
+.cm-form-main .form-row.field-year .form-multiline > div:nth-child(5) {
+    flex: 1.5 1 0 !important;
+    min-width: 100px !important;
+}
+.cm-form-main .form-row.field-year .form-multiline > div:nth-child(6) {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+}
+.cm-form-main .form-row.field-year .form-multiline > div:nth-child(7) {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+}
+
+.cm-form-main .fieldBox.field-year input {
+    width: 100px !important;
+}
+.cm-form-main .fieldBox.field-vehicle_type select,
+.cm-form-main .fieldBox.field-status select,
+.cm-form-main .fieldBox.field-warehouse select {
+    width: auto !important;
+}
+
+/* ===== Container form: compact fields row (number, status, line, warehouse, ths, ths_payer) ===== */
+/* Order: 1=number, 2=line, 3=ths, 4=ths_payer, 5=warehouse, 6=status */
+.cm-form-main .form-row.field-number .form-multiline > div:nth-child(1) {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+}
+.cm-form-main .form-row.field-number .form-multiline > div:nth-child(2) {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+}
+.cm-form-main .form-row.field-number .form-multiline > div:nth-child(3) {
+    flex: 0 0 140px !important;
+    min-width: 0 !important;
+}
+.cm-form-main .form-row.field-number .form-multiline > div:nth-child(4) {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+}
+.cm-form-main .form-row.field-number .form-multiline > div:nth-child(5) {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+}
+.cm-form-main .form-row.field-number .form-multiline > div:nth-child(6) {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+}
+
+.cm-form-main .fieldBox.field-number input {
+    width: auto !important;
+}
+.cm-form-main .fieldBox.field-ths input {
+    width: 130px !important;
+}
+.cm-form-main .fieldBox.field-status select,
+.cm-form-main .fieldBox.field-ths_payer select,
+.cm-form-main .fieldBox.field-line select,
+.cm-form-main .fieldBox.field-warehouse select {
+    width: auto !important;
+}
+
 /* ===== TRANSITION ===== */
 *, *::before, *::after {
     /* Disable transitions during page load */

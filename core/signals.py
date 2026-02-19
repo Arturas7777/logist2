@@ -1166,6 +1166,67 @@ def send_container_notifications_on_save(sender, instance, created, **kwargs):
         transaction.on_commit(_enqueue_unload)
 
 
+# ============================================================================
+# СИГНАЛЫ ДЛЯ EMAIL-УВЕДОМЛЕНИЙ О РАЗГРУЗКЕ ОТДЕЛЬНЫХ ТС (БЕЗ КОНТЕЙНЕРА)
+# ============================================================================
+
+@receiver(pre_save, sender=Car)
+def save_old_car_notification_values(sender, instance, **kwargs):
+    """Сохраняем старое значение unload_date для ТС без контейнера"""
+    if instance.pk:
+        try:
+            old = Car.objects.filter(pk=instance.pk).values('unload_date', 'container_id').first()
+            if old:
+                instance._pre_save_car_notification = {
+                    'unload_date': old.get('unload_date'),
+                    'container_id': old.get('container_id'),
+                }
+            else:
+                instance._pre_save_car_notification = None
+        except Exception:
+            instance._pre_save_car_notification = None
+    else:
+        instance._pre_save_car_notification = None
+
+
+@receiver(post_save, sender=Car)
+def send_car_unload_notification_on_save(sender, instance, created, **kwargs):
+    """
+    Автоматически отправляет уведомление клиенту при разгрузке ТС без контейнера.
+    Срабатывает когда unload_date устанавливается впервые для ТС без контейнера.
+    """
+    if not instance.pk or instance.container_id:
+        return
+    
+    old_values = getattr(instance, '_pre_save_car_notification', None) or {}
+    instance._pre_save_car_notification = None
+    
+    old_container_id = old_values.get('container_id')
+    if old_container_id:
+        return
+    
+    old_unload_date = old_values.get('unload_date')
+    
+    should_notify = False
+    if instance.unload_date:
+        if created:
+            should_notify = True
+        elif old_unload_date is None:
+            should_notify = True
+    
+    if should_notify:
+        def _enqueue_car_unload():
+            try:
+                from core.tasks import send_car_unload_notification_task
+                send_car_unload_notification_task.delay(instance.pk)
+            except Exception:
+                from core.services.email_service import CarNotificationService
+                if not CarNotificationService.was_car_unload_notification_sent(instance):
+                    CarNotificationService.send_car_unload_notification(instance)
+
+        transaction.on_commit(_enqueue_car_unload)
+
+
 # Сигнал для автоматической синхронизации фотографий с Google Drive
 @receiver(post_save, sender=Container)
 def auto_sync_photos_on_container_change(sender, instance, created, **kwargs):

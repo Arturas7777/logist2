@@ -379,10 +379,14 @@ class NotificationLog(models.Model):
     NOTIFICATION_TYPES = [
         ('PLANNED', 'Планируемая разгрузка'),
         ('UNLOADED', 'Разгрузка выполнена'),
+        ('CAR_UNLOADED', 'Разгрузка ТС (без контейнера)'),
     ]
     
     container = models.ForeignKey(Container, on_delete=models.CASCADE, related_name='notifications', 
-                                  verbose_name="Контейнер")
+                                  verbose_name="Контейнер", null=True, blank=True)
+    car = models.ForeignKey('Car', on_delete=models.CASCADE, related_name='notifications',
+                            verbose_name="ТС", null=True, blank=True,
+                            help_text="Для уведомлений о разгрузке ТС без контейнера")
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='notifications',
                                verbose_name="Клиент")
     notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES, 
@@ -407,10 +411,15 @@ class NotificationLog(models.Model):
         ordering = ['-sent_at']
         indexes = [
             models.Index(fields=['container', 'notification_type']),
+            models.Index(fields=['car', 'notification_type']),
             models.Index(fields=['client', 'sent_at']),
         ]
     
     def __str__(self):
         status = "✓" if self.success else "✗"
-        return f"{status} {self.get_notification_type_display()} - {self.container.number} → {self.email_to}"
+        if self.container:
+            return f"{status} {self.get_notification_type_display()} - {self.container.number} → {self.email_to}"
+        elif self.car:
+            return f"{status} {self.get_notification_type_display()} - {self.car.vin} → {self.email_to}"
+        return f"{status} {self.get_notification_type_display()} → {self.email_to}"
 
