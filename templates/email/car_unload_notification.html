@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Автомобиль разгружен</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            color: #4CAF50;
+            margin: 0;
+            font-size: 24px;
+        }
+        .success-badge {
+            display: inline-block;
+            background-color: #4CAF50;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .info-block {
+            background-color: #e8f5e9;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .info-block h2 {
+            color: #2E7D32;
+            margin-top: 0;
+            font-size: 18px;
+        }
+        .highlight {
+            font-size: 28px;
+            font-weight: bold;
+            color: #2E7D32;
+        }
+        .car-details {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            border-left: 4px solid #4CAF50;
+        }
+        .car-details p {
+            margin: 8px 0;
+        }
+        .action-block {
+            background-color: #fff3e0;
+            border-left: 4px solid #FF9800;
+            padding: 15px 20px;
+            margin: 20px 0;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+        }
+        .footer a {
+            color: #4CAF50;
+            text-decoration: none;
+        }
+        .greeting {
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{ company_name }}</h1>
+            <span class="success-badge">✓ Автомобиль разгружен</span>
+        </div>
+        
+        <p class="greeting">Уважаемый(ая) {{ client_name }},</p>
+        
+        <p>Рады сообщить, что ваш автомобиль успешно разгружен!</p>
+        
+        <div class="info-block">
+            <h2>Информация о разгрузке</h2>
+            <p><strong>Дата разгрузки:</strong></p>
+            <p class="highlight">{{ unload_date|date:"d.m.Y" }}</p>
+            {% if warehouse %}
+            <p><strong>Склад:</strong> {{ warehouse }}</p>
+            {% endif %}
+            {% if warehouse_address %}
+            <p><strong>Адрес:</strong> {{ warehouse_address }}</p>
+            {% endif %}
+        </div>
+        
+        <div class="car-details">
+            <h3 style="margin-top: 0; color: #2E7D32;">Ваш автомобиль:</h3>
+            <p><strong>Марка:</strong> {{ car.brand }}</p>
+            <p><strong>Год выпуска:</strong> {{ car.year }}</p>
+            <p><strong>VIN:</strong> {{ car.vin }}</p>
+        </div>
+        
+        <div class="action-block">
+            <strong>Что дальше?</strong>
+            <p>Ваш автомобиль находится на складе и готов к выдаче. Свяжитесь с нами для организации передачи.</p>
+        </div>
+        
+        <p>Если у вас есть вопросы, пожалуйста, свяжитесь с нами.</p>
+        
+        <div class="footer">
+            <p><strong>{{ company_name }}</strong></p>
+            {% if company_phone %}<p>Телефон: {{ company_phone }}</p>{% endif %}
+            {% if company_email %}<p>Email: <a href="mailto:{{ company_email }}">{{ company_email }}</a></p>{% endif %}
+            {% if company_website %}<p>Сайт: <a href="{{ company_website }}">{{ company_website }}</a></p>{% endif %}
+        </div>
+    </div>
+</body>
+</html>

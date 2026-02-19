@@ -41,8 +41,7 @@ class ContainerAdmin(admin.ModelAdmin):
         ('Основные данные', {
             'classes': ('collapse',),
             'fields': (
-                ('number', 'status', 'line', 'warehouse'),
-                ('ths', 'ths_payer'),
+                ('number', 'line', 'ths', 'ths_payer', 'warehouse', 'status'),
                 ('eta', 'planned_unload_date', 'unload_date'),
                 'google_drive_folder_url',
             )
@@ -429,6 +428,8 @@ class ContainerAdmin(admin.ModelAdmin):
         form = super().get_form(request, obj, **kwargs)
         for field in form.base_fields.values():
             field.help_text = ''
+        if 'line' in form.base_fields:
+            form.base_fields['line'].label = 'Линия'
         return form
 
     def colored_status(self, obj):

@@ -90,7 +90,7 @@ class CarAdmin(admin.ModelAdmin):
     fieldsets = (
         ('Основные данные', {
             'fields': (
-                ('year', 'brand', 'vehicle_type', 'vin', 'client', 'status'),
+                ('year', 'brand', 'vin', 'vehicle_type', 'client', 'status', 'warehouse'),
                 ('unload_date', 'transfer_date'),
                 ('has_title', 'title_notes'),
             )
@@ -105,7 +105,6 @@ class CarAdmin(admin.ModelAdmin):
         ('Склад', {
             'classes': ('collapse',),
             'fields': (
-                'warehouse',
                 'warehouse_services_display',
             )
         }),
@@ -127,10 +126,12 @@ class CarAdmin(admin.ModelAdmin):
             )
         }),
     )
-    actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'set_transferred_today', 'set_title_with_us']
+    actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'set_transferred_today', 'set_title_with_us', 'resend_car_unload_notification']
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
+        if 'year' in form.base_fields:
+            form.base_fields['year'].label = 'Год'
         if 'has_title' in form.base_fields:
             form.base_fields['has_title'].label = 'Тайтл получен'
         if 'title_notes' in form.base_fields:
@@ -567,6 +568,35 @@ class CarAdmin(admin.ModelAdmin):
             obj.save()
         self.message_user(request, f"Тайтл установлен как 'У нас' для {updated} автомобилей.")
     set_title_with_us.short_description = "Тайтл у нас"
+
+    def resend_car_unload_notification(self, request, queryset):
+        """Повторная отправка уведомления о разгрузке для ТС без контейнера"""
+        from core.services.email_service import CarNotificationService
+
+        sent = 0
+        skipped = 0
+
+        for car in queryset.select_related('client', 'warehouse'):
+            if car.container_id:
+                skipped += 1
+                continue
+            if not car.unload_date:
+                self.message_user(request, f"ТС {car.vin}: не указана дата разгрузки", level='WARNING')
+                continue
+            if not car.client:
+                self.message_user(request, f"ТС {car.vin}: не указан клиент", level='WARNING')
+                continue
+
+            if CarNotificationService.send_car_unload_notification(car, user=request.user):
+                sent += 1
+            else:
+                self.message_user(request, f"ТС {car.vin}: не удалось отправить уведомление", level='WARNING')
+
+        if sent:
+            self.message_user(request, f"Уведомления отправлены для {sent} ТС.")
+        if skipped:
+            self.message_user(request, f"Пропущено {skipped} ТС (привязаны к контейнеру).", level='WARNING')
+    resend_car_unload_notification.short_description = "Повторить уведомление о разгрузке ТС"
 
     class Media:
         css = {'all': ('css/dashboard_admin.css',)}
