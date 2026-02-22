@@ -25,14 +25,35 @@
   <script>
   document.addEventListener('DOMContentLoaded', function() {
     var img = document.getElementById('cm-container-photo-el');
-    if (!img) return;
-    var fieldset = document.querySelector('.cm-form-main fieldset.module');
-    if (!fieldset) return;
-    var heading = fieldset.querySelector('.fieldset-heading');
-    if (heading) {
-      heading.after(img);
-    } else {
-      fieldset.prepend(img);
+    if (img) {
+      var fieldset = document.querySelector('.cm-form-main fieldset.module');
+      if (fieldset) {
+        var heading = fieldset.querySelector('.fieldset-heading');
+        if (heading) {
+          heading.after(img);
+        } else {
+          fieldset.prepend(img);
+        }
+      }
+    }
+
+    var gdriveRow = document.querySelector('.form-row.field-google_drive_folder_url');
+    var slot = document.getElementById('gdrive-field-slot');
+    if (gdriveRow && slot) {
+      gdriveRow.style.padding = '0';
+      gdriveRow.style.margin = '0';
+      gdriveRow.style.border = 'none';
+      gdriveRow.style.display = 'flex';
+      gdriveRow.style.alignItems = 'center';
+      gdriveRow.style.gap = '8px';
+      gdriveRow.style.fontSize = '13px';
+      var label = gdriveRow.querySelector('label');
+      if (label) {
+        label.style.width = 'auto';
+        label.style.float = 'none';
+        label.style.whiteSpace = 'nowrap';
+      }
+      slot.appendChild(gdriveRow);
     }
   });
   </script>
