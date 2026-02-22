@@ -39,7 +39,6 @@ class ContainerAdmin(admin.ModelAdmin):
     inlines = [CarInline]
     fieldsets = (
         ('Основные данные', {
-            'classes': ('collapse',),
             'fields': (
                 ('number', 'line', 'ths', 'ths_payer', 'warehouse', 'unload_site', 'status'),
                 ('eta', 'planned_unload_date', 'unload_date'),
