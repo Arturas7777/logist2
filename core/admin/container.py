@@ -456,19 +456,20 @@ class ContainerAdmin(admin.ModelAdmin):
     photos_count_display.admin_order_field = '_photos_count'
 
     def set_status_floating(self, request, queryset):
+        pks = list(queryset.values_list('pk', flat=True))
         updated = queryset.update(status='FLOATING')
-        for obj in queryset:
+        for obj in Container.objects.filter(pk__in=pks):
             obj.update_days_and_storage()
             obj.sync_cars()
             obj.save(update_fields=['days', 'storage_cost'])
-            # Update status for all cars in container
             obj.container_cars.update(status='FLOATING')
         self.message_user(request, f"Статус изменён на 'В пути' для {updated} контейнеров и их авто.")
     set_status_floating.short_description = "Изменить статус на В пути"
 
     def set_status_in_port(self, request, queryset):
+        pks = list(queryset.values_list('pk', flat=True))
         updated = queryset.update(status='IN_PORT')
-        for obj in queryset:
+        for obj in Container.objects.filter(pk__in=pks):
             obj.update_days_and_storage()
             obj.sync_cars()
             obj.save(update_fields=['days', 'storage_cost'])
@@ -492,8 +493,9 @@ class ContainerAdmin(admin.ModelAdmin):
     set_status_unloaded.short_description = "Изменить статус на Разгружен"
 
     def set_status_transferred(self, request, queryset):
+        pks = list(queryset.values_list('pk', flat=True))
         updated = queryset.update(status='TRANSFERRED')
-        for obj in queryset:
+        for obj in Container.objects.filter(pk__in=pks):
             obj.update_days_and_storage()
             obj.sync_cars()
             obj.save(update_fields=['days', 'storage_cost'])
