@@ -40,20 +40,19 @@
     var gdriveRow = document.querySelector('.form-row.field-google_drive_folder_url');
     var slot = document.getElementById('gdrive-field-slot');
     if (gdriveRow && slot) {
-      gdriveRow.style.padding = '0';
-      gdriveRow.style.margin = '0';
-      gdriveRow.style.border = 'none';
-      gdriveRow.style.display = 'flex';
-      gdriveRow.style.alignItems = 'center';
-      gdriveRow.style.gap = '8px';
-      gdriveRow.style.fontSize = '13px';
-      var label = gdriveRow.querySelector('label');
-      if (label) {
-        label.style.width = 'auto';
-        label.style.float = 'none';
-        label.style.whiteSpace = 'nowrap';
+      var input = gdriveRow.querySelector('input');
+      if (input) {
+        var wrapper = document.createElement('div');
+        wrapper.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:13px;';
+        var lbl = document.createElement('span');
+        lbl.textContent = 'Google Drive папка:';
+        lbl.style.cssText = 'white-space:nowrap;font-weight:bold;color:#333;';
+        wrapper.appendChild(lbl);
+        input.style.cssText = 'min-width:400px;padding:4px 8px;border:1px solid #ccc;border-radius:4px;font-size:13px;';
+        wrapper.appendChild(input);
+        slot.appendChild(wrapper);
+        gdriveRow.style.display = 'none';
       }
-      slot.appendChild(gdriveRow);
     }
   });
   </script>
