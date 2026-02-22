@@ -6,7 +6,6 @@
 {% endblock %}
 
 {% block topbar_title %}
-  <img src="{% static 'icons/container.png' %}" class="cm-page-icon" alt="">
   <span>{% if original %}{{ original.number }}{% else %}Новый контейнер{% endif %}</span>
 {% endblock %}
 
@@ -16,8 +15,26 @@
 
 <div class="cm-form-grid" {% if original %}style="--cm-status-color: {{ original.get_status_color }};"{% endif %}>
   <div class="cm-form-main">
+    {% if original %}
+    <img src="{% static 'icons/container.png' %}" id="cm-container-photo-el" class="cm-car-photo" alt="Container">
+    {% endif %}
     {{ block.super }}
   </div>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', function() {
+    var img = document.getElementById('cm-container-photo-el');
+    if (!img) return;
+    var fieldset = document.querySelector('.cm-form-main fieldset.module');
+    if (!fieldset) return;
+    var heading = fieldset.querySelector('.fieldset-heading');
+    if (heading) {
+      heading.after(img);
+    } else {
+      fieldset.prepend(img);
+    }
+  });
+  </script>
 
   <div class="cm-form-sidebar-col">
     {% if original %}
