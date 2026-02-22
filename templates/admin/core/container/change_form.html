@@ -16,7 +16,8 @@
 <div class="cm-form-grid" {% if original %}style="--cm-status-color: {{ original.get_status_color }};"{% endif %}>
   <div class="cm-form-main">
     {% if original %}
-    <img src="{% static 'icons/container.png' %}" id="cm-container-photo-el" class="cm-car-photo" alt="Container">
+    <img src="{% static 'icons/container.png' %}" id="cm-container-photo-el" alt="Container"
+         style="float: left; margin: 4px 24px 16px 0; object-fit: contain;">
     {% endif %}
     {{ block.super }}
   </div>
