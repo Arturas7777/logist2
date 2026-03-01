@@ -62,9 +62,10 @@ class CarAdmin(admin.ModelAdmin):
     change_form_template = 'admin/core/car/change_form.html'
     change_list_template = 'admin/core/car/change_list.html'
     list_display = (
-        'vin', 'brand', 'vehicle_type', 'year_display', 'client', 'colored_status', 'container_display', 'warehouse', 'line',
+        'vin_display', 'brand', 'vehicle_type', 'year_display', 'client', 'colored_status', 'container_display', 'warehouse', 'line',
         'unload_date_display', 'days_display', 'storage_cost_display', 'total_price_display', 'markup_display', 'has_title'
     )
+    list_display_links = ('vin_display',)
     list_editable = ('has_title',)
     list_filter = (MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter)
     search_fields = ('vin', 'brand')
@@ -359,6 +360,21 @@ class CarAdmin(admin.ModelAdmin):
             obj.get_status_display()
         )
     colored_status.short_description = 'Статус'
+
+    def vin_display(self, obj):
+        return format_html(
+            '<span class="vin-copy-wrap">'
+            '<span class="vin-copy-btn" data-vin="{vin}" title="Копировать VIN">'
+            '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" '
+            'fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'
+            '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>'
+            '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'
+            '</svg>'
+            '</span> {vin}</span>',
+            vin=obj.vin,
+        )
+    vin_display.short_description = 'VIN'
+    vin_display.admin_order_field = 'vin'
 
     def container_display(self, obj):
         """Displays container number with clickable link and status-based styling"""
