@@ -504,57 +504,50 @@ class GoogleDriveSync:
                 return 0
             
             total_added = 0
-            found_folder_urls = []  # Для сохранения найденных ссылок
             
             logger.info(f"[{container_number}] Searching for photos...")
             
-            # Если у контейнера есть прямая ссылка на Google Drive - используем её
-            if container.google_drive_folder_url:
-                logger.info(f"   Using direct link from container card")
-                total_added = GoogleDriveSync.download_folder_photos(
-                    container.google_drive_folder_url, 
-                    container,
-                    photo_type='UNLOADING'  # По умолчанию - разгрузка
-                )
-            else:
-                # Ищем в обеих корневых папках
-                for folder_type, folder_id in GOOGLE_DRIVE_FOLDERS.items():
-                    photo_type = FOLDER_PHOTO_TYPES.get(folder_type, 'GENERAL')
-                    type_label = "Unloaded" if folder_type == 'unloaded' else "In container"
-                    
-                    if verbose:
-                        logger.info(f"   Searching in '{type_label}'...")
-                    
-                    found_folder_id = GoogleDriveSync.find_container_folder(
-                        container_number, 
-                        folder_id,
-                        verbose=verbose
-                    )
-                    
-                    if found_folder_id:
-                        added = GoogleDriveSync.download_folder_photos(
-                            found_folder_id,
-                            container,
-                            photo_type=photo_type
-                        )
-                        total_added += added
-                        
-                        # Сохраняем ссылку на найденную папку (приоритет - ВЫГРУЖЕННЫЕ)
-                        if folder_type == 'unloaded':
-                            folder_url = f"https://drive.google.com/drive/folders/{found_folder_id}"
-                            found_folder_urls.insert(0, folder_url)  # В начало - приоритет
-                        else:
-                            folder_url = f"https://drive.google.com/drive/folders/{found_folder_id}"
-                            found_folder_urls.append(folder_url)
-                            
-                    elif verbose:
-                        logger.info(f"   Not found in '{type_label}'")
+            # ВСЕГДА ищем в обеих корневых папках (ВЫГРУЖЕННЫЕ + В КОНТЕЙНЕРЕ)
+            for folder_type, folder_id in GOOGLE_DRIVE_FOLDERS.items():
+                photo_type = FOLDER_PHOTO_TYPES.get(folder_type, 'GENERAL')
+                type_label = "Выгруженные" if folder_type == 'unloaded' else "В контейнере"
                 
-                # Сохраняем первую найденную ссылку (ВЫГРУЖЕННЫЕ имеет приоритет)
-                if found_folder_urls and not container.google_drive_folder_url:
-                    container.google_drive_folder_url = found_folder_urls[0]
-                    container.save(update_fields=['google_drive_folder_url'])
-                    logger.info(f"[{container_number}] Saved Google Drive folder URL: {found_folder_urls[0]}")
+                # Для папки "unloaded" используем прямую ссылку если есть
+                if folder_type == 'unloaded' and container.google_drive_folder_url:
+                    logger.info(f"   [{type_label}] Используем прямую ссылку из карточки")
+                    added = GoogleDriveSync.download_folder_photos(
+                        container.google_drive_folder_url,
+                        container,
+                        photo_type=photo_type
+                    )
+                    total_added += added
+                    continue
+                
+                if verbose:
+                    logger.info(f"   [{type_label}] Поиск папки на Google Drive...")
+                
+                found_folder_id = GoogleDriveSync.find_container_folder(
+                    container_number, 
+                    folder_id,
+                    verbose=verbose
+                )
+                
+                if found_folder_id:
+                    added = GoogleDriveSync.download_folder_photos(
+                        found_folder_id,
+                        container,
+                        photo_type=photo_type
+                    )
+                    total_added += added
+                    
+                    # Сохраняем ссылку на папку ВЫГРУЖЕННЫХ если ещё не сохранена
+                    if folder_type == 'unloaded' and not container.google_drive_folder_url:
+                        container.google_drive_folder_url = f"https://drive.google.com/drive/folders/{found_folder_id}"
+                        container.save(update_fields=['google_drive_folder_url'])
+                        logger.info(f"[{container_number}] Saved Google Drive folder URL")
+                        
+                elif verbose:
+                    logger.info(f"   [{type_label}] Папка не найдена")
             
             if total_added == 0:
                 logger.info(f"[{container_number}] No new photos found on Google Drive")
