@@ -715,20 +715,9 @@ h1, h2, h3, h4, h5, h6 {
     transition: color 0.3s ease;
 }
 
-.nav-link::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 50%;
-    width: 0;
-    height: 2px;
-    background: white;
-    transition: all 0.3s ease;
-    transform: translateX(-50%);
-}
-
-.nav-link:hover::after {
-    width: 80%;
+/* Дропдауны не должны иметь подчёркивание */
+.navbar-nav .nav-item.dropdown .nav-link::after {
+    display: none;
 }
 
 /* ===== Футер ===== */
