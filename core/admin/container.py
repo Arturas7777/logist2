@@ -576,47 +576,21 @@ class ContainerAdmin(admin.ModelAdmin):
 
         for container in queryset:
             try:
-                container_number = container.number
-                photos_added = 0
-
-                # Check both folders (unloaded and in container)
-                for folder_type, folder_id in [
-                    ('unloaded', '1711SSTZ3_YgUcZfNrgNzhscbmlHXlsKb'),
-                    ('in_container', '11poTWYYG3uKTuGTYDWS2m8uA52mlzP6f')
-                ]:
-                    # Get month folders
-                    month_folders = GoogleDriveSync.get_public_folder_files(folder_id)
-
-                    for month_folder in month_folders:
-                        if not month_folder.get('is_folder'):
-                            continue
-
-                        # Get container folders in this month
-                        container_folders = GoogleDriveSync.get_public_folder_files(month_folder['id'])
-
-                        for container_folder in container_folders:
-                            if container_folder['name'] == container_number:
-                                # Found container folder!
-                                photo_type = 'UNLOADING' if folder_type == 'unloaded' else 'GENERAL'
-                                count = GoogleDriveSync.sync_container_folder(
-                                    container_number,
-                                    container_folder['id'],
-                                    photo_type
-                                )
-                                photos_added += count
+                photos_added = GoogleDriveSync.sync_container_by_number(
+                    container.number, verbose=True
+                )
 
                 if photos_added > 0:
                     success_count += 1
                     total_photos += photos_added
-                    logger.info(f"Container {container_number}: added {photos_added} photos")
+                    logger.info(f"Container {container.number}: added {photos_added} photos")
                 else:
-                    logger.warning(f"Container {container_number}: folder not found on Google Drive")
+                    logger.warning(f"Container {container.number}: no new photos found on Google Drive")
 
             except Exception as e:
                 error_count += 1
                 logger.error(f"Error syncing container {container.number}: {e}")
 
-        # User message
         if total_photos > 0:
             self.message_user(
                 request,

@@ -79,6 +79,7 @@ class ContainerPhoto(models.Model):
     PHOTO_TYPES = [
         ('LOADING', 'Погрузка'),
         ('UNLOADING', 'Разгрузка'),
+        ('IN_CONTAINER', 'В контейнере'),
         ('SEAL', 'Пломба'),
         ('GENERAL', 'Общее'),
     ]
