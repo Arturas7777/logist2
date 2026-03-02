@@ -293,8 +293,12 @@ document.addEventListener('DOMContentLoaded', function() {
     let autoShowPhotos = urlParams.get('photos') === '1';
     
     // Обновляем обработчик формы отслеживания
+    let isSubmitting = false;
+    
     trackingForm.addEventListener('submit', function(e) {
         e.preventDefault();
+        
+        if (isSubmitting) return;
         
         const trackingNumber = document.getElementById('tracking_number').value.trim();
         
@@ -303,7 +307,10 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        // Показываем загрузку
+        isSubmitting = true;
+        const submitBtn = trackingForm.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        
         showResult('<div class="spinner-border spinner-border-sm me-2"></div>Поиск...', 'info');
         
         fetch('{% url "website:track_shipment" %}', {
@@ -317,8 +324,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 email: ''
             })
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok && response.status === 429) {
+                return { _throttled: true };
+            }
+            return response.json();
+        })
         .then(data => {
+            if (data._throttled) {
+                showResult('<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> Слишком много запросов. Подождите немного и попробуйте снова.</div>', 'warning');
+                photosSection.style.display = 'none';
+                return;
+            }
+            
             if (data.type) {
                 let resultHtml = '<div class="alert alert-success"><h6><i class="bi bi-check-circle"></i> Груз найден!</h6>';
                 
@@ -328,23 +346,19 @@ document.addEventListener('DOMContentLoaded', function() {
                     resultHtml += `<p><strong>Марка:</strong> ${car.brand || 'N/A'}</p>`;
                     resultHtml += `<p><strong>Статус:</strong> ${car.status_display || car.status}</p>`;
                     
-                    // Дата разгрузки контейнера
                     if (car.container_unload_date) {
                         const unloadDate = new Date(car.container_unload_date);
                         resultHtml += `<p><strong>Дата разгрузки:</strong> ${unloadDate.toLocaleDateString('ru-RU')}</p>`;
                     }
                     
-                    // Адрес склада (только адрес, без названия)
                     if (car.warehouse_address) {
                         resultHtml += `<p><strong>Склад:</strong> ${car.warehouse_address}</p>`;
                     }
                     
-                    // Контейнер (если есть)
                     if (car.container_number) {
                         resultHtml += `<p><strong>Контейнер:</strong> ${car.container_number}</p>`;
                     }
                     
-                    // Если у автомобиля есть контейнер с фотографиями - показываем кнопку
                     if (car.container_number && car.container_photos_count > 0) {
                         currentContainerNumber = car.container_number;
                         photosSection.style.display = 'block';
@@ -363,7 +377,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     resultHtml += `<p><strong>Контейнер:</strong> ${container.number}</p>`;
                     resultHtml += `<p><strong>Статус:</strong> ${container.status_display || container.status}</p>`;
                     
-                    // Дата разгрузки
                     if (container.unload_date) {
                         const unloadDate = new Date(container.unload_date);
                         resultHtml += `<p><strong>Дата разгрузки:</strong> ${unloadDate.toLocaleDateString('ru-RU')}</p>`;
@@ -373,7 +386,6 @@ document.addEventListener('DOMContentLoaded', function() {
                         resultHtml += `<p><strong>Линия:</strong> ${container.line_name}</p>`;
                     }
                     
-                    // Адрес склада (только адрес, без названия)
                     if (container.warehouse_address) {
                         resultHtml += `<p><strong>Склад:</strong> ${container.warehouse_address}</p>`;
                     }
@@ -382,7 +394,6 @@ document.addEventListener('DOMContentLoaded', function() {
                         resultHtml += `<p><strong>Автомобилей:</strong> ${container.cars_count}</p>`;
                     }
                     
-                    // Показываем кнопку фотографий для контейнера
                     currentContainerNumber = container.number;
                     photosSection.style.display = 'block';
                     showPhotosBtn.style.display = 'block';
@@ -399,15 +410,22 @@ document.addEventListener('DOMContentLoaded', function() {
             } else if (data.error) {
                 showResult(`<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> ${data.error}</div>`, 'warning');
                 photosSection.style.display = 'none';
+            } else if (data.detail) {
+                showResult(`<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> ${data.detail}</div>`, 'warning');
+                photosSection.style.display = 'none';
             } else {
-                showResult('<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Неизвестная ошибка</div>', 'danger');
+                showResult('<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Произошла ошибка. Попробуйте ещё раз.</div>', 'danger');
                 photosSection.style.display = 'none';
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            showResult('<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка при поиске груза</div>', 'danger');
+            showResult('<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка соединения. Проверьте интернет и попробуйте снова.</div>', 'danger');
             photosSection.style.display = 'none';
+        })
+        .finally(() => {
+            isSubmitting = false;
+            submitBtn.disabled = false;
         });
     });
     
