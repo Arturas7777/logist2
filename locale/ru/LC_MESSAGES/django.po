@@ -3,7 +3,6 @@
 # This file is distributed under the same license as the PACKAGE package.
 # FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
 #
-#, fuzzy
 msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
@@ -36,10 +35,8 @@ msgid " By %(filter_title)s "
 msgstr ""
 
 #: .\templates\website\about.html:4
-#, fuzzy
-#| msgid "О компании"
 msgid "О компании - Caromoto Lithuania"
-msgstr "О компании"
+msgstr "О компании - Caromoto Lithuania"
 
 #: .\templates\website\about.html:10 .\templates\website\base.html:43
 #: .\templates\website\base.html:187
@@ -47,10 +44,8 @@ msgid "О компании"
 msgstr "О компании"
 
 #: .\templates\website\about.html:11
-#, fuzzy
-#| msgid "Caromoto Lithuania - Доставка автомобилей из США"
 msgid "Профессиональная логистика автомобилей из США"
-msgstr "Caromoto Lithuania - Доставка автомобилей из США"
+msgstr "Профессиональная логистика автомобилей из США"
 
 #: .\templates\website\about.html:22
 msgid ""
@@ -76,10 +71,8 @@ msgid "лет на рынке"
 msgstr ""
 
 #: .\templates\website\about.html:42
-#, fuzzy
-#| msgid "Доставка автомобилей"
 msgid "доставленных авто"
-msgstr "Доставка автомобилей"
+msgstr "доставленных авто"
 
 #: .\templates\website\about.html:48
 msgid "страхование"
@@ -234,10 +227,8 @@ msgid "Все права защищены."
 msgstr ""
 
 #: .\templates\website\contact.html:4
-#, fuzzy
-#| msgid "Контакты"
 msgid "Контакты - Caromoto Lithuania"
-msgstr "Контакты"
+msgstr "Контакты - Caromoto Lithuania"
 
 #: .\templates\website\contact.html:11
 msgid "Свяжитесь с нами любым удобным способом"
@@ -448,10 +439,8 @@ msgid "Последние новости"
 msgstr ""
 
 #: .\templates\website\home.html:163
-#, fuzzy
-#| msgid "Новости"
 msgid "Все новости"
-msgstr "Новости"
+msgstr "Все новости"
 
 #: .\templates\website\home.html:185
 msgid "Читать"
