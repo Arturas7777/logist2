@@ -237,6 +237,7 @@ class ContactMessageViewSet(viewsets.ModelViewSet):
 # ============================================================================
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @throttle_classes([TrackShipmentThrottle])
 def track_shipment(request):
@@ -865,6 +866,7 @@ def ai_chat_history(request):
 
 
 @api_view(['GET'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def get_container_photos(request, container_number):
     """Получить фотографии контейнера с разделением по типам"""
@@ -927,6 +929,7 @@ def get_container_photos(request, container_number):
 
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def download_photos_archive(request):
     """Скачать архив выбранных фотографий"""
