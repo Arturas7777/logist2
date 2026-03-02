@@ -54,9 +54,8 @@
                     <!-- Переключатель языков для всех пользователей -->
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="languageDropdown" role="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-globe"></i> 
                             {% get_current_language as LANGUAGE_CODE %}
-                            {% if LANGUAGE_CODE == 'lt' %}LT{% elif LANGUAGE_CODE == 'ru' %}RU{% else %}EN{% endif %}
+                            {% if LANGUAGE_CODE == 'lt' %}🇱🇹{% elif LANGUAGE_CODE == 'ru' %}🇷🇺{% else %}🇬🇧{% endif %}
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end">
                             <li>
