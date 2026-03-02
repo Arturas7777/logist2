@@ -715,9 +715,18 @@ h1, h2, h3, h4, h5, h6 {
     transition: color 0.3s ease;
 }
 
-/* Дропдауны не должны иметь подчёркивание */
+/* Дропдауны: убираем подчёркивание и Bootstrap-стрелку */
 .navbar-nav .nav-item.dropdown .nav-link::after {
     display: none;
+}
+
+.navbar-nav .dropdown-toggle::after {
+    display: none;
+}
+
+/* Одинаковый размер шрифта для всех пунктов навигации */
+.navbar-nav .nav-link {
+    font-size: 1rem;
 }
 
 /* ===== Футер ===== */

@@ -53,9 +53,9 @@
                     </li>
                     <!-- Переключатель языков для всех пользователей -->
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" id="languageDropdown" role="button" data-bs-toggle="dropdown">
+                        <a class="nav-link" href="#" id="languageDropdown" role="button" data-bs-toggle="dropdown">
                             {% get_current_language as LANGUAGE_CODE %}
-                            {% if LANGUAGE_CODE == 'lt' %}🇱🇹{% elif LANGUAGE_CODE == 'ru' %}🇷🇺{% else %}🇬🇧{% endif %}
+                            {% if LANGUAGE_CODE == 'lt' %}<i class="bi bi-globe"></i> LT{% elif LANGUAGE_CODE == 'ru' %}<i class="bi bi-globe"></i> RU{% else %}<i class="bi bi-globe"></i> EN{% endif %}
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end">
                             <li>
@@ -108,7 +108,7 @@
                         </li>
                     {% else %}
                         <li class="nav-item">
-                            <a class="nav-link btn btn-outline-light ms-2" href="/admin/login/">
+                            <a class="nav-link" href="/admin/login/">
                                 <i class="bi bi-box-arrow-in-right"></i> Вход
                             </a>
                         </li>
