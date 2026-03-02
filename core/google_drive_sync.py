@@ -61,10 +61,111 @@ class GoogleDriveSync:
         return None
     
     @staticmethod
+    def _parse_embedded_folder(content):
+        """Парсит HTML страницу embeddedfolderview и возвращает список файлов/папок."""
+        files = []
+        seen_ids = set()
+        
+        # Паттерн 1: ссылки на файлы с названиями (flip-entry-title)
+        file_pattern = r'href="https://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)/view[^"]*"[^>]*>.*?<div class="flip-entry-title">([^<]+)</div>'
+        for match in re.finditer(file_pattern, content, re.DOTALL):
+            file_id = match.group(1)
+            if file_id in seen_ids:
+                continue
+            seen_ids.add(file_id)
+            filename = match.group(2).strip()
+            if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')):
+                files.append({
+                    'id': file_id,
+                    'name': filename,
+                    'mimeType': 'image/jpeg',
+                    'is_folder': False
+                })
+        
+        # Паттерн 2: подпапки
+        folder_pattern = r'href="https://drive\.google\.com/drive/folders/([a-zA-Z0-9_-]+)[^"]*"[^>]*>.*?<div class="flip-entry-title">([^<]+)</div>'
+        for match in re.finditer(folder_pattern, content, re.DOTALL):
+            fid = match.group(1)
+            if fid in seen_ids:
+                continue
+            seen_ids.add(fid)
+            files.append({
+                'id': fid,
+                'name': match.group(2).strip(),
+                'mimeType': 'application/vnd.google-apps.folder',
+                'is_folder': True
+            })
+        
+        # Паттерн 3 (fallback): простой поиск file ID + название
+        if not files:
+            file_ids = re.findall(r'href="https://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)', content)
+            filenames = re.findall(r'<div class="flip-entry-title">([^<]+)</div>', content)
+            for i, file_id in enumerate(file_ids):
+                if file_id in seen_ids:
+                    continue
+                seen_ids.add(file_id)
+                if i < len(filenames):
+                    filename = filenames[i].strip()
+                    if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')):
+                        files.append({
+                            'id': file_id,
+                            'name': filename,
+                            'mimeType': 'image/jpeg',
+                            'is_folder': False
+                        })
+        
+        return files
+    
+    @staticmethod
+    def _parse_drive_folder_page(content):
+        """
+        Парсит обычную страницу Google Drive папки.
+        Данные о файлах встроены в JavaScript на странице.
+        """
+        files = []
+        seen_ids = set()
+        
+        # Google Drive встраивает данные о файлах в JS. 
+        # Ищем ID файлов и имена из различных паттернов в JS-данных.
+        
+        # Паттерн: массивы вида ["FILE_ID","FILENAME",...] в JS
+        js_file_pattern = r'\["([a-zA-Z0-9_-]{25,})","([^"]+\.(?:jpe?g|png|gif|bmp|webp))"'
+        for match in re.finditer(js_file_pattern, content, re.IGNORECASE):
+            file_id = match.group(1)
+            filename = match.group(2)
+            if file_id not in seen_ids:
+                seen_ids.add(file_id)
+                files.append({
+                    'id': file_id,
+                    'name': filename,
+                    'mimeType': 'image/jpeg',
+                    'is_folder': False
+                })
+        
+        # Паттерн для папок в JS-данных: ID папки + имя + application/vnd.google-apps.folder
+        js_folder_pattern = r'\["([a-zA-Z0-9_-]{25,})","([^"]+)","application/vnd\.google-apps\.folder"'
+        for match in re.finditer(js_folder_pattern, content):
+            fid = match.group(1)
+            if fid not in seen_ids:
+                seen_ids.add(fid)
+                files.append({
+                    'id': fid,
+                    'name': match.group(2),
+                    'mimeType': 'application/vnd.google-apps.folder',
+                    'is_folder': True
+                })
+        
+        return files
+
+    @staticmethod
     def get_folder_files_web(folder_id):
         """
         Получает список файлов и подпапок через веб-интерфейс Google Drive.
         Работает для публичных папок без API ключа.
+        
+        Использует два метода:
+        1. embeddedfolderview (list mode) - основной
+        2. Обычная страница папки Drive - fallback для больших папок
         
         Returns:
             list: Список словарей {id, name, mimeType, is_folder}
@@ -72,80 +173,80 @@ class GoogleDriveSync:
         if not folder_id:
             return []
         
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+        }
+        
         try:
-            # Прямая ссылка на просмотр папки
-            url = f"https://drive.google.com/embeddedfolderview?id={folder_id}"
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
-            
+            # Метод 1: embeddedfolderview в режиме списка (показывает больше файлов)
+            url = f"https://drive.google.com/embeddedfolderview?id={folder_id}#list"
             response = requests.get(url, headers=headers, timeout=30)
             
             if response.status_code != 200:
                 logger.error(f"Не удалось получить доступ к папке {folder_id}: HTTP {response.status_code}")
                 return []
             
-            content = response.text
+            files = GoogleDriveSync._parse_embedded_folder(response.text)
             
-            # Парсим HTML для извлечения файлов и папок
-            files = []
-            
-            # Ищем ссылки на файлы
-            file_pattern = r'href="https://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)/view[^"]*"[^>]*>.*?<div class="flip-entry-title">([^<]+)</div>'
-            for match in re.finditer(file_pattern, content, re.DOTALL):
-                file_id = match.group(1)
-                filename = match.group(2).strip()
+            # Если нашли файлы — проверяем, не обрезан ли результат
+            if files:
+                images_count = sum(1 for f in files if not f.get('is_folder'))
+                if images_count >= 50:
+                    logger.warning(
+                        f"Папка {folder_id}: найдено {images_count} изображений — "
+                        f"возможно, список обрезан Google Drive. Пробуем альтернативный метод."
+                    )
+                    # Метод 2: обычная страница Drive (может содержать все файлы в JS)
+                    alt_files = GoogleDriveSync._get_files_via_drive_page(folder_id, headers)
+                    if len(alt_files) > len(files):
+                        logger.info(f"Альтернативный метод нашёл больше файлов: {len(alt_files)} vs {len(files)}")
+                        files = alt_files
                 
-                # Фильтруем только изображения
-                if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')):
-                    files.append({
-                        'id': file_id,
-                        'name': filename,
-                        'mimeType': 'image/jpeg',
-                        'is_folder': False
-                    })
+                logger.debug(f"Найдено {len(files)} элементов в папке {folder_id}")
+                return files
             
-            # Ищем подпапки
-            folder_pattern = r'href="https://drive\.google\.com/drive/folders/([a-zA-Z0-9_-]+)[^"]*"[^>]*>.*?<div class="flip-entry-title">([^<]+)</div>'
-            for match in re.finditer(folder_pattern, content, re.DOTALL):
-                folder_id_inner = match.group(1)
-                folder_name = match.group(2).strip()
-                files.append({
-                    'id': folder_id_inner,
-                    'name': folder_name,
-                    'mimeType': 'application/vnd.google-apps.folder',
-                    'is_folder': True
-                })
+            # Метод 2: если embeddedfolderview ничего не дал
+            logger.debug(f"embeddedfolderview пуст для {folder_id}, пробуем обычную страницу Drive")
+            alt_files = GoogleDriveSync._get_files_via_drive_page(folder_id, headers)
+            if alt_files:
+                logger.info(f"Альтернативный метод нашёл {len(alt_files)} элементов для {folder_id}")
+                return alt_files
             
-            # Альтернативный парсинг если первый не сработал
-            if not files:
-                # Простой паттерн для файлов
-                file_ids = re.findall(r'href="https://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)', content)
-                filenames = re.findall(r'<div class="flip-entry-title">([^<]+)</div>', content)
-                
-                for i, file_id in enumerate(file_ids):
-                    if i < len(filenames):
-                        filename = filenames[i].strip()
-                        if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')):
-                            files.append({
-                                'id': file_id,
-                                'name': filename,
-                                'mimeType': 'image/jpeg',
-                                'is_folder': False
-                            })
-            
-            logger.debug(f"Найдено {len(files)} элементов в папке {folder_id}")
-            return files
+            logger.debug(f"Найдено 0 элементов в папке {folder_id}")
+            return []
             
         except Exception as e:
             logger.error(f"Ошибка веб-метода для папки {folder_id}: {e}", exc_info=True)
             return []
     
     @staticmethod
-    def download_file(file_id):
+    def _get_files_via_drive_page(folder_id, headers):
+        """Получает файлы через обычную страницу Google Drive папки."""
+        try:
+            url = f"https://drive.google.com/drive/folders/{folder_id}"
+            response = requests.get(url, headers=headers, timeout=30)
+            if response.status_code == 200:
+                return GoogleDriveSync._parse_drive_folder_page(response.text)
+        except Exception as e:
+            logger.debug(f"Альтернативный метод не сработал для {folder_id}: {e}")
+        return []
+    
+    @staticmethod
+    def _is_image_content(content):
+        """Проверяет, является ли содержимое файла изображением по magic bytes."""
+        if not content or len(content) < 100:
+            return False
+        is_jpeg = content[:2] == b'\xff\xd8'
+        is_png = content[:4] == b'\x89PNG'
+        is_webp = len(content) > 12 and content[:4] == b'RIFF' and content[8:12] == b'WEBP'
+        is_gif = content[:3] == b'GIF'
+        is_bmp = content[:2] == b'BM'
+        return is_jpeg or is_png or is_webp or is_gif or is_bmp
+
+    @staticmethod
+    def download_file(file_id, max_retries=2):
         """
-        Скачивает файл с Google Drive.
+        Скачивает файл с Google Drive с retry-логикой.
         
         Returns:
             bytes or None: Содержимое файла
@@ -153,34 +254,73 @@ class GoogleDriveSync:
         if not file_id:
             return None
         
-        try:
-            download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-            
-            session = requests.Session()
-            response = session.get(download_url, stream=True, timeout=60)
-            
-            # Обработка больших файлов с подтверждением (>100MB)
-            if 'download_warning' in response.text or 'virus' in response.text.lower():
-                for key, value in response.cookies.items():
-                    if key.startswith('download_warning'):
-                        confirm_url = download_url + f"&confirm={value}"
-                        response = session.get(confirm_url, stream=True, timeout=60)
-                        break
-            
-            if response.status_code == 200:
+        import time
+        
+        for attempt in range(max_retries + 1):
+            try:
+                download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+                
+                session = requests.Session()
+                response = session.get(download_url, timeout=60)
+                
+                if response.status_code != 200:
+                    logger.warning(f"Не удалось скачать файл {file_id}: HTTP {response.status_code}")
+                    if attempt < max_retries:
+                        time.sleep(2 * (attempt + 1))
+                        continue
+                    return None
+                
                 content = response.content
-                # Проверяем что это действительно изображение
-                if len(content) > 1000 and content[:4] in [b'\xff\xd8\xff\xe0', b'\xff\xd8\xff\xe1', b'\x89PNG']:
+                
+                # Если Google вернул HTML-страницу подтверждения скачивания
+                if content[:5] == b'<!DOC' or content[:5] == b'<html' or b'download_warning' in content[:5000]:
+                    # Ищем токен подтверждения в cookies или в HTML
+                    confirm_token = None
+                    for key, value in response.cookies.items():
+                        if 'download_warning' in key:
+                            confirm_token = value
+                            break
+                    
+                    if not confirm_token:
+                        # Ищем токен в HTML (новый формат Google Drive)
+                        import re as _re
+                        token_match = _re.search(r'confirm=([a-zA-Z0-9_-]+)', response.text)
+                        if token_match:
+                            confirm_token = token_match.group(1)
+                    
+                    if confirm_token:
+                        confirm_url = f"{download_url}&confirm={confirm_token}"
+                        response = session.get(confirm_url, timeout=60)
+                        content = response.content
+                    else:
+                        # Пробуем прямой URL без подтверждения
+                        alt_url = f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t"
+                        response = session.get(alt_url, timeout=60)
+                        content = response.content
+                
+                if GoogleDriveSync._is_image_content(content):
                     return content
-                logger.warning(f"Файл {file_id} не является изображением")
+                
+                logger.warning(
+                    f"Файл {file_id} не является изображением "
+                    f"(size={len(content)}, header={content[:4].hex() if content else 'empty'})"
+                )
                 return None
-            
-            logger.warning(f"Не удалось скачать файл {file_id}: HTTP {response.status_code}")
-            return None
-            
-        except Exception as e:
-            logger.error(f"Ошибка при скачивании файла {file_id}: {e}")
-            return None
+                
+            except requests.exceptions.Timeout:
+                logger.warning(f"Таймаут при скачивании {file_id} (попытка {attempt + 1}/{max_retries + 1})")
+                if attempt < max_retries:
+                    time.sleep(3 * (attempt + 1))
+                    continue
+                return None
+            except Exception as e:
+                logger.error(f"Ошибка при скачивании файла {file_id}: {e}")
+                if attempt < max_retries:
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                return None
+        
+        return None
     
     @staticmethod
     def download_folder_photos(folder_url, container, photo_type='UNLOADING'):
