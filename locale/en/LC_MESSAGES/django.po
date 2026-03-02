@@ -665,3 +665,7 @@ msgstr "Need a Consultation?"
 #: .\templates\website\services.html:224
 msgid "Наши специалисты помогут выбрать оптимальный пакет услуг"
 msgstr "Our specialists will help you choose the optimal service package"
+
+#: templates\website\base.html
+msgid "Язык"
+msgstr "Language"

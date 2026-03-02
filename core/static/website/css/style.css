@@ -699,8 +699,8 @@ h1, h2, h3, h4, h5, h6 {
     transform: none;
 }
 
-/* Красная черта снизу — только для обычных пунктов, не дропдаунов */
-.navbar-nav .nav-item:not(.dropdown) .nav-link::after {
+/* Красная черта снизу — для всех пунктов включая дропдауны */
+.navbar-nav .nav-item .nav-link::after {
     content: '';
     position: absolute;
     bottom: 2px;
@@ -712,7 +712,7 @@ h1, h2, h3, h4, h5, h6 {
     transform: translateX(-50%);
 }
 
-.navbar-nav .nav-item:not(.dropdown) .nav-link:hover::after {
+.navbar-nav .nav-item .nav-link:hover::after {
     width: calc(100% - 1.5rem);
 }
 

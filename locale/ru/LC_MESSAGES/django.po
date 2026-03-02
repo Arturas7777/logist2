@@ -676,3 +676,7 @@ msgstr ""
 #: .\templates\website\services.html:224
 msgid "Наши специалисты помогут выбрать оптимальный пакет услуг"
 msgstr ""
+
+#: templates\website\base.html
+msgid "Язык"
+msgstr "Язык"
