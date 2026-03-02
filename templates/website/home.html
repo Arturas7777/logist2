@@ -208,7 +208,7 @@
 
 <!-- Модальное окно для фотографий контейнера -->
 <div class="modal fade" id="photosModal" tabindex="-1" aria-labelledby="photosModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl">
+    <div class="modal-dialog modal-xl modal-fullscreen-lg-down">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="photosModalLabel">
@@ -519,10 +519,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function createPhotoCard(photo) {
         const photoCard = document.createElement('div');
-        photoCard.className = 'col-md-4 col-sm-6';
+        photoCard.className = 'col-6 col-md-4 col-lg-3';
         photoCard.innerHTML = `
             <div class="card h-100">
-                <div class="card-img-top-container" style="height: 200px; overflow: hidden; cursor: pointer; position: relative;">
+                <div class="card-img-top-container" style="aspect-ratio: 4/3; overflow: hidden; cursor: pointer; position: relative;">
                     <img src="${photo.thumbnail_url}" class="card-img-top photo-preview" style="width: 100%; height: 100%; object-fit: cover;" alt="${photo.description}" data-full-url="${photo.url}" loading="lazy">
                     <div class="photo-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0); transition: all 0.3s; display: flex; align-items: center; justify-content: center;">
                         <i class="bi bi-zoom-in" style="color: white; font-size: 2rem; opacity: 0; transition: opacity 0.3s;"></i>
@@ -535,7 +535,6 @@ document.addEventListener('DOMContentLoaded', function() {
                             <small class="text-muted">${photo.photo_type}</small>
                         </label>
                     </div>
-                    <small class="text-muted d-block">${photo.uploaded_at}</small>
                 </div>
             </div>
         `;
