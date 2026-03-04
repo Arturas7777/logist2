@@ -739,13 +739,13 @@ class CarAdmin(admin.ModelAdmin):
                     car_service.markup_amount = 0
             car_service.save()
 
-        # Then create new services from catalog (if needed)
+        # Then create new services from catalog (only add_by_default services)
         if obj.warehouse:
             warehouse_services = WarehouseService.objects.filter(
                 warehouse=obj.warehouse,
                 is_active=True,
-                default_price__gt=0
-            ).only('id', 'default_price')
+                add_by_default=True
+            ).only('id', 'default_price', 'default_markup')
 
             existing_car_service_ids = set(existing_warehouse_car_services.values_list('service_id', flat=True))
 
@@ -813,13 +813,13 @@ class CarAdmin(admin.ModelAdmin):
                     car_service.markup_amount = 0
             car_service.save()
 
-        # Then create new services from catalog (if needed)
+        # Then create new services from catalog (only add_by_default services)
         if obj.line:
             line_services = LineService.objects.filter(
                 line=obj.line,
                 is_active=True,
-                default_price__gt=0
-            ).only('id', 'default_price')
+                add_by_default=True
+            ).only('id', 'default_price', 'default_markup')
 
             existing_car_service_ids = set(existing_line_car_services.values_list('service_id', flat=True))
 
@@ -881,13 +881,13 @@ class CarAdmin(admin.ModelAdmin):
                     car_service.markup_amount = 0
             car_service.save()
 
-        # Then create new services from catalog (if needed)
+        # Then create new services from catalog (only add_by_default services)
         if obj.carrier:
             carrier_services = CarrierService.objects.filter(
                 carrier=obj.carrier,
                 is_active=True,
-                default_price__gt=0
-            ).only('id', 'default_price')
+                add_by_default=True
+            ).only('id', 'default_price', 'default_markup')
 
             existing_car_service_ids = set(existing_carrier_car_services.values_list('service_id', flat=True))
 
