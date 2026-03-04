@@ -538,6 +538,101 @@ def apply_client_tariffs_for_container(container):
         )
 
 
+def apply_client_tariff_for_car(car):
+    """
+    Применяет тариф клиента к наценкам услуг одного автомобиля.
+
+    Вызывается при смене клиента в карточке авто.
+    Логика аналогична apply_client_tariffs_for_container(), но для одного авто.
+
+    Если у нового клиента tariff_type == NONE — сбрасывает markup на default_markup
+    из каталога услуг (WarehouseService/LineService/CarrierService/CompanyService).
+    """
+    from core.models import CarService, ClientTariffRate
+
+    if not car or not car.pk:
+        return
+
+    client = car.client
+
+    if not client or client.tariff_type == 'NONE':
+        _reset_markup_to_defaults(car)
+        return
+
+    total_cars_in_container = 1
+    if car.container_id:
+        total_cars_in_container = Car.objects.filter(container_id=car.container_id).count()
+
+    agreed_total = None
+
+    if client.tariff_type == 'FIXED':
+        rate = ClientTariffRate.objects.filter(
+            client=client, vehicle_type=car.vehicle_type
+        ).first()
+        if rate:
+            agreed_total = rate.agreed_total_price
+
+    elif client.tariff_type == 'FLEXIBLE':
+        rate = ClientTariffRate.objects.filter(
+            client=client,
+            vehicle_type=car.vehicle_type,
+            min_cars__lte=total_cars_in_container
+        ).filter(
+            db_models.Q(max_cars__gte=total_cars_in_container) | db_models.Q(max_cars__isnull=True)
+        ).first()
+        if rate:
+            agreed_total = rate.agreed_total_price
+
+    if agreed_total is None:
+        logger.debug(
+            f"Нет тарифа для {client.name} ({client.tariff_type}), "
+            f"тип ТС: {car.vehicle_type}, кол-во авто: {total_cars_in_container}"
+        )
+        return
+
+    all_services = list(CarService.objects.filter(car=car))
+    non_storage = [svc for svc in all_services
+                   if svc.get_service_name() and 'Хранение' not in svc.get_service_name()]
+
+    if not non_storage:
+        return
+
+    actual_total = sum((svc.custom_price or Decimal('0')) for svc in non_storage)
+    diff = agreed_total - actual_total
+
+    share = (diff / len(non_storage)).quantize(Decimal('0.01'))
+    remainder = diff - share * len(non_storage)
+
+    for i, svc in enumerate(non_storage):
+        svc.markup_amount = share
+        if i == len(non_storage) - 1:
+            svc.markup_amount = share + remainder
+        svc.save(update_fields=['markup_amount'])
+
+    logger.info(
+        f"📊 Пересчёт тарифа при смене клиента {car.vin} ({client.name}): "
+        f"agreed={agreed_total}€, actual_cost={actual_total}€, наценка={diff}€"
+    )
+
+
+def _reset_markup_to_defaults(car):
+    """Сбрасывает markup_amount на default_markup из каталога услуг."""
+    from core.models import CarService
+
+    for svc in CarService.objects.filter(car=car):
+        default_markup = Decimal('0')
+        try:
+            service_obj = svc._get_service_obj()
+            if service_obj:
+                default_markup = Decimal(str(getattr(service_obj, 'default_markup', 0) or 0))
+        except Exception:
+            pass
+
+        if svc.markup_amount != default_markup:
+            svc.markup_amount = default_markup
+            svc.save(update_fields=['markup_amount'])
+
+
 def find_warehouse_services_for_car(warehouse):
     """
     Находит услуги склада для автомобиля, которые должны добавляться по умолчанию.
