@@ -739,8 +739,10 @@ class CarAdmin(admin.ModelAdmin):
                     car_service.markup_amount = 0
             car_service.save()
 
-        # Then create new services from catalog (only add_by_default services)
-        if obj.warehouse:
+        # Auto-add default warehouse services only for new cars or when warehouse changed
+        changed_data = getattr(form, 'changed_data', []) if form else []
+        warehouse_changed = not change or 'warehouse' in changed_data
+        if warehouse_changed and obj.warehouse:
             warehouse_services = WarehouseService.objects.filter(
                 warehouse=obj.warehouse,
                 is_active=True,
@@ -749,26 +751,21 @@ class CarAdmin(admin.ModelAdmin):
 
             existing_car_service_ids = set(existing_warehouse_car_services.values_list('service_id', flat=True))
 
-            # Get blacklist of deleted services
             deleted_services = DeletedCarService.objects.filter(
                 car=obj,
                 service_type='WAREHOUSE'
             ).values_list('service_id', flat=True)
 
             for service in warehouse_services:
-                # Check if service was deleted
                 if f'warehouse_{service.id}' in removed_services:
                     continue
 
-                # Check blacklist
                 if service.id in deleted_services:
                     continue
 
-                # If service not yet in CarService, create automatically
                 if service.id not in existing_car_service_ids:
                     field_name = f'warehouse_service_{service.id}'
                     value = request.POST.get(field_name) or service.default_price
-                    # Get default_markup from service
                     default_markup = getattr(service, 'default_markup', 0) or 0
                     CarService.objects.create(
                         car=obj,
@@ -813,8 +810,9 @@ class CarAdmin(admin.ModelAdmin):
                     car_service.markup_amount = 0
             car_service.save()
 
-        # Then create new services from catalog (only add_by_default services)
-        if obj.line:
+        # Auto-add default line services only for new cars or when line changed
+        line_changed = not change or 'line' in changed_data
+        if line_changed and obj.line:
             line_services = LineService.objects.filter(
                 line=obj.line,
                 is_active=True,
@@ -823,7 +821,6 @@ class CarAdmin(admin.ModelAdmin):
 
             existing_car_service_ids = set(existing_line_car_services.values_list('service_id', flat=True))
 
-            # Get blacklist of deleted services
             deleted_services = DeletedCarService.objects.filter(
                 car=obj,
                 service_type='LINE'
@@ -881,8 +878,9 @@ class CarAdmin(admin.ModelAdmin):
                     car_service.markup_amount = 0
             car_service.save()
 
-        # Then create new services from catalog (only add_by_default services)
-        if obj.carrier:
+        # Auto-add default carrier services only for new cars or when carrier changed
+        carrier_changed = not change or 'carrier' in changed_data
+        if carrier_changed and obj.carrier:
             carrier_services = CarrierService.objects.filter(
                 carrier=obj.carrier,
                 is_active=True,
@@ -960,6 +958,17 @@ class CarAdmin(admin.ModelAdmin):
                 logger.debug(f"Обновлены поля: storage_cost={obj.storage_cost}, days={obj.days}")
             except Exception as e:
                 logger.error(f"Ошибка при пересчете стоимости хранения: {e}")
+
+        # Recalculate client tariff when client changes (skip TRANSFERRED cars)
+        if change and form and 'client' in getattr(form, 'changed_data', []):
+            if obj.status != 'TRANSFERRED':
+                try:
+                    from core.signals import apply_client_tariff_for_car
+                    apply_client_tariff_for_car(obj)
+                    obj.calculate_total_price()
+                    Car.objects.filter(pk=obj.pk).update(total_price=obj.total_price)
+                except Exception as e:
+                    logger.error(f"Ошибка при пересчете тарифа клиента: {e}")
 
     def warehouse_services_display(self, obj):
         """Displays editable fields for all warehouse services"""
