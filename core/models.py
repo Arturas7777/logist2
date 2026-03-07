@@ -772,15 +772,21 @@ class Car(models.Model):
         ВАЖНО: total_price включает скрытую наценку (markup_amount)!
         Это полная сумма, которую заплатит клиент.
 
-        Оптимизация: один проход по car_services вместо 5 отдельных запросов.
+        Порядок: обновить дни/хранение -> записать цену хранения в CarService ->
+        -> сбросить prefetch-кэш -> просуммировать все CarService.
         """
-        # Сбрасываем кэш related objects чтобы получить актуальные услуги из БД
+        # 1. Обновляем дни и storage_cost (поля на модели Car)
+        self.update_days_and_storage()
+
+        # 2. Записываем рассчитанную цену хранения в CarService (через .update(),
+        #    минуя сигналы -- итог всё равно будет учтён ниже при суммировании)
+        self._update_storage_service_price()
+
+        # 3. Сбрасываем prefetch-кэш чтобы получить актуальные услуги из БД
         if hasattr(self, '_prefetched_objects_cache'):
             self._prefetched_objects_cache.pop('car_services', None)
 
-        # Сначала обновляем дни и цену услуги "Хранение"
-        self.update_days_and_storage()
-
+        # 4. Один проход по car_services: итоговая цена = sum(final_price) + sum(markup)
         total = Decimal('0.00')
         markup = Decimal('0.00')
         for svc in self.car_services.all():
@@ -794,27 +800,24 @@ class Car(models.Model):
         """Обновляет платные дни и стоимость хранения для автомобиля.
         
         Цена за день берётся из услуги "Хранение" в списке услуг склада.
-        Стоимость = платные_дни × цена_за_день
+        Стоимость = платные_дни × цена_за_день.
+        
+        НЕ обновляет CarService и НЕ пересчитывает total_price.
+        Для полного пересчёта используйте calculate_total_price().
         """
         if not self.unload_date or not self.warehouse:
             self.days = 0
             self.storage_cost = Decimal('0.00')
-            self._update_storage_service_price()
             return
 
-        # Бесплатные дни из настроек склада
         free_days = int(self.warehouse.free_days or 0)
 
         end_date = self.transfer_date if self.status == 'TRANSFERRED' and self.transfer_date else timezone.now().date()
         total_days = (end_date - self.unload_date).days + 1
         self.days = max(0, total_days - free_days)
         
-        # Получаем ставку из услуги "Хранение"
         daily_rate = self._get_storage_daily_rate()
         self.storage_cost = Decimal(str(self.days)) * daily_rate
-        
-        # Обновляем цену услуги "Хранение" в CarService
-        self._update_storage_service_price()
     
     def _get_storage_daily_rate(self):
         """Получает ставку хранения за день из услуги 'Хранение' склада."""
@@ -1044,12 +1047,21 @@ class Car(models.Model):
         super().save(*args, **kwargs)
         
         # Шаг 5: пересчёт цены ПОСЛЕ сохранения (нужен pk для запросов CarService)
-        # Используем update() вместо повторного save() — избегаем двойного сохранения
+        # calculate_total_price() обновляет days, storage_cost, total_price и CarService «Хранение»
         try:
-            old_total_price = self.total_price
+            old_total = self.total_price
+            old_days = self.days
+            old_storage = self.storage_cost
             self.calculate_total_price()
-            if self.total_price != old_total_price:
-                Car.objects.filter(pk=self.pk).update(total_price=self.total_price)
+            update_fields = {}
+            if self.total_price != old_total:
+                update_fields['total_price'] = self.total_price
+            if self.days != old_days:
+                update_fields['days'] = self.days
+            if self.storage_cost != old_storage:
+                update_fields['storage_cost'] = self.storage_cost
+            if update_fields:
+                Car.objects.filter(pk=self.pk).update(**update_fields)
         except Exception as e:
             logger.error(f"Failed to calculate total price for car {self.vin}: {e}")
 
@@ -1420,41 +1432,6 @@ def recalculate_car_price_on_service_delete(sender, instance, **kwargs):
         )
     except Exception as e:
         logger.error(f"Ошибка пересчета цены при удалении услуги: {e}")
-
-
-@receiver(post_save, sender=Car)
-def recalculate_car_price_on_car_save(sender, instance, **kwargs):
-    """Пересчитывает текущую цену автомобиля при изменении полей, влияющих на расчет"""
-    # Защита от рекурсии
-    if getattr(instance, '_recalculating_price', False):
-        return
-    if getattr(instance, '_creating_services', False):
-        return
-    
-    try:
-        # Пропускаем для новых объектов
-        if hasattr(instance, '_state') and instance._state.adding:
-            return
-        
-        # Пропускаем если это update_fields=['total_price'] - означает что цена уже пересчитана
-        update_fields = kwargs.get('update_fields')
-        if update_fields and 'total_price' in update_fields:
-            return
-        
-        # Устанавливаем флаг защиты от рекурсии
-        instance._recalculating_price = True
-        
-        try:
-            instance.calculate_total_price()
-            # Используем update() вместо save() чтобы не триггерить сигналы
-            Car.objects.filter(id=instance.id).update(
-                total_price=instance.total_price
-            )
-        finally:
-            instance._recalculating_price = False
-            
-    except Exception as e:
-        logger.error(f"Ошибка пересчета цены при изменении автомобиля: {e}")
 
 
 class AutoTransport(models.Model):

@@ -1704,25 +1704,149 @@ body.popup #footer {
     padding: 16px 24px !important;
 }
 
-/* ===== SELECT2 OVERRIDES (if used) ===== */
+/* ===== SELECT2 OVERRIDES ===== */
+.select2-container { width: 100% !important; }
+
 .select2-container--default .select2-selection--single {
-    border: 1px solid var(--cm-border) !important;
-    border-radius: var(--cm-radius-xs) !important;
-    height: 38px !important;
-    padding: 4px 8px !important;
+    height: 42px !important;
+    border: 1px solid var(--cm-border, #ebebf0) !important;
+    border-radius: var(--cm-radius-xs, 8px) !important;
+    padding: 6px 14px !important;
+}
+.select2-container--default .select2-selection--single .select2-selection__rendered {
+    line-height: 28px !important;
+    padding-left: 0 !important;
+}
+.select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: 40px !important;
 }
 .select2-container--default .select2-selection--single:focus,
 .select2-container--default.select2-container--focus .select2-selection--single {
     border-color: var(--cm-purple) !important;
     box-shadow: 0 0 0 3px var(--cm-purple-bg) !important;
 }
+
+.select2-container--default .select2-selection--multiple {
+    border: 1px solid var(--cm-border, #ebebf0) !important;
+    border-radius: var(--cm-radius-xs, 8px) !important;
+    padding: 10px 12px !important;
+    min-height: 80px !important;
+    max-height: 300px !important;
+    overflow-y: auto !important;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice {
+    border: none !important;
+    border-radius: 8px !important;
+    color: white !important;
+    padding: 6px 12px 6px 8px !important;
+    margin: 4px !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    max-width: calc(100% - 16px) !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    line-height: 1.4 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0 !important;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice span {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+.select2-selection__choice a {
+    pointer-events: auto;
+}
+
+/* Цвета тегов по статусу автомобиля */
+.select2-selection__choice[data-status="FLOATING"] {
+    background: linear-gradient(135deg, #2772a8 0%, #1e5a8a 100%) !important;
+}
+.select2-selection__choice[data-status="IN_PORT"] {
+    background: linear-gradient(135deg, #8B0000 0%, #6B0000 100%) !important;
+}
+.select2-selection__choice[data-status="UNLOADED"] {
+    background: linear-gradient(135deg, #239f58 0%, #1a7a43 100%) !important;
+}
+.select2-selection__choice[data-status="TRANSFERRED"] {
+    background: linear-gradient(135deg, #78458c 0%, #5a3369 100%) !important;
+}
+.select2-selection__choice:not([data-status]) {
+    background: var(--cm-purple, #6c5ce7) !important;
+}
+
+/* Цвета в выпадающем списке */
+.select2-results__option[data-status="FLOATING"] { border-left: 4px solid #2772a8; }
+.select2-results__option[data-status="IN_PORT"] { border-left: 4px solid #8B0000; }
+.select2-results__option[data-status="UNLOADED"] { border-left: 4px solid #239f58; }
+.select2-results__option[data-status="TRANSFERRED"] { border-left: 4px solid #78458c; }
+
+/* Кнопка удаления тега */
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+    color: rgba(255,255,255,0.9) !important;
+    font-size: 16px !important;
+    font-weight: bold !important;
+    border: none !important;
+    background: rgba(0,0,0,0.15) !important;
+    border-radius: 50% !important;
+    outline: none !important;
+    box-shadow: none !important;
+    width: 20px !important;
+    height: 20px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    flex-shrink: 0 !important;
+    margin-right: 8px !important;
+    position: relative !important;
+    top: 0 !important;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+    color: #ff6b6b !important;
+    background: transparent !important;
+    border: none !important;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove:focus {
+    outline: none !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* Контейнер тегов: block вместо inline (Select2 default) чтобы дети получали корректную ширину */
+.select2-container--default .select2-selection--multiple .select2-selection__rendered {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* Поле поиска всегда на новой строке под тегами */
+.select2-container--default .select2-selection--multiple .select2-search--inline {
+    display: block !important;
+    width: 100% !important;
+}
+.select2-container--default .select2-selection--multiple .select2-search--inline .select2-search__field {
+    width: 100% !important;
+    min-width: 100% !important;
+    margin: 0 !important;
+    padding: 8px 4px !important;
+    font-size: 14px !important;
+    height: auto !important;
+    box-sizing: border-box !important;
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+
 .select2-dropdown {
-    border: 1px solid var(--cm-border) !important;
-    border-radius: var(--cm-radius-xs) !important;
+    border: 1px solid var(--cm-border, #ebebf0) !important;
+    border-radius: var(--cm-radius-xs, 8px) !important;
     box-shadow: var(--cm-shadow-md) !important;
 }
 .select2-results__option--highlighted {
-    background: var(--cm-purple) !important;
+    background-color: var(--cm-purple, #6c5ce7) !important;
 }
 
 /* ===== TABULAR INLINE IMPROVEMENTS ===== */
@@ -2623,6 +2747,76 @@ body.popup .cm-form-grid .submit-row {
 .cm-form-main .fieldBox.field-warehouse select,
 .cm-form-main .fieldBox.field-unload_site select {
     width: auto !important;
+}
+
+/* ===== FILTER HORIZONTAL WIDGET (M2M selectors for cars etc.) ===== */
+.selector {
+    width: 100% !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 12px !important;
+}
+
+.selector .selector-available,
+.selector .selector-chosen {
+    flex: 1 1 45% !important;
+    min-width: 280px !important;
+    max-width: none !important;
+    width: auto !important;
+}
+
+.selector select {
+    width: 100% !important;
+    min-height: 250px !important;
+    height: 250px !important;
+    font-size: .85rem !important;
+    padding: 4px !important;
+    border: 1px solid var(--cm-border) !important;
+    border-radius: var(--cm-radius-xs) !important;
+    box-sizing: border-box !important;
+}
+
+.selector .selector-filter {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    margin-bottom: 6px !important;
+}
+
+.selector .selector-filter label {
+    white-space: nowrap !important;
+    font-size: .82rem !important;
+    font-weight: 600 !important;
+    color: var(--cm-text-secondary) !important;
+}
+
+.selector .selector-filter input[type="text"] {
+    flex: 1 !important;
+    width: 100% !important;
+    min-width: 200px !important;
+    padding: 8px 12px !important;
+    font-size: .88rem !important;
+    border: 1px solid var(--cm-border) !important;
+    border-radius: var(--cm-radius-xs) !important;
+    box-sizing: border-box !important;
+}
+
+.selector .selector-filter input[type="text"]:focus {
+    border-color: var(--cm-purple) !important;
+    box-shadow: 0 0 0 3px var(--cm-purple-bg) !important;
+    outline: none !important;
+}
+
+.selector-chooseall,
+.selector-clearall,
+.selector .selector-add,
+.selector .selector-remove {
+    font-size: .82rem !important;
+    color: var(--cm-purple) !important;
+}
+
+.selector ul.selector-chooser {
+    align-self: center !important;
 }
 
 /* ===== TRANSITION ===== */

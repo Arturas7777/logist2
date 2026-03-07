@@ -4,7 +4,6 @@
 {% block extrahead %}
 {{ block.super }}
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-<link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
 <style>
     :root {
         --primary: var(--cm-purple, #6c5ce7);
@@ -379,130 +378,7 @@
     
     .empty-state .icon { font-size: 48px; margin-bottom: 15px; }
     
-    .select2-container { width: 100% !important; }
-    
-    .select2-container--default .select2-selection--single {
-        height: 42px !important;
-        border: 1px solid var(--cm-border, #ebebf0) !important;
-        border-radius: var(--cm-radius-xs, 8px) !important;
-        padding: 6px 14px !important;
-    }
-    
-    .select2-container--default .select2-selection--single .select2-selection__rendered {
-        line-height: 28px !important;
-        padding-left: 0 !important;
-    }
-    
-    .select2-container--default .select2-selection--single .select2-selection__arrow {
-        height: 40px !important;
-    }
-    
-    .select2-container--default .select2-selection--multiple {
-        border: 1px solid var(--cm-border, #ebebf0) !important;
-        border-radius: var(--cm-radius-xs, 8px) !important;
-        padding: 10px 12px !important;
-        min-height: 80px !important;
-        max-height: 300px !important;
-        overflow-y: auto !important;
-    }
-    
-    .select2-container--default .select2-selection--multiple .select2-selection__choice {
-        border: none !important;
-        border-radius: 8px !important;
-        color: white !important;
-        padding: 6px 12px 6px 8px !important;
-        margin: 4px !important;
-        font-size: 13px !important;
-        font-weight: 500 !important;
-        max-width: calc(100% - 16px) !important;
-        white-space: nowrap !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-        line-height: 1.4 !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        gap: 0 !important;
-    }
-    
-    .select2-container--default .select2-selection--multiple .select2-selection__choice span {
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-    }
-    
-    /* Цвета тегов по статусу автомобиля */
-    .select2-selection__choice[data-status="FLOATING"] {
-        background: linear-gradient(135deg, #2772a8 0%, #1e5a8a 100%) !important;
-    }
-    .select2-selection__choice[data-status="IN_PORT"] {
-        background: linear-gradient(135deg, #8B0000 0%, #6B0000 100%) !important;
-    }
-    .select2-selection__choice[data-status="UNLOADED"] {
-        background: linear-gradient(135deg, #239f58 0%, #1a7a43 100%) !important;
-    }
-    .select2-selection__choice[data-status="TRANSFERRED"] {
-        background: linear-gradient(135deg, #78458c 0%, #5a3369 100%) !important;
-    }
-    /* По умолчанию если статус не определен */
-    .select2-selection__choice:not([data-status]) {
-        background: var(--cm-purple, #6c5ce7) !important;
-    }
-    
-    /* Цвета в выпадающем списке */
-    .select2-results__option[data-status="FLOATING"] { border-left: 4px solid #2772a8; }
-    .select2-results__option[data-status="IN_PORT"] { border-left: 4px solid #8B0000; }
-    .select2-results__option[data-status="UNLOADED"] { border-left: 4px solid #239f58; }
-    .select2-results__option[data-status="TRANSFERRED"] { border-left: 4px solid #78458c; }
-    
-    .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
-        color: rgba(255,255,255,0.9) !important;
-        font-size: 16px !important;
-        font-weight: bold !important;
-        border: none !important;
-        background: rgba(0,0,0,0.15) !important;
-        border-radius: 50% !important;
-        outline: none !important;
-        box-shadow: none !important;
-        width: 20px !important;
-        height: 20px !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        cursor: pointer !important;
-        flex-shrink: 0 !important;
-        margin-right: 8px !important;
-        position: relative !important;
-        top: 0 !important;
-    }
-    
-    .select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
-        color: #ff6b6b !important;
-        background: transparent !important;
-        border: none !important;
-    }
-    
-    .select2-container--default .select2-selection--multiple .select2-selection__choice__remove:focus {
-        outline: none !important;
-        border: none !important;
-        box-shadow: none !important;
-    }
-    
-    .select2-selection__choice a {
-        pointer-events: auto;
-    }
-    
-    /* Поле ввода поиска внутри multiple select */
-    .select2-container--default .select2-selection--multiple .select2-search--inline .select2-search__field {
-        margin-top: 8px !important;
-        font-size: 14px !important;
-    }
-    
-    .select2-dropdown {
-        border: 1px solid var(--cm-border, #ebebf0) !important;
-        border-radius: var(--cm-radius-xs, 8px) !important;
-        box-shadow: var(--cm-shadow-md) !important;
-    }
-    
-    .select2-results__option--highlighted { background-color: var(--cm-purple, #6c5ce7) !important; }
+    /* Select2: все стили в dashboard_admin.css */
     
     @media (max-width: 1100px) {
         .invoice-grid { grid-template-columns: 1fr; }
@@ -984,7 +860,7 @@
             var statusLabel = statusLabels[status] || '';
             return $('<span>' + state.text + (statusLabel ? ' <small style="opacity:0.7;">' + statusLabel + '</small>' : '') + '</span>');
         },
-            templateSelection: function(state) {
+        templateSelection: function(state) {
             if (!state.id) return state.text;
             var status = $(state.element).data('status');
             var link = carAdminBaseUrl + state.id + '/change/';
@@ -993,7 +869,7 @@
                 'style="color:inherit;text-decoration:none;cursor:pointer;">' + state.text + '</a>');
         }
     });
-    
+
     // Добавляем data-status к созданным тегам
     function applyStatusColors() {
         $('.select2-selection__choice').each(function() {
