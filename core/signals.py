@@ -43,6 +43,12 @@ for _model in (LineService, WarehouseService, CarrierService, CompanyService):
 def save_old_container_values(sender, instance, **kwargs):
     """Сохраняем старые значения контейнера до сохранения (на экземпляре)"""
     logger.debug(f"[PRE_SAVE] Container {instance.number} pk={instance.pk}")
+
+    # Auto-set status to UNLOADED when unload_date is set and status hasn't progressed past it
+    if instance.unload_date and instance.status in ('FLOATING', 'IN_PORT'):
+        instance.status = 'UNLOADED'
+        logger.info(f"[PRE_SAVE] Auto-set status to UNLOADED for container {instance.number}")
+
     if instance.pk:
         try:
             old = Container.objects.filter(pk=instance.pk).values('status', 'unload_date').first()
@@ -845,7 +851,6 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
 def update_cars_on_warehouse_service_change(sender, instance, **kwargs):
     """Обновляет записи CarService при изменении услуг склада"""
     try:
-        # Находим все автомобили с этим складом
         cars = Car.objects.filter(warehouse=instance.warehouse)
         
         for car in cars:
@@ -857,30 +862,28 @@ def update_cars_on_warehouse_service_change(sender, instance, **kwargs):
             
             if instance.is_active and instance.default_price > 0:
                 if not car_service:
-                    # Не добавляем услугу в существующие авто автоматически
                     continue
                 
-                # Для услуги "Хранение" цена и наценка = платные_дни × ставка_за_день
                 if instance.name == 'Хранение':
                     days = Decimal(str(car.days or 0))
                     custom_price = days * Decimal(str(instance.default_price or 0))
                     default_markup = days * Decimal(str(getattr(instance, 'default_markup', 0) or 0))
                 else:
                     custom_price = instance.default_price
-                    # Получаем default_markup из услуги
                     default_markup = getattr(instance, 'default_markup', None) or Decimal('0')
                 
-                # Обновляем существующую запись CarService
                 car_service.custom_price = custom_price
                 car_service.markup_amount = default_markup
                 car_service.save(update_fields=['custom_price', 'markup_amount'])
             else:
-                # Удаляем запись CarService если услуга неактивна или цена = 0
-                CarService.objects.filter(
+                deleted = CarService.objects.filter(
                     car=car,
                     service_type='WAREHOUSE',
                     service_id=instance.id
                 ).delete()
+                if deleted[0] > 0:
+                    car.calculate_total_price()
+                    Car.objects.filter(pk=car.pk).update(total_price=car.total_price)
                 
     except Exception as e:
         logger.error(f"Error updating cars on warehouse service change: {e}")
@@ -888,20 +891,27 @@ def update_cars_on_warehouse_service_change(sender, instance, **kwargs):
 @receiver(post_save, sender=LineService)
 def update_cars_on_line_service_change(sender, instance, **kwargs):
     """
-    ОТКЛЮЧЕНО: Услуги линии (THS) теперь управляются централизованно 
-    через create_ths_services_for_container() при сохранении контейнера.
-    
-    Этот сигнал больше НЕ добавляет услуги линии автоматически к автомобилям.
+    Услуги линии (THS) управляются централизованно через
+    create_ths_services_for_container() при сохранении контейнера.
+    Этот сигнал только удаляет услуги если LineService стала неактивной,
+    и пересчитывает total_price затронутых авто.
     """
-    # Только удаляем услугу если она стала неактивной
     if not instance.is_active:
         try:
+            affected_car_ids = list(CarService.objects.filter(
+                service_type='LINE',
+                service_id=instance.id
+            ).values_list('car_id', flat=True))
+            
             deleted = CarService.objects.filter(
                 service_type='LINE',
                 service_id=instance.id
             ).delete()
             if deleted[0] > 0:
                 logger.info(f"Deleted {deleted[0]} LINE services for inactive LineService {instance.id}")
+                for car in Car.objects.filter(id__in=affected_car_ids):
+                    car.calculate_total_price()
+                    Car.objects.filter(pk=car.pk).update(total_price=car.total_price)
         except Exception as e:
             logger.error(f"Error deleting inactive line service: {e}")
 
@@ -909,7 +919,6 @@ def update_cars_on_line_service_change(sender, instance, **kwargs):
 def update_cars_on_carrier_service_change(sender, instance, **kwargs):
     """Обновляет записи CarService при изменении услуг перевозчика"""
     try:
-        # Находим все автомобили с этим перевозчиком
         cars = Car.objects.filter(carrier=instance.carrier)
         
         for car in cars:
@@ -921,7 +930,6 @@ def update_cars_on_carrier_service_change(sender, instance, **kwargs):
             
             if instance.is_active and instance.default_price > 0:
                 if not car_service:
-                    # Не добавляем услугу в существующие авто автоматически
                     continue
                 
                 default_markup = getattr(instance, 'default_markup', None) or Decimal('0')
@@ -929,12 +937,14 @@ def update_cars_on_carrier_service_change(sender, instance, **kwargs):
                 car_service.markup_amount = default_markup
                 car_service.save(update_fields=['custom_price', 'markup_amount'])
             else:
-                # Удаляем запись CarService если услуга неактивна или цена = 0
-                CarService.objects.filter(
+                deleted = CarService.objects.filter(
                     car=car,
                     service_type='CARRIER',
                     service_id=instance.id
                 ).delete()
+                if deleted[0] > 0:
+                    car.calculate_total_price()
+                    Car.objects.filter(pk=car.pk).update(total_price=car.total_price)
                 
     except Exception as e:
         logger.error(f"Error updating cars on carrier service change: {e}")
@@ -949,11 +959,17 @@ def update_cars_on_company_service_change(sender, instance, **kwargs):
             service_id=instance.id
         )
         
+        affected_car_ids = list(car_services.values_list('car_id', flat=True).distinct())
+        
         if instance.is_active and instance.default_price > 0:
             default_markup = getattr(instance, 'default_markup', None) or Decimal('0')
             car_services.update(custom_price=instance.default_price, markup_amount=default_markup)
         else:
             car_services.delete()
+        
+        for car in Car.objects.filter(id__in=affected_car_ids):
+            car.calculate_total_price()
+            Car.objects.filter(pk=car.pk).update(total_price=car.total_price)
     except Exception as e:
         logger.error(f"Error updating cars on company service change: {e}")
 

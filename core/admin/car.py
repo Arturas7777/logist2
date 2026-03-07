@@ -541,16 +541,16 @@ class CarAdmin(admin.ModelAdmin):
     def set_status_floating(self, request, queryset):
         updated = queryset.update(status='FLOATING')
         for obj in queryset:
-            obj.update_days_and_storage()
-            obj.save(update_fields=['days', 'storage_cost', 'total_price'])
+            obj.calculate_total_price()
+            Car.objects.filter(pk=obj.pk).update(days=obj.days, storage_cost=obj.storage_cost, total_price=obj.total_price)
         self.message_user(request, f"Статус изменён на 'В пути' для {updated} автомобилей.")
     set_status_floating.short_description = "Изменить статус на В пути"
 
     def set_status_in_port(self, request, queryset):
         updated = queryset.update(status='IN_PORT')
         for obj in queryset:
-            obj.update_days_and_storage()
-            obj.save(update_fields=['days', 'storage_cost', 'total_price'])
+            obj.calculate_total_price()
+            Car.objects.filter(pk=obj.pk).update(days=obj.days, storage_cost=obj.storage_cost, total_price=obj.total_price)
         self.message_user(request, f"Статус изменён на 'В порту' для {updated} автомобилей.")
     set_status_in_port.short_description = "Изменить статус на В порту"
 
@@ -559,8 +559,8 @@ class CarAdmin(admin.ModelAdmin):
         for obj in queryset:
             if obj.warehouse and obj.unload_date:
                 obj.status = 'UNLOADED'
-                obj.update_days_and_storage()
-                obj.save(update_fields=['status', 'days', 'storage_cost', 'total_price'])
+                obj.calculate_total_price()
+                Car.objects.filter(pk=obj.pk).update(status=obj.status, days=obj.days, storage_cost=obj.storage_cost, total_price=obj.total_price)
                 updated += 1
             else:
                 self.message_user(request, f"Автомобиль {obj.vin} не обновлён: требуются поля 'Склад' и 'Дата разгрузки'.", level='warning')
@@ -572,8 +572,8 @@ class CarAdmin(admin.ModelAdmin):
         for obj in queryset:
             if obj.status == 'TRANSFERRED' and not obj.transfer_date:
                 obj.transfer_date = timezone.now().date()
-            obj.update_days_and_storage()
-            obj.save(update_fields=['transfer_date', 'days', 'storage_cost', 'total_price'])
+            obj.calculate_total_price()
+            Car.objects.filter(pk=obj.pk).update(transfer_date=obj.transfer_date, days=obj.days, storage_cost=obj.storage_cost, total_price=obj.total_price)
         self.message_user(request, f"Статус изменён на 'Передан' для {updated} автомобилей.")
     set_status_transferred.short_description = "Изменить статус на Передан"
 
@@ -743,6 +743,15 @@ class CarAdmin(admin.ModelAdmin):
         changed_data = getattr(form, 'changed_data', []) if form else []
         warehouse_changed = not change or 'warehouse' in changed_data
         if warehouse_changed and obj.warehouse:
+            # When warehouse changes, clear DeletedCarService for services not belonging
+            # to the new warehouse -- old deletions are irrelevant for a new provider
+            new_wh_service_ids = set(
+                WarehouseService.objects.filter(warehouse=obj.warehouse).values_list('id', flat=True)
+            )
+            DeletedCarService.objects.filter(
+                car=obj, service_type='WAREHOUSE'
+            ).exclude(service_id__in=new_wh_service_ids).delete()
+
             warehouse_services = WarehouseService.objects.filter(
                 warehouse=obj.warehouse,
                 is_active=True,
@@ -813,6 +822,13 @@ class CarAdmin(admin.ModelAdmin):
         # Auto-add default line services only for new cars or when line changed
         line_changed = not change or 'line' in changed_data
         if line_changed and obj.line:
+            new_line_service_ids = set(
+                LineService.objects.filter(line=obj.line).values_list('id', flat=True)
+            )
+            DeletedCarService.objects.filter(
+                car=obj, service_type='LINE'
+            ).exclude(service_id__in=new_line_service_ids).delete()
+
             line_services = LineService.objects.filter(
                 line=obj.line,
                 is_active=True,
@@ -881,6 +897,13 @@ class CarAdmin(admin.ModelAdmin):
         # Auto-add default carrier services only for new cars or when carrier changed
         carrier_changed = not change or 'carrier' in changed_data
         if carrier_changed and obj.carrier:
+            new_carrier_service_ids = set(
+                CarrierService.objects.filter(carrier=obj.carrier).values_list('id', flat=True)
+            )
+            DeletedCarService.objects.filter(
+                car=obj, service_type='CARRIER'
+            ).exclude(service_id__in=new_carrier_service_ids).delete()
+
             carrier_services = CarrierService.objects.filter(
                 carrier=obj.carrier,
                 is_active=True,
@@ -986,7 +1009,7 @@ class CarAdmin(admin.ModelAdmin):
                     try:
                         # Get service and warehouse details
                         service = WarehouseService.objects.select_related('warehouse').get(id=car_service.service_id)
-                        current_value = car_service.custom_price or service.default_price
+                        current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
                         markup_value = car_service.markup_amount or 0
                         warehouse_name = service.warehouse.name
 
@@ -1057,7 +1080,7 @@ class CarAdmin(admin.ModelAdmin):
                 try:
                     # Get service details
                     service = LineService.objects.get(id=car_service.service_id)
-                    current_value = car_service.custom_price or service.default_price
+                    current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
                     markup_value = car_service.markup_amount or 0
 
                     html += f'''
@@ -1114,7 +1137,7 @@ class CarAdmin(admin.ModelAdmin):
                 try:
                     # Get service details
                     service = CarrierService.objects.get(id=car_service.service_id)
-                    current_value = car_service.custom_price or service.default_price
+                    current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
                     markup_value = car_service.markup_amount or 0
 
                     html += f'''

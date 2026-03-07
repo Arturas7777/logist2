@@ -4,13 +4,7 @@
 {% block extrahead %}
 {{ block.super }}
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-<link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
-<link href="{% static 'css/autotransport.css' %}?v=4" rel="stylesheet">
-<style>
-    .select2-selection__choice a {
-        pointer-events: auto;
-    }
-</style>
+<link href="{% static 'css/autotransport.css' %}?v=13" rel="stylesheet">
 {% endblock %}
 
 {% block topbar_title %}
@@ -431,7 +425,7 @@ console.log('✅ jQuery мост установлен, версия:', window.jQ
                     'style="color:inherit;text-decoration:none;cursor:pointer;">' + state.text + '</a>');
             }
         });
-        
+
         // Добавляем data-status к созданным тегам
         function applyStatusColors() {
             $('.select2-selection__choice').each(function() {

@@ -4,7 +4,7 @@
 Заменяет:
 - Услуги линий в соответствии с количеством авто в контейнере
 - Услуги складов только на "Разгрузка/Погрузка/Декларация" и "Хранение"
-- Пересчитывает итоговые и текущие цены
+- Пересчитывает итоговые цены
 """
 
 from django.core.management.base import BaseCommand
@@ -34,7 +34,6 @@ class Command(BaseCommand):
         
         self.stdout.write(self.style.SUCCESS('Начинаем пересчет услуг автомобилей...\n'))
         
-        # Статистика
         stats = {
             'cars_processed': 0,
             'line_services_updated': 0,
@@ -43,7 +42,6 @@ class Command(BaseCommand):
             'errors': 0,
         }
         
-        # Получаем все автомобили с контейнерами
         cars = Car.objects.select_related(
             'container', 'container__line', 'warehouse', 'line'
         ).prefetch_related('car_services').all()
@@ -73,7 +71,6 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR(f'Ошибка для {car.vin}: {e}'))
                 logger.error(f'Error processing car {car.vin}: {e}')
         
-        # Итоги
         self.stdout.write('\n' + '='*50)
         self.stdout.write(self.style.SUCCESS('ИТОГИ:'))
         self.stdout.write(f'  Обработано автомобилей: {stats["cars_processed"]}')
@@ -83,7 +80,7 @@ class Command(BaseCommand):
         self.stdout.write(f'  Ошибок: {stats["errors"]}')
         
         if dry_run:
-            self.stdout.write(self.style.WARNING('\n[!] Eto byl predprosmotr. Zapustite bez --dry-run dlya primeneniya izmeneniy.'))
+            self.stdout.write(self.style.WARNING('\n[!] Это был предпросмотр. Запустите без --dry-run для применения изменений.'))
 
     def process_car(self, car, dry_run):
         """Обрабатывает один автомобиль"""
@@ -99,11 +96,9 @@ class Command(BaseCommand):
             car_count = car.container.container_cars.count()
             vehicle_type = getattr(car, 'vehicle_type', 'CAR')
             
-            # Находим подходящую услугу линии
             new_line_service = self.find_line_service(line, car_count, vehicle_type)
             
             if new_line_service:
-                # Удаляем старые услуги линий
                 old_services = list(car.car_services.filter(service_type='LINE').values_list('service_id', flat=True))
                 
                 if not dry_run:
@@ -121,7 +116,6 @@ class Command(BaseCommand):
         
         # === 2. УСЛУГИ СКЛАДА ===
         if car.warehouse:
-            # Находим нужные услуги склада
             warehouse_services = self.find_warehouse_services(car.warehouse)
             
             if warehouse_services:
@@ -145,16 +139,19 @@ class Command(BaseCommand):
         
         # === 3. ПЕРЕСЧЕТ ЦЕН ===
         old_total = car.total_price
-        old_current = car.current_price
         
         if not dry_run:
             car.update_days_and_storage()
             car.calculate_total_price()
-            car.save(update_fields=['days', 'storage_cost', 'current_price', 'total_price'])
+            Car.objects.filter(pk=car.pk).update(
+                days=car.days,
+                storage_cost=car.storage_cost,
+                total_price=car.total_price,
+            )
         
-        if car.total_price != old_total or car.current_price != old_current:
+        if car.total_price != old_total:
             changes['price_updated'] = True
-            self.stdout.write(f'  [PRICE] {car.vin}: cena {old_total} -> {car.total_price}')
+            self.stdout.write(f'  [PRICE] {car.vin}: цена {old_total} -> {car.total_price}')
         
         return changes
 
@@ -163,12 +160,10 @@ class Command(BaseCommand):
         services = LineService.objects.filter(line=line, is_active=True)
         
         if vehicle_type == 'MOTO':
-            # Для мотоциклов ищем услугу с MOTO
             for service in services:
                 if 'MOTO' in service.name.upper():
                     return service
         else:
-            # Для авто ищем по количеству
             search_patterns = [
                 f'{car_count} АВТО',
                 f'{car_count} AUTO',
@@ -197,11 +192,9 @@ class Command(BaseCommand):
         for service in all_services:
             service_name_upper = service.name.upper()
             
-            # Услуга разгрузки/декларации
             if not unload_service and any(kw in service_name_upper for kw in unload_keywords):
                 unload_service = service
             
-            # Услуга хранения
             if not storage_service and any(kw in service_name_upper for kw in storage_keywords):
                 storage_service = service
         
@@ -211,4 +204,3 @@ class Command(BaseCommand):
             services.append(storage_service)
         
         return services
-

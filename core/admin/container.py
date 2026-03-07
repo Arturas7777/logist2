@@ -1,10 +1,12 @@
 import json
 import logging
 import time
+from contextlib import contextmanager
 
 from django.contrib import admin
 from django.db import transaction
 from django.db.models import Q
+from django.db.models.signals import post_save, post_delete
 from django.contrib.admin import SimpleListFilter
 from django.utils.html import format_html
 from decimal import Decimal
@@ -12,11 +14,44 @@ from decimal import Decimal
 from core.models import (
     Car, Container, CarService, WarehouseService, LineService,
     CarrierService, CompanyService,
+    recalculate_car_price_on_service_save,
+    recalculate_car_price_on_service_delete,
+)
+from core.signals import (
+    update_related_on_car_save,
+    create_car_services_on_car_save,
+    recalculate_invoices_on_car_service_save,
+    recalculate_invoices_on_car_service_delete,
 )
 from core.admin_filters import MultiStatusFilter, MultiWarehouseFilter, ClientAutocompleteFilter
 from core.admin.inlines import CarInline
 
 logger = logging.getLogger('django')
+
+
+@contextmanager
+def signals_disabled(*signal_pairs):
+    """Temporarily disconnect signals, guaranteed reconnection even on exception."""
+    for signal, handler, sender in signal_pairs:
+        signal.disconnect(handler, sender=sender)
+    try:
+        yield
+    finally:
+        for signal, handler, sender in signal_pairs:
+            signal.connect(handler, sender=sender)
+
+
+CAR_SIGNALS = [
+    (post_save, update_related_on_car_save, Car),
+    (post_save, create_car_services_on_car_save, Car),
+    (post_save, recalculate_car_price_on_service_save, CarService),
+    (post_delete, recalculate_car_price_on_service_delete, CarService),
+]
+
+INVOICE_SIGNALS = [
+    (post_save, recalculate_invoices_on_car_service_save, CarService),
+    (post_delete, recalculate_invoices_on_car_service_delete, CarService),
+]
 
 CONTAINER_STATUS_COLORS = {
     'В пути': '#2772a8',  # Darker blue
@@ -71,6 +106,14 @@ class ContainerAdmin(admin.ModelAdmin):
 
     def _save_model_inner(self, request, obj, form, change):
         """Внутренний метод save_model, выполняемый внутри transaction.atomic()"""
+
+        # Auto-set status to UNLOADED when unload_date is filled and status is still before unloading
+        obj._status_auto_changed = False
+        if obj.unload_date and obj.status in ('FLOATING', 'IN_PORT'):
+            obj.status = 'UNLOADED'
+            obj._status_auto_changed = True
+            logger.info(f"Auto-set status to UNLOADED for container {obj.number} (unload_date={obj.unload_date})")
+
         # If new object without pk, save it
         if not change and not obj.pk:
             super().save_model(request, obj, form, change)
@@ -89,8 +132,11 @@ class ContainerAdmin(admin.ModelAdmin):
             except Exception as e:
                 logger.error(f"Failed to sync cars after warehouse change for container {obj.id}: {e}")
 
-        # If status changed - update status for ALL cars in container
-        if change and form and 'status' in getattr(form, 'changed_data', []):
+        # If status changed (manually or auto-set) - update status for ALL cars in container
+        changed_data = getattr(form, 'changed_data', []) if form else []
+        status_changed_by_user = change and 'status' in changed_data
+        status_changed_auto = change and getattr(obj, '_status_auto_changed', False)
+        if status_changed_by_user or status_changed_auto:
             try:
                 logger.info(f"Status changed for container {obj.id} to {obj.status}, bulk updating all cars...")
                 updated_count = obj.container_cars.update(status=obj.status)
@@ -101,59 +147,37 @@ class ContainerAdmin(admin.ModelAdmin):
         # If unload date changed - update date for ALL cars in container
         if change and form and 'unload_date' in getattr(form, 'changed_data', []):
             try:
-                from django.db.models.signals import post_save, post_delete
-                from core.signals import update_related_on_car_save, create_car_services_on_car_save, recalculate_car_price_on_service_save, recalculate_car_price_on_service_delete
-
                 logger.info(f"Unload date changed for container {obj.id} to {obj.unload_date}, bulk updating all cars...")
-
-                # Refresh container from DB
                 obj.refresh_from_db()
 
-                # Temporarily disconnect ALL signals for optimization
-                post_save.disconnect(update_related_on_car_save, sender=Car)
-                post_save.disconnect(create_car_services_on_car_save, sender=Car)
-                post_save.disconnect(recalculate_car_price_on_service_save, sender=CarService)
-                post_delete.disconnect(recalculate_car_price_on_service_delete, sender=CarService)
+                with signals_disabled(*CAR_SIGNALS):
+                    cars_to_update = []
+                    affected_invoices = set()
 
-                cars_to_update = []
-                affected_invoices = set()
+                    for car in obj.container_cars.select_related('warehouse').all():
+                        car.unload_date = obj.unload_date
+                        car.update_days_and_storage()
+                        car.calculate_total_price()
+                        cars_to_update.append(car)
 
-                for car in obj.container_cars.select_related('warehouse').all():
-                    # Update unload date for ALL cars
-                    car.unload_date = obj.unload_date
-                    car.update_days_and_storage()
-                    car.calculate_total_price()
-                    cars_to_update.append(car)
+                        for invoice in car.newinvoice_set.all():
+                            affected_invoices.add(invoice)
 
-                    # Collect invoices for update (new system only)
-                    for invoice in car.newinvoice_set.all():
-                        affected_invoices.add(invoice)
+                    if cars_to_update:
+                        Car.objects.bulk_update(
+                            cars_to_update,
+                            ['unload_date', 'days', 'storage_cost', 'total_price'],
+                            batch_size=50
+                        )
+                        logger.info(f"Bulk updated {len(cars_to_update)} cars in container {obj.number}")
 
-                # Bulk update with single query
-                if cars_to_update:
-                    Car.objects.bulk_update(
-                        cars_to_update,
-                        ['unload_date', 'days', 'storage_cost', 'total_price'],
-                        batch_size=50
-                    )
-                    logger.info(f"Bulk updated {len(cars_to_update)} cars in container {obj.number}")
-
-                # Re-enable signals
-                post_save.connect(update_related_on_car_save, sender=Car)
-                post_save.connect(create_car_services_on_car_save, sender=Car)
-                post_save.connect(recalculate_car_price_on_service_save, sender=CarService)
-                post_delete.connect(recalculate_car_price_on_service_delete, sender=CarService)
-
-                # Update all affected invoices
                 if affected_invoices:
                     logger.info(f"Updating {len(affected_invoices)} affected invoices...")
                     for invoice in affected_invoices:
                         try:
                             if hasattr(invoice, 'regenerate_items_from_cars'):
-                                # NewInvoice
                                 invoice.regenerate_items_from_cars()
                             else:
-                                # InvoiceOLD
                                 invoice.update_total_amount()
                         except Exception as e:
                             logger.error(f"Error updating invoice {invoice.id}: {e}")
@@ -161,16 +185,6 @@ class ContainerAdmin(admin.ModelAdmin):
 
             except Exception as e:
                 logger.error(f"Failed to update cars after unload_date change for container {obj.id}: {e}")
-                # Make sure signals are re-enabled even on error
-                try:
-                    from django.db.models.signals import post_save, post_delete
-                    from core.signals import update_related_on_car_save, create_car_services_on_car_save, recalculate_car_price_on_service_save, recalculate_car_price_on_service_delete
-                    post_save.connect(update_related_on_car_save, sender=Car)
-                    post_save.connect(create_car_services_on_car_save, sender=Car)
-                    post_save.connect(recalculate_car_price_on_service_save, sender=CarService)
-                    post_delete.connect(recalculate_car_price_on_service_delete, sender=CarService)
-                except:
-                    pass
 
         # Check THS-related changes: line, THS amount, THS payer, warehouse
         changed_data = getattr(form, 'changed_data', []) if form else []
@@ -184,45 +198,28 @@ class ContainerAdmin(admin.ModelAdmin):
         if should_create_ths:
             line_start = time.time()
             try:
-                from django.db.models.signals import post_save, post_delete
-                from core.signals import update_related_on_car_save, create_car_services_on_car_save, create_ths_services_for_container, apply_client_tariffs_for_container, recalculate_invoices_on_car_service_save, recalculate_invoices_on_car_service_delete
-                from core.models import recalculate_car_price_on_service_save, recalculate_car_price_on_service_delete, LineService, WarehouseService
+                from core.signals import create_ths_services_for_container, apply_client_tariffs_for_container
                 from core.models_billing import NewInvoice
 
                 logger.info(f"[TIMING] THS-related change started for container {obj.id}, line: {obj.line}, ths: {obj.ths}, ths_payer: {obj.ths_payer}")
 
-                # Temporarily disconnect ALL signals to avoid recursion and cascading updates
-                post_save.disconnect(update_related_on_car_save, sender=Car)
-                post_save.disconnect(create_car_services_on_car_save, sender=Car)
-                post_save.disconnect(recalculate_car_price_on_service_save, sender=CarService)
-                post_delete.disconnect(recalculate_car_price_on_service_delete, sender=CarService)
-                post_save.disconnect(recalculate_invoices_on_car_service_save, sender=CarService)
-                post_delete.disconnect(recalculate_invoices_on_car_service_delete, sender=CarService)
-
-                try:
-                    # 1. If line changed - update line for all cars
+                with signals_disabled(*(CAR_SIGNALS + INVOICE_SIGNALS)):
                     if 'line' in changed_data:
-                        car_ids = list(obj.container_cars.values_list('id', flat=True))
                         updated_count = obj.container_cars.update(line=obj.line)
                         logger.info(f"[TIMING] Line updated for {updated_count} cars")
 
-                    # 2. Create THS services with proportional distribution
                     if obj.line and obj.ths:
                         created_count = create_ths_services_for_container(obj)
                         logger.info(f"[TIMING] Created {created_count} THS services with proportional distribution")
-                        # 2.1. Apply client tariffs
                         apply_client_tariffs_for_container(obj)
                     else:
-                        # If no line or THS = 0, delete old THS services
                         car_ids = list(obj.container_cars.values_list('id', flat=True))
-                        # Delete THS services from lines
                         deleted_line = CarService.objects.filter(
                             car_id__in=car_ids,
                             service_type='LINE'
                         ).filter(
                             service_id__in=LineService.objects.filter(name__icontains='THS').values_list('id', flat=True)
                         ).delete()
-                        # Delete THS services from warehouses
                         deleted_wh = CarService.objects.filter(
                             car_id__in=car_ids,
                             service_type='WAREHOUSE'
@@ -231,14 +228,12 @@ class ContainerAdmin(admin.ModelAdmin):
                         ).delete()
                         logger.info(f"[TIMING] Deleted {deleted_line[0]} line THS services and {deleted_wh[0]} warehouse THS services")
 
-                    # 3. Recalculate prices for all cars (BULK)
                     cars_to_update = []
                     affected_invoices = set()
                     for car in obj.container_cars.select_related('warehouse').all():
                         car.update_days_and_storage()
                         car.calculate_total_price()
                         cars_to_update.append(car)
-                        # Collect related invoices
                         for invoice in NewInvoice.objects.filter(cars=car, status__in=['DRAFT', 'ISSUED', 'PARTIALLY_PAID', 'OVERDUE']):
                             affected_invoices.add(invoice)
 
@@ -250,7 +245,6 @@ class ContainerAdmin(admin.ModelAdmin):
                         )
                         logger.info(f"[TIMING] Recalculated prices for {len(cars_to_update)} cars")
 
-                    # 4. Update related invoices
                     if affected_invoices:
                         logger.info(f"[TIMING] Updating {len(affected_invoices)} affected invoices...")
                         for invoice in affected_invoices:
@@ -261,15 +255,6 @@ class ContainerAdmin(admin.ModelAdmin):
                         logger.info(f"[TIMING] Invoices updated")
 
                     logger.info(f"[TIMING] THS-related change completed in {time.time() - line_start:.2f}s")
-
-                finally:
-                    # Re-enable signals
-                    post_save.connect(update_related_on_car_save, sender=Car)
-                    post_save.connect(create_car_services_on_car_save, sender=Car)
-                    post_save.connect(recalculate_car_price_on_service_save, sender=CarService)
-                    post_delete.connect(recalculate_car_price_on_service_delete, sender=CarService)
-                    post_save.connect(recalculate_invoices_on_car_service_save, sender=CarService)
-                    post_delete.connect(recalculate_invoices_on_car_service_delete, sender=CarService)
 
             except Exception as e:
                 logger.error(f"Failed to update cars after line change for container {obj.id}: {e}", exc_info=True)
