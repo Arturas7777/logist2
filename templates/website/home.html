@@ -1015,6 +1015,12 @@ document.addEventListener('DOMContentLoaded', function() {
             closePhotoViewer();
         });
         
+        // Закрытие по кнопке X
+        document.getElementById('close-viewer').addEventListener('click', function(e) {
+            e.stopPropagation();
+            closePhotoViewer();
+        });
+        
         // Скачивание отдельного фото
         document.getElementById('download-single').addEventListener('click', function(e) {
             e.stopPropagation();
@@ -1024,13 +1030,19 @@ document.addEventListener('DOMContentLoaded', function() {
             link.click();
         });
         
-        // Remove old keyboard handler, add new one
+        // Disable Bootstrap modal Escape while viewer is open
+        const modalEl = document.getElementById('photosModal');
+        const bsModal = bootstrap.Modal.getInstance(modalEl);
+        if (bsModal) bsModal._config.keyboard = false;
+        
+        // Keyboard handler
         if (_viewerKeyHandler) {
             document.removeEventListener('keydown', _viewerKeyHandler, true);
         }
         _viewerKeyHandler = function(e) {
             if (!document.getElementById('photo-viewer')) return;
             if (e.key === 'Escape') {
+                e.preventDefault();
                 e.stopImmediatePropagation();
                 closePhotoViewer();
             } else if (e.key === 'ArrowLeft') {
@@ -1057,6 +1069,11 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             viewer.remove();
             document.body.style.overflow = '';
+            
+            // Re-enable Bootstrap modal Escape
+            const modalEl = document.getElementById('photosModal');
+            const bsModal = bootstrap.Modal.getInstance(modalEl);
+            if (bsModal) bsModal._config.keyboard = true;
         }
     }
     if (autoTrack) {
