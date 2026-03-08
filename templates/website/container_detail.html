@@ -41,11 +41,14 @@
                     <div class="row g-3">
                         {% for photo in container.photos.all %}
                         <div class="col-md-4 col-sm-6">
-                            <div class="photo-item">
-                                <img src="{{ photo.photo.url }}" class="img-fluid rounded" 
+                            <div class="photo-item" style="position: relative; cursor: pointer; overflow: hidden; border-radius: 0.375rem;" onclick="openPhotoLightbox(this)">
+                                <img src="{% if photo.thumbnail %}{{ photo.thumbnail.url }}{% else %}{{ photo.photo.url }}{% endif %}"
+                                     data-full-url="{{ photo.photo.url }}"
+                                     class="img-fluid rounded"
                                      alt="{{ photo.get_photo_type_display }}"
-                                     style="width: 100%; height: 200px; object-fit: cover;">
-                                <div class="photo-overlay">
+                                     loading="lazy"
+                                     style="width: 100%; height: 200px; object-fit: cover; transition: transform 0.3s;">
+                                <div class="photo-overlay" style="position: absolute; bottom: 0; left: 0; right: 0; padding: 6px 10px; background: linear-gradient(transparent, rgba(0,0,0,0.6));">
                                     <span class="badge bg-dark">{{ photo.get_photo_type_display }}</span>
                                 </div>
                             </div>
@@ -182,6 +185,28 @@
         </div>
     </div>
 </div>
+
+<!-- Lightbox -->
+<div id="photoLightbox" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:9999; justify-content:center; align-items:center; cursor:pointer;" onclick="closePhotoLightbox()">
+    <img id="lightboxImg" src="" style="max-width:95%; max-height:95%; object-fit:contain; border-radius:4px;" onclick="event.stopPropagation()">
+    <button type="button" style="position:absolute; top:15px; right:20px; background:none; border:none; color:#fff; font-size:2.5rem; cursor:pointer; line-height:1;" onclick="closePhotoLightbox()">&times;</button>
+</div>
+
+<script>
+function openPhotoLightbox(el) {
+    const img = el.querySelector('img');
+    const lb = document.getElementById('photoLightbox');
+    document.getElementById('lightboxImg').src = img.dataset.fullUrl;
+    lb.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+function closePhotoLightbox() {
+    document.getElementById('photoLightbox').style.display = 'none';
+    document.getElementById('lightboxImg').src = '';
+    document.body.style.overflow = '';
+}
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closePhotoLightbox();
+});
+</script>
 {% endblock %}
-
-
