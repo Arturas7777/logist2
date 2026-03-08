@@ -674,11 +674,11 @@ class BillingService:
             logger.debug('[AutoReconcile] Нет несопоставленных банковских транзакций')
             return result
         
-        # 2. Все неоплаченные ВХОДЯЩИЕ инвойсы с external_number
-        #    (INCOMING = recipient_company_id == 1, т.е. нам выставили)
+        from ..models import Company
+        default_company_id = Company.get_default_id()
         unpaid_invoices = NewInvoice.objects.filter(
             status__in=['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'],
-            recipient_company_id=1,  # Caromoto Lithuania — получатель (нам выставили)
+            recipient_company_id=default_company_id,
         ).exclude(
             external_number=''
         )

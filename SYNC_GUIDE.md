@@ -88,7 +88,7 @@ git pull origin master
 **На компе или ноуте (3 команды по очереди):**
 
 ```powershell
-ssh root@176.118.198.78 "PGPASSWORD='7154032tut' pg_dump -U arturas -h localhost -d logist2_db -F c -b -f /tmp/logist2_sync_backup.dump"
+ssh root@176.118.198.78 "PGPASSWORD='\$PGPASSWORD' pg_dump -U arturas -h localhost -d logist2_db -F c -b -f /tmp/logist2_sync_backup.dump"
 ```
 
 ```powershell
@@ -96,7 +96,7 @@ scp root@176.118.198.78:/tmp/logist2_sync_backup.dump .
 ```
 
 ```powershell
-$env:PGPASSWORD='7154032tut'; pg_restore -U arturas -h localhost -d logist2_db --clean --if-exists logist2_sync_backup.dump
+$env:PGPASSWORD='YOUR_DB_PASSWORD_HERE'; pg_restore -U arturas -h localhost -d logist2_db --clean --if-exists logist2_sync_backup.dump
 ```
 
 После восстановления можно удалить дамп:

@@ -3,7 +3,6 @@ import re
 from django.views.decorators.http import require_GET
 from django.utils import timezone
 from django.template.loader import render_to_string
-from django.contrib.auth.decorators import login_required
 from django.db.models import Q, Sum
 from datetime import timedelta, datetime
 from typing import Optional
@@ -16,9 +15,6 @@ from decimal import Decimal
 import logging
 from django.shortcuts import render, get_object_or_404
 from django.contrib.admin.views.decorators import staff_member_required
-from django.utils import timezone
-from django.views.decorators.csrf import csrf_exempt
-from django.apps import apps
 
 logger = logging.getLogger('django')
 
@@ -77,42 +73,23 @@ def car_list_api(request):
 @staff_member_required
 @require_GET
 def get_invoice_total(request):
-    """Вычисляет общую сумму для выбранных автомобилей."""
+    """Вычисляет общую сумму для выбранных автомобилей (один SQL-запрос)."""
     car_ids = request.GET.get('car_ids', '').split(',')
     car_ids = [int(cid) for cid in car_ids if cid.strip().isdigit()]
-    logger.info(f"get_invoice_total called with car_ids: {car_ids}")
 
     result = {'total_amount': '0.00'}
     if not car_ids:
-        logger.warning("No valid car IDs provided, returning 0.00")
         return JsonResponse(result)
 
     try:
-        cars = Car.objects.filter(id__in=car_ids).select_related(
-            'client', 'warehouse', 'container', 'line', 'carrier'
+        agg = Car.objects.filter(id__in=car_ids).aggregate(
+            total=Sum('total_price')
         )
-        if not cars.exists():
-            logger.warning(f"No cars found for IDs: {car_ids}")
-            result['error'] = 'No cars found for the provided IDs'
-            return JsonResponse(result)
-        logger.info(f"Cars found: {list(cars)}")
-        for car in cars:
-            logger.debug(f"Car {car.pk}: total_price={car.total_price}, storage_cost={car.storage_cost}")
-    except Exception as e:
-        logger.error(f"Error querying cars: {e}")
-        result['error'] = f"Error querying cars: {e}"
-        return JsonResponse(result, status=500)
-
-    try:
-        total = Decimal('0.00')
-        for car in cars:
-            car.calculate_total_price()
-            total += car.total_price or Decimal('0.00')
+        total = agg['total'] or Decimal('0.00')
         result['total_amount'] = str(total)
-        logger.info(f"Calculated total_amount (in-memory): {result['total_amount']}")
         return JsonResponse(result)
     except Exception as e:
-        logger.error(f"Error calculating total in-memory: {e}")
+        logger.error(f"Error calculating invoice total: {e}")
         result['error'] = str(e)
         return JsonResponse(result, status=500)
 
@@ -168,7 +145,7 @@ def get_client_balance(request):
     logger.warning("Invalid client ID")
     return JsonResponse({'error': 'Invalid client ID'}, status=400)
 
-@login_required
+@staff_member_required
 def register_payment(request):
     """Регистрирует платеж для инвойса."""
     if request.method != 'POST':
@@ -484,6 +461,7 @@ def get_invoice_cars_api(request):
         response['Content-Type'] = 'application/json'
         return response
 
+@staff_member_required
 @require_GET
 def get_warehouse_cars_api(request):
     """API для получения доступных автомобилей для склада (Caromoto Lithuania)"""
@@ -568,20 +546,22 @@ def comparison_dashboard(request):
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
     
-    if start_date:
-        start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-    if end_date:
-        end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+    try:
+        if start_date:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+        if end_date:
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+    except ValueError:
+        return JsonResponse({'error': 'Неверный формат даты. Используйте YYYY-MM-DD'}, status=400)
     
     comparison_service = ComparisonService()
-    
+
     report = comparison_service.get_comparison_report(start_date, end_date)
-    discrepancies = comparison_service.find_discrepancies(start_date, end_date)
-    
+
     clients = Client.objects.filter(
         car__unload_date__isnull=False
     ).distinct().order_by('name')
-    
+
     client_comparisons = []
     for client in clients:
         comparison = comparison_service.compare_client_costs_with_warehouse_invoices(
@@ -589,11 +569,11 @@ def comparison_dashboard(request):
         )
         if comparison['status'] != 'no_data':
             client_comparisons.append(comparison)
-    
+
     warehouses = Warehouse.objects.filter(
         car__isnull=False
     ).distinct().order_by('name')
-    
+
     warehouse_comparisons = []
     for warehouse in warehouses:
         comparison = comparison_service.compare_warehouse_costs_with_payments(
@@ -601,7 +581,15 @@ def comparison_dashboard(request):
         )
         if comparison['status'] != 'no_data':
             warehouse_comparisons.append(comparison)
-    
+
+    discrepancies = [
+        {'type': 'client_comparison', 'entity': c['client_name'], 'comparison': c}
+        for c in client_comparisons if c['status'] not in ('match', 'no_data')
+    ] + [
+        {'type': 'warehouse_comparison', 'entity': w['warehouse_name'], 'comparison': w}
+        for w in warehouse_comparisons if w['status'] not in ('match', 'no_data')
+    ]
+
     context = {
         'report': report,
         'discrepancies': discrepancies,
@@ -711,7 +699,6 @@ def get_discrepancies_api(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 @staff_member_required
-@csrf_exempt
 def get_warehouses(request):
     """Получает список всех активных складов"""
     try:
@@ -728,7 +715,6 @@ def get_warehouses(request):
 
 
 @staff_member_required
-@csrf_exempt
 def get_companies(request):
     """Получает список всех компаний"""
     try:
@@ -878,7 +864,6 @@ def get_available_services(request, car_id):
         return JsonResponse({'error': str(e)}, status=500)
 
 @staff_member_required
-@csrf_exempt
 def add_services(request, car_id):
     """Добавляет выбранные услуги к автомобилю"""
     if request.method != 'POST':
@@ -980,6 +965,7 @@ def add_services(request, car_id):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+@staff_member_required
 def get_container_photos_json(request, container_id):
     """
     API endpoint для получения списка фотографий контейнера.
@@ -1021,7 +1007,6 @@ def get_container_photos_json(request, container_id):
 
 
 @staff_member_required
-@csrf_exempt
 def sync_container_photos_from_gdrive(request, container_id):
     """
     Синхронизирует фотографии контейнера с Google Drive через Celery.

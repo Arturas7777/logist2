@@ -274,9 +274,37 @@ def cache_comparison_data(start_date, end_date):
         return {}
 
 def invalidate_cache(pattern):
-    """Инвалидирует кэш по паттерну"""
+    """Инвалидирует кэш по паттерну.
+    
+    Поддерживает Redis (через django-redis) и FileBasedCache.
+    Для Redis использует SCAN вместо KEYS для production-safety.
+    """
     try:
-        cache.delete_many(cache.keys(pattern))
+        backend = cache.__class__.__name__
+        if 'Redis' in backend:
+            from django.core.cache.backends.redis import RedisCache
+            if isinstance(cache, RedisCache):
+                client = cache._cache.get_client()
+                prefix = getattr(cache, 'key_prefix', '') or ''
+                full_pattern = f"{prefix}:{pattern}" if prefix else pattern
+                cursor = 0
+                keys_to_delete = []
+                while True:
+                    cursor, keys = client.scan(cursor, match=full_pattern, count=100)
+                    keys_to_delete.extend(keys)
+                    if cursor == 0:
+                        break
+                if keys_to_delete:
+                    client.delete(*keys_to_delete)
+                logger.info(f"Cache invalidated for pattern: {pattern} ({len(keys_to_delete)} keys)")
+                return
+        
+        keys = [
+            'company_stats:', 'client_stats:', 'warehouse_stats:', 'comparison_data:',
+        ]
+        matching = [k for k in keys if pattern.replace('*', '') in k]
+        if matching:
+            cache.delete_many(matching)
         logger.info(f"Cache invalidated for pattern: {pattern}")
     except Exception as e:
         logger.error(f"Error invalidating cache for pattern {pattern}: {e}")

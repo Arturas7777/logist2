@@ -6,9 +6,6 @@
     'use strict';
     
     $(document).ready(function() {
-        console.log('🚛 AutoTransport JS инициализирован');
-        console.log('jQuery версия:', $.fn.jquery);
-        console.log('Select2 доступен:', typeof $.fn.select2);
 
         // ============================================
         // 1. АВТОЗАПОЛНЕНИЕ EORI КОДА ИЗ ПЕРЕВОЗЧИКА
@@ -137,7 +134,6 @@
                             phone: newPhone
                         },
                         success: function(data) {
-                            console.log('✅ Телефон водителя обновлен:', data.phone);
                         },
                         error: function(xhr, status, error) {
                             console.error('Ошибка обновления телефона:', error);
@@ -247,7 +243,6 @@
                         trailer_number: trailerNumber
                     },
                     success: function(data) {
-                        console.log('✅ Новый автовоз добавлен:', data.truck);
                         // Обновляем список
                         const truckSelect = $('#id_truck');
                         const option = $('<option></option>')
@@ -301,7 +296,6 @@
                         phone: phone
                     },
                     success: function(data) {
-                        console.log('✅ Новый водитель добавлен:', data.driver);
                         // Обновляем список
                         const driverSelect = $('#id_driver');
                         const option = $('<option></option>')
@@ -428,7 +422,6 @@
             }
         });
 
-        console.log('✅ Все обработчики AutoTransport подключены');
     });
 
 })(window.django && window.django.jQuery ? window.django.jQuery : window.jQuery);

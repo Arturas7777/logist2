@@ -142,49 +142,33 @@ def update_related_on_container_save(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender=Car)
 def update_related_on_car_save(sender, instance, **kwargs):
-    # Обновляем total_amount инвойсов МАССОВО через bulk_update
-    logger.debug(f"🔔 Signal post_save triggered for Car {instance.id} ({instance.vin})")
-    
-    # Проверяем, что у экземпляра есть первичный ключ
+    """Defer invoice regeneration to after transaction commit to avoid blocking saves."""
     if not instance.pk:
-        logger.debug("Skipping - no PK")
         return
     
-    # Обновляем новые инвойсы (NewInvoice)
-    # Добавляем защиту от рекурсии
-    logger.debug(f"Checking NewInvoice update for car {instance.id}, _updating_invoices={getattr(instance, '_updating_invoices', False)}")
+    if getattr(instance, '_updating_invoices', False):
+        return
     
-    if not getattr(instance, '_updating_invoices', False):
-        try:
-            instance._updating_invoices = True
-            
-            # Получаем все новые инвойсы, связанные с этим автомобилем
-            # Используем select_for_update(nowait=True) чтобы не ждать блокировку
-            new_invoices = list(NewInvoice.objects.filter(cars=instance).values_list('id', flat=True))
-            logger.debug(f"Found {len(new_invoices)} NewInvoice(s) for car {instance.vin}")
-            
-            if new_invoices:
-                for invoice_id in new_invoices:
-                    try:
-                        # Каждый инвойс обрабатываем в отдельной транзакции
-                        with transaction.atomic():
-                            invoice = NewInvoice.objects.select_for_update(nowait=True).get(id=invoice_id)
-                            logger.info(f"Regenerating invoice {invoice.number} for car {instance.vin}...")
-                            invoice.regenerate_items_from_cars()
-                            logger.info(f"✅ Auto-regenerated invoice {invoice.number} for car {instance.vin}")
-                    except OperationalError:
-                        # Инвойс заблокирован другой транзакцией - пропускаем
-                        logger.warning(f"⏭️ Skipping invoice {invoice_id} - locked by another transaction")
-                    except NewInvoice.DoesNotExist:
-                        logger.warning(f"⏭️ Invoice {invoice_id} was deleted")
-            else:
-                logger.debug(f"No NewInvoice found for car {instance.vin}")
-        except Exception as e:
-            logger.error(f"❌ Failed to update new invoices for car {instance.id}: {e}", exc_info=True)
-        finally:
-            instance._updating_invoices = False
-    else:
-        logger.debug(f"Skipping NewInvoice update (recursion protection) for car {instance.id}")
+    new_invoices = list(NewInvoice.objects.filter(cars=instance).values_list('id', flat=True))
+    if not new_invoices:
+        return
+
+    car_id = instance.pk
+    def _regenerate_invoices():
+        for invoice_id in new_invoices:
+            try:
+                with transaction.atomic():
+                    invoice = NewInvoice.objects.select_for_update(nowait=True).get(id=invoice_id)
+                    invoice.regenerate_items_from_cars()
+                    logger.info(f"Auto-regenerated invoice {invoice.number} for car {car_id}")
+            except OperationalError:
+                logger.warning(f"Skipping invoice {invoice_id} - locked by another transaction")
+            except NewInvoice.DoesNotExist:
+                pass
+            except Exception as e:
+                logger.error(f"Failed to regenerate invoice {invoice_id}: {e}")
+
+    transaction.on_commit(_regenerate_invoices)
 
 
 # Сигналы для автоматического создания CarService при изменении контрагентов
@@ -875,42 +859,47 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
 
 @receiver(post_save, sender=WarehouseService)
 def update_cars_on_warehouse_service_change(sender, instance, **kwargs):
-    """Обновляет записи CarService при изменении услуг склада"""
+    """Обновляет записи CarService при изменении услуг склада (bulk)."""
     try:
-        cars = Car.objects.filter(warehouse=instance.warehouse)
-        
-        for car in cars:
-            car_service = CarService.objects.filter(
-                car=car,
+        if instance.is_active and instance.default_price > 0:
+            car_services = list(CarService.objects.filter(
+                service_type='WAREHOUSE',
+                service_id=instance.id,
+                car__warehouse=instance.warehouse
+            ).select_related('car'))
+
+            if not car_services:
+                return
+
+            default_markup_val = getattr(instance, 'default_markup', None) or Decimal('0')
+            for cs in car_services:
+                if instance.name == 'Хранение':
+                    days = Decimal(str(cs.car.days or 0))
+                    cs.custom_price = days * Decimal(str(instance.default_price or 0))
+                    cs.markup_amount = days * Decimal(str(default_markup_val))
+                else:
+                    cs.custom_price = instance.default_price
+                    cs.markup_amount = default_markup_val
+
+            CarService.objects.bulk_update(car_services, ['custom_price', 'markup_amount'], batch_size=100)
+        else:
+            affected_car_ids = list(CarService.objects.filter(
                 service_type='WAREHOUSE',
                 service_id=instance.id
-            ).first()
-            
-            if instance.is_active and instance.default_price > 0:
-                if not car_service:
-                    continue
-                
-                if instance.name == 'Хранение':
-                    days = Decimal(str(car.days or 0))
-                    custom_price = days * Decimal(str(instance.default_price or 0))
-                    default_markup = days * Decimal(str(getattr(instance, 'default_markup', 0) or 0))
-                else:
-                    custom_price = instance.default_price
-                    default_markup = getattr(instance, 'default_markup', None) or Decimal('0')
-                
-                car_service.custom_price = custom_price
-                car_service.markup_amount = default_markup
-                car_service.save(update_fields=['custom_price', 'markup_amount'])
-            else:
-                deleted = CarService.objects.filter(
-                    car=car,
-                    service_type='WAREHOUSE',
-                    service_id=instance.id
-                ).delete()
-                if deleted[0] > 0:
+            ).values_list('car_id', flat=True))
+
+            CarService.objects.filter(
+                service_type='WAREHOUSE',
+                service_id=instance.id
+            ).delete()
+
+            if affected_car_ids:
+                cars_to_update = []
+                for car in Car.objects.filter(pk__in=affected_car_ids):
                     car.calculate_total_price()
-                    Car.objects.filter(pk=car.pk).update(total_price=car.total_price)
-                
+                    cars_to_update.append(car)
+                if cars_to_update:
+                    Car.objects.bulk_update(cars_to_update, ['total_price'], batch_size=100)
     except Exception as e:
         logger.error(f"Error updating cars on warehouse service change: {e}")
 
@@ -920,7 +909,7 @@ def update_cars_on_line_service_change(sender, instance, **kwargs):
     Услуги линии (THS) управляются централизованно через
     create_ths_services_for_container() при сохранении контейнера.
     Этот сигнал только удаляет услуги если LineService стала неактивной,
-    и пересчитывает total_price затронутых авто.
+    и пересчитывает total_price затронутых авто (bulk).
     """
     if not instance.is_active:
         try:
@@ -935,50 +924,51 @@ def update_cars_on_line_service_change(sender, instance, **kwargs):
             ).delete()
             if deleted[0] > 0:
                 logger.info(f"Deleted {deleted[0]} LINE services for inactive LineService {instance.id}")
+                cars_to_update = []
                 for car in Car.objects.filter(id__in=affected_car_ids):
                     car.calculate_total_price()
-                    Car.objects.filter(pk=car.pk).update(total_price=car.total_price)
+                    cars_to_update.append(car)
+                if cars_to_update:
+                    Car.objects.bulk_update(cars_to_update, ['total_price'], batch_size=100)
         except Exception as e:
             logger.error(f"Error deleting inactive line service: {e}")
 
 @receiver(post_save, sender=CarrierService)
 def update_cars_on_carrier_service_change(sender, instance, **kwargs):
-    """Обновляет записи CarService при изменении услуг перевозчика"""
+    """Обновляет записи CarService при изменении услуг перевозчика (bulk)."""
     try:
-        cars = Car.objects.filter(carrier=instance.carrier)
-        
-        for car in cars:
-            car_service = CarService.objects.filter(
-                car=car,
+        if instance.is_active and instance.default_price > 0:
+            default_markup = getattr(instance, 'default_markup', None) or Decimal('0')
+            CarService.objects.filter(
+                service_type='CARRIER',
+                service_id=instance.id,
+                car__carrier=instance.carrier
+            ).update(custom_price=instance.default_price, markup_amount=default_markup)
+        else:
+            affected_car_ids = list(CarService.objects.filter(
                 service_type='CARRIER',
                 service_id=instance.id
-            ).first()
-            
-            if instance.is_active and instance.default_price > 0:
-                if not car_service:
-                    continue
-                
-                default_markup = getattr(instance, 'default_markup', None) or Decimal('0')
-                car_service.custom_price = instance.default_price
-                car_service.markup_amount = default_markup
-                car_service.save(update_fields=['custom_price', 'markup_amount'])
-            else:
-                deleted = CarService.objects.filter(
-                    car=car,
-                    service_type='CARRIER',
-                    service_id=instance.id
-                ).delete()
-                if deleted[0] > 0:
+            ).values_list('car_id', flat=True))
+
+            CarService.objects.filter(
+                service_type='CARRIER',
+                service_id=instance.id
+            ).delete()
+
+            if affected_car_ids:
+                cars_to_update = []
+                for car in Car.objects.filter(pk__in=affected_car_ids):
                     car.calculate_total_price()
-                    Car.objects.filter(pk=car.pk).update(total_price=car.total_price)
-                
+                    cars_to_update.append(car)
+                if cars_to_update:
+                    Car.objects.bulk_update(cars_to_update, ['total_price'], batch_size=100)
     except Exception as e:
         logger.error(f"Error updating cars on carrier service change: {e}")
 
 
 @receiver(post_save, sender=CompanyService)
 def update_cars_on_company_service_change(sender, instance, **kwargs):
-    """Обновляет записи CarService при изменении услуг компании"""
+    """Обновляет записи CarService при изменении услуг компании (bulk)."""
     try:
         car_services = CarService.objects.filter(
             service_type='COMPANY',
@@ -993,9 +983,13 @@ def update_cars_on_company_service_change(sender, instance, **kwargs):
         else:
             car_services.delete()
         
-        for car in Car.objects.filter(id__in=affected_car_ids):
-            car.calculate_total_price()
-            Car.objects.filter(pk=car.pk).update(total_price=car.total_price)
+        if affected_car_ids:
+            cars_to_update = []
+            for car in Car.objects.filter(id__in=affected_car_ids):
+                car.calculate_total_price()
+                cars_to_update.append(car)
+            if cars_to_update:
+                Car.objects.bulk_update(cars_to_update, ['total_price'], batch_size=100)
     except Exception as e:
         logger.error(f"Error updating cars on company service change: {e}")
 
@@ -1413,23 +1407,19 @@ def autotransport_post_save(sender, instance, created, **kwargs):
 
 
 def _mark_cars_as_transferred(autotransport, transfer_date=None):
-    """Помечает все авто автовоза как переданные с указанной датой"""
+    """Помечает все авто автовоза как переданные с указанной датой (bulk)."""
     from django.utils import timezone as tz
     if transfer_date is None:
         transfer_date = tz.now().date()
 
-    cars = autotransport.cars.exclude(status='TRANSFERRED')
-    count = 0
-    for car in cars:
-        car.status = 'TRANSFERRED'
-        car.transfer_date = transfer_date
-        car.save(update_fields=['status', 'transfer_date'])
-        count += 1
-
+    count = autotransport.cars.exclude(status='TRANSFERRED').update(
+        status='TRANSFERRED',
+        transfer_date=transfer_date
+    )
     if count:
         logger.info(
-            f"🚛 Автовоз {autotransport.number}: {count} авто → TRANSFERRED "
-            f"(дата передачи: {transfer_date})"
+            f"Autotransport {autotransport.number}: {count} cars -> TRANSFERRED "
+            f"(transfer date: {transfer_date})"
         )
 
 

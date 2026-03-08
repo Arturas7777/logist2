@@ -379,19 +379,21 @@ class DashboardService:
     def get_aged_receivables(self):
         """
         Возвращает дебиторскую задолженность, сгруппированную по срокам просрочки.
-        Считает только OUTGOING инвойсы (issuer_company_id=1) с остатком > 0.
+        Считает только OUTGOING инвойсы (issuer_company = default) с остатком > 0.
         """
         cache_key = get_cache_key('dashboard', 'aged_receivables')
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
+        from ..models import Company
         from ..models_billing import NewInvoice
         from django.db.models import F
 
+        default_company_id = Company.get_default_id()
         today = timezone.now().date()
         unpaid = NewInvoice.objects.filter(
-            issuer_company_id=1,
+            issuer_company_id=default_company_id,
             status__in=['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'],
         ).exclude(total__lte=F('paid_amount'))
 
@@ -438,19 +440,21 @@ class DashboardService:
     def get_aged_payables(self):
         """
         Возвращает кредиторскую задолженность, сгруппированную по срокам просрочки.
-        Считает только INCOMING инвойсы (recipient_company_id=1) с остатком > 0.
+        Считает только INCOMING инвойсы (recipient_company = default) с остатком > 0.
         """
         cache_key = get_cache_key('dashboard', 'aged_payables')
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
+        from ..models import Company
         from ..models_billing import NewInvoice
         from django.db.models import F
 
+        default_company_id = Company.get_default_id()
         today = timezone.now().date()
         unpaid = NewInvoice.objects.filter(
-            recipient_company_id=1,
+            recipient_company_id=default_company_id,
             status__in=['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'],
         ).exclude(total__lte=F('paid_amount'))
 
