@@ -133,10 +133,12 @@ document.getElementById('contact-form').addEventListener('submit', async (e) => 
     resultDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Отправка...</div>';
     
     try {
+        const csrfToken = document.cookie.match(/csrftoken=([^;]+)/)?.[1] || '';
         const response = await fetch('/api/contact/', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
             },
             body: JSON.stringify(formData)
         });

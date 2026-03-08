@@ -81,12 +81,18 @@ function showToast(message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = `toast align-items-center text-white bg-${type} border-0`;
     toast.setAttribute('role', 'alert');
-    toast.innerHTML = `
-        <div class="d-flex">
-            <div class="toast-body">${message}</div>
-            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-        </div>
-    `;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'd-flex';
+    const body = document.createElement('div');
+    body.className = 'toast-body';
+    body.textContent = message;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn-close btn-close-white me-2 m-auto';
+    btn.setAttribute('data-bs-dismiss', 'toast');
+    wrapper.appendChild(body);
+    wrapper.appendChild(btn);
+    toast.appendChild(wrapper);
     
     toastContainer.appendChild(toast);
     
@@ -179,15 +185,9 @@ let pageStartTime = Date.now();
 window.addEventListener('beforeunload', () => {
     const timeSpent = Math.round((Date.now() - pageStartTime) / 1000);
     // Можно отправить на сервер для аналитики
-    console.log('Time spent on page:', timeSpent, 'seconds');
 });
 
-// Debug режим
-const isDebug = new URLSearchParams(window.location.search).has('debug');
-if (isDebug) {
-    console.log('Debug mode enabled');
-    console.log('Page loaded at:', new Date().toISOString());
-}
+
 
 // Инициализация всплывающих подсказок Bootstrap
 const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
@@ -196,7 +196,3 @@ const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstra
 // Инициализация popovers Bootstrap
 const popoverTriggerList = document.querySelectorAll('[data-bs-toggle="popover"]');
 const popoverList = [...popoverTriggerList].map(popoverTriggerEl => new bootstrap.Popover(popoverTriggerEl));
-
-console.log('Caromoto Lithuania - сайт загружен успешно');
-
-

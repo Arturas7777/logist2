@@ -514,10 +514,11 @@ class NewInvoice(models.Model):
         - INCOMING: нам выставили (мы получатель)
         - INTERNAL: прочие комбинации
         """
-        # Caromoto Lithuania — Company с id=1
-        if self.issuer_company_id == 1:
+        from .models import Company
+        default_id = Company.get_default_id()
+        if self.issuer_company_id == default_id:
             return self.DIRECTION_OUTGOING
-        if self.recipient_company_id == 1:
+        if self.recipient_company_id == default_id:
             return self.DIRECTION_INCOMING
         return self.DIRECTION_INTERNAL
     
@@ -749,7 +750,7 @@ class NewInvoice(models.Model):
         is_company = (issuer_type == 'Company')
         
         order = 0
-        for car in self.cars.all():
+        for car in self.cars.prefetch_related('car_services').select_related('warehouse').all():
             # Пересчитываем хранение и стоимость перед генерацией позиций
             car.update_days_and_storage()
             car.calculate_total_price()

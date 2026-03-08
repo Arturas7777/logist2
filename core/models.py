@@ -1125,22 +1125,24 @@ class Car(models.Model):
         """
         Возвращает отчёт о прибыльности автомобиля.
 
-        Доход — сумма по OUTGOING инвойсам (issuer_company_id=1), привязанным к этому авто.
-        Себестоимость — сумма по INCOMING инвойсам (recipient_company_id=1), привязанным к этому авто.
+        Доход — сумма по OUTGOING инвойсам (issuer_company = default), привязанным к этому авто.
+        Себестоимость — сумма по INCOMING инвойсам (recipient_company = default), привязанным к этому авто.
         Прибыль = доход − себестоимость.
         """
         from core.models_billing import InvoiceItem
         from django.db.models import Sum
 
+        default_company_id = Company.get_default_id()
+
         income_total = InvoiceItem.objects.filter(
             car=self,
-            invoice__issuer_company_id=1,
+            invoice__issuer_company_id=default_company_id,
             invoice__status__in=['ISSUED', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'],
         ).aggregate(s=Sum('total_price'))['s'] or Decimal('0.00')
 
         cost_total = InvoiceItem.objects.filter(
             car=self,
-            invoice__recipient_company_id=1,
+            invoice__recipient_company_id=default_company_id,
             invoice__status__in=['ISSUED', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'],
         ).aggregate(s=Sum('total_price'))['s'] or Decimal('0.00')
 
@@ -1212,6 +1214,14 @@ class Company(models.Model):
         from django.conf import settings
         name = getattr(settings, 'COMPANY_NAME', 'Caromoto Lithuania')
         return cls.objects.filter(name=name).first()
+
+    @classmethod
+    def get_default_id(cls):
+        """Возвращает ID компании по умолчанию. Кэширует результат."""
+        if not hasattr(cls, '_default_company_id_cache'):
+            company = cls.get_default()
+            cls._default_company_id_cache = company.pk if company else None
+        return cls._default_company_id_cache
 
 
 class CompanyService(models.Model):

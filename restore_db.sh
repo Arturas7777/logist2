@@ -1,6 +1,6 @@
 #!/bin/bash
 cd /var/www/www-root/data/www/logist2
-export PGPASSWORD='7154032tut'
+export PGPASSWORD="${PGPASSWORD:?Set PGPASSWORD environment variable}"
 
 echo "=== Dropping all tables in logist2_db ==="
 

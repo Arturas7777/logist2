@@ -291,6 +291,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const urlParams = new URLSearchParams(window.location.search);
     const autoTrack = urlParams.get('track');
     let autoShowPhotos = urlParams.get('photos') === '1';
+
+    function escapeHtml(str) {
+        if (str == null) return '';
+        const div = document.createElement('div');
+        div.textContent = String(str);
+        return div.innerHTML;
+    }
     
     // Обновляем обработчик формы отслеживания
     let isSubmitting = false;
@@ -342,21 +349,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 if (data.type === 'car') {
                     const car = data.data;
-                    resultHtml += `<p><strong>Автомобиль:</strong> ${car.vin}</p>`;
-                    resultHtml += `<p><strong>Марка:</strong> ${car.brand || 'N/A'}</p>`;
-                    resultHtml += `<p><strong>Статус:</strong> ${car.status_display || car.status}</p>`;
+                    resultHtml += `<p><strong>Автомобиль:</strong> ${escapeHtml(car.vin)}</p>`;
+                    resultHtml += `<p><strong>Марка:</strong> ${escapeHtml(car.brand || 'N/A')}</p>`;
+                    resultHtml += `<p><strong>Статус:</strong> ${escapeHtml(car.status_display || car.status)}</p>`;
                     
                     if (car.container_unload_date) {
                         const unloadDate = new Date(car.container_unload_date);
-                        resultHtml += `<p><strong>Дата разгрузки:</strong> ${unloadDate.toLocaleDateString('ru-RU')}</p>`;
+                        resultHtml += `<p><strong>Дата разгрузки:</strong> ${escapeHtml(unloadDate.toLocaleDateString('ru-RU'))}</p>`;
                     }
                     
                     if (car.warehouse_address) {
-                        resultHtml += `<p><strong>Склад:</strong> ${car.warehouse_address}</p>`;
+                        resultHtml += `<p><strong>Склад:</strong> ${escapeHtml(car.warehouse_address)}</p>`;
                     }
                     
                     if (car.container_number) {
-                        resultHtml += `<p><strong>Контейнер:</strong> ${car.container_number}</p>`;
+                        resultHtml += `<p><strong>Контейнер:</strong> ${escapeHtml(car.container_number)}</p>`;
                     }
                     
                     if (car.container_number && car.container_photos_count > 0) {
@@ -374,24 +381,24 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 } else if (data.type === 'container') {
                     const container = data.data;
-                    resultHtml += `<p><strong>Контейнер:</strong> ${container.number}</p>`;
-                    resultHtml += `<p><strong>Статус:</strong> ${container.status_display || container.status}</p>`;
+                    resultHtml += `<p><strong>Контейнер:</strong> ${escapeHtml(container.number)}</p>`;
+                    resultHtml += `<p><strong>Статус:</strong> ${escapeHtml(container.status_display || container.status)}</p>`;
                     
                     if (container.unload_date) {
                         const unloadDate = new Date(container.unload_date);
-                        resultHtml += `<p><strong>Дата разгрузки:</strong> ${unloadDate.toLocaleDateString('ru-RU')}</p>`;
+                        resultHtml += `<p><strong>Дата разгрузки:</strong> ${escapeHtml(unloadDate.toLocaleDateString('ru-RU'))}</p>`;
                     }
                     
                     if (container.line_name) {
-                        resultHtml += `<p><strong>Линия:</strong> ${container.line_name}</p>`;
+                        resultHtml += `<p><strong>Линия:</strong> ${escapeHtml(container.line_name)}</p>`;
                     }
                     
                     if (container.warehouse_address) {
-                        resultHtml += `<p><strong>Склад:</strong> ${container.warehouse_address}</p>`;
+                        resultHtml += `<p><strong>Склад:</strong> ${escapeHtml(container.warehouse_address)}</p>`;
                     }
                     
                     if (container.cars_count) {
-                        resultHtml += `<p><strong>Автомобилей:</strong> ${container.cars_count}</p>`;
+                        resultHtml += `<p><strong>Автомобилей:</strong> ${escapeHtml(container.cars_count)}</p>`;
                     }
                     
                     currentContainerNumber = container.number;
@@ -408,10 +415,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 resultHtml += '</div>';
                 showResult(resultHtml, 'success');
             } else if (data.error) {
-                showResult(`<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> ${data.error}</div>`, 'warning');
+                showResult(`<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> ${escapeHtml(data.error)}</div>`, 'warning');
                 photosSection.style.display = 'none';
             } else if (data.detail) {
-                showResult(`<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> ${data.detail}</div>`, 'warning');
+                showResult(`<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> ${escapeHtml(data.detail)}</div>`, 'warning');
                 photosSection.style.display = 'none';
             } else {
                 showResult('<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Произошла ошибка. Попробуйте ещё раз.</div>', 'danger');

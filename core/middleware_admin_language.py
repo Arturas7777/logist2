@@ -7,16 +7,20 @@ from django.utils import translation
 class AdminRussianLanguageMiddleware:
     """
     Middleware, который устанавливает русский язык для всех страниц админки
+    и восстанавливает предыдущий после обработки запроса.
     """
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        # Если это админка, принудительно устанавливаем русский язык
+        prev_lang = translation.get_language()
         if request.path.startswith('/admin'):
             translation.activate('ru')
             request.LANGUAGE_CODE = 'ru'
         
         response = self.get_response(request)
-        return response
 
+        if request.path.startswith('/admin') and prev_lang:
+            translation.activate(prev_lang)
+
+        return response

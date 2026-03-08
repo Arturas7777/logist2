@@ -2,11 +2,12 @@ from rest_framework import serializers
 from .models import Car
 from .models_billing import NewInvoice
 
+
 class CarSerializer(serializers.ModelSerializer):
     text = serializers.CharField(source='__str__')
     class Meta:
         model = Car
-        fields = ['id', 'text', 'vin', 'brand', 'year', 'status', 'warehouse', 'client', 'current_price', 'total_price', 'storage_cost', 'days']
+        fields = ['id', 'text', 'vin', 'brand', 'year', 'status', 'warehouse', 'client', 'total_price', 'storage_cost', 'days']
 
 
 class InvoiceSerializer(serializers.ModelSerializer):

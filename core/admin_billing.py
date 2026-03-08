@@ -57,10 +57,12 @@ class InvoiceDirectionFilter(admin.SimpleListFilter):
         ]
     
     def queryset(self, request, queryset):
+        from .models import Company
+        default_id = Company.get_default_id()
         if self.value() == 'outgoing':
-            return queryset.filter(issuer_company_id=1)
+            return queryset.filter(issuer_company_id=default_id)
         if self.value() == 'incoming':
-            return queryset.filter(recipient_company_id=1)
+            return queryset.filter(recipient_company_id=default_id)
         return queryset
 
 

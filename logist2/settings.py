@@ -178,6 +178,7 @@ LOCALE_PATHS = [
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [
     BASE_DIR / "core" / "static",
+    BASE_DIR / "static",
 ]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
@@ -210,7 +211,7 @@ SESSION_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_AGE = 1209600
 SESSION_COOKIE_DOMAIN = None
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'
-SESSION_SAVE_EVERY_REQUEST = True
+SESSION_SAVE_EVERY_REQUEST = False
 
 # Logging
 LOGGING = {
@@ -253,28 +254,21 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
 SECURE_HSTS_PRELOAD = not DEBUG
 SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 
-# CSRF trusted origins derived from ALLOWED_HOSTS
-def _build_csrf_trusted(origins):
-    result = []
-    for host in origins:
+def _build_csrf_trusted(env_origins, hosts):
+    """Combine explicit env origins with auto-generated ones from ALLOWED_HOSTS."""
+    result = list(env_origins)
+    for host in hosts:
         if host and host != 'localhost' and host != '127.0.0.1':
-            result.append(f"https://{host}")
-            result.append(f"http://{host}")
-    # localhost/http for dev
-    result.append('http://localhost')
-    result.append('http://127.0.0.1')
-    result.append('https://localhost')
-    result.append('https://127.0.0.1')
+            for scheme in ('https', 'http'):
+                origin = f"{scheme}://{host}"
+                if origin not in result:
+                    result.append(origin)
+    for fallback in ('http://localhost', 'http://127.0.0.1', 'https://localhost', 'https://127.0.0.1'):
+        if fallback not in result:
+            result.append(fallback)
     return result
 
-CSRF_TRUSTED_ORIGINS = _build_csrf_trusted(ALLOWED_HOSTS)
-
-# Static files (CSS, JavaScript, Images)
-STATIC_URL = '/static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_DIRS = [
-    BASE_DIR / 'static',
-]
+CSRF_TRUSTED_ORIGINS = _build_csrf_trusted(CSRF_TRUSTED_ORIGINS, ALLOWED_HOSTS)
 
 # Email settings for notifications
 # Для тестирования используем console backend (письма выводятся в терминал)

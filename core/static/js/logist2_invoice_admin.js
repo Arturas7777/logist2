@@ -5,7 +5,6 @@
 
 class InvoiceBuilder {
     constructor() {
-        console.log('Создание InvoiceBuilder...');
         this.selectedCars = new Set();
         this.fromEntity = null;
         this.toEntity = null;
@@ -13,14 +12,11 @@ class InvoiceBuilder {
         this.totalCost = 0;
         this.searchTimer = null;
         
-        console.log('Инициализация обработчиков событий...');
         this.initializeEventListeners();
         this.setCurrentDate();
-        console.log('InvoiceBuilder инициализирован');
     }
     
     initializeEventListeners() {
-        console.log('Настройка обработчиков событий...');
         
         // Обработчики для выбора типа отправителя
         const fromEntityType = document.getElementById('from_entity_type');
@@ -28,7 +24,6 @@ class InvoiceBuilder {
             fromEntityType.addEventListener('change', (e) => {
                 this.handleEntityTypeChange('from', e.target.value);
             });
-            console.log('Обработчик from_entity_type добавлен');
         } else {
             console.error('Элемент from_entity_type не найден!');
         }
@@ -39,7 +34,6 @@ class InvoiceBuilder {
             toEntityType.addEventListener('change', (e) => {
                 this.handleEntityTypeChange('to', e.target.value);
             });
-            console.log('Обработчик to_entity_type добавлен');
         } else {
             console.error('Элемент to_entity_type не найден!');
         }
@@ -50,7 +44,6 @@ class InvoiceBuilder {
             serviceType.addEventListener('change', (e) => {
                 this.handleServiceTypeChange(e.target.value);
             });
-            console.log('Обработчик service_type добавлен');
         } else {
             console.error('Элемент service_type не найден!');
         }
@@ -64,7 +57,6 @@ class InvoiceBuilder {
             fromEntitySearch.addEventListener('blur', (e) => {
                 setTimeout(() => this.clearSearchResults('from'), 200);
             });
-            console.log('Обработчики from_entity_search добавлены');
         } else {
             console.error('Элемент from_entity_search не найден!');
         }
@@ -78,7 +70,6 @@ class InvoiceBuilder {
             toEntitySearch.addEventListener('blur', (e) => {
                 setTimeout(() => this.clearSearchResults('to'), 200);
             });
-            console.log('Обработчики to_entity_search добавлены');
         } else {
             console.error('Элемент to_entity_search не найден!');
         }
@@ -89,7 +80,6 @@ class InvoiceBuilder {
             carSearch.addEventListener('input', (e) => {
                 this.handleCarSearch(e.target.value);
             });
-            console.log('Обработчик car_search добавлен');
         } else {
             console.error('Элемент car_search не найден!');
         }
@@ -98,10 +88,8 @@ class InvoiceBuilder {
         const invoiceForm = document.getElementById('invoice_form');
         if (invoiceForm) {
             invoiceForm.addEventListener('submit', (e) => {
-                console.log('Форма отправлена!');
                 this.handleFormSubmit(e);
             });
-            console.log('Обработчик invoice_form добавлен');
         } else {
             console.error('Элемент invoice_form не найден!');
         }
@@ -110,10 +98,8 @@ class InvoiceBuilder {
         const saveDraftBtn = document.getElementById('save_draft');
         if (saveDraftBtn) {
             saveDraftBtn.addEventListener('click', (e) => {
-                console.log('Кнопка "Сохранить черновик" нажата!');
                 this.handleSaveDraft(e);
             });
-            console.log('Обработчик save_draft добавлен');
         } else {
             console.error('Элемент save_draft не найден!');
         }
@@ -121,7 +107,6 @@ class InvoiceBuilder {
         // Проверяем кнопку создания инвойса
         const createInvoiceBtn = document.getElementById('create_invoice');
         if (createInvoiceBtn) {
-            console.log('Кнопка create_invoice найдена, disabled:', createInvoiceBtn.disabled);
         } else {
             console.error('Элемент create_invoice не найден!');
         }
@@ -156,7 +141,6 @@ class InvoiceBuilder {
     
     handleServiceTypeChange(serviceType) {
         this.serviceType = serviceType;
-        console.log('Выбран тип услуг:', serviceType);
         
         // Обновляем скрытое поле Django
         const serviceTypeField = document.getElementById('id_service_type');
@@ -206,12 +190,23 @@ class InvoiceBuilder {
     displayEntityResults(entitySide, partners) {
         const resultsDiv = document.getElementById(`${entitySide}_entity_results`);
         
-        resultsDiv.innerHTML = partners.map(partner => `
-            <div class="entity-result" data-id="${partner.id}" data-name="${partner.name}" data-type="${partner.type}">
-                <div class="entity-name">${partner.name}</div>
-                <div class="entity-type">${this.getEntityTypeDisplay(partner.type)}</div>
-            </div>
-        `).join('');
+        resultsDiv.innerHTML = '';
+        partners.forEach(partner => {
+            const div = document.createElement('div');
+            div.className = 'entity-result';
+            div.dataset.id = partner.id;
+            div.dataset.name = partner.name;
+            div.dataset.type = partner.type;
+            const nameDiv = document.createElement('div');
+            nameDiv.className = 'entity-name';
+            nameDiv.textContent = partner.name;
+            const typeDiv = document.createElement('div');
+            typeDiv.className = 'entity-type';
+            typeDiv.textContent = this.getEntityTypeDisplay(partner.type);
+            div.appendChild(nameDiv);
+            div.appendChild(typeDiv);
+            resultsDiv.appendChild(div);
+        });
         
         // Добавляем обработчики кликов
         resultsDiv.querySelectorAll('.entity-result').forEach(result => {
@@ -352,24 +347,35 @@ class InvoiceBuilder {
         if (cars.length === 0) {
             carsContainer.innerHTML = '<div style="text-align: center; color: #6c757d; padding: 40px;">Нет доступных автомобилей</div>';
         } else {
-            carsContainer.innerHTML = cars.map(car => {
-                // Рассчитываем стоимость в зависимости от типа услуг
+            carsContainer.innerHTML = '';
+            cars.forEach(car => {
                 const serviceCost = this.calculateServiceCost(car);
-                return `
-                    <div class="car-card" data-car-id="${car.id}" data-cost="${serviceCost}" data-car-data='${JSON.stringify(car)}'>
-                        <div class="car-vin">${car.vin}</div>
-                        <div class="car-details">
-                            ${car.brand} ${car.year}<br>
-                            Статус: ${car.status}<br>
-                            Клиент: ${car.client_name}<br>
-                            Склад: ${car.warehouse_name}<br>
-                            Дата разгрузки: ${car.unload_date}
-                            ${car.transfer_date !== 'Не указана' ? '<br>Дата передачи: ' + car.transfer_date : ''}
-                        </div>
-                        <div class="car-costs">${serviceCost.toFixed(2)} €</div>
-                    </div>
-                `;
-            }).join('');
+                const card = document.createElement('div');
+                card.className = 'car-card';
+                card.dataset.carId = car.id;
+                card.dataset.cost = serviceCost;
+                card.dataset.carData = JSON.stringify(car);
+
+                const vinDiv = document.createElement('div');
+                vinDiv.className = 'car-vin';
+                vinDiv.textContent = car.vin;
+
+                const detailsDiv = document.createElement('div');
+                detailsDiv.className = 'car-details';
+                let details = `${car.brand} ${car.year}\nСтатус: ${car.status}\nКлиент: ${car.client_name}\nСклад: ${car.warehouse_name}\nДата разгрузки: ${car.unload_date}`;
+                if (car.transfer_date !== 'Не указана') details += `\nДата передачи: ${car.transfer_date}`;
+                detailsDiv.style.whiteSpace = 'pre-line';
+                detailsDiv.textContent = details;
+
+                const costsDiv = document.createElement('div');
+                costsDiv.className = 'car-costs';
+                costsDiv.textContent = `${serviceCost.toFixed(2)} €`;
+
+                card.appendChild(vinDiv);
+                card.appendChild(detailsDiv);
+                card.appendChild(costsDiv);
+                carsContainer.appendChild(card);
+            });
             
             // Добавляем обработчики кликов для выбора автомобилей
             carsContainer.querySelectorAll('.car-card').forEach(card => {
@@ -386,24 +392,19 @@ class InvoiceBuilder {
         const carId = carCard.dataset.carId;
         const cost = parseFloat(carCard.dataset.cost);
         
-        console.log('Переключение выбора автомобиля:', carId, 'стоимость:', cost);
         
         if (this.selectedCars.has(carId)) {
             // Убираем автомобиль
             this.selectedCars.delete(carId);
             this.totalCost -= cost;
             carCard.classList.remove('selected');
-            console.log('Автомобиль удален из выбора');
         } else {
             // Добавляем автомобиль
             this.selectedCars.add(carId);
             this.totalCost += cost;
             carCard.classList.add('selected');
-            console.log('Автомобиль добавлен в выбор');
         }
         
-        console.log('Выбранных автомобилей:', this.selectedCars.size);
-        console.log('Общая стоимость:', this.totalCost);
         
         this.updateInvoiceSummary();
         this.updateHiddenCarsField();
@@ -435,8 +436,6 @@ class InvoiceBuilder {
             carsField = document.querySelector('select[name="cars"]');
         }
         
-        console.log('Поле cars найдено:', carsField);
-        console.log('Тип поля:', carsField?.tagName);
         
         if (carsField) {
             const carIds = Array.from(this.selectedCars);
@@ -447,11 +446,9 @@ class InvoiceBuilder {
                 options.forEach(option => {
                     option.selected = carIds.includes(option.value);
                 });
-                console.log('Обновлено поле cars (select):', carIds);
             } else {
                 // Для input просто устанавливаем value
                 carsField.value = carIds.join(',');
-                console.log('Обновлено поле cars (input):', carIds, 'значение:', carsField.value);
             }
         } else {
             console.error('Поле cars не найдено!');
@@ -489,26 +486,17 @@ class InvoiceBuilder {
         const hasServiceType = this.serviceType !== null;
         const hasCars = this.selectedCars.size > 0;
         
-        console.log('Проверка завершенности формы:');
-        console.log('hasFromEntity:', hasFromEntity);
-        console.log('hasToEntity:', hasToEntity);
-        console.log('hasServiceType:', hasServiceType);
-        console.log('hasCars:', hasCars);
-        console.log('Кнопка будет включена:', hasFromEntity && hasToEntity && hasServiceType && hasCars);
         
         createButton.disabled = !(hasFromEntity && hasToEntity && hasServiceType && hasCars);
     }
     
     async handleFormSubmit(e) {
         e.preventDefault();
-        console.log('Обработка отправки формы...');
         
         if (!this.validateForm()) {
-            console.log('Валидация не прошла');
             return;
         }
         
-        console.log('Валидация прошла успешно');
         
         try {
             // Устанавливаем номер инвойса
@@ -556,11 +544,6 @@ class InvoiceBuilder {
             // Обновляем поле cars перед отправкой
             this.updateHiddenCarsField();
             
-            console.log('Скрытые поля заполнены:');
-            console.log('Номер:', invoiceNumber);
-            console.log('Дата:', today);
-            console.log('Сумма:', this.totalCost.toFixed(2));
-            console.log('Выбранные автомобили:', Array.from(this.selectedCars));
             
             // Проверяем, что все поля заполнены
             const fromEntityTypeField = document.getElementById('id_from_entity_type');
@@ -569,22 +552,8 @@ class InvoiceBuilder {
             const toEntityIdField = document.getElementById('id_to_entity_id');
             const carsField = document.getElementById('id_cars');
             
-            console.log('Проверка полей:');
-            console.log('numberField.value:', document.getElementById('id_number')?.value);
-            console.log('fromEntityTypeField.value:', fromEntityTypeField?.value);
-            console.log('fromEntityIdField.value:', fromEntityIdField?.value);
-            console.log('toEntityTypeField.value:', toEntityTypeField?.value);
-            console.log('toEntityIdField.value:', toEntityIdField?.value);
-            console.log('carsField.value:', carsField?.value);
-            console.log('totalAmountField.value:', totalAmountField?.value);
             
             // Дополнительная отладка для поля cars
-            console.log('Отладка поля cars:');
-            console.log('selectedCars:', Array.from(this.selectedCars));
-            console.log('carsField элемент:', carsField);
-            console.log('carsField тип:', carsField?.tagName);
-            console.log('carsField name:', carsField?.name);
-            console.log('carsField id:', carsField?.id);
             
             // Устанавливаем общую сумму (повторно для надежности)
             if (totalAmountField) {
@@ -608,30 +577,22 @@ class InvoiceBuilder {
     }
     
     validateForm() {
-        console.log('Проверка валидации:');
-        console.log('fromEntity:', this.fromEntity);
-        console.log('toEntity:', this.toEntity);
-        console.log('selectedCars.size:', this.selectedCars.size);
         
         if (!this.fromEntity) {
-            console.log('Ошибка: нет отправителя');
             this.showMessage('Выберите отправителя', 'error');
             return false;
         }
         
         if (!this.toEntity) {
-            console.log('Ошибка: нет получателя');
             this.showMessage('Выберите получателя', 'error');
             return false;
         }
         
         if (this.selectedCars.size === 0) {
-            console.log('Ошибка: нет выбранных автомобилей');
             this.showMessage('Выберите хотя бы один автомобиль', 'error');
             return false;
         }
         
-        console.log('Валидация прошла успешно');
         return true;
     }
     
@@ -696,13 +657,9 @@ class InvoiceBuilder {
 
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('DOM загружен, инициализируем InvoiceBuilder...');
     
     // Добавляем небольшую задержку для полной загрузки всех элементов
     setTimeout(() => {
-        console.log('Проверяем наличие элементов формы...');
-        console.log('URL:', window.location.href);
-        console.log('Заголовок страницы:', document.title);
         
         // Проверяем различные возможные формы
         const invoiceForm = document.getElementById('invoice_form');
@@ -710,25 +667,14 @@ document.addEventListener('DOMContentLoaded', function() {
         const addForm = document.querySelector('form[action*="add"]');
         const anyForm = document.querySelector('form');
         
-        console.log('invoice_form:', invoiceForm);
-        console.log('changeForm:', changeForm);
-        console.log('addForm:', addForm);
-        console.log('anyForm:', anyForm);
         
         // Проверяем, есть ли блок с классом invoice-builder
         const invoiceBuilder = document.querySelector('.invoice-builder');
-        console.log('invoice-builder блок:', invoiceBuilder);
         
         if (invoiceForm) {
-            console.log('Форма найдена, создаем InvoiceBuilder...');
             const invoiceBuilder = new InvoiceBuilder();
-            console.log('InvoiceBuilder создан:', invoiceBuilder);
         } else if (invoiceBuilder) {
-            console.log('Блок invoice-builder найден, но форма invoice_form отсутствует');
-            console.log('Содержимое блока:', invoiceBuilder.innerHTML.substring(0, 200) + '...');
         } else {
-            console.log('Ни форма, ни блок invoice-builder не найдены');
-            console.log('Все формы на странице:', Array.from(document.querySelectorAll('form')).map(f => f.id || f.className || 'без ID'));
         }
     }, 100);
 });

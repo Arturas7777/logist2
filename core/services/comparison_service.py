@@ -3,7 +3,8 @@
 """
 
 from decimal import Decimal
-from django.db.models import Sum, Q
+from django.db import models
+from django.db.models import Sum, Q, Count
 from django.utils import timezone
 from datetime import timedelta
 from typing import Dict, List, Any
@@ -42,7 +43,7 @@ class ComparisonService:
             }
         
         # Получаем общую стоимость автомобиля
-        car_total_cost = car.total_price or car.current_price or Decimal('0.00')
+        car_total_cost = car.total_price or Decimal('0.00')
         
         # Получаем все инвойсы склада, связанные с этим автомобилем
         warehouse_invoices = Invoice.objects.filter(
@@ -116,31 +117,35 @@ class ComparisonService:
                 'difference': 0
             }
         
-        # Суммируем стоимость всех автомобилей клиента
-        cars_total_cost = sum(
-            (car.total_price or car.current_price or Decimal('0.00')) 
-            for car in cars
+        agg = cars_query.aggregate(
+            total_cost=Sum('total_price'),
+            cars_count=models.Count('id')
         )
-        
-        # Получаем все инвойсы склада для автомобилей клиента
+        cars_total_cost = agg['total_cost'] or Decimal('0.00')
+        cars_count = agg['cars_count']
+
         warehouse_invoices = Invoice.objects.filter(
-            cars__in=cars,
+            cars__client=client,
             to_entity_type='WAREHOUSE'
         )
-        
         if start_date:
-            warehouse_invoices = warehouse_invoices.filter(issue_date__gte=start_date)
+            warehouse_invoices = warehouse_invoices.filter(
+                Q(issue_date__gte=start_date) | Q(cars__unload_date__gte=start_date)
+            )
         if end_date:
-            warehouse_invoices = warehouse_invoices.filter(issue_date__lte=end_date)
-        
-        warehouse_invoices_total = warehouse_invoices.aggregate(
-            total=Sum('total_amount')
-        )['total'] or Decimal('0.00')
-        
-        # Вычисляем разницу
+            warehouse_invoices = warehouse_invoices.filter(
+                Q(issue_date__lte=end_date) | Q(cars__unload_date__lte=end_date)
+            )
+        warehouse_invoices = warehouse_invoices.distinct()
+
+        wh_agg = warehouse_invoices.aggregate(
+            total=Sum('total_amount'),
+            inv_count=models.Count('id')
+        )
+        warehouse_invoices_total = wh_agg['total'] or Decimal('0.00')
+
         difference = cars_total_cost - warehouse_invoices_total
-        
-        # Определяем статус
+
         if abs(difference) <= self.tolerance:
             status = 'match'
             message = 'Суммы совпадают'
@@ -150,16 +155,16 @@ class ComparisonService:
         else:
             status = 'warehouse_higher'
             message = f'Стоимость склада выше на {abs(difference):.2f} €'
-        
+
         return {
             'status': status,
             'message': message,
             'client_name': client.name,
-            'cars_count': cars.count(),
+            'cars_count': cars_count,
             'cars_total_cost': float(cars_total_cost),
             'warehouse_invoices_total': float(warehouse_invoices_total),
             'difference': float(difference),
-            'invoices_count': warehouse_invoices.count(),
+            'invoices_count': wh_agg['inv_count'],
             'period': {
                 'start_date': start_date,
                 'end_date': end_date
@@ -267,47 +272,44 @@ class ComparisonService:
         if not end_date:
             end_date = timezone.now().date()
         
-        # Получаем все автомобили в периоде
-        cars_query = Car.objects.filter(unload_date__gte=start_date, unload_date__lte=end_date)
-        cars = cars_query.all()
-        
-        # Получаем все инвойсы в периоде
-        invoices_query = Invoice.objects.filter(issue_date__gte=start_date, issue_date__lte=end_date)
-        invoices = invoices_query.all()
-        
-        # Получаем все платежи в периоде
-        payments_query = Payment.objects.filter(date__gte=start_date, date__lte=end_date)
-        payments = payments_query.all()
-        
-        # Суммируем общие суммы
-        cars_total = sum(
-            (car.total_price or car.current_price or Decimal('0.00')) 
-            for car in cars
+        cars_agg = Car.objects.filter(
+            unload_date__gte=start_date, unload_date__lte=end_date
+        ).aggregate(
+            total=Sum('total_price'),
+            cnt=Count('id')
         )
-        
-        invoices_total = invoices.aggregate(
-            total=Sum('total_amount')
-        )['total'] or Decimal('0.00')
-        
-        payments_total = payments.aggregate(
-            total=Sum('amount')
-        )['total'] or Decimal('0.00')
-        
-        # Вычисляем разницы
+        cars_total = cars_agg['total'] or Decimal('0.00')
+
+        invoices_agg = Invoice.objects.filter(
+            issue_date__gte=start_date, issue_date__lte=end_date
+        ).aggregate(
+            total=Sum('total_amount'),
+            cnt=Count('id')
+        )
+        invoices_total = invoices_agg['total'] or Decimal('0.00')
+
+        payments_agg = Payment.objects.filter(
+            date__gte=start_date, date__lte=end_date
+        ).aggregate(
+            total=Sum('amount'),
+            cnt=Count('id')
+        )
+        payments_total = payments_agg['total'] or Decimal('0.00')
+
         cars_vs_invoices_diff = cars_total - invoices_total
         invoices_vs_payments_diff = invoices_total - payments_total
-        
+
         return {
             'period': {
                 'start_date': start_date,
                 'end_date': end_date
             },
             'summary': {
-                'cars_count': cars.count(),
+                'cars_count': cars_agg['cnt'],
                 'cars_total': float(cars_total),
-                'invoices_count': invoices.count(),
+                'invoices_count': invoices_agg['cnt'],
                 'invoices_total': float(invoices_total),
-                'payments_count': payments.count(),
+                'payments_count': payments_agg['cnt'],
                 'payments_total': float(payments_total),
                 'cars_vs_invoices_difference': float(cars_vs_invoices_diff),
                 'invoices_vs_payments_difference': float(invoices_vs_payments_diff)
@@ -327,14 +329,17 @@ class ComparisonService:
             Список расхождений
         """
         discrepancies = []
-        
+
         if not start_date:
             start_date = timezone.now().date() - timedelta(days=30)
         if not end_date:
             end_date = timezone.now().date()
-        
-        # Проверяем каждого клиента
-        clients = Client.objects.all()
+
+        clients = Client.objects.filter(
+            car__unload_date__gte=start_date,
+            car__unload_date__lte=end_date
+        ).distinct()
+
         for client in clients:
             comparison = self.compare_client_costs_with_warehouse_invoices(
                 client, start_date, end_date
@@ -345,9 +350,11 @@ class ComparisonService:
                     'entity': client.name,
                     'comparison': comparison
                 })
-        
-        # Проверяем каждый склад
-        warehouses = Warehouse.objects.all()
+
+        warehouses = Warehouse.objects.filter(
+            Q(car__unload_date__gte=start_date, car__unload_date__lte=end_date)
+        ).distinct()
+
         for warehouse in warehouses:
             comparison = self.compare_warehouse_costs_with_payments(
                 warehouse, start_date, end_date
@@ -358,6 +365,7 @@ class ComparisonService:
                     'entity': warehouse.name,
                     'comparison': comparison
                 })
-        
+
         return discrepancies
+
 

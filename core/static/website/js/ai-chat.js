@@ -212,7 +212,6 @@ async function sendMessage() {
             return;
         }
         
-        console.debug('AI chat response', { status: response.status, data });
         
         // Удаляем индикатор загрузки
         loadingDiv.remove();
@@ -305,8 +304,6 @@ if (!hasVisited) {
     localStorage.setItem('has_visited_site', 'true');
 }
 
-console.log('ИИ-помощник Caromoto Lithuania инициализирован');
-console.log('Для очистки истории вызовите: clearChatHistory()');
 }
 
 
