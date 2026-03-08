@@ -66,6 +66,10 @@
         .car-details p {
             margin: 8px 0;
         }
+        .vin-value {
+            word-break: break-all;
+            font-family: 'Courier New', monospace;
+        }
         .action-block {
             background-color: #fff3e0;
             border-left: 4px solid #FF9800;
@@ -117,7 +121,7 @@
             <h3 style="margin-top: 0; color: #2E7D32;">Ваш автомобиль:</h3>
             <p><strong>Марка:</strong> {{ car.brand }}</p>
             <p><strong>Год выпуска:</strong> {{ car.year }}</p>
-            <p><strong>VIN:</strong> {{ car.vin }}</p>
+            <p><strong>VIN:</strong> <span class="vin-value">{{ car.vin }}</span></p>
         </div>
         
         <div class="action-block">
