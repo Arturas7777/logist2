@@ -656,6 +656,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     let currentPhotoIndex = 0;
     let currentTabPhotosUrls = [];
+    let _viewerKeyHandler = null;
+    let _viewerScale = 1;
     
     function setupPhotoZoom() {
         // Получаем URL фото из активной вкладки
@@ -976,27 +978,11 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
         
-        // Навигация стрелками клавиатуры + закрытие по Escape
-        function handleViewerKeydown(e) {
-            if (e.key === 'Escape') {
-                closePhotoViewer();
-            } else if (e.key === 'ArrowLeft' && currentPhotoIndex > 0) {
-                e.preventDefault();
-                currentPhotoIndex--;
-                updateViewerImage();
-            } else if (e.key === 'ArrowRight' && currentPhotoIndex < currentTabPhotosUrls.length - 1) {
-                e.preventDefault();
-                currentPhotoIndex++;
-                updateViewerImage();
-            }
-        }
-        document.addEventListener('keydown', handleViewerKeydown);
-        viewer._keyHandler = handleViewerKeydown;
-        
         function updateViewerImage() {
             const img = document.getElementById('viewer-image');
             if (!img) return;
             scale = 1;
+            _viewerScale = 1;
             translateX = 0;
             translateY = 0;
             img.src = currentTabPhotosUrls[currentPhotoIndex];
@@ -1011,16 +997,28 @@ document.addEventListener('DOMContentLoaded', function() {
             if (nextBtn) nextBtn.style.display = currentPhotoIndex < currentTabPhotosUrls.length - 1 ? '' : 'none';
         }
         
-        // Закрытие по клику на фон (вне фото)
-        viewer.addEventListener('click', function(e) {
-            if (e.target === viewer || e.target === viewer.firstElementChild) {
-                closePhotoViewer();
+        // Sync scale to global for keyboard handler
+        const origUpdateTransform = updateTransform;
+        updateTransform = function(wt) { origUpdateTransform(wt); _viewerScale = scale; };
+        
+        // Track mouse drag to avoid closing after pan
+        let clickStartX = 0, clickStartY = 0, wasDragged = false;
+        viewer.addEventListener('mousedown', function(e) {
+            clickStartX = e.clientX;
+            clickStartY = e.clientY;
+            wasDragged = false;
+        });
+        viewer.addEventListener('mousemove', function(e) {
+            if (Math.abs(e.clientX - clickStartX) > 5 || Math.abs(e.clientY - clickStartY) > 5) {
+                wasDragged = true;
             }
         });
         
-        // Закрытие по кнопке
-        document.getElementById('close-viewer').addEventListener('click', function(e) {
-            e.stopPropagation();
+        // Close when clicking dark area (not image, not buttons)
+        viewer.addEventListener('click', function(e) {
+            if (wasDragged) return;
+            if (e.target.tagName === 'IMG') return;
+            if (e.target.closest('button')) return;
             closePhotoViewer();
         });
         
@@ -1032,6 +1030,24 @@ document.addEventListener('DOMContentLoaded', function() {
             link.download = currentTabPhotosUrls[currentPhotoIndex].split('/').pop();
             link.click();
         });
+        
+        // Remove old keyboard handler, add new one
+        if (_viewerKeyHandler) {
+            document.removeEventListener('keydown', _viewerKeyHandler);
+        }
+        _viewerKeyHandler = function(e) {
+            if (!document.getElementById('photo-viewer')) return;
+            if (e.key === 'Escape') {
+                closePhotoViewer();
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                if (currentPhotoIndex > 0) { currentPhotoIndex--; updateViewerImage(); }
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                if (currentPhotoIndex < currentTabPhotosUrls.length - 1) { currentPhotoIndex++; updateViewerImage(); }
+            }
+        };
+        document.addEventListener('keydown', _viewerKeyHandler);
     }
     
     function closePhotoViewer() {
@@ -1041,8 +1057,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.removeEventListener('mousemove', viewer._dragHandlers.move);
                 document.removeEventListener('mouseup', viewer._dragHandlers.up);
             }
-            if (viewer._keyHandler) {
-                document.removeEventListener('keydown', viewer._keyHandler);
+            if (_viewerKeyHandler) {
+                document.removeEventListener('keydown', _viewerKeyHandler);
+                _viewerKeyHandler = null;
             }
             viewer.remove();
             document.body.style.overflow = '';
