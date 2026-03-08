@@ -1026,7 +1026,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Remove old keyboard handler, add new one
         if (_viewerKeyHandler) {
-            document.removeEventListener('keydown', _viewerKeyHandler);
+            document.removeEventListener('keydown', _viewerKeyHandler, true);
         }
         _viewerKeyHandler = function(e) {
             if (!document.getElementById('photo-viewer')) return;
@@ -1041,7 +1041,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (currentPhotoIndex < currentTabPhotosUrls.length - 1) { currentPhotoIndex++; updateViewerImage(); }
             }
         };
-        document.addEventListener('keydown', _viewerKeyHandler);
+        document.addEventListener('keydown', _viewerKeyHandler, true);
     }
     
     function closePhotoViewer() {
@@ -1052,7 +1052,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.removeEventListener('mouseup', viewer._dragHandlers.up);
             }
             if (_viewerKeyHandler) {
-                document.removeEventListener('keydown', _viewerKeyHandler);
+                document.removeEventListener('keydown', _viewerKeyHandler, true);
                 _viewerKeyHandler = null;
             }
             viewer.remove();
