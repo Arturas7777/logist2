@@ -1001,24 +1001,17 @@ document.addEventListener('DOMContentLoaded', function() {
         const origUpdateTransform = updateTransform;
         updateTransform = function(wt) { origUpdateTransform(wt); _viewerScale = scale; };
         
-        // Track mouse drag to avoid closing after pan
-        let clickStartX = 0, clickStartY = 0, wasDragged = false;
+        // Track mousedown position to distinguish click from drag
+        let clickStartX = 0, clickStartY = 0;
         viewer.addEventListener('mousedown', function(e) {
             clickStartX = e.clientX;
             clickStartY = e.clientY;
-            wasDragged = false;
-        });
-        viewer.addEventListener('mousemove', function(e) {
-            if (Math.abs(e.clientX - clickStartX) > 5 || Math.abs(e.clientY - clickStartY) > 5) {
-                wasDragged = true;
-            }
         });
         
-        // Close when clicking dark area (not image, not buttons)
+        // Close when clicking dark area (not image); drag > 5px ignored
         viewer.addEventListener('click', function(e) {
-            if (wasDragged) return;
+            if (Math.abs(e.clientX - clickStartX) > 5 || Math.abs(e.clientY - clickStartY) > 5) return;
             if (e.target.tagName === 'IMG') return;
-            if (e.target.closest('button')) return;
             closePhotoViewer();
         });
         
@@ -1038,6 +1031,7 @@ document.addEventListener('DOMContentLoaded', function() {
         _viewerKeyHandler = function(e) {
             if (!document.getElementById('photo-viewer')) return;
             if (e.key === 'Escape') {
+                e.stopImmediatePropagation();
                 closePhotoViewer();
             } else if (e.key === 'ArrowLeft') {
                 e.preventDefault();
