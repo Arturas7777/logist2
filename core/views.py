@@ -22,6 +22,7 @@ from django.apps import apps
 
 logger = logging.getLogger('django')
 
+@staff_member_required
 def car_list_api(request):
     """Возвращает список автомобилей для клиента, отфильтрованный по статусу."""
     raw_client = (request.GET.get('client_id') or request.GET.get('client') or '').strip()
@@ -73,6 +74,7 @@ def car_list_api(request):
     logger.warning("Invalid or missing client id, returning no client selected")
     return HttpResponse('<option class="no-results">Клиент не выбран</option>', content_type='text/html')
 
+@staff_member_required
 @require_GET
 def get_invoice_total(request):
     """Вычисляет общую сумму для выбранных автомобилей."""
@@ -104,9 +106,8 @@ def get_invoice_total(request):
     try:
         total = Decimal('0.00')
         for car in cars:
-            current_price, total_price = car.calculate_total_price()
-            add = total_price if (total_price and total_price > 0) else (current_price or Decimal('0.00'))
-            total += Decimal(str(add))
+            car.calculate_total_price()
+            total += car.total_price or Decimal('0.00')
         result['total_amount'] = str(total)
         logger.info(f"Calculated total_amount (in-memory): {result['total_amount']}")
         return JsonResponse(result)
@@ -115,6 +116,7 @@ def get_invoice_total(request):
         result['error'] = str(e)
         return JsonResponse(result, status=500)
 
+@staff_member_required
 @require_GET
 def get_container_data(request, container_id: int):
     """Возвращает данные контейнера по ID."""
@@ -133,26 +135,30 @@ def get_container_data(request, container_id: int):
         logger.error(f"Container not found: ID={container_id}")
         return JsonResponse({'error': 'Container not found'}, status=404)
 
+@staff_member_required
 @require_GET
 def get_client_balance(request):
-    """Возвращает детализированный баланс клиента по ID."""
+    """Возвращает баланс клиента по ID."""
     client_id: Optional[str] = request.GET.get('client_id')
     logger.info(f"get_client_balance called with client_id: {client_id}")
     if client_id and client_id.isdigit():
         try:
-            from decimal import Decimal
             client = Client.objects.get(id=client_id)
-            details = client.balance_details()
+            balance = client.balance
 
-            # Совместимость с фронтендом: total_balance и status
-            real_balance = client.real_balance
-            total_balance = real_balance  # используем реальный баланс
-            status = 'Переплата' if total_balance < 0 else ('Задолженность' if total_balance > 0 else 'Ноль')
+            if balance > 0:
+                status = 'Переплата'
+            elif balance < 0:
+                status = 'Задолженность'
+            else:
+                status = 'Ноль'
 
             response = {
-                **details,
-                'total_balance': str(total_balance),
+                'balance': str(balance),
+                'total_balance': str(balance),
                 'status': status,
+                'balance_status': client.balance_status,
+                'balance_color': client.balance_color,
             }
             logger.info(f"Client balance for {client_id}: {response}")
             return JsonResponse(response)
@@ -170,15 +176,18 @@ def register_payment(request):
         return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=400)
 
     invoice_id: Optional[str] = request.POST.get('invoice_id')
-    amount: float = float(request.POST.get('amount', 0))
-    payment_type: Optional[str] = request.POST.get('payment_type')
+    amount_raw = request.POST.get('amount', '0')
+    try:
+        amount = Decimal(amount_raw)
+    except Exception:
+        return JsonResponse({'status': 'error', 'message': 'Некорректная сумма'}, status=400)
+
+    payment_method: Optional[str] = request.POST.get('payment_type', 'TRANSFER')
     from_balance: bool = request.POST.get('from_balance') == 'on'
-    from_cash_balance: bool = request.POST.get('from_cash_balance') == 'on'
     description: str = request.POST.get('description', '')
     payer_id: Optional[str] = request.POST.get('payer_id')
-    recipient: str = request.POST.get('recipient', '')
 
-    logger.info(f"Registering payment: invoice_id={invoice_id}, amount={amount}, payment_type={payment_type}, from_balance={from_balance}, from_cash_balance={from_cash_balance}, payer_id={payer_id}")
+    logger.info(f"Registering payment: invoice_id={invoice_id}, amount={amount}, method={payment_method}, from_balance={from_balance}, payer_id={payer_id}")
 
     try:
         invoice = Invoice.objects.get(id=invoice_id) if invoice_id else None
@@ -188,33 +197,35 @@ def register_payment(request):
             logger.error("Payer required for balance payment")
             return JsonResponse({'status': 'error', 'message': 'Плательщик обязателен для оплаты с баланса'}, status=400)
 
-        # Проверка достаточности баланса для платежа с баланса
-        if from_balance and payer:
-            if not payer.can_pay_from_balance(amount, payment_type, from_cash_balance):
-                logger.error(f"Insufficient funds for client {payer.name}: amount={amount}, from_cash_balance={from_cash_balance}")
-                return JsonResponse({'status': 'error', 'message': f"Недостаточно средств на {'наличном' if from_cash_balance else 'безналичном'} балансе"}, status=400)
+        if from_balance and payer and payer.balance < amount:
+            return JsonResponse({'status': 'error', 'message': 'Недостаточно средств на балансе'}, status=400)
+
+        method = 'BALANCE' if from_balance else (payment_method or 'TRANSFER')
 
         payment = Payment(
+            type='PAYMENT',
+            method=method,
+            status='COMPLETED',
             invoice=invoice,
             amount=amount,
-            payment_type=payment_type,
-            description=description,
+            description=description or f'Платёж на сумму {amount}',
             from_client=payer,
-            to_client=recipient if hasattr(recipient, 'name') else None,
-            to_warehouse=recipient if hasattr(recipient, 'name') and 'warehouse' in str(type(recipient)).lower() else None,
-            to_line=recipient if hasattr(recipient, 'name') and 'line' in str(type(recipient)).lower() else None,
-            to_company=recipient if hasattr(recipient, 'name') and 'company' in str(type(recipient)).lower() else None
+            to_company=Company.get_default(),
+            created_by=request.user if request.user.is_authenticated else None,
         )
         payment.save()
 
-        logger.info(f"Payment saved: id={payment.pk}, client_id={payer.pk if payer else 'N/A'}, cash_balance={payer.cash_balance if payer else 'N/A'}, card_balance={payer.card_balance if payer else 'N/A'}")
+        if invoice:
+            invoice.paid_amount += amount
+            invoice.update_status()
+            invoice.save(update_fields=['paid_amount', 'status', 'updated_at'])
+
+        logger.info(f"Payment saved: id={payment.pk}, client_id={payer.pk if payer else 'N/A'}, balance={payer.balance if payer else 'N/A'}")
 
         return JsonResponse({
             'status': 'success',
             'message': f'Платеж на сумму {amount} зарегистрирован',
-            'client_balance': str(payer.invoice_balance) if payer else None,
-            'cash_balance': str(payer.cash_balance) if payer else None,
-            'card_balance': str(payer.card_balance) if payer else None
+            'client_balance': str(payer.balance) if payer else None,
         })
     except (Invoice.DoesNotExist, Client.DoesNotExist) as e:
         logger.error(f"Error registering payment: {e}")
@@ -254,33 +265,33 @@ def company_dashboard(request):
 @staff_member_required
 def get_payment_objects(request):
     """AJAX view для получения списка объектов определенного типа для формы платежа"""
-    object_type = request.GET.get('type')
+    object_type = request.GET.get('type', '').strip().lower()
     logger.info(f"get_payment_objects called with type: {object_type}")
     
     if not object_type:
-        logger.warning("No type parameter provided")
         return JsonResponse({'error': 'Type parameter is required'}, status=400)
     
+    ALLOWED_MODELS = {
+        'client': Client,
+        'warehouse': Warehouse,
+        'line': Line,
+        'carrier': Carrier,
+        'company': Company,
+    }
+    
+    model = ALLOWED_MODELS.get(object_type)
+    if not model:
+        logger.warning(f"Disallowed model type requested: {object_type}")
+        return JsonResponse({'error': f'Invalid type: {object_type}'}, status=400)
+    
     try:
-        # Получаем модель по типу
-        logger.info(f"Getting model for type: {object_type}")
-        model = apps.get_model('core', object_type.title())
-        logger.info(f"Model class: {model}")
-        
-        # Получаем все объекты модели, отсортированные по имени
         objects = model.objects.all().order_by('name' if hasattr(model, 'name') else 'id')
-        logger.info(f"Found {objects.count()} objects")
         
-        # Формируем список объектов для JSON
-        objects_list = []
-        for obj in objects:
-            display_name = getattr(obj, 'name', str(obj))
-            objects_list.append({
-                'id': obj.id,
-                'name': display_name
-            })
+        objects_list = [{
+            'id': obj.id,
+            'name': getattr(obj, 'name', str(obj))
+        } for obj in objects]
         
-        logger.info(f"Returning {len(objects_list)} objects")
         return JsonResponse({
             'type': object_type,
             'objects': objects_list
@@ -290,6 +301,7 @@ def get_payment_objects(request):
         logger.error(f"Error getting objects for type {object_type}: {e}")
         return JsonResponse({'error': str(e)}, status=500)
 
+@staff_member_required
 @require_GET
 def search_partners_api(request):
     """API для поиска партнеров по типу и названию"""
@@ -355,6 +367,7 @@ def search_partners_api(request):
         response['Content-Type'] = 'application/json'
         return response
 
+@staff_member_required
 @require_GET
 def get_invoice_cars_api(request):
     """API для получения автомобилей для инвойса - показываем автомобили, связанные с отправителем"""
@@ -439,8 +452,7 @@ def get_invoice_cars_api(request):
         logger.info(f"Found {cars.count()} cars for entity type {to_entity_type} with ID {to_entity_id}")
         
         for car in cars:
-            # Всегда показываем полную стоимость автомобиля
-            total_cost = car.total_price or car.current_price or Decimal('0.00')
+            total_cost = car.total_price or Decimal('0.00')
             
             cars_data.append({
                 'id': car.id,
@@ -553,7 +565,6 @@ def get_warehouse_cars_api(request):
 def comparison_dashboard(request):
     """Дашборд для сравнения сумм между расчетами и счетами склада"""
     
-    # Получаем параметры фильтрации
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
     
@@ -562,17 +573,15 @@ def comparison_dashboard(request):
     if end_date:
         end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
     
-    # Создаем сервис сравнения
     comparison_service = ComparisonService()
     
-    # Получаем общий отчет
     report = comparison_service.get_comparison_report(start_date, end_date)
-    
-    # Находим расхождения
     discrepancies = comparison_service.find_discrepancies(start_date, end_date)
     
-    # Получаем статистику по клиентам
-    clients = Client.objects.all()
+    clients = Client.objects.filter(
+        car__unload_date__isnull=False
+    ).distinct().order_by('name')
+    
     client_comparisons = []
     for client in clients:
         comparison = comparison_service.compare_client_costs_with_warehouse_invoices(
@@ -581,8 +590,10 @@ def comparison_dashboard(request):
         if comparison['status'] != 'no_data':
             client_comparisons.append(comparison)
     
-    # Получаем статистику по складам
-    warehouses = Warehouse.objects.all()
+    warehouses = Warehouse.objects.filter(
+        car__isnull=False
+    ).distinct().order_by('name')
+    
     warehouse_comparisons = []
     for warehouse in warehouses:
         comparison = comparison_service.compare_warehouse_costs_with_payments(
@@ -602,6 +613,7 @@ def comparison_dashboard(request):
     
     return render(request, 'admin/comparison_dashboard.html', context)
 
+@staff_member_required
 @require_GET
 def compare_car_costs_api(request):
     """API для сравнения стоимости конкретного автомобиля"""
@@ -620,6 +632,7 @@ def compare_car_costs_api(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+@staff_member_required
 @require_GET
 def compare_client_costs_api(request):
     """API для сравнения стоимости автомобилей клиента"""
@@ -648,6 +661,7 @@ def compare_client_costs_api(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+@staff_member_required
 @require_GET
 def compare_warehouse_costs_api(request):
     """API для сравнения стоимости услуг склада"""
@@ -676,6 +690,7 @@ def compare_warehouse_costs_api(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+@staff_member_required
 @require_GET
 def get_discrepancies_api(request):
     """API для получения расхождений"""
@@ -729,6 +744,7 @@ def get_companies(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+@staff_member_required
 def get_available_services(request, car_id):
     """Получает доступные услуги для добавления к автомобилю"""
     logger.info(f"get_available_services called: car_id={car_id}, method={request.method}")
@@ -1004,56 +1020,22 @@ def get_container_photos_json(request, container_id):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
+@staff_member_required
 @csrf_exempt
 def sync_container_photos_from_gdrive(request, container_id):
     """
-    Синхронизирует фотографии контейнера с Google Drive.
-    
-    Если указана ссылка на папку Google Drive - использует её.
-    Если ссылка не указана - автоматически ищет папку по номеру контейнера
-    в структуре папок Google Drive (ВЫГРУЖЕННЫЕ / В КОНТЕЙНЕРЕ).
+    Синхронизирует фотографии контейнера с Google Drive через Celery.
     """
     try:
         if request.method != 'POST':
             return JsonResponse({'success': False, 'error': 'Only POST method allowed'}, status=405)
         
-        from .google_drive_sync import GoogleDriveSync
-        from .models import Container
-        from django.db import connection
-        
         container = Container.objects.get(id=container_id)
-        container_number = container.number
         folder_url = container.google_drive_folder_url
         
-        # Закрываем соединение с БД перед запуском в фоне
-        connection.close()
+        from .tasks import sync_container_photos_gdrive_task
+        sync_container_photos_gdrive_task.delay(container_id, folder_url or None)
         
-        # Запускаем загрузку в отдельном потоке
-        import threading
-        def download_in_background():
-            try:
-                # Django пересоздаст соединение автоматически в новом потоке
-                from django.db import connection as thread_connection
-                from .models import Container as ContainerModel
-                
-                # Перезагружаем контейнер в новом потоке
-                container_obj = ContainerModel.objects.get(id=container_id)
-                
-                if folder_url:
-                    # Используем указанную ссылку
-                    GoogleDriveSync.download_folder_photos(folder_url, container_obj)
-                else:
-                    # Автопоиск по номеру контейнера в структуре Google Drive
-                    GoogleDriveSync.sync_container_by_number(container_number)
-                
-                thread_connection.close()
-            except Exception as e:
-                logger.error(f"Background download error for {container_number}: {e}", exc_info=True)
-        
-        thread = threading.Thread(target=download_in_background, daemon=True)
-        thread.start()
-        
-        # Сразу возвращаем ответ
         message = 'Загрузка фотографий начата. '
         if folder_url:
             message += 'Используется указанная ссылка на папку.'
@@ -1072,107 +1054,6 @@ def sync_container_photos_from_gdrive(request, container_id):
     except Exception as e:
         logger.error(f"Error syncing Google Drive photos: {e}", exc_info=True)
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
-
-
-@staff_member_required
-@require_GET
-def search_counterparties(request):
-    """
-    API для поиска контрагентов (клиенты, склады, линии, перевозчики, компании)
-    Используется для автокомплита в форме инвойса
-    """
-    query = request.GET.get('q', '').strip()
-    
-    if len(query) < 1:
-        return JsonResponse({'results': []})
-    
-    results = []
-    
-    # Поиск по компаниям
-    companies = Company.objects.filter(name__icontains=query)[:5]
-    for obj in companies:
-        results.append({
-            'id': f'company_{obj.pk}',
-            'text': f'🏢 {obj.name}',
-            'type': 'company',
-            'type_id': obj.pk,
-        })
-    
-    # Поиск по клиентам
-    clients = Client.objects.filter(name__icontains=query)[:5]
-    for obj in clients:
-        results.append({
-            'id': f'client_{obj.pk}',
-            'text': f'👤 {obj.name}',
-            'type': 'client',
-            'type_id': obj.pk,
-        })
-    
-    # Поиск по складам
-    warehouses = Warehouse.objects.filter(name__icontains=query)[:5]
-    for obj in warehouses:
-        results.append({
-            'id': f'warehouse_{obj.pk}',
-            'text': f'🏭 {obj.name}',
-            'type': 'warehouse',
-            'type_id': obj.pk,
-        })
-    
-    # Поиск по линиям
-    lines = Line.objects.filter(name__icontains=query)[:5]
-    for obj in lines:
-        results.append({
-            'id': f'line_{obj.pk}',
-            'text': f'🚢 {obj.name}',
-            'type': 'line',
-            'type_id': obj.pk,
-        })
-    
-    # Поиск по перевозчикам
-    carriers = Carrier.objects.filter(Q(name__icontains=query) | Q(contact_person__icontains=query))[:5]
-    for obj in carriers:
-        results.append({
-            'id': f'carrier_{obj.pk}',
-            'text': f'🚚 {obj.name}',
-            'type': 'carrier',
-            'type_id': obj.pk,
-        })
-    
-    return JsonResponse({'results': results})
-
-
-@staff_member_required
-@require_GET
-def search_cars(request):
-    """
-    API для поиска автомобилей по VIN, марке
-    Используется для автокомплита в форме инвойса и автовоза
-    """
-    query = request.GET.get('q', '').strip()
-    selected = request.GET.getlist('selected', [])  # Уже выбранные ID
-    
-    if len(query) < 2:
-        return JsonResponse({'results': []})
-    
-    # Исключаем уже выбранные
-    cars = Car.objects.filter(
-        Q(vin__icontains=query) | Q(brand__icontains=query)
-    ).exclude(pk__in=selected).select_related('client')[:15]
-    
-    results = []
-    for car in cars:
-        client_name = car.client.name if car.client else 'Без клиента'
-        results.append({
-            'id': car.pk,
-            'text': f'{car.brand} {car.year} ({car.vin}) - {client_name}',
-            'vin': car.vin,
-            'brand': car.brand,
-            'year': car.year,
-            'client': client_name,
-            'status': car.status,  # Добавляем статус для цветных тегов
-        })
-    
-    return JsonResponse({'results': results})
 
 
 @staff_member_required

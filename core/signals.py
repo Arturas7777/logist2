@@ -2,7 +2,7 @@ from django.db.models.signals import post_save, post_delete, pre_delete, pre_sav
 from django.dispatch import receiver
 from django.db import models as db_models
 from .models import Car, Container, WarehouseService, LineService, CarrierService, Company, CompanyService, CarService, DeletedCarService, LineTHSCoefficient
-from .models_billing import NewInvoice
+from .models_billing import NewInvoice, Transaction
 from django.db.models import Sum
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
@@ -41,22 +41,29 @@ for _model in (LineService, WarehouseService, CarrierService, CompanyService):
 
 @receiver(pre_save, sender=Container)
 def save_old_container_values(sender, instance, **kwargs):
-    """Сохраняем старые значения контейнера до сохранения (на экземпляре)"""
+    """Единый pre_save для Container: сохраняет старые значения и авто-устанавливает статус.
+    Объединяет логику сохранения старых значений для синхронизации авто и уведомлений
+    в один запрос к БД вместо двух.
+    """
     logger.debug(f"[PRE_SAVE] Container {instance.number} pk={instance.pk}")
 
-    # Auto-set status to UNLOADED when unload_date is set and status hasn't progressed past it
     if instance.unload_date and instance.status in ('FLOATING', 'IN_PORT'):
         instance.status = 'UNLOADED'
         logger.info(f"[PRE_SAVE] Auto-set status to UNLOADED for container {instance.number}")
 
     if instance.pk:
         try:
-            old = Container.objects.filter(pk=instance.pk).values('status', 'unload_date').first()
+            old = Container.objects.filter(pk=instance.pk).values(
+                'status', 'unload_date', 'planned_unload_date'
+            ).first()
             if old:
                 instance._pre_save_values = old
+                instance._pre_save_notification = {
+                    'planned_unload_date': old.get('planned_unload_date'),
+                    'unload_date': old.get('unload_date')
+                }
                 logger.debug(f"[PRE_SAVE] Saved old values: {old}")
 
-                # Фиксируем момент получения статуса UNLOADED
                 old_status = old.get('status')
                 if (
                     instance.status == 'UNLOADED'
@@ -64,11 +71,16 @@ def save_old_container_values(sender, instance, **kwargs):
                     and not instance.unloaded_status_at
                 ):
                     instance.unloaded_status_at = timezone.now()
+            else:
+                instance._pre_save_values = None
+                instance._pre_save_notification = None
         except Exception as e:
             logger.error(f"[PRE_SAVE] Error: {e}")
+            instance._pre_save_values = None
+            instance._pre_save_notification = None
     else:
         instance._pre_save_values = None
-        # Новый контейнер: если сразу UNLOADED — сохраняем момент статуса
+        instance._pre_save_notification = None
         if instance.status == 'UNLOADED' and not instance.unloaded_status_at:
             instance.unloaded_status_at = timezone.now()
 
@@ -178,20 +190,34 @@ def update_related_on_car_save(sender, instance, **kwargs):
 # Сигналы для автоматического создания CarService при изменении контрагентов
 
 @receiver(pre_save, sender=Car)
-def save_old_contractors(sender, instance, **kwargs):
-    """Сохраняет старые значения контрагентов на экземпляре (thread-safe)"""
+def save_old_car_values(sender, instance, **kwargs):
+    """Единый pre_save для Car: сохраняет старые значения контрагентов и уведомлений
+    в один запрос к БД вместо двух отдельных.
+    """
     if instance.pk:
         try:
-            old_instance = Car.objects.get(pk=instance.pk)
-            instance._pre_save_contractors = {
-                'warehouse_id': old_instance.warehouse_id,
-                'line_id': old_instance.line_id,
-                'carrier_id': old_instance.carrier_id
-            }
-        except Car.DoesNotExist:
+            old = Car.objects.filter(pk=instance.pk).values(
+                'warehouse_id', 'line_id', 'carrier_id', 'unload_date', 'container_id'
+            ).first()
+            if old:
+                instance._pre_save_contractors = {
+                    'warehouse_id': old['warehouse_id'],
+                    'line_id': old['line_id'],
+                    'carrier_id': old['carrier_id'],
+                }
+                instance._pre_save_car_notification = {
+                    'unload_date': old['unload_date'],
+                    'container_id': old['container_id'],
+                }
+            else:
+                instance._pre_save_contractors = None
+                instance._pre_save_car_notification = None
+        except Exception:
             instance._pre_save_contractors = None
+            instance._pre_save_car_notification = None
     else:
         instance._pre_save_contractors = None
+        instance._pre_save_car_notification = None
 
 def find_line_service_by_container_count(line, container, vehicle_type):
     """
@@ -1193,26 +1219,47 @@ def delete_car_services_on_company_service_delete(sender, instance, **kwargs):
 
 
 # ============================================================================
+# СИГНАЛЫ ДЛЯ АВТО-ПЕРЕСЧЁТА БАЛАНСА И PAID_AMOUNT ПРИ ИЗМЕНЕНИИ ТРАНЗАКЦИИ
+# ============================================================================
+
+def _recalc_transaction_effects(instance):
+    """Пересчитать баланс затронутых сущностей и paid_amount связанного инвойса."""
+    if instance.status != 'COMPLETED':
+        return
+
+    for entity in (instance.sender, instance.recipient):
+        try:
+            Transaction.recalculate_entity_balance(entity)
+        except Exception as e:
+            logger.error(f"Error recalculating balance for {entity}: {e}")
+
+    if instance.invoice_id:
+        try:
+            instance.invoice.recalculate_paid_amount()
+        except Exception as e:
+            logger.error(f"Error recalculating paid_amount for invoice {instance.invoice_id}: {e}")
+
+
+@receiver(post_save, sender=Transaction)
+def recalculate_on_transaction_save(sender, instance, **kwargs):
+    """При создании/изменении транзакции пересчитать балансы и paid_amount."""
+    if getattr(instance, '_skip_balance_recalc', False):
+        return
+    _recalc_transaction_effects(instance)
+
+
+@receiver(post_delete, sender=Transaction)
+def recalculate_on_transaction_delete(sender, instance, **kwargs):
+    """При удалении транзакции пересчитать балансы и paid_amount."""
+    _recalc_transaction_effects(instance)
+
+
+# ============================================================================
 # СИГНАЛЫ ДЛЯ EMAIL-УВЕДОМЛЕНИЙ КЛИЕНТОВ
 # ============================================================================
 
-@receiver(pre_save, sender=Container)
-def save_old_notification_values(sender, instance, **kwargs):
-    """Сохраняем старые значения planned_unload_date и unload_date на экземпляре (thread-safe)"""
-    if instance.pk:
-        try:
-            old = Container.objects.filter(pk=instance.pk).values('planned_unload_date', 'unload_date').first()
-            if old:
-                instance._pre_save_notification = {
-                    'planned_unload_date': old.get('planned_unload_date'),
-                    'unload_date': old.get('unload_date')
-                }
-            else:
-                instance._pre_save_notification = None
-        except Exception:
-            instance._pre_save_notification = None
-    else:
-        instance._pre_save_notification = None
+
+# NOTE: save_old_notification_values for Container was merged into save_old_container_values above
 
 
 @receiver(post_save, sender=Container)
@@ -1281,23 +1328,8 @@ def send_container_notifications_on_save(sender, instance, created, **kwargs):
 # СИГНАЛЫ ДЛЯ EMAIL-УВЕДОМЛЕНИЙ О РАЗГРУЗКЕ ОТДЕЛЬНЫХ ТС (БЕЗ КОНТЕЙНЕРА)
 # ============================================================================
 
-@receiver(pre_save, sender=Car)
-def save_old_car_notification_values(sender, instance, **kwargs):
-    """Сохраняем старое значение unload_date для ТС без контейнера"""
-    if instance.pk:
-        try:
-            old = Car.objects.filter(pk=instance.pk).values('unload_date', 'container_id').first()
-            if old:
-                instance._pre_save_car_notification = {
-                    'unload_date': old.get('unload_date'),
-                    'container_id': old.get('container_id'),
-                }
-            else:
-                instance._pre_save_car_notification = None
-        except Exception:
-            instance._pre_save_car_notification = None
-    else:
-        instance._pre_save_car_notification = None
+
+# NOTE: save_old_car_notification_values was merged into save_old_car_values above
 
 
 @receiver(post_save, sender=Car)

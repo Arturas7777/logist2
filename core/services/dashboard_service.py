@@ -373,6 +373,124 @@ class DashboardService:
         return txs
 
     # ========================================================================
+    # AGED RECEIVABLES (ДЕБИТОРСКАЯ ЗАДОЛЖЕННОСТЬ ПО СРОКАМ)
+    # ========================================================================
+
+    def get_aged_receivables(self):
+        """
+        Возвращает дебиторскую задолженность, сгруппированную по срокам просрочки.
+        Считает только OUTGOING инвойсы (issuer_company_id=1) с остатком > 0.
+        """
+        cache_key = get_cache_key('dashboard', 'aged_receivables')
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        from ..models_billing import NewInvoice
+        from django.db.models import F
+
+        today = timezone.now().date()
+        unpaid = NewInvoice.objects.filter(
+            issuer_company_id=1,
+            status__in=['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'],
+        ).exclude(total__lte=F('paid_amount'))
+
+        buckets = {
+            'current': {'label': 'Не просрочен', 'total': Decimal('0'), 'count': 0},
+            '1_30': {'label': '1-30 дней', 'total': Decimal('0'), 'count': 0},
+            '31_60': {'label': '31-60 дней', 'total': Decimal('0'), 'count': 0},
+            '61_90': {'label': '61-90 дней', 'total': Decimal('0'), 'count': 0},
+            '90_plus': {'label': '90+ дней', 'total': Decimal('0'), 'count': 0},
+        }
+
+        for inv in unpaid.only('total', 'paid_amount', 'due_date'):
+            remaining = inv.total - inv.paid_amount
+            if remaining <= 0:
+                continue
+            if not inv.due_date or inv.due_date >= today:
+                bucket = 'current'
+            else:
+                overdue_days = (today - inv.due_date).days
+                if overdue_days <= 30:
+                    bucket = '1_30'
+                elif overdue_days <= 60:
+                    bucket = '31_60'
+                elif overdue_days <= 90:
+                    bucket = '61_90'
+                else:
+                    bucket = '90_plus'
+            buckets[bucket]['total'] += remaining
+            buckets[bucket]['count'] += 1
+
+        grand_total = sum(b['total'] for b in buckets.values())
+        result = {
+            'buckets': buckets,
+            'grand_total': grand_total,
+        }
+
+        cache.set(cache_key, result, CACHE_TIMEOUTS['short'])
+        return result
+
+    # ========================================================================
+    # AGED PAYABLES (КРЕДИТОРСКАЯ ЗАДОЛЖЕННОСТЬ ПО СРОКАМ)
+    # ========================================================================
+
+    def get_aged_payables(self):
+        """
+        Возвращает кредиторскую задолженность, сгруппированную по срокам просрочки.
+        Считает только INCOMING инвойсы (recipient_company_id=1) с остатком > 0.
+        """
+        cache_key = get_cache_key('dashboard', 'aged_payables')
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        from ..models_billing import NewInvoice
+        from django.db.models import F
+
+        today = timezone.now().date()
+        unpaid = NewInvoice.objects.filter(
+            recipient_company_id=1,
+            status__in=['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'],
+        ).exclude(total__lte=F('paid_amount'))
+
+        buckets = {
+            'current': {'label': 'Не просрочен', 'total': Decimal('0'), 'count': 0},
+            '1_30': {'label': '1-30 дней', 'total': Decimal('0'), 'count': 0},
+            '31_60': {'label': '31-60 дней', 'total': Decimal('0'), 'count': 0},
+            '61_90': {'label': '61-90 дней', 'total': Decimal('0'), 'count': 0},
+            '90_plus': {'label': '90+ дней', 'total': Decimal('0'), 'count': 0},
+        }
+
+        for inv in unpaid.only('total', 'paid_amount', 'due_date'):
+            remaining = inv.total - inv.paid_amount
+            if remaining <= 0:
+                continue
+            if not inv.due_date or inv.due_date >= today:
+                bucket = 'current'
+            else:
+                overdue_days = (today - inv.due_date).days
+                if overdue_days <= 30:
+                    bucket = '1_30'
+                elif overdue_days <= 60:
+                    bucket = '31_60'
+                elif overdue_days <= 90:
+                    bucket = '61_90'
+                else:
+                    bucket = '90_plus'
+            buckets[bucket]['total'] += remaining
+            buckets[bucket]['count'] += 1
+
+        grand_total = sum(b['total'] for b in buckets.values())
+        result = {
+            'buckets': buckets,
+            'grand_total': grand_total,
+        }
+
+        cache.set(cache_key, result, CACHE_TIMEOUTS['short'])
+        return result
+
+    # ========================================================================
     # RECENT OPERATIONS
     # ========================================================================
 
@@ -422,6 +540,9 @@ class DashboardService:
             # P&L по категориям
             'expenses_by_category': self.get_expenses_by_category(),
             'income_by_category': self.get_income_by_category(),
+            # Aged receivables / payables
+            'aged_receivables': self.get_aged_receivables(),
+            'aged_payables': self.get_aged_payables(),
             # Bank accounts (Revolut и др.)
             'bank_accounts': self.get_bank_balances(),
             'recent_bank_transactions': self.get_recent_bank_transactions(),

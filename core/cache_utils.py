@@ -3,7 +3,6 @@
 """
 
 from django.core.cache import cache
-from django.db import models
 from django.db.models import Sum, Count, Avg, Q
 from django.utils import timezone
 from datetime import timedelta
@@ -12,12 +11,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Время кэширования (в секундах)
 CACHE_TIMEOUTS = {
-    'short': 300,      # 5 минут
-    'medium': 1800,    # 30 минут
-    'long': 3600,      # 1 час
-    'very_long': 7200, # 2 часа
+    'short': 300,
+    'medium': 1800,
+    'long': 3600,
+    'very_long': 7200,
 }
 
 def get_cache_key(prefix, *args):
@@ -28,52 +26,49 @@ def cache_company_stats():
     """Кэширует статистику компании"""
     cache_key = get_cache_key('company_stats')
     cached_data = cache.get(cache_key)
-    
+
     if cached_data is not None:
         return cached_data
-    
+
     from .models import Company, Car
-    from .models_billing import NewInvoice as Invoice, Transaction as Payment
-    
+    from .models_billing import NewInvoice, Transaction
+
     try:
-        # Получаем компанию по умолчанию
-        company = Company.objects.filter(name__icontains='Caromoto').first()
+        company = Company.get_default()
         if not company:
             return {}
-        
-        # Общая статистика
+
         total_cars = Car.objects.count()
         active_cars = Car.objects.exclude(status='TRANSFERRED').count()
-        
-        # Статистика за последний месяц
+
         month_ago = timezone.now().date() - timedelta(days=30)
-        
-        monthly_invoices = Invoice.objects.filter(
+
+        monthly_invoices = NewInvoice.objects.filter(
             date__gte=month_ago
         ).aggregate(
             total_amount=Sum('total'),
             count=Count('id')
         )
-        
-        monthly_payments = Payment.objects.filter(
-            date__gte=month_ago
+
+        monthly_payments = Transaction.objects.filter(
+            date__gte=month_ago,
+            status='COMPLETED'
         ).aggregate(
             total_amount=Sum('amount'),
             count=Count('id')
         )
-        
+
         monthly_cars = Car.objects.filter(
             unload_date__gte=month_ago
         ).aggregate(
             total_value=Sum('total_price'),
             count=Count('id')
         )
-        
+
         stats = {
             'company': {
                 'name': company.name,
                 'balance': float(company.balance),
-                'total_balance': float(company.balance),
             },
             'cars': {
                 'total': total_cars,
@@ -96,10 +91,10 @@ def cache_company_stats():
             },
             'cached_at': timezone.now().isoformat(),
         }
-        
+
         cache.set(cache_key, stats, CACHE_TIMEOUTS['medium'])
         return stats
-        
+
     except Exception as e:
         logger.error(f"Error caching company stats: {e}")
         return {}
@@ -108,47 +103,44 @@ def cache_client_stats(client_id):
     """Кэширует статистику клиента"""
     cache_key = get_cache_key('client_stats', client_id)
     cached_data = cache.get(cache_key)
-    
+
     if cached_data is not None:
         return cached_data
-    
+
     from .models import Client, Car
-    from .models_billing import NewInvoice as Invoice, Transaction as Payment
-    
+    from .models_billing import NewInvoice, Transaction
+
     try:
         client = Client.objects.get(id=client_id)
-        
-        # Статистика автомобилей
+
         cars_stats = Car.objects.filter(client=client).aggregate(
             total=Count('id'),
-            active=Count('id', filter=models.Q(status__in=['FLOATING', 'IN_PORT', 'UNLOADED'])),
+            active=Count('id', filter=Q(status__in=['FLOATING', 'IN_PORT', 'UNLOADED'])),
             total_value=Sum('total_price'),
             avg_value=Avg('total_price')
         )
-        
-        # Статистика инвойсов
-        invoices_stats = Invoice.objects.filter(
+
+        invoices_stats = NewInvoice.objects.filter(
             recipient_client=client
         ).aggregate(
             total_amount=Sum('total'),
             count=Count('id'),
-            paid_count=Count('id', filter=models.Q(status='PAID'))
+            paid_count=Count('id', filter=Q(status='PAID'))
         )
-        
-        # Статистика платежей
-        payments_stats = Payment.objects.filter(
-            Q(from_client=client) | Q(to_client=client)
+
+        payments_stats = Transaction.objects.filter(
+            Q(from_client=client) | Q(to_client=client),
+            status='COMPLETED'
         ).aggregate(
             total_amount=Sum('amount'),
             count=Count('id')
         )
-        
+
         stats = {
             'client': {
                 'id': client.id,
                 'name': client.name,
                 'balance': float(client.balance),
-                'total_balance': float(client.balance),
             },
             'cars': {
                 'total': cars_stats['total'] or 0,
@@ -168,10 +160,10 @@ def cache_client_stats(client_id):
             },
             'cached_at': timezone.now().isoformat(),
         }
-        
+
         cache.set(cache_key, stats, CACHE_TIMEOUTS['medium'])
         return stats
-        
+
     except Client.DoesNotExist:
         return {}
     except Exception as e:
@@ -182,51 +174,47 @@ def cache_warehouse_stats(warehouse_id):
     """Кэширует статистику склада"""
     cache_key = get_cache_key('warehouse_stats', warehouse_id)
     cached_data = cache.get(cache_key)
-    
+
     if cached_data is not None:
         return cached_data
-    
+
     from .models import Warehouse, Car, Container
-    from .models_billing import NewInvoice as Invoice, Transaction as Payment
-    
+    from .models_billing import NewInvoice, Transaction
+
     try:
         warehouse = Warehouse.objects.get(id=warehouse_id)
-        
-        # Статистика автомобилей
+
         cars_stats = Car.objects.filter(warehouse=warehouse).aggregate(
             total=Count('id'),
-            active=Count('id', filter=models.Q(status__in=['FLOATING', 'IN_PORT', 'UNLOADED'])),
+            active=Count('id', filter=Q(status__in=['FLOATING', 'IN_PORT', 'UNLOADED'])),
             total_value=Sum('total_price')
         )
-        
-        # Статистика контейнеров
+
         containers_stats = Container.objects.filter(warehouse=warehouse).aggregate(
             total=Count('id'),
-            active=Count('id', filter=models.Q(status__in=['FLOATING', 'IN_PORT', 'UNLOADED']))
+            active=Count('id', filter=Q(status__in=['FLOATING', 'IN_PORT', 'UNLOADED']))
         )
-        
-        # Статистика инвойсов
-        invoices_stats = Invoice.objects.filter(
+
+        invoices_stats = NewInvoice.objects.filter(
             Q(issuer_warehouse=warehouse) | Q(recipient_warehouse=warehouse)
         ).aggregate(
             total_amount=Sum('total'),
             count=Count('id')
         )
-        
-        # Статистика платежей
-        payments_stats = Payment.objects.filter(
-            Q(from_warehouse=warehouse) | Q(to_warehouse=warehouse)
+
+        payments_stats = Transaction.objects.filter(
+            Q(from_warehouse=warehouse) | Q(to_warehouse=warehouse),
+            status='COMPLETED'
         ).aggregate(
             total_amount=Sum('amount'),
             count=Count('id')
         )
-        
+
         stats = {
             'warehouse': {
                 'id': warehouse.id,
                 'name': warehouse.name,
                 'balance': float(warehouse.balance),
-                'total_balance': float(warehouse.balance),
             },
             'cars': {
                 'total': cars_stats['total'] or 0,
@@ -247,10 +235,10 @@ def cache_warehouse_stats(warehouse_id):
             },
             'cached_at': timezone.now().isoformat(),
         }
-        
+
         cache.set(cache_key, stats, CACHE_TIMEOUTS['medium'])
         return stats
-        
+
     except Warehouse.DoesNotExist:
         return {}
     except Exception as e:
@@ -261,30 +249,26 @@ def cache_comparison_data(start_date, end_date):
     """Кэширует данные для системы сравнения"""
     cache_key = get_cache_key('comparison_data', start_date, end_date)
     cached_data = cache.get(cache_key)
-    
+
     if cached_data is not None:
         return cached_data
-    
+
     from .services.comparison_service import ComparisonService
-    
+
     try:
         comparison_service = ComparisonService()
-        
-        # Общий отчет
         report = comparison_service.get_comparison_report(start_date, end_date)
-        
-        # Расхождения
         discrepancies = comparison_service.find_discrepancies(start_date, end_date)
-        
+
         data = {
             'report': report,
             'discrepancies': discrepancies,
             'cached_at': timezone.now().isoformat(),
         }
-        
+
         cache.set(cache_key, data, CACHE_TIMEOUTS['short'])
         return data
-        
+
     except Exception as e:
         logger.error(f"Error caching comparison data: {e}")
         return {}
@@ -300,18 +284,18 @@ def invalidate_cache(pattern):
 def invalidate_related_cache(model_name, instance_id):
     """Инвалидирует связанный кэш при изменении объекта"""
     patterns = [
-        f"company_stats:*",
-        f"client_stats:*",
-        f"warehouse_stats:*",
-        f"comparison_data:*",
+        "company_stats:*",
+        "client_stats:*",
+        "warehouse_stats:*",
+        "comparison_data:*",
     ]
-    
+
     for pattern in patterns:
         invalidate_cache(pattern)
-    
+
     logger.info(f"Related cache invalidated for {model_name} #{instance_id}")
 
-# Декораторы для кэширования
+
 def cache_method_result(timeout='medium'):
     """Декоратор для кэширования результатов методов"""
     def decorator(func):
@@ -321,14 +305,14 @@ def cache_method_result(timeout='medium'):
                 self.id if hasattr(self, 'id') else str(self),
                 *args
             )
-            
+
             cached_result = cache.get(cache_key)
             if cached_result is not None:
                 return cached_result
-            
+
             result = func(self, *args, **kwargs)
             cache.set(cache_key, result, CACHE_TIMEOUTS[timeout])
             return result
-        
+
         return wrapper
     return decorator

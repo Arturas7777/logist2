@@ -14,7 +14,7 @@ BillingService - централизованная точка входа для:
 Дата: 30 сентября 2025
 """
 
-from django.db import transaction
+from django.db import models, transaction
 from django.db.models import Sum, Q
 from django.utils import timezone
 from decimal import Decimal, ROUND_HALF_UP
@@ -356,28 +356,15 @@ class BillingService:
         
         logger.info(f"Created payment transaction {trx.number}: {amount} for invoice {invoice.number}")
         
-        # Обновляем оплаченную сумму инвойса
-        invoice.paid_amount += amount
-        invoice.update_status()
-        invoice.save()
+        # Балансы и paid_amount пересчитываются автоматически сигналом post_save Transaction
+        invoice.refresh_from_db()
         
-        # Обновляем балансы
         remaining = invoice.remaining_amount
         overpayment = Decimal('0.00')
         
         if invoice.paid_amount > invoice.total:
             overpayment = invoice.paid_amount - invoice.total
             logger.warning(f"Overpayment detected for invoice {invoice.number}: {overpayment}")
-        
-        # Списываем с баланса плательщика
-        if hasattr(payer, 'balance'):
-            payer.balance -= amount
-            payer.save(update_fields=['balance', 'balance_updated_at'])
-        
-        # Зачисляем на баланс получателя
-        if hasattr(invoice.issuer, 'balance'):
-            invoice.issuer.balance += amount
-            invoice.issuer.save(update_fields=['balance', 'balance_updated_at'])
         
         logger.info(f"Invoice {invoice.number} payment processed: paid={invoice.paid_amount}, total={invoice.total}, remaining={remaining}")
         
@@ -462,21 +449,7 @@ class BillingService:
         
         logger.info(f"Created refund transaction {refund_trx.number}: {refund_amount} for transaction {original_transaction.number}")
         
-        # Обновляем инвойс, если это был платеж по инвойсу
-        if original_transaction.invoice:
-            invoice = original_transaction.invoice
-            invoice.paid_amount -= refund_amount
-            invoice.update_status()
-            invoice.save()
-        
-        # Обновляем балансы
-        if sender and hasattr(sender, 'balance'):
-            sender.balance += refund_amount
-            sender.save(update_fields=['balance', 'balance_updated_at'])
-        
-        if recipient and hasattr(recipient, 'balance'):
-            recipient.balance -= refund_amount
-            recipient.save(update_fields=['balance', 'balance_updated_at'])
+        # Балансы и paid_amount пересчитываются автоматически сигналом post_save Transaction
         
         return refund_trx
     
@@ -539,14 +512,7 @@ class BillingService:
         
         logger.info(f"Created transfer transaction {trx.number}: {amount} from {from_entity} to {to_entity}")
         
-        # Обновляем балансы
-        if hasattr(from_entity, 'balance'):
-            from_entity.balance -= amount
-            from_entity.save(update_fields=['balance', 'balance_updated_at'])
-        
-        if hasattr(to_entity, 'balance'):
-            to_entity.balance += amount
-            to_entity.save(update_fields=['balance', 'balance_updated_at'])
+        # Балансы пересчитываются автоматически сигналом post_save Transaction
         
         return trx
     
@@ -583,7 +549,6 @@ class BillingService:
         if not cls.validate_entity(entity):
             raise ValueError("Сущность не указана или невалидна")
         
-        # Создаем транзакцию (отправитель и получатель - одна и та же сущность)
         entity_type = entity.__class__.__name__
         
         trx = Transaction(
@@ -595,18 +560,13 @@ class BillingService:
             status='COMPLETED'
         )
         
-        # И отправитель, и получатель - одна и та же сущность
-        setattr(trx, f'from_{entity_type.lower()}', entity)
         setattr(trx, f'to_{entity_type.lower()}', entity)
         
         trx.save()
         
         logger.info(f"Created balance topup transaction {trx.number}: {amount} for {entity}")
         
-        # Обновляем баланс
-        if hasattr(entity, 'balance'):
-            entity.balance += amount
-            entity.save(update_fields=['balance', 'balance_updated_at'])
+        # Баланс пересчитывается автоматически сигналом post_save Transaction
         
         return trx
     
@@ -663,10 +623,7 @@ class BillingService:
         
         logger.info(f"Created balance adjustment transaction {trx.number}: {amount} for {entity}")
         
-        # Обновляем баланс
-        if hasattr(entity, 'balance'):
-            entity.balance += amount
-            entity.save(update_fields=['balance', 'balance_updated_at'])
+        # Баланс пересчитывается автоматически сигналом post_save Transaction
         
         return trx
     

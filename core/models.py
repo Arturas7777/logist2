@@ -37,20 +37,8 @@ VEHICLE_TYPE_CHOICES = [
 ]
 
 
-def get_current_user():
-    """Получить текущего пользователя"""
-    from django.contrib.auth.models import AnonymousUser
-    from django.contrib.auth import get_user
-    
-    try:
-        user = get_user()
-        if user.is_authenticated:
-            return user.username
-        return 'system'
-    except:
-        return 'system'
 
-# Базовый менеджер для управления обновлениями
+
 # Справочники
 class Line(models.Model):
     name = models.CharField(max_length=100, verbose_name="Название линии")
@@ -478,21 +466,34 @@ class Container(models.Model):
         - жёстко перезаписывает все складские поля дефолтами нового склада
         - дата разгрузки ВСЕГДА наследуется из контейнера (принудительно)
         - пересчитывает хранение и суммы
+        Использует bulk_update для минимизации запросов.
         """
-        # Проверяем, что у экземпляра есть первичный ключ
         if not self.pk:
             return
-            
-        for car in self.container_cars.all():
-            car.warehouse = self.warehouse
-            car.apply_warehouse_defaults(force=True)  # перезаписать rate/free_days и прочее
-            # Дата разгрузки ВСЕГДА наследуется из контейнера (принудительно)
-            if self.unload_date:
-                car.unload_date = self.unload_date
-                logger.debug(f"Car {car.vin}: forced unload_date={self.unload_date} from container {self.number}")
-            car.update_days_and_storage()
-            car.calculate_total_price()
-            car.save()
+
+        cars = list(self.container_cars.select_related('warehouse').all())
+        if not cars:
+            return
+
+        update_fields = [
+            'warehouse', 'unload_date', 'rate', 'free_days',
+            'storage_cost', 'days', 'total_price',
+            'unload_fee', 'delivery_fee', 'loading_fee', 'docs_fee',
+            'transfer_fee', 'transit_declaration', 'export_declaration',
+            'extra_costs', 'complex_fee',
+        ]
+
+        with transaction.atomic():
+            for car in cars:
+                car.warehouse = self.warehouse
+                car.apply_warehouse_defaults(force=True)
+                if self.unload_date:
+                    car.unload_date = self.unload_date
+                    logger.debug(f"Car {car.vin}: forced unload_date={self.unload_date} from container {self.number}")
+                car.update_days_and_storage()
+                car.calculate_total_price()
+
+            Car.objects.bulk_update(cars, update_fields, batch_size=50)
 
     def sync_cars_after_edit(self):
         """
@@ -501,46 +502,48 @@ class Container(models.Model):
         — дата разгрузки ВСЕГДА берется из контейнера (принудительное наследование),
         — подтягивает дефолты склада (rate/free_days/и т.д.) при пустых/дефолтных значениях,
         — пересчитывает хранение и цены.
+        Использует bulk_update для минимизации запросов.
         """
-        # Проверяем, что у экземпляра есть первичный ключ
         if not self.pk:
             return
-            
-        from .models import Car  # если файл общий, импорт не обязателен
-        for car in self.container_cars.all():
-            changed = False
 
-            # базовые связки
-            if not car.warehouse and self.warehouse:
-                car.warehouse = self.warehouse
-                changed = True
-            if not car.client and self.client:
-                car.client = self.client
-                changed = True
-            
-            # Дата разгрузки ВСЕГДА наследуется из контейнера (принудительно)
-            if self.unload_date:
-                if car.unload_date != self.unload_date:
+        cars = list(self.container_cars.select_related('warehouse').all())
+        if not cars:
+            return
+
+        cars_to_bulk_update = []
+        update_fields = {
+            'warehouse', 'client', 'unload_date', 'rate', 'free_days',
+            'storage_cost', 'days', 'total_price',
+            'unload_fee', 'delivery_fee', 'loading_fee', 'docs_fee',
+            'transfer_fee', 'transit_declaration', 'export_declaration',
+            'extra_costs', 'complex_fee',
+        }
+
+        with transaction.atomic():
+            for car in cars:
+                if not car.warehouse and self.warehouse:
+                    car.warehouse = self.warehouse
+                if not car.client and self.client:
+                    car.client = self.client
+
+                if self.unload_date and car.unload_date != self.unload_date:
                     car.unload_date = self.unload_date
-                    changed = True
                     logger.info(f"Car {car.vin}: forced unload_date update to {self.unload_date} from container {self.number}")
 
-            # подтянуть дефолты со склада (перезаписать только пустые/дефолтные)
-            if car.warehouse:
-                before_rate = car.rate
-                before_free = car.free_days
-                car.apply_warehouse_defaults(override_on_defaults=True)
-                changed = changed or (car.rate != before_rate or car.free_days != before_free)
+                if car.warehouse:
+                    car.apply_warehouse_defaults(override_on_defaults=True)
 
-            # пересчёт
-            car.update_days_and_storage()
-            car.calculate_total_price()
+                car.update_days_and_storage()
+                car.calculate_total_price()
+                cars_to_bulk_update.append(car)
 
-            if changed:
-                car.save()  # сохранит и отправит WS-обновление, если у тебя это в save()
-            else:
-                # всё равно сохраним, если изменилась стоимость/дни из-за новой даты
-                car.save(update_fields=['storage_cost', 'days', 'total_price'])
+            if cars_to_bulk_update:
+                Car.objects.bulk_update(
+                    cars_to_bulk_update,
+                    list(update_fields),
+                    batch_size=50
+                )
 
     def check_and_update_status_from_cars(self):
         """Проверяет статус всех автомобилей в контейнере и обновляет статус контейнера"""
@@ -820,23 +823,35 @@ class Car(models.Model):
         self.storage_cost = Decimal(str(self.days)) * daily_rate
     
     def _get_storage_daily_rate(self):
-        """Получает ставку хранения за день из услуги 'Хранение' склада."""
+        """Получает ставку хранения за день из услуги 'Хранение' склада.
+        Кэшируется на экземпляре для избежания повторных запросов в рамках одного save().
+        """
         if not self.warehouse:
             return Decimal('0.00')
-        
+
+        cache_attr = '_cached_storage_rate'
+        cached_wh = '_cached_storage_rate_wh_id'
+        if (
+            hasattr(self, cache_attr)
+            and getattr(self, cached_wh, None) == self.warehouse_id
+        ):
+            return getattr(self, cache_attr)
+
+        rate = Decimal('0.00')
         try:
             storage_service = WarehouseService.objects.filter(
                 warehouse=self.warehouse,
                 name='Хранение',
                 is_active=True
             ).first()
-            
             if storage_service:
-                return Decimal(str(storage_service.default_price or 0))
+                rate = Decimal(str(storage_service.default_price or 0))
         except Exception:
             pass
-        
-        return Decimal('0.00')
+
+        setattr(self, cache_attr, rate)
+        setattr(self, cached_wh, self.warehouse_id)
+        return rate
     
     def _update_storage_service_price(self):
         """Обновляет цену услуги 'Хранение' в CarService.
@@ -1106,6 +1121,45 @@ class Car(models.Model):
                 logger.error(f"Failed to send WebSocket notification for car {car_id}: {e}")
         transaction.on_commit(_notify)
 
+    def get_profit_report(self):
+        """
+        Возвращает отчёт о прибыльности автомобиля.
+
+        Доход — сумма по OUTGOING инвойсам (issuer_company_id=1), привязанным к этому авто.
+        Себестоимость — сумма по INCOMING инвойсам (recipient_company_id=1), привязанным к этому авто.
+        Прибыль = доход − себестоимость.
+        """
+        from core.models_billing import InvoiceItem
+        from django.db.models import Sum
+
+        income_total = InvoiceItem.objects.filter(
+            car=self,
+            invoice__issuer_company_id=1,
+            invoice__status__in=['ISSUED', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'],
+        ).aggregate(s=Sum('total_price'))['s'] or Decimal('0.00')
+
+        cost_total = InvoiceItem.objects.filter(
+            car=self,
+            invoice__recipient_company_id=1,
+            invoice__status__in=['ISSUED', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'],
+        ).aggregate(s=Sum('total_price'))['s'] or Decimal('0.00')
+
+        # Добавляем хранение как расход
+        storage = self.storage_cost or Decimal('0.00')
+
+        total_cost = cost_total + storage
+        profit = income_total - total_cost
+        margin = (profit / income_total * 100) if income_total > 0 else Decimal('0.00')
+
+        return {
+            'income': income_total,
+            'cost': total_cost,
+            'cost_services': cost_total,
+            'cost_storage': storage,
+            'profit': profit,
+            'margin_percent': margin.quantize(Decimal('0.1')) if isinstance(margin, Decimal) else Decimal('0.0'),
+        }
+
     def __str__(self):
         return f"{self.brand} ({self.vin})"
 
@@ -1113,10 +1167,8 @@ class Car(models.Model):
         verbose_name = "Автомобиль"
         verbose_name_plural = "Автомобили"
         indexes = [
-            models.Index(fields=['vin']),
             models.Index(fields=['status']),
             models.Index(fields=['unload_date', 'transfer_date']),
-            # Дополнительные индексы для оптимизации запросов
             models.Index(fields=['client', 'status']),
             models.Index(fields=['warehouse', 'status']),
             models.Index(fields=['line']),

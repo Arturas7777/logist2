@@ -15,6 +15,7 @@
 
 from django.db import models
 from django.core.validators import MinValueValidator
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from decimal import Decimal
@@ -320,6 +321,23 @@ class NewInvoice(models.Model):
     )
     
     # ========================================================================
+    # ВАЛЮТА
+    # ========================================================================
+
+    CURRENCY_CHOICES = [
+        ('EUR', 'EUR'),
+        ('USD', 'USD'),
+        ('GBP', 'GBP'),
+    ]
+
+    currency = models.CharField(
+        max_length=3,
+        choices=CURRENCY_CHOICES,
+        default='EUR',
+        verbose_name="Валюта"
+    )
+
+    # ========================================================================
     # ФИНАНСЫ
     # ========================================================================
     
@@ -566,6 +584,19 @@ class NewInvoice(models.Model):
         self.subtotal = sum(item.total_price for item in items)
         self.total = self.subtotal - self.discount + self.tax
         return self.total
+
+    def recalculate_paid_amount(self):
+        """Пересчитать paid_amount из реальных COMPLETED-транзакций привязанных к этому инвойсу."""
+        from django.db.models import Sum
+        payments = self.transactions.filter(
+            type='PAYMENT', status='COMPLETED'
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        refunds = self.transactions.filter(
+            type='REFUND', status='COMPLETED'
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        self.paid_amount = payments - refunds
+        self.update_status()
+        self.save(update_fields=['paid_amount', 'status', 'updated_at'])
     
     def get_items_pivot_table(self):
         """
@@ -660,18 +691,24 @@ class NewInvoice(models.Model):
             self.status = 'ISSUED'
     
     def generate_number(self):
-        """Сгенерировать уникальный номер инвойса"""
+        """Сгенерировать уникальный номер инвойса.
+        Использует select_for_update для предотвращения дублирования при конкурентном создании.
+        """
         from django.utils.timezone import now
+        from django.db import connection
+
         date = now()
         prefix = f"INV-{date.year}{date.month:02d}"
-        
-        # Находим последний номер за текущий месяц
-        last_invoice = NewInvoice.objects.filter(
-            number__startswith=prefix
-        ).order_by('-number').first()
-        
+
+        last_invoice = (
+            NewInvoice.objects
+            .filter(number__startswith=prefix)
+            .select_for_update()
+            .order_by('-number')
+            .first()
+        )
+
         if last_invoice:
-            # Извлекаем номер и увеличиваем
             try:
                 last_num = int(last_invoice.number.split('-')[-1])
                 next_num = last_num + 1
@@ -679,7 +716,7 @@ class NewInvoice(models.Model):
                 next_num = 1
         else:
             next_num = 1
-        
+
         return f"{prefix}-{next_num:04d}"
     
     def regenerate_items_from_cars(self):
@@ -817,17 +854,17 @@ class NewInvoice(models.Model):
 
     def save(self, *args, **kwargs):
         """Переопределяем save для автоматической генерации номера и обновления статуса"""
-        # Генерируем номер для новых инвойсов
+        from django.db import transaction as db_transaction
+
         if not self.number:
-            self.number = self.generate_number()
-        
-        # Устанавливаем срок оплаты, если не указан
+            with db_transaction.atomic():
+                self.number = self.generate_number()
+
         if not self.due_date:
             self.due_date = timezone.now().date() + timezone.timedelta(days=14)
-        
-        # Обновляем статус
+
         self.update_status()
-        
+
         super().save(*args, **kwargs)
 
 
@@ -1118,6 +1155,23 @@ class Transaction(models.Model):
     )
     
     # ========================================================================
+    # ВАЛЮТА
+    # ========================================================================
+
+    CURRENCY_CHOICES = [
+        ('EUR', 'EUR'),
+        ('USD', 'USD'),
+        ('GBP', 'GBP'),
+    ]
+
+    currency = models.CharField(
+        max_length=3,
+        choices=CURRENCY_CHOICES,
+        default='EUR',
+        verbose_name="Валюта"
+    )
+
+    # ========================================================================
     # СУММА И ОПИСАНИЕ
     # ========================================================================
     
@@ -1242,17 +1296,79 @@ class Transaction(models.Model):
     # МЕТОДЫ
     # ========================================================================
     
+    # ========================================================================
+    # ВАЛИДАЦИЯ
+    # ========================================================================
+
+    def clean(self):
+        """Валидация: ровно один отправитель и ровно один получатель."""
+        errors = {}
+        from_fields = [
+            self.from_client_id, self.from_warehouse_id,
+            self.from_line_id, self.from_carrier_id, self.from_company_id,
+        ]
+        to_fields = [
+            self.to_client_id, self.to_warehouse_id,
+            self.to_line_id, self.to_carrier_id, self.to_company_id,
+        ]
+        from_count = sum(1 for f in from_fields if f)
+        to_count = sum(1 for f in to_fields if f)
+
+        if self.type == 'BALANCE_TOPUP':
+            if to_count != 1:
+                errors['__all__'] = "Пополнение баланса: укажите ровно одного получателя."
+        elif self.type == 'ADJUSTMENT':
+            if (from_count + to_count) != 1:
+                errors['__all__'] = "Корректировка: укажите ровно одну сторону (отправитель ИЛИ получатель)."
+        else:
+            if from_count > 1:
+                errors['__all__'] = "Укажите не более одного отправителя."
+            if to_count > 1:
+                errors.setdefault('__all__', '')
+                errors['__all__'] += " Укажите не более одного получателя."
+                errors['__all__'] = errors['__all__'].strip()
+
+        if errors:
+            raise ValidationError(errors)
+
+    # ========================================================================
+    # ПЕРЕСЧЁТ БАЛАНСА СУЩНОСТИ
+    # ========================================================================
+
+    @staticmethod
+    def recalculate_entity_balance(entity):
+        """Пересчитать баланс entity строго по COMPLETED-транзакциям из БД."""
+        if entity is None or not hasattr(entity, 'balance'):
+            return
+        model_name = entity.__class__.__name__.lower()
+        incoming = Transaction.objects.filter(
+            status='COMPLETED', **{f'to_{model_name}': entity}
+        ).aggregate(s=models.Sum('amount'))['s'] or Decimal('0.00')
+        outgoing = Transaction.objects.filter(
+            status='COMPLETED', **{f'from_{model_name}': entity}
+        ).aggregate(s=models.Sum('amount'))['s'] or Decimal('0.00')
+        new_balance = incoming - outgoing
+        if entity.balance != new_balance:
+            entity.balance = new_balance
+            entity.save(update_fields=['balance', 'balance_updated_at'])
+
     def generate_number(self):
-        """Сгенерировать уникальный номер транзакции"""
+        """Сгенерировать уникальный номер транзакции.
+        Использует select_for_update для предотвращения дублирования.
+        """
         from django.utils.timezone import now
+
         date = now()
         prefix = f"TRX-{date.year}{date.month:02d}{date.day:02d}"
-        
-        # Находим последнюю транзакцию за текущий день
-        last_transaction = Transaction.objects.filter(
-            number__startswith=prefix
-        ).order_by('-number').first()
-        
+
+        last_transaction = (
+            Transaction.objects
+            .filter(number__startswith=prefix)
+            .select_for_update()
+            .order_by('-number')
+            .first()
+        )
+
         if last_transaction:
             try:
                 last_num = int(last_transaction.number.split('-')[-1])
@@ -1261,12 +1377,15 @@ class Transaction(models.Model):
                 next_num = 1
         else:
             next_num = 1
-        
+
         return f"{prefix}-{next_num:05d}"
     
     def save(self, *args, **kwargs):
         """Переопределяем save для автоматической генерации номера"""
+        from django.db import transaction as db_transaction
+
         if not self.number:
-            self.number = self.generate_number()
+            with db_transaction.atomic():
+                self.number = self.generate_number()
 
         super().save(*args, **kwargs)
