@@ -188,25 +188,66 @@
 
 <!-- Lightbox -->
 <div id="photoLightbox" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:9999; justify-content:center; align-items:center; cursor:pointer;" onclick="closePhotoLightbox()">
-    <img id="lightboxImg" src="" style="max-width:95%; max-height:95%; object-fit:contain; border-radius:4px;" onclick="event.stopPropagation()">
+    <img id="lightboxImg" src="" style="max-width:90%; max-height:90%; object-fit:contain; border-radius:4px;" onclick="event.stopPropagation()">
+    <button id="lbPrev" type="button" style="position:absolute; left:15px; top:50%; transform:translateY(-50%); background:rgba(255,255,255,0.3); border:none; color:#fff; font-size:2rem; padding:10px 14px; border-radius:50%; cursor:pointer;" onclick="event.stopPropagation()">&#8249;</button>
+    <button id="lbNext" type="button" style="position:absolute; right:15px; top:50%; transform:translateY(-50%); background:rgba(255,255,255,0.3); border:none; color:#fff; font-size:2rem; padding:10px 14px; border-radius:50%; cursor:pointer;" onclick="event.stopPropagation()">&#8250;</button>
+    <div style="position:absolute; top:20px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.6); padding:8px 18px; border-radius:20px; color:#fff; font-size:14px;">
+        <span id="lbCounter"></span>
+    </div>
     <button type="button" style="position:absolute; top:15px; right:20px; background:none; border:none; color:#fff; font-size:2.5rem; cursor:pointer; line-height:1;" onclick="closePhotoLightbox()">&times;</button>
 </div>
 
 <script>
-function openPhotoLightbox(el) {
-    const img = el.querySelector('img');
-    const lb = document.getElementById('photoLightbox');
-    document.getElementById('lightboxImg').src = img.dataset.fullUrl;
-    lb.style.display = 'flex';
-    document.body.style.overflow = 'hidden';
-}
-function closePhotoLightbox() {
-    document.getElementById('photoLightbox').style.display = 'none';
-    document.getElementById('lightboxImg').src = '';
-    document.body.style.overflow = '';
-}
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') closePhotoLightbox();
-});
+(function() {
+    const items = document.querySelectorAll('.photo-item[onclick]');
+    const urls = Array.from(items).map(el => el.querySelector('img').dataset.fullUrl);
+    let currentIdx = 0;
+
+    window.openPhotoLightbox = function(el) {
+        currentIdx = Array.from(items).indexOf(el);
+        showPhoto();
+    };
+
+    function showPhoto() {
+        const lb = document.getElementById('photoLightbox');
+        document.getElementById('lightboxImg').src = urls[currentIdx];
+        document.getElementById('lbPrev').style.display = currentIdx > 0 ? '' : 'none';
+        document.getElementById('lbNext').style.display = currentIdx < urls.length - 1 ? '' : 'none';
+        document.getElementById('lbCounter').textContent = (currentIdx + 1) + ' / ' + urls.length;
+        lb.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+
+    window.closePhotoLightbox = function() {
+        document.getElementById('photoLightbox').style.display = 'none';
+        document.getElementById('lightboxImg').src = '';
+        document.body.style.overflow = '';
+    };
+
+    document.addEventListener('keydown', function(e) {
+        const lb = document.getElementById('photoLightbox');
+        if (lb.style.display !== 'flex') return;
+        if (e.key === 'Escape') {
+            closePhotoLightbox();
+        } else if (e.key === 'ArrowLeft' && currentIdx > 0) {
+            e.preventDefault();
+            currentIdx--;
+            showPhoto();
+        } else if (e.key === 'ArrowRight' && currentIdx < urls.length - 1) {
+            e.preventDefault();
+            currentIdx++;
+            showPhoto();
+        }
+    });
+
+    document.getElementById('lbPrev').addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (currentIdx > 0) { currentIdx--; showPhoto(); }
+    });
+    document.getElementById('lbNext').addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (currentIdx < urls.length - 1) { currentIdx++; showPhoto(); }
+    });
+})();
 </script>
 {% endblock %}
