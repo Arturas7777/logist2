@@ -626,29 +626,50 @@ class ClientAdmin(admin.ModelAdmin):
         client = Client.objects.get(pk=client_id)
         old_balance = client.balance
 
-        # Top-ups (TOPUP)
+        # Incoming: top-ups, refunds, positive adjustments
         topups = Transaction.objects.filter(
             to_client=client,
-            type='TOPUP',
+            type='BALANCE_TOPUP',
             status='COMPLETED'
         ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
 
-        # Payments (PAYMENT)
+        refunds = Transaction.objects.filter(
+            to_client=client,
+            type='REFUND',
+            status='COMPLETED'
+        ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
+
+        adjustments_in = Transaction.objects.filter(
+            to_client=client,
+            type='ADJUSTMENT',
+            status='COMPLETED'
+        ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
+
+        # Outgoing: payments, negative adjustments
         payments = Transaction.objects.filter(
             from_client=client,
             type='PAYMENT',
             status='COMPLETED'
         ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
 
-        # New balance
-        new_balance = topups - payments
+        adjustments_out = Transaction.objects.filter(
+            from_client=client,
+            type='ADJUSTMENT',
+            status='COMPLETED'
+        ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
+
+        incoming = topups + refunds + adjustments_in
+        outgoing = payments + adjustments_out
+        new_balance = incoming - outgoing
 
         client.balance = new_balance
         client.save(update_fields=['balance'])
 
         messages.success(
             request,
-            f'Баланс пересчитан: {old_balance}EUR -> {new_balance}EUR (пополнения: {topups}EUR, платежи: {payments}EUR)'
+            f'Баланс пересчитан: {old_balance}EUR → {new_balance}EUR '
+            f'(пополнения: {topups}, возвраты: {refunds}, корр.вход: {adjustments_in}, '
+            f'платежи: {payments}, корр.выход: {adjustments_out})'
         )
         return redirect('admin:core_client_change', client_id)
 
