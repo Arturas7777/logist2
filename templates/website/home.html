@@ -659,6 +659,14 @@ document.addEventListener('DOMContentLoaded', function() {
     let _viewerKeyHandler = null;
     let _viewerScale = 1;
     
+    // Block Escape from reaching Bootstrap modal when photo viewer is open
+    document.getElementById('photosModal').addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && document.getElementById('photo-viewer')) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+        }
+    }, true);
+    
     function setupPhotoZoom() {
         // Получаем URL фото из активной вкладки
         function getActiveTabPhotos() {
@@ -759,7 +767,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <button id="download-single" style="background: var(--accent-green); border: none; color: white; padding: 10px 15px; border-radius: 5px; cursor: pointer;">
                         <i class="bi bi-download"></i>
                     </button>
-                    <button id="close-viewer" style="background: var(--accent-red); border: none; color: white; padding: 10px 15px; border-radius: 5px; cursor: pointer;">
+                    <button id="close-viewer" onclick="event.stopPropagation(); window._closePhotoViewer && window._closePhotoViewer();" style="background: var(--accent-red); border: none; color: white; padding: 10px 15px; border-radius: 5px; cursor: pointer;">
                         <i class="bi bi-x-lg"></i>
                     </button>
                 </div>
@@ -1015,12 +1023,6 @@ document.addEventListener('DOMContentLoaded', function() {
             closePhotoViewer();
         });
         
-        // Закрытие по кнопке X
-        document.getElementById('close-viewer').addEventListener('click', function(e) {
-            e.stopPropagation();
-            closePhotoViewer();
-        });
-        
         // Скачивание отдельного фото
         document.getElementById('download-single').addEventListener('click', function(e) {
             e.stopPropagation();
@@ -1029,11 +1031,6 @@ document.addEventListener('DOMContentLoaded', function() {
             link.download = currentTabPhotosUrls[currentPhotoIndex].split('/').pop();
             link.click();
         });
-        
-        // Disable Bootstrap modal Escape while viewer is open
-        const modalEl = document.getElementById('photosModal');
-        const bsModal = bootstrap.Modal.getInstance(modalEl);
-        if (bsModal) bsModal._config.keyboard = false;
         
         // Keyboard handler
         if (_viewerKeyHandler) {
@@ -1069,13 +1066,9 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             viewer.remove();
             document.body.style.overflow = '';
-            
-            // Re-enable Bootstrap modal Escape
-            const modalEl = document.getElementById('photosModal');
-            const bsModal = bootstrap.Modal.getInstance(modalEl);
-            if (bsModal) bsModal._config.keyboard = true;
         }
     }
+    window._closePhotoViewer = closePhotoViewer;
     if (autoTrack) {
         document.getElementById('tracking_number').value = autoTrack;
         trackingForm.dispatchEvent(new Event('submit'));
