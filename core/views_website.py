@@ -877,9 +877,10 @@ def get_container_photos(request, container_number):
             is_public=True
         )
         
-        # Сортируем по имени файла для сохранения последовательности из архива
+        # Сначала выгруженные, потом из контейнера; внутри группы — по имени файла
+        type_order = {'UNLOADING': 0, 'GENERAL': 1, 'IN_CONTAINER': 2}
         photos_list = list(photos)
-        photos_list.sort(key=lambda p: p.photo.name if p.photo else '')
+        photos_list.sort(key=lambda p: (type_order.get(p.photo_type or 'GENERAL', 1), p.photo.name if p.photo else ''))
         
         photos_data = []
         type_counts = {'IN_CONTAINER': 0, 'UNLOADING': 0, 'GENERAL': 0}
