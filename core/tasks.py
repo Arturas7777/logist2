@@ -1,7 +1,44 @@
 import logging
 from celery import shared_task
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
+
+
+@shared_task(bind=True, max_retries=1, default_retry_delay=300, time_limit=120)
+def check_overdue_invoices(self):
+    """
+    Периодическая задача: переводит просроченные инвойсы в статус OVERDUE.
+    Рекомендуется запускать через celery beat раз в день.
+    """
+    from core.models_billing import NewInvoice
+
+    today = timezone.now().date()
+    overdue_qs = NewInvoice.objects.filter(
+        status__in=['ISSUED', 'PARTIALLY_PAID'],
+        due_date__lt=today,
+    )
+    updated = overdue_qs.update(status='OVERDUE')
+    if updated:
+        logger.info(f"[check_overdue_invoices] Marked {updated} invoices as OVERDUE")
+    return updated
+
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=120, time_limit=600)
+def sync_container_photos_gdrive_task(self, container_id, folder_url=None):
+    """Синхронизирует фотографии контейнера с Google Drive в фоне через Celery."""
+    from core.google_drive_sync import GoogleDriveSync
+    from core.models import Container
+    try:
+        container = Container.objects.get(id=container_id)
+        if folder_url:
+            GoogleDriveSync.download_folder_photos(folder_url, container)
+        else:
+            GoogleDriveSync.sync_container_by_number(container.number)
+        logger.info(f"Google Drive sync completed for container {container.number}")
+    except Exception as exc:
+        logger.error(f"Failed Google Drive sync for container {container_id}: {exc}", exc_info=True)
+        raise self.retry(exc=exc)
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)

@@ -737,16 +737,39 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     mark_as_issued.short_description = "📤 Пометить как выставленные"
     
     def mark_as_paid(self, request, queryset):
-        """Пометить как оплаченные"""
+        """Пометить как оплаченные — создаёт транзакцию через BillingService"""
         updated = 0
+        errors = 0
         for invoice in queryset:
-            if invoice.status != 'PAID':
-                invoice.paid_amount = invoice.total
+            if invoice.status == 'PAID':
+                continue
+            remaining = invoice.remaining_amount
+            if remaining <= 0:
                 invoice.status = 'PAID'
-                invoice.save()
+                invoice.save(update_fields=['status', 'updated_at'])
                 updated += 1
-        
-        self.message_user(request, f'Помечено как оплаченные: {updated} инвойсов', messages.SUCCESS)
+                continue
+            payer = invoice.recipient
+            if not payer:
+                errors += 1
+                continue
+            try:
+                BillingService.pay_invoice(
+                    invoice=invoice,
+                    amount=remaining,
+                    method='OTHER',
+                    payer=payer,
+                    description="Отмечено как оплаченное через массовое действие",
+                    created_by=request.user,
+                )
+                updated += 1
+            except Exception:
+                errors += 1
+
+        if updated:
+            self.message_user(request, f'Помечено как оплаченные: {updated} инвойсов', messages.SUCCESS)
+        if errors:
+            self.message_user(request, f'Ошибок: {errors} (проверьте получателя инвойса)', messages.WARNING)
     mark_as_paid.short_description = "✓ Пометить как оплаченные"
     
     def cancel_invoices(self, request, queryset):
