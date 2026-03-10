@@ -953,14 +953,12 @@ class InvoiceItem(models.Model):
     unit_price = models.DecimalField(
         max_digits=15,
         decimal_places=2,
-        validators=[MinValueValidator(0)],
         verbose_name="Цена за единицу"
     )
     
     total_price = models.DecimalField(
         max_digits=15,
         decimal_places=2,
-        validators=[MinValueValidator(0)],
         verbose_name="Сумма",
         help_text="Автоматически рассчитывается: количество × цена"
     )
