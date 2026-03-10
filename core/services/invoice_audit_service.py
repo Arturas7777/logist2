@@ -722,6 +722,9 @@ def _sync_audit_to_newinvoice(audit, found_cars: dict, extracted: dict):
             if new_cars:
                 invoice.cars.add(*new_cars)
                 logger.info(f"NewInvoice #{invoice.pk}: добавлено {len(new_cars)} машин из AI-анализа")
+            for car_obj in car_objects:
+                car_obj.update_days_and_storage()
+                car_obj.save(update_fields=['days', 'storage_cost'])
 
         mapping = _load_service_mapping()
         counterparty = extracted.get('counterparty', '')
