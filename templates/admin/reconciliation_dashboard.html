@@ -1,0 +1,477 @@
+{% extends "admin/base_site.html" %}
+{% load static i18n %}
+
+{% block title %}Сверка счетов — Caromoto CRM{% endblock %}
+
+{% block topbar_title %}
+<span style="font-weight:600; font-size:1rem; color:#1e293b;">
+    <i class="bi bi-graph-up-arrow" style="color:#6c5ce7;"></i> Сверка счетов
+</span>
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+#content { background:#f4f2ff; min-height:100vh; }
+.rc-page { max-width:1300px; margin:0 auto; padding:24px; }
+
+/* Summary stats bar */
+.rc-stats { display:grid; grid-template-columns:repeat(auto-fill,minmax(155px,1fr)); gap:14px; margin-bottom:22px; }
+.rc-stat {
+    background:#fff; border-radius:14px; padding:16px 18px;
+    box-shadow:0 2px 8px rgba(108,92,231,.08), 0 0 1px rgba(0,0,0,.06);
+}
+.rc-stat .label { font-size:.7rem; color:#94a3b8; font-weight:600; text-transform:uppercase; letter-spacing:.04em; margin-bottom:3px; }
+.rc-stat .value { font-size:1.3rem; font-weight:800; color:#1e293b; }
+.rc-stat .value.ok     { color:#16a34a; }
+.rc-stat .value.warn   { color:#d97706; }
+.rc-stat .value.danger { color:#dc2626; }
+
+/* Tabs */
+.rc-tabs { display:flex; gap:0; margin-bottom:20px; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+.rc-tab {
+    flex:1; text-align:center; padding:11px 16px; font-size:.85rem; font-weight:600;
+    color:#64748b; text-decoration:none; border-bottom:3px solid transparent; transition:all .15s;
+}
+.rc-tab:hover { color:#6c5ce7; background:#faf9ff; }
+.rc-tab.active { color:#6c5ce7; border-bottom-color:#6c5ce7; background:#faf9ff; }
+.rc-tab .cnt { font-size:.72rem; background:#e2e8f0; color:#475569; padding:1px 7px; border-radius:10px; margin-left:6px; }
+.rc-tab.active .cnt { background:#ede9fe; color:#6c5ce7; }
+.rc-tab .cnt.red { background:#fee2e2; color:#dc2626; }
+
+/* Filter bar */
+.rc-filter {
+    display:flex; align-items:center; gap:10px; margin-bottom:18px; flex-wrap:wrap;
+}
+.rc-filter select {
+    padding:7px 12px; border:1.5px solid #e2e8f0; border-radius:8px; font-size:.85rem;
+    background:#fff; min-width:200px;
+}
+.rc-filter .rc-btn { display:inline-flex; align-items:center; gap:5px; padding:7px 16px; border-radius:8px; font-size:.85rem; font-weight:600; cursor:pointer; border:none; text-decoration:none; }
+.rc-btn-primary { background:#6c5ce7; color:#fff; }
+.rc-btn-primary:hover { background:#5b4bd5; }
+.rc-btn-outline { background:#fff; color:#374151; border:1.5px solid #e2e8f0; }
+.rc-btn-outline:hover { border-color:#c4b5fd; }
+
+/* Tables */
+.rc-card { background:#fff; border-radius:14px; box-shadow:0 2px 8px rgba(108,92,231,.08), 0 0 1px rgba(0,0,0,.06); overflow:hidden; margin-bottom:20px; }
+.rc-table { width:100%; border-collapse:collapse; }
+.rc-table th {
+    font-size:.7rem; font-weight:600; color:#94a3b8; text-transform:uppercase;
+    letter-spacing:.04em; padding:10px 14px; text-align:left; background:#fafbfc;
+    border-bottom:1px solid #f1f5f9; position:sticky; top:0;
+}
+.rc-table td { padding:10px 14px; font-size:.84rem; color:#1e293b; border-bottom:1px solid #f8fafc; vertical-align:middle; }
+.rc-table tr:last-child td { border-bottom:none; }
+.rc-table tr:hover td { background:#faf9ff; }
+
+.vin { font-family:'Courier New',monospace; font-size:.78rem; background:#f8f9fb; padding:2px 6px; border-radius:4px; }
+.profit-pos { color:#16a34a; font-weight:700; }
+.profit-neg { color:#dc2626; font-weight:700; }
+.profit-zero { color:#94a3b8; }
+.margin-badge {
+    display:inline-block; padding:2px 8px; border-radius:12px; font-size:.72rem; font-weight:600;
+}
+.margin-good   { background:#dcfce7; color:#166534; }
+.margin-medium { background:#fef3c7; color:#92400e; }
+.margin-bad    { background:#fee2e2; color:#991b1b; }
+
+/* Hints */
+.rc-hint {
+    border-radius:12px; padding:16px 20px; margin-bottom:12px;
+    display:flex; align-items:flex-start; gap:14px;
+}
+.rc-hint-error   { background:#fef2f2; border-left:4px solid #dc2626; }
+.rc-hint-warning { background:#fffbeb; border-left:4px solid #d97706; }
+.rc-hint-info    { background:#eff6ff; border-left:4px solid #3b82f6; }
+.rc-hint-icon { font-size:1.2rem; flex-shrink:0; margin-top:2px; }
+.rc-hint-error .rc-hint-icon   { color:#dc2626; }
+.rc-hint-warning .rc-hint-icon { color:#d97706; }
+.rc-hint-info .rc-hint-icon    { color:#3b82f6; }
+.rc-hint h4 { margin:0 0 4px; font-size:.9rem; font-weight:700; color:#1e293b; }
+.rc-hint p  { margin:0; font-size:.84rem; color:#374151; line-height:1.5; }
+.rc-hint .vins { margin-top:6px; font-size:.76rem; color:#64748b; font-family:monospace; }
+
+/* Container accordion */
+.rc-container-header {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 18px; cursor:pointer; border-bottom:1px solid #f1f5f9;
+    transition:background .15s;
+}
+.rc-container-header:hover { background:#faf9ff; }
+.rc-container-header h4 { margin:0; font-size:.9rem; font-weight:700; color:#1e293b; }
+
+.tab-content { display:none; }
+.tab-content.active { display:block; }
+
+.rc-empty { text-align:center; padding:48px 24px; color:#94a3b8; font-size:.9rem; }
+.rc-empty i { font-size:2rem; display:block; margin-bottom:10px; }
+
+a.car-link { color:#6c5ce7; text-decoration:none; }
+a.car-link:hover { text-decoration:underline; }
+
+/* Cost confirmation badges */
+.cost-badge {
+    display:inline-flex; align-items:center; gap:3px;
+    padding:2px 8px; border-radius:10px; font-size:.72rem; font-weight:600;
+}
+.cost-full    { background:#dcfce7; color:#166534; }
+.cost-partial { background:#fef3c7; color:#92400e; }
+.cost-none    { background:#f1f5f9; color:#94a3b8; }
+
+.final-badge {
+    display:inline-flex; align-items:center; gap:3px;
+    padding:1px 7px; border-radius:8px; font-size:.68rem; font-weight:600;
+}
+.final-yes { background:#dcfce7; color:#166534; }
+.final-no  { background:#fef3c7; color:#92400e; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rc-page">
+
+    {# ── Summary stats ── #}
+    <div class="rc-stats">
+        <div class="rc-stat">
+            <div class="label">Затраты поставщикам</div>
+            <div class="value danger">{{ totals.total_cost|floatformat:0 }} €</div>
+        </div>
+        <div class="rc-stat">
+            <div class="label">Выручка от клиентов</div>
+            <div class="value ok">{{ totals.total_revenue|floatformat:0 }} €</div>
+        </div>
+        <div class="rc-stat">
+            <div class="label">Прибыль</div>
+            <div class="value {% if totals.total_profit >= 0 %}ok{% else %}danger{% endif %}">
+                {{ totals.total_profit|floatformat:0 }} €
+            </div>
+        </div>
+        <div class="rc-stat">
+            <div class="label">Средняя маржа</div>
+            <div class="value {% if totals.avg_margin >= 20 %}ok{% elif totals.avg_margin >= 0 %}warn{% else %}danger{% endif %}">
+                {{ totals.avg_margin }}%
+            </div>
+        </div>
+        <div class="rc-stat">
+            <div class="label">Машин</div>
+            <div class="value">{{ totals.cars_count }}</div>
+        </div>
+        <div class="rc-stat">
+            <div class="label">Контейнеров</div>
+            <div class="value">{{ totals.containers_count }}</div>
+        </div>
+        <div class="rc-stat">
+            <div class="label">Убыточных машин</div>
+            <div class="value {% if totals.loss_cars_count > 0 %}danger{% endif %}">{{ totals.loss_cars_count }}</div>
+        </div>
+        <div class="rc-stat">
+            <div class="label">Себестоимость окончательная</div>
+            <div class="value {% if totals.final_cars_count == totals.cars_count and totals.cars_count > 0 %}ok{% elif totals.final_cars_count > 0 %}warn{% endif %}">
+                {{ totals.final_cars_count }}/{{ totals.cars_count }}
+            </div>
+        </div>
+        <div class="rc-stat">
+            <div class="label">Замечаний</div>
+            <div class="value {% if totals.hints_count > 0 %}warn{% endif %}">{{ totals.hints_count }}</div>
+        </div>
+    </div>
+
+    {# ── Filter bar ── #}
+    <form method="get" class="rc-filter">
+        <select name="audit" id="audit-filter" multiple style="height:auto; min-height:36px;">
+            {% for a in all_audits %}
+            <option value="{{ a.pk }}" {% if a.pk in selected_audits %}selected{% endif %}>
+                {{ a.counterparty_detected|default:a.original_filename }} — {{ a.invoice_date|date:"d.m.Y"|default:"?" }} ({{ a.total_amount|floatformat:0|default:"?" }} €)
+            </option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="rc-btn rc-btn-primary"><i class="bi bi-funnel"></i> Фильтр</button>
+        {% if selected_audits %}
+        <a href="{% url 'reconciliation_dashboard' %}" class="rc-btn rc-btn-outline">Сбросить</a>
+        {% endif %}
+        <a href="{% url 'invoice_audit_list' %}" class="rc-btn rc-btn-outline" style="margin-left:auto;"><i class="bi bi-cloud-upload"></i> Загрузить счёт</a>
+    </form>
+
+    {# ── Tabs ── #}
+    <div class="rc-tabs">
+        <a href="?tab=cars{% if selected_audits %}{% for a in selected_audits %}&audit={{ a }}{% endfor %}{% endif %}"
+           class="rc-tab {% if active_tab == 'cars' %}active{% endif %}">
+            <i class="bi bi-car-front"></i> По машинам <span class="cnt">{{ totals.cars_count }}</span>
+        </a>
+        <a href="?tab=containers{% if selected_audits %}{% for a in selected_audits %}&audit={{ a }}{% endfor %}{% endif %}"
+           class="rc-tab {% if active_tab == 'containers' %}active{% endif %}">
+            <i class="bi bi-box-seam"></i> По контейнерам <span class="cnt">{{ totals.containers_count }}</span>
+        </a>
+        <a href="?tab=hints{% if selected_audits %}{% for a in selected_audits %}&audit={{ a }}{% endfor %}{% endif %}"
+           class="rc-tab {% if active_tab == 'hints' %}active{% endif %}">
+            <i class="bi bi-lightbulb"></i> Замечания
+            <span class="cnt {% if totals.hints_count > 0 %}red{% endif %}">{{ totals.hints_count }}</span>
+        </a>
+        <a href="?tab=unlinked{% if selected_audits %}{% for a in selected_audits %}&audit={{ a }}{% endfor %}{% endif %}"
+           class="rc-tab {% if active_tab == 'unlinked' %}active{% endif %}">
+            <i class="bi bi-link-45deg"></i> Непривязанные
+            <span class="cnt {% if totals.unlinked_count > 0 %}red{% endif %}">{{ totals.unlinked_count }}</span>
+        </a>
+    </div>
+
+    {# ═══ TAB: CARS ═══ #}
+    <div class="tab-content {% if active_tab == 'cars' %}active{% endif %}" id="tab-cars">
+        {% if cars %}
+        <div class="rc-card" style="overflow-x:auto;">
+            <table class="rc-table">
+                <thead>
+                    <tr>
+                        <th>VIN</th>
+                        <th>Авто</th>
+                        <th>Клиент</th>
+                        <th>Контейнер</th>
+                        <th style="text-align:right;">Затраты</th>
+                        <th style="text-align:right;">Выручка</th>
+                        <th style="text-align:right;">Прибыль</th>
+                        <th style="text-align:center;">Маржа</th>
+                        <th style="text-align:center;">Затраты</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in cars %}
+                    <tr>
+                        <td><span class="vin">{{ c.vin }}</span></td>
+                        <td>{{ c.brand }}</td>
+                        <td>{{ c.client_name }}</td>
+                        <td>
+                            {% if c.container_id %}
+                            <a href="/admin/core/container/{{ c.container_id }}/change/" class="car-link">{{ c.container_number }}</a>
+                            {% else %}—{% endif %}
+                        </td>
+                        <td style="text-align:right; color:#dc2626; font-weight:600;">{{ c.total_cost|floatformat:2 }} €</td>
+                        <td style="text-align:right; color:#16a34a; font-weight:600;">{{ c.total_revenue|floatformat:2 }} €</td>
+                        <td style="text-align:right;">
+                            <span class="{% if c.profit > 0 %}profit-pos{% elif c.profit < 0 %}profit-neg{% else %}profit-zero{% endif %}">
+                                {% if c.profit > 0 %}+{% endif %}{{ c.profit|floatformat:2 }} €
+                            </span>
+                        </td>
+                        <td style="text-align:center;">
+                            <span class="margin-badge {% if c.margin_pct >= 25 %}margin-good{% elif c.margin_pct >= 0 %}margin-medium{% else %}margin-bad{% endif %}">
+                                {{ c.margin_pct }}%
+                            </span>
+                        </td>
+                        <td style="text-align:center;">
+                            {% if c.is_final %}
+                            <span class="cost-badge cost-full" title="Все {{ c.total_services }} услуг подтверждены инвойсами">
+                                <i class="bi bi-check-circle-fill"></i>
+                            </span>
+                            {% elif c.cost_status == 'partial' %}
+                            <span class="cost-badge cost-partial" title="{{ c.confirmed_services }}/{{ c.total_services }} услуг подтверждено{% if c.unlinked_costs > 0 %}, {{ c.unlinked_costs }} непривязано{% endif %}">
+                                {{ c.confirmed_services }}/{{ c.total_services }}
+                            </span>
+                            {% else %}
+                            <span class="cost-badge cost-none" title="Нет подтверждённых затрат">
+                                <i class="bi bi-dash-circle"></i>
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="/admin/core/car/{{ c.car_id }}/change/" class="car-link" title="Открыть карточку">
+                                <i class="bi bi-box-arrow-up-right"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="rc-card">
+            <div class="rc-empty">
+                <i class="bi bi-inbox"></i>
+                Нет данных. Загрузите входящие счета для анализа.
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    {# ═══ TAB: CONTAINERS ═══ #}
+    <div class="tab-content {% if active_tab == 'containers' %}active{% endif %}" id="tab-containers">
+        {% if containers %}
+        {% for cont in containers %}
+        <div class="rc-card" style="margin-bottom:14px;">
+            <div class="rc-container-header" onclick="this.parentElement.querySelector('.container-body').classList.toggle('active')">
+                <h4>
+                    <i class="bi bi-box-seam" style="color:#6c5ce7;"></i>
+                    {{ cont.container_number }}
+                    <span style="font-weight:400; color:#64748b; font-size:.8rem; margin-left:8px;">{{ cont.cars_count }} авто</span>
+                </h4>
+                <div style="display:flex; gap:20px; font-size:.85rem;">
+                    <span style="color:#dc2626; font-weight:600;">{{ cont.total_cost|floatformat:0 }} €</span>
+                    <span style="color:#16a34a; font-weight:600;">{{ cont.total_revenue|floatformat:0 }} €</span>
+                    <span class="{% if cont.profit >= 0 %}profit-pos{% else %}profit-neg{% endif %}">
+                        {% if cont.profit > 0 %}+{% endif %}{{ cont.profit|floatformat:0 }} €
+                    </span>
+                    <span class="margin-badge {% if cont.margin_pct >= 25 %}margin-good{% elif cont.margin_pct >= 0 %}margin-medium{% else %}margin-bad{% endif %}">
+                        {{ cont.margin_pct }}%
+                    </span>
+                    {% if cont.is_final %}<span class="final-badge final-yes" title="Себестоимость окончательная"><i class="bi bi-check-lg"></i> Финал</span>
+                    {% else %}<span class="final-badge final-no" title="Не все затраты подтверждены"><i class="bi bi-hourglass-split"></i></span>{% endif %}
+                    <i class="bi bi-chevron-down" style="color:#94a3b8;"></i>
+                </div>
+            </div>
+            <div class="container-body" style="display:none;">
+                <table class="rc-table">
+                    <thead>
+                        <tr>
+                            <th>VIN</th>
+                            <th>Авто</th>
+                            <th>Клиент</th>
+                            <th style="text-align:right;">Затраты</th>
+                            <th style="text-align:right;">Выручка</th>
+                            <th style="text-align:right;">Прибыль</th>
+                            <th style="text-align:center;">Маржа</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in cont.cars %}
+                        <tr>
+                            <td><span class="vin">{{ c.vin }}</span></td>
+                            <td>{{ c.brand }}</td>
+                            <td>{{ c.client_name }}</td>
+                            <td style="text-align:right; color:#dc2626;">{{ c.total_cost|floatformat:2 }} €</td>
+                            <td style="text-align:right; color:#16a34a;">{{ c.total_revenue|floatformat:2 }} €</td>
+                            <td style="text-align:right;">
+                                <span class="{% if c.profit > 0 %}profit-pos{% elif c.profit < 0 %}profit-neg{% else %}profit-zero{% endif %}">
+                                    {% if c.profit > 0 %}+{% endif %}{{ c.profit|floatformat:2 }} €
+                                </span>
+                            </td>
+                            <td style="text-align:center;">
+                                <span class="margin-badge {% if c.margin_pct >= 25 %}margin-good{% elif c.margin_pct >= 0 %}margin-medium{% else %}margin-bad{% endif %}">
+                                    {{ c.margin_pct }}%
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="rc-card">
+            <div class="rc-empty">
+                <i class="bi bi-inbox"></i>
+                Нет данных о контейнерах.
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    {# ═══ TAB: HINTS ═══ #}
+    <div class="tab-content {% if active_tab == 'hints' %}active{% endif %}" id="tab-hints">
+        {% if hints %}
+        {% for h in hints %}
+        <div class="rc-hint rc-hint-{{ h.severity }}">
+            <div class="rc-hint-icon">
+                {% if h.severity == 'error' %}<i class="bi bi-x-circle-fill"></i>
+                {% elif h.severity == 'warning' %}<i class="bi bi-exclamation-triangle-fill"></i>
+                {% else %}<i class="bi bi-info-circle-fill"></i>{% endif %}
+            </div>
+            <div>
+                <h4>{{ h.title }}
+                    {% if h.amount %}<span style="font-weight:400; color:#64748b; font-size:.8rem;">— {{ h.amount|floatformat:2 }} €</span>{% endif %}
+                </h4>
+                <p>{{ h.message }}</p>
+                {% if h.related_vins %}
+                <div class="vins">
+                    {% for v in h.related_vins %}{{ v }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="rc-card">
+            <div class="rc-empty">
+                <i class="bi bi-check-circle" style="color:#16a34a;"></i>
+                Замечаний нет. Все данные выглядят корректно.
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    {# ═══ TAB: UNLINKED ═══ #}
+    <div class="tab-content {% if active_tab == 'unlinked' %}active{% endif %}" id="tab-unlinked">
+        {% if unlinked %}
+        <div class="rc-hint rc-hint-warning" style="margin-bottom:16px;">
+            <div class="rc-hint-icon"><i class="bi bi-exclamation-triangle-fill"></i></div>
+            <div>
+                <h4>Позиции из инвойсов, которые не привязаны к услугам в карточках авто</h4>
+                <p>Эти позиции были извлечены из PDF, но система не смогла найти соответствующую CarService.
+                   Возможные причины: услуга не добавлена в карточку авто, контрагент отсутствует в маппинге,
+                   или тип услуги не распознан.</p>
+            </div>
+        </div>
+        <div class="rc-card" style="overflow-x:auto;">
+            <table class="rc-table">
+                <thead>
+                    <tr>
+                        <th>VIN</th>
+                        <th>Контрагент</th>
+                        <th>Тип услуги</th>
+                        <th>Описание</th>
+                        <th style="text-align:right;">Сумма</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in unlinked %}
+                    <tr>
+                        <td><span class="vin">{{ u.vin }}</span></td>
+                        <td>{{ u.counterparty }}</td>
+                        <td><span style="font-size:.75rem; color:#64748b;">{{ u.service_type }}</span></td>
+                        <td style="font-size:.82rem; color:#475569;">{{ u.description|truncatechars:60 }}</td>
+                        <td style="text-align:right; font-weight:600;">{{ u.amount|floatformat:2 }} €</td>
+                        <td>
+                            {% if u.car_id %}
+                            <a href="/admin/core/car/{{ u.car_id }}/change/" class="car-link" title="Открыть карточку авто">
+                                <i class="bi bi-box-arrow-up-right"></i>
+                            </a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="rc-card">
+            <div class="rc-empty">
+                <i class="bi bi-check-circle" style="color:#16a34a;"></i>
+                Все позиции привязаны к услугам. Непривязанных нет.
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Container accordion toggle
+    document.querySelectorAll('.container-body').forEach(function(el) {
+        if (el.classList.contains('active')) {
+            el.style.display = 'block';
+        }
+    });
+});
+
+document.addEventListener('click', function(e) {
+    var header = e.target.closest('.rc-container-header');
+    if (!header) return;
+    var body = header.parentElement.querySelector('.container-body');
+    if (body.style.display === 'none') {
+        body.style.display = 'block';
+    } else {
+        body.style.display = 'none';
+    }
+});
+</script>
+{% endblock %}

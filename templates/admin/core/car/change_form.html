@@ -608,5 +608,73 @@
       }, 1500);
     });
   });
+
+  /* ── Manual cost confirmation modal ── */
+  var _confirmCsId = null;
+  function openConfirmCostModal(csId, prefillAmount) {
+    _confirmCsId = csId;
+    document.getElementById('confirmCostAmount').value = prefillAmount || '';
+    document.getElementById('confirmCostDesc').value = '';
+    document.getElementById('confirmCostCounterparty').value = '';
+    document.getElementById('confirmCostModal').style.display = 'flex';
+  }
+  function closeConfirmCostModal() {
+    document.getElementById('confirmCostModal').style.display = 'none';
+    _confirmCsId = null;
+  }
+  function submitConfirmCost() {
+    if (!_confirmCsId) return;
+    var amount = document.getElementById('confirmCostAmount').value;
+    if (!amount || parseFloat(amount) <= 0) {
+      alert('Введите сумму');
+      return;
+    }
+    var formData = new FormData();
+    formData.append('car_service_id', _confirmCsId);
+    formData.append('amount', amount);
+    formData.append('counterparty', document.getElementById('confirmCostCounterparty').value);
+    formData.append('description', document.getElementById('confirmCostDesc').value);
+
+    fetch('/admin/reconciliation/manual-confirm-cost/', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value },
+      body: formData
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.ok) {
+        closeConfirmCostModal();
+        location.reload();
+      } else {
+        alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+      }
+    })
+    .catch(function(err) { alert('Ошибка запроса: ' + err.message); });
+  }
 </script>
+
+<!-- Modal: Confirm cost manually -->
+<div id="confirmCostModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:9999; align-items:center; justify-content:center;">
+  <div style="background:#fff; border-radius:14px; padding:28px 32px; width:380px; box-shadow:0 8px 32px rgba(0,0,0,.15);">
+    <h3 style="margin:0 0 16px; font-size:1rem; color:#1e293b;">
+      <span style="color:#d97706;">✍️</span> Подтвердить затрату
+    </h3>
+    <div style="margin-bottom:12px;">
+      <label style="font-size:.8rem; font-weight:600; color:#64748b;">Сумма (€)</label>
+      <input type="number" id="confirmCostAmount" step="0.01" style="width:100%; padding:8px; border:1.5px solid #e2e8f0; border-radius:8px; font-size:.9rem;" placeholder="0.00">
+    </div>
+    <div style="margin-bottom:12px;">
+      <label style="font-size:.8rem; font-weight:600; color:#64748b;">Контрагент (необязательно)</label>
+      <input type="text" id="confirmCostCounterparty" style="width:100%; padding:8px; border:1.5px solid #e2e8f0; border-radius:8px; font-size:.9rem;" placeholder="Название компании">
+    </div>
+    <div style="margin-bottom:16px;">
+      <label style="font-size:.8rem; font-weight:600; color:#64748b;">Комментарий (необязательно)</label>
+      <input type="text" id="confirmCostDesc" style="width:100%; padding:8px; border:1.5px solid #e2e8f0; border-radius:8px; font-size:.9rem;" placeholder="Примечание">
+    </div>
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button type="button" onclick="closeConfirmCostModal()" style="padding:8px 18px; border:1.5px solid #e2e8f0; border-radius:8px; background:#fff; cursor:pointer; font-size:.85rem;">Отмена</button>
+      <button type="button" onclick="submitConfirmCost()" style="padding:8px 18px; border:none; border-radius:8px; background:#6c5ce7; color:#fff; cursor:pointer; font-size:.85rem; font-weight:600;">Подтвердить</button>
+    </div>
+  </div>
+</div>
 {% endblock %}

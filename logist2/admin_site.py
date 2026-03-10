@@ -115,6 +115,40 @@ class LogistAdminSite(BaseAdminSite):
         return context
 
     # ────────────────────────────────────────────────────────────────────────
+    def _build_extra_sidebar_items(self, request):
+        """Дополнительные пункты меню вне стандартных моделей."""
+        current_path = request.path
+        tools_active = (
+            current_path.startswith('/admin/invoice-audit/')
+            or current_path.startswith('/admin/reconciliation/')
+        )
+        return [
+            {
+                'name': 'Инструменты',
+                'icon': 'bi-tools',
+                'items': [
+                    {
+                        'name':      'Проверка счетов',
+                        'url':       '/admin/invoice-audit/',
+                        'icon':      'bi-shield-check',
+                        'active':    current_path.startswith('/admin/invoice-audit/'),
+                        'add_url':   '',
+                        'view_only': True,
+                    },
+                    {
+                        'name':      'Сверка счетов',
+                        'url':       '/admin/reconciliation/',
+                        'icon':      'bi-graph-up-arrow',
+                        'active':    current_path.startswith('/admin/reconciliation/'),
+                        'add_url':   '',
+                        'view_only': True,
+                    },
+                ],
+                'is_open': tools_active,
+            }
+        ]
+
+    # ────────────────────────────────────────────────────────────────────────
     def _build_sidebar_nav(self, request):
         """
         Формирует структуру навигации для sidebar.
@@ -178,6 +212,7 @@ class LogistAdminSite(BaseAdminSite):
                     'is_open': is_open,
                 })
 
+        nav.extend(self._build_extra_sidebar_items(request))
         return nav
 
     # ────────────────────────────────────────────────────────────────────────

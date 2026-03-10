@@ -1,0 +1,553 @@
+{% extends "admin/base_site.html" %}
+{% load static i18n %}
+
+{% block title %}{{ audit }} — Проверка счёта{% endblock %}
+
+{% block topbar_title %}
+<span style="font-weight:600; font-size:1rem; color:#1e293b;">
+    <i class="bi bi-shield-check" style="color:#6c5ce7;"></i>
+    <a href="{% url 'invoice_audit_list' %}" style="color:#6c5ce7; text-decoration:none;">Проверка счетов</a>
+    <i class="bi bi-chevron-right" style="font-size:.7rem; color:#94a3b8; margin:0 4px;"></i>
+    {{ audit.counterparty_detected|default:audit.original_filename|default:"Счёт"|truncatechars:40 }}
+</span>
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+#content { background:#f4f2ff; min-height:100vh; }
+.ia-page { max-width:1200px; margin:0 auto; padding:24px; }
+
+/* Top summary bar */
+.ia-summary {
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap:16px;
+    margin-bottom:24px;
+}
+.ia-stat {
+    background:#fff;
+    border-radius:14px;
+    padding:18px 20px;
+    box-shadow:0 2px 8px rgba(108,92,231,.08), 0 0 1px rgba(0,0,0,.06);
+}
+.ia-stat .label { font-size:.75rem; color:#94a3b8; font-weight:600; text-transform:uppercase; letter-spacing:.04em; margin-bottom:4px; }
+.ia-stat .value { font-size:1.4rem; font-weight:800; color:#1e293b; }
+.ia-stat .value.ok     { color:#16a34a; }
+.ia-stat .value.warn   { color:#d97706; }
+.ia-stat .value.danger { color:#dc2626; }
+
+/* Actions bar */
+.ia-actions {
+    display:flex; gap:10px; flex-wrap:wrap;
+    margin-bottom:24px;
+}
+.ia-btn {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:9px 18px; border-radius:9px; font-size:.85rem; font-weight:600;
+    cursor:pointer; border:none; text-decoration:none; transition:all .15s;
+}
+.ia-btn-primary  { background:#6c5ce7; color:#fff; }
+.ia-btn-primary:hover  { background:#5b4bd5; }
+.ia-btn-outline  { background:#fff; color:#374151; border:1.5px solid #e2e8f0; }
+.ia-btn-outline:hover  { background:#f8f9fa; border-color:#c4b5fd; }
+.ia-btn-danger   { background:#fee2e2; color:#dc2626; }
+.ia-btn-danger:hover   { background:#fecaca; }
+
+/* Status badge */
+.badge-status {
+    display:inline-flex; align-items:center; gap:4px;
+    padding:4px 12px; border-radius:20px; font-size:.8rem; font-weight:600;
+}
+.badge-PENDING    { background:#f1f5f9; color:#64748b; }
+.badge-PROCESSING { background:#fef9c3; color:#854d0e; }
+.badge-OK         { background:#dcfce7; color:#166534; }
+.badge-HAS_ISSUES { background:#fee2e2; color:#991b1b; }
+.badge-ERROR      { background:#1e293b; color:#e2e8f0; }
+
+/* Section cards */
+.ia-section {
+    background:#fff;
+    border-radius:16px;
+    box-shadow:0 2px 8px rgba(108,92,231,.08), 0 0 1px rgba(0,0,0,.06);
+    margin-bottom:20px;
+    overflow:hidden;
+}
+.ia-section-header {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 22px 14px;
+    border-bottom:1px solid #f1f5f9;
+}
+.ia-section-header h3 {
+    margin:0; font-size:.95rem; font-weight:700; color:#1e293b;
+    display:flex; align-items:center; gap:8px;
+}
+.ia-section-count {
+    font-size:.8rem; font-weight:600;
+    padding:2px 10px; border-radius:12px;
+}
+.cnt-error   { background:#fee2e2; color:#dc2626; }
+.cnt-warning { background:#fef3c7; color:#92400e; }
+.cnt-info    { background:#e0f2fe; color:#075985; }
+.cnt-zero    { background:#f1f5f9; color:#94a3b8; }
+
+/* Discrepancy table */
+.ia-table { width:100%; border-collapse:collapse; }
+.ia-table th {
+    font-size:.72rem; font-weight:600; color:#94a3b8; text-transform:uppercase;
+    letter-spacing:.04em; padding:9px 14px; text-align:left;
+    background:#fafbfc; border-bottom:1px solid #f1f5f9;
+}
+.ia-table td { padding:11px 14px; font-size:.85rem; color:#1e293b; border-bottom:1px solid #f8fafc; vertical-align:middle; }
+.ia-table tr:last-child td { border-bottom:none; }
+
+.vin-code {
+    font-family: 'Courier New', monospace;
+    font-size:.8rem;
+    background:#f8f9fb;
+    padding:2px 7px;
+    border-radius:5px;
+    color:#374151;
+}
+
+.diff-negative { color:#dc2626; font-weight:600; }
+.diff-positive { color:#16a34a; font-weight:600; }
+.diff-zero     { color:#94a3b8; }
+
+/* Severity icons */
+.sev-error   { color:#dc2626; }
+.sev-warning { color:#d97706; }
+.sev-info    { color:#3b82f6; }
+
+/* Processing state */
+.ia-processing-banner {
+    background:#fef9c3;
+    border:1.5px solid #fde68a;
+    border-radius:12px;
+    padding:16px 22px;
+    margin-bottom:20px;
+    display:flex; align-items:center; gap:12px;
+    font-size:.9rem; color:#78350f;
+}
+.spinner {
+    width:20px; height:20px;
+    border:2.5px solid #fde68a;
+    border-top-color:#d97706;
+    border-radius:50%;
+    animation:spin .8s linear infinite;
+    flex-shrink:0;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* Error state */
+.ia-error-banner {
+    background:#fee2e2;
+    border:1.5px solid #fca5a5;
+    border-radius:12px;
+    padding:16px 22px;
+    margin-bottom:20px;
+    font-size:.875rem; color:#991b1b;
+}
+
+/* Raw extracted collapsible */
+.ia-raw { background:#1e293b; border-radius:12px; padding:20px; overflow-x:auto; }
+.ia-raw pre { color:#e2e8f0; font-size:.78rem; margin:0; white-space:pre-wrap; word-break:break-word; }
+details summary { cursor:pointer; font-size:.85rem; color:#64748b; padding:12px 22px; user-select:none; }
+details summary:hover { color:#6c5ce7; }
+
+.ia-empty-section {
+    text-align:center; padding:32px; color:#94a3b8; font-size:.875rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ia-page">
+
+    {% if messages %}
+    {% for msg in messages %}
+    <div style="background:{% if msg.tags == 'success' %}#dcfce7{% elif msg.tags == 'error' %}#fee2e2{% else %}#f0f9ff{% endif %};
+                border-radius:10px; padding:12px 18px; margin-bottom:16px;
+                font-size:.875rem; color:#1e293b; display:flex; align-items:center; gap:10px;">
+        <i class="bi {% if msg.tags == 'success' %}bi-check-circle-fill{% else %}bi-info-circle-fill{% endif %}"></i>
+        {{ msg }}
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    {# ── Processing banner ── #}
+    {% if audit.status == 'PROCESSING' or audit.status == 'PENDING' %}
+    <div class="ia-processing-banner" id="processing-banner">
+        <div class="spinner"></div>
+        <div>
+            <strong>AI обрабатывает счёт...</strong>
+            Это займёт 10–30 секунд. Страница обновится автоматически.
+        </div>
+    </div>
+    {% endif %}
+
+    {# ── Error banner ── #}
+    {% if audit.status == 'ERROR' %}
+    <div class="ia-error-banner">
+        <strong><i class="bi bi-exclamation-triangle-fill"></i> Ошибка обработки:</strong>
+        {{ audit.error_message }}
+    </div>
+    {% endif %}
+
+    {# ── Summary stats ── #}
+    <div class="ia-summary">
+        <div class="ia-stat">
+            <div class="label">Контрагент</div>
+            <div style="font-size:1rem; font-weight:700; color:#1e293b;">
+                {{ audit.counterparty_detected|default:"Определяется..." }}
+            </div>
+        </div>
+        <div class="ia-stat">
+            <div class="label">Дата счёта</div>
+            <div class="value">{{ audit.invoice_date|date:"d.m.Y"|default:"—" }}</div>
+        </div>
+        <div class="ia-stat">
+            <div class="label">Сумма</div>
+            <div class="value">
+                {% if audit.total_amount %}{{ audit.total_amount|floatformat:2 }} {{ audit.currency }}
+                {% else %}—{% endif %}
+            </div>
+        </div>
+        <div class="ia-stat">
+            <div class="label">Машин в счёте</div>
+            <div class="value">{{ audit.cars_found|add:audit.cars_missing }}</div>
+        </div>
+        <div class="ia-stat">
+            <div class="label">Найдено в системе</div>
+            <div class="value ok">{{ audit.cars_found }}</div>
+        </div>
+        <div class="ia-stat">
+            <div class="label">Нет в системе</div>
+            <div class="value {% if audit.cars_missing > 0 %}danger{% endif %}">
+                {{ audit.cars_missing }}
+            </div>
+        </div>
+        <div class="ia-stat">
+            <div class="label">Расхождений</div>
+            <div class="value {% if audit.issues_count > 0 %}warn{% endif %}">
+                {{ audit.issues_count }}
+            </div>
+        </div>
+        <div class="ia-stat">
+            <div class="label">Статус</div>
+            <div style="margin-top:4px;">
+                <span class="badge-status badge-{{ audit.status }}">{{ audit.get_status_display }}</span>
+            </div>
+        </div>
+    </div>
+
+    {# ── Action buttons ── #}
+    <div class="ia-actions">
+        <a href="{% url 'invoice_audit_list' %}" class="ia-btn ia-btn-outline">
+            <i class="bi bi-arrow-left"></i> Назад
+        </a>
+        {% if audit.pdf_file %}
+        <a href="{{ audit.pdf_file.url }}" target="_blank" class="ia-btn ia-btn-outline">
+            <i class="bi bi-file-earmark-pdf"></i> Открыть PDF
+        </a>
+        {% endif %}
+        {% if audit.status != 'PROCESSING' and audit.status != 'PENDING' %}
+        <form method="post" action="{% url 'invoice_audit_reprocess' audit.pk %}" style="margin:0;">
+            {% csrf_token %}
+            <button type="submit" class="ia-btn ia-btn-outline">
+                <i class="bi bi-arrow-repeat"></i> Перепроверить
+            </button>
+        </form>
+        {% endif %}
+        <form method="post" action="{% url 'invoice_audit_delete' audit.pk %}" style="margin:0;"
+              onsubmit="return confirm('Удалить эту проверку?')">
+            {% csrf_token %}
+            <button type="submit" class="ia-btn ia-btn-danger">
+                <i class="bi bi-trash"></i> Удалить
+            </button>
+        </form>
+        {% if audit.status == 'OK' or audit.status == 'HAS_ISSUES' %}
+        <a href="{% url 'reconciliation_dashboard' %}?audit={{ audit.pk }}" class="ia-btn ia-btn-primary" style="margin-left:auto;">
+            <i class="bi bi-graph-up-arrow"></i> Сверка по этому счёту
+        </a>
+        {% endif %}
+    </div>
+
+    {% if audit.status == 'OK' or audit.status == 'HAS_ISSUES' %}
+
+    {# ── ERRORS ── #}
+    <div class="ia-section">
+        <div class="ia-section-header">
+            <h3>
+                <i class="bi bi-x-circle-fill sev-error"></i>
+                Критические расхождения
+            </h3>
+            <span class="ia-section-count {% if errors %}cnt-error{% else %}cnt-zero{% endif %}">
+                {{ errors|length }}
+            </span>
+        </div>
+        {% if errors %}
+        <table class="ia-table">
+            <thead>
+                <tr>
+                    <th>VIN</th>
+                    <th>Автомобиль / Клиент</th>
+                    <th>Тип</th>
+                    <th>NETO сумма</th>
+                    <th>У нас</th>
+                    <th>Разница</th>
+                    <th>Пояснение</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in errors %}
+                <tr>
+                    <td><span class="vin-code">{{ d.vin }}</span></td>
+                    <td>
+                        {{ d.car|default:"—" }}
+                        {% if d.client %}<div style="font-size:.75rem; color:#64748b;">{{ d.client }}</div>{% endif %}
+                        {% if d.container %}<div style="font-size:.72rem; color:#94a3b8;">{{ d.container }}</div>{% endif %}
+                    </td>
+                    <td><span style="font-size:.75rem; color:#64748b;">{{ d.type }}</span></td>
+                    <td>{% if d.neto_amount is not None %}<strong>{{ d.neto_amount|floatformat:2 }} €</strong>{% else %}—{% endif %}</td>
+                    <td>{% if d.our_amount is not None %}{{ d.our_amount|floatformat:2 }} €{% else %}—{% endif %}</td>
+                    <td>
+                        {% if d.diff is not None %}
+                        <span class="{% if d.diff < 0 %}diff-negative{% elif d.diff > 0 %}diff-positive{% else %}diff-zero{% endif %}">
+                            {% if d.diff > 0 %}+{% endif %}{{ d.diff|floatformat:2 }} €
+                        </span>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td style="font-size:.8rem; color:#374151;">{{ d.message }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="ia-empty-section">
+            <i class="bi bi-check-circle-fill" style="color:#22c55e; font-size:1.5rem;"></i>
+            Критических расхождений нет
+        </div>
+        {% endif %}
+    </div>
+
+    {# ── WARNINGS ── #}
+    <div class="ia-section">
+        <div class="ia-section-header">
+            <h3>
+                <i class="bi bi-exclamation-triangle-fill sev-warning"></i>
+                Предупреждения
+            </h3>
+            <span class="ia-section-count {% if warnings %}cnt-warning{% else %}cnt-zero{% endif %}">
+                {{ warnings|length }}
+            </span>
+        </div>
+        {% if warnings %}
+        <table class="ia-table">
+            <thead>
+                <tr>
+                    <th>VIN</th>
+                    <th>Автомобиль / Клиент</th>
+                    <th>Тип</th>
+                    <th>NETO сумма</th>
+                    <th>У нас</th>
+                    <th>Разница</th>
+                    <th>Пояснение</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in warnings %}
+                <tr>
+                    <td><span class="vin-code">{{ d.vin }}</span></td>
+                    <td>
+                        {{ d.car|default:"—" }}
+                        {% if d.client %}<div style="font-size:.75rem; color:#64748b;">{{ d.client }}</div>{% endif %}
+                        {% if d.container %}<div style="font-size:.72rem; color:#94a3b8;">{{ d.container }}</div>{% endif %}
+                    </td>
+                    <td><span style="font-size:.75rem; color:#64748b;">{{ d.type }}</span></td>
+                    <td>{% if d.neto_amount is not None %}{{ d.neto_amount|floatformat:2 }} €{% else %}—{% endif %}</td>
+                    <td>{% if d.our_amount is not None %}{{ d.our_amount|floatformat:2 }} €{% else %}—{% endif %}</td>
+                    <td>
+                        {% if d.diff is not None %}
+                        <span class="{% if d.diff < 0 %}diff-negative{% elif d.diff > 0 %}diff-positive{% else %}diff-zero{% endif %}">
+                            {% if d.diff > 0 %}+{% endif %}{{ d.diff|floatformat:2 }} €
+                        </span>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td style="font-size:.8rem; color:#374151;">{{ d.message }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="ia-empty-section">
+            <i class="bi bi-check-circle-fill" style="color:#22c55e; font-size:1.5rem;"></i>
+            Предупреждений нет
+        </div>
+        {% endif %}
+    </div>
+
+    {# ── INFO ── #}
+    {% if infos %}
+    <div class="ia-section">
+        <div class="ia-section-header">
+            <h3>
+                <i class="bi bi-info-circle-fill sev-info"></i>
+                Информационные заметки
+            </h3>
+            <span class="ia-section-count cnt-info">{{ infos|length }}</span>
+        </div>
+        <table class="ia-table">
+            <thead>
+                <tr>
+                    <th>VIN / Описание</th>
+                    <th>Тип</th>
+                    <th>Сумма</th>
+                    <th>Пояснение</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in infos %}
+                <tr>
+                    <td>
+                        {% if d.vin and d.vin != '—' %}<span class="vin-code">{{ d.vin }}</span>{% endif %}
+                        {% if d.car %}<div style="font-size:.8rem; color:#374151;">{{ d.car }}</div>{% endif %}
+                    </td>
+                    <td><span style="font-size:.75rem; color:#64748b;">{{ d.type }}</span></td>
+                    <td>{% if d.neto_amount is not None %}{{ d.neto_amount|floatformat:2 }} €{% else %}—{% endif %}</td>
+                    <td style="font-size:.8rem; color:#374151;">{{ d.message }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    {# ── SUPPLIER COSTS / LINKING STATUS ── #}
+    {% if supplier_costs %}
+    <div class="ia-section">
+        <div class="ia-section-header">
+            <h3>
+                <i class="bi bi-link-45deg" style="color:#6c5ce7;"></i>
+                Привязка позиций к услугам
+            </h3>
+            <div style="display:flex; gap:8px;">
+                <span class="ia-section-count cnt-info">{{ linked_count }} привязано</span>
+                {% if unlinked_count > 0 %}
+                <span class="ia-section-count cnt-warning">{{ unlinked_count }} без услуги</span>
+                {% endif %}
+            </div>
+        </div>
+        <table class="ia-table">
+            <thead>
+                <tr>
+                    <th>VIN</th>
+                    <th>Тип</th>
+                    <th>Описание из счёта</th>
+                    <th style="text-align:right;">Сумма</th>
+                    <th>Привязана к</th>
+                    <th style="text-align:right;">Цена клиенту</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for sc in supplier_costs %}
+                <tr style="{% if not sc.car_service and sc.car %}background:#fffbeb;{% endif %}">
+                    <td>
+                        {% if sc.vin %}<span class="vin-code">{{ sc.vin }}</span>{% else %}—{% endif %}
+                    </td>
+                    <td><span style="font-size:.75rem; color:#64748b;">{{ sc.get_service_type_display }}</span></td>
+                    <td style="font-size:.82rem; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                        {{ sc.description|truncatechars:50 }}
+                    </td>
+                    <td style="text-align:right; font-weight:600; color:#dc2626;">{{ sc.amount|floatformat:2 }} €</td>
+                    <td>
+                        {% if sc.car_service %}
+                        <span style="font-size:.82rem; color:#16a34a;">
+                            <i class="bi bi-check-circle-fill"></i>
+                            {{ sc.car_service.get_service_name }}
+                        </span>
+                        {% elif sc.car %}
+                        <span style="font-size:.82rem; color:#d97706;">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            Нужна проверка
+                        </span>
+                        {% else %}
+                        <span style="font-size:.82rem; color:#94a3b8;">
+                            Машина не в системе
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align:right;">
+                        {% if sc.car_service %}
+                        <span style="color:#16a34a; font-weight:600;">{{ sc.car_service.final_price|floatformat:2 }} €</span>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td>
+                        {% if sc.car %}
+                        <a href="/admin/core/car/{{ sc.car.pk }}/change/" class="car-link" title="Карточка авто" style="font-size:.8rem;">
+                            <i class="bi bi-box-arrow-up-right"></i>
+                        </a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    {# ── Raw extracted data (collapsible) ── #}
+    {% if audit.raw_extracted %}
+    <div class="ia-section">
+        <details>
+            <summary><i class="bi bi-code-slash"></i> Данные извлечённые AI (JSON)</summary>
+            <div style="padding:0 22px 20px;">
+                <div class="ia-raw">
+                    <pre>{{ audit.raw_extracted|safe }}</pre>
+                </div>
+            </div>
+        </details>
+    </div>
+    {% endif %}
+
+    {% elif audit.status == 'PENDING' or audit.status == 'PROCESSING' %}
+    <div style="text-align:center; padding:64px 24px; color:#94a3b8;">
+        <div class="spinner" style="margin:0 auto 16px; width:32px; height:32px; border-width:3px;"></div>
+        <p style="font-size:.95rem; font-weight:500; color:#64748b;">Счёт обрабатывается...</p>
+        <p style="font-size:.8rem;">Страница обновится автоматически.</p>
+    </div>
+    {% endif %}
+
+</div>
+
+<script>
+{% if audit.status == 'PROCESSING' or audit.status == 'PENDING' %}
+(function poll() {
+    setTimeout(function() {
+        fetch('{% url "invoice_audit_status" audit.pk %}')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.status !== 'PROCESSING' && data.status !== 'PENDING') {
+                    location.reload();
+                } else {
+                    poll();
+                }
+            })
+            .catch(function() { poll(); });
+    }, 4000);
+})();
+{% endif %}
+
+// Pretty-print JSON in raw section
+document.addEventListener('DOMContentLoaded', function() {
+    var pre = document.querySelector('.ia-raw pre');
+    if (pre) {
+        try {
+            var obj = JSON.parse(pre.textContent);
+            pre.textContent = JSON.stringify(obj, null, 2);
+        } catch(e) {}
+    }
+});
+</script>
+{% endblock %}

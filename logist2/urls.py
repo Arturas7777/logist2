@@ -6,6 +6,12 @@ from rest_framework.routers import DefaultRouter
 from core.views import car_list_api, get_invoice_total, get_container_data, register_payment, get_client_balance, company_dashboard, get_payment_objects, search_partners_api, get_warehouse_cars_api, get_invoice_cars_api, comparison_dashboard, compare_car_costs_api, compare_client_costs_api, compare_warehouse_costs_api, get_discrepancies_api, get_available_services, add_services, get_warehouses, get_companies
 from core.routing import websocket_urlpatterns
 from core.api import CarViewSet, InvoiceViewSet
+from core.views_invoice_audit import (
+    invoice_audit_list, invoice_audit_upload, invoice_audit_detail,
+    invoice_audit_status, invoice_audit_delete, invoice_audit_reprocess,
+    reconciliation_dashboard, reconciliation_fix_ths, reconciliation_mark_reviewed,
+    manual_confirm_cost, reanalyze_newinvoice, newinvoice_audit_poll,
+)
 
 router = DefaultRouter()
 router.register(r'cars', CarViewSet, basename='car')
@@ -73,6 +79,22 @@ urlpatterns = [
     path('admin/register-payment/', register_payment, name='register_payment'),
     path('admin/dashboard/', company_dashboard, name='company_dashboard'),
     path('comparison-dashboard/', comparison_dashboard, name='comparison_dashboard'),
+
+    # ── Проверка счетов ──────────────────────────────────────────────────────
+    path('admin/invoice-audit/', invoice_audit_list,   name='invoice_audit_list'),
+    path('admin/invoice-audit/upload/', invoice_audit_upload,  name='invoice_audit_upload'),
+    path('admin/invoice-audit/<int:pk>/', invoice_audit_detail, name='invoice_audit_detail'),
+    path('admin/invoice-audit/<int:pk>/status/', invoice_audit_status,  name='invoice_audit_status'),
+    path('admin/invoice-audit/<int:pk>/delete/', invoice_audit_delete,  name='invoice_audit_delete'),
+    path('admin/invoice-audit/<int:pk>/reprocess/', invoice_audit_reprocess, name='invoice_audit_reprocess'),
+
+    # ── Сверка счетов ─────────────────────────────────────────────────────────
+    path('admin/reconciliation/', reconciliation_dashboard, name='reconciliation_dashboard'),
+    path('admin/reconciliation/fix-ths/', reconciliation_fix_ths, name='reconciliation_fix_ths'),
+    path('admin/reconciliation/mark-reviewed/', reconciliation_mark_reviewed, name='reconciliation_mark_reviewed'),
+    path('admin/reconciliation/manual-confirm-cost/', manual_confirm_cost, name='manual_confirm_cost'),
+    path('admin/newinvoice/<int:pk>/reanalyze/', reanalyze_newinvoice, name='reanalyze_newinvoice'),
+    path('admin/newinvoice/<int:pk>/audit-poll/', newinvoice_audit_poll, name='newinvoice_audit_poll'),
     
     path('ws/', include(websocket_urlpatterns)),
 ]

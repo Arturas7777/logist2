@@ -146,6 +146,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
         'created_at',
         'updated_at',
         'created_by',
+        'audit_status_display',
     )
     
     fieldsets = (
@@ -174,7 +175,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             'classes': ('collapse',),
         }),
         ('📎 Дополнительно', {
-            'fields': ('notes', 'attachment'),
+            'fields': ('notes', 'attachment', 'audit_status_display'),
         }),
         ('⚙️ Прочие получатели (если не клиент)', {
             'fields': (
@@ -243,14 +244,19 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             try:
                 invoice = NewInvoice.objects.get(pk=object_id)
                 selected_car_ids = list(invoice.cars.values_list('pk', flat=True))
-                # Данные для pivot-таблицы
                 extra_context['pivot_table'] = invoice.get_items_pivot_table()
-                # Проверяем существование файла вложения
+                extra_context['is_incoming'] = invoice.direction == 'INCOMING'
                 if invoice.attachment:
                     file_path = os.path.join(settings.MEDIA_ROOT, str(invoice.attachment))
                     extra_context['attachment_exists'] = os.path.isfile(file_path)
                 else:
                     extra_context['attachment_exists'] = False
+                # AI audit status badge
+                try:
+                    audit = invoice.audit
+                    extra_context['audit_status'] = self.audit_status_display(invoice)
+                except Exception:
+                    extra_context['audit_status'] = None
             except NewInvoice.DoesNotExist:
                 pass
         extra_context['selected_car_ids'] = selected_car_ids
@@ -355,8 +361,16 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             if car_ids:
                 cars = Car.objects.filter(pk__in=car_ids)
                 invoice.cars.set(cars)
-                # Генерируем позиции из услуг автомобилей
-                invoice.regenerate_items_from_cars()
+                # Для входящих инвойсов с AI-анализом не перезаписываем позиции
+                has_audit_items = False
+                try:
+                    has_audit_items = (invoice.direction == 'INCOMING'
+                                      and invoice.audit is not None
+                                      and invoice.items.exists())
+                except Exception:
+                    pass
+                if not has_audit_items:
+                    invoice.regenerate_items_from_cars()
                 messages.success(request, f'✅ Инвойс {invoice.number} сохранен! Создано {invoice.items.count()} позиций.')
             else:
                 invoice.cars.clear()
@@ -364,6 +378,15 @@ class NewInvoiceAdmin(admin.ModelAdmin):
                 self._handle_manual_items(request, invoice)
                 messages.success(request, f'✅ Инвойс {invoice.number} сохранен! Сумма: {invoice.total:.2f} €')
             
+            # AI-анализ PDF для входящих инвойсов
+            has_audit = False
+            try:
+                has_audit = invoice.audit is not None
+            except Exception:
+                pass
+            if invoice.attachment and invoice.direction == 'INCOMING' and not has_audit:
+                self._trigger_invoice_audit(request, invoice)
+
             # Определяем куда редиректить
             if '_save' in request.POST:
                 return redirect('admin:core_newinvoice_changelist')
@@ -487,15 +510,109 @@ class NewInvoiceAdmin(admin.ModelAdmin):
         # Сохраняем связь cars (ManyToMany сохраняется в save_related)
     
     def save_related(self, request, form, formsets, change):
-        """После сохранения ManyToMany создаем позиции из автомобилей"""
-        # Сначала сохраняем все связи
+        """После сохранения ManyToMany создаем позиции из автомобилей и запускаем AI-анализ PDF."""
         super().save_related(request, form, formsets, change)
-        
-        # Если выбраны автомобили - генерируем позиции
-        if form.instance.cars.exists():
-            form.instance.regenerate_items_from_cars()
-            messages.success(request, f"✅ Автоматически создано {form.instance.items.count()} позиций из услуг автомобилей!")
+
+        obj = form.instance
+
+        # Для входящих инвойсов с AI-анализом не перезаписываем позиции из PDF
+        has_audit_items = False
+        try:
+            has_audit_items = (obj.direction == 'INCOMING'
+                              and obj.audit is not None
+                              and obj.items.exists())
+        except Exception:
+            pass
+        if obj.cars.exists() and not has_audit_items:
+            obj.regenerate_items_from_cars()
+            messages.success(request, f"Автоматически создано {obj.items.count()} позиций из услуг автомобилей!")
+
+        # AI-анализ: входящий инвойс + есть PDF + audit ещё не создан
+        has_audit = False
+        try:
+            has_audit = obj.audit is not None
+        except Exception:
+            pass
+        if obj.attachment and obj.direction == 'INCOMING' and not has_audit:
+            self._trigger_invoice_audit(request, obj)
     
+    def audit_status_display(self, obj):
+        """Shows AI audit status badge for the invoice."""
+        if not obj.pk:
+            return format_html('<span style="color:#94a3b8;">Сохраните инвойс для запуска анализа</span>')
+
+        try:
+            audit = obj.audit
+        except Exception:
+            audit = None
+
+        if not audit:
+            if obj.attachment and obj.direction == 'INCOMING':
+                return format_html(
+                    '<span style="color:#d97706;">AI-анализ запустится после сохранения</span>'
+                )
+            return format_html('<span style="color:#94a3b8;">—</span>')
+
+        status_map = {
+            'PENDING':    ('#94a3b8', 'bi-hourglass-split', 'Ожидает обработки'),
+            'PROCESSING': ('#d97706', 'bi-arrow-repeat',    'Обрабатывается...'),
+            'OK':         ('#16a34a', 'bi-check-circle-fill', 'Всё совпадает'),
+            'HAS_ISSUES': ('#dc2626', 'bi-exclamation-triangle-fill', 'Есть расхождения'),
+            'ERROR':      ('#1e293b', 'bi-x-circle-fill',   'Ошибка'),
+        }
+        color, icon, label = status_map.get(audit.status, ('#94a3b8', 'bi-question-circle', '?'))
+        detail_url = f'/admin/invoice-audit/{audit.pk}/'
+
+        extra = ''
+        if audit.status in ('OK', 'HAS_ISSUES'):
+            extra = (
+                f' &middot; найдено {audit.cars_found} авто'
+                f'{f", расхождений: {audit.issues_count}" if audit.issues_count else ""}'
+            )
+
+        return format_html(
+            '<a href="{}" style="text-decoration:none;">'
+            '<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;'
+            'border-radius:8px;background:{}15;color:{};font-size:.85rem;font-weight:600;">'
+            '<i class="bi {}"></i> {}{}</span></a>',
+            detail_url, color, color, icon, label, extra
+        )
+    audit_status_display.short_description = 'AI-анализ PDF'
+
+    def _trigger_invoice_audit(self, request, obj):
+        """Create InvoiceAudit from NewInvoice attachment and start background processing."""
+        import threading
+        import os
+        from core.models_invoice_audit import InvoiceAudit
+        from core.services.invoice_audit_service import process_invoice_audit
+
+        try:
+            audit = InvoiceAudit.objects.filter(invoice=obj).first()
+            if audit:
+                return
+
+            filename = os.path.basename(obj.attachment.name) if obj.attachment else ''
+            audit = InvoiceAudit.objects.create(
+                pdf_file=obj.attachment,
+                original_filename=filename,
+                invoice=obj,
+                created_by=request.user,
+                status=InvoiceAudit.STATUS_PENDING,
+            )
+
+            thread = threading.Thread(
+                target=process_invoice_audit,
+                args=(audit.pk,),
+                daemon=True,
+            )
+            thread.start()
+
+            messages.info(request, f'AI-анализ PDF запущен в фоне (Audit #{audit.pk}). Обновите страницу через несколько секунд.')
+        except Exception as e:
+            import logging
+            logging.getLogger('django').exception(f'Error triggering invoice audit for NewInvoice #{obj.pk}: {e}')
+            messages.warning(request, f'Не удалось запустить AI-анализ PDF: {e}')
+
     actions = ['mark_as_issued', 'mark_as_paid', 'cancel_invoices', 'regenerate_items', 'push_to_sitepro']
 
     # ========================================================================

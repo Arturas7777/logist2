@@ -1666,6 +1666,7 @@ from .models_billing import (
     Transaction,
     SimpleBalanceMixin
 )
+from .models_invoice_audit import InvoiceAudit, SupplierCost  # noqa: F401
 
 # ==============================================================================
 # 🌐 МОДЕЛИ ДЛЯ КЛИЕНТСКОГО САЙТА
