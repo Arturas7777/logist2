@@ -620,7 +620,8 @@ class NewInvoice(models.Model):
         car_rows = OrderedDict()
 
         for item in items:
-            col_name = item.description
+            raw_desc = item.description or ''
+            col_name = raw_desc.split(':')[0].strip() if ':' in raw_desc else raw_desc
             if col_name not in seen_cols:
                 columns.append(col_name)
                 seen_cols.add(col_name)
@@ -646,6 +647,19 @@ class NewInvoice(models.Model):
                 car_rows[car_key]['client_services'][col_name] = item.client_price
                 car_rows[car_key]['client_total'] += item.client_price
 
+        single_cols = set()
+        if has_client_prices:
+            for col in columns:
+                has_any_client = any(
+                    col in row['client_services'] for row in car_rows.values()
+                )
+                if not has_any_client:
+                    single_cols.add(col)
+
+        columns_info = [
+            {'name': col, 'single': col in single_cols} for col in columns
+        ]
+
         column_totals = {}
         client_column_totals = {}
         for col in columns:
@@ -665,12 +679,16 @@ class NewInvoice(models.Model):
             cells = []
             for col in columns:
                 val = car_data['services'].get(col, None)
+                is_single = col in single_cols
                 if has_client_prices:
                     client_val = car_data['client_services'].get(col, None)
                     profit = None
                     if client_val is not None and val is not None:
                         profit = client_val - val
-                    cells.append({'invoice': val, 'client': client_val, 'profit': profit})
+                    cells.append({
+                        'invoice': val, 'client': client_val,
+                        'profit': profit, 'single': is_single,
+                    })
                 else:
                     cells.append(val)
 
@@ -690,11 +708,12 @@ class NewInvoice(models.Model):
 
         if has_client_prices:
             col_totals_paired = []
-            for col in columns:
+            for i, col in enumerate(columns):
                 inv = column_totals[col]
                 cli = client_column_totals.get(col, Decimal('0'))
                 col_totals_paired.append({
                     'invoice': inv, 'client': cli, 'profit': cli - inv,
+                    'single': col in single_cols,
                 })
             profit_grand = client_grand_total - grand_total
         else:
@@ -702,7 +721,7 @@ class NewInvoice(models.Model):
             profit_grand = None
 
         return {
-            'columns': columns,
+            'columns': columns_info,
             'rows': rows,
             'col_totals': col_totals_list,
             'col_totals_paired': col_totals_paired,
