@@ -362,14 +362,13 @@ class NewInvoiceAdmin(admin.ModelAdmin):
                 cars = Car.objects.filter(pk__in=car_ids)
                 invoice.cars.set(cars)
                 # Для входящих инвойсов с AI-анализом не перезаписываем позиции
-                has_audit_items = False
+                has_audit = False
                 try:
-                    has_audit_items = (invoice.direction == 'INCOMING'
-                                      and invoice.audit is not None
-                                      and invoice.items.exists())
+                    has_audit = (invoice.direction == 'INCOMING'
+                                 and invoice.audit is not None)
                 except Exception:
                     pass
-                if not has_audit_items:
+                if not has_audit:
                     invoice.regenerate_items_from_cars()
                 messages.success(request, f'✅ Инвойс {invoice.number} сохранен! Создано {invoice.items.count()} позиций.')
             else:
@@ -516,14 +515,13 @@ class NewInvoiceAdmin(admin.ModelAdmin):
         obj = form.instance
 
         # Для входящих инвойсов с AI-анализом не перезаписываем позиции из PDF
-        has_audit_items = False
+        has_audit = False
         try:
-            has_audit_items = (obj.direction == 'INCOMING'
-                              and obj.audit is not None
-                              and obj.items.exists())
+            has_audit = (obj.direction == 'INCOMING'
+                         and obj.audit is not None)
         except Exception:
             pass
-        if obj.cars.exists() and not has_audit_items:
+        if obj.cars.exists() and not has_audit:
             obj.regenerate_items_from_cars()
             messages.success(request, f"Автоматически создано {obj.items.count()} позиций из услуг автомобилей!")
 
