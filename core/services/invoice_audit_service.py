@@ -759,7 +759,10 @@ def _sync_audit_to_newinvoice(audit, found_cars: dict, extracted: dict):
             short_name = short_name_cache.get(stype)
 
             if not vins:
-                label = short_name or descr[:50]
+                if stype == 'COMPENSATION':
+                    label = f"{short_name or 'Комп'}: {descr[:60]}"
+                else:
+                    label = short_name or descr[:50]
                 unmatched_items.append((None, label, total, None))
                 continue
 

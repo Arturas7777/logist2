@@ -625,9 +625,12 @@ class NewInvoice(models.Model):
                 columns.append(col_name)
                 seen_cols.add(col_name)
 
-            car_key = item.car_id or 0
+            car_key = item.car_id or f'nocar_{item.pk}'
             if car_key not in car_rows:
-                car_label = f"{item.car.brand}, {item.car.vin}" if item.car else 'Без авто'
+                if item.car:
+                    car_label = f"{item.car.brand}, {item.car.vin}"
+                else:
+                    car_label = item.description or 'Без авто'
                 car_rows[car_key] = {
                     'car': item.car,
                     'car_label': car_label,
