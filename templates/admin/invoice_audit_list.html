@@ -1,0 +1,318 @@
+{% extends "admin/base_site.html" %}
+{% load static i18n %}
+
+{% block title %}Проверка счетов — Caromoto CRM{% endblock %}
+
+{% block topbar_title %}
+<span style="font-weight:600; font-size:1rem; color:#1e293b;">
+    <i class="bi bi-shield-check" style="color:#6c5ce7;"></i> Проверка счетов
+</span>
+{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+#content { background:#f4f2ff; min-height:100vh; }
+.ia-page { max-width:1100px; margin:0 auto; padding:28px 24px; }
+
+/* Upload card */
+.ia-upload-card {
+    background:#fff;
+    border-radius:16px;
+    padding:28px 32px;
+    box-shadow:0 2px 12px rgba(108,92,231,.10), 0 0 1px rgba(0,0,0,.07);
+    margin-bottom:28px;
+}
+.ia-upload-card h2 {
+    font-size:1.1rem; font-weight:700; color:#1e293b; margin:0 0 6px;
+}
+.ia-upload-card p { font-size:.875rem; color:#64748b; margin:0 0 20px; }
+
+.ia-drop-zone {
+    border: 2px dashed #c4b5fd;
+    border-radius:12px;
+    padding:32px 24px;
+    text-align:center;
+    cursor:pointer;
+    transition:all .2s;
+    background:#faf9ff;
+}
+.ia-drop-zone:hover, .ia-drop-zone.dragover {
+    border-color:#6c5ce7;
+    background:#f3f0ff;
+}
+.ia-drop-zone i { font-size:2rem; color:#a78bfa; display:block; margin-bottom:8px; }
+.ia-drop-zone p { margin:0; color:#64748b; font-size:.875rem; }
+.ia-drop-zone strong { color:#6c5ce7; }
+
+.ia-file-selected {
+    display:none;
+    align-items:center;
+    gap:10px;
+    background:#f0fdf4;
+    border:1.5px solid #86efac;
+    border-radius:10px;
+    padding:12px 16px;
+    margin-top:12px;
+    font-size:.875rem;
+    color:#166534;
+}
+.ia-file-selected i { font-size:1.2rem; color:#22c55e; }
+
+.ia-btn-upload {
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    background:#6c5ce7;
+    color:#fff;
+    border:none;
+    border-radius:10px;
+    padding:11px 24px;
+    font-size:.9rem;
+    font-weight:600;
+    cursor:pointer;
+    margin-top:16px;
+    transition:background .2s;
+}
+.ia-btn-upload:hover { background:#5b4bd5; }
+.ia-btn-upload:disabled { background:#a78bfa; cursor:not-allowed; }
+
+/* History table */
+.ia-history-card {
+    background:#fff;
+    border-radius:16px;
+    box-shadow:0 2px 12px rgba(108,92,231,.10), 0 0 1px rgba(0,0,0,.07);
+    overflow:hidden;
+}
+.ia-history-card h2 {
+    font-size:1rem; font-weight:700; color:#1e293b;
+    padding:20px 24px 16px;
+    border-bottom:1px solid #f1f5f9;
+    margin:0;
+}
+.ia-table { width:100%; border-collapse:collapse; }
+.ia-table th {
+    font-size:.75rem; font-weight:600; color:#94a3b8; text-transform:uppercase;
+    letter-spacing:.05em; padding:10px 16px; text-align:left;
+    background:#fafbfc; border-bottom:1px solid #f1f5f9;
+}
+.ia-table td {
+    padding:12px 16px; font-size:.875rem; color:#1e293b;
+    border-bottom:1px solid #f8fafc; vertical-align:middle;
+}
+.ia-table tr:last-child td { border-bottom:none; }
+.ia-table tr:hover td { background:#faf9ff; }
+.ia-table a { color:#6c5ce7; text-decoration:none; font-weight:500; }
+.ia-table a:hover { text-decoration:underline; }
+
+/* Status badges */
+.badge-status {
+    display:inline-flex; align-items:center; gap:4px;
+    padding:3px 10px; border-radius:20px; font-size:.75rem; font-weight:600;
+}
+.badge-PENDING    { background:#f1f5f9; color:#64748b; }
+.badge-PROCESSING { background:#fef9c3; color:#854d0e; }
+.badge-OK         { background:#dcfce7; color:#166534; }
+.badge-HAS_ISSUES { background:#fee2e2; color:#991b1b; }
+.badge-ERROR      { background:#f1f5f9; color:#374151; }
+
+.ia-empty {
+    text-align:center; padding:48px 24px; color:#94a3b8;
+}
+.ia-empty i { font-size:2.5rem; display:block; margin-bottom:12px; }
+
+/* Spinner */
+.spinner-sm {
+    display:inline-block;
+    width:14px; height:14px;
+    border:2px solid #e2e8f0;
+    border-top-color:#6c5ce7;
+    border-radius:50%;
+    animation:spin .7s linear infinite;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ia-page">
+
+    {% if messages %}
+    {% for msg in messages %}
+    <div style="background:{% if msg.tags == 'success' %}#dcfce7{% elif msg.tags == 'error' %}#fee2e2{% else %}#f0f9ff{% endif %};
+                border-radius:10px; padding:12px 18px; margin-bottom:20px;
+                font-size:.875rem; color:#1e293b; display:flex; align-items:center; gap:10px;">
+        <i class="bi {% if msg.tags == 'success' %}bi-check-circle-fill{% elif msg.tags == 'error' %}bi-exclamation-circle-fill{% else %}bi-info-circle-fill{% endif %}"
+           style="color:{% if msg.tags == 'success' %}#22c55e{% elif msg.tags == 'error' %}#ef4444{% else %}#3b82f6{% endif %};"></i>
+        {{ msg }}
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    {# ── Upload block ── #}
+    <div class="ia-upload-card">
+        <h2><i class="bi bi-cloud-upload" style="color:#6c5ce7; margin-right:6px;"></i>Загрузить счёт</h2>
+        <p>Поддерживаются счета от любых контрагентов (NETO, морские линии, перевозчики, брокеры). Формат: PDF.</p>
+
+        <form method="post" action="{% url 'invoice_audit_upload' %}" enctype="multipart/form-data" id="ia-upload-form">
+            {% csrf_token %}
+
+            <div class="ia-drop-zone" id="ia-drop-zone" onclick="document.getElementById('ia-file-input').click()">
+                <i class="bi bi-file-earmark-pdf"></i>
+                <p>Перетащите PDF сюда или <strong>нажмите для выбора</strong></p>
+            </div>
+
+            <input type="file" name="pdf_file" id="ia-file-input" accept=".pdf" style="display:none;">
+
+            <div class="ia-file-selected" id="ia-file-selected">
+                <i class="bi bi-file-earmark-check-fill"></i>
+                <span id="ia-file-name"></span>
+            </div>
+
+            <button type="submit" class="ia-btn-upload" id="ia-submit-btn" disabled>
+                <i class="bi bi-cpu"></i> Проверить счёт через AI
+            </button>
+        </form>
+    </div>
+
+    {# ── History ── #}
+    <div class="ia-history-card">
+        <h2>История проверок</h2>
+        {% if audits %}
+        <table class="ia-table">
+            <thead>
+                <tr>
+                    <th>Файл / Контрагент</th>
+                    <th>Дата счёта</th>
+                    <th>Сумма</th>
+                    <th>Статус</th>
+                    <th>Расхожд.</th>
+                    <th>Машин нет</th>
+                    <th>Загружен</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for audit in audits %}
+                <tr data-audit-id="{{ audit.pk }}" data-status="{{ audit.status }}">
+                    <td>
+                        <a href="{% url 'invoice_audit_detail' audit.pk %}">
+                            {{ audit.counterparty_detected|default:audit.original_filename|default:"—" }}
+                        </a>
+                        {% if audit.invoice_number %}
+                        <div style="font-size:.75rem; color:#94a3b8; margin-top:2px;">№ {{ audit.invoice_number }}</div>
+                        {% endif %}
+                    </td>
+                    <td>{{ audit.invoice_date|date:"d.m.Y"|default:"—" }}</td>
+                    <td>
+                        {% if audit.total_amount %}
+                        <strong>{{ audit.total_amount|floatformat:2 }} {{ audit.currency }}</strong>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td>
+                        <span class="badge-status badge-{{ audit.status }}">
+                            {% if audit.status == 'PROCESSING' %}<span class="spinner-sm"></span>{% endif %}
+                            {{ audit.get_status_display }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if audit.issues_count > 0 %}
+                        <span style="color:#dc2626; font-weight:600;">{{ audit.issues_count }}</span>
+                        {% else %}<span style="color:#94a3b8;">—</span>{% endif %}
+                    </td>
+                    <td>
+                        {% if audit.cars_missing > 0 %}
+                        <span style="color:#dc2626; font-weight:600;">{{ audit.cars_missing }}</span>
+                        {% else %}<span style="color:#94a3b8;">—</span>{% endif %}
+                    </td>
+                    <td style="color:#94a3b8; font-size:.8rem;">
+                        {{ audit.created_at|date:"d.m.Y H:i" }}
+                    </td>
+                    <td>
+                        <a href="{% url 'invoice_audit_detail' audit.pk %}" style="font-size:.8rem;">
+                            <i class="bi bi-arrow-right-circle"></i>
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="ia-empty">
+            <i class="bi bi-inbox"></i>
+            Счета ещё не загружались. Загрузите первый счёт выше.
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+
+<script>
+(function() {
+    var dropZone  = document.getElementById('ia-drop-zone');
+    var fileInput = document.getElementById('ia-file-input');
+    var fileSelected = document.getElementById('ia-file-selected');
+    var fileName  = document.getElementById('ia-file-name');
+    var submitBtn = document.getElementById('ia-submit-btn');
+
+    function setFile(file) {
+        if (!file) return;
+        fileName.textContent = file.name + ' (' + (file.size / 1024).toFixed(0) + ' KB)';
+        fileSelected.style.display = 'flex';
+        submitBtn.disabled = false;
+        dropZone.style.borderColor = '#6c5ce7';
+    }
+
+    fileInput.addEventListener('change', function() {
+        if (this.files[0]) setFile(this.files[0]);
+    });
+
+    dropZone.addEventListener('dragover', function(e) {
+        e.preventDefault(); this.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', function() {
+        this.classList.remove('dragover');
+    });
+    dropZone.addEventListener('drop', function(e) {
+        e.preventDefault(); this.classList.remove('dragover');
+        var file = e.dataTransfer.files[0];
+        if (file && file.name.endsWith('.pdf')) {
+            var dt = new DataTransfer();
+            dt.items.add(file);
+            fileInput.files = dt.files;
+            setFile(file);
+        }
+    });
+
+    // Show spinner on submit
+    document.getElementById('ia-upload-form').addEventListener('submit', function() {
+        submitBtn.innerHTML = '<span class="spinner-sm" style="border-top-color:#fff;"></span> Загружаем...';
+        submitBtn.disabled = true;
+    });
+
+    // Auto-refresh rows that are still PROCESSING
+    function pollProcessing() {
+        var rows = document.querySelectorAll('tr[data-status="PROCESSING"], tr[data-status="PENDING"]');
+        if (!rows.length) return;
+
+        rows.forEach(function(row) {
+            var auditId = row.dataset.auditId;
+            fetch('/admin/invoice-audit/' + auditId + '/status/')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.status !== 'PROCESSING' && data.status !== 'PENDING') {
+                        // Перезагружаем страницу когда все готовы
+                        location.reload();
+                    }
+                });
+        });
+    }
+
+    // Poll every 5 seconds if any rows are processing
+    var hasPending = document.querySelector('tr[data-status="PROCESSING"], tr[data-status="PENDING"]');
+    if (hasPending) {
+        setInterval(pollProcessing, 5000);
+    }
+})();
+</script>
+{% endblock %}

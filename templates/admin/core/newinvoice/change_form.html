@@ -1,5 +1,5 @@
 {% extends "admin/change_form.html" %}
-{% load i18n admin_urls static %}
+{% load i18n admin_urls static l10n %}
 
 {% block extrahead %}
 {{ block.super }}
@@ -282,6 +282,27 @@
         font-size: 14px;
     }
     
+    .pivot-table .col-group-header {
+        border-bottom: 2px solid var(--gray-300);
+        font-weight: 700;
+        font-size: 13px;
+    }
+    .pivot-table .sub-header {
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: .5px;
+    }
+    .pivot-table .sub-header.sub-inv { color: #6366f1; }
+    .pivot-table .sub-header.sub-client { color: #059669; }
+    .pivot-table .cell-inv { color: #4338ca; font-weight: 500; }
+    .pivot-table .cell-client { color: #059669; font-size: 12px; }
+    .pivot-table .cell-unknown { color: #d97706; font-size: 12px; font-weight: 600; }
+    .pivot-table .sub-header.sub-profit { color: #7c3aed; }
+    .pivot-table .cell-profit-pos { color: #16a34a; background: #f0fdf4; }
+    .pivot-table .cell-profit-neg { color: #dc2626; background: #fef2f2; }
+    .pivot-table .cell-profit-zero { color: #6b7280; }
+    
     .items-table input {
         padding: 8px 12px;
         border: 2px solid var(--gray-200);
@@ -448,8 +469,8 @@
                     <div class="form-group">
                         <label>💰 Сумма к оплате (€)</label>
                         <input type="number" name="manual_total" id="manual_total_input" step="0.01" min="0"
-                               value="{% if original and original.total %}{{ original.total }}{% else %}0.00{% endif %}"
-                               style="font-size: 20px; font-weight: 700; color: var(--primary); text-align: right; padding-right: 20px;">
+                               value="{% if original %}{{ original.total|unlocalize }}{% else %}0.00{% endif %}"
+                               style="font-size: 20px; font-weight: 700; color: var(--primary);">
                         <div class="form-hint" id="total_hint">Общая сумма. Пересчитывается из позиций автоматически.</div>
                     </div>
                 </div>
@@ -591,6 +612,71 @@
             <div class="card-body">
                 {% if pivot_table %}
                 <div style="overflow-x: auto;">
+                {% if pivot_table.has_client_prices %}
+                {# ── Incoming invoice: 3 sub-columns per service (Счёт / Клиент / Prof) ── #}
+                <table class="items-table pivot-table">
+                    <thead>
+                        <tr>
+                            <th rowspan="2" style="min-width:180px; vertical-align:bottom;">Авто</th>
+                            {% for col in pivot_table.columns %}
+                            <th colspan="3" class="col-group-header" style="text-align:center; min-width:160px; border-left:2px solid var(--gray-300);">{{ col }}</th>
+                            {% endfor %}
+                            <th colspan="3" class="col-group-header" style="text-align:center; min-width:160px; border-left:2px solid var(--gray-300); background:linear-gradient(135deg,var(--cm-purple,#6c5ce7) 0%,var(--cm-purple-dark,#5a4bd1) 100%); color:white; border-radius:0 10px 0 0 !important;">Итого</th>
+                        </tr>
+                        <tr>
+                            {% for col in pivot_table.columns %}
+                            <th class="sub-header sub-inv" style="border-left:2px solid var(--gray-300);">Счёт</th>
+                            <th class="sub-header sub-client">Клиент</th>
+                            <th class="sub-header sub-profit">Prof</th>
+                            {% endfor %}
+                            <th class="sub-header" style="border-left:2px solid var(--gray-300); color:rgba(255,255,255,.8); background:var(--cm-purple,#6c5ce7);">Счёт</th>
+                            <th class="sub-header" style="color:rgba(255,255,255,.8); background:var(--cm-purple,#6c5ce7);">Клиент</th>
+                            <th class="sub-header" style="color:rgba(255,255,255,.8); background:var(--cm-purple-dark,#5a4bd1);">Prof</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in pivot_table.rows %}
+                        <tr>
+                            <td style="font-weight:500;">{{ row.car_label }}</td>
+                            {% for cell in row.cells %}
+                            <td style="text-align:center; border-left:2px solid var(--gray-200);" class="cell-inv">
+                                {% if cell.invoice != None %}{{ cell.invoice|floatformat:2 }}{% else %}<span style="color:#ccc;">—</span>{% endif %}
+                            </td>
+                            <td style="text-align:center;" class="{% if cell.client != None %}cell-client{% else %}cell-unknown{% endif %}">
+                                {% if cell.client != None %}{{ cell.client|floatformat:2 }}{% else %}?{% endif %}
+                            </td>
+                            <td style="text-align:center; font-weight:600;" class="{% if cell.profit != None %}{% if cell.profit > 0 %}cell-profit-pos{% elif cell.profit < 0 %}cell-profit-neg{% else %}cell-profit-zero{% endif %}{% else %}cell-unknown{% endif %}">
+                                {% if cell.profit != None %}{% if cell.profit > 0 %}+{% endif %}{{ cell.profit|floatformat:2 }}{% else %}?{% endif %}
+                            </td>
+                            {% endfor %}
+                            <td style="text-align:center; border-left:2px solid var(--gray-300); font-weight:700; color:var(--primary);">{{ row.total|floatformat:2 }}</td>
+                            <td style="text-align:center; font-weight:700; color:#059669;">{% if row.client_total != None %}{{ row.client_total|floatformat:2 }}{% else %}?{% endif %}</td>
+                            <td style="text-align:center; font-weight:700;" class="{% if row.profit != None %}{% if row.profit > 0 %}cell-profit-pos{% elif row.profit < 0 %}cell-profit-neg{% else %}cell-profit-zero{% endif %}{% else %}cell-unknown{% endif %}">
+                                {% if row.profit != None %}{% if row.profit > 0 %}+{% endif %}{{ row.profit|floatformat:2 }}{% else %}?{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr style="background:var(--gray-100); font-weight:700;">
+                            <td>Итого</td>
+                            {% for pair in pivot_table.col_totals_paired %}
+                            <td style="text-align:center; border-left:2px solid var(--gray-300); color:#4338ca;">{{ pair.invoice|floatformat:2 }}</td>
+                            <td style="text-align:center; color:#059669;">{{ pair.client|floatformat:2 }}</td>
+                            <td style="text-align:center; font-weight:700;" class="{% if pair.profit > 0 %}cell-profit-pos{% elif pair.profit < 0 %}cell-profit-neg{% else %}cell-profit-zero{% endif %}">
+                                {% if pair.profit > 0 %}+{% endif %}{{ pair.profit|floatformat:2 }}
+                            </td>
+                            {% endfor %}
+                            <td style="text-align:center; border-left:2px solid var(--gray-300); font-size:1.1em; color:var(--primary);">{{ pivot_table.grand_total|floatformat:2 }} €</td>
+                            <td style="text-align:center; font-size:1.1em; color:#059669;">{% if pivot_table.client_grand_total != None %}{{ pivot_table.client_grand_total|floatformat:2 }} €{% else %}?{% endif %}</td>
+                            <td style="text-align:center; font-size:1.1em;" class="{% if pivot_table.profit_grand > 0 %}cell-profit-pos{% elif pivot_table.profit_grand < 0 %}cell-profit-neg{% else %}cell-profit-zero{% endif %}">
+                                {% if pivot_table.profit_grand != None %}{% if pivot_table.profit_grand > 0 %}+{% endif %}{{ pivot_table.profit_grand|floatformat:2 }} €{% else %}?{% endif %}
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+                {% else %}
+                {# ── Outgoing invoice: single column per service (original layout) ── #}
                 <table class="items-table pivot-table">
                     <thead>
                         <tr>
@@ -628,6 +714,7 @@
                         </tr>
                     </tfoot>
                 </table>
+                {% endif %}
                 </div>
                 {% elif original and original.items.exists %}
                 <table class="items-table">
@@ -744,6 +831,19 @@
                 <div style="margin-top: 8px; font-size: 12px; color: var(--gray-600); word-break: break-all;">
                     {{ original.attachment.name|truncatechars:50 }}
                 </div>
+                {% if is_incoming %}
+                <button type="button" class="btn btn-outline btn-sm" id="reanalyze-btn"
+                    style="width:100%; border-color:#6366f1; color:#6366f1; margin-top:12px;"
+                    data-url="{% url 'reanalyze_newinvoice' original.pk %}"
+                    data-csrf="{{ csrf_token }}">
+                    🔄 Перезапустить AI-анализ
+                </button>
+                {% if audit_status %}
+                <div style="margin-top: 8px; text-align: center;">
+                    {{ audit_status }}
+                </div>
+                {% endif %}
+                {% endif %}
             </div>
         </div>
         {% endif %}
@@ -1060,6 +1160,71 @@
     // Инициализация режима
     updateManualMode();
     
+    // Auto-poll: для входящих инвойсов с незавершённым AI-анализом — обновить страницу
+    {% if original and is_incoming and audit_status %}
+    (function() {
+        var pollUrl = '{% url "newinvoice_audit_poll" original.pk %}';
+        var attempts = 0;
+        var maxAttempts = 30;
+        
+        function poll() {
+            attempts++;
+            if (attempts > maxAttempts) return;
+            $.getJSON(pollUrl, function(data) {
+                if (data.ready) {
+                    location.reload();
+                } else if (data.status === 'PENDING' || data.status === 'PROCESSING') {
+                    setTimeout(poll, 3000);
+                }
+            });
+        }
+        // Проверяем, нужен ли polling (audit в процессе)
+        $.getJSON(pollUrl, function(data) {
+            if (!data.ready && (data.status === 'PENDING' || data.status === 'PROCESSING')) {
+                $('#manual_total_input').css('opacity', '0.5');
+                $('#total_hint').html('⏳ AI-анализ PDF в процессе... страница обновится автоматически');
+                setTimeout(poll, 3000);
+            }
+        });
+    })();
+    {% endif %}
+
+    // Кнопка "Перезапустить AI-анализ" — отправка через AJAX + polling
+    $('#reanalyze-btn').on('click', function() {
+        if (!confirm('Запустить AI-анализ заново? Текущие позиции будут пересозданы.')) return;
+        var btn = $(this);
+        var url = btn.data('url');
+        var csrf = btn.data('csrf');
+        btn.prop('disabled', true).text('⏳ Анализ...');
+        $('#manual_total_input').css('opacity', '0.5');
+        $('#total_hint').html('⏳ AI-анализ PDF в процессе... страница обновится автоматически');
+
+        $.ajax({
+            url: url,
+            type: 'POST',
+            data: {csrfmiddlewaretoken: csrf},
+            success: function() {
+                {% if original %}
+                var pollUrl = '{% url "newinvoice_audit_poll" original.pk %}';
+                function pollAfterReanalyze() {
+                    $.getJSON(pollUrl, function(data) {
+                        if (data.ready) {
+                            location.reload();
+                        } else {
+                            setTimeout(pollAfterReanalyze, 3000);
+                        }
+                    });
+                }
+                setTimeout(pollAfterReanalyze, 3000);
+                {% endif %}
+            },
+            error: function() {
+                btn.prop('disabled', false).text('🔄 Перезапустить AI-анализ');
+                alert('Ошибка при запуске анализа');
+            }
+        });
+    });
+
     });
 })(django.jQuery || jQuery || $);
 </script>

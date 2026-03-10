@@ -22,6 +22,32 @@ logger = logging.getLogger('django')
 CAR_MODELS_DIR = os.path.join(settings.BASE_DIR, 'core', 'static', 'icons', 'car_models')
 
 
+def _cost_badge_html(car_service_pk, current_price=None):
+    """Генерирует HTML-бейдж подтверждённости затрат для CarService."""
+    from core.models_invoice_audit import SupplierCost
+    costs = SupplierCost.objects.filter(car_service_id=car_service_pk)
+    if costs.exists():
+        total = sum(float(c.amount) for c in costs)
+        sources = set(c.source for c in costs)
+        icon = '📎' if 'INVOICE' in sources else '✍️'
+        return (
+            f'<div style="font-size:10px; margin-top:4px; padding:2px 6px; border-radius:6px; '
+            f'background:#dcfce7; color:#166534; display:inline-flex; align-items:center; gap:3px;">'
+            f'{icon} {total:.2f}\u20ac</div>'
+        )
+    else:
+        prefill = current_price if current_price is not None else 0
+        return (
+            '<div style="margin-top:4px;">'
+            '<button type="button" class="confirm-cost-btn" '
+            'style="font-size:10px; padding:1px 6px; border:1px solid #d97706; border-radius:6px; '
+            'background:#fffbeb; color:#92400e; cursor:pointer;" '
+            f'onclick="openConfirmCostModal({car_service_pk}, {prefill})">'
+            '&#10003; Confirm cost</button>'
+            '</div>'
+        )
+
+
 def find_car_image(year, brand):
     """Find best matching image for a car by year+brand.
     
@@ -1016,6 +1042,7 @@ class CarAdmin(admin.ModelAdmin):
                         # Highlight: main warehouse - green, others - yellow
                         bg_color = "#e8f5e9" if (obj.warehouse and service.warehouse.id == obj.warehouse.id) else "#fff9e6"
 
+                        cost_badge = _cost_badge_html(car_service.pk, current_value)
                         html += f'''
                         <div style="border: 1px solid #ddd; padding: 10px; background: {bg_color}; position: relative; min-width: 220px;">
                             <button type="button" onclick="removeService({service.id}, 'warehouse')" style="position: absolute; top: 5px; right: 5px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 12px;">×</button>
@@ -1026,6 +1053,7 @@ class CarAdmin(admin.ModelAdmin):
                                 <span style="color: #28a745; font-weight: bold;">+</span>
                                 <input type="number" name="markup_warehouse_service_{service.id}" value="{markup_value}" step="0.01" style="width: 60px; background: #fffde7; border-color: #ffc107;" title="Скрытая наценка" placeholder="0">
                             </div>
+                            {cost_badge}
                             <input type="hidden" name="remove_warehouse_service_{service.id}" id="remove_warehouse_service_{service.id}" value="">
                         </div>
                         '''
@@ -1083,6 +1111,7 @@ class CarAdmin(admin.ModelAdmin):
                     current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
                     markup_value = car_service.markup_amount or 0
 
+                    cost_badge = _cost_badge_html(car_service.pk, current_value)
                     html += f'''
                     <div style="border: 1px solid #ddd; padding: 10px; background: #e3f2fd; position: relative; min-width: 200px;">
                         <button type="button" onclick="removeService({service.id}, 'line')" style="position: absolute; top: 5px; right: 5px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 12px;">×</button>
@@ -1092,6 +1121,7 @@ class CarAdmin(admin.ModelAdmin):
                             <span style="color: #28a745; font-weight: bold;">+</span>
                             <input type="number" name="markup_line_service_{service.id}" value="{markup_value}" step="0.01" style="width: 60px; background: #fffde7; border-color: #ffc107;" title="Скрытая наценка" placeholder="0">
                         </div>
+                        {cost_badge}
                         <input type="hidden" name="remove_line_service_{service.id}" id="remove_line_service_{service.id}" value="">
                     </div>
                     '''
@@ -1140,6 +1170,7 @@ class CarAdmin(admin.ModelAdmin):
                     current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
                     markup_value = car_service.markup_amount or 0
 
+                    cost_badge = _cost_badge_html(car_service.pk, current_value)
                     html += f'''
                     <div style="border: 1px solid #ddd; padding: 10px; background: #fff3e0; position: relative; min-width: 200px;">
                         <button type="button" onclick="removeService({service.id}, 'carrier')" style="position: absolute; top: 5px; right: 5px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 12px;">×</button>
@@ -1149,6 +1180,7 @@ class CarAdmin(admin.ModelAdmin):
                             <span style="color: #28a745; font-weight: bold;">+</span>
                             <input type="number" name="markup_carrier_service_{service.id}" value="{markup_value}" step="0.01" style="width: 60px; background: #fffde7; border-color: #ffc107;" title="Скрытая наценка" placeholder="0">
                         </div>
+                        {cost_badge}
                         <input type="hidden" name="remove_carrier_service_{service.id}" id="remove_carrier_service_{service.id}" value="">
                     </div>
                     '''
@@ -1193,6 +1225,7 @@ class CarAdmin(admin.ModelAdmin):
                         current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
                         markup_value = car_service.markup_amount or 0
 
+                        cost_badge = _cost_badge_html(car_service.pk, current_value)
                         html += f'''
                         <div style="border: 1px solid #ddd; padding: 10px; background: #f3e8ff; position: relative; min-width: 240px;">
                             <button type="button" onclick="removeService({service.id}, 'company')" style="position: absolute; top: 5px; right: 5px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 12px;">×</button>
@@ -1203,6 +1236,7 @@ class CarAdmin(admin.ModelAdmin):
                                 <span style="color: #28a745; font-weight: bold;">+</span>
                                 <input type="number" name="markup_company_service_{service.id}" value="{markup_value}" step="0.01" style="width: 60px; background: #fffde7; border-color: #ffc107;" title="Скрытая наценка" placeholder="0">
                             </div>
+                            {cost_badge}
                             <input type="hidden" name="remove_company_service_{service.id}" id="remove_company_service_{service.id}" value="">
                         </div>
                         '''

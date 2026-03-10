@@ -1,0 +1,214 @@
+{
+  "_comment": "Маппинг контрагентов из инвойсов → услуги в системе. Ключ = название контрагента (как AI его определяет). provider_type = WAREHOUSE|LINE|CARRIER|COMPANY. entity_id = PK в таблице. services = {AI_service_type: service_id}.",
+
+  "NETO": {
+    "provider_type": "WAREHOUSE",
+    "entity_id": 1,
+    "aliases": ["NETO", "UAB NETO", "NETO UAB"],
+    "services": {
+      "UNLOADING": 15,
+      "THS": 46,
+      "STORAGE": 32,
+      "DECLARATION": 21,
+      "BDK": 20,
+      "DOCS": 18,
+      "TRANSPORT": 16
+    }
+  },
+
+  "LOGISPACE": {
+    "provider_type": "WAREHOUSE",
+    "entity_id": 2,
+    "aliases": ["LOGISPACE", "UAB LOGISPACE"],
+    "services": {
+      "UNLOADING": 14,
+      "STORAGE": 45,
+      "DECLARATION": 31
+    }
+  },
+
+  "TTG": {
+    "provider_type": "WAREHOUSE",
+    "entity_id": 3,
+    "aliases": ["TTG", "UAB TTG"],
+    "services": {
+      "UNLOADING": 38,
+      "STORAGE": 44
+    }
+  },
+
+  "ATLANTIC": {
+    "provider_type": "WAREHOUSE",
+    "entity_id": 4,
+    "aliases": ["ATLANTIC", "UAB ATLANTIC"],
+    "services": {
+      "UNLOADING": 37,
+      "STORAGE": 43
+    }
+  },
+
+  "KLIT": {
+    "provider_type": "WAREHOUSE",
+    "entity_id": 6,
+    "aliases": ["KLIT", "UAB KLIT"],
+    "services": {
+      "UNLOADING": 36,
+      "STORAGE": 42
+    }
+  },
+
+  "KKT": {
+    "provider_type": "WAREHOUSE",
+    "entity_id": 7,
+    "aliases": ["KKT", "UAB KKT"],
+    "services": {
+      "UNLOADING": 35,
+      "STORAGE": 41
+    }
+  },
+
+  "MARETAS": {
+    "provider_type": "WAREHOUSE",
+    "entity_id": 8,
+    "aliases": ["MARETAS", "UAB MARETAS"],
+    "services": {
+      "UNLOADING": 34,
+      "STORAGE": 39
+    }
+  },
+
+  "AVN": {
+    "provider_type": "WAREHOUSE",
+    "entity_id": 22,
+    "aliases": ["AVN", "UAB AVN"],
+    "services": {
+      "UNLOADING": 33,
+      "STORAGE": 40
+    }
+  },
+
+  "OLICARGO": {
+    "provider_type": "WAREHOUSE",
+    "entity_id": 23,
+    "aliases": ["OLICARGO", "UAB OLICARGO"],
+    "services": {
+      "UNLOADING": 48,
+      "THS": 48
+    }
+  },
+
+  "TRANSLAIVA": {
+    "provider_type": "WAREHOUSE",
+    "entity_id": 24,
+    "aliases": ["TRANSLAIVA", "UAB TRANSLAIVA"],
+    "services": {
+      "THS": 47
+    }
+  },
+
+  "MAERSK": {
+    "provider_type": "LINE",
+    "entity_id": 13,
+    "aliases": ["MAERSK", "MAERSK LINE", "A.P. MOLLER-MAERSK"],
+    "services": {
+      "THS": 46,
+      "DOCS": 52
+    }
+  },
+
+  "COSCO": {
+    "provider_type": "LINE",
+    "entity_id": 14,
+    "aliases": ["COSCO", "COSCO SHIPPING", "COSCO SHIPPING LINES"],
+    "services": {
+      "THS": 48,
+      "DOCS": 53
+    }
+  },
+
+  "ONE": {
+    "provider_type": "LINE",
+    "entity_id": 5,
+    "aliases": ["ONE", "OCEAN NETWORK EXPRESS"],
+    "services": {
+      "THS": 49,
+      "DOCS": 54
+    }
+  },
+
+  "CMA": {
+    "provider_type": "LINE",
+    "entity_id": 4,
+    "aliases": ["CMA", "CMA CGM", "CMA-CGM"],
+    "services": {
+      "THS": 47,
+      "DOCS": 55
+    }
+  },
+
+  "MSC": {
+    "provider_type": "LINE",
+    "entity_id": 3,
+    "aliases": ["MSC", "MEDITERRANEAN SHIPPING"],
+    "services": {
+      "THS": 50,
+      "DOCS": 56
+    }
+  },
+
+  "OOCL": {
+    "provider_type": "LINE",
+    "entity_id": 2,
+    "aliases": ["OOCL", "ORIENT OVERSEAS CONTAINER LINE"],
+    "services": {
+      "THS": 51,
+      "DOCS": 57
+    }
+  },
+
+  "PALDEXA": {
+    "provider_type": "CARRIER",
+    "entity_id": 1,
+    "aliases": ["PALDEXA", "UAB PALDEXA", "PALDEXA, UAB"],
+    "services": {
+      "TRANSPORT": 1,
+      "UNLOADING": 2
+    }
+  },
+
+  "FORZA": {
+    "provider_type": "CARRIER",
+    "entity_id": 2,
+    "aliases": ["FORZA", "UAB FORZA", "FORZA, UAB"],
+    "services": {
+      "TRANSPORT": 8
+    }
+  },
+
+  "TRANSFEROK": {
+    "provider_type": "CARRIER",
+    "entity_id": 10,
+    "aliases": ["TRANSFEROK", "UAB TRANSFEROK", "TRANSFEROK, UAB"],
+    "services": {
+      "TRANSPORT": 9
+    }
+  },
+
+  "Caromoto Lithuania": {
+    "provider_type": "COMPANY",
+    "entity_id": 1,
+    "aliases": ["CAROMOTO", "CAROMOTO LITHUANIA", "UAB CAROMOTO LITHUANIA"],
+    "services": {
+      "DOCS": 1
+    }
+  },
+
+  "Inchcape Auto": {
+    "provider_type": "COMPANY",
+    "entity_id": 12,
+    "aliases": ["INCHCAPE", "INCHCAPE AUTO", "UAB INCHCAPE AUTO"],
+    "services": {
+      "DOCS": 2
+    }
+  }
+}

@@ -33,3 +33,6 @@ except ImportError as e:
     import logging
     logger = logging.getLogger('django')
     logger.warning(f"Could not load accounting admin: {e}")
+
+# Invoice audit — managed via custom views at /admin/invoice-audit/
+# No admin registration needed.

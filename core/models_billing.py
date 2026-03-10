@@ -602,75 +602,111 @@ class NewInvoice(models.Model):
     def get_items_pivot_table(self):
         """
         Возвращает данные для табличного отображения инвойса:
-        строки = авто, столбцы = группы услуг (short_name), крайний правый = итого
+        строки = авто, столбцы = группы услуг (short_name), крайний правый = итого.
+        Для входящих инвойсов каждая ячейка содержит и цену из инвойса, и цену для клиента.
         """
         from collections import OrderedDict
-        
+
         items = self.items.all().select_related('car').order_by('order')
-        
+
         if not items.exists():
             return None
-        
-        # Собираем уникальные заголовки столбцов (в порядке появления)
+
+        is_incoming = self.direction == 'INCOMING'
+        has_client_prices = is_incoming and items.filter(client_price__isnull=False).exists()
+
         columns = []
         seen_cols = set()
-        
-        # Группируем по авто
         car_rows = OrderedDict()
-        
+
         for item in items:
             col_name = item.description
             if col_name not in seen_cols:
                 columns.append(col_name)
                 seen_cols.add(col_name)
-            
+
             car_key = item.car_id or 0
             if car_key not in car_rows:
-                car_label = ''
-                if item.car:
-                    car_label = f"{item.car.brand}, {item.car.vin}"
-                else:
-                    car_label = 'Без авто'
+                car_label = f"{item.car.brand}, {item.car.vin}" if item.car else 'Без авто'
                 car_rows[car_key] = {
                     'car': item.car,
                     'car_label': car_label,
                     'services': {},
+                    'client_services': {},
                     'total': Decimal('0'),
+                    'client_total': Decimal('0'),
                 }
-            
+
             car_rows[car_key]['services'][col_name] = item.unit_price
             car_rows[car_key]['total'] += item.total_price
-        
-        # Считаем итоги по столбцам
+            if item.client_price is not None:
+                car_rows[car_key]['client_services'][col_name] = item.client_price
+                car_rows[car_key]['client_total'] += item.client_price
+
         column_totals = {}
+        client_column_totals = {}
         for col in columns:
             column_totals[col] = sum(
                 row['services'].get(col, Decimal('0')) for row in car_rows.values()
             )
-        
+            if has_client_prices:
+                client_column_totals[col] = sum(
+                    row['client_services'].get(col, Decimal('0')) for row in car_rows.values()
+                )
+
         grand_total = sum(row['total'] for row in car_rows.values())
-        
-        # Формируем строки с ячейками в порядке столбцов
+        client_grand_total = sum(row['client_total'] for row in car_rows.values()) if has_client_prices else None
+
         rows = []
         for car_data in car_rows.values():
             cells = []
             for col in columns:
                 val = car_data['services'].get(col, None)
-                cells.append(val)
+                if has_client_prices:
+                    client_val = car_data['client_services'].get(col, None)
+                    profit = None
+                    if client_val is not None and val is not None:
+                        profit = client_val - val
+                    cells.append({'invoice': val, 'client': client_val, 'profit': profit})
+                else:
+                    cells.append(val)
+
+            row_profit = None
+            if has_client_prices:
+                row_profit = car_data['client_total'] - car_data['total']
+
             rows.append({
                 'car_label': car_data['car_label'],
                 'cells': cells,
                 'total': car_data['total'],
+                'client_total': car_data['client_total'] if has_client_prices else None,
+                'profit': row_profit,
             })
-        
-        # Итого по столбцам
+
         col_totals_list = [column_totals[col] for col in columns]
-        
+
+        if has_client_prices:
+            col_totals_paired = []
+            for col in columns:
+                inv = column_totals[col]
+                cli = client_column_totals.get(col, Decimal('0'))
+                col_totals_paired.append({
+                    'invoice': inv, 'client': cli, 'profit': cli - inv,
+                })
+            profit_grand = client_grand_total - grand_total
+        else:
+            col_totals_paired = None
+            profit_grand = None
+
         return {
             'columns': columns,
             'rows': rows,
             'col_totals': col_totals_list,
+            'col_totals_paired': col_totals_paired,
             'grand_total': grand_total,
+            'client_grand_total': client_grand_total,
+            'profit_grand': profit_grand,
+            'has_client_prices': has_client_prices,
         }
     
     def update_status(self):
@@ -928,7 +964,14 @@ class InvoiceItem(models.Model):
         verbose_name="Сумма",
         help_text="Автоматически рассчитывается: количество × цена"
     )
-    
+
+    client_price = models.DecimalField(
+        max_digits=15, decimal_places=2,
+        null=True, blank=True,
+        verbose_name="Цена для клиента",
+        help_text="Цена из CarService (для сравнения во входящих инвойсах)"
+    )
+
     # Порядок отображения
     order = models.PositiveIntegerField(
         default=0,
