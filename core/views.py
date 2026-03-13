@@ -22,12 +22,10 @@ logger = logging.getLogger('django')
 def car_list_api(request):
     """Возвращает список автомобилей для клиента, отфильтрованный по статусу."""
     raw_client = (request.GET.get('client_id') or request.GET.get('client') or '').strip()
-    # Нормализуем client_id: берём только цифры
     m = re.search(r"\d+", raw_client)
     raw_client = m.group(0) if m else ''
     search_query: str = request.GET.get('search', '').strip().lower()
-    logger.info(f"car_list_api called with GET: {request.GET}")
-    logger.info(f"Extracted client: '{raw_client}', search: '{search_query}'")
+    logger.debug("car_list_api called with GET: %s", request.GET)
 
     try:
         client_id_int = int(raw_client)
@@ -35,17 +33,10 @@ def car_list_api(request):
         client_id_int = None
 
     if client_id_int:
-        # Используем оптимизированный менеджер с prefetch
         allowed_statuses = ['UNLOADED', 'IN_PORT', 'FLOATING', 'TRANSFERRED']
         all_cars = Car.objects.by_client(client_id_int).filter(
             status__in=allowed_statuses
         ).select_related('client', 'warehouse', 'container', 'line', 'carrier')
-        logger.info(f"All cars for client {client_id_int}: {all_cars.count()}")
-        if all_cars.exists():
-            for car in all_cars:
-                logger.debug(f"Car {car.pk}: VIN={car.vin}, Brand={car.brand}, Year={car.year}, Status={car.status}, Transfer Date={car.transfer_date}")
-        else:
-            logger.warning(f"No cars found for client {client_id_int}")
 
         if search_query:
             year_q = Q()
@@ -59,15 +50,9 @@ def car_list_api(request):
                 Q(brand__icontains=search_query) |
                 year_q
             )
-            logger.info(f"Filtered cars with search '{search_query}': {all_cars.count()}")
-            if all_cars.exists():
-                for car in all_cars:
-                    logger.debug(f"Filtered car: {car.pk} - VIN: {car.vin}, Brand: {car.brand}, Year: {car.year}, Status: {car.status}, Transfer Date={car.transfer_date}")
 
         html = render_to_string('admin/car_options.html', context={'cars': all_cars}, request=request)
-        logger.debug(f"Returning HTML: {html[:100]}...")
         return HttpResponse(html, content_type='text/html')
-    logger.warning("Invalid or missing client id, returning no client selected")
     return HttpResponse('<option class="no-results">Клиент не выбран</option>', content_type='text/html')
 
 @staff_member_required
@@ -97,19 +82,15 @@ def get_invoice_total(request):
 @require_GET
 def get_container_data(request, container_id: int):
     """Возвращает данные контейнера по ID."""
-    logger.info(f"get_container_data called with container_id: {container_id}")
     try:
         container = Container.objects.get(id=container_id)
-        container.refresh_from_db()
         data = {
             'free_days': container.free_days,
             'storage_cost': str(container.storage_cost),
             'status': container.status,
         }
-        logger.info(f"get_container_data: ID={container_id}, free_days={container.free_days}, storage_cost={container.storage_cost}")
         return JsonResponse(data)
     except Container.DoesNotExist:
-        logger.error(f"Container not found: ID={container_id}")
         return JsonResponse({'error': 'Container not found'}, status=404)
 
 @staff_member_required
@@ -117,7 +98,6 @@ def get_container_data(request, container_id: int):
 def get_client_balance(request):
     """Возвращает баланс клиента по ID."""
     client_id: Optional[str] = request.GET.get('client_id')
-    logger.info(f"get_client_balance called with client_id: {client_id}")
     if client_id and client_id.isdigit():
         try:
             client = Client.objects.get(id=client_id)
@@ -130,19 +110,15 @@ def get_client_balance(request):
             else:
                 status = 'Ноль'
 
-            response = {
+            return JsonResponse({
                 'balance': str(balance),
                 'total_balance': str(balance),
                 'status': status,
                 'balance_status': client.balance_status,
                 'balance_color': client.balance_color,
-            }
-            logger.info(f"Client balance for {client_id}: {response}")
-            return JsonResponse(response)
+            })
         except Client.DoesNotExist:
-            logger.error(f"Client not found: ID={client_id}")
             return JsonResponse({'error': 'Client not found'}, status=404)
-    logger.warning("Invalid client ID")
     return JsonResponse({'error': 'Invalid client ID'}, status=400)
 
 @staff_member_required
@@ -164,7 +140,7 @@ def register_payment(request):
     description: str = request.POST.get('description', '')
     payer_id: Optional[str] = request.POST.get('payer_id')
 
-    logger.info(f"Registering payment: invoice_id={invoice_id}, amount={amount}, method={payment_method}, from_balance={from_balance}, payer_id={payer_id}")
+    logger.debug("Registering payment: invoice_id=%s, amount=%s, method=%s", invoice_id, amount, payment_method)
 
     try:
         invoice = Invoice.objects.get(id=invoice_id) if invoice_id else None
@@ -197,7 +173,7 @@ def register_payment(request):
             invoice.update_status()
             invoice.save(update_fields=['paid_amount', 'status', 'updated_at'])
 
-        logger.info(f"Payment saved: id={payment.pk}, client_id={payer.pk if payer else 'N/A'}, balance={payer.balance if payer else 'N/A'}")
+        logger.debug("Payment saved: id=%s", payment.pk)
 
         return JsonResponse({
             'status': 'success',
@@ -243,7 +219,7 @@ def company_dashboard(request):
 def get_payment_objects(request):
     """AJAX view для получения списка объектов определенного типа для формы платежа"""
     object_type = request.GET.get('type', '').strip().lower()
-    logger.info(f"get_payment_objects called with type: {object_type}")
+    logger.debug("get_payment_objects called with type: %s", object_type)
     
     if not object_type:
         return JsonResponse({'error': 'Type parameter is required'}, status=400)
@@ -354,7 +330,7 @@ def get_invoice_cars_api(request):
     to_entity_id = request.GET.get('to_entity_id')
     search_query = request.GET.get('search', '').strip()
     
-    logger.info(f"get_invoice_cars_api called with: from_entity_type={from_entity_type}, from_entity_id={from_entity_id}, to_entity_type={to_entity_type}, to_entity_id={to_entity_id}, search_query={search_query}")
+    logger.debug("get_invoice_cars_api: from=%s/%s, to=%s/%s", from_entity_type, from_entity_id, to_entity_type, to_entity_id)
     
     # Проверяем наличие отправителя (обязательно) и получателя (опционально)
     if not all([from_entity_type, from_entity_id]):
@@ -424,10 +400,7 @@ def get_invoice_cars_api(request):
                 year_q
             )
         
-        # Формируем данные для каждого автомобиля
         cars_data = []
-        logger.info(f"Found {cars.count()} cars for entity type {to_entity_type} with ID {to_entity_id}")
-        
         for car in cars:
             total_cost = car.total_price or Decimal('0.00')
             
@@ -450,13 +423,12 @@ def get_invoice_cars_api(request):
                 'transport_kz': float(car.transport_kz or 0)
             })
         
-        logger.info(f"Returning {len(cars_data)} cars")
         response = JsonResponse({'cars': cars_data})
         response['Content-Type'] = 'application/json'
         return response
         
     except Exception as e:
-        logger.error(f"Error getting invoice cars: {e}")
+        logger.error("Error getting invoice cars: %s", e)
         response = JsonResponse({'error': str(e)}, status=500)
         response['Content-Type'] = 'application/json'
         return response
@@ -541,8 +513,9 @@ def get_warehouse_cars_api(request):
 
 @staff_member_required
 def comparison_dashboard(request):
-    """Дашборд для сравнения сумм между расчетами и счетами склада"""
-    
+    """Дашборд для сравнения сумм между расчетами и счетами склада.
+    Оптимизировано: batch-запросы вместо N+1.
+    """
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
     
@@ -555,32 +528,10 @@ def comparison_dashboard(request):
         return JsonResponse({'error': 'Неверный формат даты. Используйте YYYY-MM-DD'}, status=400)
     
     comparison_service = ComparisonService()
-
     report = comparison_service.get_comparison_report(start_date, end_date)
 
-    clients = Client.objects.filter(
-        car__unload_date__isnull=False
-    ).distinct().order_by('name')
-
-    client_comparisons = []
-    for client in clients:
-        comparison = comparison_service.compare_client_costs_with_warehouse_invoices(
-            client, start_date, end_date
-        )
-        if comparison['status'] != 'no_data':
-            client_comparisons.append(comparison)
-
-    warehouses = Warehouse.objects.filter(
-        car__isnull=False
-    ).distinct().order_by('name')
-
-    warehouse_comparisons = []
-    for warehouse in warehouses:
-        comparison = comparison_service.compare_warehouse_costs_with_payments(
-            warehouse, start_date, end_date
-        )
-        if comparison['status'] != 'no_data':
-            warehouse_comparisons.append(comparison)
+    client_comparisons = comparison_service.batch_compare_clients(start_date, end_date)
+    warehouse_comparisons = comparison_service.batch_compare_warehouses(start_date, end_date)
 
     discrepancies = [
         {'type': 'client_comparison', 'entity': c['client_name'], 'comparison': c}
@@ -733,134 +684,86 @@ def get_companies(request):
 @staff_member_required
 def get_available_services(request, car_id):
     """Получает доступные услуги для добавления к автомобилю"""
-    logger.info(f"get_available_services called: car_id={car_id}, method={request.method}")
-    
     service_type = request.GET.get('type')
     
-    logger.info(f"get_available_services called: car_id={car_id}, service_type={service_type}")
-    
     if not service_type:
-        logger.error("Service type is required")
         return JsonResponse({'error': 'Service type is required'}, status=400)
     
     try:
-        car = Car.objects.get(id=car_id)
-        logger.info(f"Found car: {car.vin}, warehouse={car.warehouse}, line={car.line}, carrier={car.carrier}")
+        car = Car.objects.select_related('warehouse', 'line', 'carrier').get(id=car_id)
         services = []
         
         if service_type == 'warehouse':
-            # Проверяем, передан ли конкретный склад
             warehouse_id = request.GET.get('warehouse_id')
             if warehouse_id:
                 warehouse = Warehouse.objects.get(id=warehouse_id)
-                logger.info(f"Processing warehouse services for selected warehouse: {warehouse}")
             elif car.warehouse:
                 warehouse = car.warehouse
-                logger.info(f"Processing warehouse services for car's warehouse: {warehouse}")
             else:
-                logger.info("No warehouse selected or assigned to car")
                 return JsonResponse({'services': []})
             
-            # Получаем услуги склада, которые еще не добавлены к автомобилю
-            existing_service_ids = CarService.objects.filter(
-                car=car, 
-                service_type='WAREHOUSE'
-            ).values_list('service_id', flat=True)
-            
-            logger.info(f"Existing warehouse service IDs: {list(existing_service_ids)}")
-            
-            available_services = WarehouseService.objects.filter(
-                warehouse=warehouse
-            ).exclude(id__in=existing_service_ids)
-            
-            logger.info(f"Available warehouse services count: {available_services.count()}")
+            existing_service_ids = set(CarService.objects.filter(
+                car=car, service_type='WAREHOUSE'
+            ).values_list('service_id', flat=True))
             
             services = [{
                 'id': service.id,
                 'name': service.name,
                 'price': float(service.default_price)
-            } for service in available_services]
+            } for service in WarehouseService.objects.filter(
+                warehouse=warehouse
+            ).exclude(id__in=existing_service_ids)]
             
         elif service_type == 'line' and car.line:
-            logger.info(f"Processing line services for line: {car.line}")
-            # Получаем услуги линии, которые еще не добавлены к автомобилю
-            existing_service_ids = CarService.objects.filter(
-                car=car, 
-                service_type='LINE'
-            ).values_list('service_id', flat=True)
-            
-            logger.info(f"Existing line service IDs: {list(existing_service_ids)}")
-            
-            available_services = LineService.objects.filter(
-                line=car.line
-            ).exclude(id__in=existing_service_ids)
-            
-            logger.info(f"Available line services count: {available_services.count()}")
+            existing_service_ids = set(CarService.objects.filter(
+                car=car, service_type='LINE'
+            ).values_list('service_id', flat=True))
             
             services = [{
                 'id': service.id,
                 'name': service.name,
                 'price': float(service.default_price)
-            } for service in available_services]
+            } for service in LineService.objects.filter(
+                line=car.line
+            ).exclude(id__in=existing_service_ids)]
             
         elif service_type == 'carrier' and car.carrier:
-            logger.info(f"Processing carrier services for carrier: {car.carrier}")
-            # Получаем услуги перевозчика, которые еще не добавлены к автомобилю
-            existing_service_ids = CarService.objects.filter(
-                car=car, 
-                service_type='CARRIER'
-            ).values_list('service_id', flat=True)
-            
-            logger.info(f"Existing carrier service IDs: {list(existing_service_ids)}")
-            
-            available_services = CarrierService.objects.filter(
-                carrier=car.carrier
-            ).exclude(id__in=existing_service_ids)
-            
-            logger.info(f"Available carrier services count: {available_services.count()}")
+            existing_service_ids = set(CarService.objects.filter(
+                car=car, service_type='CARRIER'
+            ).values_list('service_id', flat=True))
             
             services = [{
                 'id': service.id,
                 'name': service.name,
                 'price': float(service.default_price)
-            } for service in available_services]
+            } for service in CarrierService.objects.filter(
+                carrier=car.carrier
+            ).exclude(id__in=existing_service_ids)]
         
         elif service_type == 'company':
             company_id = request.GET.get('company_id')
             if not company_id:
-                logger.info("No company selected")
                 return JsonResponse({'services': []})
             
             company = Company.objects.get(id=company_id)
-            logger.info(f"Processing company services for company: {company}")
-            
-            existing_service_ids = CarService.objects.filter(
-                car=car,
-                service_type='COMPANY'
-            ).values_list('service_id', flat=True)
-            
-            available_services = CompanyService.objects.filter(
-                company=company,
-                is_active=True
-            ).exclude(id__in=existing_service_ids)
+            existing_service_ids = set(CarService.objects.filter(
+                car=car, service_type='COMPANY'
+            ).values_list('service_id', flat=True))
             
             services = [{
                 'id': service.id,
                 'name': service.name,
                 'price': float(service.default_price)
-            } for service in available_services]
-        else:
-            logger.warning(f"No {service_type} associated with car {car_id}")
-            services = []
+            } for service in CompanyService.objects.filter(
+                company=company, is_active=True
+            ).exclude(id__in=existing_service_ids)]
         
-        logger.info(f"Returning {len(services)} services")
         return JsonResponse({'services': services})
         
     except Car.DoesNotExist:
-        logger.error(f"Car not found: {car_id}")
         return JsonResponse({'error': 'Car not found'}, status=404)
     except Exception as e:
-        logger.error(f"Error getting available services: {e}", exc_info=True)
+        logger.error("Error getting available services: %s", e, exc_info=True)
         return JsonResponse({'error': str(e)}, status=500)
 
 @staff_member_required
@@ -1046,7 +949,8 @@ def sync_container_photos_from_gdrive(request, container_id):
 def search_counterparties(request):
     """
     API для поиска контрагентов (клиенты, склады, линии, перевозчики, компании)
-    Используется для автокомплита в форме инвойса
+    Используется для автокомплита в форме инвойса.
+    Выполняет 5 запросов с values_list для минимизации нагрузки.
     """
     query = request.GET.get('q', '').strip()
     
@@ -1055,55 +959,22 @@ def search_counterparties(request):
     
     results = []
     
-    # Поиск по компаниям
-    companies = Company.objects.filter(name__icontains=query)[:5]
-    for obj in companies:
-        results.append({
-            'id': f'company_{obj.pk}',
-            'text': f'🏢 {obj.name}',
-            'type': 'company',
-            'type_id': obj.pk,
-        })
+    search_config = [
+        (Company, Q(name__icontains=query), 'company', '🏢'),
+        (Client, Q(name__icontains=query), 'client', '👤'),
+        (Warehouse, Q(name__icontains=query), 'warehouse', '🏭'),
+        (Line, Q(name__icontains=query), 'line', '🚢'),
+        (Carrier, Q(name__icontains=query) | Q(contact_person__icontains=query), 'carrier', '🚚'),
+    ]
     
-    # Поиск по клиентам
-    clients = Client.objects.filter(name__icontains=query)[:5]
-    for obj in clients:
-        results.append({
-            'id': f'client_{obj.pk}',
-            'text': f'👤 {obj.name}',
-            'type': 'client',
-            'type_id': obj.pk,
-        })
-    
-    # Поиск по складам
-    warehouses = Warehouse.objects.filter(name__icontains=query)[:5]
-    for obj in warehouses:
-        results.append({
-            'id': f'warehouse_{obj.pk}',
-            'text': f'🏭 {obj.name}',
-            'type': 'warehouse',
-            'type_id': obj.pk,
-        })
-    
-    # Поиск по линиям
-    lines = Line.objects.filter(name__icontains=query)[:5]
-    for obj in lines:
-        results.append({
-            'id': f'line_{obj.pk}',
-            'text': f'🚢 {obj.name}',
-            'type': 'line',
-            'type_id': obj.pk,
-        })
-    
-    # Поиск по перевозчикам
-    carriers = Carrier.objects.filter(Q(name__icontains=query) | Q(contact_person__icontains=query))[:5]
-    for obj in carriers:
-        results.append({
-            'id': f'carrier_{obj.pk}',
-            'text': f'🚚 {obj.name}',
-            'type': 'carrier',
-            'type_id': obj.pk,
-        })
+    for model, q_filter, type_name, icon in search_config:
+        for pk, name in model.objects.filter(q_filter).values_list('pk', 'name')[:5]:
+            results.append({
+                'id': f'{type_name}_{pk}',
+                'text': f'{icon} {name}',
+                'type': type_name,
+                'type_id': pk,
+            })
     
     return JsonResponse({'results': results})
 

@@ -317,6 +317,123 @@ class ComparisonService:
             'status': 'success'
         }
     
+    def batch_compare_clients(self, start_date=None, end_date=None) -> List[Dict[str, Any]]:
+        """Batch comparison for all clients with cars — 2-3 SQL queries instead of N+1."""
+        car_filters = Q(unload_date__isnull=False)
+        if start_date:
+            car_filters &= Q(unload_date__gte=start_date)
+        if end_date:
+            car_filters &= Q(unload_date__lte=end_date)
+
+        from django.db.models import Count
+        client_agg = (
+            Car.objects.filter(car_filters)
+            .values('client_id', 'client__name')
+            .annotate(total_cost=Sum('total_price'), cars_count=Count('id'))
+            .filter(client_id__isnull=False)
+            .order_by('client__name')
+        )
+
+        inv_filters = Q(cars__client__isnull=False)
+        if start_date:
+            inv_filters &= (Q(issue_date__gte=start_date) | Q(cars__unload_date__gte=start_date))
+        if end_date:
+            inv_filters &= (Q(issue_date__lte=end_date) | Q(cars__unload_date__lte=end_date))
+
+        inv_agg = dict(
+            Invoice.objects.filter(inv_filters, to_entity_type='WAREHOUSE')
+            .values('cars__client_id')
+            .annotate(total=Sum('total_amount'), cnt=Count('id', distinct=True))
+            .values_list('cars__client_id', 'total')
+        )
+
+        results = []
+        for row in client_agg:
+            client_name = row['client__name']
+            cars_total = row['total_cost'] or Decimal('0.00')
+            wh_total = inv_agg.get(row['client_id']) or Decimal('0.00')
+            diff = cars_total - wh_total
+
+            if abs(diff) <= self.tolerance:
+                status, message = 'match', 'Суммы совпадают'
+            elif diff > 0:
+                status, message = 'cars_higher', f'Стоимость автомобилей выше на {diff:.2f} €'
+            else:
+                status, message = 'warehouse_higher', f'Стоимость склада выше на {abs(diff):.2f} €'
+
+            results.append({
+                'status': status, 'message': message,
+                'client_name': client_name,
+                'cars_count': row['cars_count'],
+                'cars_total_cost': float(cars_total),
+                'warehouse_invoices_total': float(wh_total),
+                'difference': float(diff),
+                'invoices_count': 0,
+                'period': {'start_date': start_date, 'end_date': end_date},
+            })
+        return results
+
+    def batch_compare_warehouses(self, start_date=None, end_date=None) -> List[Dict[str, Any]]:
+        """Batch comparison for all warehouses — 2 SQL queries instead of N+1."""
+        inv_filters = Q(to_entity_type='WAREHOUSE')
+        if start_date:
+            inv_filters &= Q(issue_date__gte=start_date)
+        if end_date:
+            inv_filters &= Q(issue_date__lte=end_date)
+
+        inv_agg = (
+            Invoice.objects.filter(inv_filters)
+            .values('to_entity_id')
+            .annotate(total=Sum('total_amount'), cnt=Count('id'))
+        )
+        inv_by_wh = {r['to_entity_id']: r for r in inv_agg}
+
+        pay_filters = Q(to_warehouse__isnull=False)
+        if start_date:
+            pay_filters &= Q(date__gte=start_date)
+        if end_date:
+            pay_filters &= Q(date__lte=end_date)
+
+        pay_agg = dict(
+            Payment.objects.filter(pay_filters)
+            .values('to_warehouse_id')
+            .annotate(total=Sum('amount'))
+            .values_list('to_warehouse_id', 'total')
+        )
+
+        wh_ids = set(inv_by_wh.keys()) | set(pay_agg.keys())
+        if not wh_ids:
+            return []
+
+        warehouses = {w.id: w.name for w in Warehouse.objects.filter(id__in=wh_ids)}
+
+        results = []
+        for wh_id in sorted(wh_ids):
+            wh_name = warehouses.get(wh_id, f'Warehouse #{wh_id}')
+            inv_data = inv_by_wh.get(wh_id, {})
+            inv_total = inv_data.get('total') or Decimal('0.00')
+            pay_total = pay_agg.get(wh_id) or Decimal('0.00')
+            diff = inv_total - pay_total
+
+            if abs(diff) <= self.tolerance:
+                status, message = 'match', 'Суммы совпадают'
+            elif diff > 0:
+                status, message = 'invoices_higher', f'Стоимость инвойсов выше на {diff:.2f} €'
+            else:
+                status, message = 'payments_higher', f'Сумма платежей выше на {abs(diff):.2f} €'
+
+            results.append({
+                'status': status, 'message': message,
+                'warehouse_name': wh_name,
+                'invoices_count': inv_data.get('cnt', 0),
+                'invoices_total': float(inv_total),
+                'payments_count': 0,
+                'payments_total': float(pay_total),
+                'difference': float(diff),
+                'period': {'start_date': start_date, 'end_date': end_date},
+            })
+        return results
+
     def find_discrepancies(self, start_date=None, end_date=None) -> List[Dict[str, Any]]:
         """
         Находит расхождения в суммах

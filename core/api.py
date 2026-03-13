@@ -10,12 +10,19 @@ class ReadOnlyForStaff(permissions.BasePermission):
 
 
 class CarViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Car.objects.select_related('client', 'warehouse', 'container').all()
+    queryset = Car.objects.select_related(
+        'client', 'warehouse', 'container', 'container__line', 'line', 'carrier'
+    ).all()
     serializer_class = CarSerializer
     permission_classes = [ReadOnlyForStaff]
 
 
 class InvoiceViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Invoice.objects.select_related('client', 'warehouse').prefetch_related('cars').all()  # cars здесь - это ManyToMany в Invoice
+    queryset = Invoice.objects.select_related(
+        'recipient_client', 'recipient_warehouse', 'recipient_company',
+        'recipient_line', 'recipient_carrier',
+        'issuer_company', 'issuer_warehouse', 'issuer_line', 'issuer_carrier',
+        'category',
+    ).prefetch_related('cars').all()
     serializer_class = InvoiceSerializer
     permission_classes = [ReadOnlyForStaff]
