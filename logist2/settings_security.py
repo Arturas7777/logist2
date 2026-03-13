@@ -2,6 +2,15 @@ from django.utils.deprecation import MiddlewareMixin
 from django.conf import settings
 
 
+class DebugQueryResetMiddleware(MiddlewareMixin):
+    """Prevents memory leak from accumulated SQL queries when DEBUG=True."""
+    def process_response(self, request, response):
+        if settings.DEBUG:
+            from django.db import reset_queries
+            reset_queries()
+        return response
+
+
 class SecurityHeadersMiddleware(MiddlewareMixin):
     def process_response(self, request, response):
         # X-Content-Type-Options
