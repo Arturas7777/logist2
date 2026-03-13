@@ -42,14 +42,17 @@ for _model in (LineService, WarehouseService, CarrierService, CompanyService):
 @receiver(pre_save, sender=Container)
 def save_old_container_values(sender, instance, **kwargs):
     """Единый pre_save для Container: сохраняет старые значения и авто-устанавливает статус.
-    Объединяет логику сохранения старых значений для синхронизации авто и уведомлений
-    в один запрос к БД вместо двух.
+    Оптимизация: пропускает DB-запрос при update_fields (частичное обновление).
     """
-    logger.debug(f"[PRE_SAVE] Container {instance.number} pk={instance.pk}")
-
     if instance.unload_date and instance.status in ('FLOATING', 'IN_PORT'):
         instance.status = 'UNLOADED'
-        logger.info(f"[PRE_SAVE] Auto-set status to UNLOADED for container {instance.number}")
+        logger.info("[PRE_SAVE] Auto-set status to UNLOADED for container %s", instance.number)
+
+    update_fields = kwargs.get('update_fields')
+    if update_fields is not None:
+        instance._pre_save_values = None
+        instance._pre_save_notification = None
+        return
 
     if instance.pk:
         try:
@@ -62,7 +65,6 @@ def save_old_container_values(sender, instance, **kwargs):
                     'planned_unload_date': old.get('planned_unload_date'),
                     'unload_date': old.get('unload_date')
                 }
-                logger.debug(f"[PRE_SAVE] Saved old values: {old}")
 
                 old_status = old.get('status')
                 if (
@@ -75,7 +77,7 @@ def save_old_container_values(sender, instance, **kwargs):
                 instance._pre_save_values = None
                 instance._pre_save_notification = None
         except Exception as e:
-            logger.error(f"[PRE_SAVE] Error: {e}")
+            logger.error("[PRE_SAVE] Error: %s", e)
             instance._pre_save_values = None
             instance._pre_save_notification = None
     else:
@@ -107,7 +109,7 @@ def update_related_on_container_save(sender, instance, created, **kwargs):
         
         # Если дата разгрузки изменилась - обновляем все авто
         if old_unload_date != new_unload_date and new_unload_date is not None:
-            logger.info(f"🔄 [SIGNAL] unload_date changed for container {instance.number}: {old_unload_date} -> {new_unload_date}")
+            logger.info("[SIGNAL] unload_date changed for container %s: %s -> %s", instance.number, old_unload_date, new_unload_date)
             
             try:
                 # Проверяем, не обновлены ли уже авто (через admin.save_model)
@@ -119,12 +121,11 @@ def update_related_on_container_save(sender, instance, created, **kwargs):
                 
                 # Обновляем дату у всех авто одним запросом (быстро и надёжно)
                 updated_count = instance.container_cars.update(unload_date=new_unload_date)
-                logger.info(f"✅ [SIGNAL] Updated unload_date to {new_unload_date} for {updated_count} cars in container {instance.number}")
+                logger.info("[SIGNAL] Updated unload_date to %s for %d cars in container %s", new_unload_date, updated_count, instance.number)
                 
-                # Пересчитываем дни и цены для каждого авто
                 if updated_count > 0:
                     cars_to_update = []
-                    for car in instance.container_cars.select_related('warehouse').all():
+                    for car in instance.container_cars.select_related('warehouse').prefetch_related('car_services').all():
                         car.update_days_and_storage()
                         car.calculate_total_price()
                         cars_to_update.append(car)
@@ -135,10 +136,10 @@ def update_related_on_container_save(sender, instance, created, **kwargs):
                             ['days', 'storage_cost', 'total_price'],
                             batch_size=50
                         )
-                        logger.info(f"✅ [SIGNAL] Recalculated prices for {len(cars_to_update)} cars")
+                        logger.info("[SIGNAL] Recalculated prices for %d cars", len(cars_to_update))
                         
             except Exception as e:
-                logger.error(f"❌ [SIGNAL] Failed to update cars for container {instance.number}: {e}", exc_info=True)
+                logger.error("[SIGNAL] Failed to update cars for container %s: %s", instance.number, e, exc_info=True)
 
 @receiver(post_save, sender=Car)
 def update_related_on_car_save(sender, instance, **kwargs):
@@ -175,9 +176,17 @@ def update_related_on_car_save(sender, instance, **kwargs):
 
 @receiver(pre_save, sender=Car)
 def save_old_car_values(sender, instance, **kwargs):
-    """Единый pre_save для Car: сохраняет старые значения контрагентов и уведомлений
-    в один запрос к БД вместо двух отдельных.
+    """Единый pre_save для Car: сохраняет старые значения контрагентов и уведомлений.
+    Оптимизация: пропускает DB-запрос при update_fields (bulk_update, частичные сохранения).
     """
+    update_fields = kwargs.get('update_fields')
+    if update_fields is not None:
+        tracked = {'warehouse_id', 'line_id', 'carrier_id', 'unload_date', 'container_id'}
+        if not tracked.intersection(update_fields):
+            instance._pre_save_contractors = None
+            instance._pre_save_car_notification = None
+            return
+
     if instance.pk:
         try:
             old = Car.objects.filter(pk=instance.pk).values(
@@ -1027,7 +1036,14 @@ def auto_categorize_invoice(sender, instance, **kwargs):
 
 @receiver(pre_save, sender=NewInvoice)
 def save_old_invoice_status(sender, instance, **kwargs):
-    """Сохраняет старый статус инвойса на экземпляре (thread-safe)."""
+    """Сохраняет старый статус инвойса на экземпляре (thread-safe).
+    Пропускает DB-запрос при update_fields без 'status'.
+    """
+    update_fields = kwargs.get('update_fields')
+    if update_fields is not None and 'status' not in update_fields:
+        instance._pre_save_status = None
+        return
+
     if instance.pk:
         try:
             old = NewInvoice.objects.filter(pk=instance.pk).values('status').first()
@@ -1093,48 +1109,42 @@ def auto_push_invoice_to_sitepro(sender, instance, created, **kwargs):
 # СИГНАЛЫ ДЛЯ ПЕРЕСЧЕТА ИНВОЙСОВ ПРИ ИЗМЕНЕНИИ УСЛУГ АВТОМОБИЛЯ
 # ============================================================================
 
+def _deferred_invoice_regeneration(car_id):
+    """Deferred invoice regeneration via on_commit to avoid cascading during bulk saves."""
+    def _do_regenerate():
+        try:
+            invoice_ids = list(
+                NewInvoice.objects.filter(
+                    cars__id=car_id,
+                    status__in=['DRAFT', 'ISSUED', 'PARTIALLY_PAID', 'OVERDUE']
+                ).values_list('id', flat=True)
+            )
+            for invoice_id in invoice_ids:
+                try:
+                    with transaction.atomic():
+                        invoice = NewInvoice.objects.select_for_update(nowait=True).get(id=invoice_id)
+                        invoice.regenerate_items_from_cars()
+                except OperationalError:
+                    logger.warning("Skipping invoice %s - locked", invoice_id)
+                except NewInvoice.DoesNotExist:
+                    pass
+        except Exception as e:
+            logger.error("Error in deferred invoice regeneration for car %s: %s", car_id, e)
+    transaction.on_commit(_do_regenerate)
+
+
 @receiver(post_save, sender=CarService)
 def recalculate_invoices_on_car_service_save(sender, instance, **kwargs):
-    """Пересчитывает инвойсы при изменении услуги автомобиля"""
-    try:
-        car = instance.car
-        if not car:
-            return
-        
-        # Находим все инвойсы с этим автомобилем (кроме оплаченных и отмененных)
-        invoices = NewInvoice.objects.filter(
-            cars=car,
-            status__in=['DRAFT', 'ISSUED', 'PARTIALLY_PAID', 'OVERDUE']
-        )
-        
-        for invoice in invoices:
-            logger.info(f"🔄 Пересчет инвойса {invoice.number} после изменения услуги авто {car.vin}")
-            invoice.regenerate_items_from_cars()
-            
-    except Exception as e:
-        logger.error(f"Error recalculating invoices on CarService save: {e}")
+    """Пересчитывает инвойсы при изменении услуги автомобиля (deferred)."""
+    if instance.car_id:
+        _deferred_invoice_regeneration(instance.car_id)
 
 
 @receiver(post_delete, sender=CarService)
 def recalculate_invoices_on_car_service_delete(sender, instance, **kwargs):
-    """Пересчитывает инвойсы при удалении услуги автомобиля"""
-    try:
-        car = instance.car
-        if not car:
-            return
-        
-        # Находим все инвойсы с этим автомобилем (кроме оплаченных и отмененных)
-        invoices = NewInvoice.objects.filter(
-            cars=car,
-            status__in=['DRAFT', 'ISSUED', 'PARTIALLY_PAID', 'OVERDUE']
-        )
-        
-        for invoice in invoices:
-            logger.info(f"🔄 Пересчет инвойса {invoice.number} после удаления услуги авто {car.vin}")
-            invoice.regenerate_items_from_cars()
-            
-    except Exception as e:
-        logger.error(f"Error recalculating invoices on CarService delete: {e}")
+    """Пересчитывает инвойсы при удалении услуги автомобиля (deferred)."""
+    if instance.car_id:
+        _deferred_invoice_regeneration(instance.car_id)
 
 
 # ============================================================================

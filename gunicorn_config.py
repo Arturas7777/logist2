@@ -6,8 +6,8 @@ backlog = 2048
 
 # Worker processes
 workers = 4  # Рекомендуется (2 x CPU cores) + 1
-worker_class = 'sync'
-worker_connections = 1000
+worker_class = 'gthread'
+threads = 4  # 4 workers × 4 threads = 16 параллельных запросов
 timeout = 120
 keepalive = 5
 
