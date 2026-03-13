@@ -32,6 +32,7 @@ EXTRACTION_SCHEMA = """
   "items": [
     {
       "vins": ["VIN1", "VIN2"],
+      "brand": "марка автомобиля или null",
       "service_type": "UNLOADING|THS|STORAGE|TRANSPORT|DECLARATION|BDK|DOCS|COMPENSATION|OTHER",
       "description": "оригинальное название из счёта",
       "unit_price": 0.00,
@@ -48,7 +49,11 @@ SYSTEM_PROMPT = f"""Ты — система обработки логистич�
 Твоя задача: извлечь структурированные данные из счёта-фактуры.
 
 Правила:
-- VIN-номера: 17-значные коды (буквы и цифры). Извлекай ВСЕ VIN-номера точно, как написано.
+- VIN-номера: обычно 17-значные коды (буквы и цифры). Извлекай ВСЕ VIN-номера точно, как написано.
+- ЧАСТИЧНЫЕ VIN: некоторые контрагенты (например, Atlantic Express) указывают только последние 6 цифр VIN
+  вместо полного номера. Извлекай их как есть (например, "123456") в поле vins.
+  В таком случае ОБЯЗАТЕЛЬНО заполни поле "brand" (марка авто), если она указана в счёте — это нужно для сопоставления.
+- brand: если в строке счёта указана марка/модель автомобиля, запиши её в поле "brand". Если не указана — null.
 - service_type — выбери наиболее подходящий:
     UNLOADING  = разгрузка/погрузка контейнера, перевозка в порту ("Konteinerio pervežimas", "Выгрузка", "Handling")
     THS        = портовые сборы, терминальные сборы ("Vietiniai uosto mokesčiai", "THC", "Terminal Handling")
@@ -67,6 +72,8 @@ SYSTEM_PROMPT = f"""Ты — система обработки логистич�
   * total = ОТРИЦАТЕЛЬНОЕ число
   * vins = [] если компенсация не привязана к конкретному VIN, или [VIN] если привязана
   * НЕ записывай компенсации только в notes — каждая компенсация должна быть отдельным item!
+- description: ОБЯЗАТЕЛЬНО сохраняй оригинальное название услуги из счёта точно как написано.
+  Это критично для сопоставления с услугами в системе.
 - Если VIN-номера перечислены через запятую для одной строки — все включай в массив vins.
 - Не выдумывай данных — только то, что есть в тексте.
 
@@ -92,6 +99,24 @@ def extract_text_from_pdf(pdf_path: str) -> str:
     except Exception as e:
         logger.error(f"Ошибка при чтении PDF: {e}")
         raise
+
+
+def extract_images_from_pdf(pdf_path: str) -> list[str]:
+    """Renders PDF pages to base64-encoded PNG images for Vision API (scanned PDFs)."""
+    import base64
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        logger.error("PyMuPDF не установлен. Запустите: pip install pymupdf")
+        raise
+
+    images = []
+    doc = fitz.open(pdf_path)
+    for page in doc:
+        pix = page.get_pixmap(dpi=200)
+        images.append(base64.b64encode(pix.tobytes("png")).decode('utf-8'))
+    doc.close()
+    return images
 
 
 def call_llm(text: str) -> dict:
@@ -123,33 +148,81 @@ def call_llm(text: str) -> dict:
         ],
     )
 
-    content = response.content[0].text
+    return _parse_llm_json(response.content[0].text)
 
-    # Claude может обернуть JSON в ```json ... ``` — убираем
-    content = content.strip()
-    if content.startswith('```'):
-        lines = content.split('\n')
+
+def _parse_llm_json(text: str) -> dict:
+    """Strip markdown fences and parse JSON from LLM response."""
+    text = text.strip()
+    if text.startswith('```'):
+        lines = text.split('\n')
         lines = [l for l in lines if not l.strip().startswith('```')]
-        content = '\n'.join(lines)
+        text = '\n'.join(lines)
+    return json.loads(text)
 
-    return json.loads(content)
 
-
-def _find_cars_by_vins(vins: set) -> dict:
+def call_llm_with_images(images_b64: list[str]) -> dict:
     """
-    Find cars by VIN with fuzzy matching for padded VINs.
+    Sends PDF page images to Anthropic Claude Vision API for structured extraction.
+    Used as fallback when PDF has no extractable text (scanned documents).
+    """
+    import os
+    try:
+        import anthropic
+    except ImportError:
+        logger.error("anthropic не установлен. Запустите: pip install anthropic")
+        raise
+
+    api_key = os.getenv('ANTHROPIC_API_KEY', '')
+    if not api_key:
+        raise ValueError("ANTHROPIC_API_KEY не настроен в .env")
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+    content_blocks = []
+    for b64 in images_b64:
+        content_blocks.append({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": b64,
+            },
+        })
+    content_blocks.append({
+        "type": "text",
+        "text": "Вот отсканированный счёт-фактура. Извлеки данные по схеме. Верни ТОЛЬКО JSON, без markdown.",
+    })
+
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=4000,
+        temperature=0,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": content_blocks}],
+    )
+
+    return _parse_llm_json(response.content[0].text)
+
+
+def _find_cars_by_vins(vins: set, brand_hints: dict | None = None) -> dict:
+    """
+    Find cars by VIN with fuzzy matching for padded VINs and partial VINs.
     Returns: dict {pdf_vin -> Car} (using the PDF's VIN as key).
+
+    brand_hints: optional dict {vin -> brand_string} for disambiguation of partial VINs.
 
     Matching strategy:
     1. Exact match (vin__in)
-    2. For unmatched: DB VIN starts with the PDF VIN (handles padding like '12345---')
-    3. For unmatched: PDF VIN starts with the DB VIN (handles truncation)
+    2. For unmatched: DB VIN starts with / ends with the PDF VIN
+    3. For short partial VINs (< 10 chars): endswith + brand disambiguation
     """
     from core.models import Car
 
     if not vins:
         return {}
 
+    brand_hints = brand_hints or {}
     result = {}
 
     # 1. Exact match
@@ -161,7 +234,7 @@ def _find_cars_by_vins(vins: set) -> dict:
     if not remaining:
         return result
 
-    # 2. For each unmatched VIN, try startswith / contains
+    # 2. For each unmatched VIN, try startswith / endswith
     from django.db.models import Q
     q = Q()
     for vin in remaining:
@@ -169,17 +242,99 @@ def _find_cars_by_vins(vins: set) -> dict:
     candidates = Car.objects.filter(q).select_related('client', 'container')
 
     for vin in remaining:
+        matches = []
         for car in candidates:
-            if car.vin.startswith(vin) or car.vin.rstrip('-').upper() == vin:
-                result[vin] = car
-                break
+            if car.vin.startswith(vin) or car.vin.endswith(vin) or car.vin.rstrip('-').upper() == vin:
+                matches.append(car)
+
+        if len(matches) == 1:
+            result[vin] = matches[0]
+        elif len(matches) > 1:
+            # Partial VIN matched multiple cars — use brand hint to disambiguate
+            brand = brand_hints.get(vin, '').upper()
+            if brand:
+                brand_matches = [c for c in matches if brand in c.brand.upper()]
+                if len(brand_matches) == 1:
+                    result[vin] = brand_matches[0]
+                elif brand_matches:
+                    result[vin] = brand_matches[0]
+                else:
+                    result[vin] = matches[0]
+            else:
+                result[vin] = matches[0]
 
     return result
+
+
+def _fuzzy_match_service_name(description: str, entity_name_map: dict) -> int | None:
+    """
+    Match invoice description against entity service names.
+    Handles OCR errors via fuzzy matching (SequenceMatcher).
+    Returns service_id or None.
+    """
+    from difflib import SequenceMatcher
+    import unicodedata
+
+    if not entity_name_map or not description:
+        return None
+
+    def _normalize(s: str) -> str:
+        s = s.strip().upper()
+        s = unicodedata.normalize('NFD', s)
+        s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+        return s
+
+    desc_norm = _normalize(description)
+
+    # 1. Exact match (normalized)
+    for name, sid in entity_name_map.items():
+        if _normalize(name) == desc_norm:
+            return sid
+
+    # 2. Containment match (normalized)
+    for name, sid in entity_name_map.items():
+        name_norm = _normalize(name)
+        if name_norm in desc_norm or desc_norm in name_norm:
+            return sid
+
+    # 3. Fuzzy match — tolerant to OCR errors (threshold 80%)
+    best_sid = None
+    best_ratio = 0.0
+    for name, sid in entity_name_map.items():
+        name_norm = _normalize(name)
+        # Compare against the beginning of desc (same length as service name)
+        desc_prefix = desc_norm[:len(name_norm) + 5]
+        ratio = SequenceMatcher(None, name_norm, desc_prefix).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_sid = sid
+
+    if best_ratio >= 0.8:
+        return best_sid
+
+    return None
+
+
+def _get_service_model(provider_type: str):
+    """Returns the service model class for a given provider_type."""
+    from core.models import CarService
+    return CarService.SERVICE_MODEL_MAP.get(provider_type)
+
+
+def _get_entity_field(provider_type: str) -> str | None:
+    """Returns the FK field name on the service model that points to the entity."""
+    return {
+        'WAREHOUSE': 'warehouse_id',
+        'LINE':      'line_id',
+        'CARRIER':   'carrier_id',
+        'COMPANY':   'company_id',
+    }.get(provider_type)
 
 
 def compare_with_db(extracted: dict) -> dict:
     """
     Сравнивает извлечённые данные из счёта с данными в БД.
+    Использует маппинг контрагента для сопоставления с правильными услугами.
     Возвращает dict с полями:
       - discrepancies: list — список расхождений
       - cars_found: int
@@ -188,40 +343,82 @@ def compare_with_db(extracted: dict) -> dict:
     """
     from core.models import Car, CarService
 
-    # Маппинг service_type → id складских услуг в нашей системе
-    # id=15/33/34/35/36/38 — "Разгрузка/ Погрузка / Декларация"
-    # id=46 — "THS NETO"
-    # id=32/39-45 — "Хранение"
-    UNLOADING_SERVICE_IDS = {14, 15, 29, 33, 34, 35, 36, 37, 38, 48}
-    THS_SERVICE_IDS       = {46, 47}
-    STORAGE_SERVICE_IDS   = {32, 39, 40, 41, 42, 43, 44, 45}
-
     discrepancies = []
     cars_found    = 0
     cars_missing  = 0
 
-    # Собираем все VIN из счёта
+    # ── Определяем контрагента и его услуги ──────────────────────────────────
+    counterparty_name = extracted.get('counterparty', '')
+    mapping = _load_service_mapping()
+    counterparty_conf = _resolve_counterparty(counterparty_name, mapping)
+
+    provider_type = counterparty_conf.get('provider_type') if counterparty_conf else None
+    service_map   = counterparty_conf.get('services', {}) if counterparty_conf else {}
+    entity_id     = counterparty_conf.get('entity_id') if counterparty_conf else None
+
+    # Загружаем все услуги контрагента для сопоставления по названию
+    entity_services = {}  # service_id → service_obj
+    entity_name_map = {}  # normalized_name → service_id
+    if provider_type and entity_id:
+        svc_model = _get_service_model(provider_type)
+        if svc_model:
+            filter_field = _get_entity_field(provider_type)
+            if filter_field:
+                for svc in svc_model.objects.filter(**{filter_field: entity_id}):
+                    entity_services[svc.pk] = svc
+                    entity_name_map[svc.name.strip().upper()] = svc.pk
+                    if hasattr(svc, 'short_name') and svc.short_name:
+                        entity_name_map[svc.short_name.strip().upper()] = svc.pk
+
+    # Собираем все VIN и brand-подсказки из счёта
     all_vins_in_invoice = set()
+    brand_hints         = {}  # vin → brand (для частичных VIN)
     storage_days_map    = {}  # vin → paid_days
 
     for item in extracted.get('items', []):
+        item_brand = (item.get('brand') or '').strip()
         for vin in item.get('vins', []):
             vin_clean = vin.strip().upper()
             if vin_clean:
                 all_vins_in_invoice.add(vin_clean)
+                if item_brand:
+                    brand_hints[vin_clean] = item_brand
         if item.get('service_type') == 'STORAGE':
             for vin, days in item.get('storage_days_per_vin', {}).items():
                 storage_days_map[vin.strip().upper()] = int(days)
 
-    # Загружаем машины из БД (с fuzzy-поиском для дополненных VIN)
-    found_cars = _find_cars_by_vins(all_vins_in_invoice)
+    # Загружаем машины из БД (с fuzzy-поиском + brand для частичных VIN)
+    found_cars = _find_cars_by_vins(all_vins_in_invoice, brand_hints)
 
-    # Загружаем CarService для всех найденных машин за один запрос
+    # Загружаем CarService для найденных машин, фильтруя по провайдеру если известен
     car_services = {}  # car_id → list of CarService
     if found_cars:
         car_ids = [c.pk for c in found_cars.values()]
-        for cs in CarService.objects.filter(car_id__in=car_ids):
+        qs = CarService.objects.filter(car_id__in=car_ids)
+        if provider_type:
+            qs = qs.filter(service_type=provider_type)
+        for cs in qs:
             car_services.setdefault(cs.car_id, []).append(cs)
+
+    def _find_service(services_list, stype, description=''):
+        """Найти CarService: маппинг → name matching (с fuzzy для OCR)."""
+        # 1. По маппингу service_type → service_id
+        target_sid = service_map.get(stype)
+        if target_sid is not None:
+            matched = [s for s in services_list if s.service_id == target_sid]
+            if matched:
+                total = sum(float(s.custom_price or 0) for s in matched)
+                return matched, total
+
+        # 2. Fallback: fuzzy name matching
+        name_sid = _fuzzy_match_service_name(description, entity_name_map)
+        if name_sid is not None:
+            matched = [s for s in services_list if s.service_id == name_sid]
+            if matched:
+                total = sum(float(s.custom_price or 0) for s in matched)
+                return matched, total
+
+        return [], 0.0
 
     # ── Проверяем каждый элемент счёта ──────────────────────────────────────
     for item in extracted.get('items', []):
@@ -258,9 +455,8 @@ def compare_with_db(extracted: dict) -> dict:
 
             # ── UNLOADING / DECLARATION ──────────────────────────────────────
             if stype == 'UNLOADING':
-                our_unload_services = [s for s in services if s.service_id in UNLOADING_SERVICE_IDS]
-                our_price = sum(float(s.custom_price or 0) for s in our_unload_services)
-                if not our_unload_services:
+                our_services_list, our_price = _find_service(services, 'UNLOADING', descr)
+                if not our_services_list:
                     discrepancies.append({
                         'type':        'UNLOADING_NOT_SET',
                         'severity':    'warning',
@@ -272,7 +468,7 @@ def compare_with_db(extracted: dict) -> dict:
                         'neto_amount': unit_price,
                         'our_amount':  0.0,
                         'diff':        -unit_price,
-                        'message':     f'Услуга разгрузки не найдена в системе (NETO: {unit_price:.2f} €)',
+                        'message':     f'Услуга разгрузки ({counterparty_name}) не найдена в системе (счёт: {unit_price:.2f} €)',
                     })
                 elif abs(our_price - unit_price) > 1.0:
                     discrepancies.append({
@@ -286,16 +482,15 @@ def compare_with_db(extracted: dict) -> dict:
                         'neto_amount': unit_price,
                         'our_amount':  our_price,
                         'diff':        our_price - unit_price,
-                        'message':     f'Разгрузка: NETO={unit_price:.2f}€, у нас={our_price:.2f}€ (разница {our_price - unit_price:+.2f}€)',
+                        'message':     f'Разгрузка ({counterparty_name}): счёт={unit_price:.2f}€, у нас={our_price:.2f}€ (разница {our_price - unit_price:+.2f}€)',
                     })
 
             # ── THS ──────────────────────────────────────────────────────────
             elif stype == 'THS':
-                our_ths_services = [s for s in services if s.service_id in THS_SERVICE_IDS]
-                our_ths = sum(float(s.custom_price or 0) for s in our_ths_services)
+                our_services_list, our_ths = _find_service(services, 'THS', descr)
                 diff = our_ths - unit_price
 
-                if not our_ths_services and unit_price > 0:
+                if not our_services_list and unit_price > 0:
                     discrepancies.append({
                         'type':        'THS_NOT_SET',
                         'severity':    'warning',
@@ -307,14 +502,14 @@ def compare_with_db(extracted: dict) -> dict:
                         'neto_amount': unit_price,
                         'our_amount':  0.0,
                         'diff':        -unit_price,
-                        'message':     f'THS не выставлен клиенту (NETO: {unit_price:.2f} €)',
+                        'message':     f'THS ({counterparty_name}) не выставлен клиенту (счёт: {unit_price:.2f} €)',
                     })
                 elif abs(diff) > 1.0:
                     severity = 'error' if diff < -5 else 'warning'
                     msg = (
-                        f'THS: NETO={unit_price:.2f}€, клиенту={our_ths:.2f}€ — убыток {abs(diff):.2f}€'
+                        f'THS ({counterparty_name}): счёт={unit_price:.2f}€, клиенту={our_ths:.2f}€ — убыток {abs(diff):.2f}€'
                         if diff < 0 else
-                        f'THS: NETO={unit_price:.2f}€, клиенту={our_ths:.2f}€ — наценка {diff:.2f}€'
+                        f'THS ({counterparty_name}): счёт={unit_price:.2f}€, клиенту={our_ths:.2f}€ — наценка {diff:.2f}€'
                     )
                     discrepancies.append({
                         'type':        'THS_MISMATCH',
@@ -332,36 +527,98 @@ def compare_with_db(extracted: dict) -> dict:
 
             # ── STORAGE ──────────────────────────────────────────────────────
             elif stype == 'STORAGE':
+                our_services_list, our_storage_price = _find_service(services, 'STORAGE', descr)
                 neto_paid_days   = storage_days_map.get(vin, 0)
-                # Мы даём клиенту 5 бесплатных дней, NETO даёт 7 → разница 2
-                expected_client_days = neto_paid_days + 2
                 our_days         = car.days or 0
                 our_storage_cost = float(car.storage_cost or 0)
-                neto_cost        = neto_paid_days * 5.0
 
-                day_diff = our_days - expected_client_days
-                if day_diff != 0:
-                    severity = 'info' if day_diff > 0 else 'warning'
-                    msg = (
-                        f'Хранение: NETO={neto_paid_days} пл. дней → ожидаем {expected_client_days} у клиента, у нас={our_days} (+{day_diff} дней)'
-                        if day_diff > 0 else
-                        f'Хранение: NETO={neto_paid_days} пл. дней → ожидаем {expected_client_days} у клиента, у нас={our_days} (на {abs(day_diff)} меньше!)'
-                    )
+                if neto_paid_days > 0:
+                    expected_client_days = neto_paid_days + 2
+                    neto_cost = neto_paid_days * 5.0
+                    day_diff = our_days - expected_client_days
+                    if day_diff != 0:
+                        severity = 'info' if day_diff > 0 else 'warning'
+                        msg = (
+                            f'Хранение ({counterparty_name}): счёт={neto_paid_days} пл. дней → ожидаем {expected_client_days} у клиента, у нас={our_days} (+{day_diff} дней)'
+                            if day_diff > 0 else
+                            f'Хранение ({counterparty_name}): счёт={neto_paid_days} пл. дней → ожидаем {expected_client_days} у клиента, у нас={our_days} (на {abs(day_diff)} меньше!)'
+                        )
+                        discrepancies.append({
+                            'type':        'STORAGE_DAYS_MISMATCH',
+                            'severity':    severity,
+                            'vin':         vin,
+                            'car':         str(car),
+                            'client':      str(car.client) if car.client else None,
+                            'container':   car.container.number if car.container else None,
+                            'description': 'Хранение',
+                            'neto_amount': neto_cost,
+                            'our_amount':  our_storage_cost,
+                            'diff':        our_storage_cost - neto_cost,
+                            'message':     msg,
+                        })
+                elif unit_price > 0:
+                    if not our_services_list:
+                        discrepancies.append({
+                            'type':        'STORAGE_NOT_SET',
+                            'severity':    'warning',
+                            'vin':         vin,
+                            'car':         str(car),
+                            'client':      str(car.client) if car.client else None,
+                            'container':   car.container.number if car.container else None,
+                            'description': 'Хранение',
+                            'neto_amount': unit_price,
+                            'our_amount':  0.0,
+                            'diff':        -unit_price,
+                            'message':     f'Хранение ({counterparty_name}): не найдено в системе (счёт: {unit_price:.2f} €)',
+                        })
+                    elif abs(our_storage_price - unit_price) > 1.0:
+                        discrepancies.append({
+                            'type':        'STORAGE_MISMATCH',
+                            'severity':    'warning',
+                            'vin':         vin,
+                            'car':         str(car),
+                            'client':      str(car.client) if car.client else None,
+                            'container':   car.container.number if car.container else None,
+                            'description': 'Хранение',
+                            'neto_amount': unit_price,
+                            'our_amount':  our_storage_price,
+                            'diff':        our_storage_price - unit_price,
+                            'message':     f'Хранение ({counterparty_name}): счёт={unit_price:.2f}€, у нас={our_storage_price:.2f}€ (разница {our_storage_price - unit_price:+.2f}€)',
+                        })
+
+            # ── Прочие услуги с VIN (TRANSPORT, DECLARATION, DOCS, BDK) ──────
+            elif stype in ('TRANSPORT', 'DECLARATION', 'DOCS', 'BDK'):
+                our_services_list, our_price = _find_service(services, stype, descr)
+                if not our_services_list:
                     discrepancies.append({
-                        'type':        'STORAGE_DAYS_MISMATCH',
-                        'severity':    severity,
+                        'type':        f'{stype}_NOT_SET',
+                        'severity':    'warning',
                         'vin':         vin,
                         'car':         str(car),
                         'client':      str(car.client) if car.client else None,
                         'container':   car.container.number if car.container else None,
-                        'description': 'Хранение',
-                        'neto_amount': neto_cost,
-                        'our_amount':  our_storage_cost,
-                        'diff':        our_storage_cost - neto_cost,
-                        'message':     msg,
+                        'description': descr,
+                        'neto_amount': unit_price,
+                        'our_amount':  0.0,
+                        'diff':        -unit_price,
+                        'message':     f'{descr} ({counterparty_name}): не найдено в системе (счёт: {unit_price:.2f} €)',
+                    })
+                elif abs(our_price - unit_price) > 1.0:
+                    discrepancies.append({
+                        'type':        f'{stype}_MISMATCH',
+                        'severity':    'warning',
+                        'vin':         vin,
+                        'car':         str(car),
+                        'client':      str(car.client) if car.client else None,
+                        'container':   car.container.number if car.container else None,
+                        'description': descr,
+                        'neto_amount': unit_price,
+                        'our_amount':  our_price,
+                        'diff':        our_price - unit_price,
+                        'message':     f'{descr} ({counterparty_name}): счёт={unit_price:.2f}€, у нас={our_price:.2f}€ (разница {our_price - unit_price:+.2f}€)',
                     })
 
-    # ── Особые позиции: COMPENSATION / BDK / DOCS без VIN ───────────────────
+    # ── Особые позиции: COMPENSATION / без VIN ───────────────────────────────
     for item in extracted.get('items', []):
         stype = item.get('service_type', 'OTHER')
         vins  = [v.strip().upper() for v in item.get('vins', []) if v.strip()]
@@ -380,7 +637,7 @@ def compare_with_db(extracted: dict) -> dict:
                 'neto_amount': total,
                 'our_amount':  None,
                 'diff':        None,
-                'message':     f'Компенсация от контрагента: {descr} ({total:.2f} €) — убедитесь, что учтена',
+                'message':     f'Компенсация от {counterparty_name}: {descr} ({total:.2f} €) — убедитесь, что учтена',
             })
         elif stype in ('BDK', 'DOCS', 'OTHER') and not vins:
             discrepancies.append({
@@ -394,7 +651,7 @@ def compare_with_db(extracted: dict) -> dict:
                 'neto_amount': total,
                 'our_amount':  None,
                 'diff':        None,
-                'message':     f'Доп. позиция без VIN: {descr} ({total:.2f} €) — проверьте, выставлено ли клиенту',
+                'message':     f'Доп. позиция без VIN ({counterparty_name}): {descr} ({total:.2f} €) — проверьте, выставлено ли клиенту',
             })
 
     issues_count = sum(
@@ -462,7 +719,7 @@ def _find_car_service(car, provider_type: str, service_id: int):
 def create_supplier_costs(audit, extracted: dict, found_cars: dict) -> dict:
     """
     Создаёт записи SupplierCost для каждого VIN+услуги из извлечённых данных.
-    Использует маппинг из invoice_service_mapping.json для привязки к CarService.
+    Использует маппинг из invoice_service_mapping.json + сопоставление по названию для привязки к CarService.
     found_cars: dict vin -> Car (уже загруженные из БД).
     Returns: dict с метриками привязки {linked, unlinked, no_mapping}.
     """
@@ -474,6 +731,39 @@ def create_supplier_costs(audit, extracted: dict, found_cars: dict) -> dict:
 
     provider_type = counterparty_conf.get('provider_type') if counterparty_conf else None
     service_map   = counterparty_conf.get('services', {}) if counterparty_conf else {}
+    entity_id     = counterparty_conf.get('entity_id') if counterparty_conf else None
+
+    # Загружаем все услуги контрагента для name-based matching
+    entity_name_map = {}  # normalized_name → service_id
+    if provider_type and entity_id:
+        svc_model = _get_service_model(provider_type)
+        filter_field = _get_entity_field(provider_type)
+        if svc_model and filter_field:
+            for svc in svc_model.objects.filter(**{filter_field: entity_id}):
+                entity_name_map[svc.name.strip().upper()] = svc.pk
+                if hasattr(svc, 'short_name') and svc.short_name:
+                    entity_name_map[svc.short_name.strip().upper()] = svc.pk
+
+    def _resolve_car_service(car, stype: str, description: str):
+        """Найти CarService: маппинг → name matching, возвращает (car_service, status)."""
+        if not car or not provider_type:
+            return None, 'no_mapping'
+
+        # 1. По маппингу service_type → service_id
+        mapped_sid = service_map.get(stype)
+        if mapped_sid is not None:
+            cs = _find_car_service(car, provider_type, mapped_sid)
+            if cs:
+                return cs, 'linked'
+
+        # 2. По названию услуги (fuzzy для OCR)
+        name_sid = _fuzzy_match_service_name(description, entity_name_map)
+        if name_sid is not None:
+            cs = _find_car_service(car, provider_type, name_sid)
+            if cs:
+                return cs, 'linked'
+
+        return None, 'unlinked' if (mapped_sid or name_sid) else 'no_mapping'
 
     storage_days_map = {}
     for item in extracted.get('items', []):
@@ -507,23 +797,13 @@ def create_supplier_costs(audit, extracted: dict, found_cars: dict) -> dict:
             ))
             continue
 
-        mapped_service_id = service_map.get(stype)
-
         for vin in vins:
             if not vin:
                 continue
 
             car = found_cars.get(vin)
-            car_service = None
-
-            if car and provider_type and mapped_service_id:
-                car_service = _find_car_service(car, provider_type, mapped_service_id)
-                if car_service:
-                    stats['linked'] += 1
-                else:
-                    stats['unlinked'] += 1
-            elif car:
-                stats['no_mapping'] += 1
+            car_service, status = _resolve_car_service(car, stype, descr)
+            stats[status] += 1
 
             costs_to_create.append(SupplierCost(
                 car=car,
@@ -607,11 +887,16 @@ def process_invoice_audit(audit_id: int) -> None:
         pdf_path = audit.pdf_file.path
         text = extract_text_from_pdf(pdf_path)
 
-        if not text.strip():
-            raise ValueError("PDF не содержит текста (возможно, отсканированное изображение)")
-
-        # 2. LLM извлекает структурированные данные
-        extracted = call_llm(text)
+        if text.strip():
+            # 2a. Текстовый PDF → извлечение из текста
+            extracted = call_llm(text)
+        else:
+            # 2b. Отсканированный PDF → рендерим страницы и отправляем в Vision API
+            logger.info(f"InvoiceAudit #{audit_id}: текст не найден, используем Vision API для сканированного PDF")
+            images_b64 = extract_images_from_pdf(pdf_path)
+            if not images_b64:
+                raise ValueError("PDF не содержит ни текста, ни изображений")
+            extracted = call_llm_with_images(images_b64)
 
         # 3. Парсим дату
         invoice_date = None
