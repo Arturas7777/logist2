@@ -442,7 +442,6 @@ details summary:hover { color:#6c5ce7; }
             <thead>
                 <tr>
                     <th>VIN</th>
-                    <th>Тип</th>
                     <th>Описание из счёта</th>
                     <th style="text-align:right;">Сумма</th>
                     <th>Привязана к</th>
@@ -456,7 +455,6 @@ details summary:hover { color:#6c5ce7; }
                     <td>
                         {% if sc.vin %}<span class="vin-code">{{ sc.vin }}</span>{% else %}—{% endif %}
                     </td>
-                    <td><span style="font-size:.75rem; color:#64748b;">{{ sc.get_service_type_display }}</span></td>
                     <td style="font-size:.82rem; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                         {{ sc.description|truncatechars:50 }}
                     </td>

@@ -41,7 +41,7 @@
   "ATLANTIC": {
     "provider_type": "WAREHOUSE",
     "entity_id": 4,
-    "aliases": ["ATLANTIC", "UAB ATLANTIC"],
+    "aliases": ["ATLANTIC", "UAB ATLANTIC", "ATLANTIC EXPRESS", "UAB ATLANTIC EXPRESS"],
     "services": {
       "UNLOADING": 37,
       "STORAGE": 43
