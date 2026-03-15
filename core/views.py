@@ -807,7 +807,7 @@ def add_services(request, car_id):
         import json
         data = json.loads(request.body)
         service_type = data.get('service_type')
-        service_ids = data.get('service_ids', [])
+        service_ids = [int(sid) for sid in data.get('service_ids', [])]
         
         if not service_type or not service_ids:
             return JsonResponse({'error': 'Service type and IDs are required'}, status=400)
