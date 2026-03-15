@@ -75,3 +75,4 @@ node_modules/
 npm-debug.log
 yarn-error.log
 container_photos/
+.claude/
