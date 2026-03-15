@@ -14,3 +14,6 @@ class DataUpdateConsumer(AsyncWebsocketConsumer):
 
     async def data_update(self, event):
         await self.send(text_data=json.dumps(event["data"]))
+
+    async def data_update_batch(self, event):
+        await self.send(text_data=json.dumps(event.get("data", event)))

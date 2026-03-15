@@ -62,7 +62,12 @@ class ContainerPhotoSerializer(serializers.ModelSerializer):
 
 
 class ClientCarSerializer(serializers.ModelSerializer):
-    """Сериализатор для автомобилей клиента"""
+    """Сериализатор для автомобилей клиента.
+    
+    Expects queryset with prefetch:
+        Prefetch('photos', queryset=CarPhoto.objects.filter(is_public=True))
+        Prefetch('container__photos', queryset=ContainerPhoto.objects.filter(is_public=True))
+    """
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     warehouse_name = serializers.CharField(source='warehouse.name', read_only=True, allow_null=True)
     warehouse_address = serializers.CharField(source='warehouse.address', read_only=True, allow_null=True)
@@ -84,24 +89,36 @@ class ClientCarSerializer(serializers.ModelSerializer):
         ]
     
     def get_photos_count(self, obj):
+        if hasattr(obj, '_prefetched_objects_cache') and 'photos' in obj._prefetched_objects_cache:
+            return len(obj._prefetched_objects_cache['photos'])
         return obj.photos.filter(is_public=True).count()
     
     def get_container_photos(self, obj):
-        """Получить фотографии контейнера, в котором пришел автомобиль"""
-        if obj.container:
+        if not obj.container:
+            return []
+        if (hasattr(obj.container, '_prefetched_objects_cache')
+                and 'photos' in obj.container._prefetched_objects_cache):
+            photos = obj.container._prefetched_objects_cache['photos']
+        else:
             photos = obj.container.photos.filter(is_public=True)
-            return ContainerPhotoSerializer(photos, many=True).data
-        return []
+        return ContainerPhotoSerializer(photos, many=True, context=self.context).data
     
     def get_container_photos_count(self, obj):
-        """Количество фотографий контейнера"""
-        if obj.container:
-            return obj.container.photos.filter(is_public=True).count()
-        return 0
+        if not obj.container:
+            return 0
+        if (hasattr(obj.container, '_prefetched_objects_cache')
+                and 'photos' in obj.container._prefetched_objects_cache):
+            return len(obj.container._prefetched_objects_cache['photos'])
+        return obj.container.photos.filter(is_public=True).count()
 
 
 class ClientContainerSerializer(serializers.ModelSerializer):
-    """Сериализатор для контейнеров клиента"""
+    """Сериализатор для контейнеров клиента.
+    
+    Expects queryset with prefetch:
+        Prefetch('photos', queryset=ContainerPhoto.objects.filter(is_public=True))
+        Prefetch('container_cars')
+    """
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     line_name = serializers.CharField(source='line.name', read_only=True, allow_null=True)
     warehouse_name = serializers.CharField(source='warehouse.name', read_only=True, allow_null=True)
@@ -119,9 +136,13 @@ class ClientContainerSerializer(serializers.ModelSerializer):
         ]
     
     def get_cars_count(self, obj):
+        if hasattr(obj, '_prefetched_objects_cache') and 'container_cars' in obj._prefetched_objects_cache:
+            return len(obj._prefetched_objects_cache['container_cars'])
         return obj.container_cars.count()
     
     def get_photos_count(self, obj):
+        if hasattr(obj, '_prefetched_objects_cache') and 'photos' in obj._prefetched_objects_cache:
+            return len(obj._prefetched_objects_cache['photos'])
         return obj.photos.filter(is_public=True).count()
 
 

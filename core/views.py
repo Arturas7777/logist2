@@ -4,13 +4,14 @@ from django.views.decorators.http import require_GET
 from django.utils import timezone
 from django.template.loader import render_to_string
 from django.db.models import Q, Sum
+from django.core.cache import cache
 from datetime import timedelta, datetime
 from typing import Optional
 from .models import Car, Container, Client, Warehouse, Line, Company, Carrier, CarService, WarehouseService, LineService, CarrierService, CompanyService
 from .models_billing import NewInvoice as Invoice, Transaction as Payment
 from .services.comparison_service import ComparisonService
 from .pagination import paginate_queryset, paginated_json_response, PaginationHelper
-from .cache_utils import cache_company_stats, cache_client_stats, cache_warehouse_stats, cache_comparison_data
+from .cache_utils import cache_company_stats, cache_client_stats, cache_warehouse_stats, cache_comparison_data, CACHE_TIMEOUTS
 from decimal import Decimal
 import logging
 from django.shortcuts import render, get_object_or_404
@@ -238,6 +239,11 @@ def get_payment_objects(request):
         return JsonResponse({'error': f'Invalid type: {object_type}'}, status=400)
     
     try:
+        cache_key = f'payment_objects:{object_type}'
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return JsonResponse(cached)
+
         objects = model.objects.all().order_by('name' if hasattr(model, 'name') else 'id')
         
         objects_list = [{
@@ -245,10 +251,12 @@ def get_payment_objects(request):
             'name': getattr(obj, 'name', str(obj))
         } for obj in objects]
         
-        return JsonResponse({
+        result = {
             'type': object_type,
             'objects': objects_list
-        })
+        }
+        cache.set(cache_key, result, CACHE_TIMEOUTS['medium'])
+        return JsonResponse(result)
         
     except Exception as e:
         logger.error(f"Error getting objects for type {object_type}: {e}")
@@ -514,7 +522,7 @@ def get_warehouse_cars_api(request):
 @staff_member_required
 def comparison_dashboard(request):
     """Дашборд для сравнения сумм между расчетами и счетами склада.
-    Оптимизировано: batch-запросы вместо N+1.
+    Оптимизировано: batch-запросы вместо N+1, с кэшированием.
     """
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
@@ -527,6 +535,14 @@ def comparison_dashboard(request):
     except ValueError:
         return JsonResponse({'error': 'Неверный формат даты. Используйте YYYY-MM-DD'}, status=400)
     
+    cache_key = f'comparison_dashboard:{start_date}:{end_date}'
+    cached_context = cache.get(cache_key)
+
+    if cached_context is not None:
+        cached_context['start_date'] = start_date
+        cached_context['end_date'] = end_date
+        return render(request, 'admin/comparison_dashboard.html', cached_context)
+
     comparison_service = ComparisonService()
     report = comparison_service.get_comparison_report(start_date, end_date)
 
@@ -550,6 +566,7 @@ def comparison_dashboard(request):
         'end_date': end_date,
     }
     
+    cache.set(cache_key, context, CACHE_TIMEOUTS['short'])
     return render(request, 'admin/comparison_dashboard.html', context)
 
 @staff_member_required
@@ -653,13 +670,20 @@ def get_discrepancies_api(request):
 def get_warehouses(request):
     """Получает список всех активных складов"""
     try:
+        cache_key = 'ref:warehouses_list'
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return JsonResponse(cached)
+
         warehouses = Warehouse.objects.all().order_by('name')
         warehouses_data = [{
             'id': warehouse.id,
             'name': warehouse.name
         } for warehouse in warehouses]
         
-        return JsonResponse({'warehouses': warehouses_data})
+        result = {'warehouses': warehouses_data}
+        cache.set(cache_key, result, CACHE_TIMEOUTS['medium'])
+        return JsonResponse(result)
     except Exception as e:
         logger.error(f"Error loading warehouses: {e}")
         return JsonResponse({'error': str(e)}, status=500)
@@ -669,13 +693,20 @@ def get_warehouses(request):
 def get_companies(request):
     """Получает список всех компаний"""
     try:
+        cache_key = 'ref:companies_list'
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return JsonResponse(cached)
+
         companies = Company.objects.all().order_by('name')
         companies_data = [{
             'id': company.id,
             'name': company.name
         } for company in companies]
         
-        return JsonResponse({'companies': companies_data})
+        result = {'companies': companies_data}
+        cache.set(cache_key, result, CACHE_TIMEOUTS['medium'])
+        return JsonResponse(result)
     except Exception as e:
         logger.error(f"Error loading companies: {e}")
         return JsonResponse({'error': str(e)}, status=500)
@@ -768,7 +799,7 @@ def get_available_services(request, car_id):
 
 @staff_member_required
 def add_services(request, car_id):
-    """Добавляет выбранные услуги к автомобилю"""
+    """Добавляет выбранные услуги к автомобилю (batch-оптимизация)"""
     if request.method != 'POST':
         return JsonResponse({'error': 'Only POST method allowed'}, status=405)
     
@@ -781,64 +812,59 @@ def add_services(request, car_id):
         if not service_type or not service_ids:
             return JsonResponse({'error': 'Service type and IDs are required'}, status=400)
         
+        service_type_upper = service_type.upper()
         car = Car.objects.get(id=car_id)
-        added_count = 0
+
+        MODEL_MAP = {
+            'WAREHOUSE': WarehouseService,
+            'LINE': LineService,
+            'CARRIER': CarrierService,
+            'COMPANY': CompanyService,
+        }
+        service_model = MODEL_MAP.get(service_type_upper)
+        if not service_model:
+            return JsonResponse({'error': f'Invalid service type: {service_type}'}, status=400)
+
+        services_by_id = {s.id: s for s in service_model.objects.filter(id__in=service_ids)}
+
+        existing_ids = set(CarService.objects.filter(
+            car=car, service_type=service_type_upper, service_id__in=service_ids
+        ).values_list('service_id', flat=True))
+
+        to_create = []
         skipped_count = 0
         errors = []
-        
+
         for service_id in service_ids:
-            service_type_upper = service_type.upper()
-            custom_price = None
-            markup_amount = Decimal('0')
-            
-            try:
-                if service_type_upper == 'WAREHOUSE':
-                    service = WarehouseService.objects.get(id=service_id)
-                    if service.name == 'Хранение':
-                        days = Decimal(str(car.days or 0))
-                        custom_price = days * Decimal(str(service.default_price or 0))
-                        markup_amount = days * Decimal(str(getattr(service, 'default_markup', 0) or 0))
-                    else:
-                        custom_price = service.default_price
-                        markup_amount = getattr(service, 'default_markup', 0) or 0
-                elif service_type_upper == 'LINE':
-                    service = LineService.objects.get(id=service_id)
-                    custom_price = service.default_price
-                    markup_amount = getattr(service, 'default_markup', 0) or 0
-                elif service_type_upper == 'CARRIER':
-                    service = CarrierService.objects.get(id=service_id)
-                    custom_price = service.default_price
-                    markup_amount = getattr(service, 'default_markup', 0) or 0
-                elif service_type_upper == 'COMPANY':
-                    service = CompanyService.objects.get(id=service_id)
-                    custom_price = service.default_price
-                    markup_amount = getattr(service, 'default_markup', 0) or 0
-                else:
-                    continue
-                
-                # Check if already exists (unique_together: car, service_type, service_id)
-                existing = CarService.objects.filter(
-                    car=car,
-                    service_type=service_type_upper,
-                    service_id=service_id
-                ).exists()
-                
-                if existing:
-                    skipped_count += 1
-                    logger.info(f"Service {service_id} ({service_type_upper}) already exists for car {car_id}, skipping")
-                    continue
-                
-                CarService.objects.create(
-                    car=car,
-                    service_type=service_type_upper,
-                    service_id=service_id,
-                    custom_price=custom_price,
-                    markup_amount=markup_amount
-                )
-                added_count += 1
-            except Exception as e:
-                logger.error(f"Error adding service {service_id} ({service_type_upper}) to car {car_id}: {e}")
-                errors.append(str(e))
+            if service_id in existing_ids:
+                skipped_count += 1
+                continue
+
+            service = services_by_id.get(service_id)
+            if not service:
+                errors.append(f'Service {service_id} not found')
+                continue
+
+            custom_price = service.default_price
+            markup_amount = getattr(service, 'default_markup', 0) or 0
+
+            if service_type_upper == 'WAREHOUSE' and service.name == 'Хранение':
+                days = Decimal(str(car.days or 0))
+                custom_price = days * Decimal(str(service.default_price or 0))
+                markup_amount = days * Decimal(str(getattr(service, 'default_markup', 0) or 0))
+
+            to_create.append(CarService(
+                car=car,
+                service_type=service_type_upper,
+                service_id=service_id,
+                custom_price=custom_price,
+                markup_amount=markup_amount,
+            ))
+
+        added_count = 0
+        if to_create:
+            CarService.objects.bulk_create(to_create, ignore_conflicts=True)
+            added_count = len(to_create)
         
         if added_count > 0:
             return JsonResponse({
@@ -950,13 +976,17 @@ def search_counterparties(request):
     """
     API для поиска контрагентов (клиенты, склады, линии, перевозчики, компании)
     Используется для автокомплита в форме инвойса.
-    Выполняет 5 запросов с values_list для минимизации нагрузки.
     """
     query = request.GET.get('q', '').strip()
     
     if len(query) < 1:
         return JsonResponse({'results': []})
     
+    cache_key = f'search_counterparties:{query.lower()}'
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return JsonResponse(cached)
+
     results = []
     
     search_config = [
@@ -976,7 +1006,9 @@ def search_counterparties(request):
                 'type_id': pk,
             })
     
-    return JsonResponse({'results': results})
+    result = {'results': results}
+    cache.set(cache_key, result, 60)
+    return JsonResponse(result)
 
 
 @staff_member_required

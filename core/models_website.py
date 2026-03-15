@@ -144,28 +144,32 @@ class ContainerPhoto(models.Model):
             return False
     
     def save(self, *args, **kwargs):
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        # Определяем, новый ли это объект
-        is_new = self.pk is None
-        
-        # Сохраняем объект первый раз
         super().save(*args, **kwargs)
         
-        # Создаем миниатюру только если её нет и есть оригинальное фото
         if self.photo and not self.thumbnail:
-            logger.info(f"ContainerPhoto {self.id}: попытка создания миниатюры (is_new={is_new})")
-            if self.create_thumbnail():
-                # Сохраняем только поле thumbnail, чтобы избежать рекурсии
-                super().save(update_fields=['thumbnail'])
-            else:
-                logger.warning(f"ContainerPhoto {self.id}: не удалось создать миниатюру")
+            from django.db import transaction
+            transaction.on_commit(lambda: _create_thumbnail_async(self.pk))
     
     class Meta:
         verbose_name = "Фотография контейнера"
         verbose_name_plural = "Фотографии контейнеров"
         ordering = ['photo']  # Сортировка по имени файла для сохранения последовательности
+
+
+def _create_thumbnail_async(photo_pk):
+    """Dispatch thumbnail creation to Celery or run inline as fallback."""
+    try:
+        from .tasks import create_container_photo_thumbnail_task
+        create_container_photo_thumbnail_task.delay(photo_pk)
+    except Exception:
+        import logging
+        logger = logging.getLogger(__name__)
+        try:
+            photo = ContainerPhoto.objects.get(pk=photo_pk)
+            if photo.create_thumbnail():
+                ContainerPhoto.objects.filter(pk=photo_pk).update(thumbnail=photo.thumbnail)
+        except Exception as e:
+            logger.error(f"Fallback thumbnail creation failed for {photo_pk}: {e}")
 
 
 class ContainerPhotoArchive(models.Model):

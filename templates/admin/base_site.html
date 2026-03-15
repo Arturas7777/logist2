@@ -116,13 +116,50 @@ document.addEventListener('DOMContentLoaded', function() {
             'box-shadow':'none', width:'100%', 'min-width':'0'
         });
     } else if (cs) {
-        // Fallback: no actions on page — just style search as card
-        s(cs, {
+        // No actions on page (empty list) — build unified toolbar from search + add button
+        var unified = document.createElement('div');
+        unified.id = 'cm-unified-toolbar';
+        s(unified, {
             background:'#fff', border:'none', 'border-radius':'14px',
-            padding:'16px 20px', margin:'0 0 16px 0',
-            display:'flex', 'align-items':'center', gap:'12px',
+            padding:'8px 12px', margin:'0 0 16px 0',
+            display:'flex', 'align-items':'stretch', gap:'8px',
+            'flex-wrap':'wrap',
             'box-shadow':'0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08)'
         });
+        if (tb) {
+            tb.parentNode.insertBefore(unified, tb);
+            unified.appendChild(tb);
+            s(tb, {
+                background:'transparent', border:'none', padding:'0', margin:'0',
+                flex:'1 1 250px', 'min-width':'0'
+            });
+        }
+        s(cs, {
+            background:'transparent', border:'none', 'border-radius':'0',
+            padding:'0', margin:'0',
+            display:'flex', 'align-items':'stretch', gap:'8px',
+            'box-shadow':'none', width:'100%', 'min-width':'0'
+        });
+        var addBtn = document.querySelector('#cm-object-tools-src .object-tools a');
+        if (addBtn) {
+            var fixStyle = document.getElementById('cm-add-fix');
+            if (!fixStyle) {
+                fixStyle = document.createElement('style');
+                fixStyle.id = 'cm-add-fix';
+                fixStyle.textContent = '#cm-unified-toolbar .cm-add-btn::before,#cm-unified-toolbar .cm-add-btn::after{display:none!important;content:none!important;}';
+                document.head.appendChild(fixStyle);
+            }
+            addBtn.className = 'cm-add-btn';
+            s(addBtn, {
+                padding:'7px 16px', 'font-size':'0.85rem', 'font-weight':'600',
+                'border-radius':'8px', 'line-height':'1.4',
+                display:'inline-flex', 'align-items':'center', 'justify-content':'center',
+                float:'none', background:'#6c5ce7', color:'#fff',
+                'text-decoration':'none', 'white-space':'nowrap', 'flex-shrink':'0',
+                border:'none', cursor:'pointer', flex:'0 0 auto'
+            });
+            unified.appendChild(addBtn);
+        }
     }
     // .changelist-form-container — flex child, takes remaining space
     document.querySelectorAll('.changelist-form-container').forEach(function(el) {

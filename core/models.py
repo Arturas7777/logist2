@@ -41,7 +41,7 @@ VEHICLE_TYPE_CHOICES = [
 
 # Справочники
 class Line(models.Model):
-    name = models.CharField(max_length=100, verbose_name="Название линии")
+    name = models.CharField(max_length=100, verbose_name="Название линии", db_index=True)
     
     # Единый баланс (новая система)
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс",
@@ -91,7 +91,7 @@ class LineTHSCoefficient(models.Model):
 
 
 class Carrier(models.Model):
-    name = models.CharField(max_length=100, verbose_name="Название перевозчика")
+    name = models.CharField(max_length=100, verbose_name="Название перевозчика", db_index=True)
     short_name = models.CharField(max_length=20, blank=True, null=True, verbose_name="Короткое название")
     contact_person = models.CharField(max_length=100, blank=True, null=True, verbose_name="Контактное лицо")
     phone = models.CharField(max_length=20, blank=True, null=True, verbose_name="Телефон")
@@ -186,7 +186,7 @@ class Client(models.Model):
         ('FLEXIBLE', 'Гибкая цена (зависит от кол-ва авто)'),
     ]
     
-    name = models.CharField(max_length=100, verbose_name="Имя клиента")
+    name = models.CharField(max_length=100, verbose_name="Имя клиента", db_index=True)
     email = models.EmailField(blank=True, null=True, verbose_name="Email 1",
                               help_text="Основной email для уведомлений о разгрузке контейнеров")
     email2 = models.EmailField(blank=True, null=True, verbose_name="Email 2",
@@ -302,7 +302,7 @@ class Warehouse(models.Model):
         (3, 'Площадка 3'),
     ]
 
-    name = models.CharField(max_length=100, verbose_name="Название склада")
+    name = models.CharField(max_length=100, verbose_name="Название склада", db_index=True)
 
     # Площадка 1
     address_name = models.CharField(max_length=100, blank=True, verbose_name="Название площадки 1")
@@ -1184,7 +1184,7 @@ class Car(models.Model):
 class Company(models.Model):
     """Модель для логистической компании Caromoto Lithuania"""
     
-    name = models.CharField(max_length=100, default="Caromoto Lithuania", verbose_name="Название компании")
+    name = models.CharField(max_length=100, default="Caromoto Lithuania", verbose_name="Название компании", db_index=True)
     
     # Единый баланс (новая система)
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс",

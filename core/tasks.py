@@ -69,6 +69,23 @@ def send_unload_notifications_task(self, container_id):
         raise self.retry(exc=exc)
 
 
+@shared_task(bind=True, max_retries=2, default_retry_delay=30, time_limit=60)
+def create_container_photo_thumbnail_task(self, photo_pk):
+    """Creates thumbnail for a ContainerPhoto in background."""
+    from core.models_website import ContainerPhoto
+    try:
+        photo = ContainerPhoto.objects.get(pk=photo_pk)
+        if photo.photo and not photo.thumbnail:
+            if photo.create_thumbnail():
+                ContainerPhoto.objects.filter(pk=photo_pk).update(thumbnail=photo.thumbnail)
+                logger.info(f"Thumbnail created for ContainerPhoto {photo_pk}")
+    except ContainerPhoto.DoesNotExist:
+        logger.warning(f"ContainerPhoto {photo_pk} not found for thumbnail")
+    except Exception as exc:
+        logger.error(f"Thumbnail creation failed for {photo_pk}: {exc}")
+        raise self.retry(exc=exc)
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def send_car_unload_notification_task(self, car_id):
     from core.models import Car
