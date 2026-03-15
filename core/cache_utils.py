@@ -321,6 +321,22 @@ def invalidate_related_cache(model_name, instance_id):
     for pattern in patterns:
         invalidate_cache(pattern)
 
+    REF_CACHE_KEYS = [
+        'ref:warehouses_list', 'ref:companies_list',
+    ]
+    PAYMENT_KEYS = [
+        'payment_objects:client', 'payment_objects:warehouse',
+        'payment_objects:line', 'payment_objects:carrier',
+        'payment_objects:company',
+    ]
+    model_lower = model_name.lower()
+    if model_lower in ('client', 'warehouse', 'line', 'carrier', 'company'):
+        cache.delete(f'payment_objects:{model_lower}')
+    if model_lower == 'warehouse':
+        cache.delete('ref:warehouses_list')
+    if model_lower == 'company':
+        cache.delete('ref:companies_list')
+
     logger.info(f"Related cache invalidated for {model_name} #{instance_id}")
 
 

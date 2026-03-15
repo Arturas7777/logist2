@@ -11,9 +11,10 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth import authenticate, login, logout
 from django.http import JsonResponse, FileResponse, Http404, HttpResponse
 from django.views.decorators.cache import cache_page
+from django.core.cache import cache as django_cache
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from django.db.models import Q, Count, Prefetch
+from django.db.models import Q, Count, F, Prefetch
 from django.utils import timezone
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import api_view, permission_classes, action, authentication_classes, throttle_classes
@@ -90,8 +91,8 @@ def news_list(request):
 def news_detail(request, slug):
     """Детальная страница новости"""
     post = get_object_or_404(NewsPost, slug=slug, published=True)
+    NewsPost.objects.filter(pk=post.pk).update(views=F('views') + 1)
     post.views += 1
-    post.save(update_fields=['views'])
     return render(request, 'website/news_detail.html', {'post': post})
 
 
@@ -106,18 +107,18 @@ def client_dashboard(request):
         client_user = request.user.clientuser
         client = client_user.client
         
-        # Получаем автомобили клиента
         cars = Car.objects.filter(client=client).select_related(
             'warehouse', 'container'
         ).prefetch_related(
-            Prefetch('photos', queryset=CarPhoto.objects.filter(is_public=True))
+            Prefetch('photos', queryset=CarPhoto.objects.filter(is_public=True)),
+            Prefetch('container__photos', queryset=ContainerPhoto.objects.filter(is_public=True)),
         ).order_by('-id')
         
-        # Получаем контейнеры клиента
         containers = Container.objects.filter(client=client).select_related(
             'line', 'warehouse'
         ).prefetch_related(
-            Prefetch('photos', queryset=ContainerPhoto.objects.filter(is_public=True))
+            Prefetch('photos', queryset=ContainerPhoto.objects.filter(is_public=True)),
+            'container_cars',
         ).order_by('-id')
         
         context = {
@@ -197,7 +198,8 @@ class ClientCarViewSet(viewsets.ReadOnlyModelViewSet):
         return Car.objects.filter(client=client).select_related(
             'warehouse', 'container'
         ).prefetch_related(
-            Prefetch('photos', queryset=CarPhoto.objects.filter(is_public=True))
+            Prefetch('photos', queryset=CarPhoto.objects.filter(is_public=True)),
+            Prefetch('container__photos', queryset=ContainerPhoto.objects.filter(is_public=True)),
         ).order_by('-id')
 
 
@@ -212,7 +214,7 @@ class ClientContainerViewSet(viewsets.ReadOnlyModelViewSet):
             'line', 'warehouse'
         ).prefetch_related(
             Prefetch('photos', queryset=ContainerPhoto.objects.filter(is_public=True)),
-            Prefetch('container_cars', queryset=Car.objects.all())
+            'container_cars',
         ).order_by('-id')
 
 
@@ -869,7 +871,12 @@ def ai_chat_history(request):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def get_container_photos(request, container_number):
-    """Получить фотографии контейнера с разделением по типам"""
+    """Получить фотографии контейнера с разделением по типам (кэш 15 мин)"""
+    cache_key = f'container_photos:{container_number}'
+    cached = django_cache.get(cache_key)
+    if cached is not None:
+        return Response(cached)
+
     try:
         container = Container.objects.get(number=container_number)
         photos = ContainerPhoto.objects.filter(
@@ -877,7 +884,6 @@ def get_container_photos(request, container_number):
             is_public=True
         )
         
-        # Сначала выгруженные, потом из контейнера; внутри группы — по имени файла
         type_order = {'UNLOADING': 0, 'GENERAL': 1, 'IN_CONTAINER': 2}
         photos_list = list(photos)
         photos_list.sort(key=lambda p: (type_order.get(p.photo_type or 'GENERAL', 1), p.photo.name if p.photo else ''))
@@ -889,7 +895,6 @@ def get_container_photos(request, container_number):
             photo_type = photo.photo_type or 'GENERAL'
             type_counts[photo_type] = type_counts.get(photo_type, 0) + 1
             
-            # Ensure URLs have /media/ prefix
             photo_url = photo.photo.url
             if not photo_url.startswith('/media/') and not photo_url.startswith('http'):
                 photo_url = '/media/' + photo_url.lstrip('/')
@@ -904,18 +909,20 @@ def get_container_photos(request, container_number):
                 'thumbnail_url': thumb_url,
                 'description': photo.description,
                 'photo_type': photo.get_photo_type_display(),
-                'photo_type_code': photo_type,  # Сырой код для фильтрации
+                'photo_type_code': photo_type,
                 'uploaded_at': photo.uploaded_at.strftime('%Y-%m-%d %H:%M'),
                 'filename': photo.filename
             })
         
-        return Response({
+        result = {
             'success': True,
             'container_number': container.number,
             'photos': photos_data,
             'photos_count': len(photos_data),
-            'type_counts': type_counts  # Количество фото каждого типа
-        })
+            'type_counts': type_counts
+        }
+        django_cache.set(cache_key, result, 60 * 15)
+        return Response(result)
         
     except Container.DoesNotExist:
         return Response({
@@ -945,7 +952,7 @@ def download_photos_archive(request):
         photos = ContainerPhoto.objects.filter(
             id__in=photo_ids,
             is_public=True
-        )
+        ).select_related('container')
         
         if not photos.exists():
             return Response({

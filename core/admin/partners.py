@@ -1621,9 +1621,10 @@ class AutoTransportAdmin(admin.ModelAdmin):
         """Get context for template"""
         extra_context = extra_context or {}
 
-        # Pass all cars for selection (like in invoices)
         from core.models import Car
-        extra_context['cars'] = Car.objects.select_related('client').all()
+        extra_context['cars'] = Car.objects.filter(
+            status__in=['UNLOADED', 'IN_PORT', 'FLOATING']
+        ).select_related('client').order_by('-id')[:200]
 
         # If editing existing auto-transport - pass selected IDs
         if object_id:

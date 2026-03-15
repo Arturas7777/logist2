@@ -83,13 +83,7 @@ class MultiWarehouseFilter(SimpleListFilter):
     def lookups(self, request, model_admin):
         """Возвращает список доступных складов"""
         from core.models import Warehouse
-        warehouses = Warehouse.objects.all().order_by('name')
-        
-        choices = []
-        for warehouse in warehouses:
-            choices.append((warehouse.id, warehouse.name))
-        
-        return choices
+        return list(Warehouse.objects.values_list('id', 'name').order_by('name'))
 
     def queryset(self, request, queryset):
         """Фильтрует queryset на основе выбранных складов"""
@@ -127,33 +121,22 @@ class ClientAutocompleteFilter(SimpleListFilter):
     template = 'admin/client_autocomplete_filter.html'
 
     def lookups(self, request, model_admin):
-        """Возвращает список клиентов для автодополнения"""
         from core.models import Client
-        clients = Client.objects.all().order_by('name')
-        return [(str(c.id), c.name) for c in clients]
+        return Client.objects.values_list('id', 'name').order_by('name')
 
     def queryset(self, request, queryset):
-        """Фильтрует по выбранному клиенту"""
         if self.value():
             return queryset.filter(client_id=self.value())
         return queryset
 
     def choices(self, changelist):
-        """Возвращает данные для шаблона"""
-        from core.models import Client
+        clients_data = [{'id': str(pk), 'text': name} for pk, name in self.lookup_choices]
         
-        # Получаем всех клиентов для Select2
-        clients = Client.objects.all().order_by('name')
-        clients_data = [{'id': str(c.id), 'text': c.name} for c in clients]
-        
-        # Текущий выбранный клиент
         current_value = self.value()
         current_text = ''
         if current_value:
-            try:
-                current_text = Client.objects.get(id=current_value).name
-            except Client.DoesNotExist:
-                pass
+            lookup = {str(pk): name for pk, name in self.lookup_choices}
+            current_text = lookup.get(str(current_value), '')
         
         yield {
             'selected': current_value is None,

@@ -45,15 +45,13 @@ class ComparisonService:
         # Получаем общую стоимость автомобиля
         car_total_cost = car.total_price or Decimal('0.00')
         
-        # Получаем все инвойсы склада, связанные с этим автомобилем
         warehouse_invoices = Invoice.objects.filter(
             cars=car,
-            to_entity_type='WAREHOUSE',
-            to_entity_id=car.warehouse.id
+            issuer_warehouse=car.warehouse,
         )
         
         warehouse_invoices_total = warehouse_invoices.aggregate(
-            total=Sum('total_amount')
+            total=Sum('total')
         )['total'] or Decimal('0.00')
         
         # Вычисляем разницу
@@ -126,20 +124,20 @@ class ComparisonService:
 
         warehouse_invoices = Invoice.objects.filter(
             cars__client=client,
-            to_entity_type='WAREHOUSE'
+            issuer_warehouse__isnull=False,
         )
         if start_date:
             warehouse_invoices = warehouse_invoices.filter(
-                Q(issue_date__gte=start_date) | Q(cars__unload_date__gte=start_date)
+                Q(date__gte=start_date) | Q(cars__unload_date__gte=start_date)
             )
         if end_date:
             warehouse_invoices = warehouse_invoices.filter(
-                Q(issue_date__lte=end_date) | Q(cars__unload_date__lte=end_date)
+                Q(date__lte=end_date) | Q(cars__unload_date__lte=end_date)
             )
         warehouse_invoices = warehouse_invoices.distinct()
 
         wh_agg = warehouse_invoices.aggregate(
-            total=Sum('total_amount'),
+            total=Sum('total'),
             inv_count=models.Count('id')
         )
         warehouse_invoices_total = wh_agg['total'] or Decimal('0.00')
@@ -185,16 +183,14 @@ class ComparisonService:
         Returns:
             Словарь с результатами сравнения
         """
-        # Получаем все инвойсы склада
         invoices_query = Invoice.objects.filter(
-            to_entity_type='WAREHOUSE',
-            to_entity_id=warehouse.id
+            issuer_warehouse=warehouse,
         )
         
         if start_date:
-            invoices_query = invoices_query.filter(issue_date__gte=start_date)
+            invoices_query = invoices_query.filter(date__gte=start_date)
         if end_date:
-            invoices_query = invoices_query.filter(issue_date__lte=end_date)
+            invoices_query = invoices_query.filter(date__lte=end_date)
         
         invoices = invoices_query.all()
         
@@ -210,7 +206,7 @@ class ComparisonService:
         
         # Суммируем стоимость всех инвойсов склада
         invoices_total = invoices.aggregate(
-            total=Sum('total_amount')
+            total=Sum('total')
         )['total'] or Decimal('0.00')
         
         # Получаем все платежи складу
@@ -281,9 +277,9 @@ class ComparisonService:
         cars_total = cars_agg['total'] or Decimal('0.00')
 
         invoices_agg = Invoice.objects.filter(
-            issue_date__gte=start_date, issue_date__lte=end_date
+            date__gte=start_date, date__lte=end_date
         ).aggregate(
-            total=Sum('total_amount'),
+            total=Sum('total'),
             cnt=Count('id')
         )
         invoices_total = invoices_agg['total'] or Decimal('0.00')
@@ -334,16 +330,16 @@ class ComparisonService:
             .order_by('client__name')
         )
 
-        inv_filters = Q(cars__client__isnull=False)
+        inv_filters = Q(cars__client__isnull=False, issuer_warehouse__isnull=False)
         if start_date:
-            inv_filters &= (Q(issue_date__gte=start_date) | Q(cars__unload_date__gte=start_date))
+            inv_filters &= (Q(date__gte=start_date) | Q(cars__unload_date__gte=start_date))
         if end_date:
-            inv_filters &= (Q(issue_date__lte=end_date) | Q(cars__unload_date__lte=end_date))
+            inv_filters &= (Q(date__lte=end_date) | Q(cars__unload_date__lte=end_date))
 
         inv_agg = dict(
-            Invoice.objects.filter(inv_filters, to_entity_type='WAREHOUSE')
+            Invoice.objects.filter(inv_filters)
             .values('cars__client_id')
-            .annotate(total=Sum('total_amount'), cnt=Count('id', distinct=True))
+            .annotate(total=Sum('total'), cnt=Count('id', distinct=True))
             .values_list('cars__client_id', 'total')
         )
 
@@ -375,18 +371,18 @@ class ComparisonService:
 
     def batch_compare_warehouses(self, start_date=None, end_date=None) -> List[Dict[str, Any]]:
         """Batch comparison for all warehouses — 2 SQL queries instead of N+1."""
-        inv_filters = Q(to_entity_type='WAREHOUSE')
+        inv_filters = Q(issuer_warehouse__isnull=False)
         if start_date:
-            inv_filters &= Q(issue_date__gte=start_date)
+            inv_filters &= Q(date__gte=start_date)
         if end_date:
-            inv_filters &= Q(issue_date__lte=end_date)
+            inv_filters &= Q(date__lte=end_date)
 
         inv_agg = (
             Invoice.objects.filter(inv_filters)
-            .values('to_entity_id')
-            .annotate(total=Sum('total_amount'), cnt=Count('id'))
+            .values('issuer_warehouse_id')
+            .annotate(total=Sum('total'), cnt=Count('id'))
         )
-        inv_by_wh = {r['to_entity_id']: r for r in inv_agg}
+        inv_by_wh = {r['issuer_warehouse_id']: r for r in inv_agg}
 
         pay_filters = Q(to_warehouse__isnull=False)
         if start_date:
