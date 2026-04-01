@@ -1063,7 +1063,7 @@ class LineAdmin(admin.ModelAdmin):
         from django.shortcuts import redirect
         from django.db import transaction
         from core.models import Container, Car, Line
-        from core.signals import create_ths_services_for_container, apply_client_tariffs_for_container
+        from core.services.car_service_manager import create_ths_services_for_container, apply_client_tariffs_for_container
         import logging
         logger = logging.getLogger(__name__)
 

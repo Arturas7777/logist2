@@ -1459,43 +1459,6 @@ class CarService(models.Model):
         ]
 
 
-# Сигналы для автоматического пересчета текущей цены при изменении услуг
-from django.db.models.signals import post_save, post_delete
-from django.dispatch import receiver
-
-
-@receiver(post_save, sender=CarService)
-def recalculate_car_price_on_service_save(sender, instance, **kwargs):
-    """Пересчитывает текущую цену автомобиля при сохранении услуги"""
-    # Защита от рекурсии - пропускаем если идёт создание услуг
-    if getattr(instance.car, '_creating_services', False):
-        return
-    try:
-        instance.car.calculate_total_price()
-        # Используем update() вместо save() чтобы не триггерить сигналы
-        Car.objects.filter(id=instance.car.id).update(
-            total_price=instance.car.total_price
-        )
-    except Exception as e:
-        logger.error(f"Ошибка пересчета цены при сохранении услуги: {e}")
-
-
-@receiver(post_delete, sender=CarService)
-def recalculate_car_price_on_service_delete(sender, instance, **kwargs):
-    """Пересчитывает текущую цену автомобиля при удалении услуги"""
-    # Защита от рекурсии - пропускаем если идёт создание услуг
-    if getattr(instance.car, '_creating_services', False):
-        return
-    try:
-        instance.car.calculate_total_price()
-        # Используем update() вместо save() чтобы не триггерить сигналы
-        Car.objects.filter(id=instance.car.id).update(
-            total_price=instance.car.total_price
-        )
-    except Exception as e:
-        logger.error(f"Ошибка пересчета цены при удалении услуги: {e}")
-
-
 class AutoTransport(models.Model):
     """Автовоз на загрузку - формирование рейса"""
     STATUS_CHOICES = [

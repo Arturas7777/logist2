@@ -43,27 +43,8 @@ api_v1_patterns = [
     path('companies/', get_companies, name='get_companies'),
 ]
 
-# ============================================================================
-# Обратная совместимость: старые /api/ пути (deprecated, удалить в будущем)
-# ============================================================================
-api_legacy_patterns = [
-    path('cars/', car_list_api, name='car_list_api_legacy'),
-    path('invoice-total/', get_invoice_total, name='get_invoice_total_legacy'),
-    path('container/<int:container_id>/', get_container_data, name='get_container_data_legacy'),
-    path('client-balance/', get_client_balance, name='get_client_balance_legacy'),
-    path('payment-objects/', get_payment_objects, name='get_payment_objects_legacy'),
-    path('search-partners/', search_partners_api, name='search_partners_api_legacy'),
-    path('warehouse-cars/', get_warehouse_cars_api, name='get_warehouse_cars_api_legacy'),
-    path('invoice-cars/', get_invoice_cars_api, name='get_invoice_cars_api_legacy'),
-    path('compare-car-costs/', compare_car_costs_api, name='compare_car_costs_api_legacy'),
-    path('compare-client-costs/', compare_client_costs_api, name='compare_client_costs_api_legacy'),
-    path('compare-warehouse-costs/', compare_warehouse_costs_api, name='compare_warehouse_costs_api_legacy'),
-    path('discrepancies/', get_discrepancies_api, name='get_discrepancies_api_legacy'),
-    path('car/<int:car_id>/get_available_services/', get_available_services, name='get_available_services_legacy'),
-    path('car/<int:car_id>/add_services/', add_services, name='add_services_legacy'),
-    path('warehouses/', get_warehouses, name='get_warehouses_legacy'),
-    path('companies/', get_companies, name='get_companies_legacy'),
-]
+# Legacy /api/ -> forwards to same views (deprecated, remove when all clients migrate)
+api_legacy_patterns = api_v1_patterns
 
 urlpatterns = [
     # ========== МЕЖДУНАРОДНАЯ ПОДДЕРЖКА ==========
