@@ -481,9 +481,7 @@ class Container(models.Model):
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
-        from django.core.exceptions import ValidationError
-        if self.status == 'UNLOADED' and (not self.warehouse or not self.unload_date):
-            raise ValidationError("Для статуса 'Разгружен' обязательны поля 'Склад' и 'Дата разгрузки'")
+        self.clean()
         super().save(*args, **kwargs)
 
     def sync_cars_after_warehouse_change(self):
@@ -816,14 +814,13 @@ class Car(models.Model):
         if hasattr(self, '_prefetched_objects_cache'):
             self._prefetched_objects_cache.pop('car_services', None)
 
-        # 4. Один проход по car_services: итоговая цена = sum(final_price) + sum(markup)
+        # 4. Один проход по car_services: итоговая цена = sum(invoice_price)
+        #    invoice_price = (base_price + markup) * quantity — учитывает наценку корректно
         total = Decimal('0.00')
-        markup = Decimal('0.00')
         for svc in self.car_services.all():
-            total += Decimal(str(svc.final_price))
-            markup += svc.markup_amount if svc.markup_amount is not None else Decimal('0')
+            total += Decimal(str(svc.invoice_price))
 
-        self.total_price = total + markup
+        self.total_price = total
         return self.total_price
 
     def update_days_and_storage(self):
@@ -1551,6 +1548,15 @@ class AutoTransport(models.Model):
     def __str__(self):
         return f"Автовоз {self.number} - {self.carrier.name}"
     
+    ALLOWED_TRANSITIONS = {
+        'DRAFT':      {'FORMED', 'CANCELLED'},
+        'FORMED':     {'LOADED', 'DRAFT', 'CANCELLED'},
+        'LOADED':     {'IN_TRANSIT', 'FORMED', 'CANCELLED'},
+        'IN_TRANSIT': {'DELIVERED', 'CANCELLED'},
+        'DELIVERED':  set(),
+        'CANCELLED':  {'DRAFT'},
+    }
+
     def save(self, *args, **kwargs):
         if not self.eori_code and self.carrier:
             self.eori_code = self.carrier.eori_code or ''
@@ -1562,6 +1568,17 @@ class AutoTransport(models.Model):
         
         if self.driver and not self.driver_phone:
             self.driver_phone = self.driver.phone
+        
+        if self.pk:
+            old_status = AutoTransport.objects.filter(pk=self.pk).values_list('status', flat=True).first()
+            if old_status and old_status != self.status:
+                allowed = self.ALLOWED_TRANSITIONS.get(old_status, set())
+                if self.status not in allowed:
+                    from django.core.exceptions import ValidationError
+                    raise ValidationError(
+                        f"Недопустимый переход статуса автовоза: {old_status} → {self.status}. "
+                        f"Допустимые: {', '.join(sorted(allowed)) or 'нет'}"
+                    )
         
         super().save(*args, **kwargs)
     
@@ -1615,7 +1632,11 @@ class AutoTransport(models.Model):
         return Client.objects.filter(car__in=self.cars.all()).distinct()
     
     def generate_invoices(self):
-        """Создать/обновить инвойсы для клиентов"""
+        """Создать/обновить инвойсы для клиентов.
+        
+        Skips invoices that are already PAID or CANCELLED to avoid corrupting
+        finalized financial records.
+        """
         from .models_billing import NewInvoice
         from django.utils import timezone
         
@@ -1623,25 +1644,31 @@ class AutoTransport(models.Model):
         created_invoices = []
         
         for client in clients:
-            # Получаем автомобили этого клиента в автовозе
             client_cars = self.cars.filter(client=client)
             
             if not client_cars.exists():
                 continue
             
-            # Проверяем, есть ли уже инвойс для этого автовоза и клиента
             existing_invoice = NewInvoice.objects.filter(
                 auto_transport=self,
                 recipient_client=client
+            ).exclude(
+                status__in=['PAID', 'CANCELLED']
             ).first()
             
             if existing_invoice:
-                # Обновляем существующий инвойс
                 existing_invoice.cars.set(client_cars)
                 existing_invoice.regenerate_items_from_cars()
                 created_invoices.append(existing_invoice)
             else:
-                # Создаем новый инвойс
+                has_finalized = NewInvoice.objects.filter(
+                    auto_transport=self,
+                    recipient_client=client,
+                    status__in=['PAID', 'CANCELLED']
+                ).exists()
+                if has_finalized:
+                    continue
+
                 from .models import Company
                 company = Company.get_default()
                 

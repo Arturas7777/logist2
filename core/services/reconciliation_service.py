@@ -97,14 +97,17 @@ def get_car_profitability(car_ids=None, container_ids=None, audit_ids=None):
         cost_by_car[cid]['total'] += sc['total']
         cost_by_car[cid]['breakdown'][sc['service_type']] += sc['total']
 
-    target_car_ids = set(cost_by_car.keys())
-    if car_ids:
-        target_car_ids &= set(car_ids)
-    if container_ids:
-        container_cars = set(
-            Car.objects.filter(container_id__in=container_ids).values_list('id', flat=True)
-        )
-        target_car_ids &= container_cars
+    if car_ids or container_ids:
+        target_car_ids = None
+        if car_ids:
+            target_car_ids = set(car_ids)
+        if container_ids:
+            container_car_set = set(
+                Car.objects.filter(container_id__in=container_ids).values_list('id', flat=True)
+            )
+            target_car_ids = container_car_set if target_car_ids is None else (target_car_ids & container_car_set)
+    else:
+        target_car_ids = set(cost_by_car.keys())
 
     if not target_car_ids:
         return []

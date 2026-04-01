@@ -125,6 +125,13 @@ def create_ths_services_for_container(container):
 
     service_type = container.ths_payer if hasattr(container, 'ths_payer') else 'LINE'
 
+    if service_type == 'WAREHOUSE' and not container.warehouse:
+        logger.warning(
+            "Container %s: ths_payer=WAREHOUSE but no warehouse set. Falling back to LINE.",
+            container.number,
+        )
+        service_type = 'LINE'
+
     line_service = None
     if service_type == 'LINE':
         line_service = LineService.objects.filter(
@@ -303,7 +310,7 @@ def _distribute_markup_for_car(car, agreed_total, total_cars_in_container):
     if not non_storage:
         return
 
-    actual_total = sum((svc.custom_price or Decimal('0')) for svc in non_storage)
+    actual_total = sum(Decimal(str(svc.final_price)) for svc in non_storage)
     diff = agreed_total - actual_total
 
     share = (diff / len(non_storage)).quantize(Decimal('0.01'))

@@ -7,6 +7,7 @@ from django.db.models import Sum, Count, Q, F
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
 from datetime import timedelta
+from dateutil.relativedelta import relativedelta
 from decimal import Decimal
 import logging
 
@@ -190,12 +191,10 @@ class DashboardService:
         from ..models_billing import Transaction
         now = timezone.now()
 
-        # Начало периода — первый день (months-1) месяцев назад
-        start_dt = (now - timedelta(days=(months - 1) * 30)).replace(
+        start_dt = (now - relativedelta(months=months - 1)).replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
         )
 
-        # 1 запрос: доходы по месяцам (вместо 6 отдельных)
         rev_qs = (
             Transaction.objects.filter(
                 to_company=self.company,
@@ -209,7 +208,6 @@ class DashboardService:
         )
         rev_map = {row['month'].strftime('%m/%Y'): float(row['total']) for row in rev_qs}
 
-        # 2-й запрос: расходы по месяцам
         exp_qs = (
             Transaction.objects.filter(
                 from_company=self.company,
@@ -223,12 +221,11 @@ class DashboardService:
         )
         exp_map = {row['month'].strftime('%m/%Y'): float(row['total']) for row in exp_qs}
 
-        # Собираем результат по всем месяцам периода
         labels = []
         revenue = []
         expenses = []
         for i in range(months - 1, -1, -1):
-            dt = now - timedelta(days=i * 30)
+            dt = now - relativedelta(months=i)
             month_start = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             label = month_start.strftime('%m/%Y')
             labels.append(label)

@@ -519,8 +519,11 @@ def add_services(request, car_id):
 
         added_count = 0
         if to_create:
-            CarService.objects.bulk_create(to_create, ignore_conflicts=True)
-            added_count = len(to_create)
+            created = CarService.objects.bulk_create(to_create, ignore_conflicts=True)
+            added_count = CarService.objects.filter(
+                car=car, service_type=service_type_upper,
+                service_id__in=[s.service_id for s in to_create]
+            ).count() - len(existing_ids)
 
         if added_count > 0:
             return JsonResponse({

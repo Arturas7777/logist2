@@ -372,10 +372,9 @@ class SiteProService:
                     items_errors.append(str(e)[:200])
                     logger.error(f'[SitePro] Ошибка создания позиции: {e}')
 
-            # Обновляем запись синхронизации
             sync.external_id = str(sale_id)
             sync.external_number = str(sale_number)
-            sync.sync_status = 'SENT'
+            sync.sync_status = 'PARTIAL' if items_errors else 'SENT'
             sync.error_message = '; '.join(items_errors) if items_errors else ''
             sync.last_synced_at = timezone.now()
             sync.save()
@@ -535,6 +534,10 @@ class SiteProService:
         try:
             result = self._api_post(self.SALE_PDF, {'id': int(sync.external_id)})
 
+            if not isinstance(result, dict):
+                logger.warning(f'[SitePro] Неожиданный ответ API для PDF инвойса {invoice.number}: {type(result)}')
+                return ''
+
             pdf_url = result.get('url', '') or result.get('pdfUrl', '') or ''
 
             if pdf_url:
@@ -547,6 +550,9 @@ class SiteProService:
 
         except SiteProAPIError as e:
             logger.error(f'[SitePro] Ошибка получения PDF для инвойса {invoice.number}: {e}')
+            return ''
+        except (TypeError, ValueError, AttributeError) as e:
+            logger.error(f'[SitePro] Ошибка обработки ответа PDF для инвойса {invoice.number}: {e}')
             return ''
 
     # ========================================================================

@@ -228,36 +228,37 @@ class ContainerNotificationService:
     def send_planned_to_all_clients(container, user=None):
         """
         Отправляет уведомление о планируемой разгрузке всем клиентам с автомобилями в контейнере.
+        Использует select_for_update для предотвращения дублирования при параллельных вызовах.
         
         Returns:
             tuple: (sent_count, failed_count) - количество клиентов, которым отправлено/не отправлено
         """
         from core.models_website import NotificationLog
+        from django.db import transaction as db_transaction
         
-        # Проверяем, не отправляли ли уже уведомление о планируемой разгрузке для этого контейнера
-        already_notified_clients = set(
-            NotificationLog.objects.filter(
-                container=container,
-                notification_type='PLANNED',
-                success=True
-            ).values_list('client_id', flat=True)
-        )
-        
-        # Получаем уникальных клиентов с email
-        clients = set()
-        for car in container.container_cars.select_related('client').all():
-            if car.client and car.client.has_notification_emails() and car.client.notification_enabled:
-                if car.client.id not in already_notified_clients:
-                    clients.add(car.client)
-        
-        sent = 0
-        failed = 0
-        
-        for client in clients:
-            if ContainerNotificationService.send_planned_notification(container, client, user):
-                sent += 1
-            else:
-                failed += 1
+        with db_transaction.atomic():
+            already_notified_clients = set(
+                NotificationLog.objects.select_for_update().filter(
+                    container=container,
+                    notification_type='PLANNED',
+                    success=True
+                ).values_list('client_id', flat=True)
+            )
+            
+            clients = set()
+            for car in container.container_cars.select_related('client').all():
+                if car.client and car.client.has_notification_emails() and car.client.notification_enabled:
+                    if car.client.id not in already_notified_clients:
+                        clients.add(car.client)
+            
+            sent = 0
+            failed = 0
+            
+            for client in clients:
+                if ContainerNotificationService.send_planned_notification(container, client, user):
+                    sent += 1
+                else:
+                    failed += 1
         
         return sent, failed
     
@@ -265,36 +266,37 @@ class ContainerNotificationService:
     def send_unload_to_all_clients(container, user=None):
         """
         Отправляет уведомление о разгрузке всем клиентам с автомобилями в контейнере.
+        Использует select_for_update для предотвращения дублирования при параллельных вызовах.
         
         Returns:
             tuple: (sent_count, failed_count) - количество клиентов, которым отправлено/не отправлено
         """
         from core.models_website import NotificationLog
+        from django.db import transaction as db_transaction
         
-        # Проверяем, не отправляли ли уже уведомление о разгрузке для этого контейнера
-        already_notified_clients = set(
-            NotificationLog.objects.filter(
-                container=container,
-                notification_type='UNLOADED',
-                success=True
-            ).values_list('client_id', flat=True)
-        )
-        
-        # Получаем уникальных клиентов с email
-        clients = set()
-        for car in container.container_cars.select_related('client').all():
-            if car.client and car.client.has_notification_emails() and car.client.notification_enabled:
-                if car.client.id not in already_notified_clients:
-                    clients.add(car.client)
-        
-        sent = 0
-        failed = 0
-        
-        for client in clients:
-            if ContainerNotificationService.send_unload_notification(container, client, user):
-                sent += 1
-            else:
-                failed += 1
+        with db_transaction.atomic():
+            already_notified_clients = set(
+                NotificationLog.objects.select_for_update().filter(
+                    container=container,
+                    notification_type='UNLOADED',
+                    success=True
+                ).values_list('client_id', flat=True)
+            )
+            
+            clients = set()
+            for car in container.container_cars.select_related('client').all():
+                if car.client and car.client.has_notification_emails() and car.client.notification_enabled:
+                    if car.client.id not in already_notified_clients:
+                        clients.add(car.client)
+            
+            sent = 0
+            failed = 0
+            
+            for client in clients:
+                if ContainerNotificationService.send_unload_notification(container, client, user):
+                    sent += 1
+                else:
+                    failed += 1
         
         return sent, failed
     

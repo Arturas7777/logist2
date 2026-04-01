@@ -566,7 +566,7 @@ class CarAdmin(admin.ModelAdmin):
 
     def set_status_floating(self, request, queryset):
         updated = queryset.update(status='FLOATING')
-        for obj in queryset:
+        for obj in Car.objects.filter(pk__in=queryset.values_list('pk', flat=True)):
             obj.calculate_total_price()
             Car.objects.filter(pk=obj.pk).update(days=obj.days, storage_cost=obj.storage_cost, total_price=obj.total_price)
         self.message_user(request, f"Статус изменён на 'В пути' для {updated} автомобилей.")
@@ -574,7 +574,7 @@ class CarAdmin(admin.ModelAdmin):
 
     def set_status_in_port(self, request, queryset):
         updated = queryset.update(status='IN_PORT')
-        for obj in queryset:
+        for obj in Car.objects.filter(pk__in=queryset.values_list('pk', flat=True)):
             obj.calculate_total_price()
             Car.objects.filter(pk=obj.pk).update(days=obj.days, storage_cost=obj.storage_cost, total_price=obj.total_price)
         self.message_user(request, f"Статус изменён на 'В порту' для {updated} автомобилей.")
@@ -582,7 +582,7 @@ class CarAdmin(admin.ModelAdmin):
 
     def set_status_unloaded(self, request, queryset):
         updated = 0
-        for obj in queryset:
+        for obj in Car.objects.filter(pk__in=queryset.values_list('pk', flat=True)):
             if obj.warehouse and obj.unload_date:
                 obj.status = 'UNLOADED'
                 obj.calculate_total_price()
@@ -594,9 +594,10 @@ class CarAdmin(admin.ModelAdmin):
     set_status_unloaded.short_description = "Изменить статус на Разгружен"
 
     def set_status_transferred(self, request, queryset):
+        car_pks = list(queryset.values_list('pk', flat=True))
         updated = queryset.update(status='TRANSFERRED')
-        for obj in queryset:
-            if obj.status == 'TRANSFERRED' and not obj.transfer_date:
+        for obj in Car.objects.filter(pk__in=car_pks):
+            if not obj.transfer_date:
                 obj.transfer_date = timezone.now().date()
             obj.calculate_total_price()
             Car.objects.filter(pk=obj.pk).update(transfer_date=obj.transfer_date, days=obj.days, storage_cost=obj.storage_cost, total_price=obj.total_price)
@@ -606,9 +607,6 @@ class CarAdmin(admin.ModelAdmin):
     def set_title_with_us(self, request, queryset):
         logger.info(f"Setting has_title=True for {queryset.count()} cars")
         updated = queryset.update(has_title=True)
-        for obj in queryset:
-            logger.debug(f"Updating car {obj.vin} with has_title=True")
-            obj.save()
         self.message_user(request, f"Тайтл установлен как 'У нас' для {updated} автомобилей.")
     set_title_with_us.short_description = "Тайтл у нас"
 

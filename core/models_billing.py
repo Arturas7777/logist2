@@ -765,17 +765,16 @@ class NewInvoice(models.Model):
             return
         if self.total > 0 and self.paid_amount >= self.total:
             self.status = 'PAID'
+        elif self.total == 0 and self.paid_amount >= 0:
+            if self.status not in ('DRAFT', 'ISSUED'):
+                self.status = 'ISSUED'
         elif self.paid_amount > 0 and self.total > 0:
             self.status = 'PARTIALLY_PAID'
-        elif self.status == 'DRAFT':
-            pass
         elif self.total > 0 and self.paid_amount == 0:
             if self.is_overdue:
                 self.status = 'OVERDUE'
             elif self.status not in ('DRAFT', 'ISSUED'):
                 self.status = 'ISSUED'
-        elif self.status == 'PAID' and self.total == 0:
-            self.status = 'ISSUED'
     
     def generate_number(self):
         """Сгенерировать уникальный номер инвойса.

@@ -104,15 +104,9 @@ class WarehouseAdmin(admin.ModelAdmin):
             <div style="background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #dee2e6;">
                 <h3 style="margin-top:0; color:#495057;">Баланс склада</h3>
 
-                <div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">
-                    <strong>Баланс:</strong><br>
-                    <span style="font-size:18px; color:{'#28a745' if balance >= 0 else '#dc3545'};">{balance:.2f}</span>
-                </div>
-                </div>
-
-                <div style="background:white; padding:15px; border-radius:5px; border:2px solid {'#28a745' if total_balance >= 0 else '#dc3545'};">
-                    <strong style="color:{'#28a745' if total_balance >= 0 else '#dc3545'};">Общий баланс:</strong><br>
-                    <span style="font-size:24px; font-weight:bold; color:{'#28a745' if total_balance >= 0 else '#dc3545'};">{total_balance:.2f}</span>
+                <div style="background:white; padding:15px; border-radius:5px; border:2px solid {'#28a745' if balance >= 0 else '#dc3545'};">
+                    <strong style="color:{'#28a745' if balance >= 0 else '#dc3545'};">Баланс:</strong><br>
+                    <span style="font-size:24px; font-weight:bold; color:{'#28a745' if balance >= 0 else '#dc3545'};">{balance:.2f}</span>
                 </div>
             </div>
             """
@@ -166,19 +160,19 @@ class WarehouseAdmin(admin.ModelAdmin):
     balance_transactions_display.short_description = 'Платежи'
 
     def reset_warehouse_balance(self, request, queryset):
-        """Resets balances for selected warehouses"""
+        """Recalculates balances for selected warehouses from transaction history."""
         from django.contrib import messages
+        from core.models_billing import Transaction
 
         try:
             for warehouse in queryset:
-                warehouse.balance = 0
-                warehouse.save()
+                Transaction.recalculate_entity_balance(warehouse)
 
-            messages.success(request, f'Балансы {queryset.count()} складов успешно обнулены')
+            messages.success(request, f'Балансы {queryset.count()} складов пересчитаны из истории транзакций')
         except Exception as e:
-            messages.error(request, f'Ошибка при обнулении балансов: {e}')
+            messages.error(request, f'Ошибка при пересчёте балансов: {e}')
 
-    reset_warehouse_balance.short_description = 'Обнулить балансы выбранных складов'
+    reset_warehouse_balance.short_description = 'Пересчитать балансы выбранных складов'
 
 
 
@@ -486,10 +480,6 @@ class ClientAdmin(admin.ModelAdmin):
 
     sync_all_balances.short_description = 'Синхронизировать инвойс-балансы'
 
-    def get_queryset(self, request):
-        """Get queryset with optimization"""
-        return Client.objects.with_balance_info()
-
     def change_view(self, request, object_id, form_url='', extra_context=None):
         extra_context = extra_context or {}
         client = self.get_object(request, object_id)
@@ -601,75 +591,51 @@ class ClientAdmin(admin.ModelAdmin):
         return render(request, 'admin/client_topup.html', context)
 
     def reset_balance_view(self, request, client_id):
-        """Reset client balance"""
+        """Reset client balance by creating an adjustment transaction (POST only)."""
         from django.shortcuts import redirect
         from django.contrib import messages
         from decimal import Decimal
+        from core.services.billing_service import BillingService
 
         client = Client.objects.get(pk=client_id)
-        old_balance = client.balance
 
-        client.balance = Decimal('0.00')
-        client.save(update_fields=['balance'])
+        if request.method != 'POST':
+            messages.error(request, 'Обнуление баланса доступно только через POST-запрос.')
+            return redirect('admin:core_client_change', client_id)
+
+        if not request.POST.get('confirm'):
+            messages.warning(request, 'Обнуление баланса не подтверждено.')
+            return redirect('admin:core_client_change', client_id)
+
+        old_balance = client.balance
+        if old_balance != Decimal('0.00'):
+            BillingService.adjust_balance(
+                entity=client,
+                amount=-old_balance,
+                reason=f'Обнуление баланса (был: {old_balance}EUR)',
+                created_by=request.user if request.user.is_authenticated else None,
+            )
+            client.refresh_from_db()
 
         messages.success(request, f'Баланс клиента {client.name} обнулён (был: {old_balance}EUR)')
         return redirect('admin:core_client_change', client_id)
 
     def recalc_balance_view(self, request, client_id):
-        """Recalculate client balance based on transactions"""
+        """Recalculate client balance using canonical logic (sum all COMPLETED transactions)."""
         from django.shortcuts import redirect
         from django.contrib import messages
-        from django.db.models import Sum
-        from decimal import Decimal
         from core.models_billing import Transaction
 
         client = Client.objects.get(pk=client_id)
         old_balance = client.balance
 
-        # Incoming: top-ups, refunds, positive adjustments
-        topups = Transaction.objects.filter(
-            to_client=client,
-            type='BALANCE_TOPUP',
-            status='COMPLETED'
-        ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
-
-        refunds = Transaction.objects.filter(
-            to_client=client,
-            type='REFUND',
-            status='COMPLETED'
-        ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
-
-        adjustments_in = Transaction.objects.filter(
-            to_client=client,
-            type='ADJUSTMENT',
-            status='COMPLETED'
-        ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
-
-        # Outgoing: payments, negative adjustments
-        payments = Transaction.objects.filter(
-            from_client=client,
-            type='PAYMENT',
-            status='COMPLETED'
-        ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
-
-        adjustments_out = Transaction.objects.filter(
-            from_client=client,
-            type='ADJUSTMENT',
-            status='COMPLETED'
-        ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
-
-        incoming = topups + refunds + adjustments_in
-        outgoing = payments + adjustments_out
-        new_balance = incoming - outgoing
-
-        client.balance = new_balance
-        client.save(update_fields=['balance'])
+        Transaction.recalculate_entity_balance(client)
+        client.refresh_from_db()
 
         messages.success(
             request,
-            f'Баланс пересчитан: {old_balance}EUR → {new_balance}EUR '
-            f'(пополнения: {topups}, возвраты: {refunds}, корр.вход: {adjustments_in}, '
-            f'платежи: {payments}, корр.выход: {adjustments_out})'
+            f'Баланс пересчитан: {old_balance}EUR → {client.balance}EUR '
+            f'(canonical: sum(incoming) - sum(outgoing) всех COMPLETED транзакций)'
         )
         return redirect('admin:core_client_change', client_id)
 
