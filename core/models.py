@@ -43,10 +43,17 @@ VEHICLE_TYPE_CHOICES = [
 class Line(models.Model):
     name = models.CharField(max_length=100, verbose_name="Название линии", db_index=True)
     
-    # Единый баланс (новая система)
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс",
                                   help_text="Положительный = нам должны, отрицательный = мы должны")
     balance_updated_at = models.DateTimeField(auto_now=True, verbose_name="Баланс обновлен")
+    
+    def get_balance_breakdown(self):
+        from .models_billing import SimpleBalanceMixin
+        return SimpleBalanceMixin.get_balance_breakdown(self)
+    
+    def get_balance_info(self):
+        from .models_billing import SimpleBalanceMixin
+        return SimpleBalanceMixin.get_balance_info(self)
     
     # Услуги и цены
     ocean_freight_rate = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Стоимость перевозки (за авто)")
@@ -99,10 +106,17 @@ class Carrier(models.Model):
     eori_code = models.CharField(max_length=50, blank=True, null=True, verbose_name="EORI код",
                                   help_text="Код EORI перевозчика для таможенного оформления")
     
-    # Единый баланс (новая система)
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс",
                                   help_text="Положительный = нам должны, отрицательный = мы должны")
     balance_updated_at = models.DateTimeField(auto_now=True, verbose_name="Баланс обновлен")
+    
+    def get_balance_breakdown(self):
+        from .models_billing import SimpleBalanceMixin
+        return SimpleBalanceMixin.get_balance_breakdown(self)
+    
+    def get_balance_info(self):
+        from .models_billing import SimpleBalanceMixin
+        return SimpleBalanceMixin.get_balance_info(self)
     
     # Услуги и цены
     transport_rate = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Стоимость перевозки (за км)")
@@ -203,10 +217,17 @@ class Client(models.Model):
         help_text="NONE=обычные наценки, FIXED=фикс.цена (не зависит от кол-ва), FLEXIBLE=цена зависит от кол-ва авто в контейнере"
     )
 
-    # Единый баланс (новая система)
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс", 
                                    help_text="Положительный = переплата, отрицательный = долг")
     balance_updated_at = models.DateTimeField(auto_now=True, verbose_name="Баланс обновлен")
+    
+    def get_balance_breakdown(self):
+        from .models_billing import SimpleBalanceMixin
+        return SimpleBalanceMixin.get_balance_breakdown(self)
+    
+    def get_balance_info(self):
+        from .models_billing import SimpleBalanceMixin
+        return SimpleBalanceMixin.get_balance_info(self)
     
     objects = OptimizedClientManager()
     
@@ -316,7 +337,6 @@ class Warehouse(models.Model):
     address3_name = models.CharField(max_length=100, blank=True, verbose_name="Название площадки 3")
     address3 = models.CharField(max_length=300, blank=True, verbose_name="Адрес площадки 3")
 
-    # Единый баланс (новая система)
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс",
                                   help_text="Положительный = нам должны, отрицательный = мы должны")
     balance_updated_at = models.DateTimeField(auto_now=True, verbose_name="Баланс обновлен")
@@ -341,6 +361,14 @@ class Warehouse(models.Model):
 
     def __str__(self):
         return self.name
+    
+    def get_balance_breakdown(self):
+        from .models_billing import SimpleBalanceMixin
+        return SimpleBalanceMixin.get_balance_breakdown(self)
+    
+    def get_balance_info(self):
+        from .models_billing import SimpleBalanceMixin
+        return SimpleBalanceMixin.get_balance_info(self)
 
     def get_site_address(self, site_number):
         """Возвращает (name, address) для площадки 1/2/3"""
@@ -453,10 +481,9 @@ class Container(models.Model):
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
-        # Валидация перед сохранением (clean() из админки вызывается автоматически,
-        # но при сохранении через код — проверяем здесь)
+        from django.core.exceptions import ValidationError
         if self.status == 'UNLOADED' and (not self.warehouse or not self.unload_date):
-            raise ValueError("Для статуса 'Разгружен' обязательны поля 'Склад' и 'Дата разгрузки'")
+            raise ValidationError("Для статуса 'Разгружен' обязательны поля 'Склад' и 'Дата разгрузки'")
         super().save(*args, **kwargs)
 
     def sync_cars_after_warehouse_change(self):
@@ -1044,13 +1071,9 @@ class Car(models.Model):
             self.transfer_date = timezone.now().date()
 
     def save(self, *args, **kwargs):
-        # Шаг 1: наследуем данные контейнера
         self._inherit_from_container()
-        
-        # Шаг 2: синхронизируем статус/даты
         self._sync_status_and_dates()
 
-        # Шаг 3: на создании — тянем дефолты склада ДО первого save()
         is_new = self.pk is None
         if is_new and self.warehouse:
             try:
@@ -1058,29 +1081,20 @@ class Car(models.Model):
             except Exception as e:
                 logger.error(f"Failed to set initial warehouse values for car {self.vin}: {e}")
 
-        # Шаг 4: сохраняем объект
         super().save(*args, **kwargs)
         
-        # Шаг 5: пересчёт цены ПОСЛЕ сохранения (нужен pk для запросов CarService)
-        # calculate_total_price() обновляет days, storage_cost, total_price и CarService «Хранение»
+        # Recalculate price AFTER initial save (needs pk for CarService queries).
+        # Uses a single atomic update instead of a second save to avoid race conditions.
         try:
-            old_total = self.total_price
-            old_days = self.days
-            old_storage = self.storage_cost
             self.calculate_total_price()
-            update_fields = {}
-            if self.total_price != old_total:
-                update_fields['total_price'] = self.total_price
-            if self.days != old_days:
-                update_fields['days'] = self.days
-            if self.storage_cost != old_storage:
-                update_fields['storage_cost'] = self.storage_cost
-            if update_fields:
-                Car.objects.filter(pk=self.pk).update(**update_fields)
+            Car.objects.filter(pk=self.pk).update(
+                total_price=self.total_price,
+                days=self.days,
+                storage_cost=self.storage_cost,
+            )
         except Exception as e:
             logger.error(f"Failed to calculate total price for car {self.vin}: {e}")
 
-        # Шаг 6: обновляем связанные объекты
         if self.pk:
             try:
                 Car.objects.update_related(self)
@@ -1093,7 +1107,6 @@ class Car(models.Model):
                 except Exception as e:
                     logger.error(f"Failed to check container status for car {self.id}: {e}")
 
-        # Шаг 7: WebSocket-уведомление (после коммита транзакции)
         car_id = self.pk
         car_status = self.status
         car_storage = str(self.storage_cost)
@@ -1186,12 +1199,10 @@ class Company(models.Model):
     
     name = models.CharField(max_length=100, default="Caromoto Lithuania", verbose_name="Название компании", db_index=True)
     
-    # Единый баланс (новая система)
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс",
                                   help_text="Положительный = нам должны, отрицательный = мы должны")
     balance_updated_at = models.DateTimeField(auto_now=True, verbose_name="Баланс обновлен")
     
-    # Метаданные
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
     
@@ -1203,6 +1214,14 @@ class Company(models.Model):
     
     def __str__(self):
         return self.name
+    
+    def get_balance_breakdown(self):
+        from .models_billing import SimpleBalanceMixin
+        return SimpleBalanceMixin.get_balance_breakdown(self)
+    
+    def get_balance_info(self):
+        from .models_billing import SimpleBalanceMixin
+        return SimpleBalanceMixin.get_balance_info(self)
 
     @classmethod
     def get_default(cls):
@@ -1217,11 +1236,16 @@ class Company(models.Model):
 
     @classmethod
     def get_default_id(cls):
-        """Возвращает ID компании по умолчанию. Кэширует результат."""
-        if not hasattr(cls, '_default_company_id_cache'):
-            company = cls.get_default()
-            cls._default_company_id_cache = company.pk if company else None
-        return cls._default_company_id_cache
+        """Возвращает ID компании по умолчанию. Кэширует через Django cache (TTL 5 мин)."""
+        from django.core.cache import cache
+        cache_key = 'company:default_id'
+        result = cache.get(cache_key)
+        if result is not None:
+            return result if result != '__none__' else None
+        company = cls.get_default()
+        value = company.pk if company else None
+        cache.set(cache_key, value if value is not None else '__none__', 300)
+        return value
 
 
 class CompanyService(models.Model):
@@ -1528,22 +1552,40 @@ class AutoTransport(models.Model):
         return f"Автовоз {self.number} - {self.carrier.name}"
     
     def save(self, *args, **kwargs):
-        # Автоматически подтягиваем EORI код из перевозчика если не указан
         if not self.eori_code and self.carrier:
             self.eori_code = self.carrier.eori_code or ''
         
-        # Генерируем номер если не указан
         if not self.number:
-            from django.utils import timezone
-            date_str = timezone.now().strftime('%Y%m%d')
-            count = AutoTransport.objects.filter(number__startswith=f'AT-{date_str}').count()
-            self.number = f'AT-{date_str}-{count + 1:03d}'
+            from django.db import transaction as db_transaction
+            with db_transaction.atomic():
+                self.number = self._generate_number()
         
-        # Подтягиваем телефон водителя если выбран водитель
         if self.driver and not self.driver_phone:
             self.driver_phone = self.driver.phone
         
         super().save(*args, **kwargs)
+    
+    @staticmethod
+    def _generate_number():
+        """Generate unique number using select_for_update to prevent duplicates."""
+        date_str = timezone.now().strftime('%Y%m%d')
+        prefix = f'AT-{date_str}'
+        last = (
+            AutoTransport.objects
+            .filter(number__startswith=prefix)
+            .select_for_update()
+            .order_by('-number')
+            .first()
+        )
+        if last:
+            try:
+                last_num = int(last.number.split('-')[-1])
+                next_num = last_num + 1
+            except (ValueError, IndexError):
+                next_num = 1
+        else:
+            next_num = 1
+        return f'{prefix}-{next_num:03d}'
     
     @property
     def truck_full_number(self):
