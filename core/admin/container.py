@@ -14,10 +14,10 @@ from decimal import Decimal
 from core.models import (
     Car, Container, CarService, WarehouseService, LineService,
     CarrierService, CompanyService,
-    recalculate_car_price_on_service_save,
-    recalculate_car_price_on_service_delete,
 )
 from core.signals import (
+    recalculate_car_price_on_service_save,
+    recalculate_car_price_on_service_delete,
     update_related_on_car_save,
     create_car_services_on_car_save,
     recalculate_invoices_on_car_service_save,
@@ -198,7 +198,7 @@ class ContainerAdmin(admin.ModelAdmin):
         if should_create_ths:
             line_start = time.time()
             try:
-                from core.signals import create_ths_services_for_container, apply_client_tariffs_for_container
+                from core.services.car_service_manager import create_ths_services_for_container, apply_client_tariffs_for_container
                 from core.models_billing import NewInvoice
 
                 logger.info(f"[TIMING] THS-related change started for container {obj.id}, line: {obj.line}, ths: {obj.ths}, ths_payer: {obj.ths_payer}")
@@ -375,7 +375,7 @@ class ContainerAdmin(admin.ModelAdmin):
         # ALWAYS recalculate THS if line and ths exist (even without explicit changes)
         if parent.line and parent.ths:
             try:
-                from core.signals import create_ths_services_for_container, apply_client_tariffs_for_container
+                from core.services.car_service_manager import create_ths_services_for_container, apply_client_tariffs_for_container
                 from django.db import transaction
 
                 # Force refresh container data from DB

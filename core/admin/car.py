@@ -1012,7 +1012,7 @@ class CarAdmin(admin.ModelAdmin):
         if change and form and 'client' in getattr(form, 'changed_data', []):
             if obj.status != 'TRANSFERRED':
                 try:
-                    from core.signals import apply_client_tariff_for_car
+                    from core.services.car_service_manager import apply_client_tariff_for_car
                     apply_client_tariff_for_car(obj)
                     obj.calculate_total_price()
                     Car.objects.filter(pk=obj.pk).update(total_price=obj.total_price)
