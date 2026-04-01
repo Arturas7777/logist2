@@ -10,6 +10,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 
 from core.models import Car, Container, Client, Company
 from core.models_billing import NewInvoice as Invoice, Transaction as Payment
+from core.services.billing_service import BillingService
 
 logger = logging.getLogger('django')
 
@@ -49,21 +50,30 @@ def register_payment(request):
 
             method = 'BALANCE' if from_balance else (payment_method or 'TRANSFER')
 
-            payment = Payment(
-                type='PAYMENT',
-                method=method,
-                status='COMPLETED',
-                invoice=invoice,
-                amount=amount,
-                description=description or f'Платёж на сумму {amount}',
-                from_client=payer,
-                to_company=Company.get_default(),
-                created_by=request.user if request.user.is_authenticated else None,
-            )
-            payment.save()
+            if invoice:
+                if not payer:
+                    payer = invoice.recipient
+                result = BillingService.pay_invoice(
+                    invoice=invoice,
+                    amount=amount,
+                    method=method,
+                    payer=payer,
+                    description=description or f'Платёж на сумму {amount}',
+                    created_by=request.user if request.user.is_authenticated else None,
+                )
+            else:
+                payment = Payment(
+                    type='PAYMENT',
+                    method=method,
+                    status='COMPLETED',
+                    amount=amount,
+                    description=description or f'Платёж на сумму {amount}',
+                    from_client=payer,
+                    to_company=Company.get_default(),
+                    created_by=request.user if request.user.is_authenticated else None,
+                )
+                payment.save()
 
-            # paid_amount and balance are recalculated by post_save signal on Transaction;
-            # refresh to return the up-to-date values.
             if payer:
                 payer.refresh_from_db()
 

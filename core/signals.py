@@ -110,8 +110,10 @@ def update_related_on_container_save(sender, instance, created, **kwargs):
                 instance.number, old_unload_date, new_unload_date,
             )
             try:
-                first_car = instance.container_cars.first()
-                if first_car and first_car.unload_date == new_unload_date:
+                out_of_sync = instance.container_cars.exclude(
+                    unload_date=new_unload_date
+                ).count()
+                if out_of_sync == 0:
                     return
 
                 updated_count = instance.container_cars.update(unload_date=new_unload_date)
@@ -320,7 +322,11 @@ def recalculate_car_price_on_service_save(sender, instance, **kwargs):
         return
     try:
         instance.car.calculate_total_price()
-        Car.objects.filter(id=instance.car.id).update(total_price=instance.car.total_price)
+        Car.objects.filter(id=instance.car.id).update(
+            total_price=instance.car.total_price,
+            days=instance.car.days,
+            storage_cost=instance.car.storage_cost,
+        )
     except Exception as e:
         logger.error("Error recalculating price on service save: %s", e)
 
@@ -331,7 +337,11 @@ def recalculate_car_price_on_service_delete(sender, instance, **kwargs):
         return
     try:
         instance.car.calculate_total_price()
-        Car.objects.filter(id=instance.car.id).update(total_price=instance.car.total_price)
+        Car.objects.filter(id=instance.car.id).update(
+            total_price=instance.car.total_price,
+            days=instance.car.days,
+            storage_cost=instance.car.storage_cost,
+        )
     except Exception as e:
         logger.error("Error recalculating price on service delete: %s", e)
 

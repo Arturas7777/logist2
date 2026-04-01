@@ -74,9 +74,9 @@ class ComparisonService:
             'car_vin': car.vin,
             'car_brand': car.brand,
             'car_year': car.year,
-            'car_total_cost': float(car_total_cost),
-            'warehouse_invoices_total': float(warehouse_invoices_total),
-            'difference': float(difference),
+            'car_total_cost': str(car_total_cost),
+            'warehouse_invoices_total': str(warehouse_invoices_total),
+            'difference': str(difference),
             'warehouse_name': car.warehouse.name,
             'invoices_count': warehouse_invoices.count()
         }
@@ -159,9 +159,9 @@ class ComparisonService:
             'message': message,
             'client_name': client.name,
             'cars_count': cars_count,
-            'cars_total_cost': float(cars_total_cost),
-            'warehouse_invoices_total': float(warehouse_invoices_total),
-            'difference': float(difference),
+            'cars_total_cost': str(cars_total_cost),
+            'warehouse_invoices_total': str(warehouse_invoices_total),
+            'difference': str(difference),
             'invoices_count': wh_agg['inv_count'],
             'period': {
                 'start_date': start_date,
@@ -242,10 +242,10 @@ class ComparisonService:
             'message': message,
             'warehouse_name': warehouse.name,
             'invoices_count': invoices.count(),
-            'invoices_total': float(invoices_total),
+            'invoices_total': str(invoices_total),
             'payments_count': payments_query.count(),
-            'payments_total': float(payments_total),
-            'difference': float(difference),
+            'payments_total': str(payments_total),
+            'difference': str(difference),
             'period': {
                 'start_date': start_date,
                 'end_date': end_date
@@ -302,13 +302,13 @@ class ComparisonService:
             },
             'summary': {
                 'cars_count': cars_agg['cnt'],
-                'cars_total': float(cars_total),
+                'cars_total': str(cars_total),
                 'invoices_count': invoices_agg['cnt'],
-                'invoices_total': float(invoices_total),
+                'invoices_total': str(invoices_total),
                 'payments_count': payments_agg['cnt'],
-                'payments_total': float(payments_total),
-                'cars_vs_invoices_difference': float(cars_vs_invoices_diff),
-                'invoices_vs_payments_difference': float(invoices_vs_payments_diff)
+                'payments_total': str(payments_total),
+                'cars_vs_invoices_difference': str(cars_vs_invoices_diff),
+                'invoices_vs_payments_difference': str(invoices_vs_payments_diff)
             },
             'status': 'success'
         }
@@ -361,9 +361,9 @@ class ComparisonService:
                 'status': status, 'message': message,
                 'client_name': client_name,
                 'cars_count': row['cars_count'],
-                'cars_total_cost': float(cars_total),
-                'warehouse_invoices_total': float(wh_total),
-                'difference': float(diff),
+                'cars_total_cost': str(cars_total),
+                'warehouse_invoices_total': str(wh_total),
+                'difference': str(diff),
                 'invoices_count': 0,
                 'period': {'start_date': start_date, 'end_date': end_date},
             })
@@ -422,10 +422,10 @@ class ComparisonService:
                 'status': status, 'message': message,
                 'warehouse_name': wh_name,
                 'invoices_count': inv_data.get('cnt', 0),
-                'invoices_total': float(inv_total),
+                'invoices_total': str(inv_total),
                 'payments_count': 0,
-                'payments_total': float(pay_total),
-                'difference': float(diff),
+                'payments_total': str(pay_total),
+                'difference': str(diff),
                 'period': {'start_date': start_date, 'end_date': end_date},
             })
         return results

@@ -153,9 +153,14 @@ class ContainerAdmin(admin.ModelAdmin):
                 with signals_disabled(*CAR_SIGNALS):
                     cars_to_update = []
                     affected_invoices = set()
+                    update_fields = ['unload_date', 'days', 'storage_cost', 'total_price']
 
                     for car in obj.container_cars.select_related('warehouse').all():
                         car.unload_date = obj.unload_date
+                        if not obj.unload_date and car.status == 'UNLOADED':
+                            car.status = obj.status or 'IN_PORT'
+                            if 'status' not in update_fields:
+                                update_fields.append('status')
                         car.update_days_and_storage()
                         car.calculate_total_price()
                         cars_to_update.append(car)
@@ -166,7 +171,7 @@ class ContainerAdmin(admin.ModelAdmin):
                     if cars_to_update:
                         Car.objects.bulk_update(
                             cars_to_update,
-                            ['unload_date', 'days', 'storage_cost', 'total_price'],
+                            update_fields,
                             batch_size=50
                         )
                         logger.info(f"Bulk updated {len(cars_to_update)} cars in container {obj.number}")

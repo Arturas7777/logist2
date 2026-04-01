@@ -314,73 +314,70 @@ class BillingService:
                       'overpayment': Decimal
                   }
         """
-        from core.models_billing import Transaction
+        from core.models_billing import Transaction, NewInvoice
         
-        # Валидация
         amount = cls.quantize(amount)
         
         if amount <= 0:
             raise ValueError("Сумма платежа должна быть положительной")
         
-        if invoice.status == 'CANCELLED':
+        locked_invoice = NewInvoice.objects.select_for_update().get(pk=invoice.pk)
+        
+        if locked_invoice.status == 'CANCELLED':
             raise ValueError("Нельзя оплатить отмененный инвойс")
         
-        if invoice.status == 'PAID':
+        if locked_invoice.status == 'PAID':
             raise ValueError("Инвойс уже полностью оплачен")
         
-        if invoice.currency and hasattr(invoice, 'currency'):
-            from core.models_billing import Transaction as TrxModel
-            valid_currencies = dict(TrxModel.CURRENCY_CHOICES)
-            if invoice.currency not in valid_currencies:
-                raise ValueError(f"Неизвестная валюта инвойса: {invoice.currency}")
+        remaining = locked_invoice.remaining_amount
+        if amount > remaining and remaining > 0:
+            amount = remaining
         
-        # Определяем отправителя (плательщика)
         payer_type = payer.__class__.__name__
         from_field = f'from_{payer_type.lower()}'
         
-        # Определяем получателя (выставителя инвойса)
-        invoice_issuer = invoice.issuer
+        invoice_issuer = locked_invoice.issuer
+        if not invoice_issuer:
+            raise ValueError("У инвойса не указан выставитель")
         issuer_type = invoice_issuer.__class__.__name__
         to_field = f'to_{issuer_type.lower()}'
         
-        # Создаем транзакцию
         trx = Transaction(
             type='PAYMENT',
             method=method,
-            invoice=invoice,
+            invoice=locked_invoice,
             amount=amount,
-            description=description or f"Оплата инвойса {invoice.number}",
+            currency=locked_invoice.currency or 'EUR',
+            description=description or f"Оплата инвойса {locked_invoice.number}",
             created_by=created_by,
             status='COMPLETED'
         )
         
-        # Устанавливаем отправителя и получателя
         setattr(trx, from_field, payer)
-        setattr(trx, to_field, invoice.issuer)
+        setattr(trx, to_field, invoice_issuer)
         
         trx.save()
         
-        logger.info(f"Created payment transaction {trx.number}: {amount} for invoice {invoice.number}")
+        logger.info(f"Created payment transaction {trx.number}: {amount} for invoice {locked_invoice.number}")
         
-        # Балансы и paid_amount пересчитываются автоматически сигналом post_save Transaction
+        locked_invoice.refresh_from_db()
         invoice.refresh_from_db()
         
-        remaining = invoice.remaining_amount
+        remaining = locked_invoice.remaining_amount
         overpayment = Decimal('0.00')
         
-        if invoice.paid_amount > invoice.total:
-            overpayment = invoice.paid_amount - invoice.total
-            logger.warning(f"Overpayment detected for invoice {invoice.number}: {overpayment}")
+        if locked_invoice.paid_amount > locked_invoice.total:
+            overpayment = locked_invoice.paid_amount - locked_invoice.total
+            logger.warning(f"Overpayment detected for invoice {locked_invoice.number}: {overpayment}")
         
-        logger.info(f"Invoice {invoice.number} payment processed: paid={invoice.paid_amount}, total={invoice.total}, remaining={remaining}")
+        logger.info(f"Invoice {locked_invoice.number} payment processed: paid={locked_invoice.paid_amount}, total={locked_invoice.total}, remaining={remaining}")
         
-        # Привязываем банковскую транзакцию, если указана
         if bank_transaction_id:
             try:
                 from core.models_banking import BankTransaction as BankTrx
                 bank_trx = BankTrx.objects.get(pk=bank_transaction_id)
                 bank_trx.matched_transaction = trx
-                bank_trx.matched_invoice = invoice
+                bank_trx.matched_invoice = locked_invoice
                 bank_trx.save(update_fields=['matched_transaction', 'matched_invoice'])
                 logger.info(f"Linked bank transaction {bank_trx.external_id} to payment {trx.number}")
             except BankTrx.DoesNotExist:
@@ -390,7 +387,7 @@ class BillingService:
         
         return {
             'transaction': trx,
-            'invoice': invoice,
+            'invoice': locked_invoice,
             'remaining': remaining,
             'overpayment': overpayment
         }
@@ -421,11 +418,23 @@ class BillingService:
         if original_transaction.type == 'REFUND':
             raise ValueError("Нельзя сделать возврат возврата")
         
-        # Определяем сумму возврата
         refund_amount = cls.quantize(amount) if amount else original_transaction.amount
         
         if refund_amount <= 0 or refund_amount > original_transaction.amount:
             raise ValueError("Некорректная сумма возврата")
+        
+        already_refunded = Transaction.objects.filter(
+            type='REFUND',
+            status='COMPLETED',
+            description__contains=original_transaction.number,
+        ).aggregate(total=models.Sum('amount'))['total'] or Decimal('0.00')
+        
+        max_refundable = original_transaction.amount - already_refunded
+        if refund_amount > max_refundable:
+            raise ValueError(
+                f"Сумма возврата ({refund_amount}) превышает доступный остаток "
+                f"({max_refundable}). Уже возвращено: {already_refunded}"
+            )
         
         # Создаем транзакцию возврата (меняем отправителя и получателя местами)
         refund_trx = Transaction(
@@ -695,6 +704,7 @@ class BillingService:
             return result
         
         # Строим индекс: external_number → invoice (для быстрого поиска)
+        import re
         ext_num_to_invoices = {}
         for inv in unpaid_invoices:
             key = inv.external_number.strip()
@@ -712,10 +722,10 @@ class BillingService:
             if not desc:
                 continue
             
-            # Ищем совпадение: external_number содержится в description банковской транзакции
+            # Ищем совпадение: external_number как целое слово в description
             matched_invoice = None
             for ext_num, invoices in ext_num_to_invoices.items():
-                if ext_num in desc:
+                if re.search(r'(?<!\w)' + re.escape(ext_num) + r'(?!\w)', desc):
                     # Берём первый неоплаченный инвойс с таким номером
                     for inv in invoices:
                         if inv.status not in ['PAID', 'CANCELLED']:
@@ -727,11 +737,25 @@ class BillingService:
             if not matched_invoice:
                 continue
             
-            bank_amount = abs(bank_trx.amount)  # Банковская сумма (положительная)
+            bank_amount = abs(bank_trx.amount)
             remaining = matched_invoice.remaining_amount
             
+            invoice_currency = matched_invoice.currency or 'EUR'
+            bank_currency = getattr(bank_trx, 'currency', 'EUR') or 'EUR'
+            if bank_currency.upper() != invoice_currency.upper():
+                logger.warning(
+                    f'[AutoReconcile] Пропуск: валюта банка ({bank_currency}) != '
+                    f'валюта инвойса ({invoice_currency}) для {matched_invoice.number}'
+                )
+                result['errors'].append({
+                    'bank_trx': str(bank_trx),
+                    'invoice': matched_invoice.number,
+                    'error': f'Несовпадение валют: банк {bank_currency}, инвойс {invoice_currency}',
+                })
+                continue
+            
             logger.info(
-                f'[AutoReconcile] Совпадение: банк "{desc}" ({bank_amount} {bank_trx.currency}) '
+                f'[AutoReconcile] Совпадение: банк "{desc}" ({bank_amount} {bank_currency}) '
                 f'↔ инвойс {matched_invoice.number} (external: {matched_invoice.external_number}, '
                 f'remaining: {remaining})'
             )

@@ -12,6 +12,7 @@
 """
 
 import json
+import logging
 
 from django.contrib import admin
 from django.utils.html import format_html
@@ -24,6 +25,8 @@ from decimal import Decimal, InvalidOperation
 
 from .models_billing import NewInvoice, InvoiceItem, Transaction, ExpenseCategory
 from .services.billing_service import BillingService
+
+logger = logging.getLogger('django')
 
 
 # ============================================================================
@@ -197,8 +200,6 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     
     filter_horizontal = ('cars',)
     
-    actions = ['mark_as_issued', 'mark_as_paid', 'cancel_invoices', 'regenerate_items']
-
     def add_view(self, request, form_url='', extra_context=None):
         """Кастомная обработка добавления инвойса"""
         from core.models import Company, Client, Car
@@ -880,7 +881,8 @@ class NewInvoiceAdmin(admin.ModelAdmin):
                     created_by=request.user,
                 )
                 updated += 1
-            except Exception:
+            except Exception as e:
+                logger.error("mark_as_paid failed for invoice %s: %s", invoice.number, e)
                 errors += 1
 
         if updated:
@@ -908,18 +910,24 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     cancel_invoices.short_description = "✗ Отменить инвойсы"
     
     def regenerate_items(self, request, queryset):
-        """Пересоздать позиции из автомобилей"""
+        """Пересоздать позиции из автомобилей (пропускает PAID и CANCELLED)"""
         count = 0
+        skipped = 0
         for invoice in queryset:
+            if invoice.status in ('PAID', 'CANCELLED'):
+                skipped += 1
+                continue
             if invoice.cars.exists():
                 invoice.regenerate_items_from_cars()
                 count += 1
         
         if count > 0:
-            self.message_user(request, f'✅ Позиции пересозданы для {count} инвойсов', messages.SUCCESS)
-        else:
-            self.message_user(request, '⚠ Выберите инвойсы с автомобилями', messages.WARNING)
-    regenerate_items.short_description = "🔄 Пересоздать позиции из автомобилей"
+            self.message_user(request, f'Позиции пересозданы для {count} инвойсов', messages.SUCCESS)
+        if skipped > 0:
+            self.message_user(request, f'Пропущено {skipped} оплаченных/отменённых инвойсов', messages.WARNING)
+        if count == 0 and skipped == 0:
+            self.message_user(request, 'Выберите инвойсы с автомобилями', messages.WARNING)
+    regenerate_items.short_description = "Пересоздать позиции из автомобилей"
     
     def push_to_sitepro(self, request, queryset):
         """Отправить выбранные инвойсы в site.pro (бухгалтерия)"""

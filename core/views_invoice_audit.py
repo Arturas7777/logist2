@@ -295,8 +295,13 @@ def reconciliation_fix_ths(request):
     if not sc.car:
         return JsonResponse({'error': 'No car linked'}, status=400)
 
-    THS_SERVICE_IDS = [46, 47]
-    ths_service = CarService.objects.filter(car=sc.car, service_id__in=THS_SERVICE_IDS).first()
+    from core.models import WarehouseService, LineService
+    ths_service_ids_wh = list(WarehouseService.objects.filter(name__icontains='THS').values_list('id', flat=True))
+    ths_service_ids_line = list(LineService.objects.filter(name__icontains='THS').values_list('id', flat=True))
+    ths_service = (
+        CarService.objects.filter(car=sc.car, service_type='WAREHOUSE', service_id__in=ths_service_ids_wh).first()
+        or CarService.objects.filter(car=sc.car, service_type='LINE', service_id__in=ths_service_ids_line).first()
+    )
 
     if ths_service:
         ths_service.custom_price = sc.amount
