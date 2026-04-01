@@ -1,4 +1,5 @@
 import logging
+from decimal import Decimal, InvalidOperation
 
 from django import forms
 from django.forms import ModelForm
@@ -142,15 +143,15 @@ class WarehouseForm(ModelForm):
                     
                     if name:
                         try:
+                            decimal_price = Decimal(str(price)) if price else Decimal('0')
                             WarehouseService.objects.create(
                                 warehouse=instance,
                                 name=name,
-                                default_price=float(price) if price else 0
+                                default_price=decimal_price
                             )
                             logger.debug(f"Создана новая услуга: {name} с ценой {price}")
-                        except ValueError as e:
+                        except (ValueError, InvalidOperation) as e:
                             logger.error(f"Ошибка при создании услуги: {e}")
-                            pass
             
             # Сохраняем значения существующих услуг
             for field_name, value in self.cleaned_data.items():

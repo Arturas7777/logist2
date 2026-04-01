@@ -328,6 +328,12 @@ class BillingService:
         if invoice.status == 'PAID':
             raise ValueError("Инвойс уже полностью оплачен")
         
+        if invoice.currency and hasattr(invoice, 'currency'):
+            from core.models_billing import Transaction as TrxModel
+            valid_currencies = dict(TrxModel.CURRENCY_CHOICES)
+            if invoice.currency not in valid_currencies:
+                raise ValueError(f"Неизвестная валюта инвойса: {invoice.currency}")
+        
         # Определяем отправителя (плательщика)
         payer_type = payer.__class__.__name__
         from_field = f'from_{payer_type.lower()}'
@@ -488,11 +494,12 @@ class BillingService:
         if not cls.validate_entity(from_entity) or not cls.validate_entity(to_entity):
             raise ValueError("Отправитель и получатель должны быть указаны")
         
-        # Проверяем достаточность средств
-        if hasattr(from_entity, 'balance') and from_entity.balance < amount:
-            raise ValueError(f"Недостаточно средств: доступно {from_entity.balance}, требуется {amount}")
+        # Re-read with row-level lock to prevent concurrent balance drain
+        if hasattr(from_entity, 'balance'):
+            locked_entity = type(from_entity).objects.select_for_update().get(pk=from_entity.pk)
+            if locked_entity.balance < amount:
+                raise ValueError(f"Недостаточно средств: доступно {locked_entity.balance}, требуется {amount}")
         
-        # Создаем транзакцию
         from_type = from_entity.__class__.__name__
         to_type = to_entity.__class__.__name__
         

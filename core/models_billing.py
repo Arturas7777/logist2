@@ -475,6 +475,27 @@ class NewInvoice(models.Model):
             models.Index(fields=['issuer_line', 'status']),
             models.Index(fields=['issuer_carrier', 'status']),
         ]
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(issuer_company__isnull=False, issuer_warehouse__isnull=True, issuer_line__isnull=True, issuer_carrier__isnull=True) |
+                    models.Q(issuer_company__isnull=True, issuer_warehouse__isnull=False, issuer_line__isnull=True, issuer_carrier__isnull=True) |
+                    models.Q(issuer_company__isnull=True, issuer_warehouse__isnull=True, issuer_line__isnull=False, issuer_carrier__isnull=True) |
+                    models.Q(issuer_company__isnull=True, issuer_warehouse__isnull=True, issuer_line__isnull=True, issuer_carrier__isnull=False)
+                ),
+                name='invoice_exactly_one_issuer',
+            ),
+            models.CheckConstraint(
+                check=(
+                    models.Q(recipient_client__isnull=False, recipient_warehouse__isnull=True, recipient_line__isnull=True, recipient_carrier__isnull=True, recipient_company__isnull=True) |
+                    models.Q(recipient_client__isnull=True, recipient_warehouse__isnull=False, recipient_line__isnull=True, recipient_carrier__isnull=True, recipient_company__isnull=True) |
+                    models.Q(recipient_client__isnull=True, recipient_warehouse__isnull=True, recipient_line__isnull=False, recipient_carrier__isnull=True, recipient_company__isnull=True) |
+                    models.Q(recipient_client__isnull=True, recipient_warehouse__isnull=True, recipient_line__isnull=True, recipient_carrier__isnull=False, recipient_company__isnull=True) |
+                    models.Q(recipient_client__isnull=True, recipient_warehouse__isnull=True, recipient_line__isnull=True, recipient_carrier__isnull=True, recipient_company__isnull=False)
+                ),
+                name='invoice_exactly_one_recipient',
+            ),
+        ]
     
     def __str__(self):
         return f"Инвойс {self.number} ({self.get_status_display()})"
@@ -595,7 +616,14 @@ class NewInvoice(models.Model):
         refunds = self.transactions.filter(
             type='REFUND', status='COMPLETED'
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        self.paid_amount = payments - refunds
+        calculated = payments - refunds
+        if calculated < Decimal('0.00'):
+            logger.warning(
+                "Invoice %s: paid_amount would be negative (%s). "
+                "Payments=%s, Refunds=%s. Clamping to 0.",
+                self.number, calculated, payments, refunds,
+            )
+        self.paid_amount = max(Decimal('0.00'), calculated)
         self.update_status()
         self.save(update_fields=['paid_amount', 'status', 'updated_at'])
     
@@ -883,27 +911,36 @@ class NewInvoice(models.Model):
         from django.core.exceptions import ValidationError
         errors = {}
         
-        # Проверяем, что указан хотя бы один выставитель
         issuers = [
             self.issuer_company_id, self.issuer_warehouse_id,
             self.issuer_line_id, self.issuer_carrier_id,
         ]
-        if not any(issuers):
-            errors['__all__'] = "Необходимо указать хотя бы одного выставителя инвойса."
+        issuer_count = sum(1 for f in issuers if f)
+        if issuer_count == 0:
+            errors['__all__'] = "Необходимо указать ровно одного выставителя инвойса."
+        elif issuer_count > 1:
+            errors['__all__'] = "Можно указать только одного выставителя инвойса."
         
-        # Проверяем, что указан хотя бы один получатель
         recipients = [
             self.recipient_company_id, self.recipient_client_id,
             self.recipient_warehouse_id, self.recipient_line_id,
             self.recipient_carrier_id,
         ]
-        if not any(recipients):
-            errors['__all__'] = "Необходимо указать хотя бы одного получателя инвойса."
+        recipient_count = sum(1 for f in recipients if f)
+        if recipient_count == 0:
+            errors.setdefault('__all__', '')
+            errors['__all__'] = (errors['__all__'] + " Необходимо указать ровно одного получателя инвойса.").strip()
+        elif recipient_count > 1:
+            errors.setdefault('__all__', '')
+            errors['__all__'] = (errors['__all__'] + " Можно указать только одного получателя инвойса.").strip()
         
-        # Проверяем, что выставитель и получатель не совпадают
         if self.issuer_company_id and self.recipient_company_id:
             if self.issuer_company_id == self.recipient_company_id:
                 errors['recipient_company'] = "Выставитель и получатель не могут быть одной компанией."
+        
+        if self.issuer_warehouse_id and self.recipient_warehouse_id:
+            if self.issuer_warehouse_id == self.recipient_warehouse_id:
+                errors['recipient_warehouse'] = "Выставитель и получатель не могут быть одним складом."
         
         if self.due_date and self.date and self.due_date < self.date:
             errors['due_date'] = "Срок оплаты не может быть раньше даты выставления."
@@ -911,6 +948,16 @@ class NewInvoice(models.Model):
         if errors:
             raise ValidationError(errors)
 
+    def delete(self, *args, **kwargs):
+        if self.status == 'PAID':
+            raise ValidationError("Нельзя удалить оплаченный инвойс. Используйте отмену.")
+        if self.paid_amount > 0:
+            raise ValidationError(
+                "Нельзя удалить инвойс с зарегистрированными платежами. "
+                "Сначала оформите возврат."
+            )
+        return super().delete(*args, **kwargs)
+    
     def save(self, *args, **kwargs):
         """Переопределяем save для автоматической генерации номера и обновления статуса"""
         from django.db import transaction as db_transaction
@@ -1365,7 +1412,7 @@ class Transaction(models.Model):
     # ========================================================================
 
     def clean(self):
-        """Валидация: ровно один отправитель и ровно один получатель."""
+        """Валидация: ровно один отправитель и ровно один получатель, совпадение валют."""
         errors = {}
         from_fields = [
             self.from_client_id, self.from_warehouse_id,
@@ -1391,6 +1438,12 @@ class Transaction(models.Model):
                 errors.setdefault('__all__', '')
                 errors['__all__'] += " Укажите не более одного получателя."
                 errors['__all__'] = errors['__all__'].strip()
+
+        if self.invoice_id and self.invoice and self.currency != self.invoice.currency:
+            errors['currency'] = (
+                f"Валюта транзакции ({self.currency}) не совпадает "
+                f"с валютой инвойса ({self.invoice.currency})."
+            )
 
         if errors:
             raise ValidationError(errors)
@@ -1443,6 +1496,14 @@ class Transaction(models.Model):
             next_num = 1
 
         return f"{prefix}-{next_num:05d}"
+    
+    def delete(self, *args, **kwargs):
+        if self.status == 'COMPLETED':
+            raise ValidationError(
+                "Нельзя удалить завершённую транзакцию. "
+                "Для корректировки создайте возврат или корректировку."
+            )
+        return super().delete(*args, **kwargs)
     
     def save(self, *args, **kwargs):
         """Переопределяем save для автоматической генерации номера"""

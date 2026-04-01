@@ -86,6 +86,68 @@ def create_container_photo_thumbnail_task(self, photo_pk):
         raise self.retry(exc=exc)
 
 
+@shared_task(bind=True, max_retries=0, time_limit=300)
+def check_balance_consistency(self):
+    """
+    Periodic task: validates that stored balances match transaction history.
+    Logs warnings for any mismatches found. Run weekly via celery beat.
+    """
+    from decimal import Decimal
+    from django.db.models import Sum
+    from core.models import Client, Warehouse, Line, Company, Carrier
+    from core.models_billing import Transaction, NewInvoice
+
+    mismatches = []
+
+    for model in [Client, Warehouse, Line, Company, Carrier]:
+        model_name = model.__name__.lower()
+        for entity in model.objects.all():
+            incoming = Transaction.objects.filter(
+                status='COMPLETED', **{f'to_{model_name}': entity}
+            ).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
+            outgoing = Transaction.objects.filter(
+                status='COMPLETED', **{f'from_{model_name}': entity}
+            ).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
+            expected = incoming - outgoing
+            if entity.balance != expected:
+                mismatches.append(
+                    f'{model.__name__} "{entity}" (id={entity.pk}): '
+                    f'stored={entity.balance}, expected={expected}'
+                )
+                entity.balance = expected
+                entity.save(update_fields=['balance', 'balance_updated_at'])
+
+    invoice_issues = 0
+    for inv in NewInvoice.objects.exclude(status='CANCELLED').iterator():
+        payments = inv.transactions.filter(
+            type='PAYMENT', status='COMPLETED'
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        refunds = inv.transactions.filter(
+            type='REFUND', status='COMPLETED'
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        expected_paid = max(Decimal('0.00'), payments - refunds)
+        if inv.paid_amount != expected_paid:
+            invoice_issues += 1
+            inv.paid_amount = expected_paid
+            inv.update_status()
+            inv.save(update_fields=['paid_amount', 'status', 'updated_at'])
+
+    if mismatches:
+        logger.warning(
+            '[check_balance_consistency] Fixed %d balance mismatches:\n%s',
+            len(mismatches), '\n'.join(mismatches),
+        )
+    if invoice_issues:
+        logger.warning(
+            '[check_balance_consistency] Fixed %d invoice paid_amount mismatches',
+            invoice_issues,
+        )
+    total = len(mismatches) + invoice_issues
+    if total == 0:
+        logger.info('[check_balance_consistency] All balances and paid_amounts are consistent')
+    return {'balance_fixes': len(mismatches), 'invoice_fixes': invoice_issues}
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def send_car_unload_notification_task(self, car_id):
     from core.models import Car

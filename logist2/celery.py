@@ -12,4 +12,8 @@ app.conf.beat_schedule = {
         'task': 'core.tasks.check_overdue_invoices',
         'schedule': crontab(hour=6, minute=0),
     },
+    'check-balance-consistency-weekly': {
+        'task': 'core.tasks.check_balance_consistency',
+        'schedule': crontab(hour=3, minute=0, day_of_week='sunday'),
+    },
 }
