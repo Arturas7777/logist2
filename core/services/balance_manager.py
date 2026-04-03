@@ -14,7 +14,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.db import transaction
 import logging
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 
 class BalanceManager:

@@ -21,7 +21,7 @@ def round_up_to_5(value):
         return value
     return value + (5 - remainder)
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 
 class WebSocketBatcher:

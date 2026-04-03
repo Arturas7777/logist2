@@ -12,7 +12,7 @@ from core.models import Car, Container, Client, Company
 from core.models_billing import NewInvoice as Invoice, Transaction as Payment
 from core.services.billing_service import BillingService
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 
 @staff_member_required
@@ -87,8 +87,8 @@ def register_payment(request):
     except ValueError as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
     except Exception as e:
-        logger.error("Unexpected error registering payment: %s", e)
-        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+        logger.error("Unexpected error registering payment: %s", e, exc_info=True)
+        return JsonResponse({'status': 'error', 'message': 'Внутренняя ошибка сервера'}, status=500)
 
 
 @staff_member_required
@@ -145,7 +145,8 @@ def get_container_photos_json(request, container_id):
     except Container.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Container not found'}, status=404)
     except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        logger.error("Error in get_container_photos_json: %s", e, exc_info=True)
+        return JsonResponse({'success': False, 'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
 @staff_member_required
@@ -176,4 +177,4 @@ def sync_container_photos_from_gdrive(request, container_id):
         return JsonResponse({'success': False, 'error': 'Контейнер не найден'}, status=404)
     except Exception as e:
         logger.error("Error syncing Google Drive photos: %s", e, exc_info=True)
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        return JsonResponse({'success': False, 'error': 'Внутренняя ошибка сервера'}, status=500)

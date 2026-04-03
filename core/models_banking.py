@@ -184,7 +184,9 @@ class BankAccount(models.Model):
     class Meta:
         verbose_name = 'Банковский счёт'
         verbose_name_plural = 'Банковские счета'
-        unique_together = ('connection', 'external_id')
+        constraints = [
+            models.UniqueConstraint(fields=['connection', 'external_id'], name='unique_bank_account'),
+        ]
 
     def __str__(self):
         return f'{self.name} ({self.currency}) — {self.balance} {self.currency}'
@@ -272,7 +274,9 @@ class BankTransaction(models.Model):
     class Meta:
         verbose_name = 'Банковская транзакция'
         verbose_name_plural = 'Банковские транзакции'
-        unique_together = ('connection', 'external_id')
+        constraints = [
+            models.UniqueConstraint(fields=['connection', 'external_id'], name='unique_bank_transaction'),
+        ]
         ordering = ['-created_at']
 
     def __str__(self):

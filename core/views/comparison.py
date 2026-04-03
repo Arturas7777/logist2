@@ -12,7 +12,7 @@ from core.models import Car, Client, Warehouse
 from core.services.comparison_service import ComparisonService
 from core.cache_utils import CACHE_TIMEOUTS
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 
 @staff_member_required
@@ -76,7 +76,8 @@ def compare_car_costs_api(request):
     except Car.DoesNotExist:
         return JsonResponse({'error': 'Car not found'}, status=404)
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        logger.error("Error in compare_car_costs_api: %s", e, exc_info=True)
+        return JsonResponse({'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
 @staff_member_required
@@ -103,7 +104,8 @@ def compare_client_costs_api(request):
     except Client.DoesNotExist:
         return JsonResponse({'error': 'Client not found'}, status=404)
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        logger.error("Error in compare_client_costs_api: %s", e, exc_info=True)
+        return JsonResponse({'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
 @staff_member_required
@@ -130,7 +132,8 @@ def compare_warehouse_costs_api(request):
     except Warehouse.DoesNotExist:
         return JsonResponse({'error': 'Warehouse not found'}, status=404)
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        logger.error("Error in compare_warehouse_costs_api: %s", e, exc_info=True)
+        return JsonResponse({'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
 @staff_member_required
@@ -148,4 +151,5 @@ def get_discrepancies_api(request):
         discrepancies = ComparisonService().find_discrepancies(start_date, end_date)
         return JsonResponse({'discrepancies': discrepancies})
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        logger.error("Error in get_discrepancies_api: %s", e, exc_info=True)
+        return JsonResponse({'error': 'Внутренняя ошибка сервера'}, status=500)

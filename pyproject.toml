@@ -1,0 +1,38 @@
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "logist2.settings.test"
+python_files = ["test_*.py", "tests.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short --strict-markers"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks integration tests",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "SIM",   # flake8-simplify
+    "DJ",    # flake8-django
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "B008",  # do not perform function calls in argument defaults
+    "B905",  # zip without strict
+    "DJ001", # avoid using null=True on string fields
+    "N806",  # variable in function should be lowercase
+    "SIM108", # ternary operator
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["core", "logist2"]

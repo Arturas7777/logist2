@@ -21,7 +21,7 @@ from core.models import (
 from core.models_billing import NewInvoice as Invoice, Transaction as Payment
 from core.cache_utils import CACHE_TIMEOUTS
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 
 @staff_member_required
@@ -77,8 +77,8 @@ def get_invoice_total(request):
         result['total_amount'] = str(total)
         return JsonResponse(result)
     except Exception as e:
-        logger.error("Error calculating invoice total: %s", e)
-        result['error'] = str(e)
+        logger.error("Error calculating invoice total: %s", e, exc_info=True)
+        result['error'] = 'Внутренняя ошибка сервера'
         return JsonResponse(result, status=500)
 
 
@@ -158,8 +158,8 @@ def get_payment_objects(request):
         cache.set(cache_key, result, CACHE_TIMEOUTS['medium'])
         return JsonResponse(result)
     except Exception as e:
-        logger.error("Error getting objects for type %s: %s", object_type, e)
-        return JsonResponse({'error': str(e)}, status=500)
+        logger.error("Error getting objects for type %s: %s", object_type, e, exc_info=True)
+        return JsonResponse({'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
 @staff_member_required
@@ -199,8 +199,8 @@ def search_partners_api(request):
         ]
         return JsonResponse({'type': entity_type, 'objects': objects_list})
     except Exception as e:
-        logger.error("Error searching partners for type %s: %s", entity_type, e)
-        return JsonResponse({'error': str(e)}, status=500)
+        logger.error("Error searching partners for type %s: %s", entity_type, e, exc_info=True)
+        return JsonResponse({'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
 @staff_member_required
@@ -285,8 +285,8 @@ def get_invoice_cars_api(request):
 
         return JsonResponse({'cars': cars_data})
     except Exception as e:
-        logger.error("Error getting invoice cars: %s", e)
-        return JsonResponse({'error': str(e)}, status=500)
+        logger.error("Error getting invoice cars: %s", e, exc_info=True)
+        return JsonResponse({'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
 @staff_member_required
@@ -349,8 +349,8 @@ def get_warehouse_cars_api(request):
 
         return JsonResponse({'cars': cars_data})
     except Exception as e:
-        logger.error("Error getting warehouse cars: %s", e)
-        return JsonResponse({'error': str(e)}, status=500)
+        logger.error("Error getting warehouse cars: %s", e, exc_info=True)
+        return JsonResponse({'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
 @staff_member_required
@@ -367,8 +367,8 @@ def get_warehouses(request):
         cache.set(cache_key, result, CACHE_TIMEOUTS['medium'])
         return JsonResponse(result)
     except Exception as e:
-        logger.error("Error loading warehouses: %s", e)
-        return JsonResponse({'error': str(e)}, status=500)
+        logger.error("Error loading warehouses: %s", e, exc_info=True)
+        return JsonResponse({'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
 @staff_member_required
@@ -385,8 +385,8 @@ def get_companies(request):
         cache.set(cache_key, result, CACHE_TIMEOUTS['medium'])
         return JsonResponse(result)
     except Exception as e:
-        logger.error("Error loading companies: %s", e)
-        return JsonResponse({'error': str(e)}, status=500)
+        logger.error("Error loading companies: %s", e, exc_info=True)
+        return JsonResponse({'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
 @staff_member_required
@@ -452,7 +452,7 @@ def get_available_services(request, car_id):
         return JsonResponse({'error': 'Car not found'}, status=404)
     except Exception as e:
         logger.error("Error getting available services: %s", e, exc_info=True)
-        return JsonResponse({'error': str(e)}, status=500)
+        return JsonResponse({'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
 @staff_member_required
@@ -550,7 +550,7 @@ def add_services(request, car_id):
         return JsonResponse({'error': f'Автомобиль с ID {car_id} не найден'}, status=404)
     except Exception as e:
         logger.error("Error in add_services for car %s: %s", car_id, e, exc_info=True)
-        return JsonResponse({'error': str(e)}, status=500)
+        return JsonResponse({'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
 @staff_member_required

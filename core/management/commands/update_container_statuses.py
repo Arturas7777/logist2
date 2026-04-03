@@ -3,7 +3,7 @@ from django.db import transaction
 from core.models import Container, Car
 import logging
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):

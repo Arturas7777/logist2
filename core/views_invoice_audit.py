@@ -16,7 +16,7 @@ from django.views.decorators.http import require_POST, require_GET
 from core.models_invoice_audit import InvoiceAudit, SupplierCost
 from core.models import CarService
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 
 @staff_member_required

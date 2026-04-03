@@ -24,7 +24,7 @@ from core.admin.inlines import (
     CompanyServiceInline, ClientTariffRateInline,
 )
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 
 # ==============================================================================

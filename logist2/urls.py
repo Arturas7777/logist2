@@ -21,11 +21,11 @@ router.register(r'invoices', InvoiceViewSet, basename='invoice')
 # Версионированные API эндпоинты (api/v1/)
 # ============================================================================
 api_v1_patterns = [
-    # DRF ViewSets
+    # DRF ViewSets (JSON API)
     path('', include(router.urls)),
     
     # Кастомные API эндпоинты
-    path('cars/', car_list_api, name='car_list_api'),
+    path('cars/select/', car_list_api, name='car_list_api'),
     path('invoice-total/', get_invoice_total, name='get_invoice_total'),
     path('container/<int:container_id>/', get_container_data, name='get_container_data'),
     path('client-balance/', get_client_balance, name='get_client_balance'),
@@ -92,9 +92,7 @@ urlpatterns += [
     path('admin/', admin.site.urls),
 ]
 
-# Добавляем поддержку медиа файлов в режиме разработки
+# Медиа-файлы обслуживаются Django только в DEBUG-режиме.
+# В production используйте Nginx для отдачи /media/.
 if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-else:
-    # В продакшне также добавляем обработку медиа файлов для админки
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -5,7 +5,7 @@ from django import forms
 from django.forms import ModelForm
 from core.models import Line, Carrier, Warehouse, LineService, CarrierService, WarehouseService
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 
 class LineForm(ModelForm):
