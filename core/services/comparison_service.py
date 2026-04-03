@@ -13,7 +13,7 @@ import logging
 from ..models import Car, Warehouse, Client, Company
 from ..models_billing import NewInvoice as Invoice, Transaction as Payment
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 
 class ComparisonService:

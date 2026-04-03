@@ -245,7 +245,7 @@ class ContactMessageViewSet(viewsets.ModelViewSet):
 def track_shipment(request):
     """Отследить груз по номеру VIN или контейнера"""
     import logging
-    logger = logging.getLogger('django')
+    logger = logging.getLogger(__name__)
     
     try:
         tracking_number = request.data.get('tracking_number', '').strip()

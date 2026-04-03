@@ -6,7 +6,7 @@ from django.db import models
 from decimal import Decimal
 import logging
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 
 class TimestampMixin(models.Model):

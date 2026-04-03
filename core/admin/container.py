@@ -26,7 +26,7 @@ from core.signals import (
 from core.admin_filters import MultiStatusFilter, MultiWarehouseFilter, ClientAutocompleteFilter
 from core.admin.inlines import CarInline
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 
 @contextmanager

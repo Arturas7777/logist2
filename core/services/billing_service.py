@@ -21,7 +21,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional, List, Dict, Union
 import logging
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 
 class BillingService:

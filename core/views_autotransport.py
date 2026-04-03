@@ -2,12 +2,16 @@
 API endpoints для системы автовозов на загрузку
 """
 
+import logging
+
 from django.http import JsonResponse
 from django.contrib.admin.views.decorators import staff_member_required
 from django.views.decorators.http import require_GET, require_POST
 import json
 
 from .models import Carrier, CarrierTruck, CarrierDriver, AutoTransport
+
+logger = logging.getLogger(__name__)
 
 
 @staff_member_required
@@ -47,7 +51,8 @@ def get_carrier_info(request, carrier_id):
     except Carrier.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Перевозчик не найден'}, status=404)
     except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        logger.error("Error in get_carrier_info: %s", e, exc_info=True)
+        return JsonResponse({'success': False, 'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
 @staff_member_required
@@ -64,7 +69,8 @@ def get_driver_phone(request, driver_id):
     except CarrierDriver.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Водитель не найден'}, status=404)
     except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        logger.error("Error in get_driver_phone: %s", e, exc_info=True)
+        return JsonResponse({'success': False, 'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
 @staff_member_required
@@ -90,7 +96,8 @@ def update_driver_phone(request):
     except CarrierDriver.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Водитель не найден'}, status=404)
     except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        logger.error("Error in update_driver_phone: %s", e, exc_info=True)
+        return JsonResponse({'success': False, 'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
 @staff_member_required
@@ -106,7 +113,8 @@ def get_border_crossings(request):
         
         return JsonResponse({'success': True, 'results': results})
     except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        logger.error("Error in get_border_crossings: %s", e, exc_info=True)
+        return JsonResponse({'success': False, 'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
 @staff_member_required
@@ -153,7 +161,8 @@ def create_carrier_truck(request):
     except Carrier.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Перевозчик не найден'}, status=404)
     except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        logger.error("Error in create_carrier_truck: %s", e, exc_info=True)
+        return JsonResponse({'success': False, 'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
 @staff_member_required
@@ -188,4 +197,5 @@ def create_carrier_driver(request):
     except Carrier.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Перевозчик не найден'}, status=404)
     except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        logger.error("Error in create_carrier_driver: %s", e, exc_info=True)
+        return JsonResponse({'success': False, 'error': 'Внутренняя ошибка сервера'}, status=500)

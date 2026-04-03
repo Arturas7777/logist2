@@ -19,7 +19,7 @@ from .managers import (
 
 
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 # === Общие типы ТС (используется в Car, LineTHSCoefficient, ClientTariffRate) ===
 VEHICLE_TYPE_CHOICES = [
@@ -91,7 +91,9 @@ class LineTHSCoefficient(models.Model):
     class Meta:
         verbose_name = "Коэффициент THS для типа ТС"
         verbose_name_plural = "Коэффициенты THS для типов ТС"
-        unique_together = ['line', 'vehicle_type']
+        constraints = [
+            models.UniqueConstraint(fields=['line', 'vehicle_type'], name='unique_line_vehicle_type'),
+        ]
     
     def __str__(self):
         return f"{self.line.name} - {self.get_vehicle_type_display()}: ×{self.coefficient}"
@@ -118,7 +120,6 @@ class Carrier(models.Model):
         from .models_billing import SimpleBalanceMixin
         return SimpleBalanceMixin.get_balance_info(self)
     
-    # Услуги и цены
     transport_rate = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Стоимость перевозки (за км)")
     loading_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Стоимость погрузки")
     unloading_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Стоимость разгрузки")
@@ -127,8 +128,6 @@ class Carrier(models.Model):
     
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
-    
-    objects = OptimizedCompanyManager()
     
     class Meta:
         verbose_name = "Перевозчик"
@@ -152,7 +151,9 @@ class CarrierTruck(models.Model):
     class Meta:
         verbose_name = "Автовоз перевозчика"
         verbose_name_plural = "Автовозы перевозчиков"
-        unique_together = ['carrier', 'truck_number', 'trailer_number']
+        constraints = [
+            models.UniqueConstraint(fields=['carrier', 'truck_number', 'trailer_number'], name='unique_carrier_truck_trailer'),
+        ]
         ordering = ['-created_at']
     
     def __str__(self):
@@ -575,17 +576,15 @@ class Container(models.Model):
         if not self.pk:
             return
             
-        cars = self.container_cars.all()
-        if not cars.exists():
+        if not self.container_cars.exists():
             return
             
-        # Проверяем, все ли автомобили имеют статус "Передан"
-        all_transferred = all(car.status == 'TRANSFERRED' for car in cars)
+        has_non_transferred = self.container_cars.exclude(status='TRANSFERRED').exists()
         
-        if all_transferred and self.status != 'TRANSFERRED':
+        if not has_non_transferred and self.status != 'TRANSFERRED':
             self.status = 'TRANSFERRED'
             self.save(update_fields=['status'])
-            logger.info(f"Container {self.number} status automatically changed to TRANSFERRED")
+            logger.info("Container %s status automatically changed to TRANSFERRED", self.number)
 
     def get_unload_address(self):
         """Возвращает (name, address) выбранной площадки разгрузки"""
@@ -1245,27 +1244,28 @@ class Company(models.Model):
         return value
 
 
-class CompanyService(models.Model):
-    """Услуги компаний"""
-    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='services', verbose_name="Компания")
+class BaseService(models.Model):
+    """Абстрактная базовая модель для всех типов услуг."""
     name = models.CharField(max_length=200, verbose_name="Название услуги")
+    code = models.SlugField(max_length=50, blank=True, default='', verbose_name="Код",
+        help_text="Машинный идентификатор услуги (напр. unloading, storage, ths). Используется для программной привязки.")
     short_name = models.CharField(max_length=20, blank=True, default='', verbose_name="Сокращённо",
         help_text="Короткое название для инвойсов и таблиц (напр. THS, Порт, Хран)")
     description = models.TextField(blank=True, verbose_name="Описание")
     default_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Цена по умолчанию")
-    default_markup = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0,
-        verbose_name="Наценка по умолчанию",
-        help_text="Скрытая наценка, которая будет автоматически добавлена при создании услуги для авто"
-    )
+    default_markup = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Наценка по умолчанию",
+        help_text="Скрытая наценка, которая будет автоматически добавлена при создании услуги для авто")
     is_active = models.BooleanField(default=True, verbose_name="Активна")
-    add_by_default = models.BooleanField(
-        default=False,
-        verbose_name="Добавлять по умолчанию",
-        help_text="Автоматически добавлять эту услугу при создании автомобиля для этой компании"
-    )
+    add_by_default = models.BooleanField(default=False, verbose_name="Добавлять по умолчанию",
+        help_text="Автоматически добавлять эту услугу при создании автомобиля")
+
+    class Meta:
+        abstract = True
+
+
+class CompanyService(BaseService):
+    """Услуги компаний"""
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='services', verbose_name="Компания")
     
     def __str__(self):
         return f"{self.company.name} - {self.name}"
@@ -1274,26 +1274,10 @@ class CompanyService(models.Model):
         verbose_name = "Услуга компании"
         verbose_name_plural = "Услуги компаний"
 
-# Модели для системы услуг
 
-
-
-class LineService(models.Model):
+class LineService(BaseService):
     """Услуги морских линий"""
     line = models.ForeignKey(Line, on_delete=models.CASCADE, related_name='services', verbose_name="Линия")
-    name = models.CharField(max_length=200, verbose_name="Название услуги")
-    short_name = models.CharField(max_length=20, blank=True, default='', verbose_name="Сокращённо",
-        help_text="Короткое название для инвойсов и таблиц (напр. THS, Порт, Хран)")
-    description = models.TextField(blank=True, verbose_name="Описание")
-    default_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Цена по умолчанию")
-    default_markup = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Наценка по умолчанию",
-        help_text="Скрытая наценка, которая будет автоматически добавлена при создании услуги для авто")
-    is_active = models.BooleanField(default=True, verbose_name="Активна")
-    add_by_default = models.BooleanField(
-        default=False,
-        verbose_name="Добавлять по умолчанию",
-        help_text="Автоматически добавлять эту услугу при создании автомобиля для этой линии"
-    )
     
     def __str__(self):
         return f"{self.line.name} - {self.name}"
@@ -1303,22 +1287,9 @@ class LineService(models.Model):
         verbose_name_plural = "Услуги линий"
 
 
-class CarrierService(models.Model):
+class CarrierService(BaseService):
     """Услуги перевозчиков"""
     carrier = models.ForeignKey(Carrier, on_delete=models.CASCADE, related_name='services', verbose_name="Перевозчик")
-    name = models.CharField(max_length=200, verbose_name="Название услуги")
-    short_name = models.CharField(max_length=20, blank=True, default='', verbose_name="Сокращённо",
-        help_text="Короткое название для инвойсов и таблиц (напр. THS, Порт, Хран)")
-    description = models.TextField(blank=True, verbose_name="Описание")
-    default_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Цена по умолчанию")
-    default_markup = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Наценка по умолчанию",
-        help_text="Скрытая наценка, которая будет автоматически добавлена при создании услуги для авто")
-    is_active = models.BooleanField(default=True, verbose_name="Активна")
-    add_by_default = models.BooleanField(
-        default=False,
-        verbose_name="Добавлять по умолчанию",
-        help_text="Автоматически добавлять эту услугу при создании автомобиля для этого перевозчика"
-    )
     
     def __str__(self):
         return f"{self.carrier.name} - {self.name}"
@@ -1328,19 +1299,9 @@ class CarrierService(models.Model):
         verbose_name_plural = "Услуги перевозчиков"
 
 
-class WarehouseService(models.Model):
+class WarehouseService(BaseService):
     """Услуги складов"""
     warehouse = models.ForeignKey(Warehouse, on_delete=models.CASCADE, related_name='services', verbose_name="Склад")
-    name = models.CharField(max_length=200, verbose_name="Название услуги")
-    short_name = models.CharField(max_length=20, blank=True, default='', verbose_name="Сокращённо",
-        help_text="Короткое название для инвойсов и таблиц (напр. THS, Порт, Хран)")
-    description = models.TextField(blank=True, verbose_name="Описание")
-    default_price = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Цена по умолчанию")
-    default_markup = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Наценка по умолчанию",
-        help_text="Скрытая наценка, которая будет автоматически добавлена при создании услуги для авто")
-    is_active = models.BooleanField(default=True, verbose_name="Активна")
-    add_by_default = models.BooleanField(default=False, verbose_name="Добавлять по умолчанию",
-        help_text="Автоматически добавлять эту услугу при создании автомобиля на этом складе")
     
     def __str__(self):
         return f"{self.warehouse.name} - {self.name}"
@@ -1363,7 +1324,9 @@ class DeletedCarService(models.Model):
     deleted_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата удаления")
     
     class Meta:
-        unique_together = ['car', 'service_type', 'service_id']
+        constraints = [
+            models.UniqueConstraint(fields=['car', 'service_type', 'service_id'], name='unique_deleted_car_service'),
+        ]
         verbose_name = "Удаленная услуга автомобиля"
         verbose_name_plural = "Удаленные услуги автомобилей"
 
@@ -1472,7 +1435,9 @@ class CarService(models.Model):
     class Meta:
         verbose_name = "Услуга автомобиля"
         verbose_name_plural = "Услуги автомобилей"
-        unique_together = ('car', 'service_type', 'service_id')
+        constraints = [
+            models.UniqueConstraint(fields=['car', 'service_type', 'service_id'], name='unique_car_service'),
+        ]
         indexes = [
             models.Index(fields=['car', 'service_type']),
             models.Index(fields=['service_type', 'service_id']),

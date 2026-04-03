@@ -17,7 +17,7 @@ from core.models import (
 )
 from core.admin_filters import MultiStatusFilter, MultiWarehouseFilter, ClientAutocompleteFilter
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 CAR_MODELS_DIR = os.path.join(settings.BASE_DIR, 'core', 'static', 'icons', 'car_models')
 

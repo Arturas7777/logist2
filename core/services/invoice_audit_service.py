@@ -17,7 +17,7 @@ from decimal import Decimal, InvalidOperation
 from django.conf import settings
 from django.utils import timezone
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 
 # ── Схема JSON, которую должен вернуть LLM ─────────────────────────────────

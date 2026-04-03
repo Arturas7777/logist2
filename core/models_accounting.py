@@ -218,7 +218,9 @@ class SiteProInvoiceSync(models.Model):
     class Meta:
         verbose_name = 'Синхронизация инвойса (site.pro)'
         verbose_name_plural = 'Синхронизация инвойсов (site.pro)'
-        unique_together = ('connection', 'invoice')
+        constraints = [
+            models.UniqueConstraint(fields=['connection', 'invoice'], name='unique_sitepro_invoice_sync'),
+        ]
         ordering = ['-created_at']
 
     def __str__(self):

@@ -21,7 +21,7 @@ from .models import (
 )
 from .models_billing import NewInvoice, Transaction
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================

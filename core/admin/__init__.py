@@ -14,7 +14,7 @@ try:
     from core.admin_billing import NewInvoiceAdmin, TransactionAdmin, ExpenseCategoryAdmin
 except ImportError as e:
     import logging
-    logger = logging.getLogger('django')
+    logger = logging.getLogger(__name__)
     logger.warning(f"Could not load new billing admin: {e}")
     logger.warning("Make sure admin_billing.py and models_billing.py exist")
 
@@ -23,7 +23,7 @@ try:
     from core.admin_banking import BankConnectionAdmin, BankAccountAdmin, BankTransactionAdmin
 except ImportError as e:
     import logging
-    logger = logging.getLogger('django')
+    logger = logging.getLogger(__name__)
     logger.warning(f"Could not load banking admin: {e}")
 
 # Import accounting admin (site.pro / b1.lt)
@@ -31,7 +31,7 @@ try:
     from core.admin_accounting import SiteProConnectionAdmin, SiteProInvoiceSyncAdmin
 except ImportError as e:
     import logging
-    logger = logging.getLogger('django')
+    logger = logging.getLogger(__name__)
     logger.warning(f"Could not load accounting admin: {e}")
 
 # Invoice audit — managed via custom views at /admin/invoice-audit/

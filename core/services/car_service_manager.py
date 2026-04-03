@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from django.db import models as db_models
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 
 def find_line_service_by_container_count(line, container, vehicle_type):

@@ -21,7 +21,7 @@ from django.contrib.auth import get_user_model
 from decimal import Decimal
 import logging
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 User = get_user_model()
 
 

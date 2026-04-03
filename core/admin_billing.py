@@ -26,7 +26,7 @@ from decimal import Decimal, InvalidOperation
 from .models_billing import NewInvoice, InvoiceItem, Transaction, ExpenseCategory
 from .services.billing_service import BillingService
 
-logger = logging.getLogger('django')
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -609,7 +609,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             messages.info(request, f'AI-анализ PDF запущен в фоне (Audit #{audit.pk}). Обновите страницу через несколько секунд.')
         except Exception as e:
             import logging
-            logging.getLogger('django').exception(f'Error triggering invoice audit for NewInvoice #{obj.pk}: {e}')
+            logging.getLogger(__name__).exception(f'Error triggering invoice audit for NewInvoice #{obj.pk}: {e}')
             messages.warning(request, f'Не удалось запустить AI-анализ PDF: {e}')
 
     actions = ['mark_as_issued', 'mark_as_paid', 'cancel_invoices', 'regenerate_items', 'push_to_sitepro']

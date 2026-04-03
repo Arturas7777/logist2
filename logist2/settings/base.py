@@ -150,37 +150,28 @@ else:
 # Cache
 # ---------------------------------------------------------------------------
 
-def _get_cache_config():
-    redis_url = (
-        f"redis://{os.getenv('REDIS_HOST', '127.0.0.1')}"
-        f":{os.getenv('REDIS_PORT', '6379')}/1"
-    )
-    try:
-        import socket
-        host = os.getenv('REDIS_HOST', '127.0.0.1')
-        port = int(os.getenv('REDIS_PORT', '6379'))
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(1)
-        s.connect((host, port))
-        s.close()
-        return {
-            'default': {
-                'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-                'LOCATION': redis_url,
-                'TIMEOUT': 300,
-                'KEY_PREFIX': 'logist2',
-            }
-        }
-    except (ConnectionRefusedError, OSError, socket.timeout):
-        return {
-            'default': {
-                'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
-                'LOCATION': BASE_DIR / '.cache',
-                'TIMEOUT': 300,
-            }
-        }
+_cache_backend = os.getenv('CACHE_BACKEND', 'redis').lower()
 
-CACHES = _get_cache_config()
+if _cache_backend == 'redis':
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': (
+                f"redis://{os.getenv('REDIS_HOST', '127.0.0.1')}"
+                f":{os.getenv('REDIS_PORT', '6379')}/1"
+            ),
+            'TIMEOUT': 300,
+            'KEY_PREFIX': 'logist2',
+        }
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+            'LOCATION': BASE_DIR / '.cache',
+            'TIMEOUT': 300,
+        }
+    }
 
 # ---------------------------------------------------------------------------
 # Celery
@@ -240,7 +231,11 @@ STATICFILES_DIRS = [
     BASE_DIR / 'static',
 ]
 STATIC_ROOT = os.getenv('STATIC_ROOT', BASE_DIR / 'staticfiles')
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+STORAGES = {
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.getenv('MEDIA_ROOT', BASE_DIR / 'media')
@@ -287,10 +282,17 @@ SESSION_SAVE_EVERY_REQUEST = False
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{asctime} {levelname} {name} {message}',
+            'style': '{',
+        },
+    },
     'handlers': {
         'console': {
             'level': 'DEBUG',
             'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
         },
     },
     'loggers': {
@@ -301,7 +303,7 @@ LOGGING = {
         },
         'core': {
             'handlers': ['console'],
-            'level': 'WARNING',
+            'level': 'INFO' if DEBUG else 'WARNING',
             'propagate': False,
         },
     },
