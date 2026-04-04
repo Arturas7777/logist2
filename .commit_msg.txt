@@ -1,0 +1,14 @@
+refactor: code quality, security, infrastructure improvements
+
+- Replace unique_together with UniqueConstraint across all models
+- Extract abstract BaseService model for service deduplication
+- Fix logging: use __name__ instead of 'django' across all modules
+- Fix security: remove str(e) leaks in API error responses
+- Fix duplicate /api/v1/cars/ URL, media serving in production
+- Replace TCP probe with CACHE_BACKEND env var in settings
+- Migrate from STATICFILES_STORAGE to STORAGES (Django 5.x)
+- Optimize Container.check_and_update_status_from_cars with exists()
+- Add Docker infrastructure (Dockerfile, docker-compose, nginx)
+- Add GitHub Actions CI pipeline (lint + test)
+- Add pyproject.toml (ruff, pytest config), pre-commit hooks
+- Update deploy script to include migrations step
