@@ -1259,6 +1259,13 @@ class BaseService(models.Model):
     add_by_default = models.BooleanField(default=False, verbose_name="Добавлять по умолчанию",
         help_text="Автоматически добавлять эту услугу при создании автомобиля")
 
+    def save(self, *args, **kwargs):
+        if self.code is None:
+            self.code = ''
+        if self.short_name is None:
+            self.short_name = ''
+        super().save(*args, **kwargs)
+
     class Meta:
         abstract = True
 
