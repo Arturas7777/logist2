@@ -150,16 +150,17 @@ def update_related_on_container_save(sender, instance, created, **kwargs):
 def save_old_car_values(sender, instance, **kwargs):
     update_fields = kwargs.get('update_fields')
     if update_fields is not None:
-        tracked = {'warehouse_id', 'line_id', 'carrier_id', 'unload_date', 'container_id'}
+        tracked = {'warehouse_id', 'line_id', 'carrier_id', 'unload_date', 'container_id', 'status'}
         if not tracked.intersection(update_fields):
             instance._pre_save_contractors = None
             instance._pre_save_car_notification = None
+            instance._pre_save_status = None
             return
 
     if instance.pk:
         try:
             old = Car.objects.filter(pk=instance.pk).values(
-                'warehouse_id', 'line_id', 'carrier_id', 'unload_date', 'container_id'
+                'warehouse_id', 'line_id', 'carrier_id', 'unload_date', 'container_id', 'status'
             ).first()
             if old:
                 instance._pre_save_contractors = {
@@ -171,15 +172,19 @@ def save_old_car_values(sender, instance, **kwargs):
                     'unload_date': old['unload_date'],
                     'container_id': old['container_id'],
                 }
+                instance._pre_save_status = old['status']
             else:
                 instance._pre_save_contractors = None
                 instance._pre_save_car_notification = None
+                instance._pre_save_status = None
         except Exception:
             instance._pre_save_contractors = None
             instance._pre_save_car_notification = None
+            instance._pre_save_status = None
     else:
         instance._pre_save_contractors = None
         instance._pre_save_car_notification = None
+        instance._pre_save_status = None
 
 
 @receiver(post_save, sender=Car)
@@ -698,6 +703,21 @@ def send_car_unload_notification_on_save(sender, instance, created, **kwargs):
 
 
 # ============================================================================
+# CONTAINER STATUS AUTO-UPDATE
+# ============================================================================
+
+@receiver(post_save, sender=Car)
+def update_container_status_on_car_transfer(sender, instance, **kwargs):
+    """When a car is manually set to TRANSFERRED, check if the whole container is done."""
+    if not instance.pk or not instance.container_id:
+        return
+    old_status = getattr(instance, '_pre_save_status', None)
+    instance._pre_save_status = None
+    if instance.status == 'TRANSFERRED' and old_status != 'TRANSFERRED':
+        _update_container_status_if_all_transferred(instance.container_id)
+
+
+# ============================================================================
 # GDRIVE SYNC NOTE
 # ============================================================================
 
@@ -735,14 +755,43 @@ def _mark_cars_as_transferred(autotransport, transfer_date=None):
     from django.utils import timezone as tz
     if transfer_date is None:
         transfer_date = tz.now().date()
-    count = autotransport.cars.exclude(status='TRANSFERRED').update(
+    affected_cars = list(
+        autotransport.cars.exclude(status='TRANSFERRED').values_list('id', 'container_id')
+    )
+    if not affected_cars:
+        return
+    car_ids = [c[0] for c in affected_cars]
+    container_ids = {c[1] for c in affected_cars if c[1]}
+    Car.objects.filter(id__in=car_ids).update(
         status='TRANSFERRED', transfer_date=transfer_date
     )
-    if count:
-        logger.info(
-            "AutoTransport %s: %d cars -> TRANSFERRED (date: %s)",
-            autotransport.number, count, transfer_date,
-        )
+    logger.info(
+        "AutoTransport %s: %d cars -> TRANSFERRED (date: %s)",
+        autotransport.number, len(car_ids), transfer_date,
+    )
+    for cid in container_ids:
+        _update_container_status_if_all_transferred(cid)
+
+
+def _update_container_status_if_all_transferred(container_id):
+    """Set container to TRANSFERRED if all its cars are TRANSFERRED."""
+    try:
+        container = Container.objects.get(pk=container_id)
+    except Container.DoesNotExist:
+        return
+    if container.status == 'TRANSFERRED':
+        return
+    cars = container.container_cars.all()
+    if not cars.exists():
+        return
+    if cars.exclude(status='TRANSFERRED').exists():
+        return
+    container.status = 'TRANSFERRED'
+    container.save(update_fields=['status'])
+    logger.info(
+        "Container %s -> TRANSFERRED (all %d cars transferred)",
+        container.number, cars.count(),
+    )
 
 
 def autotransport_cars_changed_handler(sender, instance, action, **kwargs):
