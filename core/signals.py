@@ -9,7 +9,7 @@ from django.db.models.signals import (
 )
 from django.dispatch import receiver
 from django.db import transaction, OperationalError
-from django.db.models import Sum
+from django.db.models import Sum, Q
 from django.utils import timezone
 from decimal import Decimal
 import logging
@@ -20,6 +20,7 @@ from .models import (
     Company, CarService, DeletedCarService, LineTHSCoefficient,
 )
 from .models_billing import NewInvoice, Transaction
+from .service_codes import ServiceCode, is_storage_service, is_ths_service
 
 logger = logging.getLogger(__name__)
 
@@ -188,37 +189,78 @@ def save_old_car_values(sender, instance, **kwargs):
 
 
 @receiver(post_save, sender=Car)
-def update_related_on_car_save(sender, instance, **kwargs):
-    """Deferred invoice regeneration after car save."""
+def car_post_save(sender, instance, **kwargs):
+    """Consolidated post_save handler for Car.
+
+    Responsibilities (in order):
+    1. Create/update CarService records when contractors change.
+    2. Deferred invoice regeneration.
+    3. Email notifications (standalone cars).
+    4. Container status auto-update on transfer.
+    """
     if not instance.pk:
         return
-    if getattr(instance, '_updating_invoices', False):
-        return
 
-    new_invoices = list(NewInvoice.objects.filter(cars=instance).values_list('id', flat=True))
-    if not new_invoices:
-        return
+    created = kwargs.get('created', False)
 
-    car_id = instance.pk
+    # --- 1. Invoice regeneration ---
+    if not getattr(instance, '_updating_invoices', False):
+        invoice_ids = list(NewInvoice.objects.filter(cars=instance).values_list('id', flat=True))
+        if invoice_ids:
+            _deferred_invoice_regeneration_for_car(instance.pk, invoice_ids)
 
-    def _regenerate_invoices():
-        for invoice_id in new_invoices:
+    # --- 2. CarService creation (delegates to helper) ---
+    _create_car_services_if_needed(instance, created=created, kwargs=kwargs)
+
+    # --- 3. Email notification for standalone cars ---
+    _maybe_send_car_unload_notification(instance, created=created)
+
+    # --- 4. Container status auto-update ---
+    old_status = getattr(instance, '_pre_save_status', None)
+    instance._pre_save_status = None
+    if instance.status == 'TRANSFERRED' and old_status != 'TRANSFERRED' and instance.container_id:
+        _update_container_status_if_all_transferred(instance.container_id)
+
+
+def _deferred_invoice_regeneration_for_car(car_id, invoice_ids):
+    """Schedule invoice regeneration after commit."""
+    def _do():
+        for inv_id in invoice_ids:
             try:
                 with transaction.atomic():
-                    invoice = NewInvoice.objects.select_for_update(nowait=True).get(id=invoice_id)
-                    invoice.regenerate_items_from_cars()
+                    inv = NewInvoice.objects.select_for_update(nowait=True).get(id=inv_id)
+                    inv.regenerate_items_from_cars()
             except OperationalError:
-                logger.warning("Skipping invoice %s - locked by another transaction", invoice_id)
+                logger.warning("Skipping invoice %s - locked", inv_id)
             except NewInvoice.DoesNotExist:
                 pass
             except Exception as e:
-                logger.error("Failed to regenerate invoice %s: %s", invoice_id, e)
+                logger.error("Failed to regenerate invoice %s: %s", inv_id, e)
+    transaction.on_commit(_do)
 
-    transaction.on_commit(_regenerate_invoices)
+
+def _maybe_send_car_unload_notification(instance, *, created):
+    """Send unload notification for standalone (non-container) cars."""
+    if instance.container_id:
+        return
+    old_values = getattr(instance, '_pre_save_car_notification', None) or {}
+    instance._pre_save_car_notification = None
+    if old_values.get('container_id'):
+        return
+    old_unload_date = old_values.get('unload_date')
+    if instance.unload_date and (created or old_unload_date is None):
+        def _enqueue():
+            try:
+                from core.tasks import send_car_unload_notification_task
+                send_car_unload_notification_task.delay(instance.pk)
+            except Exception:
+                from core.services.email_service import CarNotificationService
+                if not CarNotificationService.was_car_unload_notification_sent(instance):
+                    CarNotificationService.send_car_unload_notification(instance)
+        transaction.on_commit(_enqueue)
 
 
-@receiver(post_save, sender=Car)
-def create_car_services_on_car_save(sender, instance, **kwargs):
+def _create_car_services_if_needed(instance, *, created, kwargs):
     """Create CarService records when a car's contractors change."""
     from .services.car_service_manager import (
         find_warehouse_services_for_car,
@@ -233,7 +275,6 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
     if getattr(instance, '_creating_services', False):
         return
 
-    created = kwargs.get('created', False)
     if not created:
         old_contractors = getattr(instance, '_pre_save_contractors', None)
         instance._pre_save_contractors = None
@@ -261,7 +302,7 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
             for service in find_warehouse_services_for_car(instance.warehouse):
                 if service.id in deleted_by_type['WAREHOUSE']:
                     continue
-                if service.name == 'Хранение':
+                if is_storage_service(service):
                     days = Decimal(str(instance.days or 0))
                     custom_price = days * Decimal(str(service.default_price or 0))
                     default_markup = days * Decimal(str(getattr(service, 'default_markup', 0) or 0))
@@ -274,8 +315,11 @@ def create_car_services_on_car_save(sender, instance, **kwargs):
                 )
 
         # LINE (non-THS only; THS managed by create_ths_services_for_container)
+        ths_line_ids = LineService.objects.filter(
+            Q(code=ServiceCode.THS) | Q(name__icontains='THS')
+        ).values_list('id', flat=True)
         instance.car_services.filter(service_type='LINE').exclude(
-            service_id__in=LineService.objects.filter(name__icontains='THS').values_list('id', flat=True)
+            service_id__in=ths_line_ids
         ).delete()
         if instance.line:
             for service in find_line_services_for_car(instance.line):
@@ -405,7 +449,7 @@ def update_cars_on_warehouse_service_change(sender, instance, **kwargs):
                 return
             default_markup_val = getattr(instance, 'default_markup', None) or Decimal('0')
             for cs in car_services:
-                if instance.name == 'Хранение':
+                if is_storage_service(instance):
                     days = Decimal(str(cs.car.days or 0))
                     cs.custom_price = days * Decimal(str(instance.default_price or 0))
                     cs.markup_amount = days * Decimal(str(default_markup_val))
@@ -540,7 +584,7 @@ def auto_categorize_invoice(sender, instance, **kwargs):
     if instance.issuer_warehouse_id or instance.issuer_line_id or instance.issuer_carrier_id:
         try:
             from .models_billing import ExpenseCategory
-            logistics_cat = ExpenseCategory.objects.filter(name='Логистика').first()
+            logistics_cat = ExpenseCategory.objects.filter(category_type='OPERATIONAL').first()
             if logistics_cat:
                 instance.category = logistics_cat
         except Exception as e:
@@ -674,47 +718,8 @@ def send_container_notifications_on_save(sender, instance, created, **kwargs):
         transaction.on_commit(_enqueue_unload)
 
 
-@receiver(post_save, sender=Car)
-def send_car_unload_notification_on_save(sender, instance, created, **kwargs):
-    if not instance.pk or instance.container_id:
-        return
 
-    old_values = getattr(instance, '_pre_save_car_notification', None) or {}
-    instance._pre_save_car_notification = None
-    if old_values.get('container_id'):
-        return
-
-    old_unload_date = old_values.get('unload_date')
-    should_notify = False
-    if instance.unload_date:
-        if created or old_unload_date is None:
-            should_notify = True
-
-    if should_notify:
-        def _enqueue_car_unload():
-            try:
-                from core.tasks import send_car_unload_notification_task
-                send_car_unload_notification_task.delay(instance.pk)
-            except Exception:
-                from core.services.email_service import CarNotificationService
-                if not CarNotificationService.was_car_unload_notification_sent(instance):
-                    CarNotificationService.send_car_unload_notification(instance)
-        transaction.on_commit(_enqueue_car_unload)
-
-
-# ============================================================================
-# CONTAINER STATUS AUTO-UPDATE
-# ============================================================================
-
-@receiver(post_save, sender=Car)
-def update_container_status_on_car_transfer(sender, instance, **kwargs):
-    """When a car is manually set to TRANSFERRED, check if the whole container is done."""
-    if not instance.pk or not instance.container_id:
-        return
-    old_status = getattr(instance, '_pre_save_status', None)
-    instance._pre_save_status = None
-    if instance.status == 'TRANSFERRED' and old_status != 'TRANSFERRED':
-        _update_container_status_if_all_transferred(instance.container_id)
+# (Car notification and container status handlers consolidated into car_post_save above)
 
 
 # ============================================================================

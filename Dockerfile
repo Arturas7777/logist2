@@ -18,4 +18,4 @@ RUN python manage.py collectstatic --noinput 2>/dev/null || true
 
 EXPOSE 8000
 
-CMD ["gunicorn", "logist2.wsgi:application", "--config", "gunicorn_config.py"]
+CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "logist2.asgi:application"]
