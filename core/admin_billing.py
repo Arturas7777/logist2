@@ -1055,7 +1055,8 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             
             for service in services:
                 sname = service.get_service_name()
-                if sname in ("Услуга не найдена", "Хранение"):
+                from core.service_codes import NAME_TO_CODE, ServiceCode
+                if sname == "Услуга не найдена" or NAME_TO_CODE.get(sname) == ServiceCode.STORAGE:
                     continue
                 if is_company:
                     price = (service.custom_price if service.custom_price is not None else service.get_default_price()) + (service.markup_amount if service.markup_amount is not None else Decimal('0'))

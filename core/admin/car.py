@@ -243,24 +243,21 @@ class CarAdmin(admin.ModelAdmin):
         """Displays summary of all services with Caromoto Lithuania markup"""
         from decimal import Decimal
         from core.models import CarService
+        from core.service_codes import is_ths_service
         from django.db.models import Sum
 
-        # Split services: lines (all + THS from warehouse), warehouse (without THS), carrier, companies
-        line_total = Decimal('0.00')  # All line services + THS (even if through warehouse)
-        warehouse_total = Decimal('0.00')  # Warehouse services (without THS)
+        line_total = Decimal('0.00')
+        warehouse_total = Decimal('0.00')
         carrier_total = obj.get_services_total_by_provider('CARRIER')
         company_total = obj.get_services_total_by_provider('COMPANY')
 
-        # Get all services and split by categories
-        # THS is always considered a line service, even if paid through warehouse
         for service in obj.car_services.all():
-            service_name = service.get_service_name().upper()
             price = Decimal(str(service.final_price))
 
-            if service.service_type == 'LINE' or 'THS' in service_name:
-                line_total += price  # All line services + THS from warehouse
+            if service.service_type == 'LINE' or is_ths_service(service):
+                line_total += price
             elif service.service_type == 'WAREHOUSE':
-                warehouse_total += price  # Warehouse services without THS
+                warehouse_total += price
 
         # Paid days for display — динамический расчёт (как в days_display)
         if obj.warehouse and obj.unload_date:
@@ -274,10 +271,10 @@ class CarAdmin(admin.ModelAdmin):
         # Sum of distributed markups (from services)
         distributed_markup = obj.car_services.aggregate(total=Sum('markup_amount'))['total'] or Decimal('0')
 
-        # Markup from proft field (if not distributed)
-        proft_amount = obj.proft or Decimal('0.00')
+        # Legacy markup field (no longer used for distribution)
+        markup_field_amount = obj.markup or Decimal('0.00')
 
-        # Total markup = only distributed (proft no longer used)
+        # Total markup = only distributed
         total_markup = distributed_markup
 
         # Base totals (without markup)
@@ -295,11 +292,9 @@ class CarAdmin(admin.ModelAdmin):
         # Show each line service (including THS from warehouse)
         line_services_list = []
         for service in obj.car_services.all():
-            service_name = service.get_service_name()
-            # THS is considered a line service even if paid through warehouse
-            if service.service_type == 'LINE' or 'THS' in service_name.upper():
+            if service.service_type == 'LINE' or is_ths_service(service):
                 price = Decimal(str(service.final_price))
-                line_services_list.append((service_name, price))
+                line_services_list.append((service.get_service_name(), price))
 
         for name, price in line_services_list:
             html.append(f'<span style="font-size:13px; color:#6c757d;">{name}: {price:.2f}</span><br>')
@@ -314,10 +309,9 @@ class CarAdmin(admin.ModelAdmin):
         # Show each warehouse service (except THS)
         warehouse_services_list = []
         for service in obj.car_services.filter(service_type='WAREHOUSE'):
-            service_name = service.get_service_name()
-            if 'THS' not in service_name.upper():
+            if not is_ths_service(service):
                 price = Decimal(str(service.final_price))
-                warehouse_services_list.append((service_name, price))
+                warehouse_services_list.append((service.get_service_name(), price))
 
         for name, price in warehouse_services_list:
             html.append(f'<span style="font-size:13px; color:#6c757d;">{name}: {price:.2f}</span><br>')

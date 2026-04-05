@@ -21,6 +21,8 @@ from django.contrib.auth import get_user_model
 from decimal import Decimal
 import logging
 
+from .service_codes import is_storage_service
+
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
@@ -863,8 +865,7 @@ class NewInvoice(models.Model):
                 if service_name == "Услуга не найдена":
                     continue
                 
-                # Хранение обрабатывается отдельно (не через CarService)
-                if service_name == 'Хранение':
+                if is_storage_service(service):
                     continue
                 
                 short = service.get_service_short_name()

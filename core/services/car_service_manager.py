@@ -7,6 +7,9 @@ import logging
 from decimal import Decimal
 
 from django.db import models as db_models
+from django.db.models import Q
+
+from core.service_codes import ServiceCode, is_storage_service, is_ths_service
 
 logger = logging.getLogger(__name__)
 
@@ -135,13 +138,16 @@ def create_ths_services_for_container(container):
     line_service = None
     if service_type == 'LINE':
         line_service = LineService.objects.filter(
-            line=container.line, is_active=True, name__icontains='THS'
+            line=container.line, is_active=True,
+        ).filter(
+            Q(code=ServiceCode.THS) | Q(name__icontains='THS'),
         ).first()
         if not line_service:
             line_service, _ = LineService.objects.get_or_create(
                 line=container.line,
                 name=f"THS {container.line.name}",
                 defaults={
+                    'code': ServiceCode.THS,
                     'description': 'Услуга THS (рассчитывается пропорционально)',
                     'default_price': 0,
                     'is_active': True,
@@ -151,13 +157,16 @@ def create_ths_services_for_container(container):
     warehouse_service = None
     if service_type == 'WAREHOUSE' and container.warehouse:
         warehouse_service = WarehouseService.objects.filter(
-            warehouse=container.warehouse, is_active=True, name__icontains='THS'
+            warehouse=container.warehouse, is_active=True,
+        ).filter(
+            Q(code=ServiceCode.THS) | Q(name__icontains='THS'),
         ).first()
         if not warehouse_service:
             warehouse_service, _ = WarehouseService.objects.get_or_create(
                 warehouse=container.warehouse,
                 name=f"THS {container.warehouse.name}",
                 defaults={
+                    'code': ServiceCode.THS,
                     'description': 'Услуга THS (рассчитывается пропорционально)',
                     'default_price': 0,
                     'is_active': True,
@@ -179,13 +188,17 @@ def create_ths_services_for_container(container):
             CarService.objects.filter(
                 car=car, service_type='LINE'
             ).filter(
-                service_id__in=LineService.objects.filter(name__icontains='THS').values_list('id', flat=True)
+                service_id__in=LineService.objects.filter(
+                    Q(code=ServiceCode.THS) | Q(name__icontains='THS')
+                ).values_list('id', flat=True)
             ).delete()
 
             CarService.objects.filter(
                 car=car, service_type='WAREHOUSE'
             ).filter(
-                service_id__in=WarehouseService.objects.filter(name__icontains='THS').values_list('id', flat=True)
+                service_id__in=WarehouseService.objects.filter(
+                    Q(code=ServiceCode.THS) | Q(name__icontains='THS')
+                ).values_list('id', flat=True)
             ).delete()
 
             if service_type == 'LINE' and line_service:
@@ -305,7 +318,7 @@ def _distribute_markup_for_car(car, agreed_total, total_cars_in_container):
     all_services = list(CarService.objects.filter(car=car))
     non_storage = [
         svc for svc in all_services
-        if svc.get_service_name() and 'Хранение' not in svc.get_service_name()
+        if not is_storage_service(svc)
     ]
     if not non_storage:
         return

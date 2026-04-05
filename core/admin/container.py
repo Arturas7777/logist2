@@ -18,8 +18,7 @@ from core.models import (
 from core.signals import (
     recalculate_car_price_on_service_save,
     recalculate_car_price_on_service_delete,
-    update_related_on_car_save,
-    create_car_services_on_car_save,
+    car_post_save,
     recalculate_invoices_on_car_service_save,
     recalculate_invoices_on_car_service_delete,
 )
@@ -42,8 +41,7 @@ def signals_disabled(*signal_pairs):
 
 
 CAR_SIGNALS = [
-    (post_save, update_related_on_car_save, Car),
-    (post_save, create_car_services_on_car_save, Car),
+    (post_save, car_post_save, Car),
     (post_save, recalculate_car_price_on_service_save, CarService),
     (post_delete, recalculate_car_price_on_service_delete, CarService),
 ]
@@ -334,10 +332,9 @@ class ContainerAdmin(admin.ModelAdmin):
                     )
 
                     for service in warehouse_services:
-                        # Check if service already exists
                         if not CarService.objects.filter(car=obj, service_type='WAREHOUSE', service_id=service.id).exists():
-                            # For "Storage" calculate price and markup x number of days
-                            if service.name == 'Хранение':
+                            from core.service_codes import is_storage_service
+                            if is_storage_service(service):
                                 days = Decimal(str(obj.days or 0))
                                 custom_price = days * Decimal(str(service.default_price or 0))
                                 default_markup = days * Decimal(str(service.default_markup or 0))

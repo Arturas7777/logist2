@@ -262,6 +262,9 @@ def get_invoice_cars_api(request):
                 year_q
             )
 
+        limit = int(request.GET.get('limit', 200))
+        cars = cars[:limit]
+
         cars_data = []
         for car in cars:
             total_cost = car.total_price or Decimal('0.00')
@@ -318,6 +321,9 @@ def get_warehouse_cars_api(request):
                 Q(brand__icontains=search_query) |
                 year_q
             )
+
+        limit = int(request.GET.get('limit', 200))
+        cars = cars[:limit]
 
         cars_data = []
         for car in cars:
@@ -504,7 +510,8 @@ def add_services(request, car_id):
             custom_price = service.default_price
             markup_amount = getattr(service, 'default_markup', 0) or 0
 
-            if service_type_upper == 'WAREHOUSE' and service.name == 'Хранение':
+            from core.service_codes import is_storage_service
+            if service_type_upper == 'WAREHOUSE' and is_storage_service(service):
                 days = Decimal(str(car.days or 0))
                 custom_price = days * Decimal(str(service.default_price or 0))
                 markup_amount = days * Decimal(str(getattr(service, 'default_markup', 0) or 0))

@@ -1,59 +1,66 @@
 """
-Миксины для моделей Django
-"""
+Reusable model mixins.
 
-from django.db import models
+These mixins provide shared behaviour without defining database fields,
+so they can be added to existing models without generating migrations.
+"""
 from decimal import Decimal
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-class TimestampMixin(models.Model):
+class BalanceMethodsMixin:
     """
-    Абстрактный миксин для добавления временных меток
-    """
-    
-    created_at = models.DateTimeField(
-        auto_now_add=True, 
-        verbose_name="Дата создания"
-    )
-    updated_at = models.DateTimeField(
-        auto_now=True, 
-        verbose_name="Дата обновления"
-    )
-    
-    class Meta:
-        abstract = True
+    Provides ``get_balance_breakdown()`` and ``get_balance_info()`` for any
+    model that has a ``balance`` DecimalField.
 
+    Does NOT declare database fields — those stay on the concrete models.
+    """
 
-class SoftDeleteMixin(models.Model):
-    """
-    Абстрактный миксин для мягкого удаления записей
-    """
-    
-    is_deleted = models.BooleanField(
-        default=False, 
-        verbose_name="Удалено"
-    )
-    deleted_at = models.DateTimeField(
-        null=True, 
-        blank=True, 
-        verbose_name="Дата удаления"
-    )
-    
-    class Meta:
-        abstract = True
-    
-    def soft_delete(self):
-        """Мягкое удаление записи"""
-        from django.utils import timezone
-        self.is_deleted = True
-        self.deleted_at = timezone.now()
-        self.save(update_fields=['is_deleted', 'deleted_at'])
-    
-    def restore(self):
-        """Восстановление записи"""
-        self.is_deleted = False
-        self.deleted_at = None
-        self.save(update_fields=['is_deleted', 'deleted_at'])
+    def get_balance_breakdown(self):
+        from django.db.models import Sum, Q
+
+        model_name = self.__class__.__name__.lower()
+        from core.models_billing import Transaction
+
+        incoming_filter = Q(**{f'to_{model_name}': self})
+        outgoing_filter = Q(**{f'from_{model_name}': self})
+
+        transactions = Transaction.objects.filter(
+            (incoming_filter | outgoing_filter),
+            status='COMPLETED',
+        )
+
+        breakdown = {}
+        for method in ('CASH', 'CARD', 'TRANSFER'):
+            incoming = transactions.filter(
+                incoming_filter, method=method,
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            outgoing = transactions.filter(
+                outgoing_filter, method=method,
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            breakdown[method.lower()] = incoming - outgoing
+
+        breakdown['total'] = self.balance
+        return breakdown
+
+    def get_balance_info(self):
+        balance = self.balance
+        if balance > 0:
+            status, color = 'ПЕРЕПЛАТА', '#28a745'
+            description = f'Переплата {balance:.2f}'
+        elif balance < 0:
+            status, color = 'ДОЛГ', '#dc3545'
+            description = f'Долг {abs(balance):.2f}'
+        else:
+            status, color = 'БАЛАНС', '#6c757d'
+            description = 'Баланс нулевой'
+
+        return {
+            'balance': balance,
+            'status': status,
+            'color': color,
+            'description': description,
+            'breakdown': self.get_balance_breakdown(),
+        }
