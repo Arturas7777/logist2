@@ -1020,30 +1020,28 @@ class CarAdmin(admin.ModelAdmin):
                 service_type='WAREHOUSE'
             ).select_related('car')
 
-            html = '<div style="margin: 10px 0; display: flex; flex-wrap: wrap; gap: 10px;">'
+            html = '<div class="cm-svc-grid">'
 
             if car_services:
                 for car_service in car_services:
                     try:
-                        # Get service and warehouse details
                         service = WarehouseService.objects.select_related('warehouse').get(id=car_service.service_id)
                         current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
                         markup_value = car_service.markup_amount or 0
                         warehouse_name = service.warehouse.name
 
-                        # Highlight: main warehouse - green, others - yellow
-                        bg_color = "#e8f5e9" if (obj.warehouse and service.warehouse.id == obj.warehouse.id) else "#fff9e6"
+                        variant = "cm-svc-card--warehouse" if (obj.warehouse and service.warehouse.id == obj.warehouse.id) else "cm-svc-card--warehouse-other"
 
                         cost_badge = _cost_badge_html(car_service.pk, current_value)
                         html += f'''
-                        <div style="border: 1px solid #ddd; padding: 10px; background: {bg_color}; position: relative; min-width: 220px;">
-                            <button type="button" onclick="removeService({service.id}, 'warehouse')" style="position: absolute; top: 5px; right: 5px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 12px;">×</button>
-                            <div style="font-size: 11px; color: #666; margin-bottom: 3px;">📦 {warehouse_name}</div>
-                            <strong>{service.name}</strong><br>
-                            <div style="display: flex; gap: 5px; align-items: center; margin-top: 5px;">
-                                <input type="number" name="warehouse_service_{service.id}" value="{current_value}" step="0.01" style="width: 80px;" title="Цена услуги">
-                                <span style="color: #28a745; font-weight: bold;">+</span>
-                                <input type="number" name="markup_warehouse_service_{service.id}" value="{markup_value}" step="0.01" style="width: 60px; background: #fffde7; border-color: #ffc107;" title="Скрытая наценка" placeholder="0">
+                        <div class="cm-svc-card {variant}">
+                            <button type="button" onclick="removeService({service.id}, 'warehouse')" class="cm-svc-remove">×</button>
+                            <div class="cm-svc-provider">📦 {warehouse_name}</div>
+                            <div class="cm-svc-name">{service.name}</div>
+                            <div class="cm-svc-inputs">
+                                <input type="number" name="warehouse_service_{service.id}" value="{current_value}" step="0.01" title="Цена услуги">
+                                <span>+</span>
+                                <input type="number" name="markup_warehouse_service_{service.id}" value="{markup_value}" step="0.01" class="cm-svc-markup" title="Скрытая наценка" placeholder="0">
                             </div>
                             {cost_badge}
                             <input type="hidden" name="remove_warehouse_service_{service.id}" id="remove_warehouse_service_{service.id}" value="">
@@ -1094,24 +1092,23 @@ class CarAdmin(admin.ModelAdmin):
                 service_type='LINE'
             )
 
-            html = '<div style="margin: 10px 0; display: flex; flex-wrap: wrap; gap: 10px;">'
+            html = '<div class="cm-svc-grid">'
 
             for car_service in car_services:
                 try:
-                    # Get service details
                     service = LineService.objects.get(id=car_service.service_id)
                     current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
                     markup_value = car_service.markup_amount or 0
 
                     cost_badge = _cost_badge_html(car_service.pk, current_value)
                     html += f'''
-                    <div style="border: 1px solid #ddd; padding: 10px; background: #e3f2fd; position: relative; min-width: 200px;">
-                        <button type="button" onclick="removeService({service.id}, 'line')" style="position: absolute; top: 5px; right: 5px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 12px;">×</button>
-                        <strong>{service.name}</strong><br>
-                        <div style="display: flex; gap: 5px; align-items: center; margin-top: 5px;">
-                            <input type="number" name="line_service_{service.id}" value="{current_value}" step="0.01" style="width: 80px;" title="Цена услуги">
-                            <span style="color: #28a745; font-weight: bold;">+</span>
-                            <input type="number" name="markup_line_service_{service.id}" value="{markup_value}" step="0.01" style="width: 60px; background: #fffde7; border-color: #ffc107;" title="Скрытая наценка" placeholder="0">
+                    <div class="cm-svc-card cm-svc-card--line">
+                        <button type="button" onclick="removeService({service.id}, 'line')" class="cm-svc-remove">×</button>
+                        <div class="cm-svc-name">{service.name}</div>
+                        <div class="cm-svc-inputs">
+                            <input type="number" name="line_service_{service.id}" value="{current_value}" step="0.01" title="Цена услуги">
+                            <span>+</span>
+                            <input type="number" name="markup_line_service_{service.id}" value="{markup_value}" step="0.01" class="cm-svc-markup" title="Скрытая наценка" placeholder="0">
                         </div>
                         {cost_badge}
                         <input type="hidden" name="remove_line_service_{service.id}" id="remove_line_service_{service.id}" value="">
@@ -1153,24 +1150,23 @@ class CarAdmin(admin.ModelAdmin):
                 service_type='CARRIER'
             )
 
-            html = '<div style="margin: 10px 0; display: flex; flex-wrap: wrap; gap: 10px;">'
+            html = '<div class="cm-svc-grid">'
 
             for car_service in car_services:
                 try:
-                    # Get service details
                     service = CarrierService.objects.get(id=car_service.service_id)
                     current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
                     markup_value = car_service.markup_amount or 0
 
                     cost_badge = _cost_badge_html(car_service.pk, current_value)
                     html += f'''
-                    <div style="border: 1px solid #ddd; padding: 10px; background: #fff3e0; position: relative; min-width: 200px;">
-                        <button type="button" onclick="removeService({service.id}, 'carrier')" style="position: absolute; top: 5px; right: 5px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 12px;">×</button>
-                        <strong>{service.name}</strong><br>
-                        <div style="display: flex; gap: 5px; align-items: center; margin-top: 5px;">
-                            <input type="number" name="carrier_service_{service.id}" value="{current_value}" step="0.01" style="width: 80px;" title="Цена услуги">
-                            <span style="color: #28a745; font-weight: bold;">+</span>
-                            <input type="number" name="markup_carrier_service_{service.id}" value="{markup_value}" step="0.01" style="width: 60px; background: #fffde7; border-color: #ffc107;" title="Скрытая наценка" placeholder="0">
+                    <div class="cm-svc-card cm-svc-card--carrier">
+                        <button type="button" onclick="removeService({service.id}, 'carrier')" class="cm-svc-remove">×</button>
+                        <div class="cm-svc-name">{service.name}</div>
+                        <div class="cm-svc-inputs">
+                            <input type="number" name="carrier_service_{service.id}" value="{current_value}" step="0.01" title="Цена услуги">
+                            <span>+</span>
+                            <input type="number" name="markup_carrier_service_{service.id}" value="{markup_value}" step="0.01" class="cm-svc-markup" title="Скрытая наценка" placeholder="0">
                         </div>
                         {cost_badge}
                         <input type="hidden" name="remove_carrier_service_{service.id}" id="remove_carrier_service_{service.id}" value="">
@@ -1208,7 +1204,7 @@ class CarAdmin(admin.ModelAdmin):
                 service_type='COMPANY'
             )
 
-            html = '<div style="margin: 10px 0; display: flex; flex-wrap: wrap; gap: 10px;">'
+            html = '<div class="cm-svc-grid">'
 
             if car_services:
                 for car_service in car_services:
@@ -1219,14 +1215,14 @@ class CarAdmin(admin.ModelAdmin):
 
                         cost_badge = _cost_badge_html(car_service.pk, current_value)
                         html += f'''
-                        <div style="border: 1px solid #ddd; padding: 10px; background: #f3e8ff; position: relative; min-width: 240px;">
-                            <button type="button" onclick="removeService({service.id}, 'company')" style="position: absolute; top: 5px; right: 5px; background: #dc3545; color: white; border: none; border-radius: 50%; width: 20px; height: 20px; cursor: pointer; font-size: 12px;">×</button>
-                            <div style="font-size: 11px; color: #666; margin-bottom: 3px;">🏢 {service.company.name}</div>
-                            <strong>{service.name}</strong><br>
-                            <div style="display: flex; gap: 5px; align-items: center; margin-top: 5px;">
-                                <input type="number" name="company_service_{service.id}" value="{current_value}" step="0.01" style="width: 80px;" title="Цена услуги">
-                                <span style="color: #28a745; font-weight: bold;">+</span>
-                                <input type="number" name="markup_company_service_{service.id}" value="{markup_value}" step="0.01" style="width: 60px; background: #fffde7; border-color: #ffc107;" title="Скрытая наценка" placeholder="0">
+                        <div class="cm-svc-card cm-svc-card--company">
+                            <button type="button" onclick="removeService({service.id}, 'company')" class="cm-svc-remove">×</button>
+                            <div class="cm-svc-provider">🏢 {service.company.name}</div>
+                            <div class="cm-svc-name">{service.name}</div>
+                            <div class="cm-svc-inputs">
+                                <input type="number" name="company_service_{service.id}" value="{current_value}" step="0.01" title="Цена услуги">
+                                <span>+</span>
+                                <input type="number" name="markup_company_service_{service.id}" value="{markup_value}" step="0.01" class="cm-svc-markup" title="Скрытая наценка" placeholder="0">
                             </div>
                             {cost_badge}
                             <input type="hidden" name="remove_company_service_{service.id}" id="remove_company_service_{service.id}" value="">

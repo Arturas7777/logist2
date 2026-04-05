@@ -92,12 +92,18 @@ nav.sticky {
 }
 
 /* ===== LAYOUT: Container ===== */
+html, body {
+    max-width: 100vw;
+    overflow-x: hidden;
+}
 #container {
     background: var(--cm-bg) !important;
     min-height: 100vh;
     position: relative;
     display: flex;
     flex-direction: column;
+    max-width: 100vw;
+    overflow-x: hidden;
 }
 
 /* ===== LAYOUT: Main + Content ===== */
@@ -1655,8 +1661,13 @@ body.popup #footer {
     }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
     .cm-sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        z-index: 1000;
         transform: translateX(-100%);
         transition: transform .3s ease;
     }
@@ -1674,6 +1685,9 @@ body.popup #footer {
         padding: 14px 16px;
     }
     .cm-topbar-center {
+        display: none;
+    }
+    .cm-topbar-right {
         display: none;
     }
     main#content-start, main.content {
@@ -2139,7 +2153,9 @@ body.popup #footer {
 .cm-car-photo {
     float: left;
     width: 380px;
-    height: 190px;
+    max-width: 100%;
+    height: auto;
+    max-height: 220px;
     object-fit: contain;
     margin: 4px 24px 16px 0;
     border-radius: 10px;
@@ -2166,8 +2182,11 @@ body.popup #footer {
     padding: 0;
 }
 
-/* Hide submit row when sidebar is visible */
-.cm-form-grid .submit-row {
+/* Hide submit row — sidebar has its own action buttons */
+.cm-form-grid .submit-row,
+.cm-form-main .submit-row,
+body.model-car .submit-row,
+body.model-container .submit-row {
     display: none !important;
 }
 
@@ -2650,6 +2669,132 @@ body.model-newinvoice.change-form #content > h2 {
     }
 }
 
+@media (max-width: 1024px) {
+    .cm-car-photo {
+        float: none;
+        display: block;
+        width: 100%;
+        max-height: 180px;
+        margin: 0 0 12px 0;
+    }
+
+    .cm-form-main .form-row .form-multiline {
+        flex-direction: column !important;
+    }
+    .cm-form-main .form-row .form-multiline > div {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        width: 100% !important;
+    }
+
+    .cm-form-main fieldset.module {
+        padding: 6px 0 !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        overflow: hidden !important;
+    }
+
+    .cm-form-main fieldset.module > h2,
+    .cm-form-main fieldset.module > .fieldset-heading {
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+        margin-top: -6px !important;
+        padding-left: 10px !important;
+        padding-right: 10px !important;
+    }
+
+    .cm-form-main fieldset.collapse > details > summary {
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+        margin-top: -6px !important;
+        padding-left: 10px !important;
+        padding-right: 10px !important;
+    }
+
+    .cm-form-main {
+        max-width: 100% !important;
+    }
+
+    .cm-form-main .form-row {
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+    }
+
+    .cm-form-main .form-row > div,
+    .cm-form-main .form-row .flex-container,
+    .cm-form-main .form-row .fieldBox {
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        float: none !important;
+        margin-right: 0 !important;
+        margin-left: 0 !important;
+        width: 100% !important;
+    }
+
+    .cm-form-main .form-row input:not([type="checkbox"]):not([type="hidden"]),
+    .cm-form-main .form-row select,
+    .cm-form-main .form-row textarea,
+    .cm-form-main .form-row .select2-container {
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    .cm-form-main .form-row .related-widget-wrapper {
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+        flex-wrap: wrap !important;
+    }
+    .cm-form-main .form-row .related-widget-wrapper select {
+        min-width: 0 !important;
+        width: 100% !important;
+    }
+
+    .cm-svc-grid {
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    .cm-svc-card {
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+        flex: 1 1 100% !important;
+    }
+
+    html, body {
+        overflow-x: hidden !important;
+    }
+
+    main#content-start, main.content {
+        padding: 6px !important;
+    }
+
+    .cm-form-grid {
+        gap: 10px !important;
+    }
+
+    .cm-sidebar-card {
+        margin-bottom: 10px !important;
+    }
+
+    .submit-row {
+        flex-wrap: wrap !important;
+    }
+    .submit-row input, .submit-row a, .submit-row button {
+        flex: 1 1 auto !important;
+        white-space: nowrap !important;
+        font-size: .78rem !important;
+        padding: 8px 12px !important;
+    }
+
+    .cm-sidebar-actions .cm-btn {
+        font-size: .82rem !important;
+        padding: 10px 14px !important;
+    }
+}
+
 /* Popup mode: hide form grid sidebar */
 body.popup .cm-form-grid {
     display: block;
@@ -2665,6 +2810,98 @@ body.popup .cm-page-header {
 
 body.popup .cm-form-grid .submit-row {
     display: flex !important;
+}
+
+/* ===== Service cards inside car form ===== */
+.cm-svc-grid {
+    margin: 10px 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.cm-svc-card {
+    position: relative;
+    border: 1px solid var(--cm-border, #e2e8f0);
+    border-radius: 10px;
+    padding: 10px 12px;
+    min-width: 180px;
+    max-width: 300px;
+    flex: 0 1 auto;
+    box-sizing: border-box;
+}
+.cm-form-main .form-row .flex-container:not(.form-multiline) .cm-svc-card input[type="number"],
+.cm-form-main .form-row .cm-svc-card input[type="number"],
+.cm-svc-card input[type="number"] {
+    width: 70px !important;
+    max-width: 70px !important;
+    min-width: 50px !important;
+    padding: 4px 6px !important;
+    border: 1px solid var(--cm-border, #e2e8f0) !important;
+    border-radius: 6px !important;
+    font-size: .85rem !important;
+    box-sizing: border-box !important;
+    flex: 0 0 70px !important;
+}
+.cm-form-main .form-row .flex-container:not(.form-multiline) .cm-svc-card input.cm-svc-markup,
+.cm-form-main .form-row .cm-svc-card input.cm-svc-markup,
+.cm-svc-card input.cm-svc-markup {
+    width: 56px !important;
+    max-width: 56px !important;
+    flex: 0 0 56px !important;
+    background: #fffde7 !important;
+    border-color: #ffc107 !important;
+}
+.cm-svc-card .cm-svc-remove {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: #ef4444;
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.cm-svc-card .cm-svc-provider {
+    font-size: .72rem;
+    color: var(--cm-text-muted, #9ca3af);
+    margin-bottom: 2px;
+}
+.cm-svc-card .cm-svc-name {
+    font-weight: 600;
+    font-size: .85rem;
+    margin-bottom: 4px;
+}
+.cm-svc-card .cm-svc-inputs {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    margin-top: 4px;
+}
+.cm-svc-card .cm-svc-inputs span {
+    color: #10b981;
+    font-weight: 700;
+    font-size: .85rem;
+}
+
+.cm-svc-card--warehouse { background: #f0fdf4; }
+.cm-svc-card--warehouse-other { background: #fefce8; }
+.cm-svc-card--line { background: #eff6ff; }
+.cm-svc-card--carrier { background: #fff7ed; }
+.cm-svc-card--company { background: #faf5ff; }
+
+@media (max-width: 1024px) {
+    .cm-svc-card {
+        min-width: 0;
+        max-width: none;
+        flex: 1 1 100%;
+    }
 }
 
 /* ===== Car form: row 1 (year, brand, vin, vehicle_type) ===== */
