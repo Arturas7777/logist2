@@ -92,9 +92,15 @@ nav.sticky {
 }
 
 /* ===== LAYOUT: Container ===== */
-html, body {
-    max-width: 100vw;
+html {
     overflow-x: hidden;
+    overscroll-behavior-x: none;
+}
+body {
+    overflow-x: hidden;
+    width: 100%;
+    position: relative;
+    overscroll-behavior-x: none;
 }
 #container {
     background: var(--cm-bg) !important;
@@ -102,7 +108,8 @@ html, body {
     position: relative;
     display: flex;
     flex-direction: column;
-    max-width: 100vw;
+    width: 100%;
+    max-width: 100%;
     overflow-x: hidden;
 }
 
@@ -1664,15 +1671,14 @@ body.popup #footer {
 @media (max-width: 1024px) {
     .cm-sidebar {
         position: fixed;
-        left: 0;
+        left: -260px;
         top: 0;
         bottom: 0;
         z-index: 1000;
-        transform: translateX(-100%);
-        transition: transform .3s ease;
+        transition: left .3s ease;
     }
     .cm-sidebar.open {
-        transform: translateX(0);
+        left: 0;
     }
     .cm-sidebar-toggle {
         display: block;
@@ -1682,7 +1688,17 @@ body.popup #footer {
     }
     .cm-topbar {
         margin-left: 0;
-        padding: 14px 16px;
+        padding: 10px 16px;
+        justify-content: center;
+    }
+    .cm-topbar-left {
+        width: 100%;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+    }
+    .cm-topbar-left .cm-sidebar-toggle {
+        order: 2;
     }
     .cm-topbar-center {
         display: none;
@@ -2832,22 +2848,21 @@ body.popup .cm-form-grid .submit-row {
 .cm-form-main .form-row .flex-container:not(.form-multiline) .cm-svc-card input[type="number"],
 .cm-form-main .form-row .cm-svc-card input[type="number"],
 .cm-svc-card input[type="number"] {
-    width: 70px !important;
-    max-width: 70px !important;
-    min-width: 50px !important;
+    width: auto !important;
+    max-width: none !important;
+    min-width: 60px !important;
     padding: 4px 6px !important;
     border: 1px solid var(--cm-border, #e2e8f0) !important;
     border-radius: 6px !important;
     font-size: .85rem !important;
     box-sizing: border-box !important;
-    flex: 0 0 70px !important;
+    flex: 1 1 60px !important;
 }
 .cm-form-main .form-row .flex-container:not(.form-multiline) .cm-svc-card input.cm-svc-markup,
 .cm-form-main .form-row .cm-svc-card input.cm-svc-markup,
 .cm-svc-card input.cm-svc-markup {
-    width: 56px !important;
-    max-width: 56px !important;
-    flex: 0 0 56px !important;
+    flex: 1 1 50px !important;
+    min-width: 50px !important;
     background: #fffde7 !important;
     border-color: #ffc107 !important;
 }
