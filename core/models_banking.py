@@ -63,6 +63,7 @@ class BankConnection(models.Model):
 
     BANK_TYPE_CHOICES = [
         ('REVOLUT', 'Revolut Business'),
+        ('PAYSERA', 'Paysera'),
         ('OTHER', 'Другой банк'),
     ]
 

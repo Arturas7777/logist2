@@ -1,0 +1,215 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block title %}Привязать транзакции к инвойсу{% endblock %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+    .link-form {
+        max-width: 800px;
+        margin: 0 auto;
+    }
+    .info-box {
+        background: #f0f4ff;
+        border: 1px solid #c7d2fe;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 24px;
+    }
+    .info-box h3 {
+        margin: 0 0 12px 0;
+        color: #3730a3;
+        font-size: 16px;
+    }
+    .trx-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    .trx-list li {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid #e0e7ff;
+        font-size: 14px;
+    }
+    .trx-list li:last-child { border-bottom: none; }
+    .trx-amount-in { font-weight: 700; color: #16a34a; }
+    .trx-amount-out { font-weight: 700; color: #dc2626; }
+    .form-section {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 24px;
+    }
+    .form-section h3 {
+        margin: 0 0 16px 0;
+        color: #1e293b;
+        font-size: 16px;
+        border-bottom: 1px solid #e5e7eb;
+        padding-bottom: 10px;
+    }
+    .invoice-search {
+        width: 100%;
+        padding: 10px 14px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 14px;
+        box-sizing: border-box;
+        margin-bottom: 12px;
+    }
+    .invoice-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+    }
+    .invoice-table th {
+        text-align: left;
+        padding: 8px 10px;
+        background: #f9fafb;
+        border-bottom: 2px solid #e5e7eb;
+        font-weight: 600;
+        color: #374151;
+    }
+    .invoice-table td {
+        padding: 8px 10px;
+        border-bottom: 1px solid #f3f4f6;
+    }
+    .invoice-table tr:hover { background: #f0f4ff; }
+    .invoice-table tr.selected { background: #dbeafe; }
+    .invoice-table .inv-number { font-weight: 600; color: #1e40af; }
+    .inv-status-paid { color: #16a34a; font-weight: 600; }
+    .inv-status-unpaid { color: #dc2626; font-weight: 600; }
+    .inv-status-partial { color: #d97706; font-weight: 600; }
+    .invoice-list-wrap {
+        max-height: 400px;
+        overflow-y: auto;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+    }
+    .action-buttons {
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+        margin-top: 20px;
+    }
+    .btn {
+        display: inline-block;
+        padding: 10px 24px;
+        border: none;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+        transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: #4f46e5; color: #fff; }
+    .btn-cancel { background: #e5e7eb; color: #374151; }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Главная</a>
+    &rsaquo; <a href="{% url 'admin:core_banktransaction_changelist' %}">Банковские транзакции</a>
+    &rsaquo; Привязать к инвойсу
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="link-form">
+
+    <div class="info-box">
+        <h3>Выбрано {{ transactions|length }} транзакций</h3>
+        <ul class="trx-list">
+            {% for trx in transactions %}
+            <li>
+                <span>{{ trx.created_at|date:"d.m.Y" }} — {{ trx.counterparty_name|default:"Без контрагента" }}</span>
+                {% if trx.amount >= 0 %}
+                <span class="trx-amount-in">+{{ trx.amount }} {{ trx.currency }}</span>
+                {% else %}
+                <span class="trx-amount-out">{{ trx.amount }} {{ trx.currency }}</span>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="link_to_invoice">
+        <input type="hidden" name="confirm_link" value="yes">
+        {% for trx in transactions %}
+        <input type="hidden" name="{{ action_checkbox_name }}" value="{{ trx.pk }}">
+        {% endfor %}
+
+        <div class="form-section">
+            <h3>Выберите инвойс</h3>
+            <input type="text" class="invoice-search" id="invoiceSearch"
+                   placeholder="Поиск по номеру, клиенту, сумме..." autocomplete="off">
+            <div class="invoice-list-wrap">
+                <table class="invoice-table" id="invoiceTable">
+                    <thead>
+                        <tr>
+                            <th></th>
+                            <th>Номер</th>
+                            <th>Дата</th>
+                            <th>Клиент</th>
+                            <th>Сумма</th>
+                            <th>Статус</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for inv in invoices %}
+                        <tr data-search="{{ inv.number|lower }} {{ inv.recipient_client.name|default:''|lower }} {{ inv.total }}">
+                            <td><input type="radio" name="invoice_id" value="{{ inv.pk }}" required></td>
+                            <td class="inv-number">{{ inv.number }}</td>
+                            <td>{{ inv.date|date:"d.m.Y" }}</td>
+                            <td>{{ inv.recipient_client.name|default:"—" }}</td>
+                            <td>{{ inv.total }} {{ inv.currency }}</td>
+                            <td>
+                                {% if inv.status == 'PAID' %}
+                                <span class="inv-status-paid">Оплачен</span>
+                                {% elif inv.status == 'PARTIALLY_PAID' %}
+                                <span class="inv-status-partial">Частично</span>
+                                {% else %}
+                                <span class="inv-status-unpaid">{{ inv.get_status_display }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="action-buttons">
+            <a href="{% url 'admin:core_banktransaction_changelist' %}" class="btn btn-cancel">Отмена</a>
+            <button type="submit" class="btn btn-primary">Привязать</button>
+        </div>
+    </form>
+</div>
+
+<script>
+document.getElementById('invoiceSearch').addEventListener('input', function() {
+    const q = this.value.toLowerCase();
+    document.querySelectorAll('#invoiceTable tbody tr').forEach(function(row) {
+        const text = row.getAttribute('data-search') || '';
+        row.style.display = text.includes(q) ? '' : 'none';
+    });
+});
+document.querySelectorAll('#invoiceTable tbody tr').forEach(function(row) {
+    row.addEventListener('click', function(e) {
+        if (e.target.tagName === 'INPUT') return;
+        const radio = row.querySelector('input[type="radio"]');
+        if (radio) { radio.checked = true; }
+        document.querySelectorAll('#invoiceTable tbody tr').forEach(function(r) { r.classList.remove('selected'); });
+        row.classList.add('selected');
+    });
+});
+</script>
+{% endblock %}
