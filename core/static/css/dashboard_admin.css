@@ -1671,14 +1671,14 @@ body.popup #footer {
 @media (max-width: 1024px) {
     .cm-sidebar {
         position: fixed;
-        left: -260px;
+        left: 0;
         top: 0;
         bottom: 0;
         z-index: 1000;
-        transition: left .3s ease;
+        display: none;
     }
     .cm-sidebar.open {
-        left: 0;
+        display: flex;
     }
     .cm-sidebar-toggle {
         display: block;
@@ -1696,6 +1696,10 @@ body.popup #footer {
         flex-direction: column;
         align-items: center;
         gap: 6px;
+    }
+    .cm-topbar-left a img {
+        max-width: calc(100vw - 32px);
+        height: auto;
     }
     .cm-topbar-left .cm-sidebar-toggle {
         order: 2;
