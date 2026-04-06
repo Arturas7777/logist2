@@ -180,9 +180,9 @@ class BankReconciliationFilter(admin.SimpleListFilter):
 @admin.register(BankTransaction)
 class BankTransactionAdmin(admin.ModelAdmin):
     list_display = (
-        'created_at', 'connection', 'transaction_type',
-        'display_amount', 'currency', 'counterparty_name',
-        'display_reconciled', 'display_action', 'state',
+        'created_at', 'transaction_type',
+        'display_amount', 'display_counterparty', 'display_description',
+        'display_reconciled', 'display_action',
     )
     list_filter = (BankReconciliationFilter, 'transaction_type', 'state', 'currency', 'connection')
     search_fields = ('description', 'counterparty_name', 'external_id')
@@ -227,6 +227,44 @@ class BankTransactionAdmin(admin.ModelAdmin):
         )
     display_amount.short_description = 'Сумма'
     display_amount.admin_order_field = 'amount'
+
+    def display_counterparty(self, obj):
+        name = obj.counterparty_name or ''
+        if not name:
+            return format_html('<span style="color:#9898b0;">—</span>')
+        return format_html(
+            '<span style="font-weight:600;">{}</span>',
+            name
+        )
+    display_counterparty.short_description = 'Отправитель'
+    display_counterparty.admin_order_field = 'counterparty_name'
+
+    def display_description(self, obj):
+        desc = obj.description or ''
+        if not desc:
+            return format_html('<span style="color:#9898b0;">—</span>')
+        if len(desc) <= 60:
+            return format_html('<span>{}</span>', desc)
+        short = desc[:60]
+        return format_html(
+            '<span style="display:inline;">{}&hellip; '
+            '<a href="#" onclick="'
+            "var full=this.parentElement.nextElementSibling;"
+            "full.style.display='block';this.parentElement.style.display='none';"
+            'return false;"'
+            ' style="color:#2563eb;font-size:11px;">&#9660;</a>'
+            '</span>'
+            '<span style="display:none;white-space:normal;max-width:400px;">{} '
+            '<a href="#" onclick="'
+            "var short=this.parentElement.previousElementSibling;"
+            "short.style.display='inline';this.parentElement.style.display='none';"
+            'return false;"'
+            ' style="color:#2563eb;font-size:11px;">&#9650;</a>'
+            '</span>',
+            short, desc
+        )
+    display_description.short_description = 'Назначение платежа'
+    display_description.admin_order_field = 'description'
 
     def display_reconciled(self, obj):
         # 1. Привязано к инвойсу/транзакции

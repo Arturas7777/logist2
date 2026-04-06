@@ -242,7 +242,36 @@ class RevolutService:
                 currency = leg.get('currency', '')
                 cp = leg.get('counterparty', {})
                 if isinstance(cp, dict):
-                    counterparty = cp.get('account_name', '') or cp.get('name', '')
+                    counterparty = (
+                        cp.get('account_name', '')
+                        or cp.get('name', '')
+                        or cp.get('company_name', '')
+                    )
+                leg_desc = leg.get('description', '')
+                if not description and leg_desc:
+                    description = leg_desc
+                # Revolut puts sender name in leg description as "Payment from Name"
+                if not counterparty and leg_desc:
+                    import re
+                    pf_match = re.match(r'(?:Payment from|Transfer from)\s+(.+)', leg_desc, re.IGNORECASE)
+                    if pf_match:
+                        counterparty = pf_match.group(1).strip()
+
+            # Fallback: top-level counterparty
+            if not counterparty:
+                top_cp = item.get('counterparty', {})
+                if isinstance(top_cp, dict):
+                    counterparty = (
+                        top_cp.get('name', '')
+                        or top_cp.get('account_name', '')
+                        or top_cp.get('company_name', '')
+                    )
+
+            # Fallback: merchant (для карточных платежей)
+            if not counterparty:
+                merchant = item.get('merchant', {})
+                if isinstance(merchant, dict):
+                    counterparty = merchant.get('name', '')
 
             # Парсим дату
             created_at_str = item.get('created_at', '')
