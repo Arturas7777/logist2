@@ -229,14 +229,29 @@ class BankTransactionAdmin(admin.ModelAdmin):
     display_amount.admin_order_field = 'amount'
 
     def display_counterparty(self, obj):
+        from django.utils.safestring import mark_safe
         name = obj.counterparty_name or ''
         if not name:
             return format_html('<span style="color:#9898b0;">—</span>')
-        return format_html(
-            '<span style="font-weight:600;">{}</span>',
-            name
-        )
-    display_counterparty.short_description = 'Отправитель'
+        if obj.amount >= 0:
+            return format_html(
+                '<span style="display:inline-flex;align-items:center;gap:6px;">'
+                '<span style="display:inline-flex;align-items:center;justify-content:center;'
+                'width:24px;height:24px;border-radius:50%;background:#dcfce7;color:#16a34a;'
+                'font-size:14px;font-weight:700;flex-shrink:0;" title="Входящий">&#8595;</span>'
+                '<span style="font-weight:600;">{}</span></span>',
+                name
+            )
+        else:
+            return format_html(
+                '<span style="display:inline-flex;align-items:center;gap:6px;">'
+                '<span style="display:inline-flex;align-items:center;justify-content:center;'
+                'width:24px;height:24px;border-radius:50%;background:#fee2e2;color:#dc2626;'
+                'font-size:14px;font-weight:700;flex-shrink:0;" title="Исходящий">&#8593;</span>'
+                '<span style="font-weight:600;">{}</span></span>',
+                name
+            )
+    display_counterparty.short_description = 'Контрагент'
     display_counterparty.admin_order_field = 'counterparty_name'
 
     def display_description(self, obj):
