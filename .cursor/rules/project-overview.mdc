@@ -1,0 +1,135 @@
+---
+description: Общий контекст проекта Logist2 — архитектура, модели, сервисы, деплой
+globs:
+  - "**/*.py"
+  - "**/*.html"
+  - "**/*.css"
+  - "**/*.js"
+---
+
+# Logist2 — Django-проект для Caromoto Lithuania MB
+
+## О проекте
+
+Система управления логистикой автомобилей: приём контейнеров в порту, разгрузка, хранение на складе, доставка клиенту, выставление счетов, приём оплаты.
+
+- **Владелец:** Caromoto Lithuania MB (Литва), логистика и брокерские услуги
+- **Сайт:** caromoto-lt.com
+- **Сервер:** root@176.118.198.78, путь: /var/www/www-root/data/www/logist2
+- **Деплой:** `scripts/deploy.ps1` (scp → migrate → collectstatic → restart gunicorn+daphne)
+- **Суперпользователь:** arturas
+
+## Стек
+
+- Python 3.13 (лок.), 3.10 (сервер)
+- Django 5.1.7, Daphne (ASGI), Channels (WebSocket)
+- DRF (rest_framework)
+- WhiteNoise (статика)
+- PostgreSQL (через .env)
+- Revolut Business API (банкинг)
+- site.pro API (бухгалтерия / выставление счетов)
+- AI: OpenAI API (чат, аудит счетов, RAG)
+
+## Структура проекта
+
+```
+logist2/                   # Django project package
+  settings/
+    base.py                # Основные настройки
+    dev.py / prod.py       # Окружения
+  urls.py                  # Все URL-маршруты
+  admin_site.py            # Кастомный AdminSite с группировкой sidebar
+
+core/                      # Единственное Django-приложение (вся бизнес-логика)
+  models.py                # Логистика: Car, Container, AutoTransport, Client,
+                           #   Company, Warehouse, Line, Carrier, CarService и др.
+  models_billing.py        # Финансы: NewInvoice, InvoiceItem, Transaction, ExpenseCategory
+  models_banking.py        # Банкинг: BankConnection, BankAccount, BankTransaction
+  models_accounting.py     # Бухгалтерия: SiteProConnection, SiteProInvoiceSync
+  models_website.py        # Сайт: ClientUser, CarPhoto, AIChat, NewsPost и др.
+  models_invoice_audit.py  # Аудит: InvoiceAudit, SupplierCost
+
+  admin/
+    __init__.py            # Импорт всех admin-модулей
+    car.py                 # CarAdmin
+    container.py           # ContainerAdmin
+    partners.py            # Client, Company, Warehouse, Line, Carrier admin
+    inlines.py             # Inline-классы
+  admin_billing.py         # NewInvoiceAdmin, TransactionAdmin
+  admin_banking.py         # BankConnectionAdmin, BankTransactionAdmin
+  admin_accounting.py      # SiteProConnectionAdmin
+  admin_website.py         # ClientUser, AIChat и др.
+
+  services/
+    billing_service.py     # Создание инвойсов, платежи, возвраты, пополнение баланса
+    revolut_service.py     # Revolut API: sync счетов и транзакций
+    sitepro_service.py     # Пуш инвойсов в site.pro
+    balance_manager.py     # Пересчёт и проверка консистентности балансов
+    reconciliation_service.py  # Сверка банковских операций с инвойсами
+    car_service_manager.py # Автосоздание CarService при смене контрагентов
+    car_lifecycle_service.py   # Жизненный цикл авто
+    email_service.py       # Уведомления клиентам
+    invoice_audit_service.py   # AI-аудит входящих счетов
+    comparison_service.py  # Сравнение стоимости услуг
+    dashboard_service.py   # Данные для дашборда
+    ai_chat_service.py     # AI-чат для клиентского портала
+    ai_rag.py              # RAG для AI
+
+  signals.py               # Все сигналы (post_save/delete для Car, Container,
+                           #   Transaction, CarService, AutoTransport, Invoice)
+  views.py                 # API views (car_list, register_payment, dashboard и др.)
+  views_website.py         # Клиентский сайт
+  views_autotransport.py   # Автовоз
+  views_invoice_audit.py   # Аудит и сверка счетов
+  api.py                   # DRF ViewSets (CarViewSet, InvoiceViewSet)
+
+templates/admin/           # Кастомные шаблоны админки
+```
+
+## Ключевые модели и связи
+
+### Логистика
+- **Car** — автомобиль (VIN, brand, year, vehicle_type). Связи: client, container, warehouse, line, carrier. Поля стоимости: total_price, storage_cost, days + множество fee-полей.
+- **Container** — контейнер с авто. Статусы: FLOATING → IN_PORT → UNLOADED → TRANSFERRED. Связь: line, client, warehouse.
+- **AutoTransport** — автовоз для доставки. M2M с Car. При статусе FORMED → автогенерация инвойсов.
+- **CarService** — привязка услуги к авто (service_type: LINE/CARRIER/WAREHOUSE/COMPANY + service_id → FK к соотв. *Service модели). custom_price, markup_amount.
+
+### Партнёры
+- **Client** — клиент с balance (долг/переплата). Tariff rates через ClientTariffRate.
+- **Company** — компания (Caromoto Lithuania = id=1, default). `Company.get_default()`.
+- **Warehouse**, **Line**, **Carrier** — контрагенты, каждый с balance и набором услуг (*Service).
+
+### Финансы (models_billing.py)
+- **NewInvoice** — инвойс: issuer → recipient (ровно один каждый). Статусы: DRAFT → ISSUED → PARTIALLY_PAID → PAID. paid_amount из Transaction.
+- **Transaction** — финансовая операция. Типы: PAYMENT, REFUND, ADJUSTMENT, TRANSFER, BALANCE_TOPUP. Методы: CASH, CARD, TRANSFER, BALANCE. Сигнал post_save → пересчёт баланса entity + paid_amount инвойса.
+
+### Банкинг (models_banking.py)
+- **BankTransaction** — кэш операций Revolut. counterparty_name, description. matched_invoice, matched_transaction для сверки.
+
+## Сигналы (signals.py) — важные цепочки
+
+1. **Car post_save** → пересоздание CarService при смене warehouse/line/carrier → пересчёт invoices
+2. **Container post_save** → обновление unload_date на всех авто в контейнере → пересчёт storage
+3. **Transaction post_save** → `recalculate_entity_balance()` + `invoice.recalculate_paid_amount()`
+4. **CarService post_save/delete** → пересчёт car.total_price + регенерация связанных инвойсов
+5. **AutoTransport post_save** → генерация инвойсов при FORMED, перевод авто в TRANSFERRED при LOADED/IN_TRANSIT/DELIVERED
+6. **NewInvoice pre_save** → авто-категоризация; post_save → авто-пуш в site.pro при ISSUED
+
+## Admin
+
+Кастомный `LogistAdminSite` с sidebar-навигацией. 6 групп: Логистика, Партнёры, Финансы, Банкинг, Бухгалтерия, Сайт. Плюс "Инструменты" (Проверка счетов, Сверка счетов).
+
+Кастомные шаблоны: `templates/admin/core/car/change_form.html`, `templates/admin/core/newinvoice/change_form.html` и др.
+
+## API
+
+- `/api/v1/` — DRF ViewSets + кастомные endpoints
+- `/admin/register-payment/` — регистрация платежа из админки
+- `/admin/dashboard/` — дашборд компании
+- `/admin/invoice-audit/` — AI-аудит входящих счетов
+- `/admin/reconciliation/` — сверка
+- WebSocket: через Channels (core/routing.py)
+
+## Особенности PowerShell
+
+Сервер — Linux, локальная разработка — Windows. При SSH-командах с Python-кодом PowerShell ломает кавычки. Решение: писать скрипт в файл → scp на сервер → ssh python script.py → rm.

@@ -1,0 +1,104 @@
+---
+description: Контекст бухгалтерии и финансовой архитектуры проекта Caromoto Lithuania
+globs:
+  - core/models_billing.py
+  - core/models_banking.py
+  - core/admin_banking.py
+  - core/services/billing_service.py
+  - core/services/revolut_service.py
+  - core/services/reconciliation_service.py
+  - core/signals.py
+---
+
+# Caromoto Lithuania — финансовая архитектура
+
+## О компании
+
+Caromoto Lithuania MB — логистические и брокерские услуги (перевозка авто).
+Сайт: caromoto-lt.com. Бухгалтерия ведётся через site.pro + бухгалтер.
+Банк: Revolut Business (интеграция через API).
+
+## Типы клиентов и платежей
+
+### 1. Прямые клиенты (розница)
+- Платят наличными при заборе машины.
+- Схема: Инвойс (Company → Client, привязка к машинам) → Transaction(PAYMENT, CASH, invoice=...).
+
+### 2. Оптовые клиенты (главная сложность)
+- Оптовик (напр. "Клиент А") — заказывает обработку множества машин, копится долг.
+- Его розничные клиенты делают **банковские переводы** на счёт Caromoto случайными суммами.
+- Суммы переводов НЕ привязаны к конкретным машинам.
+- В назначении платежа может быть указана машина, которой у Caromoto не было в работе.
+- По факту это **оплата долга оптовика через третьих лиц**.
+
+### Правильная схема для оптовиков:
+1. **Реальные инвойсы** — выставляются только оптовику за реально обработанные машины (пушатся в site.pro).
+2. **Входящие переводы от третьих лиц** — фиксируются как Transaction(BALANCE_TOPUP, TRANSFER, to_client=Оптовик) с описанием кто перевёл.
+3. **Закрытие инвойсов** — когда баланс позволяет: Transaction(PAYMENT, BALANCE, from_client=Оптовик, invoice=реальный_инвойс).
+4. **НЕ выписывать фиктивные инвойсы** розничным клиентам оптовика за машины, которых не было.
+5. Юридическое основание: **письмо-поручение** от оптовика ("прошу принять оплату от X в счёт моей задолженности").
+
+## Ключевые модели
+
+### NewInvoice (models_billing.py)
+- issuer (Company/Warehouse/Line/Carrier) → recipient (Client/Warehouse/Line/Carrier/Company)
+- Constraint: ровно один issuer + ровно один recipient
+- Статусы: DRAFT → ISSUED → PARTIALLY_PAID → PAID / OVERDUE / CANCELLED
+- `paid_amount` пересчитывается из COMPLETED Transaction'ов через `recalculate_paid_amount()`
+- Авто-пуш в site.pro при смене статуса на ISSUED (сигнал)
+- direction: OUTGOING (мы выставили) / INCOMING (нам выставили) / INTERNAL
+
+### Transaction (models_billing.py)
+- Типы: PAYMENT, REFUND, ADJUSTMENT, TRANSFER, BALANCE_TOPUP
+- Методы: CASH, CARD, TRANSFER, BALANCE, OTHER
+- from_* / to_* — ровно один отправитель и получатель
+- Сигнал post_save → recalculate_entity_balance() + invoice.recalculate_paid_amount()
+- Нельзя удалить COMPLETED транзакцию (только REFUND/ADJUSTMENT)
+
+### Client (models.py)
+- `balance` — единый баланс (положительный = переплата, отрицательный = долг)
+- Пересчитывается автоматически из всех COMPLETED транзакций
+
+### BankTransaction (models_banking.py)
+- Кэш операций из Revolut API
+- `counterparty_name` — имя отправителя/получателя
+- `description` — назначение платежа
+- `matched_transaction` / `matched_invoice` — привязка к внутренним операциям
+- Авто-reconciliation в BillingService.auto_reconcile_bank_transactions()
+
+## Revolut API парсинг (revolut_service.py)
+
+Имя контрагента извлекается в порядке приоритета:
+1. `legs[0].counterparty.account_name / name / company_name`
+2. `legs[0].description` — формат "Payment from Имя Фамилия" (основной источник для входящих)
+3. Top-level `counterparty.name`
+4. `merchant.name` (для карточных платежей)
+
+Назначение платежа: `reference` (приоритет) или `legs[0].description`.
+
+## Admin: BankTransactionAdmin
+
+Колонки списка: Дата | Тип | Сумма | Контрагент | Назначение платежа | Сверка | Действие
+
+Контрагент отображается с цветным бейджем-стрелкой:
+- ↓ зелёный кружок = входящий (деньги пришли)
+- ↑ красный кружок = исходящий (деньги ушли)
+
+Назначение платежа: раскрывается вниз при клике (для длинных текстов > 60 символов).
+
+## Деплой
+
+Сервер: root@176.118.198.78, путь: /var/www/www-root/data/www/logist2
+Скрипт: `scripts/deploy.ps1` (scp файлов → migrate → collectstatic → restart gunicorn+daphne)
+После деплоя кода revolut_service нужно пересинхронизировать транзакции для обновления counterparty_name.
+
+## BillingService (services/billing_service.py)
+
+Ключевые методы:
+- `create_invoice()` — создание инвойса с авто-позициями из CarService
+- `pay_invoice()` — оплата инвойса (авто-пересчёт paid_amount и баланса)
+- `topup_balance()` — пополнение баланса сущности
+- `transfer()` — перевод между сущностями
+- `adjust_balance()` — ручная корректировка
+- `refund()` — возврат
+- `auto_reconcile_bank_transactions()` — авто-сопоставление банковских операций с инвойсами
