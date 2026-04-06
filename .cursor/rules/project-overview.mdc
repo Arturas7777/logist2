@@ -1,5 +1,5 @@
 ---
-description: Общий контекст проекта Logist2 — архитектура, модели, сервисы, деплой
+description: Полный контекст проекта Logist2 — архитектура, модели, сервисы, деплой, зависимости
 globs:
   - "**/*.py"
   - "**/*.html"
@@ -11,125 +11,336 @@ globs:
 
 ## О проекте
 
-Система управления логистикой автомобилей: приём контейнеров в порту, разгрузка, хранение на складе, доставка клиенту, выставление счетов, приём оплаты.
+Система управления логистикой автомобилей: приём контейнеров в порту, разгрузка, хранение на складе, доставка клиенту, выставление счетов, приём оплаты. Клиентский сайт + портал + AI-чат.
 
 - **Владелец:** Caromoto Lithuania MB (Литва), логистика и брокерские услуги
 - **Сайт:** caromoto-lt.com
 - **Сервер:** root@176.118.198.78, путь: /var/www/www-root/data/www/logist2
-- **Деплой:** `scripts/deploy.ps1` (scp → migrate → collectstatic → restart gunicorn+daphne)
 - **Суперпользователь:** arturas
+- **Языки интерфейса:** lt (литовский), en (английский), ru (русский) — `locale/`
 
-## Стек
+## Стек и зависимости
 
 - Python 3.13 (лок.), 3.10 (сервер)
-- Django 5.1.7, Daphne (ASGI), Channels (WebSocket)
-- DRF (rest_framework)
-- WhiteNoise (статика)
-- PostgreSQL (через .env)
-- Revolut Business API (банкинг)
-- site.pro API (бухгалтерия / выставление счетов)
-- AI: OpenAI API (чат, аудит счетов, RAG)
+- **Django 5.1.7**, Daphne (ASGI), Gunicorn (WSGI fallback)
+- **Channels** + channels_redis (WebSocket)
+- **Celery** + Redis (фоновые задачи)
+- **DRF** (rest_framework)
+- **WhiteNoise** (статика)
+- **PostgreSQL** (psycopg2-binary, через .env)
+- **Revolut Business API** (банкинг)
+- **site.pro API** (бухгалтерия)
+- **Anthropic** (Claude — аудит счетов, invoice_audit_service)
+- **OpenAI** (AI-чат, RAG — используется в коде, но НЕ в requirements.txt!)
+- **Google APIs** (google-api-python-client — синхронизация фото с Google Drive)
+- **pdfplumber / pymupdf** (парсинг PDF-счетов)
+- **Pillow** (обработка изображений, thumbnails)
+- **cryptography** (шифрование токенов Revolut)
+- **django-admin-interface**, django-cleanup, django-colorfield
+- **HTMX** (htmx.min.js — динамические обновления в админке)
+- **jQuery 3.6 + Select2** (vendor JS)
+- **ruff** (линтер, настроен в pyproject.toml)
+- **pytest** (тесты, настроен в pyproject.toml)
 
 ## Структура проекта
 
 ```
-logist2/                   # Django project package
-  settings/
-    base.py                # Основные настройки
-    dev.py / prod.py       # Окружения
-  urls.py                  # Все URL-маршруты
-  admin_site.py            # Кастомный AdminSite с группировкой sidebar
+manage.py
+gunicorn_config.py          # Конфиг Gunicorn для продакшена
+START_ME.bat                # Локальный запуск dev-сервера (Windows)
+Dockerfile                  # Docker-конфиг
+docker-compose.yml
+pyproject.toml              # pytest + ruff настройки
+requirements.txt            # Все зависимости
 
-core/                      # Единственное Django-приложение (вся бизнес-логика)
-  models.py                # Логистика: Car, Container, AutoTransport, Client,
-                           #   Company, Warehouse, Line, Carrier, CarService и др.
-  models_billing.py        # Финансы: NewInvoice, InvoiceItem, Transaction, ExpenseCategory
-  models_banking.py        # Банкинг: BankConnection, BankAccount, BankTransaction
-  models_accounting.py     # Бухгалтерия: SiteProConnection, SiteProInvoiceSync
-  models_website.py        # Сайт: ClientUser, CarPhoto, AIChat, NewsPost и др.
-  models_invoice_audit.py  # Аудит: InvoiceAudit, SupplierCost
+logist2/                    # Django project package
+  settings/
+    base.py                 # Основные настройки (INSTALLED_APPS, MIDDLEWARE, DB, etc.)
+    dev.py / prod.py        # Окружения
+    test.py                 # Тестовые настройки
+  settings_security.py      # SecurityHeadersMiddleware, DebugQueryResetMiddleware
+  urls.py                   # Главный URLconf
+  admin_site.py             # Кастомный LogistAdminSite с группировкой sidebar
+  celery.py                 # Celery app config
+  asgi.py / wsgi.py
+
+core/                       # Единственное Django-приложение (ВСЯ бизнес-логика)
+  apps.py                   # CoreConfig
+  models.py                 # Car, Container, AutoTransport, Client, Company,
+                            #   Warehouse, Line, Carrier, CarService, *Service и др.
+  models_billing.py         # NewInvoice, InvoiceItem, Transaction, ExpenseCategory
+  models_banking.py         # BankConnection, BankAccount, BankTransaction
+  models_accounting.py      # SiteProConnection, SiteProInvoiceSync
+  models_website.py         # ClientUser, CarPhoto, ContainerPhoto, AIChat, NewsPost и др.
+  models_invoice_audit.py   # InvoiceAudit, SupplierCost
+  managers.py               # Кастомные менеджеры
+  mixins.py                 # Миксины моделей
+  forms.py                  # Django-формы
+  utils.py                  # Вспомогательные функции
+  cache_utils.py            # Кэширование
+
+  service_codes.py          # ServiceCode константы (STORAGE, THS, UNLOADING, DELIVERY,
+                            #   LOADING, DOCUMENTS, TRANSFER, TRANSIT_DECLARATION, etc.)
+                            #   + хелперы: is_storage_service(), is_ths_service()
 
   admin/
-    __init__.py            # Импорт всех admin-модулей
-    car.py                 # CarAdmin
-    container.py           # ContainerAdmin
-    partners.py            # Client, Company, Warehouse, Line, Carrier admin
-    inlines.py             # Inline-классы
-  admin_billing.py         # NewInvoiceAdmin, TransactionAdmin
-  admin_banking.py         # BankConnectionAdmin, BankTransactionAdmin
-  admin_accounting.py      # SiteProConnectionAdmin
-  admin_website.py         # ClientUser, AIChat и др.
+    __init__.py             # Импорт всех admin-модулей
+    car.py                  # CarAdmin
+    container.py            # ContainerAdmin
+    partners.py             # Client, Company, Warehouse, Line, Carrier admin
+    inlines.py              # Inline-классы
+  admin_billing.py          # NewInvoiceAdmin, TransactionAdmin, ExpenseCategoryAdmin
+  admin_banking.py          # BankConnectionAdmin, BankTransactionAdmin
+  admin_accounting.py       # SiteProConnectionAdmin, SiteProInvoiceSyncAdmin
+  admin_website.py          # ClientUser, AIChat, NewsPost и др.
+  admin_filters.py          # Кастомные фильтры для админки
+  admin_invoice_audit.py    # Admin для аудита (кастомные views)
+
+  views/                    # ⚠️ Это ПАКЕТ, не файл!
+    __init__.py             # Реэкспорт всех views
+    api.py                  # API views (car_list_api, register_payment и др.)
+    admin_views.py          # Admin-специфичные views
+    comparison.py           # Сравнение стоимости
+  views_website.py          # Клиентский сайт (home, about, services, contact, news)
+  views_autotransport.py    # Автовоз views
+  views_invoice_audit.py    # Аудит и сверка счетов views
 
   services/
-    billing_service.py     # Создание инвойсов, платежи, возвраты, пополнение баланса
-    revolut_service.py     # Revolut API: sync счетов и транзакций
-    sitepro_service.py     # Пуш инвойсов в site.pro
-    balance_manager.py     # Пересчёт и проверка консистентности балансов
+    billing_service.py      # Инвойсы, платежи, возвраты, пополнение баланса, auto-reconciliation
+    revolut_service.py      # Revolut API: sync счетов и транзакций
+    sitepro_service.py      # Пуш инвойсов в site.pro
+    balance_manager.py      # Пересчёт и проверка консистентности балансов
     reconciliation_service.py  # Сверка банковских операций с инвойсами
-    car_service_manager.py # Автосоздание CarService при смене контрагентов
+    car_service_manager.py  # Автосоздание CarService при смене контрагентов
     car_lifecycle_service.py   # Жизненный цикл авто
-    email_service.py       # Уведомления клиентам
-    invoice_audit_service.py   # AI-аудит входящих счетов
-    comparison_service.py  # Сравнение стоимости услуг
-    dashboard_service.py   # Данные для дашборда
-    ai_chat_service.py     # AI-чат для клиентского портала
-    ai_rag.py              # RAG для AI
+    email_service.py        # Email-уведомления клиентам (unload, planned)
+    invoice_audit_service.py   # AI-аудит входящих счетов (Anthropic/Claude)
+    comparison_service.py   # Сравнение стоимости услуг
+    dashboard_service.py    # Данные для дашборда
+    ai_chat_service.py      # AI-чат для клиентского портала (OpenAI)
+    ai_rag.py               # RAG для AI (поиск по базе знаний)
+    admin_ai_agent.py       # AI-агент для админки
 
-  signals.py               # Все сигналы (post_save/delete для Car, Container,
-                           #   Transaction, CarService, AutoTransport, Invoice)
-  views.py                 # API views (car_list, register_payment, dashboard и др.)
-  views_website.py         # Клиентский сайт
-  views_autotransport.py   # Автовоз
-  views_invoice_audit.py   # Аудит и сверка счетов
-  api.py                   # DRF ViewSets (CarViewSet, InvoiceViewSet)
+  serializers.py            # DRF сериализаторы (Car, Invoice)
+  serializers_website.py    # DRF сериализаторы для клиентского API
+  api.py                    # DRF ViewSets (CarViewSet, InvoiceViewSet)
+  throttles.py              # Rate limiting
 
-templates/admin/           # Кастомные шаблоны админки
+  signals.py                # ВСЕ сигналы (post_save/delete)
+  tasks.py                  # Celery-задачи
+  consumers.py              # WebSocket consumer (DataUpdateConsumer)
+  routing.py                # WebSocket URL: ws/updates/
+
+  urls.py                   # App URLs: /core/ (car/container services, GDrive, search, autotransport)
+  urls_website.py           # Публичный сайт: /, /about/, /services/, /contact/, /news/,
+                            #   /dashboard/, /car/, /container/, AI chat, tracking, фото
+
+  middleware_admin_language.py  # AdminRussianLanguageMiddleware — форсирует ru в /admin/
+  google_drive_sync.py      # Синхронизация фото с Google Drive
+  templatetags/
+    admin_extras.py         # Кастомные template tags для админки
+
+  management/commands/      # 25 management-команд:
+    setup_revolut.py        # Настройка Revolut API
+    setup_sitepro.py        # Настройка site.pro API
+    sync_bank_accounts.py   # Синхронизация банковских счетов
+    sync_client_balances.py # Пересчёт балансов клиентов
+    sync_google_drive_photos.py / sync_photos_gdrive.py  # Фото из GDrive
+    recalculate_car_services.py  # Пересчёт услуг авто
+    recalculate_storage.py  # Пересчёт хранения
+    regenerate_invoices.py  # Перегенерация инвойсов
+    reset_billing.py        # Сброс биллинга
+    rebuild_ai_index.py / rebuild_ai_index_if_stale.py  # RAG индекс
+    check_data_integrity.py # Проверка целостности данных
+    create_default_company.py  # Создание компании по умолчанию
+    init_new_balance_system.py  # Инициализация системы балансов
+    fix_ths_line_services.py    # Фикс THS-услуг
+    generate_thumbnails.py / regenerate_thumbnails.py  # Миниатюры фото
+    cleanup_broken_photos.py / fix_photo_names.py / repair_container_photos.py
+    update_container_statuses.py
+    add_performance_indexes.py / apply_optimizations.py
+    migrate_services.py
+    check_photo_environment.py
+
+  tests/                    # Тесты:
+    test_billing.py, test_car_service_manager.py, test_lifecycle.py,
+    test_models.py, test_service_codes.py, test_signals.py
+
+  migrations/               # 123+ миграций
+
+templates/
+  admin/
+    base_site.html          # Главный шаблон админки (sidebar, topbar, CSS/JS)
+    change_list.html        # Кастомный список
+    company_dashboard.html  # Дашборд компании
+    register_payment.html   # Регистрация платежа
+    invoice_pay.html, invoice_change.html, invoice_edit.html
+    client_change.html, client_topup.html, client_cars_in_warehouse.html
+    company_change.html, line_change.html, carrier_change.html
+    warehouse_change.html, warehouse_change_form.html, warehouse_car_options.html
+    car_options.html
+    invoice_audit_list.html, invoice_audit_detail.html
+    reconciliation_dashboard.html, comparison_dashboard.html
+    confirm_reset_balances.html
+    multi_warehouse_filter.html, multi_status_filter.html, client_autocomplete_filter.html
+    core/car/change_form.html, change_list.html
+    core/container/change_form.html, photos_gallery.html
+    core/autotransport/change_form.html, change_list.html
+    core/newinvoice/change_form.html
+    core/banktransaction/create_expense.html, create_expenses_bulk.html
+  website/
+    base.html, home.html, about.html, services.html, contact.html
+    news_list.html, news_detail.html, car_detail.html, container_detail.html
+    not_authorized.html
+  email/
+    unload_notification.html, planned_notification.html, car_unload_notification.html
+
+core/static/
+  css/  dashboard_admin.css, autotransport.css, logist2_custom_admin.css,
+        invoice_admin.css, vendor/select2-4.0.13.min.css
+  css/  website/css/style.css, admin/css/ai-chat.css
+  js/   logist2_htmx.js, autotransport.js, logist2_invoice_admin.js,
+        warehouse_address.js, htmx.min.js
+  js/   vendor/jquery-3.6.0.min.js, vendor/select2-4.0.13.min.js
+  js/   website/js/main.js, website/js/ai-chat.js
+
+static/website/images/      # Логотип: logo_caromoto.svg
+
+locale/                     # lt/, en/, ru/ — переводы django.po
+
+scripts/
+  deploy.ps1                # Деплой: scp → migrate → collectstatic → restart gunicorn+daphne
+  sync_from_vps.ps1         # Синхронизация с VPS
+  prepare_for_deploy.py     # Подготовка к деплою
+  create_env.py             # Генерация .env файла
+  create_test_client.py     # Тестовый клиент
+  run_all_tests.py          # Запуск всех тестов
+  nginx_caromoto.conf       # Nginx конфиг для caromoto-lt.com
+  nginx_logist2.conf        # Nginx конфиг для logist2
+  caromoto-lt.service       # systemd unit для сайта
+  logist2.service           # systemd unit для logist2
+  restore_db.sh, sync_photos_cron.sh, vps_push.sh, fix_media_permissions.sh
 ```
 
-## Ключевые модели и связи
+## Ключевые модели
 
 ### Логистика
-- **Car** — автомобиль (VIN, brand, year, vehicle_type). Связи: client, container, warehouse, line, carrier. Поля стоимости: total_price, storage_cost, days + множество fee-полей.
-- **Container** — контейнер с авто. Статусы: FLOATING → IN_PORT → UNLOADED → TRANSFERRED. Связь: line, client, warehouse.
-- **AutoTransport** — автовоз для доставки. M2M с Car. При статусе FORMED → автогенерация инвойсов.
-- **CarService** — привязка услуги к авто (service_type: LINE/CARRIER/WAREHOUSE/COMPANY + service_id → FK к соотв. *Service модели). custom_price, markup_amount.
+
+**Car** — автомобиль:
+- Идентификация: `vin` (unique), `brand`, `year`, `vehicle_type`
+- Связи: `client`, `container`, `warehouse`, `unload_site` (WarehouseSite), `line`, `carrier`
+- Статусы: FLOATING → IN_PORT → UNLOADED → TRANSFERRED
+- Даты: `unload_date`, `transfer_date`
+- Стоимость: `total_price`, `storage_cost`, `days`, `price`, `auction_fee`
+- Сборы: `ths`, `unload_fee`, `delivery_fee`, `loading_fee`, `docs_fee`, `transfer_fee`, `transit_declaration_fee`, `export_declaration_fee`, `extra_costs`, `declaration_fee`, `complex_fee`, `markup`, `ocean_freight`, `transport_usa`, `transport_kz`, `broker_fee`, `additional_expenses`
+- Особое: `hide_markup_in` (FK → CarService), `has_title`, `title_notes`
+
+**Container** — контейнер:
+- `number` (unique), `status`, `line`, `client`, `warehouse`, `unload_site`
+- `eta`, `planned_unload_date`, `unload_date`, `unloaded_status_at`
+- `customs_procedure`, `ths`, `ths_payer`
+- Сборы: `warehouse_fee`, `declaration_fee`, `markup`
+- `google_drive_folder_url`, `notes`
+
+**AutoTransport** — автовоз: `number`, `status`, `carrier`, `truck`, M2M `cars`. При FORMED → автогенерация инвойсов.
+
+**CarService** — привязка услуги к авто: `service_type` (LINE/CARRIER/WAREHOUSE/COMPANY) + `service_id`, `custom_price`, `markup_amount`, `quantity`.
 
 ### Партнёры
-- **Client** — клиент с balance (долг/переплата). Tariff rates через ClientTariffRate.
-- **Company** — компания (Caromoto Lithuania = id=1, default). `Company.get_default()`.
-- **Warehouse**, **Line**, **Carrier** — контрагенты, каждый с balance и набором услуг (*Service).
+- **Client** — `name`, `balance` (долг/переплата), `tariff_type`, emails (до 4), `notification_enabled`. Тарифы: ClientTariffRate.
+- **Company** — `name`, `balance`. Default = Caromoto Lithuania (id=1). `Company.get_default()`.
+- **Warehouse** — `name`, `balance`, адреса (до 3 площадок через WarehouseSite), default fees.
+- **Line** — `name`, `balance`, тарифы (ocean_freight_rate, ths_fee, etc.). LineTHSCoefficient.
+- **Carrier** — `name`, `balance`, транспортные настройки. CarrierTruck, CarrierDriver.
 
 ### Финансы (models_billing.py)
-- **NewInvoice** — инвойс: issuer → recipient (ровно один каждый). Статусы: DRAFT → ISSUED → PARTIALLY_PAID → PAID. paid_amount из Transaction.
-- **Transaction** — финансовая операция. Типы: PAYMENT, REFUND, ADJUSTMENT, TRANSFER, BALANCE_TOPUP. Методы: CASH, CARD, TRANSFER, BALANCE. Сигнал post_save → пересчёт баланса entity + paid_amount инвойса.
+- **NewInvoice** — issuer → recipient (ровно один каждый, DB constraints). Статусы: DRAFT → ISSUED → PARTIALLY_PAID → PAID / OVERDUE / CANCELLED. `paid_amount` пересчитывается из Transaction. Direction: OUTGOING/INCOMING/INTERNAL.
+- **InvoiceItem** — позиция: `car`, `description`, `quantity`, `unit_price`, `total_price`, `client_price`.
+- **Transaction** — типы: PAYMENT, REFUND, ADJUSTMENT, TRANSFER, BALANCE_TOPUP. Методы: CASH, CARD, TRANSFER, BALANCE, OTHER. from_*/to_* — один отправитель и получатель. Сигнал → пересчёт баланса + paid_amount.
+- **ExpenseCategory** — категоризация (OPERATIONAL, ADMINISTRATIVE, SALARY, MARKETING, TAX, OTHER).
 
 ### Банкинг (models_banking.py)
-- **BankTransaction** — кэш операций Revolut. counterparty_name, description. matched_invoice, matched_transaction для сверки.
+- **BankConnection** — Revolut API credentials (зашифрованы Fernet).
+- **BankAccount** — кэш счетов.
+- **BankTransaction** — кэш операций. `counterparty_name`, `description`, `matched_invoice`, `matched_transaction`, `reconciliation_skipped`.
 
-## Сигналы (signals.py) — важные цепочки
+### Бухгалтерия (models_accounting.py)
+- **SiteProConnection** — site.pro API. auto_push_on_issue, VAT, invoice_series.
+- **SiteProInvoiceSync** — статус синхронизации инвойса с site.pro.
 
-1. **Car post_save** → пересоздание CarService при смене warehouse/line/carrier → пересчёт invoices
-2. **Container post_save** → обновление unload_date на всех авто в контейнере → пересчёт storage
-3. **Transaction post_save** → `recalculate_entity_balance()` + `invoice.recalculate_paid_amount()`
+### Аудит (models_invoice_audit.py)
+- **InvoiceAudit** — загруженный PDF, распознанные поля, статус. OneToOne → NewInvoice.
+- **SupplierCost** — стоимость от поставщика по конкретному авто/услуге.
+
+## Сигналы (signals.py)
+
+1. **Car post_save** → пересоздание CarService при смене warehouse/line/carrier → пересчёт invoices → email нотификации
+2. **Container post_save** → обновление unload_date на всех авто → пересчёт storage → email нотификации
+3. **Transaction post_save/delete** → `recalculate_entity_balance()` + `invoice.recalculate_paid_amount()`
 4. **CarService post_save/delete** → пересчёт car.total_price + регенерация связанных инвойсов
-5. **AutoTransport post_save** → генерация инвойсов при FORMED, перевод авто в TRANSFERRED при LOADED/IN_TRANSIT/DELIVERED
-6. **NewInvoice pre_save** → авто-категоризация; post_save → авто-пуш в site.pro при ISSUED
+5. **AutoTransport post_save** → генерация инвойсов при FORMED, перевод авто в TRANSFERRED
+6. **NewInvoice pre_save** → авто-категоризация, сохранение old status; post_save → авто-пуш в site.pro при ISSUED
+7. **Catalog *Service post_save** → обновление цен в существующих CarService записях
+
+## Celery-задачи (tasks.py)
+
+- `check_overdue_invoices` — устанавливает статус OVERDUE на просроченные инвойсы
+- `check_balance_consistency` — сверяет балансы сущностей и paid_amount инвойсов
+- `sync_container_photos_gdrive_task` — синхронизация фото из Google Drive
+- `send_planned_notifications_task` / `send_unload_notifications_task` / `send_car_unload_notification_task`
+- `create_container_photo_thumbnail_task`
+
+## URL-маршруты
+
+### logist2/urls.py (главный)
+- `/i18n/` — интернационализация
+- `/api/v1/` — DRF ViewSets + кастомные API
+- `/api/` — legacy (зеркало v1, deprecated)
+- `/admin/register-payment/`, `/admin/dashboard/`
+- `/admin/invoice-audit/` — AI-аудит счетов
+- `/admin/reconciliation/` — сверка
+- `/ws/` → WebSocket routing
+- `/` → core.urls_website (публичный сайт)
+- `/core/` → core.urls (внутренние API)
+- `/admin/` → Django admin
+
+### core/urls.py (/core/)
+Car/container services, GDrive/photo sync, поиск контрагентов и авто, autotransport API
+
+### core/urls_website.py (/)
+Публичный сайт: home, about, services, contact, news, dashboard, car/container страницы, фото, AI chat, tracking
+
+### core/routing.py (WebSocket)
+`ws/updates/` → DataUpdateConsumer
 
 ## Admin
 
-Кастомный `LogistAdminSite` с sidebar-навигацией. 6 групп: Логистика, Партнёры, Финансы, Банкинг, Бухгалтерия, Сайт. Плюс "Инструменты" (Проверка счетов, Сверка счетов).
+Кастомный `LogistAdminSite` (logist2/admin_site.py) с sidebar. 6 групп + Инструменты:
+- **Логистика:** Car, Container, AutoTransport
+- **Партнёры:** Client, Company, Warehouse, Line, Carrier
+- **Финансы:** NewInvoice, Transaction, ExpenseCategory
+- **Банкинг:** BankConnection, BankAccount, BankTransaction
+- **Бухгалтерия:** SiteProConnection, SiteProInvoiceSync
+- **Сайт:** ClientUser, AIChat, NewsPost, ContactMessage, TrackingRequest, NotificationLog
+- **Инструменты:** Проверка счетов (/admin/invoice-audit/), Сверка счетов (/admin/reconciliation/)
 
-Кастомные шаблоны: `templates/admin/core/car/change_form.html`, `templates/admin/core/newinvoice/change_form.html` и др.
+## Middleware
 
-## API
+- `SecurityHeadersMiddleware` (logist2/settings_security.py) — заголовки безопасности
+- `DebugQueryResetMiddleware` (logist2/settings_security.py) — сброс query log
+- `AdminRussianLanguageMiddleware` (core/middleware_admin_language.py) — форсирует русский в /admin/
 
-- `/api/v1/` — DRF ViewSets + кастомные endpoints
-- `/admin/register-payment/` — регистрация платежа из админки
-- `/admin/dashboard/` — дашборд компании
-- `/admin/invoice-audit/` — AI-аудит входящих счетов
-- `/admin/reconciliation/` — сверка
-- WebSocket: через Channels (core/routing.py)
+## Деплой
 
-## Особенности PowerShell
+- **Скрипт:** `scripts/deploy.ps1` (scp файлов → migrate → collectstatic → restart gunicorn+daphne)
+- **Сервер:** root@176.118.198.78, путь: /var/www/www-root/data/www/logist2
+- **Nginx:** конфиги в scripts/nginx_*.conf
+- **Systemd:** scripts/caromoto-lt.service, scripts/logist2.service
+- **Docker:** Dockerfile + docker-compose.yml (альтернативный вариант)
 
-Сервер — Linux, локальная разработка — Windows. При SSH-командах с Python-кодом PowerShell ломает кавычки. Решение: писать скрипт в файл → scp на сервер → ssh python script.py → rm.
+## Особенности
+
+- **PowerShell + SSH:** при SSH-командах с Python-кодом PowerShell ломает кавычки. Решение: писать скрипт в файл → scp → ssh python script.py → rm.
+- **views/ — это пакет**, не файл. Реэкспорт через `core/views/__init__.py`.
+- **openai используется в коде** (ai_chat_service, views_website), но **отсутствует в requirements.txt**.
+- **service_codes.py** — критически важен для биллинга; определяет коды услуг и хелперы is_storage_service/is_ths_service.
