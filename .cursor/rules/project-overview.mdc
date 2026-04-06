@@ -140,7 +140,7 @@ core/                       # Единственное Django-приложени
   templatetags/
     admin_extras.py         # Кастомные template tags для админки
 
-  management/commands/      # 25 management-команд:
+  management/commands/      # 33 management-команды:
     setup_revolut.py        # Настройка Revolut API
     setup_sitepro.py        # Настройка site.pro API
     sync_bank_accounts.py   # Синхронизация банковских счетов
@@ -161,6 +161,14 @@ core/                       # Единственное Django-приложени
     add_performance_indexes.py / apply_optimizations.py
     migrate_services.py
     check_photo_environment.py
+    # Бухгалтерия и сверка:
+    auto_reconcile.py       # Авто-сопоставление банковских транзакций с инвойсами (3 правила, --dry-run)
+    skip_outgoing.py        # Авто-пропуск исходящих транзакций (22 категории, --dry-run)
+    import_sitepro_history.py    # Импорт клиентов и инвойсов из site.pro
+    import_paysera_from_sitepro.py  # Импорт Paysera-транзакций из site.pro
+    load_all_revolut.py     # Загрузка полной истории Revolut (помесячная пагинация)
+    pull_sitepro_data.py    # Разведка данных site.pro (клиенты, продажи, банк)
+    sitepro_discrepancy_report.py  # Отчёт о расхождениях Django ↔ site.pro
 
   tests/                    # Тесты:
     test_billing.py, test_car_service_manager.py, test_lifecycle.py,
@@ -187,7 +195,7 @@ templates/
     core/container/change_form.html, photos_gallery.html
     core/autotransport/change_form.html, change_list.html
     core/newinvoice/change_form.html
-    core/banktransaction/create_expense.html, create_expenses_bulk.html
+    core/banktransaction/create_expense.html, create_expenses_bulk.html, link_to_invoice.html
   website/
     base.html, home.html, about.html, services.html, contact.html
     news_list.html, news_detail.html, car_detail.html, container_detail.html
@@ -260,9 +268,9 @@ scripts/
 - **ExpenseCategory** — категоризация (OPERATIONAL, ADMINISTRATIVE, SALARY, MARKETING, TAX, OTHER).
 
 ### Банкинг (models_banking.py)
-- **BankConnection** — Revolut API credentials (зашифрованы Fernet).
+- **BankConnection** — credentials банков (зашифрованы Fernet). bank_type: REVOLUT, PAYSERA, OTHER.
 - **BankAccount** — кэш счетов.
-- **BankTransaction** — кэш операций. `counterparty_name`, `description`, `matched_invoice`, `matched_transaction`, `reconciliation_skipped`.
+- **BankTransaction** — кэш операций. `counterparty_name`, `description`, `matched_invoice`, `matched_transaction`, `reconciliation_skipped`, `reconciliation_note`. 410 транзакций, 93% сопоставлено.
 
 ### Бухгалтерия (models_accounting.py)
 - **SiteProConnection** — site.pro API. auto_push_on_issue, VAT, invoice_series.
@@ -286,6 +294,7 @@ scripts/
 
 - `check_overdue_invoices` — устанавливает статус OVERDUE на просроченные инвойсы
 - `check_balance_consistency` — сверяет балансы сущностей и paid_amount инвойсов
+- `sync_sitepro_invoices` — ежедневно 7:30, пуш новых инвойсов в site.pro + подтягивание оплат
 - `sync_container_photos_gdrive_task` — синхронизация фото из Google Drive
 - `send_planned_notifications_task` / `send_unload_notifications_task` / `send_car_unload_notification_task`
 - `create_container_photo_thumbnail_task`

@@ -575,6 +575,79 @@ class SiteProService:
         return result.get('data', []) if isinstance(result, dict) else []
 
     # ========================================================================
+    # PULL DATA (import from site.pro)
+    # ========================================================================
+
+    def _paginate_list(self, endpoint: str, filters: dict = None, max_pages: int = 100) -> list:
+        """Paginate through a list endpoint collecting all records."""
+        all_data = []
+        page = 1
+        while page <= max_pages:
+            payload = {'page': page, 'rows': 100}
+            if filters:
+                payload['filters'] = filters
+            result = self._api_post(endpoint, payload)
+            if not isinstance(result, dict):
+                break
+            data = result.get('data', [])
+            all_data.extend(data)
+            total_pages = result.get('pages', 1)
+            if page >= total_pages:
+                break
+            page += 1
+        return all_data
+
+    def list_all_clients(self) -> list:
+        """Fetch all clients from site.pro."""
+        return self._paginate_list(self.CLIENTS_LIST)
+
+    def list_all_sales(self, date_from: str = None, date_to: str = None) -> list:
+        """Fetch all sales/invoices from site.pro, optionally filtered by date range."""
+        rules = []
+        if date_from:
+            rules.append({'field': 'date', 'op': 'ge', 'data': date_from})
+        if date_to:
+            rules.append({'field': 'date', 'op': 'le', 'data': date_to})
+        filters = {'groupOp': 'AND', 'rules': rules} if rules else None
+        return self._paginate_list(self.SALES_LIST, filters)
+
+    def list_sale_items(self, sale_id: int) -> list:
+        """Fetch line items for a specific sale."""
+        result = self._api_post(self.SALE_ITEMS_LIST, {
+            'page': 1,
+            'rows': 200,
+            'filters': {
+                'groupOp': 'AND',
+                'rules': [{'field': 'saleId', 'op': 'eq', 'data': str(sale_id)}],
+            },
+        })
+        return result.get('data', []) if isinstance(result, dict) else []
+
+    def get_client_balance(self, client_id: int) -> dict:
+        """Fetch balance for a specific client in site.pro."""
+        result = self._api_post(self.CLIENT_BALANCE, {'clientId': client_id})
+        return result if isinstance(result, dict) else {}
+
+    BANK_TRANSACTIONS_LIST = '/bank/transactions/list'
+
+    def list_bank_transactions(self) -> list:
+        """Fetch all bank transactions from site.pro (uses pageSize=10, fixed by API)."""
+        all_data = []
+        page = 1
+        while page <= 200:
+            result = self._api_post(self.BANK_TRANSACTIONS_LIST, {
+                'page': page, 'pageSize': 10,
+            })
+            if not isinstance(result, dict):
+                break
+            data = result.get('data', [])
+            all_data.extend(data)
+            if page >= result.get('pages', 1):
+                break
+            page += 1
+        return all_data
+
+    # ========================================================================
     # BULK OPERATIONS
     # ========================================================================
 

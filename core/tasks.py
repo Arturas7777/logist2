@@ -148,6 +148,76 @@ def check_balance_consistency(self):
     return {'balance_fixes': len(mismatches), 'invoice_fixes': invoice_issues}
 
 
+@shared_task(bind=True, max_retries=1, default_retry_delay=300, time_limit=300)
+def sync_sitepro_invoices(self):
+    """
+    Periodic task: sync new invoices to site.pro and pull updated payment status.
+    Runs daily via celery beat.
+    """
+    from core.models_accounting import SiteProConnection, SiteProInvoiceSync
+    from core.models_billing import NewInvoice
+    from core.services.sitepro_service import SiteProService
+    from decimal import Decimal
+
+    conn = SiteProConnection.objects.filter(is_active=True).first()
+    if not conn:
+        logger.info('[sync_sitepro] No active SiteProConnection, skipping')
+        return {'status': 'no_connection'}
+
+    svc = SiteProService(conn)
+    result = {'pushed': 0, 'updated_payments': 0, 'errors': []}
+
+    if conn.auto_push_on_issue:
+        unsent = NewInvoice.objects.filter(
+            status='ISSUED',
+        ).exclude(
+            sitepro_syncs__connection=conn,
+            sitepro_syncs__sync_status='SENT',
+        )
+        for inv in unsent[:50]:
+            try:
+                svc.push_invoice(inv)
+                result['pushed'] += 1
+            except Exception as e:
+                result['errors'].append(f'push {inv.number}: {str(e)[:100]}')
+
+    try:
+        sp_sales = svc.list_all_sales()
+        sp_real_by_id = {str(s['id']): s for s in sp_sales if s.get('isSale')}
+
+        syncs = SiteProInvoiceSync.objects.filter(
+            connection=conn, sync_status='SENT',
+        ).select_related('invoice')
+
+        for sync_obj in syncs:
+            sp_sale = sp_real_by_id.get(sync_obj.external_id)
+            if not sp_sale:
+                continue
+            sp_amount = Decimal(str(sp_sale.get('sumWithVat', 0) or 0))
+            sp_balance = Decimal(str(sp_sale.get('currencyBalance', 0) or 0))
+            sp_paid = max(sp_amount - sp_balance, Decimal('0'))
+
+            inv = sync_obj.invoice
+            if abs(inv.paid_amount - sp_paid) > Decimal('0.01'):
+                inv.paid_amount = sp_paid
+                inv.update_status()
+                inv.save(update_fields=['paid_amount', 'status', 'updated_at'])
+                result['updated_payments'] += 1
+
+    except Exception as e:
+        result['errors'].append(f'pull: {str(e)[:200]}')
+
+    conn.last_synced_at = timezone.now()
+    conn.last_error = '; '.join(result['errors']) if result['errors'] else ''
+    conn.save(update_fields=['last_synced_at', 'last_error', 'updated_at'])
+
+    logger.info(
+        '[sync_sitepro] pushed=%d, updated_payments=%d, errors=%d',
+        result['pushed'], result['updated_payments'], len(result['errors']),
+    )
+    return result
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def send_car_unload_notification_task(self, car_id):
     from core.models import Car

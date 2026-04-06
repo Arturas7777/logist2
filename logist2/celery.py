@@ -16,4 +16,8 @@ app.conf.beat_schedule = {
         'task': 'core.tasks.check_balance_consistency',
         'schedule': crontab(hour=3, minute=0, day_of_week='sunday'),
     },
+    'sync-sitepro-invoices-daily': {
+        'task': 'core.tasks.sync_sitepro_invoices',
+        'schedule': crontab(hour=7, minute=30),
+    },
 }

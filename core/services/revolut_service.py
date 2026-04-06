@@ -309,15 +309,6 @@ class RevolutService:
 
             updated_transactions.append(tx)
 
-        # Удаляем старые транзакции (старше 90 дней) для экономии места
-        cutoff = timezone.now() - timedelta(days=90)
-        deleted_count, _ = BankTransaction.objects.filter(
-            connection=self.connection,
-            created_at__lt=cutoff,
-        ).delete()
-        if deleted_count:
-            logger.info(f'[Revolut] Удалено {deleted_count} старых транзакций')
-
         logger.info(f'[Revolut] Загружено {len(updated_transactions)} транзакций')
         return updated_transactions
 

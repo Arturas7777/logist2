@@ -148,6 +148,25 @@ class BankAccountAdmin(admin.ModelAdmin):
 # BANK TRANSACTION (read-only)
 # ============================================================================
 
+class BankDirectionFilter(admin.SimpleListFilter):
+    """Фильтр: входящие / исходящие"""
+    title = 'Направление'
+    parameter_name = 'direction'
+
+    def lookups(self, request, model_admin):
+        return [
+            ('incoming', '↓ Входящие'),
+            ('outgoing', '↑ Исходящие'),
+        ]
+
+    def queryset(self, request, queryset):
+        if self.value() == 'incoming':
+            return queryset.filter(amount__gt=0)
+        if self.value() == 'outgoing':
+            return queryset.filter(amount__lt=0)
+        return queryset
+
+
 class BankReconciliationFilter(admin.SimpleListFilter):
     """Фильтр: статус сопоставления банковской операции"""
     title = 'Сопоставление'
@@ -184,7 +203,7 @@ class BankTransactionAdmin(admin.ModelAdmin):
         'display_amount', 'display_counterparty', 'display_description',
         'display_reconciled', 'display_action',
     )
-    list_filter = (BankReconciliationFilter, 'transaction_type', 'state', 'currency', 'connection')
+    list_filter = (BankReconciliationFilter, BankDirectionFilter, 'transaction_type', 'state', 'currency', 'connection')
     search_fields = ('description', 'counterparty_name', 'external_id')
     readonly_fields = (
         'connection', 'external_id', 'transaction_type', 'amount', 'currency',
@@ -192,7 +211,12 @@ class BankTransactionAdmin(admin.ModelAdmin):
     )
     autocomplete_fields = ['matched_invoice', 'matched_transaction']
     date_hierarchy = 'created_at'
-    actions = ['mark_skip_reconciliation', 'unmark_skip_reconciliation', 'create_expenses_bulk']
+    list_per_page = 50
+    ordering = ('-created_at',)
+    actions = [
+        'mark_skip_reconciliation', 'unmark_skip_reconciliation',
+        'link_to_invoice', 'create_expenses_bulk',
+    ]
 
     fieldsets = (
         ('Банковская операция', {
@@ -282,28 +306,35 @@ class BankTransactionAdmin(admin.ModelAdmin):
     display_description.admin_order_field = 'description'
 
     def display_reconciled(self, obj):
-        # 1. Привязано к инвойсу/транзакции
         if obj.matched_invoice_id or obj.matched_transaction_id:
             parts = []
             if obj.matched_invoice:
-                parts.append(f'Инв: {obj.matched_invoice.number}')
+                parts.append(obj.matched_invoice.number)
             if obj.matched_transaction:
-                parts.append(f'Трх: {obj.matched_transaction.number}')
+                parts.append(f'TRX {obj.matched_transaction.number}')
             label = ', '.join(parts)
             return format_html(
-                '<span style="color:#16a34a;font-weight:600" title="{}">✓ Сопоставлено</span>',
-                label
+                '<span style="display:inline-flex;align-items:center;gap:4px;'
+                'background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;'
+                'font-size:12px;font-weight:600;" title="{}">'
+                '&#10003; {}</span>',
+                label, parts[0] if parts else 'Сопоставлено'
             )
-        # 2. Помечено как "не требует привязки"
         if obj.reconciliation_skipped:
             note = obj.reconciliation_note or 'Не требует привязки'
+            short_note = note.replace('Авто-пропуск: ', '')
             return format_html(
-                '<span style="color:#9898b0;" title="{}">⊘ Пропуск</span>',
-                note
+                '<span style="display:inline-flex;align-items:center;gap:4px;'
+                'background:#f3f4f6;color:#6b7280;padding:2px 8px;border-radius:10px;'
+                'font-size:12px;" title="{}">'
+                '&#8709; {}</span>',
+                note, short_note[:25]
             )
-        # 3. Не сопоставлено — требует внимания
         return format_html(
-            '<span style="color:#dc2626;font-weight:600;">✗ Не привязано</span>'
+            '<span style="display:inline-flex;align-items:center;gap:4px;'
+            'background:#fef2f2;color:#dc2626;padding:2px 8px;border-radius:10px;'
+            'font-size:12px;font-weight:600;">'
+            '&#10007; Не привязано</span>'
         )
     display_reconciled.short_description = 'Сверка'
 
@@ -462,6 +493,83 @@ class BankTransactionAdmin(admin.ModelAdmin):
                 return render(request, 'admin/core/banktransaction/create_expense.html', context)
 
         return render(request, 'admin/core/banktransaction/create_expense.html', context)
+
+    @admin.action(description='Привязать к инвойсу')
+    def link_to_invoice(self, request, queryset):
+        """Привязка выбранных транзакций к конкретному инвойсу через промежуточную страницу"""
+        from core.models_billing import NewInvoice, Transaction as BillingTransaction
+        from core.models import Company
+
+        eligible = queryset.filter(
+            matched_invoice__isnull=True,
+            reconciliation_skipped=False,
+        )
+
+        if not eligible.exists():
+            messages.warning(request, 'Нет подходящих транзакций (все уже сопоставлены или пропущены).')
+            return None
+
+        if request.POST.get('confirm_link') == 'yes':
+            invoice_id = request.POST.get('invoice_id')
+            if not invoice_id:
+                messages.error(request, 'Выберите инвойс.')
+                return None
+            try:
+                invoice = NewInvoice.objects.get(pk=invoice_id)
+            except NewInvoice.DoesNotExist:
+                messages.error(request, 'Инвойс не найден.')
+                return None
+
+            company = Company.get_default()
+            linked = 0
+            for bt in eligible:
+                with transaction.atomic():
+                    bt.matched_invoice = invoice
+                    bt.reconciliation_note = f'Привязано вручную к {invoice.number}'
+                    bt.save(update_fields=['matched_invoice', 'reconciliation_note', 'fetched_at'])
+
+                    payment_amount = min(abs(bt.amount), invoice.total - invoice.paid_amount)
+                    if payment_amount > 0 and bt.amount > 0:
+                        tx = BillingTransaction(
+                            type='PAYMENT',
+                            method='TRANSFER',
+                            status='COMPLETED',
+                            amount=payment_amount,
+                            currency=invoice.currency or 'EUR',
+                            invoice=invoice,
+                            from_client=invoice.recipient_client,
+                            to_company=company,
+                            description=(
+                                f'Ручная привязка банковского платежа '
+                                f'{bt.counterparty_name} -> {invoice.number}'
+                            ),
+                            date=bt.created_at,
+                        )
+                        tx.save()
+                        bt.matched_transaction = tx
+                        bt.save(update_fields=['matched_transaction', 'fetched_at'])
+
+                    linked += 1
+
+            messages.success(request, f'{linked} транзакций привязано к {invoice.number}.')
+            return None
+
+        invoices = (
+            NewInvoice.objects
+            .exclude(status='CANCELLED')
+            .select_related('recipient_client')
+            .order_by('-date')[:200]
+        )
+
+        context = {
+            **self.admin_site.each_context(request),
+            'transactions': list(eligible),
+            'invoices': invoices,
+            'title': 'Привязать транзакции к инвойсу',
+            'opts': self.model._meta,
+            'action_checkbox_name': admin.helpers.ACTION_CHECKBOX_NAME,
+        }
+        return render(request, 'admin/core/banktransaction/link_to_invoice.html', context)
 
     @admin.action(description='Пометить: не требует привязки')
     def mark_skip_reconciliation(self, request, queryset):
