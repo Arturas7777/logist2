@@ -502,6 +502,26 @@
                     </div>
                 </div>
                 
+                <div class="form-row-2" style="margin-bottom: 20px;">
+                    <div class="form-group">
+                        <label>🔗 Связанный счёт</label>
+                        <input type="text" name="linked_invoice" id="linked_invoice_input"
+                               value="{% if original and original.linked_invoice %}{{ original.linked_invoice.number }}{% endif %}"
+                               placeholder="Номер связанного инвойса (напр. AVBLC-000001)">
+                        <div class="form-hint">
+                            Пара: реальный BLC-счёт ↔ официальный счёт на ту же сумму
+                            {% if original and original.linked_invoice %}
+                                — <a href="{% url 'admin:core_newinvoice_change' original.linked_invoice.pk %}" style="color:var(--primary);">Открыть {{ original.linked_invoice.number }}</a>
+                            {% endif %}
+                            {% if original and linked_from_invoice %}
+                                — привязан из <a href="{% url 'admin:core_newinvoice_change' linked_from_invoice.pk %}" style="color:var(--primary);">{{ linked_from_invoice.number }}</a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="form-group" style="display:flex;flex-direction:column;justify-content:center;">
+                    </div>
+                </div>
+
                 <div class="form-row-2">
                     <div class="form-group">
                         <label>🏢 Выставитель</label>
