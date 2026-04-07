@@ -206,26 +206,35 @@ class NewInvoice(models.Model):
     DOCUMENT_TYPE_CHOICES = [
         ('INVOICE', 'Счёт-фактура (PARDP)'),
         ('PROFORMA', 'Коммерческое предложение (AV)'),
+        ('INVOICE_BLC', 'Неофициальный счёт (PARBLC)'),
+        ('PROFORMA_BLC', 'Неофициальное предложение (AVBLC)'),
     ]
+
+    DOCTYPE_PREFIX_MAP = {
+        'INVOICE': 'PARDP',
+        'PROFORMA': 'AV',
+        'INVOICE_BLC': 'PARBLC',
+        'PROFORMA_BLC': 'AVBLC',
+    }
     
     # ========================================================================
     # ИДЕНТИФИКАЦИЯ
     # ========================================================================
 
     document_type = models.CharField(
-        max_length=10,
+        max_length=15,
         choices=DOCUMENT_TYPE_CHOICES,
         default='PROFORMA',
         verbose_name="Тип документа",
-        help_text="INVOICE (PARDP) — бухгалтерский инвойс, синхронизируется с site.pro. "
-                  "PROFORMA (AV) — коммерческое предложение, не экспортируется."
+        help_text="PARDP — официальный счёт (site.pro). AV — коммерческое предложение. "
+                  "PARBLC — неофициальный счёт (нал). AVBLC — неофициальное предложение."
     )
     
     number = models.CharField(
         max_length=50,
         unique=True,
         verbose_name="Номер документа",
-        help_text="Уникальный номер (генерируется автоматически: PARDP-NNNNNN или AV-NNNNNNNN)"
+        help_text="Уникальный номер (генерируется автоматически по серии)"
     )
     
     external_number = models.CharField(
@@ -796,15 +805,10 @@ class NewInvoice(models.Model):
     def generate_number(self):
         """Сгенерировать уникальный номер документа.
 
-        PARDP-NNNNNN — для INVOICE (сквозная нумерация, как в site.pro)
-        AV-NNNNNNNN — для PROFORMA (коммерческое предложение)
+        Серия определяется по document_type через DOCTYPE_PREFIX_MAP:
+        PARDP-NNNNNN, AV-NNNNNN, PARBLC-NNNNNN, AVBLC-NNNNNN.
         """
-        from django.db import connection
-
-        if self.document_type == 'INVOICE':
-            prefix = 'PARDP'
-        else:
-            prefix = 'AV'
+        prefix = self.DOCTYPE_PREFIX_MAP.get(self.document_type, 'AV')
         pad = 6
 
         last_invoice = (
@@ -826,6 +830,23 @@ class NewInvoice(models.Model):
 
         return f"{prefix}-{next_num:0{pad}d}"
     
+    def change_series(self, new_document_type):
+        """Перевести инвойс в другую серию с автоматическим перенумерованием.
+
+        Returns the old number for logging purposes.
+        """
+        from django.db import transaction as db_transaction
+
+        if new_document_type == self.document_type:
+            return self.number
+
+        old_number = self.number
+        self.document_type = new_document_type
+        with db_transaction.atomic():
+            self.number = self.generate_number()
+            self.save(update_fields=['document_type', 'number', 'updated_at'])
+        return old_number
+
     def regenerate_items_from_cars(self):
         """
         Автоматически создает позиции инвойса из услуг выбранных автомобилей.

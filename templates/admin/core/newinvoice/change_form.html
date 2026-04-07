@@ -448,6 +448,15 @@
                         <input type="date" name="due_date" value="{% if original %}{{ original.due_date|date:'Y-m-d' }}{% endif %}">
                     </div>
                     <div class="form-group">
+                        <label>Серия</label>
+                        <select name="document_type">
+                            <option value="PROFORMA" {% if original.document_type == 'PROFORMA' or not original %}selected{% endif %}>AV — коммерческое предл.</option>
+                            <option value="INVOICE" {% if original.document_type == 'INVOICE' %}selected{% endif %}>PARDP — счёт-фактура</option>
+                            <option value="PROFORMA_BLC" {% if original.document_type == 'PROFORMA_BLC' %}selected{% endif %}>AVBLC — неофиц. предл.</option>
+                            <option value="INVOICE_BLC" {% if original.document_type == 'INVOICE_BLC' %}selected{% endif %}>PARBLC — неофиц. счёт</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label>Статус</label>
                         <select name="status">
                             <option value="DRAFT" {% if original.status == 'DRAFT' %}selected{% endif %}>Черновик</option>
