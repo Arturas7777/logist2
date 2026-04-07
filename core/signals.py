@@ -616,6 +616,8 @@ def auto_push_invoice_to_sitepro(sender, instance, created, **kwargs):
     instance._pre_save_status = None
     if instance.status != 'ISSUED' or old_status == 'ISSUED':
         return
+    if getattr(instance, 'document_type', 'PROFORMA') != 'INVOICE':
+        return
     if getattr(instance, '_pushing_to_sitepro', False):
         return
 

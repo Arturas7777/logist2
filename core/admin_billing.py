@@ -115,6 +115,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     
     list_display = (
         'number_display',
+        'doc_type_badge',
         'direction_badge',
         'category_display',
         'notes_display',
@@ -127,6 +128,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     )
     
     list_filter = (
+        'document_type',
         InvoiceDirectionFilter,
         'status',
         'category',
@@ -624,7 +626,20 @@ class NewInvoiceAdmin(admin.ModelAdmin):
         return format_html('<a href="{}" style="font-weight: bold;">{}</a>', url, obj.number)
     number_display.short_description = 'Номер'
     number_display.admin_order_field = 'number'
-    
+
+    def doc_type_badge(self, obj):
+        if obj.document_type == 'INVOICE':
+            return format_html(
+                '<span style="background:#dbeafe;color:#1e40af;padding:2px 7px;'
+                'border-radius:10px;font-size:11px;font-weight:600;">PARDP</span>'
+            )
+        return format_html(
+            '<span style="background:#fef3c7;color:#92400e;padding:2px 7px;'
+            'border-radius:10px;font-size:11px;font-weight:600;">AV</span>'
+        )
+    doc_type_badge.short_description = 'Тип'
+    doc_type_badge.admin_order_field = 'document_type'
+
     def direction_badge(self, obj):
         """Бейдж направления: Исходящий / Входящий / Внутренний"""
         direction = obj.direction
@@ -947,15 +962,25 @@ class NewInvoiceAdmin(admin.ModelAdmin):
         from .services.sitepro_service import SiteProService, SiteProAPIError
         service = SiteProService(connection)
         
-        # Отправляем только выставленные инвойсы
-        eligible = queryset.filter(status__in=['ISSUED', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'])
+        eligible = queryset.filter(
+            status__in=['ISSUED', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'],
+            document_type='INVOICE',
+        )
         if not eligible.exists():
-            self.message_user(
-                request,
-                'Выберите инвойсы со статусом "Выставлен", "Частично оплачен", '
-                '"Оплачен" или "Просрочен".',
-                messages.WARNING
-            )
+            proforma_count = queryset.filter(document_type='PROFORMA').count()
+            if proforma_count:
+                self.message_user(
+                    request,
+                    f'В site.pro отправляются только счета-фактуры (PARDP). '
+                    f'{proforma_count} коммерческих предложений (AV) пропущено.',
+                    messages.WARNING
+                )
+            else:
+                self.message_user(
+                    request,
+                    'Выберите счета-фактуры (PARDP) со статусом "Выставлен" или "Оплачен".',
+                    messages.WARNING
+                )
             return
         
         result = service.push_invoices(eligible)
