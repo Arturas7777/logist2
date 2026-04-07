@@ -803,10 +803,9 @@ class NewInvoice(models.Model):
 
         if self.document_type == 'INVOICE':
             prefix = 'PARDP'
-            pad = 6
         else:
             prefix = 'AV'
-            pad = 8
+        pad = 6
 
         last_invoice = (
             NewInvoice.objects
