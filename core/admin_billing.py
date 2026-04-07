@@ -389,6 +389,12 @@ class NewInvoiceAdmin(admin.ModelAdmin):
                 self._handle_manual_items(request, invoice)
                 messages.success(request, f'✅ Инвойс {invoice.number} сохранен! Сумма: {invoice.total:.2f} €')
             
+            # Авто-регистрация кассового платежа для новых PARBLC-инвойсов
+            if not object_id and invoice.document_type == 'INVOICE_BLC' and invoice.remaining_amount > 0:
+                cash_amount = invoice.remaining_amount
+                invoice._register_cash_payment(created_by=request.user)
+                messages.info(request, f'💵 Оплата наличными зарегистрирована: {cash_amount:.2f} €')
+
             # AI-анализ PDF для входящих инвойсов
             has_audit = False
             try:
