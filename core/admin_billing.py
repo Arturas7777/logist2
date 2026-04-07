@@ -298,7 +298,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             if new_doc_type not in dict(NewInvoice.DOCUMENT_TYPE_CHOICES):
                 new_doc_type = 'PROFORMA'
             if object_id and invoice.document_type != new_doc_type:
-                old_num = invoice.change_series(new_doc_type)
+                old_num = invoice.change_series(new_doc_type, created_by=request.user)
                 messages.info(request, f'Серия изменена: {old_num} → {invoice.number}')
             else:
                 invoice.document_type = new_doc_type
@@ -882,12 +882,21 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     mark_as_issued.short_description = "📤 Пометить как выставленные"
     
     def mark_as_paid(self, request, queryset):
-        """Пометить как оплаченные — создаёт транзакцию через BillingService"""
+        """Пометить как оплаченные — создаёт транзакцию через BillingService.
+        Для BLC-серий (AVBLC/PARBLC) переводит в PARBLC + CASH-платёж."""
         updated = 0
         errors = 0
         for invoice in queryset:
             if invoice.status == 'PAID':
                 continue
+
+            is_blc = invoice.document_type in ('PROFORMA_BLC', 'INVOICE_BLC')
+
+            if is_blc and invoice.document_type != 'INVOICE_BLC':
+                invoice.change_series('INVOICE_BLC', created_by=request.user)
+                updated += 1
+                continue
+
             remaining = invoice.remaining_amount
             if remaining <= 0:
                 invoice.status = 'PAID'
@@ -899,10 +908,11 @@ class NewInvoiceAdmin(admin.ModelAdmin):
                 errors += 1
                 continue
             try:
+                method = 'CASH' if is_blc else 'OTHER'
                 BillingService.pay_invoice(
                     invoice=invoice,
                     amount=remaining,
-                    method='OTHER',
+                    method=method,
                     payer=payer,
                     description="Отмечено как оплаченное через массовое действие",
                     created_by=request.user,
@@ -1029,7 +1039,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
 
             changed = 0
             for inv in queryset:
-                old_number = inv.change_series(new_type)
+                old_number = inv.change_series(new_type, created_by=request.user)
                 if old_number != inv.number:
                     changed += 1
                     logger.info('Invoice %s -> %s (series %s)', old_number, inv.number, new_type)
@@ -1149,11 +1159,17 @@ class NewInvoiceAdmin(admin.ModelAdmin):
         
         if request.method == 'POST':
             try:
+                is_blc = invoice.document_type in ('PROFORMA_BLC', 'INVOICE_BLC')
+
+                if is_blc and invoice.document_type != 'INVOICE_BLC':
+                    old_num = invoice.change_series('INVOICE_BLC', created_by=request.user)
+                    messages.success(request, f'Серия {old_num} → {invoice.number}, оплата наличными зарегистрирована.')
+                    return redirect('admin:core_newinvoice_change', invoice_id)
+
                 amount = Decimal(request.POST.get('amount', 0))
                 method = request.POST.get('method', 'CASH')
                 description = request.POST.get('description', '')
                 
-                # Определяем плательщика
                 payer = invoice.recipient
                 
                 result = BillingService.pay_invoice(

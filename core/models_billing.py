@@ -830,8 +830,11 @@ class NewInvoice(models.Model):
 
         return f"{prefix}-{next_num:0{pad}d}"
     
-    def change_series(self, new_document_type):
+    def change_series(self, new_document_type, created_by=None):
         """Перевести инвойс в другую серию с автоматическим перенумерованием.
+
+        При переходе на INVOICE_BLC (PARBLC) автоматически создаётся
+        кассовый платёж (CASH) на оставшуюся сумму и инвойс закрывается.
 
         Returns the old number for logging purposes.
         """
@@ -841,11 +844,63 @@ class NewInvoice(models.Model):
             return self.number
 
         old_number = self.number
+        old_type = self.document_type
         self.document_type = new_document_type
         with db_transaction.atomic():
             self.number = self.generate_number()
             self.save(update_fields=['document_type', 'number', 'updated_at'])
+
+            if new_document_type == 'INVOICE_BLC' and self.remaining_amount > 0:
+                self._register_cash_payment(created_by=created_by)
+            elif old_type == 'INVOICE_BLC' and new_document_type != 'INVOICE_BLC':
+                self._reverse_cash_payments(created_by=created_by)
+
         return old_number
+
+    def _register_cash_payment(self, created_by=None):
+        """Create a CASH PAYMENT transaction for the remaining amount."""
+        from django.db import transaction as db_transaction
+
+        remaining = self.remaining_amount
+        if remaining <= 0:
+            return
+
+        payer = self.recipient
+        issuer = self.issuer
+        if not payer or not issuer:
+            return
+
+        payer_field = f'from_{payer.__class__.__name__.lower()}'
+        issuer_field = f'to_{issuer.__class__.__name__.lower()}'
+
+        trx = Transaction(
+            type='PAYMENT',
+            method='CASH',
+            invoice=self,
+            amount=remaining,
+            currency=self.currency or 'EUR',
+            description=f"Оплата наличными ({self.number})",
+            created_by=created_by,
+            status='COMPLETED',
+        )
+        setattr(trx, payer_field, payer)
+        setattr(trx, issuer_field, issuer)
+        trx.save()
+        logger.info('Auto cash payment %s: %s for invoice %s', trx.number, remaining, self.number)
+
+    def _reverse_cash_payments(self, created_by=None):
+        """Reverse auto-created cash payments when moving away from PARBLC."""
+        cash_payments = self.transactions.filter(
+            type='PAYMENT', method='CASH', status='COMPLETED',
+            description__contains='Оплата наличными',
+        )
+        for trx in cash_payments:
+            trx.status = 'CANCELLED'
+            trx._skip_balance_recalc = True
+            trx.save(update_fields=['status'])
+        if cash_payments.exists():
+            self.recalculate_paid_amount()
+            logger.info('Reversed %d cash payments for invoice %s', cash_payments.count(), self.number)
 
     def regenerate_items_from_cars(self):
         """

@@ -1601,6 +1601,7 @@ class AutoTransport(models.Model):
                         issuer_company=company,
                         recipient_client=client,
                         auto_transport=self,
+                        document_type='PROFORMA_BLC',
                         status='DRAFT',
                         date=timezone.now().date()
                     )
