@@ -293,6 +293,15 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             invoice.status = request.POST.get('status', 'ISSUED')
             invoice.notes = request.POST.get('notes', '')
             invoice.external_number = request.POST.get('external_number', '')
+
+            new_doc_type = request.POST.get('document_type', 'PROFORMA')
+            if new_doc_type not in dict(NewInvoice.DOCUMENT_TYPE_CHOICES):
+                new_doc_type = 'PROFORMA'
+            if object_id and invoice.document_type != new_doc_type:
+                old_num = invoice.change_series(new_doc_type)
+                messages.info(request, f'Серия изменена: {old_num} → {invoice.number}')
+            else:
+                invoice.document_type = new_doc_type
             
             # Категория
             category_id = request.POST.get('category')
@@ -614,7 +623,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             logging.getLogger(__name__).exception(f'Error triggering invoice audit for NewInvoice #{obj.pk}: {e}')
             messages.warning(request, f'Не удалось запустить AI-анализ PDF: {e}')
 
-    actions = ['mark_as_issued', 'mark_as_paid', 'cancel_invoices', 'regenerate_items', 'push_to_sitepro']
+    actions = ['mark_as_issued', 'mark_as_paid', 'cancel_invoices', 'regenerate_items', 'push_to_sitepro', 'change_series']
 
     # ========================================================================
     # ОТОБРАЖЕНИЕ ПОЛЕЙ В СПИСКЕ
@@ -628,14 +637,17 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     number_display.admin_order_field = 'number'
 
     def doc_type_badge(self, obj):
-        if obj.document_type == 'INVOICE':
-            return format_html(
-                '<span style="background:#dbeafe;color:#1e40af;padding:2px 7px;'
-                'border-radius:10px;font-size:11px;font-weight:600;">PARDP</span>'
-            )
+        badge_map = {
+            'INVOICE':      ('#dbeafe', '#1e40af', 'PARDP'),
+            'PROFORMA':     ('#fef3c7', '#92400e', 'AV'),
+            'INVOICE_BLC':  ('#1e293b', '#f8fafc', 'PARBLC'),
+            'PROFORMA_BLC': ('#e2e8f0', '#475569', 'AVBLC'),
+        }
+        bg, fg, label = badge_map.get(obj.document_type, ('#e2e8f0', '#475569', '?'))
         return format_html(
-            '<span style="background:#fef3c7;color:#92400e;padding:2px 7px;'
-            'border-radius:10px;font-size:11px;font-weight:600;">AV</span>'
+            '<span style="background:{};color:{};padding:2px 7px;'
+            'border-radius:10px;font-size:11px;font-weight:600;">{}</span>',
+            bg, fg, label
         )
     doc_type_badge.short_description = 'Тип'
     doc_type_badge.admin_order_field = 'document_type'
@@ -967,12 +979,12 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             document_type='INVOICE',
         )
         if not eligible.exists():
-            proforma_count = queryset.filter(document_type='PROFORMA').count()
-            if proforma_count:
+            non_invoice = queryset.exclude(document_type='INVOICE').count()
+            if non_invoice:
                 self.message_user(
                     request,
                     f'В site.pro отправляются только счета-фактуры (PARDP). '
-                    f'{proforma_count} коммерческих предложений (AV) пропущено.',
+                    f'{non_invoice} документов других серий пропущено.',
                     messages.WARNING
                 )
             else:
@@ -1005,7 +1017,38 @@ class NewInvoiceAdmin(admin.ModelAdmin):
                 messages.ERROR
             )
     push_to_sitepro.short_description = "📤 Отправить в site.pro (бухгалтерия)"
-    
+
+    def change_series(self, request, queryset):
+        """Сменить серию (тип документа) выбранных инвойсов"""
+        if 'apply' in request.POST:
+            new_type = request.POST.get('new_document_type')
+            valid_types = dict(NewInvoice.DOCUMENT_TYPE_CHOICES)
+            if new_type not in valid_types:
+                self.message_user(request, 'Неверный тип документа.', messages.ERROR)
+                return
+
+            changed = 0
+            for inv in queryset:
+                old_number = inv.change_series(new_type)
+                if old_number != inv.number:
+                    changed += 1
+                    logger.info('Invoice %s -> %s (series %s)', old_number, inv.number, new_type)
+
+            self.message_user(
+                request,
+                f'Серия изменена для {changed} инвойсов на {valid_types[new_type]}.',
+                messages.SUCCESS
+            )
+            return
+
+        return render(request, 'admin/core/newinvoice/change_series.html', {
+            'invoices': queryset,
+            'document_type_choices': NewInvoice.DOCUMENT_TYPE_CHOICES,
+            'action_checkbox_name': admin.helpers.ACTION_CHECKBOX_NAME,
+            'opts': self.model._meta,
+        })
+    change_series.short_description = "🔄 Сменить серию"
+
     # ========================================================================
     # КАСТОМНЫЕ УРЛЫ
     # ========================================================================

@@ -1,0 +1,152 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Смена серии инвойсов{% endblock %}
+
+{% block content %}
+<style>
+    .change-series-wrap {
+        max-width: 720px;
+        margin: 24px auto;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .change-series-wrap h2 {
+        font-size: 1.3rem;
+        font-weight: 700;
+        margin-bottom: 16px;
+    }
+    .invoice-list {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 0;
+        margin-bottom: 20px;
+        overflow: hidden;
+    }
+    .invoice-list table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .invoice-list th {
+        background: #f8fafc;
+        padding: 10px 16px;
+        text-align: left;
+        font-size: .85rem;
+        color: #64748b;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    .invoice-list td {
+        padding: 10px 16px;
+        border-bottom: 1px solid #f1f5f9;
+        font-size: .9rem;
+    }
+    .invoice-list tr:last-child td { border-bottom: none; }
+    .series-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+    .target-select {
+        margin-bottom: 20px;
+    }
+    .target-select label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+        font-size: .95rem;
+    }
+    .target-select select {
+        width: 100%;
+        padding: 10px 14px;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        font-size: .95rem;
+        background: #fff;
+    }
+    .actions-row {
+        display: flex;
+        gap: 10px;
+    }
+    .btn-apply {
+        padding: 10px 24px;
+        background: #6c5ce7;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: .95rem;
+        cursor: pointer;
+    }
+    .btn-apply:hover { background: #5a4bd1; }
+    .btn-cancel {
+        padding: 10px 24px;
+        background: #e2e8f0;
+        color: #475569;
+        border: none;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: .95rem;
+        cursor: pointer;
+        text-decoration: none;
+    }
+    .btn-cancel:hover { background: #cbd5e1; }
+</style>
+
+<div class="change-series-wrap">
+    <h2>Смена серии для {{ invoices|length }} инвойсов</h2>
+
+    <div class="invoice-list">
+        <table>
+            <thead>
+                <tr>
+                    <th>Номер</th>
+                    <th>Текущая серия</th>
+                    <th>Сумма</th>
+                    <th>Получатель</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for inv in invoices %}
+                <tr>
+                    <td><strong>{{ inv.number }}</strong></td>
+                    <td>
+                        <span class="series-badge" style="
+                            {% if inv.document_type == 'INVOICE' %}background:#dbeafe;color:#1e40af;
+                            {% elif inv.document_type == 'PROFORMA' %}background:#fef3c7;color:#92400e;
+                            {% elif inv.document_type == 'INVOICE_BLC' %}background:#1e293b;color:#f8fafc;
+                            {% else %}background:#e2e8f0;color:#475569;{% endif %}
+                        ">{{ inv.get_document_type_display }}</span>
+                    </td>
+                    <td>{{ inv.total|floatformat:2 }} €</td>
+                    <td>{{ inv.recipient_name }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        {% for inv in invoices %}
+        <input type="hidden" name="{{ action_checkbox_name }}" value="{{ inv.pk }}">
+        {% endfor %}
+        <input type="hidden" name="action" value="change_series">
+
+        <div class="target-select">
+            <label for="new_document_type">Новая серия:</label>
+            <select name="new_document_type" id="new_document_type">
+                {% for value, label in document_type_choices %}
+                <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="actions-row">
+            <button type="submit" name="apply" class="btn-apply">Применить</button>
+            <a href="{% url 'admin:core_newinvoice_changelist' %}" class="btn-cancel">Отмена</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
