@@ -262,6 +262,11 @@ class NewInvoiceAdmin(admin.ModelAdmin):
                     extra_context['audit_status'] = self.audit_status_display(invoice)
                 except Exception:
                     extra_context['audit_status'] = None
+                # Обратная связь: кто ссылается на этот инвойс
+                try:
+                    extra_context['linked_from_invoice'] = invoice.linked_from
+                except NewInvoice.DoesNotExist:
+                    extra_context['linked_from_invoice'] = None
             except NewInvoice.DoesNotExist:
                 pass
         extra_context['selected_car_ids'] = selected_car_ids
@@ -316,10 +321,15 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             if 'attachment' in request.FILES:
                 invoice.attachment = request.FILES['attachment']
 
-            # Связанный счёт
-            linked_id = request.POST.get('linked_invoice')
-            if linked_id:
-                invoice.linked_invoice = NewInvoice.objects.filter(pk=linked_id).first()
+            # Связанный счёт (принимаем номер или ID)
+            linked_val = request.POST.get('linked_invoice', '').strip()
+            if linked_val:
+                if linked_val.isdigit():
+                    invoice.linked_invoice = NewInvoice.objects.filter(pk=linked_val).first()
+                else:
+                    invoice.linked_invoice = NewInvoice.objects.filter(number=linked_val).first()
+                if not invoice.linked_invoice and linked_val:
+                    messages.warning(request, f'Связанный счёт «{linked_val}» не найден')
             else:
                 invoice.linked_invoice = None
             
