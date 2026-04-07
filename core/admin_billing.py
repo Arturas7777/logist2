@@ -117,6 +117,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
         'number_display',
         'doc_type_badge',
         'direction_badge',
+        'linked_badge',
         'category_display',
         'notes_display',
         'recipient_display',
@@ -180,7 +181,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             'classes': ('collapse',),
         }),
         ('📎 Дополнительно', {
-            'fields': ('notes', 'attachment', 'audit_status_display'),
+            'fields': ('notes', 'attachment', 'linked_invoice', 'audit_status_display'),
         }),
         ('⚙️ Прочие получатели (если не клиент)', {
             'fields': (
@@ -200,6 +201,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     
     inlines = [InvoiceItemInline]
     
+    autocomplete_fields = ['linked_invoice']
     filter_horizontal = ('cars',)
     
     def add_view(self, request, form_url='', extra_context=None):
@@ -313,6 +315,13 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             # Вложение
             if 'attachment' in request.FILES:
                 invoice.attachment = request.FILES['attachment']
+
+            # Связанный счёт
+            linked_id = request.POST.get('linked_invoice')
+            if linked_id:
+                invoice.linked_invoice = NewInvoice.objects.filter(pk=linked_id).first()
+            else:
+                invoice.linked_invoice = None
             
             # Очищаем все поля выставителя и получателя перед установкой новых
             invoice.issuer_company = None
@@ -672,7 +681,28 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             style, label
         )
     direction_badge.short_description = 'Напр.'
-    
+
+    def linked_badge(self, obj):
+        """Badge showing linked invoice pair"""
+        linked = None
+        if obj.linked_invoice_id:
+            linked = obj.linked_invoice
+        else:
+            try:
+                linked = obj.linked_from
+            except NewInvoice.DoesNotExist:
+                pass
+        if not linked:
+            return format_html('<span style="color:#ccc;">—</span>')
+        url = reverse('admin:core_newinvoice_change', args=[linked.pk])
+        return format_html(
+            '<a href="{}" style="text-decoration:none;" title="{}">'
+            '<span style="background:#e0e7ff;color:#3730a3;padding:2px 7px;'
+            'border-radius:10px;font-size:11px;font-weight:600;">🔗 {}</span></a>',
+            url, linked.number, linked.number
+        )
+    linked_badge.short_description = 'Пара'
+
     def category_display(self, obj):
         """Категория расхода/дохода"""
         if obj.category:
