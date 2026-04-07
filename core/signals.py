@@ -642,6 +642,36 @@ def auto_push_invoice_to_sitepro(sender, instance, created, **kwargs):
     transaction.on_commit(_do_push)
 
 
+@receiver(post_save, sender=NewInvoice)
+def sync_linked_invoice_status(sender, instance, **kwargs):
+    """When an invoice becomes PAID, mark its linked pair as PAID too."""
+    if instance.status != 'PAID':
+        return
+    if getattr(instance, '_syncing_linked', False):
+        return
+
+    linked = None
+    if instance.linked_invoice_id:
+        linked = instance.linked_invoice
+    else:
+        linked = getattr(instance, 'linked_from', None)
+        if linked is not None:
+            try:
+                linked = NewInvoice.objects.get(pk=linked.pk)
+            except NewInvoice.DoesNotExist:
+                linked = None
+
+    if linked and linked.status != 'PAID':
+        linked._syncing_linked = True
+        linked.paid_amount = linked.total
+        linked.status = 'PAID'
+        linked.save(update_fields=['paid_amount', 'status', 'updated_at'])
+        logger.info(
+            'Linked invoice %s marked PAID (paired with %s)',
+            linked.number, instance.number,
+        )
+
+
 # ============================================================================
 # TRANSACTION -> BALANCE RECALCULATION
 # ============================================================================
