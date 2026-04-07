@@ -201,16 +201,31 @@ class NewInvoice(models.Model):
         ('OVERDUE', 'Просрочен'),
         ('CANCELLED', 'Отменен'),
     ]
+
+    # Тип документа
+    DOCUMENT_TYPE_CHOICES = [
+        ('INVOICE', 'Счёт-фактура (PARDP)'),
+        ('PROFORMA', 'Коммерческое предложение (AV)'),
+    ]
     
     # ========================================================================
     # ИДЕНТИФИКАЦИЯ
     # ========================================================================
+
+    document_type = models.CharField(
+        max_length=10,
+        choices=DOCUMENT_TYPE_CHOICES,
+        default='PROFORMA',
+        verbose_name="Тип документа",
+        help_text="INVOICE (PARDP) — бухгалтерский инвойс, синхронизируется с site.pro. "
+                  "PROFORMA (AV) — коммерческое предложение, не экспортируется."
+    )
     
     number = models.CharField(
         max_length=50,
         unique=True,
-        verbose_name="Номер инвойса",
-        help_text="Уникальный номер инвойса (генерируется автоматически)"
+        verbose_name="Номер документа",
+        help_text="Уникальный номер (генерируется автоматически: PARDP-NNNNNN или AV-NNNNNNNN)"
     )
     
     external_number = models.CharField(
@@ -779,18 +794,23 @@ class NewInvoice(models.Model):
                 self.status = 'ISSUED'
     
     def generate_number(self):
-        """Сгенерировать уникальный номер инвойса.
-        Использует select_for_update для предотвращения дублирования при конкурентном создании.
+        """Сгенерировать уникальный номер документа.
+
+        PARDP-NNNNNN — для INVOICE (сквозная нумерация, как в site.pro)
+        AV-NNNNNNNN — для PROFORMA (коммерческое предложение)
         """
-        from django.utils.timezone import now
         from django.db import connection
 
-        date = now()
-        prefix = f"INV-{date.year}{date.month:02d}"
+        if self.document_type == 'INVOICE':
+            prefix = 'PARDP'
+            pad = 6
+        else:
+            prefix = 'AV'
+            pad = 8
 
         last_invoice = (
             NewInvoice.objects
-            .filter(number__startswith=prefix)
+            .filter(number__startswith=f'{prefix}-')
             .select_for_update()
             .order_by('-number')
             .first()
@@ -798,14 +818,14 @@ class NewInvoice(models.Model):
 
         if last_invoice:
             try:
-                last_num = int(last_invoice.number.split('-')[-1])
+                last_num = int(last_invoice.number.split('-', 1)[1])
                 next_num = last_num + 1
             except (ValueError, IndexError):
                 next_num = 1
         else:
             next_num = 1
 
-        return f"{prefix}-{next_num:04d}"
+        return f"{prefix}-{next_num:0{pad}d}"
     
     def regenerate_items_from_cars(self):
         """

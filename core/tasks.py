@@ -170,6 +170,7 @@ def sync_sitepro_invoices(self):
     if conn.auto_push_on_issue:
         unsent = NewInvoice.objects.filter(
             status='ISSUED',
+            document_type='INVOICE',
         ).exclude(
             sitepro_syncs__connection=conn,
             sitepro_syncs__sync_status='SENT',
