@@ -204,6 +204,8 @@ def reanalyze_newinvoice(request, pk):
         audit.error_message = ''
         audit.discrepancies = []
         audit.raw_extracted = {}
+        audit.pdf_file = invoice.attachment
+        audit.original_filename = os.path.basename(invoice.attachment.name) if invoice.attachment else ''
         audit.save()
     else:
         import shutil

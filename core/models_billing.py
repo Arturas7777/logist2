@@ -35,11 +35,12 @@ class ExpenseCategory(models.Model):
     """Категория расхода/дохода для классификации инвойсов и транзакций"""
     
     CATEGORY_TYPE_CHOICES = [
-        ('OPERATIONAL', 'Операционные'),       # склады, линии, перевозчики
-        ('ADMINISTRATIVE', 'Административные'), # аренда, коммунальные
+        ('OPERATIONAL', 'Операционные'),
+        ('ADMINISTRATIVE', 'Административные'),
         ('SALARY', 'Зарплаты'),
         ('MARKETING', 'Маркетинг'),
         ('TAX', 'Налоги и сборы'),
+        ('PERSONAL', 'Личные расходы'),
         ('OTHER', 'Прочие'),
     ]
     
@@ -478,6 +479,12 @@ class NewInvoice(models.Model):
         help_text="Категория для учёта доходов/расходов (напр. Логистика, Аренда)"
     )
     
+    skip_ai_comparison = models.BooleanField(
+        default=False,
+        verbose_name="Без сверки с базой",
+        help_text="AI извлечёт данные из PDF, но не будет сверять с расходами в системе"
+    )
+
     attachment = models.FileField(
         upload_to='invoices/attachments/%Y/%m/',
         null=True,

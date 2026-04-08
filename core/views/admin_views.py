@@ -5,8 +5,10 @@ from typing import Optional
 
 from django.db import transaction as db_transaction
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.contrib.admin.views.decorators import staff_member_required
+from django.contrib import messages, admin
+from django.utils import timezone
 
 from core.models import Car, Container, Client, Company
 from core.models_billing import NewInvoice as Invoice, Transaction as Payment
@@ -178,3 +180,102 @@ def sync_container_photos_from_gdrive(request, container_id):
     except Exception as e:
         logger.error("Error syncing Google Drive photos: %s", e, exc_info=True)
         return JsonResponse({'success': False, 'error': 'Внутренняя ошибка сервера'}, status=500)
+
+
+@staff_member_required
+def add_cash_expense(request):
+    """Quick form to record a personal cash expense."""
+    from core.models_billing import Transaction, ExpenseCategory
+
+    company = Company.objects.filter(name__icontains='Caromoto').first()
+    personal_categories = ExpenseCategory.objects.filter(
+        category_type='PERSONAL', is_active=True
+    ).order_by('order')
+
+    if request.method == 'POST':
+        try:
+            amount = Decimal(request.POST.get('amount', '0').replace(',', '.'))
+            if amount <= 0:
+                raise ValueError('Сумма должна быть больше 0')
+            category_id = request.POST.get('category')
+            description = request.POST.get('description', '').strip()
+
+            category = ExpenseCategory.objects.get(id=category_id, category_type='PERSONAL')
+
+            tx = Transaction.objects.create(
+                type='ADJUSTMENT',
+                method='CASH',
+                amount=amount,
+                currency='EUR',
+                from_company=company,
+                category=category,
+                description=description or f'Личный расход: {category.name}',
+                status='COMPLETED',
+                date=timezone.now(),
+            )
+            messages.success(request, f'Расход {amount:.2f} € записан ({category.name})')
+            return redirect('company_dashboard')
+        except (ValueError, InvalidOperation) as e:
+            messages.error(request, f'Ошибка: {e}')
+        except ExpenseCategory.DoesNotExist:
+            messages.error(request, 'Выберите категорию')
+
+    context = admin.site.each_context(request)
+    context['personal_categories'] = personal_categories
+
+    if company:
+        breakdown = company.get_balance_breakdown()
+        context['current_cash'] = breakdown.get('cash', Decimal('0'))
+    else:
+        context['current_cash'] = Decimal('0')
+
+    return render(request, 'admin/cash_expense.html', context)
+
+
+@staff_member_required
+def cash_wallet_reset(request):
+    """Reconcile the cash wallet with the real amount in pocket."""
+    from core.models_billing import Transaction
+
+    company = Company.objects.filter(name__icontains='Caromoto').first()
+    breakdown = company.get_balance_breakdown() if company else {}
+    current_cash = breakdown.get('cash', Decimal('0'))
+
+    if request.method == 'POST':
+        try:
+            real_amount = Decimal(request.POST.get('real_amount', '0').replace(',', '.'))
+            if real_amount < 0:
+                raise ValueError('Сумма не может быть отрицательной')
+
+            diff = real_amount - current_cash
+            if abs(diff) < Decimal('0.01'):
+                messages.info(request, 'Баланс совпадает, корректировка не нужна')
+                return redirect('company_dashboard')
+
+            if diff > 0:
+                tx = Transaction.objects.create(
+                    type='ADJUSTMENT', method='CASH', amount=abs(diff),
+                    currency='EUR', to_company=company,
+                    description='Сверка кошелька — корректировка вверх',
+                    status='COMPLETED', date=timezone.now(),
+                )
+            else:
+                tx = Transaction.objects.create(
+                    type='ADJUSTMENT', method='CASH', amount=abs(diff),
+                    currency='EUR', from_company=company,
+                    description='Сверка кошелька — корректировка вниз',
+                    status='COMPLETED', date=timezone.now(),
+                )
+
+            messages.success(
+                request,
+                f'Баланс кошелька установлен: {real_amount:.2f} € '
+                f'(корректировка {"+" if diff > 0 else ""}{diff:.2f} €)'
+            )
+            return redirect('company_dashboard')
+        except (ValueError, InvalidOperation) as e:
+            messages.error(request, f'Ошибка: {e}')
+
+    context = admin.site.each_context(request)
+    context['current_cash'] = current_cash
+    return render(request, 'admin/cash_wallet_reset.html', context)
