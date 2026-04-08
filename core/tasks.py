@@ -219,6 +219,67 @@ def sync_sitepro_invoices(self):
     return result
 
 
+@shared_task(bind=True, max_retries=1, default_retry_delay=300, time_limit=600)
+def sync_bank_and_reconcile(self):
+    """
+    Periodic task: sync Revolut bank transactions, then run both reconciliation flows.
+    1. Revolut sync (fetch accounts + transactions)
+    2. Outgoing reconciliation (we pay suppliers — match by external_number)
+    3. Incoming reconciliation (clients pay us — match by invoice number/name+amount)
+    """
+    from core.models_banking import BankConnection
+    from core.services.revolut_service import RevolutService
+    from core.services.billing_service import BillingService
+    from core.management.commands.auto_reconcile import reconcile_incoming_payments
+
+    total_transactions = 0
+    errors = 0
+
+    for conn in BankConnection.objects.filter(is_active=True):
+        if conn.bank_type != 'REVOLUT':
+            continue
+        try:
+            service = RevolutService(conn)
+            result = service.sync_all()
+            if result['error']:
+                errors += 1
+                logger.error('[sync_bank] %s error: %s', conn, result['error'])
+            else:
+                n_tx = len(result['transactions'])
+                total_transactions += n_tx
+                logger.info('[sync_bank] %s: %d accounts, %d transactions',
+                            conn, len(result['accounts']), n_tx)
+        except Exception as exc:
+            errors += 1
+            logger.error('[sync_bank] %s failed: %s', conn, exc, exc_info=True)
+
+    outgoing = {'auto_paid': [], 'linked_only': [], 'errors': []}
+    incoming = {'total': 0}
+
+    if errors == 0:
+        try:
+            outgoing = BillingService.auto_reconcile_bank_transactions()
+            logger.info('[sync_bank] outgoing reconcile: %d paid, %d linked',
+                        len(outgoing['auto_paid']), len(outgoing['linked_only']))
+        except Exception as exc:
+            logger.error('[sync_bank] outgoing reconcile failed: %s', exc, exc_info=True)
+
+        try:
+            incoming = reconcile_incoming_payments()
+            logger.info('[sync_bank] incoming reconcile: %d matched (R1=%d R2=%d R3=%d)',
+                        incoming['total'], incoming['rule1'], incoming['rule2'], incoming['rule3'])
+        except Exception as exc:
+            logger.error('[sync_bank] incoming reconcile failed: %s', exc, exc_info=True)
+
+    return {
+        'transactions_synced': total_transactions,
+        'sync_errors': errors,
+        'outgoing_paid': len(outgoing['auto_paid']),
+        'outgoing_linked': len(outgoing['linked_only']),
+        'incoming_matched': incoming.get('total', 0),
+    }
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def send_car_unload_notification_task(self, car_id):
     from core.models import Car
