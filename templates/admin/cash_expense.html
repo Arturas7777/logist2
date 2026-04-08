@@ -129,11 +129,17 @@
 
         <div class="field-group">
             <label for="id_category">Категория</label>
+            {% if personal_categories %}
             <select id="id_category" name="category" required>
                 {% for cat in personal_categories %}
                 <option value="{{ cat.id }}">{{ cat.name }}</option>
                 {% endfor %}
             </select>
+            {% else %}
+            <div style="padding:12px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:8px;color:#ef4444;font-size:.9em">
+                Категории не найдены. Обновите страницу или добавьте категории типа PERSONAL в <a href="/admin/core/expensecategory/" style="color:#6c5ce7">админке</a>.
+            </div>
+            {% endif %}
         </div>
 
         <div class="field-group">
