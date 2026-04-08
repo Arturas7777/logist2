@@ -233,6 +233,47 @@ def add_cash_expense(request):
 
 
 @staff_member_required
+def add_cash_income(request):
+    """Quick form to top up the cash wallet from external sources."""
+    from core.models_billing import Transaction
+
+    company = Company.objects.filter(name__icontains='Caromoto').first()
+
+    if request.method == 'POST':
+        try:
+            amount = Decimal(request.POST.get('amount', '0').replace(',', '.'))
+            if amount <= 0:
+                raise ValueError('Сумма должна быть больше 0')
+            description = request.POST.get('description', '').strip()
+            if not description:
+                raise ValueError('Укажите источник поступления')
+
+            Transaction.objects.create(
+                type='ADJUSTMENT',
+                method='CASH',
+                amount=amount,
+                currency='EUR',
+                to_company=company,
+                description=description,
+                status='COMPLETED',
+                date=timezone.now(),
+            )
+            messages.success(request, f'Пополнение {amount:.2f} € записано')
+            return redirect('company_dashboard')
+        except (ValueError, InvalidOperation) as e:
+            messages.error(request, f'Ошибка: {e}')
+
+    context = admin.site.each_context(request)
+    if company:
+        breakdown = company.get_balance_breakdown()
+        context['current_cash'] = breakdown.get('cash', Decimal('0'))
+    else:
+        context['current_cash'] = Decimal('0')
+
+    return render(request, 'admin/cash_income.html', context)
+
+
+@staff_member_required
 def cash_wallet_reset(request):
     """Reconcile the cash wallet with the real amount in pocket."""
     from core.models_billing import Transaction

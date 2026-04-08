@@ -607,7 +607,7 @@
 
     <!-- ════════════════ CASH WALLET ════════════════ -->
     <div class="db-section"><i class="bx bxs-wallet" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Кошелёк (наличные)</div>
-    <div class="kpi-row four" style="margin-bottom:12px">
+    <div class="kpi-row five" style="margin-bottom:12px">
         <div class="kpi accent-green">
             <div class="kpi-icon green"><i class="bx bx-money"></i></div>
             <div class="kpi-label">Наличные на руках</div>
@@ -626,8 +626,13 @@
             <div class="kpi-label">Личные расходы (всего)</div>
             <div class="kpi-value v-red">{{ cash_wallet.personal_total|floatformat:2 }} €</div>
         </div>
+        <div class="kpi accent-green" style="cursor:pointer" onclick="location.href='{% url 'add_cash_income' %}'">
+            <div class="kpi-icon green"><i class="bx bx-plus-circle"></i></div>
+            <div class="kpi-label">Пополнить</div>
+            <div class="kpi-value" style="font-size:1.3em;color:#22c55e">💰</div>
+        </div>
         <div class="kpi accent-indigo" style="cursor:pointer" onclick="location.href='{% url 'add_cash_expense' %}'">
-            <div class="kpi-icon indigo"><i class="bx bx-plus-circle"></i></div>
+            <div class="kpi-icon indigo"><i class="bx bx-minus-circle"></i></div>
             <div class="kpi-label">Записать расход</div>
             <div class="kpi-value" style="font-size:1.3em;color:#6c5ce7">💸</div>
         </div>

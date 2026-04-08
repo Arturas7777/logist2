@@ -30,6 +30,7 @@ from .admin_views import (  # noqa: F401
     get_container_photos_json,
     sync_container_photos_from_gdrive,
     add_cash_expense,
+    add_cash_income,
     cash_wallet_reset,
 )
 
