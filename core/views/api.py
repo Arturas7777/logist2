@@ -622,3 +622,60 @@ def search_cars(request):
         })
 
     return JsonResponse({'results': results})
+
+
+@staff_member_required
+@require_GET
+def search_invoices(request):
+    """AJAX autocomplete for invoices — search by number, external_number, or counterparty name."""
+    from core.models_billing import NewInvoice
+
+    query = request.GET.get('q', '').strip()
+    exclude_id = request.GET.get('exclude', '')
+
+    if len(query) < 2:
+        return JsonResponse({'results': []})
+
+    qs = NewInvoice.objects.filter(
+        Q(number__icontains=query)
+        | Q(external_number__icontains=query)
+        | Q(issuer_company__name__icontains=query)
+        | Q(issuer_warehouse__name__icontains=query)
+        | Q(issuer_line__name__icontains=query)
+        | Q(issuer_carrier__name__icontains=query)
+        | Q(recipient_client__name__icontains=query)
+        | Q(recipient_company__name__icontains=query)
+    )
+
+    if exclude_id and exclude_id.isdigit():
+        qs = qs.exclude(pk=int(exclude_id))
+
+    qs = qs.select_related(
+        'issuer_company', 'issuer_warehouse', 'issuer_line', 'issuer_carrier',
+        'recipient_client', 'recipient_company',
+    ).order_by('-date')[:15]
+
+    results = []
+    for inv in qs:
+        issuer = inv.issuer
+        recipient = inv.recipient
+        label = inv.number
+        if inv.external_number:
+            label += f' ({inv.external_number})'
+        parts = [label]
+        if issuer:
+            parts.append(str(issuer))
+        if recipient:
+            parts.append(f'→ {recipient}')
+        parts.append(f'{inv.total:.2f} €')
+
+        results.append({
+            'id': inv.number,
+            'text': ' · '.join(parts),
+            'pk': inv.pk,
+            'number': inv.number,
+            'total': str(inv.total),
+            'status': inv.status,
+        })
+
+    return JsonResponse({'results': results})

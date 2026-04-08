@@ -267,11 +267,56 @@ class NewInvoiceAdmin(admin.ModelAdmin):
                     extra_context['linked_from_invoice'] = invoice.linked_from
                 except NewInvoice.DoesNotExist:
                     extra_context['linked_from_invoice'] = None
+
+                # Кандидаты для связки (тот же контрагент, близкая сумма, не связан)
+                extra_context['link_candidates'] = self._find_link_candidates(invoice)
             except NewInvoice.DoesNotExist:
                 pass
         extra_context['selected_car_ids'] = selected_car_ids
         
         return extra_context
+
+    def _find_link_candidates(self, invoice):
+        """Find invoices that could be linked as a real↔official pair."""
+        if invoice.linked_invoice_id:
+            return []
+        try:
+            if invoice.linked_from:
+                return []
+        except NewInvoice.DoesNotExist:
+            pass
+
+        if not invoice.total or invoice.total <= 0:
+            return []
+
+        tolerance = invoice.total * Decimal('0.01')
+        total_min = invoice.total - tolerance
+        total_max = invoice.total + tolerance
+
+        qs = NewInvoice.objects.filter(
+            total__gte=total_min,
+            total__lte=total_max,
+            linked_invoice__isnull=True,
+        ).exclude(
+            pk=invoice.pk,
+        ).exclude(
+            pk__in=NewInvoice.objects.filter(
+                linked_invoice__isnull=False
+            ).values_list('linked_invoice_id', flat=True)
+        )
+
+        issuer = invoice.issuer
+        if issuer:
+            issuer_type = issuer.__class__.__name__.lower()
+            qs = qs.filter(**{f'issuer_{issuer_type}': issuer})
+
+        is_blc = invoice.document_type in ('INVOICE_BLC', 'PROFORMA_BLC')
+        if is_blc:
+            qs = qs.filter(document_type__in=['INVOICE', 'PROFORMA', 'INVOICE_FACT'])
+        else:
+            qs = qs.filter(document_type__in=['INVOICE_BLC', 'PROFORMA_BLC'])
+
+        return list(qs.order_by('-date')[:5])
     
     def _handle_custom_form(self, request, object_id):
         """Обрабатываем кастомную форму"""
@@ -667,6 +712,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             'PROFORMA':     ('#fef3c7', '#92400e', 'AV'),
             'INVOICE_BLC':  ('#1e293b', '#f8fafc', 'PARBLC'),
             'PROFORMA_BLC': ('#e2e8f0', '#475569', 'AVBLC'),
+            'INVOICE_FACT': ('#fce7f3', '#9d174d', 'FACT'),
         }
         bg, fg, label = badge_map.get(obj.document_type, ('#e2e8f0', '#475569', '?'))
         return format_html(

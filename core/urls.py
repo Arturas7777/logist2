@@ -13,6 +13,7 @@ urlpatterns = [
     # API для автокомплита в инвойсах
     path('api/search-counterparties/', views.search_counterparties, name='search_counterparties'),
     path('api/search-cars/', views.search_cars, name='search_cars'),
+    path('api/search-invoices/', views.search_invoices, name='search_invoices'),
     # API для автовозов
     path('api/carrier/<int:carrier_id>/info/', views_autotransport.get_carrier_info, name='get_carrier_info'),
     path('api/driver/<int:driver_id>/phone/', views_autotransport.get_driver_phone, name='get_driver_phone'),

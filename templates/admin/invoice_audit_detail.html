@@ -149,6 +149,29 @@
     font-size:.875rem; color:#991b1b;
 }
 
+/* Confirm/link buttons */
+.sc-btn {
+    display:inline-flex; align-items:center; gap:4px;
+    padding:4px 10px; border-radius:7px; font-size:.75rem; font-weight:600;
+    cursor:pointer; border:none; transition:all .15s;
+}
+.sc-btn-confirm { background:#dcfce7; color:#166534; }
+.sc-btn-confirm:hover { background:#bbf7d0; }
+.sc-btn-link { background:#e0f2fe; color:#075985; }
+.sc-btn-link:hover { background:#bae6fd; }
+.sc-btn-confirm-all { background:#6c5ce7; color:#fff; padding:8px 16px; border-radius:9px; font-size:.82rem; }
+.sc-btn-confirm-all:hover { background:#5b4bd5; }
+.sc-row-confirmed { opacity:.6; }
+.sc-row-confirmed td { text-decoration:line-through; text-decoration-color:#94a3b8; }
+.sc-confirmed-badge {
+    display:inline-flex; align-items:center; gap:3px;
+    font-size:.72rem; color:#16a34a; font-weight:600;
+}
+.sc-service-select {
+    font-size:.78rem; padding:3px 6px; border-radius:6px;
+    border:1.5px solid #e2e8f0; background:#fff; max-width:180px;
+}
+
 /* Raw extracted collapsible */
 .ia-raw { background:#1e293b; border-radius:12px; padding:20px; overflow-x:auto; }
 .ia-raw pre { color:#e2e8f0; font-size:.78rem; margin:0; white-space:pre-wrap; word-break:break-word; }
@@ -163,6 +186,7 @@ details summary:hover { color:#6c5ce7; }
 
 {% block content %}
 <div class="ia-page">
+    {% csrf_token %}
 
     {% if messages %}
     {% for msg in messages %}
@@ -425,16 +449,21 @@ details summary:hover { color:#6c5ce7; }
 
     {# ── SUPPLIER COSTS / LINKING STATUS ── #}
     {% if supplier_costs %}
-    <div class="ia-section">
+    <div class="ia-section" id="supplier-costs-section">
         <div class="ia-section-header">
             <h3>
                 <i class="bi bi-link-45deg" style="color:#6c5ce7;"></i>
                 Привязка позиций к услугам
             </h3>
-            <div style="display:flex; gap:8px;">
-                <span class="ia-section-count cnt-info">{{ linked_count }} привязано</span>
+            <div style="display:flex; gap:8px; align-items:center;">
+                <span class="ia-section-count cnt-info" id="linked-count-badge">{{ linked_count }} привязано</span>
                 {% if unlinked_count > 0 %}
-                <span class="ia-section-count cnt-warning">{{ unlinked_count }} без услуги</span>
+                <span class="ia-section-count cnt-warning" id="unlinked-count-badge">{{ unlinked_count }} без услуги</span>
+                {% endif %}
+                {% if linked_count > 0 %}
+                <button class="sc-btn sc-btn-confirm-all" onclick="confirmAll({{ audit.pk }})" id="confirm-all-btn">
+                    <i class="bi bi-check2-all"></i> Подтвердить всё
+                </button>
                 {% endif %}
             </div>
         </div>
@@ -446,20 +475,23 @@ details summary:hover { color:#6c5ce7; }
                     <th style="text-align:right;">Сумма</th>
                     <th>Привязана к</th>
                     <th style="text-align:right;">Цена клиенту</th>
-                    <th></th>
+                    <th>Действие</th>
                 </tr>
             </thead>
             <tbody>
                 {% for sc in supplier_costs %}
-                <tr style="{% if not sc.car_service and sc.car %}background:#fffbeb;{% endif %}">
+                <tr id="sc-row-{{ sc.pk }}"
+                    class="{% if sc.reviewed %}sc-row-confirmed{% endif %}"
+                    style="{% if not sc.car_service and sc.car %}background:#fffbeb;{% endif %}">
                     <td>
                         {% if sc.vin %}<span class="vin-code">{{ sc.vin }}</span>{% else %}—{% endif %}
                     </td>
-                    <td style="font-size:.82rem; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                    <td style="font-size:.82rem; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                        title="{{ sc.description }}">
                         {{ sc.description|truncatechars:50 }}
                     </td>
                     <td style="text-align:right; font-weight:600; color:#dc2626;">{{ sc.amount|floatformat:2 }} €</td>
-                    <td>
+                    <td id="sc-service-{{ sc.pk }}">
                         {% if sc.car_service %}
                         <span style="font-size:.82rem; color:#16a34a;">
                             <i class="bi bi-check-circle-fill"></i>
@@ -468,7 +500,9 @@ details summary:hover { color:#6c5ce7; }
                         {% elif sc.car %}
                         <span style="font-size:.82rem; color:#d97706;">
                             <i class="bi bi-exclamation-triangle"></i>
-                            Нужна проверка
+                            <span class="sc-link-area" id="sc-link-area-{{ sc.pk }}">
+                                Нужна привязка
+                            </span>
                         </span>
                         {% else %}
                         <span style="font-size:.82rem; color:#94a3b8;">
@@ -482,11 +516,24 @@ details summary:hover { color:#6c5ce7; }
                         {% else %}—{% endif %}
                     </td>
                     <td>
-                        {% if sc.car %}
-                        <a href="/admin/core/car/{{ sc.car.pk }}/change/" class="car-link" title="Карточка авто" style="font-size:.8rem;">
-                            <i class="bi bi-box-arrow-up-right"></i>
-                        </a>
-                        {% endif %}
+                        <div style="display:flex; gap:4px; align-items:center;">
+                            {% if sc.reviewed %}
+                            <span class="sc-confirmed-badge"><i class="bi bi-check-circle-fill"></i> OK</span>
+                            {% elif sc.car_service %}
+                            <button class="sc-btn sc-btn-confirm" onclick="confirmCost({{ sc.pk }}, this)">
+                                <i class="bi bi-check-lg"></i> ОК
+                            </button>
+                            {% elif sc.car %}
+                            <button class="sc-btn sc-btn-link" onclick="showLinkDialog({{ sc.pk }})">
+                                <i class="bi bi-link-45deg"></i> Привязать
+                            </button>
+                            {% endif %}
+                            {% if sc.car %}
+                            <a href="/admin/core/car/{{ sc.car.pk }}/change/" title="Карточка авто" style="font-size:.8rem; color:#64748b;">
+                                <i class="bi bi-box-arrow-up-right"></i>
+                            </a>
+                            {% endif %}
+                        </div>
                     </td>
                 </tr>
                 {% endfor %}
@@ -547,5 +594,117 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch(e) {}
     }
 });
+
+function getCsrf() {
+    return document.querySelector('[name=csrfmiddlewaretoken]').value
+        || '{{ csrf_token }}';
+}
+
+function confirmCost(scId, btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
+    fetch('{% url "supplier_cost_confirm" %}', {
+        method: 'POST',
+        headers: {'Content-Type':'application/x-www-form-urlencoded', 'X-CSRFToken': getCsrf()},
+        body: 'supplier_cost_id=' + scId,
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            var row = document.getElementById('sc-row-' + scId);
+            row.classList.add('sc-row-confirmed');
+            btn.outerHTML = '<span class="sc-confirmed-badge"><i class="bi bi-check-circle-fill"></i> OK</span>';
+        } else {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check-lg"></i> ОК';
+            alert(data.error || 'Ошибка');
+        }
+    })
+    .catch(() => { btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-lg"></i> ОК'; });
+}
+
+function confirmAll(auditId) {
+    var btn = document.getElementById('confirm-all-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Подтверждаю...';
+    fetch('{% url "supplier_cost_confirm_all" %}', {
+        method: 'POST',
+        headers: {'Content-Type':'application/x-www-form-urlencoded', 'X-CSRFToken': getCsrf()},
+        body: 'audit_id=' + auditId,
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            btn.innerHTML = '<i class="bi bi-check2-all"></i> Подтверждено (' + data.confirmed + ')';
+            btn.style.background = '#16a34a';
+            document.querySelectorAll('.sc-btn-confirm').forEach(function(b) {
+                var row = b.closest('tr');
+                row.classList.add('sc-row-confirmed');
+                b.outerHTML = '<span class="sc-confirmed-badge"><i class="bi bi-check-circle-fill"></i> OK</span>';
+            });
+        } else {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check2-all"></i> Подтвердить всё';
+            alert(data.error || 'Ошибка');
+        }
+    })
+    .catch(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-check2-all"></i> Подтвердить всё';
+    });
+}
+
+function showLinkDialog(scId) {
+    var area = document.getElementById('sc-link-area-' + scId);
+    area.innerHTML = '<i class="bi bi-hourglass-split"></i> Загрузка...';
+    fetch('{% url "supplier_cost_car_services" sc_id=0 %}'.replace('/0/', '/' + scId + '/'))
+    .then(r => r.json())
+    .then(data => {
+        if (!data.services || data.services.length === 0) {
+            area.innerHTML = '<span style="color:#dc2626;">Нет услуг в карточке</span>';
+            return;
+        }
+        var html = '<select class="sc-service-select" id="sc-select-' + scId + '">';
+        data.services.forEach(function(s) {
+            html += '<option value="' + s.id + '">' + s.name + ' (' + s.price.toFixed(2) + '€)</option>';
+        });
+        html += '</select> ';
+        html += '<button class="sc-btn sc-btn-confirm" onclick="linkCost(' + scId + ')"><i class="bi bi-link-45deg"></i></button>';
+        area.innerHTML = html;
+    })
+    .catch(function() {
+        area.innerHTML = '<span style="color:#dc2626;">Ошибка загрузки</span>';
+    });
+}
+
+function linkCost(scId) {
+    var select = document.getElementById('sc-select-' + scId);
+    var csId = select.value;
+    var serviceName = select.options[select.selectedIndex].text;
+    fetch('{% url "supplier_cost_link" %}', {
+        method: 'POST',
+        headers: {'Content-Type':'application/x-www-form-urlencoded', 'X-CSRFToken': getCsrf()},
+        body: 'supplier_cost_id=' + scId + '&car_service_id=' + csId,
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            var td = document.getElementById('sc-service-' + scId);
+            td.innerHTML = '<span style="font-size:.82rem; color:#16a34a;"><i class="bi bi-check-circle-fill"></i> ' + data.service_name + '</span>';
+            var row = document.getElementById('sc-row-' + scId);
+            row.style.background = '';
+            row.classList.add('sc-row-confirmed');
+            var actionTd = row.querySelector('td:last-child div');
+            if (actionTd) {
+                var carLink = actionTd.querySelector('a');
+                actionTd.innerHTML = '<span class="sc-confirmed-badge"><i class="bi bi-check-circle-fill"></i> OK</span> ';
+                if (carLink) actionTd.appendChild(carLink);
+            }
+        } else {
+            alert(data.error || 'Ошибка привязки');
+        }
+    })
+    .catch(function() { alert('Ошибка сети'); });
+}
 </script>
 {% endblock %}

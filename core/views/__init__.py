@@ -21,6 +21,7 @@ from .api import (  # noqa: F401
     get_companies,
     search_counterparties,
     search_cars,
+    search_invoices,
 )
 
 from .admin_views import (  # noqa: F401

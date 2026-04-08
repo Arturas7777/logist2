@@ -208,6 +208,7 @@ class NewInvoice(models.Model):
         ('PROFORMA', 'Коммерческое предложение (AV)'),
         ('INVOICE_BLC', 'Неофициальный счёт (PARBLC)'),
         ('PROFORMA_BLC', 'Неофициальное предложение (AVBLC)'),
+        ('INVOICE_FACT', 'Входящий счёт от контрагента (FACT)'),
     ]
 
     DOCTYPE_PREFIX_MAP = {
@@ -215,6 +216,7 @@ class NewInvoice(models.Model):
         'PROFORMA': 'AV',
         'INVOICE_BLC': 'PARBLC',
         'PROFORMA_BLC': 'AVBLC',
+        'INVOICE_FACT': 'FACT',
     }
     
     # ========================================================================
@@ -227,7 +229,8 @@ class NewInvoice(models.Model):
         default='PROFORMA',
         verbose_name="Тип документа",
         help_text="PARDP — официальный счёт (site.pro). AV — коммерческое предложение. "
-                  "PARBLC — неофициальный счёт (нал). AVBLC — неофициальное предложение."
+                  "PARBLC — неофициальный счёт (нал). AVBLC — неофициальное предложение. "
+                  "FACT — входящий счёт от контрагента к оплате."
     )
     
     number = models.CharField(
