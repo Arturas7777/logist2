@@ -14,7 +14,7 @@ if (-not (Test-Path "core/services/__init__.py")) {
 
 # [1/3] Upload all files via single tar+ssh pipe (1 SSH connection)
 Write-Host "[1/3] Uploading files (tar pipe)..." -ForegroundColor Yellow
-tar -cf - --exclude="__pycache__" --exclude="*.pyc" --exclude=".git" core/ logist2/ templates/ scripts/ 2>$null | ssh -o ConnectTimeout=30 -o ServerAliveInterval=10 -o ServerAliveCountMax=6 $SERVER "cd $PROJECT_DIR && tar -xf - && echo UPLOAD_OK"
+tar -cf - --exclude="__pycache__" --exclude="*.pyc" --exclude=".git" core logist2 templates scripts 2>$null | ssh -o ConnectTimeout=30 -o ServerAliveInterval=10 -o ServerAliveCountMax=6 $SERVER "cd $PROJECT_DIR && tar --overwrite -xf - && echo UPLOAD_OK"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "      ERROR: File upload failed" -ForegroundColor Red
     exit 1

@@ -20,4 +20,8 @@ app.conf.beat_schedule = {
         'task': 'core.tasks.sync_sitepro_invoices',
         'schedule': crontab(hour=7, minute=30),
     },
+    'sync-bank-and-reconcile': {
+        'task': 'core.tasks.sync_bank_and_reconcile',
+        'schedule': crontab(minute='*/30'),
+    },
 }
