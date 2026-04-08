@@ -182,10 +182,32 @@ def sync_container_photos_from_gdrive(request, container_id):
         return JsonResponse({'success': False, 'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
+def _ensure_personal_categories():
+    """Create default PERSONAL categories if none exist."""
+    from core.models_billing import ExpenseCategory
+    if ExpenseCategory.objects.filter(category_type='PERSONAL').exists():
+        return
+    defaults = [
+        ('Личные расходы', 'ЛИЧН', 100),
+        ('Продукты', 'ПРОД', 101),
+        ('Транспорт (личный)', 'ТРАНС', 102),
+        ('Развлечения', 'РАЗВЛ', 103),
+        ('Здоровье', 'ЗДОР', 104),
+        ('Одежда', 'ОДЕЖ', 105),
+    ]
+    for name, short, order in defaults:
+        ExpenseCategory.objects.get_or_create(
+            name=name,
+            defaults={'short_name': short, 'category_type': 'PERSONAL', 'order': order, 'is_active': True},
+        )
+
+
 @staff_member_required
 def add_cash_expense(request):
     """Quick form to record a personal cash expense."""
     from core.models_billing import Transaction, ExpenseCategory
+
+    _ensure_personal_categories()
 
     company = Company.objects.filter(name__icontains='Caromoto').first()
     personal_categories = ExpenseCategory.objects.filter(
