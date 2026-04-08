@@ -1,0 +1,129 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Подтверждение удаления{% endblock %}
+{% block content_title %}<h1>Удаление инвойсов с транзакциями</h1>{% endblock %}
+
+{% block content %}
+<style>
+    .delete-warning {
+        max-width: 700px;
+        margin: 0 auto;
+        background: #1e1e2e;
+        border-radius: 16px;
+        padding: 32px;
+        border: 1px solid rgba(239,68,68,.2);
+    }
+    .warning-badge {
+        text-align: center;
+        padding: 20px;
+        background: rgba(239,68,68,.08);
+        border: 1px solid rgba(239,68,68,.15);
+        border-radius: 12px;
+        margin-bottom: 24px;
+    }
+    .warning-badge .icon { font-size: 2.5em; }
+    .warning-badge .title { font-size: 1.2em; font-weight: 700; color: #ef4444; margin-top: 8px; }
+    .warning-badge .subtitle { font-size: .9em; color: #a0a0c8; margin-top: 4px; }
+    .stats-row {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+    .stat-card {
+        flex: 1;
+        background: #16162a;
+        border-radius: 10px;
+        padding: 16px;
+        text-align: center;
+        border: 1px solid rgba(255,255,255,.06);
+    }
+    .stat-card .num { font-size: 2em; font-weight: 700; color: #ef4444; }
+    .stat-card .label { font-size: .85em; color: #a0a0c8; margin-top: 4px; }
+    .inv-list {
+        max-height: 300px;
+        overflow-y: auto;
+        background: #16162a;
+        border-radius: 10px;
+        padding: 12px 16px;
+        margin-bottom: 24px;
+        border: 1px solid rgba(255,255,255,.06);
+    }
+    .inv-list table { width: 100%; border-collapse: collapse; }
+    .inv-list th { text-align: left; font-size: .8em; color: #808098; padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,.06); }
+    .inv-list td { padding: 6px 8px; font-size: .9em; color: #e0e0f0; border-bottom: 1px solid rgba(255,255,255,.03); }
+    .btn-row { display: flex; gap: 12px; justify-content: center; }
+    .btn-delete {
+        padding: 12px 32px;
+        border: none;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #ef4444, #f87171);
+        color: #fff;
+        font-size: 1em;
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .btn-cancel {
+        padding: 12px 32px;
+        border: 1px solid rgba(255,255,255,.12);
+        border-radius: 10px;
+        background: transparent;
+        color: #a0a0c8;
+        font-size: 1em;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+    }
+</style>
+
+<div class="delete-warning">
+    <div class="warning-badge">
+        <div class="icon">⚠️</div>
+        <div class="title">Это действие необратимо</div>
+        <div class="subtitle">Инвойсы и привязанные транзакции будут удалены, балансы пересчитаны</div>
+    </div>
+
+    <div class="stats-row">
+        <div class="stat-card">
+            <div class="num">{{ invoices|length }}</div>
+            <div class="label">инвойсов</div>
+        </div>
+        <div class="stat-card">
+            <div class="num">{{ transaction_count }}</div>
+            <div class="label">транзакций</div>
+        </div>
+    </div>
+
+    <div class="inv-list">
+        <table>
+            <thead>
+                <tr><th>Номер</th><th>Тип</th><th>Сумма</th><th>Статус</th></tr>
+            </thead>
+            <tbody>
+            {% for inv in invoices %}
+                <tr>
+                    <td>{{ inv.number }}</td>
+                    <td>{{ inv.get_document_type_display }}</td>
+                    <td>{{ inv.total|floatformat:2 }} {{ inv.currency }}</td>
+                    <td>{{ inv.get_status_display }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        {% for inv in invoices %}
+        <input type="hidden" name="{{ action_checkbox_name }}" value="{{ inv.pk }}">
+        {% endfor %}
+        <input type="hidden" name="action" value="delete_invoices_with_transactions">
+        <input type="hidden" name="confirm" value="1">
+        <div class="btn-row">
+            <a href="{% url 'admin:core_newinvoice_changelist' %}" class="btn-cancel">Отмена</a>
+            <button type="submit" class="btn-delete">Удалить {{ invoices|length }} инвойсов</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

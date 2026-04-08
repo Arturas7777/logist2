@@ -702,7 +702,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             logging.getLogger(__name__).exception(f'Error triggering invoice audit for NewInvoice #{obj.pk}: {e}')
             messages.warning(request, f'Не удалось запустить AI-анализ PDF: {e}')
 
-    actions = ['mark_as_issued', 'mark_as_paid', 'cancel_invoices', 'regenerate_items', 'push_to_sitepro', 'change_series']
+    actions = ['mark_as_issued', 'mark_as_paid', 'cancel_invoices', 'regenerate_items', 'push_to_sitepro', 'change_series', 'delete_invoices_with_transactions', 'recalculate_all_balances']
 
     # ========================================================================
     # ОТОБРАЖЕНИЕ ПОЛЕЙ В СПИСКЕ
@@ -1159,6 +1159,100 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             'opts': self.model._meta,
         })
     change_series.short_description = "🔄 Сменить серию"
+
+    def delete_invoices_with_transactions(self, request, queryset):
+        """Force-delete selected invoices together with linked transactions, then recalculate balances."""
+        if 'confirm' in request.POST:
+            affected_entities = set()
+            total_tx = 0
+            total_inv = 0
+
+            for inv in queryset.select_related(
+                'issuer_company', 'issuer_warehouse', 'issuer_line', 'issuer_carrier',
+                'recipient_client', 'recipient_company', 'recipient_warehouse',
+                'recipient_line', 'recipient_carrier',
+            ):
+                for field in [
+                    inv.issuer_company, inv.issuer_warehouse, inv.issuer_line, inv.issuer_carrier,
+                    inv.recipient_client, inv.recipient_company, inv.recipient_warehouse,
+                    inv.recipient_line, inv.recipient_carrier,
+                ]:
+                    if field and hasattr(field, 'balance'):
+                        affected_entities.add(field)
+
+                txs = inv.transactions.all()
+                for tx in txs:
+                    for attr in ['from_client', 'from_warehouse', 'from_line', 'from_carrier', 'from_company',
+                                 'to_client', 'to_warehouse', 'to_line', 'to_carrier', 'to_company']:
+                        entity = getattr(tx, attr, None)
+                        if entity and hasattr(entity, 'balance'):
+                            affected_entities.add(entity)
+                tx_count = txs.count()
+                txs.delete()
+                total_tx += tx_count
+
+                try:
+                    if hasattr(inv, 'audit'):
+                        inv.audit.delete()
+                except Exception:
+                    pass
+
+                inv.items.all().delete()
+                inv.delete(force=True)
+                total_inv += 1
+
+            for entity in affected_entities:
+                try:
+                    entity.refresh_from_db()
+                    Transaction.recalculate_entity_balance(entity)
+                except Exception:
+                    pass
+
+            self.message_user(
+                request,
+                f'Удалено {total_inv} инвойсов и {total_tx} транзакций. '
+                f'Пересчитаны балансы {len(affected_entities)} сущностей.',
+                messages.SUCCESS,
+            )
+            return None
+
+        tx_count = Transaction.objects.filter(invoice__in=queryset).count()
+        return render(request, 'admin/core/newinvoice/confirm_delete_invoices.html', {
+            'invoices': queryset,
+            'transaction_count': tx_count,
+            'action_checkbox_name': admin.helpers.ACTION_CHECKBOX_NAME,
+            'opts': self.model._meta,
+        })
+    delete_invoices_with_transactions.short_description = "🗑 Удалить с транзакциями (принудительно)"
+
+    def recalculate_all_balances(self, request, queryset):
+        """Recalculate balances for all entities and paid_amount for all invoices."""
+        from .models import Client, Company, Warehouse, Line, Carrier
+
+        report = []
+        for Model, label in [
+            (Client, 'Клиенты'), (Company, 'Компании'),
+            (Warehouse, 'Склады'), (Line, 'Линии'), (Carrier, 'Перевозчики'),
+        ]:
+            changed = 0
+            for entity in Model.objects.all():
+                old_balance = entity.balance
+                Transaction.recalculate_entity_balance(entity)
+                entity.refresh_from_db()
+                if entity.balance != old_balance:
+                    changed += 1
+            report.append(f'{label}: пересчитано {changed}')
+
+        inv_changed = 0
+        for inv in NewInvoice.objects.exclude(status__in=['CANCELLED', 'DRAFT']):
+            old_paid = inv.paid_amount
+            inv.recalculate_paid_amount()
+            if inv.paid_amount != old_paid:
+                inv_changed += 1
+        report.append(f'Инвойсы (paid_amount): пересчитано {inv_changed}')
+
+        self.message_user(request, ' | '.join(report), messages.SUCCESS)
+    recalculate_all_balances.short_description = "🔄 Пересчитать все балансы"
 
     # ========================================================================
     # КАСТОМНЫЕ УРЛЫ

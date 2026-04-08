@@ -1067,14 +1067,15 @@ class NewInvoice(models.Model):
         if errors:
             raise ValidationError(errors)
 
-    def delete(self, *args, **kwargs):
-        if self.status == 'PAID':
-            raise ValidationError("Нельзя удалить оплаченный инвойс. Используйте отмену.")
-        if self.paid_amount > 0:
-            raise ValidationError(
-                "Нельзя удалить инвойс с зарегистрированными платежами. "
-                "Сначала оформите возврат."
-            )
+    def delete(self, *args, force=False, **kwargs):
+        if not force:
+            if self.status == 'PAID':
+                raise ValidationError("Нельзя удалить оплаченный инвойс. Используйте отмену.")
+            if self.paid_amount > 0:
+                raise ValidationError(
+                    "Нельзя удалить инвойс с зарегистрированными платежами. "
+                    "Сначала оформите возврат."
+                )
         return super().delete(*args, **kwargs)
     
     def save(self, *args, **kwargs):
@@ -1616,8 +1617,8 @@ class Transaction(models.Model):
 
         return f"{prefix}-{next_num:05d}"
     
-    def delete(self, *args, **kwargs):
-        if self.status == 'COMPLETED':
+    def delete(self, *args, force=False, **kwargs):
+        if not force and self.status == 'COMPLETED':
             raise ValidationError(
                 "Нельзя удалить завершённую транзакцию. "
                 "Для корректировки создайте возврат или корректировку."
