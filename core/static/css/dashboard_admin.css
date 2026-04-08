@@ -2909,11 +2909,11 @@ body.popup .cm-form-grid .submit-row {
     font-size: .85rem;
 }
 
-.cm-svc-card--warehouse { background: #f0fdf4; }
-.cm-svc-card--warehouse-other { background: #fefce8; }
-.cm-svc-card--line { background: #eff6ff; }
-.cm-svc-card--carrier { background: #fff7ed; }
-.cm-svc-card--company { background: #faf5ff; }
+.cm-svc-card--warehouse { background: #dcfce7; }
+.cm-svc-card--warehouse-other { background: #fef9c3; }
+.cm-svc-card--line { background: #dbeafe; }
+.cm-svc-card--carrier { background: #ffedd5; }
+.cm-svc-card--company { background: #f3e8ff; }
 
 @media (max-width: 1024px) {
     .cm-svc-card {
