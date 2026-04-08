@@ -346,6 +346,107 @@ def reconciliation_mark_reviewed(request):
 
 @staff_member_required
 @require_POST
+def supplier_cost_confirm(request):
+    """Подтвердить привязку SupplierCost к CarService (пометить reviewed)."""
+    from django.utils import timezone
+
+    sc_id = request.POST.get('supplier_cost_id')
+    if not sc_id:
+        return JsonResponse({'error': 'supplier_cost_id required'}, status=400)
+
+    try:
+        sc = SupplierCost.objects.get(pk=sc_id)
+    except SupplierCost.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+    sc.reviewed = True
+    sc.reviewed_at = timezone.now()
+    sc.save(update_fields=['reviewed', 'reviewed_at'])
+
+    return JsonResponse({'ok': True, 'id': sc.pk})
+
+
+@staff_member_required
+@require_POST
+def supplier_cost_confirm_all(request):
+    """Подтвердить все привязанные SupplierCost в рамках одного аудита."""
+    from django.utils import timezone
+
+    audit_id = request.POST.get('audit_id')
+    if not audit_id:
+        return JsonResponse({'error': 'audit_id required'}, status=400)
+
+    now = timezone.now()
+    updated = SupplierCost.objects.filter(
+        audit_id=audit_id,
+        car_service__isnull=False,
+        reviewed=False,
+    ).update(reviewed=True, reviewed_at=now)
+
+    return JsonResponse({'ok': True, 'confirmed': updated})
+
+
+@staff_member_required
+@require_POST
+def supplier_cost_link(request):
+    """Привязать SupplierCost к указанному CarService."""
+    from django.utils import timezone
+
+    sc_id = request.POST.get('supplier_cost_id')
+    car_service_id = request.POST.get('car_service_id')
+    if not sc_id or not car_service_id:
+        return JsonResponse({'error': 'supplier_cost_id and car_service_id required'}, status=400)
+
+    try:
+        sc = SupplierCost.objects.get(pk=sc_id)
+    except SupplierCost.DoesNotExist:
+        return JsonResponse({'error': 'SupplierCost not found'}, status=404)
+
+    try:
+        cs = CarService.objects.get(pk=car_service_id)
+    except CarService.DoesNotExist:
+        return JsonResponse({'error': 'CarService not found'}, status=404)
+
+    sc.car_service = cs
+    sc.reviewed = True
+    sc.reviewed_at = timezone.now()
+    sc.save(update_fields=['car_service', 'reviewed', 'reviewed_at'])
+
+    return JsonResponse({
+        'ok': True,
+        'id': sc.pk,
+        'service_name': cs.get_service_name(),
+    })
+
+
+@staff_member_required
+@require_GET
+def supplier_cost_car_services(request, sc_id):
+    """Список доступных CarService для машины из SupplierCost (для выпадающего списка)."""
+    try:
+        sc = SupplierCost.objects.select_related('car').get(pk=sc_id)
+    except SupplierCost.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
+
+    if not sc.car:
+        return JsonResponse({'services': []})
+
+    services = CarService.objects.filter(car=sc.car).order_by('service_type', 'service_id')
+    result = []
+    for cs in services:
+        result.append({
+            'id': cs.pk,
+            'name': cs.get_service_name(),
+            'type': cs.service_type,
+            'price': float(cs.custom_price or 0),
+            'markup': float(cs.markup_amount or 0),
+        })
+
+    return JsonResponse({'services': result})
+
+
+@staff_member_required
+@require_POST
 def manual_confirm_cost(request):
     """Ручное подтверждение затраты для CarService (без PDF)."""
     from django.utils import timezone

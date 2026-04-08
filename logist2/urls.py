@@ -11,6 +11,8 @@ from core.views_invoice_audit import (
     invoice_audit_status, invoice_audit_delete, invoice_audit_reprocess,
     reconciliation_dashboard, reconciliation_fix_ths, reconciliation_mark_reviewed,
     manual_confirm_cost, reanalyze_newinvoice, newinvoice_audit_poll,
+    supplier_cost_confirm, supplier_cost_confirm_all,
+    supplier_cost_link, supplier_cost_car_services,
 )
 
 router = DefaultRouter()
@@ -74,6 +76,10 @@ urlpatterns = [
     path('admin/reconciliation/fix-ths/', reconciliation_fix_ths, name='reconciliation_fix_ths'),
     path('admin/reconciliation/mark-reviewed/', reconciliation_mark_reviewed, name='reconciliation_mark_reviewed'),
     path('admin/reconciliation/manual-confirm-cost/', manual_confirm_cost, name='manual_confirm_cost'),
+    path('admin/reconciliation/supplier-cost/confirm/', supplier_cost_confirm, name='supplier_cost_confirm'),
+    path('admin/reconciliation/supplier-cost/confirm-all/', supplier_cost_confirm_all, name='supplier_cost_confirm_all'),
+    path('admin/reconciliation/supplier-cost/link/', supplier_cost_link, name='supplier_cost_link'),
+    path('admin/reconciliation/supplier-cost/<int:sc_id>/services/', supplier_cost_car_services, name='supplier_cost_car_services'),
     path('admin/newinvoice/<int:pk>/reanalyze/', reanalyze_newinvoice, name='reanalyze_newinvoice'),
     path('admin/newinvoice/<int:pk>/audit-poll/', newinvoice_audit_poll, name='newinvoice_audit_poll'),
     

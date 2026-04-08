@@ -454,6 +454,7 @@
                             <option value="INVOICE" {% if original.document_type == 'INVOICE' %}selected{% endif %}>PARDP — счёт-фактура</option>
                             <option value="PROFORMA_BLC" {% if original.document_type == 'PROFORMA_BLC' %}selected{% endif %}>AVBLC — неофиц. предл.</option>
                             <option value="INVOICE_BLC" {% if original.document_type == 'INVOICE_BLC' %}selected{% endif %}>PARBLC — неофиц. счёт</option>
+                            <option value="INVOICE_FACT" {% if original.document_type == 'INVOICE_FACT' %}selected{% endif %}>FACT — входящий от контрагента</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -505,9 +506,11 @@
                 <div class="form-row-2" style="margin-bottom: 20px;">
                     <div class="form-group">
                         <label>🔗 Связанный счёт</label>
-                        <input type="text" name="linked_invoice" id="linked_invoice_input"
-                               value="{% if original and original.linked_invoice %}{{ original.linked_invoice.number }}{% endif %}"
-                               placeholder="Номер связанного инвойса (напр. AVBLC-000001)">
+                        <select name="linked_invoice" id="linked_invoice_select" style="width:100%;">
+                            {% if original and original.linked_invoice %}
+                            <option value="{{ original.linked_invoice.number }}" selected>{{ original.linked_invoice.number }} · {{ original.linked_invoice.total|floatformat:2 }} €</option>
+                            {% endif %}
+                        </select>
                         <div class="form-hint">
                             Пара: реальный BLC-счёт ↔ официальный счёт на ту же сумму
                             {% if original and original.linked_invoice %}
@@ -521,6 +524,32 @@
                     <div class="form-group" style="display:flex;flex-direction:column;justify-content:center;">
                     </div>
                 </div>
+
+                {% if link_candidates %}
+                <div id="link-candidates-banner" style="margin-bottom:20px;padding:14px 18px;background:linear-gradient(135deg,#eff6ff,#e0e7ff);border:1px solid #bfdbfe;border-radius:10px;">
+                    <div style="font-weight:600;font-size:13px;color:#1e40af;margin-bottom:8px;">
+                        🔗 Найден{% if link_candidates|length > 1 %}ы{% endif %} возможн{% if link_candidates|length > 1 %}ые пары{% else %}ая пара{% endif %} для связки:
+                    </div>
+                    {% for candidate in link_candidates %}
+                    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:white;border-radius:8px;{% if not forloop.last %}margin-bottom:6px;{% endif %}">
+                        <div style="flex:1;font-size:13px;">
+                            <strong>{{ candidate.number }}</strong>
+                            {% if candidate.external_number %}({{ candidate.external_number }}){% endif %}
+                            · {{ candidate.total|floatformat:2 }} €
+                            · {{ candidate.get_document_type_display }}
+                            · {{ candidate.date|date:"d.m.Y" }}
+                        </div>
+                        <a href="{% url 'admin:core_newinvoice_change' candidate.pk %}" target="_blank"
+                           style="font-size:12px;color:var(--primary);text-decoration:none;">открыть</a>
+                        <button type="button" class="link-candidate-btn"
+                                data-number="{{ candidate.number }}"
+                                style="padding:5px 14px;background:#3730a3;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">
+                            Связать
+                        </button>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
 
                 <div class="form-row-2">
                     <div class="form-group">
@@ -985,6 +1014,39 @@
         }
     });
     
+    // AJAX поиск для связанного счёта
+    $('#linked_invoice_select').select2({
+        placeholder: 'Начните вводить номер или контрагента...',
+        allowClear: true,
+        minimumInputLength: 2,
+        ajax: {
+            url: '/core/api/search-invoices/',
+            dataType: 'json',
+            delay: 300,
+            data: function(params) {
+                return {
+                    q: params.term,
+                    exclude: '{% if original %}{{ original.pk }}{% endif %}'
+                };
+            },
+            processResults: function(data) {
+                return { results: data.results };
+            },
+            cache: true
+        },
+        templateResult: function(item) {
+            if (!item.id) return item.text;
+            var statusColors = {
+                'DRAFT': '#6c757d', 'ISSUED': '#007bff', 'PARTIALLY_PAID': '#ffc107',
+                'PAID': '#28a745', 'OVERDUE': '#dc3545', 'CANCELLED': '#6c757d'
+            };
+            var color = statusColors[item.status] || '#6c757d';
+            return $('<span>' + item.text +
+                ' <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' +
+                color + ';margin-left:4px;"></span></span>');
+        }
+    });
+
     // Инициализация Select2 для автомобилей с цветами по статусу
     var carAdminBaseUrl = '/admin/core/car/';
     
@@ -1266,6 +1328,15 @@
                 alert('Ошибка при запуске анализа');
             }
         });
+    });
+
+    // Кнопка «Связать» из баннера кандидатов
+    $(document).on('click', '.link-candidate-btn', function() {
+        var number = $(this).data('number');
+        var $sel = $('#linked_invoice_select');
+        var option = new Option(number, number, true, true);
+        $sel.append(option).trigger('change');
+        $('#link-candidates-banner').slideUp(200);
     });
 
     });
