@@ -196,6 +196,7 @@
     .kpi-icon.amber     { background: #fffbeb; color: #f59e0b; }
     .kpi-icon.cyan      { background: #ecfeff; color: #06b6d4; }
     .kpi-icon.indigo    { background: #eef2ff; color: #4f46e5; }
+    .kpi-icon.teal      { background: #f0fdfa; color: #14b8a6; }
     .kpi-icon.rose      { background: #fff1f2; color: #f43f5e; }
 
     /* Colored accent strip at top of card */
@@ -215,6 +216,7 @@
     .kpi.accent-cyan::before    { background: linear-gradient(90deg, #06b6d4, #22d3ee); }
     .kpi.accent-rose::before    { background: linear-gradient(90deg, #f43f5e, #fb7185); }
     .kpi.accent-indigo::before  { background: linear-gradient(90deg, #4f46e5, #6366f1); }
+    .kpi.accent-teal::before    { background: linear-gradient(90deg, #14b8a6, #2dd4bf); }
 
     /* Value colors */
     .v-green  { color: #16a34a !important; }
@@ -471,6 +473,7 @@
         <a href="{% url 'admin:core_newinvoice_changelist' %}" class="db-action outline">Все инвойсы</a>
         <a href="{% url 'admin:core_transaction_changelist' %}" class="db-action outline">Все транзакции</a>
         <a href="{% url 'comparison_dashboard' %}" class="db-action outline">Сравнение сумм</a>
+        <a href="{% url 'add_cash_expense' %}" class="db-action outline">💸 Личный расход</a>
         {% if company %}
         <a href="{% url 'admin:core_company_change' company.pk %}" class="db-action ghost">Компания →</a>
         {% endif %}
@@ -552,14 +555,37 @@
 
     <!-- ════════════════ FINANCIAL KPIs ════════════════ -->
     <div class="db-section">Финансовые показатели</div>
-    <div class="kpi-row six" style="margin-bottom:28px">
+    <div class="kpi-row four" style="margin-bottom:12px">
+        <div class="kpi accent-teal">
+            <div class="kpi-icon teal"><i class="bx bxs-coin-stack"></i></div>
+            <div class="kpi-label">Всего активов</div>
+            <div class="kpi-value {% if total_assets >= 0 %}v-green{% else %}v-red{% endif %}">
+                {{ total_assets|floatformat:2 }} €
+            </div>
+            <div class="kpi-sub">наличные + банк</div>
+        </div>
         <div class="kpi accent-indigo">
             <div class="kpi-icon indigo"><i class="bx bxs-wallet"></i></div>
-            <div class="kpi-label">Баланс</div>
+            <div class="kpi-label">Баланс (по книгам)</div>
             <div class="kpi-value {% if company_balance >= 0 %}v-green{% else %}v-red{% endif %}">
                 {{ company_balance|floatformat:2 }} €
             </div>
         </div>
+        <div class="kpi accent-amber">
+            <div class="kpi-icon amber"><i class="bx bxs-receipt"></i></div>
+            <div class="kpi-label">К получению</div>
+            <div class="kpi-value v-amber">{{ outstanding_invoices.total|floatformat:2 }} €</div>
+            <div class="kpi-sub">{{ outstanding_invoices.count }} инвойсов</div>
+        </div>
+        <div class="kpi accent-rose">
+            <div class="kpi-icon rose"><i class="bx bxs-error-circle"></i></div>
+            <div class="kpi-label">Просроченные</div>
+            <div class="kpi-value {% if overdue_invoices_count > 0 %}v-red{% else %}v-green{% endif %}">
+                {{ overdue_invoices_count }}
+            </div>
+        </div>
+    </div>
+    <div class="kpi-row three" style="margin-bottom:28px">
         <div class="kpi accent-green">
             <div class="kpi-icon green"><i class="bx bx-trending-up"></i></div>
             <div class="kpi-label">Доходы (мес.)</div>
@@ -577,20 +603,55 @@
                 {{ monthly_profit|floatformat:2 }} €
             </div>
         </div>
-        <div class="kpi accent-amber">
-            <div class="kpi-icon amber"><i class="bx bxs-receipt"></i></div>
-            <div class="kpi-label">К получению</div>
-            <div class="kpi-value v-amber">{{ outstanding_invoices.total|floatformat:2 }} €</div>
-            <div class="kpi-sub">{{ outstanding_invoices.count }} инвойсов</div>
-        </div>
-        <div class="kpi accent-rose">
-            <div class="kpi-icon rose"><i class="bx bxs-error-circle"></i></div>
-            <div class="kpi-label">Просроченные</div>
-            <div class="kpi-value {% if overdue_invoices_count > 0 %}v-red{% else %}v-green{% endif %}">
-                {{ overdue_invoices_count }}
+    </div>
+
+    <!-- ════════════════ CASH WALLET ════════════════ -->
+    <div class="db-section"><i class="bx bxs-wallet" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Кошелёк (наличные)</div>
+    <div class="kpi-row four" style="margin-bottom:12px">
+        <div class="kpi accent-green">
+            <div class="kpi-icon green"><i class="bx bx-money"></i></div>
+            <div class="kpi-label">Наличные на руках</div>
+            <div class="kpi-value {% if cash_wallet.total_cash >= 0 %}v-green{% else %}v-red{% endif %}">
+                {{ cash_wallet.total_cash|floatformat:2 }} €
             </div>
+            <div class="kpi-sub"><a href="{% url 'cash_wallet_reset' %}" style="color:#6c5ce7;text-decoration:none">Сверить баланс</a></div>
+        </div>
+        <div class="kpi accent-amber">
+            <div class="kpi-icon amber"><i class="bx bxs-purchase-tag"></i></div>
+            <div class="kpi-label">Личные расходы (мес.)</div>
+            <div class="kpi-value v-amber">{{ cash_wallet.personal_month|floatformat:2 }} €</div>
+        </div>
+        <div class="kpi accent-red">
+            <div class="kpi-icon red"><i class="bx bxs-purchase-tag-alt"></i></div>
+            <div class="kpi-label">Личные расходы (всего)</div>
+            <div class="kpi-value v-red">{{ cash_wallet.personal_total|floatformat:2 }} €</div>
+        </div>
+        <div class="kpi accent-indigo" style="cursor:pointer" onclick="location.href='{% url 'add_cash_expense' %}'">
+            <div class="kpi-icon indigo"><i class="bx bx-plus-circle"></i></div>
+            <div class="kpi-label">Записать расход</div>
+            <div class="kpi-value" style="font-size:1.3em;color:#6c5ce7">💸</div>
         </div>
     </div>
+    {% if cash_wallet.recent_personal %}
+    <div style="background:#1e1e2e;border-radius:12px;padding:16px 20px;margin-bottom:28px;border:1px solid rgba(255,255,255,.05)">
+        <h3 style="margin:0 0 12px;font-size:.95em;color:#a0a0c8"><i class="bx bx-history" style="vertical-align:middle;margin-right:6px"></i>Последние личные расходы</h3>
+        <table class="dt" style="margin:0">
+            <thead>
+                <tr><th>Дата</th><th>Категория</th><th>Описание</th><th style="text-align:right">Сумма</th></tr>
+            </thead>
+            <tbody>
+            {% for tx in cash_wallet.recent_personal %}
+                <tr>
+                    <td>{{ tx.date|date:"d.m.Y" }}</td>
+                    <td>{{ tx.category.name|default:"—" }}</td>
+                    <td>{{ tx.description|default:"—" }}</td>
+                    <td style="text-align:right;color:#ef4444;font-weight:600">−{{ tx.amount|floatformat:2 }} €</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
 
     <!-- ════════════════ BANK ACCOUNTS ════════════════ -->
     {% if bank_accounts %}

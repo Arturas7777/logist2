@@ -59,7 +59,10 @@ def is_storage_service(service) -> bool:
     """Check whether a service object represents the Storage service."""
     if hasattr(service, 'code') and service.code:
         return service.code == ServiceCode.STORAGE
-    return getattr(service, 'name', '') == 'Хранение'
+    name = getattr(service, 'name', '')
+    if not name and callable(getattr(service, 'get_service_name', None)):
+        name = service.get_service_name()
+    return name == 'Хранение'
 
 
 def is_ths_service(service) -> bool:

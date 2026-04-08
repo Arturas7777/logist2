@@ -522,6 +522,12 @@
                         </div>
                     </div>
                     <div class="form-group" style="display:flex;flex-direction:column;justify-content:center;">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" name="skip_ai_comparison" value="1"
+                                   {% if original and original.skip_ai_comparison %}checked{% endif %}>
+                            Без сверки с базой
+                        </label>
+                        <div class="form-hint">AI извлечёт данные из PDF, но не будет сверять с расходами</div>
                     </div>
                 </div>
 
@@ -1253,13 +1259,14 @@
     });
     
     // Загрузка существующих ручных позиций (инвойс без авто, но с позициями)
-    {% if original and original.items.exists and not selected_car_ids %}
-    // Существующие позиции без привязки к автомобилям — загружаем как ручные
+    // Для входящих инвойсов с AI-аудитом позиции отображаются в read-only таблице
+    {% if original and original.items.exists and not selected_car_ids and not audit_status %}
     {% for item in original.items.all %}
     {% if not item.car %}
-    addManualItemRow('{{ item.description|escapejs }}', {{ item.quantity }}, {{ item.unit_price }});
+    addManualItemRow('{{ item.description|escapejs }}', {{ item.quantity|unlocalize }}, {{ item.unit_price|unlocalize }});
     {% endif %}
     {% endfor %}
+    $('#manual_total_input').val('{{ original.total|unlocalize }}');
     {% endif %}
     
     // Инициализация режима

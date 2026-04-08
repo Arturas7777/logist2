@@ -913,17 +913,38 @@ def process_invoice_audit(audit_id: int) -> None:
         except (InvalidOperation, TypeError):
             pass
 
-        # 5. Сравниваем с БД
-        comparison = compare_with_db(extracted)
+        # 5. Сравниваем с БД (или пропускаем, если skip_ai_comparison)
+        skip_comparison = False
+        if audit.invoice_id:
+            skip_comparison = getattr(audit.invoice, 'skip_ai_comparison', False)
 
-        # 5.5. Сохраняем фактические затраты по машинам
-        create_supplier_costs(audit, extracted, comparison.get('found_cars', {}))
-
-        # 6. Определяем итоговый статус
-        if comparison['issues_count'] > 0 or comparison['cars_missing'] > 0:
-            status = InvoiceAudit.STATUS_HAS_ISSUES
-        else:
+        if skip_comparison:
+            all_vins = set()
+            brand_hints = {}
+            for item in extracted.get('items', []):
+                item_brand = (item.get('brand') or '').strip()
+                for vin in item.get('vins', []):
+                    vin_clean = vin.strip().upper()
+                    if vin_clean:
+                        all_vins.add(vin_clean)
+                        if item_brand:
+                            brand_hints[vin_clean] = item_brand
+            found_cars = _find_cars_by_vins(all_vins, brand_hints)
+            comparison = {
+                'discrepancies': [],
+                'cars_found': len(found_cars),
+                'cars_missing': 0,
+                'issues_count': 0,
+                'found_cars': found_cars,
+            }
             status = InvoiceAudit.STATUS_OK
+        else:
+            comparison = compare_with_db(extracted)
+            create_supplier_costs(audit, extracted, comparison.get('found_cars', {}))
+            if comparison['issues_count'] > 0 or comparison['cars_missing'] > 0:
+                status = InvoiceAudit.STATUS_HAS_ISSUES
+            else:
+                status = InvoiceAudit.STATUS_OK
 
         # 7. Сохраняем результаты
         audit.counterparty_detected = extracted.get('counterparty', '')[:200]
@@ -1118,6 +1139,9 @@ def _sync_audit_to_newinvoice(audit, found_cars: dict, extracted: dict):
         if items_to_create:
             InvoiceItem.objects.bulk_create(items_to_create)
         invoice.calculate_totals()
+        if audit.total_amount and abs(invoice.total - audit.total_amount) < Decimal('1'):
+            invoice.subtotal = audit.total_amount + invoice.discount - invoice.tax
+            invoice.total = audit.total_amount
         invoice.save(update_fields=['subtotal', 'total'])
         logger.info(
             f"NewInvoice #{invoice.pk}: создано {order} позиций из PDF, total={invoice.total}"

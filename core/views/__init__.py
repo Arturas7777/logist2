@@ -29,6 +29,8 @@ from .admin_views import (  # noqa: F401
     company_dashboard,
     get_container_photos_json,
     sync_container_photos_from_gdrive,
+    add_cash_expense,
+    cash_wallet_reset,
 )
 
 from .comparison import (  # noqa: F401

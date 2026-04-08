@@ -179,6 +179,67 @@ class DashboardService:
         return count
 
     # ========================================================================
+    # CASH WALLET
+    # ========================================================================
+
+    def get_cash_wallet(self):
+        """Наличные на руках + личные расходы."""
+        if not self.company:
+            return {
+                'total_cash': Decimal('0'), 'personal_month': Decimal('0'),
+                'personal_total': Decimal('0'), 'recent_personal': [],
+            }
+
+        from ..models_billing import Transaction, ExpenseCategory
+        breakdown = self.company.get_balance_breakdown()
+        total_cash = breakdown.get('cash', Decimal('0'))
+
+        now = timezone.now()
+        start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        personal_cats = list(ExpenseCategory.objects.filter(
+            category_type='PERSONAL'
+        ).values_list('id', flat=True))
+
+        personal_month = Decimal('0')
+        personal_total = Decimal('0')
+        if personal_cats:
+            personal_month = Transaction.objects.filter(
+                from_company=self.company, status='COMPLETED',
+                method='CASH', category_id__in=personal_cats,
+                date__gte=start_of_month,
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+            personal_total = Transaction.objects.filter(
+                from_company=self.company, status='COMPLETED',
+                method='CASH', category_id__in=personal_cats,
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+        recent_personal = list(
+            Transaction.objects.filter(
+                from_company=self.company, status='COMPLETED',
+                method='CASH', category_id__in=personal_cats,
+            ).select_related('category').order_by('-date')[:10]
+        ) if personal_cats else []
+
+        return {
+            'total_cash': total_cash,
+            'personal_month': personal_month,
+            'personal_total': personal_total,
+            'recent_personal': recent_personal,
+        }
+
+    def get_total_assets(self):
+        """Всего активов = наличные + EUR-банковские счета."""
+        wallet = self.get_cash_wallet()
+        bank_accounts = self.get_bank_balances()
+        bank_eur = sum(
+            Decimal(str(acc['balance'] or 0))
+            for acc in bank_accounts if acc['currency'] == 'EUR'
+        )
+        return wallet['total_cash'] + bank_eur
+
+    # ========================================================================
     # CHARTS
     # ========================================================================
 
@@ -521,6 +582,8 @@ class DashboardService:
         monthly_revenue = self.get_monthly_revenue()
         monthly_expenses = self.get_monthly_expenses()
 
+        cash_wallet = self.get_cash_wallet()
+
         return {
             'company': self.company,
             # Operational KPIs
@@ -528,6 +591,9 @@ class DashboardService:
             'containers_by_status': containers_by_status,
             'cars_on_storage': self.get_cars_on_storage(),
             'active_auto_transports': self.get_active_auto_transports(),
+            # Cash wallet
+            'cash_wallet': cash_wallet,
+            'total_assets': self.get_total_assets(),
             # Financial KPIs
             'company_balance': self.get_company_balance(),
             'outstanding_invoices': self.get_outstanding_invoices_total(),

@@ -335,6 +335,12 @@ def _distribute_markup_for_car(car, agreed_total, total_cars_in_container):
             svc.markup_amount = share + remainder
         svc.save(update_fields=['markup_amount'])
 
+    storage_services = [svc for svc in all_services if is_storage_service(svc)]
+    for svc in storage_services:
+        if svc.markup_amount != 0:
+            svc.markup_amount = 0
+            svc.save(update_fields=['markup_amount'])
+
     logger.info(
         "Tariff for %s (%s): agreed=%s, actual_cost=%s, markup=%s, cars_count=%s, distributed over %d services",
         car.vin, car.client.name if car.client else '?',

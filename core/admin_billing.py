@@ -120,6 +120,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
         'linked_badge',
         'category_display',
         'notes_display',
+        'issuer_display',
         'recipient_display',
         'total_display',
         'paid_amount_display',
@@ -377,6 +378,8 @@ class NewInvoiceAdmin(admin.ModelAdmin):
                     messages.warning(request, f'Связанный счёт «{linked_val}» не найден')
             else:
                 invoice.linked_invoice = None
+
+            invoice.skip_ai_comparison = 'skip_ai_comparison' in request.POST
             
             # Очищаем все поля выставителя и получателя перед установкой новых
             invoice.issuer_company = None
@@ -449,8 +452,14 @@ class NewInvoiceAdmin(admin.ModelAdmin):
                 messages.success(request, f'✅ Инвойс {invoice.number} сохранен! Создано {invoice.items.count()} позиций.')
             else:
                 invoice.cars.clear()
-                # Ручной ввод суммы и позиций (для инвойсов без автомобилей)
-                self._handle_manual_items(request, invoice)
+                has_audit = False
+                try:
+                    has_audit = (invoice.direction == 'INCOMING'
+                                 and invoice.audit is not None)
+                except Exception:
+                    pass
+                if not has_audit:
+                    self._handle_manual_items(request, invoice)
                 messages.success(request, f'✅ Инвойс {invoice.number} сохранен! Сумма: {invoice.total:.2f} €')
             
             # Авто-регистрация кассового платежа для новых PARBLC-инвойсов

@@ -1,0 +1,130 @@
+{% extends "admin/base_site.html" %}
+{% load i18n l10n %}
+
+{% block title %}Сверка кошелька{% endblock %}
+{% block content_title %}<h1>🔄 Сверка баланса кошелька</h1>{% endblock %}
+
+{% block content %}
+<style>
+    .wallet-form {
+        max-width: 520px;
+        margin: 0 auto;
+        background: #1e1e2e;
+        border-radius: 16px;
+        padding: 32px;
+        border: 1px solid rgba(255,255,255,.06);
+    }
+    .wallet-form .field-group {
+        margin-bottom: 20px;
+    }
+    .wallet-form label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+        color: #c0c0e0;
+        font-size: .9em;
+    }
+    .wallet-form input[type="number"] {
+        width: 100%;
+        padding: 14px 18px;
+        border: 1px solid rgba(255,255,255,.12);
+        border-radius: 10px;
+        background: #16162a;
+        color: #e0e0f0;
+        font-size: 1.3em;
+        font-weight: 600;
+        text-align: center;
+        box-sizing: border-box;
+    }
+    .wallet-form input:focus {
+        outline: none;
+        border-color: #6c5ce7;
+        box-shadow: 0 0 0 3px rgba(108,92,231,.2);
+    }
+    .wallet-form .submit-btn {
+        width: 100%;
+        padding: 12px;
+        border: none;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #6c5ce7, #a78bfa);
+        color: #fff;
+        font-size: 1.05em;
+        font-weight: 700;
+        cursor: pointer;
+        margin-top: 8px;
+        transition: transform .1s, box-shadow .15s;
+    }
+    .wallet-form .submit-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(108,92,231,.3);
+    }
+    .current-balance {
+        text-align: center;
+        margin-bottom: 28px;
+        padding: 20px;
+        background: rgba(108,92,231,.08);
+        border: 1px solid rgba(108,92,231,.15);
+        border-radius: 12px;
+    }
+    .current-balance .label { font-size: .85em; color: #a0a0c8; margin-bottom: 4px; }
+    .current-balance .value { font-size: 2em; font-weight: 700; color: #6c5ce7; }
+    .current-balance .hint { font-size: .8em; color: #808098; margin-top: 6px; }
+    .diff-preview {
+        text-align: center;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 16px;
+        font-weight: 600;
+        display: none;
+    }
+</style>
+
+<div class="wallet-form">
+    <div class="current-balance">
+        <div class="label">Текущий расчётный баланс</div>
+        <div class="value" id="computed_balance">{{ current_cash|floatformat:2 }} €</div>
+        <div class="hint">По книгам системы (все CASH-транзакции)</div>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <div class="field-group">
+            <label for="id_real_amount">Реальная сумма в кошельке (€)</label>
+            <input type="number" id="id_real_amount" name="real_amount" step="0.01" min="0"
+                   placeholder="Посчитайте наличные..." required autofocus
+                   oninput="showDiff()">
+        </div>
+
+        <div class="diff-preview" id="diff_preview"></div>
+
+        <button type="submit" class="submit-btn">Установить баланс</button>
+    </form>
+
+    <div style="text-align:center;margin-top:16px">
+        <a href="{% url 'company_dashboard' %}" style="color:#6c5ce7;text-decoration:none;font-size:.9em">← Вернуться на дашборд</a>
+    </div>
+</div>
+
+<script>
+function showDiff() {
+    var real = parseFloat(document.getElementById('id_real_amount').value) || 0;
+    var computed = {{ current_cash|unlocalize }};
+    var diff = real - computed;
+    var el = document.getElementById('diff_preview');
+    if (Math.abs(diff) < 0.01) {
+        el.style.display = 'none';
+        return;
+    }
+    el.style.display = 'block';
+    if (diff > 0) {
+        el.style.background = 'rgba(34,197,94,.1)';
+        el.style.color = '#22c55e';
+        el.textContent = 'Корректировка: +' + diff.toFixed(2) + ' €';
+    } else {
+        el.style.background = 'rgba(239,68,68,.1)';
+        el.style.color = '#ef4444';
+        el.textContent = 'Корректировка: ' + diff.toFixed(2) + ' €';
+    }
+}
+</script>
+{% endblock %}
