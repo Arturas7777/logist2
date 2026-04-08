@@ -1,0 +1,127 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Пополнить кошелёк{% endblock %}
+{% block content_title %}<h1>💰 Пополнить кошелёк</h1>{% endblock %}
+
+{% block content %}
+<style>
+    .wallet-form {
+        max-width: 520px;
+        margin: 0 auto;
+        background: #1e1e2e;
+        border-radius: 16px;
+        padding: 32px;
+        border: 1px solid rgba(255,255,255,.06);
+    }
+    .wallet-form .field-group {
+        margin-bottom: 20px;
+    }
+    .wallet-form label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+        color: #c0c0e0;
+        font-size: .9em;
+    }
+    .wallet-form input[type="number"],
+    .wallet-form input[type="text"] {
+        width: 100%;
+        padding: 10px 14px;
+        border: 1px solid rgba(255,255,255,.12);
+        border-radius: 8px;
+        background: #16162a;
+        color: #e0e0f0;
+        font-size: 1em;
+        box-sizing: border-box;
+    }
+    .wallet-form input:focus {
+        outline: none;
+        border-color: #22c55e;
+        box-shadow: 0 0 0 3px rgba(34,197,94,.2);
+    }
+    .quick-amounts {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+        flex-wrap: wrap;
+    }
+    .quick-amounts button {
+        padding: 6px 16px;
+        border-radius: 8px;
+        border: 1px solid rgba(255,255,255,.12);
+        background: #16162a;
+        color: #a0a0c8;
+        cursor: pointer;
+        font-size: .9em;
+        transition: all .15s;
+    }
+    .quick-amounts button:hover {
+        background: #22c55e;
+        color: #fff;
+        border-color: #22c55e;
+    }
+    .wallet-form .submit-btn {
+        width: 100%;
+        padding: 12px;
+        border: none;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #22c55e, #4ade80);
+        color: #fff;
+        font-size: 1.05em;
+        font-weight: 700;
+        cursor: pointer;
+        margin-top: 8px;
+        transition: transform .1s, box-shadow .15s;
+    }
+    .wallet-form .submit-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(34,197,94,.3);
+    }
+    .cash-badge {
+        text-align: center;
+        margin-bottom: 24px;
+        padding: 14px;
+        background: rgba(34,197,94,.08);
+        border: 1px solid rgba(34,197,94,.15);
+        border-radius: 10px;
+    }
+    .cash-badge .label { font-size: .85em; color: #a0a0c8; }
+    .cash-badge .value { font-size: 1.6em; font-weight: 700; color: #22c55e; }
+</style>
+
+<div class="wallet-form">
+    <div class="cash-badge">
+        <div class="label">Наличные на руках</div>
+        <div class="value">{{ current_cash|floatformat:2 }} €</div>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <div class="field-group">
+            <label for="id_amount">Сумма (€)</label>
+            <input type="number" id="id_amount" name="amount" step="0.01" min="0.01"
+                   placeholder="0.00" required autofocus>
+            <div class="quick-amounts">
+                <button type="button" onclick="document.getElementById('id_amount').value='50'">50 €</button>
+                <button type="button" onclick="document.getElementById('id_amount').value='100'">100 €</button>
+                <button type="button" onclick="document.getElementById('id_amount').value='200'">200 €</button>
+                <button type="button" onclick="document.getElementById('id_amount').value='500'">500 €</button>
+                <button type="button" onclick="document.getElementById('id_amount').value='1000'">1000 €</button>
+            </div>
+        </div>
+
+        <div class="field-group">
+            <label for="id_description">Источник / описание</label>
+            <input type="text" id="id_description" name="description"
+                   placeholder="Клиент заплатил наличными, зарплата, возврат..." required>
+        </div>
+
+        <button type="submit" class="submit-btn">Пополнить кошелёк</button>
+    </form>
+
+    <div style="text-align:center;margin-top:16px">
+        <a href="{% url 'company_dashboard' %}" style="color:#6c5ce7;text-decoration:none;font-size:.9em">← Вернуться на дашборд</a>
+    </div>
+</div>
+{% endblock %}
