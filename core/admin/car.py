@@ -1000,19 +1000,24 @@ class CarAdmin(admin.ModelAdmin):
             except Exception as e:
                 logger.error(f"Ошибка при пересчете стоимости хранения: {e}")
 
-        # Apply client tariff markup (FIXED / FLEXIBLE) on every save,
-        # or reset markup when client changes to NONE tariff
-        client = obj.client
-        if client and client.tariff_type in ('FIXED', 'FLEXIBLE') and obj.status != 'TRANSFERRED':
-            try:
-                from core.services.car_service_manager import apply_client_tariff_for_car
-                apply_client_tariff_for_car(obj)
-                obj.calculate_total_price()
-                Car.objects.filter(pk=obj.pk).update(total_price=obj.total_price)
-            except Exception as e:
-                logger.error(f"Ошибка при пересчете тарифа клиента: {e}")
-        elif change and form and 'client' in getattr(form, 'changed_data', []):
-            if obj.status != 'TRANSFERRED':
+        # Apply client tariff markup (FIXED / FLEXIBLE) ONLY when key fields
+        # changed — not on every save, to preserve manual markup edits.
+        tariff_trigger_fields = {'client', 'warehouse', 'line', 'carrier'}
+        should_apply_tariff = (
+            not change
+            or bool(tariff_trigger_fields.intersection(changed_data))
+        )
+        if should_apply_tariff and obj.status != 'TRANSFERRED':
+            client = obj.client
+            if client and client.tariff_type in ('FIXED', 'FLEXIBLE'):
+                try:
+                    from core.services.car_service_manager import apply_client_tariff_for_car
+                    apply_client_tariff_for_car(obj)
+                    obj.calculate_total_price()
+                    Car.objects.filter(pk=obj.pk).update(total_price=obj.total_price)
+                except Exception as e:
+                    logger.error(f"Ошибка при пересчете тарифа клиента: {e}")
+            elif change and 'client' in changed_data:
                 try:
                     from core.services.car_service_manager import apply_client_tariff_for_car
                     apply_client_tariff_for_car(obj)

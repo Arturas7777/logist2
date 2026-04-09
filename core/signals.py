@@ -261,7 +261,11 @@ def _maybe_send_car_unload_notification(instance, *, created):
 
 
 def _create_car_services_if_needed(instance, *, created, kwargs):
-    """Create CarService records when a car's contractors change."""
+    """Create CarService records when a car's contractors change.
+
+    Only recreates services for the contractor type that actually changed,
+    preserving services (and manual edits) of unaffected types.
+    """
     from .services.car_service_manager import (
         find_warehouse_services_for_car,
         find_line_services_for_car,
@@ -275,6 +279,10 @@ def _create_car_services_if_needed(instance, *, created, kwargs):
     if getattr(instance, '_creating_services', False):
         return
 
+    warehouse_changed = False
+    line_changed = False
+    carrier_changed = False
+
     if not created:
         old_contractors = getattr(instance, '_pre_save_contractors', None)
         instance._pre_save_contractors = None
@@ -286,6 +294,10 @@ def _create_car_services_if_needed(instance, *, created, kwargs):
                 return
         else:
             return
+    else:
+        warehouse_changed = True
+        line_changed = True
+        carrier_changed = True
 
     instance._creating_services = True
     try:
@@ -296,52 +308,56 @@ def _create_car_services_if_needed(instance, *, created, kwargs):
                 .values_list('service_id', flat=True)
             )
 
-        # WAREHOUSE
-        instance.car_services.filter(service_type='WAREHOUSE').delete()
-        if instance.warehouse:
-            for service in find_warehouse_services_for_car(instance.warehouse):
-                if service.id in deleted_by_type['WAREHOUSE']:
-                    continue
-                if is_storage_service(service):
-                    days = Decimal(str(instance.days or 0))
-                    custom_price = days * Decimal(str(service.default_price or 0))
-                    default_markup = days * Decimal(str(getattr(service, 'default_markup', 0) or 0))
-                else:
-                    custom_price = service.default_price
-                    default_markup = getattr(service, 'default_markup', None) or Decimal('0')
-                CarService.objects.get_or_create(
-                    car=instance, service_type='WAREHOUSE', service_id=service.id,
-                    defaults={'custom_price': custom_price, 'markup_amount': default_markup},
-                )
+        # WAREHOUSE — only when warehouse actually changed
+        if warehouse_changed:
+            instance.car_services.filter(service_type='WAREHOUSE').delete()
+            if instance.warehouse:
+                for service in find_warehouse_services_for_car(instance.warehouse):
+                    if service.id in deleted_by_type['WAREHOUSE']:
+                        continue
+                    if is_storage_service(service):
+                        days = Decimal(str(instance.days or 0))
+                        custom_price = days * Decimal(str(service.default_price or 0))
+                        default_markup = days * Decimal(str(getattr(service, 'default_markup', 0) or 0))
+                    else:
+                        custom_price = service.default_price
+                        default_markup = getattr(service, 'default_markup', None) or Decimal('0')
+                    CarService.objects.get_or_create(
+                        car=instance, service_type='WAREHOUSE', service_id=service.id,
+                        defaults={'custom_price': custom_price, 'markup_amount': default_markup},
+                    )
 
         # LINE (non-THS only; THS managed by create_ths_services_for_container)
-        ths_line_ids = LineService.objects.filter(
-            Q(code=ServiceCode.THS) | Q(name__icontains='THS')
-        ).values_list('id', flat=True)
-        instance.car_services.filter(service_type='LINE').exclude(
-            service_id__in=ths_line_ids
-        ).delete()
-        if instance.line:
-            for service in find_line_services_for_car(instance.line):
-                if service.id in deleted_by_type['LINE']:
-                    continue
-                default_markup = getattr(service, 'default_markup', None) or Decimal('0')
-                CarService.objects.get_or_create(
-                    car=instance, service_type='LINE', service_id=service.id,
-                    defaults={'custom_price': service.default_price, 'markup_amount': default_markup},
-                )
+        # Only when line actually changed
+        if line_changed:
+            ths_line_ids = LineService.objects.filter(
+                Q(code=ServiceCode.THS) | Q(name__icontains='THS')
+            ).values_list('id', flat=True)
+            instance.car_services.filter(service_type='LINE').exclude(
+                service_id__in=ths_line_ids
+            ).delete()
+            if instance.line:
+                for service in find_line_services_for_car(instance.line):
+                    if service.id in deleted_by_type['LINE']:
+                        continue
+                    default_markup = getattr(service, 'default_markup', None) or Decimal('0')
+                    CarService.objects.get_or_create(
+                        car=instance, service_type='LINE', service_id=service.id,
+                        defaults={'custom_price': service.default_price, 'markup_amount': default_markup},
+                    )
 
-        # CARRIER
-        instance.car_services.filter(service_type='CARRIER').delete()
-        if instance.carrier:
-            for service in find_carrier_services_for_car(instance.carrier):
-                if service.id in deleted_by_type['CARRIER']:
-                    continue
-                default_markup = getattr(service, 'default_markup', None) or Decimal('0')
-                CarService.objects.get_or_create(
-                    car=instance, service_type='CARRIER', service_id=service.id,
-                    defaults={'custom_price': service.default_price, 'markup_amount': default_markup},
-                )
+        # CARRIER — only when carrier actually changed
+        if carrier_changed:
+            instance.car_services.filter(service_type='CARRIER').delete()
+            if instance.carrier:
+                for service in find_carrier_services_for_car(instance.carrier):
+                    if service.id in deleted_by_type['CARRIER']:
+                        continue
+                    default_markup = getattr(service, 'default_markup', None) or Decimal('0')
+                    CarService.objects.get_or_create(
+                        car=instance, service_type='CARRIER', service_id=service.id,
+                        defaults={'custom_price': service.default_price, 'markup_amount': default_markup},
+                    )
 
         # COMPANY (only for newly created cars)
         if created:

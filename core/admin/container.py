@@ -374,8 +374,9 @@ class ContainerAdmin(admin.ModelAdmin):
         logger.info(f"[FORMSET] instances count: {len(instances)}, cars_changed: {cars_changed}")
         logger.info(f"[FORMSET] parent.line: {parent.line}, parent.ths: {parent.ths}")
 
-        # ALWAYS recalculate THS if line and ths exist (even without explicit changes)
-        if parent.line and parent.ths:
+        # Recalculate THS only when cars changed (added/removed/deleted)
+        # to avoid wiping manual THS edits on unrelated container saves
+        if cars_changed and parent.line and parent.ths:
             try:
                 from core.services.car_service_manager import create_ths_services_for_container, apply_client_tariffs_for_container
                 from django.db import transaction
