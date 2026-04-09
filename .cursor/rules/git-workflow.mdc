@@ -19,8 +19,9 @@ alwaysApply: true
 
 1. `git pull origin master` — подтянуть свежий код из GitHub
 2. Если есть конфликты — `git stash` → `git pull` → `git stash pop`
-3. `.venv\Scripts\activate` + `python manage.py migrate --noinput` — применить миграции
-4. Сообщить пользователю что проект готов к работе
+3. `.\scripts\sync_db.ps1` — скачать актуальную базу данных с сервера
+4. `.venv\Scripts\activate` + `python manage.py migrate --noinput` — применить миграции
+5. Сообщить пользователю что проект готов к работе
 
 ### «Заканчиваем работу»
 
@@ -44,6 +45,14 @@ alwaysApply: true
 1. Проверяет что все локальные коммиты запушены в GitHub
 2. На сервере в 1 SSH-сессию: `git pull` → `migrate` → `collectstatic` → restart gunicorn/daphne/celery
 3. Показывает статус сервисов
+
+## Синхронизация базы данных
+
+Скрипт `sync_db.ps1` делает:
+1. `pg_dump` на сервере (формат custom, сжатый)
+2. Скачивает дамп по SCP
+3. Пересоздает локальную базу `logist2_db` и восстанавливает из дампа
+4. Локальные креды: user `arturas`, база `logist2_db`, host `localhost`
 
 ## Важно
 
