@@ -9,6 +9,8 @@ echo.
 echo Activating virtual environment...
 call .venv\Scripts\activate.bat
 
+echo Applying migrations...
+python manage.py migrate --noinput
 echo.
 echo Starting Django server on http://localhost:8000
 echo.
