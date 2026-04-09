@@ -41,8 +41,8 @@ alwaysApply: true
 ## Деплой на сервер
 
 Скрипт `deploy.ps1` делает:
-1. Пакует код в tar.gz и загружает на сервер (1 scp)
-2. На сервере в 1 SSH-сессию: распаковка → migrate → collectstatic → restart gunicorn/daphne → git commit
+1. Проверяет что все локальные коммиты запушены в GitHub
+2. На сервере в 1 SSH-сессию: `git pull` → `migrate` → `collectstatic` → restart gunicorn/daphne/celery
 3. Показывает статус сервисов
 
 ## Важно
