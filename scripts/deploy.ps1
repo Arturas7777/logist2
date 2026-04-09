@@ -22,22 +22,7 @@ Write-Host "[ok] Local branch is up-to-date with remote" -ForegroundColor Green
 Write-Host ""
 Write-Host "[1/2] Pulling & restarting on server..." -ForegroundColor Yellow
 
-$remoteCmd = @"
-cd $PROJECT_DIR && \
-git fetch origin && \
-git reset --hard origin/master && \
-chown -R www-root:www-root . && \
-source .venv/bin/activate && \
-python manage.py migrate --noinput 2>&1 | tail -5 && \
-python manage.py collectstatic --noinput 2>&1 | tail -1 && \
-systemctl restart gunicorn && \
-systemctl restart daphne && \
-systemctl restart celery && \
-sleep 3 && \
-echo GUNICORN=`$(systemctl is-active gunicorn) && \
-echo DAPHNE=`$(systemctl is-active daphne) && \
-echo CELERY=`$(systemctl is-active celery)
-"@
+$remoteCmd = "cd $PROJECT_DIR && git fetch origin && git reset --hard origin/master && chown -R www-root:www-root . && source .venv/bin/activate && python manage.py migrate --noinput 2>&1 | tail -5 && python manage.py collectstatic --noinput 2>&1 | tail -1 && systemctl restart gunicorn && systemctl restart daphne && systemctl restart celery && sleep 3 && echo GUNICORN=`$(systemctl is-active gunicorn) && echo DAPHNE=`$(systemctl is-active daphne) && echo CELERY=`$(systemctl is-active celery)"
 
 $output = ssh -o ConnectTimeout=30 -o ServerAliveInterval=10 -o ServerAliveCountMax=6 $SERVER $remoteCmd 2>$null
 if ($LASTEXITCODE -ne 0) {
@@ -58,7 +43,7 @@ Write-Host ""
 if ($gunicornOk -and $daphneOk -and $celeryOk) {
     Write-Host "All services running" -ForegroundColor Green
 } else {
-    Write-Host "WARNING: Some services may be down — check manually!" -ForegroundColor Red
+    Write-Host "WARNING: Some services may be down - check manually!" -ForegroundColor Red
 }
 
 Write-Host ""
