@@ -1700,7 +1700,7 @@ body.popup #footer {
         display: flex;
         flex-direction: row;
         align-items: center;
-        gap: 12px;
+        gap: 6px;
     }
     .cm-topbar-left .cm-sidebar-toggle {
         font-size: 1.5rem;
