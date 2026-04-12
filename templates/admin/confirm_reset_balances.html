@@ -9,60 +9,107 @@
 {% block extrastyle %}{{ block.super }}
 <link rel="stylesheet" type="text/css" href="{% static "admin/css/forms.css" %}" />
 <style>
+    main#content-start, main.content { padding: 0 !important; }
+    #content {
+        background: #f4f2ff;
+        min-height: 100vh;
+        max-width: 100% !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    #content-main { padding: 0; }
+    .crb-wrap {
+        max-width: 700px;
+        margin: 0 auto;
+        padding: 28px 32px;
+    }
     .warning-box {
-        background-color: #fff3cd;
-        border: 1px solid #ffeaa7;
-        border-radius: 4px;
-        padding: 15px;
-        margin: 20px 0;
+        background: rgba(245,158,11,.06);
+        border: 1px solid rgba(245,158,11,.2);
+        border-radius: 14px;
+        padding: 20px 24px;
+        margin-bottom: 20px;
     }
     .warning-box h3 {
-        color: #856404;
-        margin-top: 0;
+        color: #92400e;
+        margin: 0 0 10px;
+        font-size: 1.05em;
+        font-weight: 700;
     }
     .warning-box p {
-        color: #856404;
-        margin-bottom: 10px;
+        color: #78350f;
+        margin: 0 0 8px;
+        font-size: .92em;
     }
+    .warning-box ul {
+        color: #78350f;
+        font-size: .9em;
+        margin: 8px 0 0;
+        padding-left: 20px;
+    }
+    .warning-box li { padding: 3px 0; }
     .danger-box {
-        background-color: #f8d7da;
-        border: 1px solid #f5c6cb;
-        border-radius: 4px;
-        padding: 15px;
-        margin: 20px 0;
+        background: rgba(239,68,68,.06);
+        border: 1px solid rgba(239,68,68,.15);
+        border-radius: 14px;
+        padding: 20px 24px;
+        margin-bottom: 20px;
     }
     .danger-box h3 {
-        color: #721c24;
-        margin-top: 0;
+        color: #991b1b;
+        margin: 0 0 10px;
+        font-size: 1.05em;
+        font-weight: 700;
     }
     .danger-box p {
-        color: #721c24;
-        margin-bottom: 10px;
+        color: #991b1b;
+        margin: 0 0 8px;
+        font-size: .92em;
     }
+    .danger-box ul {
+        color: #991b1b;
+        font-size: .9em;
+        margin: 8px 0 0;
+        padding-left: 20px;
+    }
+    .danger-box li { padding: 3px 0; }
     .action-buttons {
-        margin-top: 20px;
+        margin-top: 24px;
         text-align: center;
     }
-    .btn {
+    .action-buttons .btn {
         display: inline-block;
-        padding: 10px 20px;
-        margin: 0 10px;
+        padding: 12px 24px;
+        margin: 0 8px;
         border: none;
-        border-radius: 4px;
+        border-radius: 10px;
         text-decoration: none;
-        font-size: 14px;
+        font-size: .95em;
+        font-weight: 700;
         cursor: pointer;
+        transition: transform .1s, box-shadow .15s;
+        font-family: inherit;
     }
-    .btn-danger {
-        background-color: #dc3545;
-        color: white;
+    .action-buttons .btn-danger {
+        background: linear-gradient(135deg, #ef4444, #f87171);
+        color: #fff;
     }
-    .btn-secondary {
-        background-color: #6c757d;
-        color: white;
+    .action-buttons .btn-danger:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(239,68,68,.3);
     }
-    .btn:hover {
-        opacity: 0.8;
+    .action-buttons .btn-secondary {
+        background: #faf9ff;
+        border: 1.5px solid #e0dcf8;
+        color: #4a4a68;
+    }
+    .action-buttons .btn-secondary:hover {
+        border-color: #6c5ce7;
+    }
+    .crb-hint {
+        margin-top: 28px;
+        text-align: center;
+        font-size: .88em;
+        color: #7c7c9a;
     }
 </style>
 {% endblock %}
@@ -77,9 +124,9 @@
 {% endblock %}
 
 {% block content %}
-<div id="content-main">
+<div class="crb-wrap">
     <div class="warning-box">
-        <h3>⚠️ Внимание!</h3>
+        <h3>Внимание!</h3>
         <p><strong>Вы собираетесь обнулить ВСЕ балансы всех партнеров и компаний в системе.</strong></p>
         <p>Это действие:</p>
         <ul>
@@ -91,7 +138,7 @@
     </div>
 
     <div class="danger-box">
-        <h3>🚨 Критическое действие!</h3>
+        <h3>Критическое действие!</h3>
         <p><strong>Это действие НЕОБРАТИМО!</strong></p>
         <p>После обнуления балансов:</p>
         <ul>
@@ -109,17 +156,13 @@
             {% for obj in queryset %}
             <input type="hidden" name="_selected_action" value="{{ obj.pk }}" />
             {% endfor %}
-            <button type="submit" class="btn btn-danger">
-                🗑️ Да, обнулить все балансы
-            </button>
-            <a href="{% url 'admin:core_payment_changelist' %}" class="btn btn-secondary">
-                ❌ Отмена
-            </a>
+            <button type="submit" class="btn btn-danger">Да, обнулить все балансы</button>
+            <a href="{% url 'admin:core_payment_changelist' %}" class="btn btn-secondary">Отмена</a>
         </form>
     </div>
 
-    <div style="margin-top: 30px; text-align: center;">
-        <p><em>Если вы не уверены, нажмите "Отмена" и вернитесь к списку платежей.</em></p>
+    <div class="crb-hint">
+        <p>Если вы не уверены, нажмите «Отмена» и вернитесь к списку платежей.</p>
     </div>
 </div>
 {% endblock %}

@@ -4,15 +4,25 @@
 {% block title %}Сверка кошелька{% endblock %}
 {% block content_title %}<h1>🔄 Сверка баланса кошелька</h1>{% endblock %}
 
-{% block content %}
+{% block extrastyle %}
+{{ block.super }}
 <style>
+    main#content-start, main.content { padding: 0 !important; }
+    #content {
+        background: #f4f2ff;
+        min-height: 100vh;
+        max-width: 100% !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    #content-main { padding: 0; }
     .wallet-form {
         max-width: 520px;
         margin: 0 auto;
-        background: #1e1e2e;
-        border-radius: 16px;
         padding: 32px;
-        border: 1px solid rgba(255,255,255,.06);
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+        border: 1px solid rgba(108,92,231,.14);
     }
     .wallet-form .field-group {
         margin-bottom: 20px;
@@ -21,25 +31,27 @@
         display: block;
         font-weight: 600;
         margin-bottom: 6px;
-        color: #c0c0e0;
+        color: #4a4a68;
         font-size: .9em;
     }
     .wallet-form input[type="number"] {
         width: 100%;
         padding: 14px 18px;
-        border: 1px solid rgba(255,255,255,.12);
+        border: 1.5px solid #e0dcf8;
         border-radius: 10px;
-        background: #16162a;
-        color: #e0e0f0;
+        background: #faf9ff;
+        color: #1a1a2e;
         font-size: 1.3em;
         font-weight: 600;
         text-align: center;
         box-sizing: border-box;
+        font-family: inherit;
     }
     .wallet-form input:focus {
         outline: none;
         border-color: #6c5ce7;
-        box-shadow: 0 0 0 3px rgba(108,92,231,.2);
+        box-shadow: 0 0 0 3px rgba(108,92,231,.12);
+        background: #fff;
     }
     .wallet-form .submit-btn {
         width: 100%;
@@ -53,6 +65,7 @@
         cursor: pointer;
         margin-top: 8px;
         transition: transform .1s, box-shadow .15s;
+        font-family: inherit;
     }
     .wallet-form .submit-btn:hover {
         transform: translateY(-1px);
@@ -62,23 +75,25 @@
         text-align: center;
         margin-bottom: 28px;
         padding: 20px;
-        background: rgba(108,92,231,.08);
-        border: 1px solid rgba(108,92,231,.15);
+        background: rgba(108,92,231,.04);
+        border: 1px solid rgba(108,92,231,.1);
         border-radius: 12px;
     }
-    .current-balance .label { font-size: .85em; color: #a0a0c8; margin-bottom: 4px; }
-    .current-balance .value { font-size: 2em; font-weight: 700; color: #6c5ce7; }
-    .current-balance .hint { font-size: .8em; color: #808098; margin-top: 6px; }
+    .current-balance .label { font-size: .85em; color: #7c7c9a; margin-bottom: 4px; }
+    .current-balance .value { font-size: 2em; font-weight: 800; color: #6c5ce7; }
+    .current-balance .hint { font-size: .8em; color: #a29bcc; margin-top: 6px; }
     .diff-preview {
         text-align: center;
         padding: 12px;
-        border-radius: 8px;
+        border-radius: 10px;
         margin-bottom: 16px;
         font-weight: 600;
         display: none;
     }
 </style>
+{% endblock %}
 
+{% block content %}
 <div class="wallet-form">
     <div class="current-balance">
         <div class="label">Текущий расчётный баланс</div>
@@ -117,11 +132,11 @@ function showDiff() {
     }
     el.style.display = 'block';
     if (diff > 0) {
-        el.style.background = 'rgba(34,197,94,.1)';
+        el.style.background = 'rgba(34,197,94,.06)';
         el.style.color = '#22c55e';
         el.textContent = 'Корректировка: +' + diff.toFixed(2) + ' €';
     } else {
-        el.style.background = 'rgba(239,68,68,.1)';
+        el.style.background = 'rgba(239,68,68,.06)';
         el.style.color = '#ef4444';
         el.textContent = 'Корректировка: ' + diff.toFixed(2) + ' €';
     }

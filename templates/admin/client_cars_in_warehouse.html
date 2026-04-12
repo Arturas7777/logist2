@@ -3,80 +3,201 @@
 
 {% block title %}{{ title }}{% endblock %}
 
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    main#content-start, main.content { padding: 0 !important; }
+    #content {
+        background: #f4f2ff;
+        min-height: 100vh;
+        max-width: 100% !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    #content-main { padding: 0; }
+    .ciw-wrap {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 28px 32px;
+    }
+    .ciw-wrap h1 {
+        font-size: 1.5em;
+        font-weight: 800;
+        color: #1a1a2e;
+        margin: 0 0 20px;
+    }
+    .ciw-actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+    }
+    .ciw-btn {
+        padding: 10px 20px;
+        border-radius: 10px;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: .9em;
+        border: none;
+        cursor: pointer;
+        transition: transform .1s, box-shadow .15s;
+        font-family: inherit;
+    }
+    .ciw-btn:hover {
+        transform: translateY(-1px);
+    }
+    .ciw-btn-back {
+        background: #faf9ff;
+        border: 1.5px solid #e0dcf8;
+        color: #4a4a68;
+    }
+    .ciw-btn-back:hover { border-color: #6c5ce7; }
+    .ciw-btn-copy {
+        background: linear-gradient(135deg, #22c55e, #4ade80);
+        color: #fff;
+    }
+    .ciw-btn-copy:hover {
+        box-shadow: 0 4px 16px rgba(34,197,94,.3);
+    }
+    .ciw-summary {
+        background: linear-gradient(135deg, #6c5ce7, #a78bfa);
+        color: #fff;
+        padding: 20px 24px;
+        border-radius: 16px;
+        margin-bottom: 20px;
+    }
+    .ciw-summary .count { font-size: 2em; font-weight: 800; }
+    .ciw-summary .hint { opacity: .85; font-size: .95em; }
+    .ciw-empty {
+        text-align: center;
+        padding: 50px 20px;
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+        border: 1px solid rgba(108,92,231,.14);
+    }
+    .ciw-empty p { color: #7c7c9a; font-size: .95em; margin: 4px 0; }
+    .ciw-wh-card {
+        background: #fff;
+        border-radius: 16px;
+        margin-bottom: 20px;
+        overflow: hidden;
+        box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+        border: 1px solid rgba(108,92,231,.14);
+    }
+    .ciw-wh-header {
+        background: #faf9ff;
+        padding: 14px 20px;
+        border-bottom: 1px solid #f0eef8;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .ciw-wh-header h3 {
+        margin: 0;
+        font-size: 1em;
+        font-weight: 700;
+        color: #1a1a2e;
+    }
+    .ciw-wh-header .badge {
+        background: #6c5ce7;
+        color: #fff;
+        padding: 3px 10px;
+        border-radius: 10px;
+        font-size: .8em;
+        font-weight: 700;
+    }
+    .ciw-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .ciw-table th {
+        text-align: left;
+        font-size: .78em;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .5px;
+        color: #7c7c9a;
+        padding: 10px 16px;
+        border-bottom: 2px solid #f0eef8;
+    }
+    .ciw-table td {
+        padding: 10px 16px;
+        font-size: .9em;
+        color: #1a1a2e;
+        border-bottom: 1px solid #f5f3ff;
+    }
+    .ciw-table tr:hover td { background: #faf9ff; }
+    .ciw-table a { color: #6c5ce7; text-decoration: none; font-weight: 600; }
+    .ciw-table a:hover { text-decoration: underline; }
+    .ciw-table .vin { font-family: monospace; font-weight: 700; }
+    .ciw-days-ok { color: #22c55e; font-weight: 700; }
+    .ciw-days-warn { color: #f59e0b; font-weight: 700; }
+    .ciw-days-danger { color: #ef4444; font-weight: 700; }
+</style>
+{% endblock %}
+
 {% block content %}
-<div style="padding: 20px;">
-    <h1>🚗 Авто на складе - {{ client.name }}</h1>
-    
-    <div style="margin: 20px 0; display: flex; gap: 15px; flex-wrap: wrap;">
-        <a href="{% url 'admin:core_client_change' client.pk %}" 
-           style="background: var(--cm-text-secondary, #6b7280); color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none;">
-            ← Назад к клиенту
-        </a>
-        <button onclick="copyToClipboard()" 
-                style="background: var(--cm-green, #10b981); color: white; padding: 10px 20px; border-radius: 6px; border: none; cursor: pointer; font-size: 14px;">
-            📋 Скопировать список
-        </button>
+<div class="ciw-wrap">
+    <h1>Авто на складе — {{ client.name }}</h1>
+
+    <div class="ciw-actions">
+        <a href="{% url 'admin:core_client_change' client.pk %}" class="ciw-btn ciw-btn-back">← Назад к клиенту</a>
+        <button onclick="copyToClipboard()" class="ciw-btn ciw-btn-copy">Скопировать список</button>
     </div>
-    
+
     {% if total_count == 0 %}
-        <div style="padding: 40px; text-align: center; background: var(--cm-bg, #f5f6fa); border-radius: 8px; margin: 20px 0;">
-            <p style="font-size: 18px; color: var(--cm-text-secondary, #6b7280);">У клиента нет авто на складе</p>
-            <p style="color: var(--cm-text-secondary, #6b7280);">Здесь отображаются только авто со статусом "Разгружен"</p>
+        <div class="ciw-empty">
+            <p style="font-size:1.1em">У клиента нет авто на складе</p>
+            <p>Здесь отображаются только авто со статусом «Разгружен»</p>
         </div>
     {% else %}
-        <div style="background: linear-gradient(135deg, #6c5ce7, #5a4bd1); color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
-            <div style="font-size: 2em; font-weight: bold;">{{ total_count }} авто</div>
-            <div style="opacity: 0.9;">на складе</div>
+        <div class="ciw-summary">
+            <div class="count">{{ total_count }} авто</div>
+            <div class="hint">на складе</div>
         </div>
-        
+
         {% for wh_name, wh_cars in warehouses_data.items %}
-        <div style="background: white; border: 1px solid #dee2e6; border-radius: 8px; margin-bottom: 20px; overflow: hidden;">
-            <div style="background: #f8f9fa; padding: 15px; border-bottom: 1px solid #dee2e6;">
-                <h3 style="margin: 0; display: flex; align-items: center; gap: 10px;">
-                    📍 {{ wh_name }}
-                    <span style="background: var(--cm-purple, #6c5ce7); color: white; padding: 3px 10px; border-radius: 12px; font-size: 14px;">
-                        {{ wh_cars|length }} авто
-                    </span>
-                </h3>
+        <div class="ciw-wh-card">
+            <div class="ciw-wh-header">
+                <h3>{{ wh_name }}</h3>
+                <span class="badge">{{ wh_cars|length }} авто</span>
             </div>
-            <table style="width: 100%; border-collapse: collapse;">
+            <table class="ciw-table">
                 <thead>
-                    <tr style="background: var(--cm-bg, #f5f6fa);">
-                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--cm-border, #ebebf0);">VIN</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--cm-border, #ebebf0);">Марка</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--cm-border, #ebebf0);">Год</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--cm-border, #ebebf0);">Контейнер</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--cm-border, #ebebf0);">Дата разгрузки</th>
-                        <th style="padding: 12px; text-align: left; border-bottom: 1px solid var(--cm-border, #ebebf0);">Дней на складе</th>
+                    <tr>
+                        <th>VIN</th>
+                        <th>Марка</th>
+                        <th>Год</th>
+                        <th>Контейнер</th>
+                        <th>Дата разгрузки</th>
+                        <th>Дней на складе</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for car in wh_cars %}
-                    <tr style="border-bottom: 1px solid #eee;">
-                        <td style="padding: 12px;">
-                            <a href="{% url 'admin:core_car_change' car.pk %}" style="font-family: monospace; font-weight: bold;">
-                                {{ car.vin }}
-                            </a>
+                    <tr>
+                        <td>
+                            <a href="{% url 'admin:core_car_change' car.pk %}" class="vin">{{ car.vin }}</a>
                         </td>
-                        <td style="padding: 12px;">{{ car.brand }}</td>
-                        <td style="padding: 12px;">{{ car.year }}</td>
-                        <td style="padding: 12px;">
+                        <td>{{ car.brand }}</td>
+                        <td>{{ car.year }}</td>
+                        <td>
                             {% if car.container %}
                                 <a href="{% url 'admin:core_container_change' car.container.pk %}">{{ car.container.number }}</a>
                             {% else %}
                                 —
                             {% endif %}
                         </td>
-                        <td style="padding: 12px;">
+                        <td>
                             {% if car.unload_date %}
                                 {{ car.unload_date|date:"d.m.Y" }}
                             {% else %}
                                 —
                             {% endif %}
                         </td>
-                        <td style="padding: 12px;">
+                        <td>
                             {% if car.days %}
-                                <span style="{% if car.days > 14 %}color: var(--cm-red, #ef4444);{% elif car.days > 7 %}color: var(--cm-orange, #f59e0b);{% else %}color: var(--cm-green, #10b981);{% endif %} font-weight: bold;">
+                                <span class="{% if car.days > 14 %}ciw-days-danger{% elif car.days > 7 %}ciw-days-warn{% else %}ciw-days-ok{% endif %}">
                                     {{ car.days }} дн.
                                 </span>
                             {% else %}
@@ -90,9 +211,12 @@
         </div>
         {% endfor %}
     {% endif %}
+
+    <div style="text-align:center;margin-top:16px">
+        <a href="{% url 'company_dashboard' %}" style="color:#6c5ce7;text-decoration:none;font-size:.9em">← Вернуться на дашборд</a>
+    </div>
 </div>
 
-<!-- Скрытое поле для текста копирования -->
 <textarea id="copyText" style="position: absolute; left: -9999px;">{{ text_for_copy }}</textarea>
 
 <script>
@@ -100,20 +224,17 @@ function copyToClipboard() {
     var copyText = document.getElementById("copyText");
     copyText.select();
     copyText.setSelectionRange(0, 99999);
-    
     try {
         navigator.clipboard.writeText(copyText.value).then(function() {
-            alert('✅ Список скопирован в буфер обмена!');
+            alert('Список скопирован в буфер обмена!');
         }).catch(function() {
-            // Fallback
             document.execCommand("copy");
-            alert('✅ Список скопирован в буфер обмена!');
+            alert('Список скопирован в буфер обмена!');
         });
     } catch (err) {
         document.execCommand("copy");
-        alert('✅ Список скопирован в буфер обмена!');
+        alert('Список скопирован в буфер обмена!');
     }
 }
 </script>
 {% endblock %}
-

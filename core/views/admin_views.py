@@ -112,6 +112,9 @@ def company_dashboard(request):
     context['expenses_by_category_json'] = context.get('expenses_by_category', [])
     context['income_by_category_json'] = context.get('income_by_category', [])
 
+    cash_wallet = context.get('cash_wallet', {})
+    context['personal_category_breakdown_json'] = cash_wallet.get('category_breakdown', [])
+
     return render(request, 'admin/company_dashboard.html', context)
 
 
@@ -235,6 +238,17 @@ def add_cash_expense(request):
                 status='COMPLETED',
                 date=timezone.now(),
             )
+
+            receipt_file = request.FILES.get('receipt')
+            if receipt_file:
+                tx.attachment = receipt_file
+                tx.save(update_fields=['attachment'])
+                try:
+                    from core.tasks import parse_receipt_task
+                    parse_receipt_task.delay(tx.id)
+                except Exception:
+                    pass
+
             messages.success(request, f'Расход {amount:.2f} € записан ({category.name})')
             return redirect('company_dashboard')
         except (ValueError, InvalidOperation) as e:
@@ -342,3 +356,100 @@ def cash_wallet_reset(request):
     context = admin.site.each_context(request)
     context['current_cash'] = current_cash
     return render(request, 'admin/cash_wallet_reset.html', context)
+
+
+@staff_member_required
+def expense_analytics(request):
+    """Personal expense analytics page with charts and AI insights."""
+    import json
+    from core.models_billing import Transaction, ExpenseCategory
+    from core.services.expense_analytics_service import ExpenseAnalyticsService
+
+    period = request.GET.get('period', '3m')
+    if period not in ('1m', '3m', '6m', '1y', 'all'):
+        period = '3m'
+
+    svc = ExpenseAnalyticsService()
+    breakdown = svc.get_category_breakdown(period)
+    trend = svc.get_monthly_trend(
+        months={'1m': 1, '3m': 3, '6m': 6, '1y': 12, 'all': 24}.get(period, 3)
+    )
+    top_items = svc.get_top_items(period)
+
+    generate_ai = request.GET.get('ai') == '1'
+    ai_insights = None
+    if generate_ai:
+        ai_insights = svc.get_ai_insights(period)
+
+    total_spent = sum(b['total'] for b in breakdown)
+    top_category = breakdown[0]['category'] if breakdown else '—'
+
+    personal_cats = list(
+        ExpenseCategory.objects.filter(category_type='PERSONAL')
+        .values_list('id', flat=True)
+    )
+    no_receipt = list(
+        Transaction.objects.filter(
+            status='COMPLETED', category_id__in=personal_cats,
+        ).filter(attachment='').select_related('category')
+        .order_by('-date')[:20]
+    ) if personal_cats else []
+
+    context = admin.site.each_context(request)
+    context.update({
+        'period': period,
+        'breakdown': breakdown,
+        'breakdown_json': json.dumps(breakdown, ensure_ascii=False),
+        'trend': trend,
+        'trend_json': json.dumps(trend, ensure_ascii=False),
+        'top_items': top_items,
+        'ai_insights': ai_insights,
+        'total_spent': total_spent,
+        'top_category': top_category,
+        'generate_ai': generate_ai,
+        'no_receipt_expenses': no_receipt,
+    })
+    return render(request, 'admin/expense_analytics.html', context)
+
+
+@staff_member_required
+def upload_expense_receipt(request, tx_id):
+    """Upload a receipt photo for an existing personal expense transaction."""
+    from core.models_billing import Transaction, ExpenseCategory
+
+    personal_cats = list(
+        ExpenseCategory.objects.filter(category_type='PERSONAL')
+        .values_list('id', flat=True)
+    )
+
+    try:
+        tx = Transaction.objects.get(
+            id=tx_id, status='COMPLETED', category_id__in=personal_cats,
+        )
+    except Transaction.DoesNotExist:
+        messages.error(request, 'Транзакция не найдена')
+        return redirect('company_dashboard')
+
+    if request.method == 'POST':
+        receipt_file = request.FILES.get('receipt')
+        if not receipt_file:
+            messages.error(request, 'Файл не выбран')
+            return redirect('company_dashboard')
+
+        tx.attachment = receipt_file
+        tx.receipt_data = None
+        tx.save(update_fields=['attachment', 'receipt_data'])
+
+        try:
+            from core.tasks import parse_receipt_task
+            parse_receipt_task.delay(tx.id)
+        except Exception:
+            pass
+
+        messages.success(
+            request,
+            f'Чек загружен для расхода {tx.amount:.2f} € ({tx.category.name})',
+        )
+        return redirect(request.POST.get('next', 'company_dashboard'))
+
+    return redirect('company_dashboard')

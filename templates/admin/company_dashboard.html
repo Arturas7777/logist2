@@ -5,9 +5,6 @@
 
 {% block extrastyle %}
 {{ block.super }}
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
 <style>
     /* ── Reset & Base ── */
@@ -113,7 +110,7 @@
         color: #6c5ce7;
     }
 
-    /* ── Section Titles ── */
+    /* ── Section Titles (collapsible) ── */
     .db-section {
         font-size: .78em;
         font-weight: 700;
@@ -121,6 +118,37 @@
         letter-spacing: 1.2px;
         color: #a29bcc;
         margin: 32px 0 14px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        user-select: none;
+        padding: 6px 0;
+        transition: color .2s;
+    }
+    .db-section:hover { color: #6c5ce7; }
+    .db-section::after {
+        content: '\eb3a';
+        font-family: 'boxicons' !important;
+        margin-left: auto;
+        font-size: 1.6em;
+        transition: transform .3s ease;
+        line-height: 1;
+    }
+    .db-section.collapsed::after {
+        transform: rotate(-90deg);
+    }
+    .db-section.collapsed { margin-bottom: 0; }
+    .db-section-body {
+        overflow: hidden;
+        max-height: 3000px;
+        opacity: 1;
+        transition: max-height .35s ease, opacity .25s ease, margin .25s ease;
+    }
+    .db-section.collapsed + .db-section-body {
+        max-height: 0;
+        opacity: 0;
+        margin: 0;
+        pointer-events: none;
     }
 
     /* ── KPI Cards ── */
@@ -138,15 +166,15 @@
         background: #fff;
         padding: 20px 22px;
         border-radius: 16px;
-        box-shadow: 0 1px 3px rgba(108,92,231,.06), 0 6px 16px rgba(108,92,231,.04);
-        border: 1px solid rgba(108,92,231,.05);
+        box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+        border: 1px solid rgba(108,92,231,.14);
         position: relative;
         transition: all .25s ease;
         overflow: hidden;
     }
     .kpi:hover {
         transform: translateY(-3px);
-        box-shadow: 0 4px 12px rgba(108,92,231,.1), 0 12px 28px rgba(108,92,231,.07);
+        box-shadow: 0 4px 12px rgba(30,20,60,.1), 0 12px 28px rgba(30,20,60,.08);
     }
     .kpi-icon {
         width: 42px;
@@ -499,7 +527,8 @@
     </div>
 
     <!-- ════════════════ OPERATIONAL KPIs ════════════════ -->
-    <div class="db-section">Операционные показатели</div>
+    <div class="db-section" data-section="operational">Операционные показатели</div>
+    <div class="db-section-body">
     <div class="kpi-row five">
         <div class="kpi accent-blue">
             <div class="kpi-icon blue"><i class="bx bxs-ship"></i></div>
@@ -552,9 +581,11 @@
         <div class="kpi" style="visibility:hidden;box-shadow:none;border:none"></div>
         <div class="kpi" style="visibility:hidden;box-shadow:none;border:none"></div>
     </div>
+    </div>
 
     <!-- ════════════════ FINANCIAL KPIs ════════════════ -->
-    <div class="db-section">Финансовые показатели</div>
+    <div class="db-section" data-section="financial">Финансовые показатели</div>
+    <div class="db-section-body">
     <div class="kpi-row four" style="margin-bottom:12px">
         <div class="kpi accent-teal">
             <div class="kpi-icon teal"><i class="bx bxs-coin-stack"></i></div>
@@ -604,9 +635,11 @@
             </div>
         </div>
     </div>
+    </div>
 
     <!-- ════════════════ CASH WALLET ════════════════ -->
-    <div class="db-section"><i class="bx bxs-wallet" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Кошелёк (наличные)</div>
+    <div class="db-section" data-section="wallet"><i class="bx bxs-wallet" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Кошелёк (наличные)</div>
+    <div class="db-section-body">
     <div class="kpi-row five" style="margin-bottom:12px">
         <div class="kpi accent-green">
             <div class="kpi-icon green"><i class="bx bx-money"></i></div>
@@ -638,11 +671,11 @@
         </div>
     </div>
     {% if cash_wallet.recent_personal %}
-    <div style="background:#1e1e2e;border-radius:12px;padding:16px 20px;margin-bottom:28px;border:1px solid rgba(255,255,255,.05)">
-        <h3 style="margin:0 0 12px;font-size:.95em;color:#a0a0c8"><i class="bx bx-history" style="vertical-align:middle;margin-right:6px"></i>Последние личные расходы</h3>
+    <div style="background:#fff;border-radius:16px;padding:20px 24px;margin-bottom:16px;box-shadow:0 1px 4px rgba(30,20,60,.06),0 4px 14px rgba(30,20,60,.05);border:1px solid rgba(108,92,231,.14)">
+        <h3 style="margin:0 0 12px;font-size:.95em;color:#4a4a68;font-weight:700"><i class="bx bx-history" style="vertical-align:middle;margin-right:6px;color:#6c5ce7"></i>Последние личные расходы</h3>
         <table class="dt" style="margin:0">
             <thead>
-                <tr><th>Дата</th><th>Категория</th><th>Описание</th><th style="text-align:right">Сумма</th></tr>
+                <tr><th>Дата</th><th>Категория</th><th>Описание</th><th style="text-align:right">Сумма</th><th style="text-align:center;width:50px">Чек</th></tr>
             </thead>
             <tbody>
             {% for tx in cash_wallet.recent_personal %}
@@ -651,6 +684,22 @@
                     <td>{{ tx.category.name|default:"—" }}</td>
                     <td>{{ tx.description|default:"—" }}</td>
                     <td style="text-align:right;color:#ef4444;font-weight:600">−{{ tx.amount|floatformat:2 }} €</td>
+                    <td style="text-align:center">
+                        {% if tx.attachment %}
+                            <a href="{{ tx.attachment.url }}" target="_blank" title="Просмотреть чек" style="color:#22c55e;font-size:1.2em;text-decoration:none">
+                                <i class="bx bx-check-circle"></i>
+                            </a>
+                        {% else %}
+                            <form method="post" action="{% url 'upload_expense_receipt' tx.id %}" enctype="multipart/form-data" style="display:inline;margin:0">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="{% url 'company_dashboard' %}">
+                                <input type="file" name="receipt" accept="image/*,.pdf" style="display:none" id="receipt-{{ tx.id }}" onchange="this.form.submit()">
+                                <label for="receipt-{{ tx.id }}" title="Загрузить чек" style="cursor:pointer;color:#6c5ce7;font-size:1.2em">
+                                    <i class="bx bx-upload"></i>
+                                </label>
+                            </form>
+                        {% endif %}
+                    </td>
                 </tr>
             {% endfor %}
             </tbody>
@@ -658,9 +707,33 @@
     </div>
     {% endif %}
 
+    {% if cash_wallet.category_breakdown %}
+    <div style="display:flex;gap:16px;margin-bottom:28px;flex-wrap:wrap">
+        <div style="flex:1;min-width:260px;background:#fff;border-radius:16px;padding:20px 24px;box-shadow:0 1px 4px rgba(30,20,60,.06),0 4px 14px rgba(30,20,60,.05);border:1px solid rgba(108,92,231,.14)">
+            <h3 style="margin:0 0 12px;font-size:.95em;color:#4a4a68;font-weight:700"><i class="bx bx-pie-chart-alt-2" style="vertical-align:middle;margin-right:6px;color:#6c5ce7"></i>Структура расходов (месяц)</h3>
+            <canvas id="personalCatChart" style="max-height:200px"></canvas>
+        </div>
+        <div style="flex:0 0 auto;display:flex;align-items:center">
+            <a href="{% url 'expense_analytics' %}" style="display:inline-flex;align-items:center;gap:8px;padding:14px 24px;border-radius:12px;background:linear-gradient(135deg,#6c5ce7,#a78bfa);color:#fff;text-decoration:none;font-weight:700;font-size:.95em;transition:all .2s">
+                <i class="bx bx-bar-chart-alt-2" style="font-size:1.3em"></i>
+                Подробная аналитика
+            </a>
+        </div>
+    </div>
+    {% else %}
+    <div style="text-align:center;margin-bottom:28px">
+        <a href="{% url 'expense_analytics' %}" style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:10px;background:rgba(108,92,231,.1);color:#6c5ce7;text-decoration:none;font-weight:600;font-size:.9em">
+            <i class="bx bx-bar-chart-alt-2"></i>
+            Аналитика расходов
+        </a>
+    </div>
+    {% endif %}
+    </div>
+
     <!-- ════════════════ BANK ACCOUNTS ════════════════ -->
     {% if bank_accounts %}
-    <div class="db-section"><i class="bx bxs-bank" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Банковские счета</div>
+    <div class="db-section" data-section="bank-accounts"><i class="bx bxs-bank" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Банковские счета</div>
+    <div class="db-section-body">
     <div class="kpi-row {% if bank_accounts|length <= 3 %}three{% elif bank_accounts|length == 4 %}four{% else %}five{% endif %}" style="margin-bottom:28px">
         {% for acc in bank_accounts %}
         <div class="kpi accent-indigo">
@@ -678,10 +751,12 @@
         </div>
         {% endfor %}
     </div>
+    </div>
     {% endif %}
 
     <!-- ════════════════ CHARTS ════════════════ -->
-    <div class="db-section">Аналитика</div>
+    <div class="db-section" data-section="analytics">Аналитика</div>
+    <div class="db-section-body">
     <div class="charts-bar-row">
         <div class="chart-card">
             <h3><i class="bx bx-bar-chart" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#6c5ce7"></i>Доходы и расходы (6 мес.)</h3>
@@ -710,10 +785,12 @@
             </div>
         </div>
     </div>
+    </div>
 
     <!-- ════════════════ P&L ПО КАТЕГОРИЯМ ════════════════ -->
     {% if expenses_by_category or income_by_category %}
-    <div class="db-section"><i class="bx bxs-pie-chart-alt-2" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> P&L по категориям (текущий месяц)</div>
+    <div class="db-section" data-section="pl-categories"><i class="bx bxs-pie-chart-alt-2" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> P&L по категориям (текущий месяц)</div>
+    <div class="db-section-body">
     <div class="charts-donut-row">
         <!-- Doughnut: структура расходов -->
         <div class="chart-card">
@@ -782,11 +859,13 @@
         </div>
     </div>
     {% endif %}
+    </div>
     {% endif %}
 
     <!-- ════════════════ AGED RECEIVABLES / PAYABLES ════════════════ -->
     {% if aged_receivables or aged_payables %}
-    <div class="db-section"><i class="bx bxs-time" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Задолженность по срокам</div>
+    <div class="db-section" data-section="aged-debt"><i class="bx bxs-time" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Задолженность по срокам</div>
+    <div class="db-section-body">
     <div class="tables-grid">
         {% if aged_receivables %}
         <div class="tbl-card">
@@ -840,10 +919,12 @@
         </div>
         {% endif %}
     </div>
+    </div>
     {% endif %}
 
     <!-- ════════════════ TABLES ════════════════ -->
-    <div class="db-section">Последние операции</div>
+    <div class="db-section" data-section="recent-ops">Последние операции</div>
+    <div class="db-section-body">
     <div class="tables-grid">
         <!-- Transactions -->
         <div class="tbl-card">
@@ -919,10 +1000,12 @@
             </div>
         </div>
     </div>
+    </div>
 
     <!-- ════════════════ BANK TRANSACTIONS TABLE ════════════════ -->
     {% if recent_bank_transactions %}
-    <div class="db-section"><i class="bx bxs-bank" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Банковские операции</div>
+    <div class="db-section" data-section="bank-ops"><i class="bx bxs-bank" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Банковские операции</div>
+    <div class="db-section-body">
     <div class="tables-grid" style="grid-template-columns:1fr">
         <div class="tbl-card">
             <h3>
@@ -963,6 +1046,7 @@
             </div>
         </div>
     </div>
+    </div>
     {% endif %}
 
 </div>
@@ -975,6 +1059,7 @@
 {{ invoices_by_status_json|json_script:"invoices-data" }}
 {{ expenses_by_category_json|json_script:"expenses-cat-data" }}
 {{ income_by_category_json|json_script:"income-cat-data" }}
+{{ personal_category_breakdown_json|json_script:"personal-cat-data" }}
 
 <script>
 (function() {
@@ -1315,6 +1400,60 @@
         }
     }
 
+        /* ── Personal category mini-chart ── */
+        var personalCatData = parseJSON('personal-cat-data');
+        var personalCatCanvas = document.getElementById('personalCatChart');
+        if (Array.isArray(personalCatData) && personalCatData.length > 0 && personalCatCanvas) {
+            var pcLabels = personalCatData.map(function(d) { return d.category; });
+            var pcData = personalCatData.map(function(d) { return d.total; });
+            var pcColors = ['#6c5ce7','#a78bfa','#f59e0b','#ef4444','#22c55e','#3b82f6','#ec4899','#14b8a6'];
+            var pcTotal = pcData.reduce(function(a, b) { return a + b; }, 0);
+
+            new Chart(personalCatCanvas, {
+                type: 'doughnut',
+                data: {
+                    labels: pcLabels,
+                    datasets: [{
+                        data: pcData,
+                        backgroundColor: pcColors.slice(0, pcLabels.length),
+                        borderWidth: 0,
+                        hoverOffset: 4,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    cutout: '55%',
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: '#7c7c9a',
+                                usePointStyle: true,
+                                pointStyle: 'circle',
+                                padding: 10,
+                                font: { size: 11, weight: '600' }
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: '#1a1a2e',
+                            titleColor: '#fff',
+                            bodyColor: '#e0e0f0',
+                            padding: 10,
+                            cornerRadius: 8,
+                            callbacks: {
+                                label: function(ctx) {
+                                    var pct = pcTotal > 0 ? ((ctx.parsed / pcTotal) * 100).toFixed(1) : '0';
+                                    return ctx.label + ': ' + ctx.parsed.toFixed(2) + ' € (' + pct + '%)';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+
     /* Run when DOM ready */
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function() {
@@ -1322,6 +1461,51 @@
         });
     } else {
         setTimeout(initCharts, 100);
+    }
+})();
+</script>
+
+<script>
+(function() {
+    'use strict';
+    var STORAGE_KEY = 'dashboard_collapsed';
+
+    function loadState() {
+        try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+        catch(e) { return {}; }
+    }
+
+    function saveState(state) {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+        catch(e) {}
+    }
+
+    function init() {
+        var state = loadState();
+        var sections = document.querySelectorAll('.db-section[data-section]');
+
+        sections.forEach(function(el) {
+            var id = el.getAttribute('data-section');
+            if (state[id]) el.classList.add('collapsed');
+
+            el.addEventListener('click', function(e) {
+                if (e.target.closest('a')) return;
+                el.classList.toggle('collapsed');
+                var s = loadState();
+                if (el.classList.contains('collapsed')) {
+                    s[id] = true;
+                } else {
+                    delete s[id];
+                }
+                saveState(s);
+            });
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
     }
 })();
 </script>

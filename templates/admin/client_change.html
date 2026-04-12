@@ -7,45 +7,51 @@
     <style>
         .balance-details {
             margin-top: 20px;
-            padding: 15px;
-            border: 1px solid #e0e0e0;
-            border-radius: 5px;
-            background-color: #fafafa;
+            padding: 20px;
+            border: 1px solid rgba(108,92,231,.14);
+            border-radius: 16px;
+            background: #fff;
+            box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
         }
-        .balance-details h3 {
-            margin-top: 0;
-        }
+        .balance-details h3 { margin-top: 0; font-weight: 700; color: #1a1a2e; }
+        .balance-details h4 { font-weight: 700; color: #1a1a2e; }
         .balance-details table {
             width: 100%;
             border-collapse: collapse;
         }
         .balance-details th, .balance-details td {
-            border: 1px solid #ddd;
-            padding: 8px;
+            border-bottom: 1px solid #f0eef8;
+            padding: 10px 12px;
             text-align: left;
+            font-size: .9em;
         }
         .balance-details th {
-            background-color: #f2f2f2;
+            background: #faf9ff;
+            color: #7c7c9a;
+            font-size: .8em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .5px;
         }
         .error-message {
-            color: var(--cm-red, #ef4444);
-            font-size: 14px;
+            color: #ef4444;
+            font-size: .88em;
             margin-top: 10px;
         }
-        /* Убираем розовую линию над разделами */
         .module h2, .module h3 {
             border-bottom: none !important;
         }
         .balance-summary {
-            background: #e7f3ff;
-            padding: 15px;
-            border-radius: 8px;
-            border: 1px solid #b3d9ff;
+            background: rgba(108,92,231,.06);
+            padding: 18px;
+            border-radius: 14px;
+            border: 1px solid rgba(108,92,231,.14);
             margin-bottom: 20px;
         }
         .balance-summary h4 {
             margin-top: 0;
-            color: #0056b3;
+            color: #6c5ce7;
+            font-weight: 700;
         }
         .balance-grid {
             display: grid;
@@ -80,7 +86,7 @@
 {% block content %}
     <!-- Панель управления балансом -->
     {% if original %}
-    <div style="margin-bottom: 20px; padding: 20px; background: linear-gradient(135deg, {% if original.balance > 0 %}#11998e, #38ef7d{% elif original.balance < 0 %}#eb3349, #f45c43{% else %}#6c5ce7, #5a4bd1{% endif %}); border-radius: 12px; color: white;">
+    <div style="margin-bottom: 20px; padding: 22px 24px; background: linear-gradient(135deg, {% if original.balance > 0 %}#22c55e, #4ade80{% elif original.balance < 0 %}#ef4444, #f87171{% else %}#6c5ce7, #a78bfa{% endif %}); border-radius: 16px; color: white;">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
             <div>
                 <div style="font-size: 2em; font-weight: bold;">

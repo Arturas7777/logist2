@@ -222,11 +222,26 @@ class DashboardService:
             ).select_related('category').order_by('-date')[:10]
         ) if personal_cats else []
 
+        category_breakdown = []
+        if personal_cats:
+            cat_data = Transaction.objects.filter(
+                from_company=self.company, status='COMPLETED',
+                method='CASH', category_id__in=personal_cats,
+                date__gte=start_of_month,
+            ).values('category__name').annotate(
+                total=Sum('amount')
+            ).order_by('-total')
+            category_breakdown = [
+                {'category': d['category__name'], 'total': float(d['total'])}
+                for d in cat_data
+            ]
+
         return {
             'total_cash': total_cash,
             'personal_month': personal_month,
             'personal_total': personal_total,
             'recent_personal': recent_personal,
+            'category_breakdown': category_breakdown,
         }
 
     def get_total_assets(self):
