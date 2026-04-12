@@ -4,15 +4,25 @@
 {% block title %}Пополнить кошелёк{% endblock %}
 {% block content_title %}<h1>💰 Пополнить кошелёк</h1>{% endblock %}
 
-{% block content %}
+{% block extrastyle %}
+{{ block.super }}
 <style>
+    main#content-start, main.content { padding: 0 !important; }
+    #content {
+        background: #f4f2ff;
+        min-height: 100vh;
+        max-width: 100% !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    #content-main { padding: 0; }
     .wallet-form {
         max-width: 520px;
         margin: 0 auto;
-        background: #1e1e2e;
-        border-radius: 16px;
         padding: 32px;
-        border: 1px solid rgba(255,255,255,.06);
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+        border: 1px solid rgba(108,92,231,.14);
     }
     .wallet-form .field-group {
         margin-bottom: 20px;
@@ -21,24 +31,26 @@
         display: block;
         font-weight: 600;
         margin-bottom: 6px;
-        color: #c0c0e0;
+        color: #4a4a68;
         font-size: .9em;
     }
     .wallet-form input[type="number"],
     .wallet-form input[type="text"] {
         width: 100%;
         padding: 10px 14px;
-        border: 1px solid rgba(255,255,255,.12);
-        border-radius: 8px;
-        background: #16162a;
-        color: #e0e0f0;
+        border: 1.5px solid #e0dcf8;
+        border-radius: 10px;
+        background: #faf9ff;
+        color: #1a1a2e;
         font-size: 1em;
         box-sizing: border-box;
+        font-family: inherit;
     }
     .wallet-form input:focus {
         outline: none;
         border-color: #22c55e;
-        box-shadow: 0 0 0 3px rgba(34,197,94,.2);
+        box-shadow: 0 0 0 3px rgba(34,197,94,.12);
+        background: #fff;
     }
     .wallet-form .submit-btn {
         width: 100%;
@@ -52,6 +64,7 @@
         cursor: pointer;
         margin-top: 8px;
         transition: transform .1s, box-shadow .15s;
+        font-family: inherit;
     }
     .wallet-form .submit-btn:hover {
         transform: translateY(-1px);
@@ -61,14 +74,16 @@
         text-align: center;
         margin-bottom: 24px;
         padding: 14px;
-        background: rgba(34,197,94,.08);
-        border: 1px solid rgba(34,197,94,.15);
-        border-radius: 10px;
+        background: rgba(34,197,94,.06);
+        border: 1px solid rgba(34,197,94,.12);
+        border-radius: 12px;
     }
-    .cash-badge .label { font-size: .85em; color: #a0a0c8; }
-    .cash-badge .value { font-size: 1.6em; font-weight: 700; color: #22c55e; }
+    .cash-badge .label { font-size: .85em; color: #7c7c9a; }
+    .cash-badge .value { font-size: 1.6em; font-weight: 800; color: #22c55e; }
 </style>
+{% endblock %}
 
+{% block content %}
 <div class="wallet-form">
     <div class="cash-badge">
         <div class="label">Наличные на руках</div>

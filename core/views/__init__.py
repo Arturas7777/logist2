@@ -32,6 +32,8 @@ from .admin_views import (  # noqa: F401
     add_cash_expense,
     add_cash_income,
     cash_wallet_reset,
+    expense_analytics,
+    upload_expense_receipt,
 )
 
 from .comparison import (  # noqa: F401

@@ -3,7 +3,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
-from core.views import car_list_api, get_invoice_total, get_container_data, register_payment, get_client_balance, company_dashboard, get_payment_objects, search_partners_api, get_warehouse_cars_api, get_invoice_cars_api, comparison_dashboard, compare_car_costs_api, compare_client_costs_api, compare_warehouse_costs_api, get_discrepancies_api, get_available_services, add_services, get_warehouses, get_companies, add_cash_expense, add_cash_income, cash_wallet_reset
+from core.views import car_list_api, get_invoice_total, get_container_data, register_payment, get_client_balance, company_dashboard, get_payment_objects, search_partners_api, get_warehouse_cars_api, get_invoice_cars_api, comparison_dashboard, compare_car_costs_api, compare_client_costs_api, compare_warehouse_costs_api, get_discrepancies_api, get_available_services, add_services, get_warehouses, get_companies, add_cash_expense, add_cash_income, cash_wallet_reset, expense_analytics, upload_expense_receipt
 from core.routing import websocket_urlpatterns
 from core.api import CarViewSet, InvoiceViewSet
 from core.views_invoice_audit import (
@@ -64,6 +64,8 @@ urlpatterns = [
     path('admin/cash-expense/', add_cash_expense, name='add_cash_expense'),
     path('admin/cash-income/', add_cash_income, name='add_cash_income'),
     path('admin/cash-wallet/reset/', cash_wallet_reset, name='cash_wallet_reset'),
+    path('admin/expense-analytics/', expense_analytics, name='expense_analytics'),
+    path('admin/expense-receipt/<int:tx_id>/', upload_expense_receipt, name='upload_expense_receipt'),
     path('comparison-dashboard/', comparison_dashboard, name='comparison_dashboard'),
 
     # ── Проверка счетов ──────────────────────────────────────────────────────

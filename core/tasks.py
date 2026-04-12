@@ -280,6 +280,52 @@ def sync_bank_and_reconcile(self):
     }
 
 
+@shared_task(bind=True, max_retries=2, default_retry_delay=60, time_limit=120)
+def parse_receipt_task(self, transaction_id):
+    """Parse receipt image attached to a personal expense transaction via Claude Vision."""
+    from core.services.receipt_parser_service import parse_transaction_receipt
+    try:
+        result = parse_transaction_receipt(transaction_id)
+        if result:
+            logger.info("[parse_receipt] Transaction %d parsed: %s",
+                        transaction_id, result.get('ai_summary', ''))
+        return result
+    except Exception as exc:
+        logger.error("[parse_receipt] Failed for transaction %d: %s",
+                     transaction_id, exc, exc_info=True)
+        raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=0, time_limit=600)
+def parse_pending_receipts(self):
+    """Fallback: parse receipts that were missed (have attachment but no receipt_data)."""
+    from core.models_billing import Transaction, ExpenseCategory
+
+    personal_cats = list(ExpenseCategory.objects.filter(
+        category_type='PERSONAL'
+    ).values_list('id', flat=True))
+
+    if not personal_cats:
+        return {'parsed': 0}
+
+    pending = Transaction.objects.filter(
+        category_id__in=personal_cats,
+        status='COMPLETED',
+        receipt_data__isnull=True,
+    ).exclude(attachment='').exclude(attachment__isnull=True)[:20]
+
+    parsed = 0
+    for tx in pending:
+        try:
+            parse_receipt_task.delay(tx.id)
+            parsed += 1
+        except Exception as e:
+            logger.error("[parse_pending_receipts] Failed to queue tx %d: %s", tx.id, e)
+
+    logger.info("[parse_pending_receipts] Queued %d receipts for parsing", parsed)
+    return {'queued': parsed}
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def send_car_unload_notification_task(self, car_id):
     from core.models import Car

@@ -9,10 +9,10 @@
     --cm-purple-light: #a29bfe;
     --cm-purple-bg: #f0edff;
     --cm-purple-dark: #5a4bd1;
-    --cm-bg: #f5f6fa;
+    --cm-bg: #f4f2ff;
     --cm-white: #ffffff;
     --cm-card: #ffffff;
-    --cm-border: #ebebf0;
+    --cm-border: #e0dcf8;
     --cm-text: #1a1a2e;
     --cm-text-secondary: #6b7280;
     --cm-text-muted: #9ca3af;
@@ -31,7 +31,7 @@
     --cm-radius-xs: 8px;
     --cm-shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 8px rgba(0,0,0,.04);
     --cm-shadow-md: 0 4px 16px rgba(0,0,0,.08);
-    --cm-shadow-card: 0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08);
+    --cm-shadow-card: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
     --cm-sidebar-w: 250px;
     --cm-topbar-h: 60px;
     --cm-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;

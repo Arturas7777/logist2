@@ -1,60 +1,174 @@
 {% extends "admin/base_site.html" %}
 {% load i18n static %}
 
-{% block content %}
-<div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-    <h1>💵 Пополнение баланса</h1>
-    
-    <div style="background: linear-gradient(135deg, {% if client.balance > 0 %}#11998e, #38ef7d{% elif client.balance < 0 %}#eb3349, #f45c43{% else %}#6c5ce7, #5a4bd1{% endif %}); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
-        <div style="font-size: 1.2em; margin-bottom: 5px;">{{ client.name }}</div>
-        <div style="font-size: 2em; font-weight: bold;">
-            {% if client.balance >= 0 %}+{% endif %}{{ client.balance }} €
-        </div>
-        <div style="opacity: 0.9; margin-top: 5px;">
-            {% if client.balance < 0 %}📉 Долг{% elif client.balance > 0 %}💰 На балансе{% else %}⚖️ Нулевой баланс{% endif %}
-        </div>
-    </div>
-    
-    <form method="post" style="background: var(--cm-bg, #f5f6fa); padding: 25px; border-radius: 8px;">
-        {% csrf_token %}
-        
-        <div style="margin-bottom: 20px;">
-            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Сумма (€)</label>
-            <input type="number" name="amount" step="0.01" min="0.01" required 
-                   style="width: 100%; padding: 12px; font-size: 18px; border: 2px solid var(--cm-border, #ebebf0); border-radius: 6px;">
-        </div>
-        
-        <div style="margin-bottom: 20px;">
-            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Способ оплаты</label>
-            <div style="display: flex; gap: 15px;">
-                <label style="flex: 1; display: flex; align-items: center; padding: 15px; background: white; border: 2px solid var(--cm-border, #ebebf0); border-radius: 6px; cursor: pointer;">
-                    <input type="radio" name="method" value="CASH" checked style="margin-right: 10px;">
-                    💵 Наличные
-                </label>
-                <label style="flex: 1; display: flex; align-items: center; padding: 15px; background: white; border: 2px solid var(--cm-border, #ebebf0); border-radius: 6px; cursor: pointer;">
-                    <input type="radio" name="method" value="CARD" style="margin-right: 10px;">
-                    💳 Перевод
-                </label>
-            </div>
-        </div>
-        
-        <div style="margin-bottom: 20px;">
-            <label style="display: block; margin-bottom: 8px; font-weight: 600;">Описание (необязательно)</label>
-            <textarea name="description" rows="3" 
-                      style="width: 100%; padding: 12px; border: 2px solid var(--cm-border, #ebebf0); border-radius: 6px;"
-                      placeholder="Примечание к платежу..."></textarea>
-        </div>
-        
-        <div style="display: flex; gap: 15px;">
-            <button type="submit" style="flex: 1; padding: 15px; background: var(--cm-green, #10b981); color: white; border: none; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer;">
-                ✅ Пополнить баланс
-            </button>
-            <a href="{% url 'admin:core_client_change' client.pk %}" 
-               style="padding: 15px 25px; background: var(--cm-text-secondary, #6b7280); color: white; text-decoration: none; border-radius: 6px; font-size: 16px;">
-                Отмена
-            </a>
-        </div>
-    </form>
-</div>
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    main#content-start, main.content { padding: 0 !important; }
+    #content {
+        background: #f4f2ff;
+        min-height: 100vh;
+        max-width: 100% !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    #content-main { padding: 0; }
+    .topup-wrap {
+        max-width: 560px;
+        margin: 0 auto;
+        padding: 28px 32px;
+    }
+    .topup-balance {
+        background: linear-gradient(135deg, {% if client.balance > 0 %}#22c55e, #4ade80{% elif client.balance < 0 %}#ef4444, #f87171{% else %}#6c5ce7, #a78bfa{% endif %});
+        padding: 22px 24px;
+        border-radius: 16px;
+        color: #fff;
+        margin-bottom: 20px;
+    }
+    .topup-balance .client-name { font-size: 1.05em; font-weight: 600; opacity: .9; margin-bottom: 4px; }
+    .topup-balance .balance-value { font-size: 2em; font-weight: 800; }
+    .topup-balance .balance-hint { font-size: .85em; opacity: .85; margin-top: 4px; }
+    .topup-card {
+        background: #fff;
+        border-radius: 16px;
+        padding: 28px;
+        box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+        border: 1px solid rgba(108,92,231,.14);
+    }
+    .topup-card .field-group { margin-bottom: 18px; }
+    .topup-card label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+        color: #4a4a68;
+        font-size: .9em;
+    }
+    .topup-card input[type="number"],
+    .topup-card textarea {
+        width: 100%;
+        padding: 10px 14px;
+        border: 1.5px solid #e0dcf8;
+        border-radius: 10px;
+        background: #faf9ff;
+        color: #1a1a2e;
+        font-size: 1em;
+        box-sizing: border-box;
+        font-family: inherit;
+    }
+    .topup-card textarea { resize: vertical; min-height: 60px; }
+    .topup-card input:focus,
+    .topup-card textarea:focus {
+        outline: none;
+        border-color: #6c5ce7;
+        box-shadow: 0 0 0 3px rgba(108,92,231,.12);
+        background: #fff;
+    }
+    .method-row {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 18px;
+    }
+    .method-option {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        padding: 14px 16px;
+        background: #faf9ff;
+        border: 1.5px solid #e0dcf8;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 500;
+        font-size: .95em;
+        color: #1a1a2e;
+        transition: border-color .2s, background .2s;
+    }
+    .method-option:hover { border-color: #6c5ce7; background: #f4f2ff; }
+    .method-option input[type="radio"] { margin-right: 10px; accent-color: #6c5ce7; }
+    .topup-actions {
+        display: flex;
+        gap: 12px;
+        margin-top: 8px;
+    }
+    .topup-actions .submit-btn {
+        flex: 1;
+        padding: 12px;
+        border: none;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #22c55e, #4ade80);
+        color: #fff;
+        font-size: 1.05em;
+        font-weight: 700;
+        cursor: pointer;
+        transition: transform .1s, box-shadow .15s;
+        font-family: inherit;
+    }
+    .topup-actions .submit-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(34,197,94,.3);
+    }
+    .topup-actions .cancel-btn {
+        padding: 12px 22px;
+        border-radius: 10px;
+        background: #faf9ff;
+        border: 1.5px solid #e0dcf8;
+        color: #4a4a68;
+        text-decoration: none;
+        font-size: .95em;
+        font-weight: 600;
+        transition: border-color .2s;
+        display: flex;
+        align-items: center;
+    }
+    .topup-actions .cancel-btn:hover { border-color: #6c5ce7; }
+</style>
 {% endblock %}
 
+{% block content %}
+<div class="topup-wrap">
+    <div class="topup-balance">
+        <div class="client-name">{{ client.name }}</div>
+        <div class="balance-value">{% if client.balance >= 0 %}+{% endif %}{{ client.balance }} €</div>
+        <div class="balance-hint">
+            {% if client.balance < 0 %}Долг{% elif client.balance > 0 %}На балансе{% else %}Нулевой баланс{% endif %}
+        </div>
+    </div>
+
+    <div class="topup-card">
+        <form method="post">
+            {% csrf_token %}
+            <div class="field-group">
+                <label for="id_amount">Сумма (€)</label>
+                <input type="number" id="id_amount" name="amount" step="0.01" min="0.01"
+                       placeholder="0.00" required autofocus>
+            </div>
+
+            <div class="field-group">
+                <label>Способ оплаты</label>
+                <div class="method-row">
+                    <label class="method-option">
+                        <input type="radio" name="method" value="CASH" checked>
+                        Наличные
+                    </label>
+                    <label class="method-option">
+                        <input type="radio" name="method" value="CARD">
+                        Перевод
+                    </label>
+                </div>
+            </div>
+
+            <div class="field-group">
+                <label for="id_description">Описание (необязательно)</label>
+                <textarea id="id_description" name="description" placeholder="Примечание к платежу..."></textarea>
+            </div>
+
+            <div class="topup-actions">
+                <button type="submit" class="submit-btn">Пополнить баланс</button>
+                <a href="{% url 'admin:core_client_change' client.pk %}" class="cancel-btn">Отмена</a>
+            </div>
+        </form>
+    </div>
+
+    <div style="text-align:center;margin-top:16px">
+        <a href="{% url 'company_dashboard' %}" style="color:#6c5ce7;text-decoration:none;font-size:.9em">← Вернуться на дашборд</a>
+    </div>
+</div>
+{% endblock %}

@@ -50,7 +50,7 @@ fi
     
     # Записываем скрипт во временный файл
     $tempScript = Join-Path $env:TEMP "vps_sync.sh"
-    $vpsScript | Out-File -FilePath $tempScript -Encoding utf8NoBOM
+    $vpsScript | Out-File -FilePath $tempScript -Encoding utf8
     
     scp $tempScript "${VPS_HOST}:/tmp/vps_sync.sh" 2>$null
     $result = ssh $VPS_HOST "bash /tmp/vps_sync.sh"

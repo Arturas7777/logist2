@@ -6,181 +6,164 @@
     <script src="{% static 'js/htmx.min.js' %}"></script>
     <style>
         .invoice-viewer { max-width: 1200px; margin: 0 auto; }
-        
-        .info-section { 
-            background: #f8f9fa; 
-            border: 2px solid #e9ecef; 
-            border-radius: 8px; 
-            padding: 20px; 
-            margin-bottom: 20px; 
+
+        .info-section {
+            background: #fff;
+            border: 1px solid rgba(108,92,231,.14);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
         }
-        
-        .section-header { 
-            font-size: 18px; 
-            font-weight: bold; 
-            color: #495057; 
-            margin-bottom: 15px; 
-            display: flex; 
-            align-items: center; 
-            gap: 10px; 
+
+        .section-header {
+            font-size: 1em;
+            font-weight: 700;
+            color: #1a1a2e;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
-        
-        .section-icon { 
-            background: #007bff; 
-            color: white; 
-            width: 30px; 
-            height: 30px; 
-            border-radius: 50%; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            font-size: 16px; 
+
+        .section-icon {
+            background: #6c5ce7;
+            color: #fff;
+            width: 30px;
+            height: 30px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
         }
-        
+
         .info-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
         }
-        
+
         .info-item {
-            background: white;
-            padding: 15px;
-            border-radius: 6px;
-            border: 1px solid #dee2e6;
+            background: #faf9ff;
+            padding: 14px 16px;
+            border-radius: 12px;
+            border: 1px solid #e0dcf8;
         }
-        
+
         .info-label {
-            font-weight: bold;
-            color: #6c757d;
-            font-size: 14px;
-            margin-bottom: 5px;
+            font-weight: 600;
+            color: #7c7c9a;
+            font-size: .82em;
+            margin-bottom: 4px;
         }
-        
+
         .info-value {
-            font-size: 16px;
-            color: #495057;
+            font-size: 1em;
+            font-weight: 600;
+            color: #1a1a2e;
         }
-        
+
         .cars-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 15px;
-            margin-top: 15px;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 14px;
+            margin-top: 14px;
         }
-        
+
         .car-card {
-            background: white;
-            border: 2px solid #e9ecef;
-            border-radius: 8px;
-            padding: 15px;
-            transition: all 0.3s ease;
+            background: #faf9ff;
+            border: 1.5px solid #e0dcf8;
+            border-radius: 12px;
+            padding: 16px;
+            transition: all .2s;
         }
-        
+
         .car-card:hover {
-            border-color: #007bff;
-            box-shadow: 0 4px 8px rgba(0,123,255,0.1);
+            border-color: #6c5ce7;
+            box-shadow: 0 4px 12px rgba(108,92,231,.12);
         }
-        
+
         .car-vin {
             font-family: monospace;
-            font-weight: bold;
-            color: #495057;
-            font-size: 14px;
-            margin-bottom: 5px;
+            font-weight: 700;
+            color: #1a1a2e;
+            font-size: .9em;
+            margin-bottom: 4px;
         }
-        
+
         .car-info {
-            color: #6c757d;
-            font-size: 14px;
-            margin-bottom: 8px;
+            color: #7c7c9a;
+            font-size: .88em;
+            margin-bottom: 6px;
         }
-        
+
         .car-cost {
-            font-weight: bold;
-            color: var(--cm-green);
-            font-size: 16px;
+            font-weight: 700;
+            color: #22c55e;
+            font-size: 1em;
         }
-        
+
         .status-badge {
             display: inline-block;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: bold;
+            padding: 4px 12px;
+            border-radius: 100px;
+            font-size: .75em;
+            font-weight: 700;
             text-transform: uppercase;
         }
-        
-        .status-paid {
-            background: #d4edda;
-            color: #155724;
-        }
-        
-        .status-unpaid {
-            background: #f8d7da;
-            color: #721c24;
-        }
-        
-        .status-outgoing {
-            background: #cce5ff;
-            color: #004085;
-        }
-        
-        .status-incoming {
-            background: #fff3cd;
-            color: #856404;
-        }
-        
+
+        .status-paid { background: rgba(34,197,94,.08); color: #22c55e; }
+        .status-unpaid { background: rgba(239,68,68,.08); color: #ef4444; }
+        .status-outgoing { background: rgba(59,130,246,.08); color: #3b82f6; }
+        .status-incoming { background: rgba(245,158,11,.08); color: #f59e0b; }
+
         .actions-section {
-            background: #f8f9fa;
-            border: 2px solid #e9ecef;
-            border-radius: 8px;
-            padding: 20px;
+            background: #fff;
+            border: 1px solid rgba(108,92,231,.14);
+            border-radius: 16px;
+            padding: 24px;
             margin-top: 20px;
+            box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
         }
-        
+
+        .actions-section h3 {
+            margin: 0 0 14px;
+            font-size: .95em;
+            font-weight: 700;
+            color: #1a1a2e;
+        }
+
         .btn {
             padding: 10px 20px;
             border: none;
-            border-radius: 4px;
+            border-radius: 10px;
             cursor: pointer;
-            font-size: 14px;
-            font-weight: bold;
+            font-size: .9em;
+            font-weight: 700;
             text-decoration: none;
             display: inline-block;
-            margin-right: 10px;
-            margin-bottom: 10px;
+            margin-right: 8px;
+            margin-bottom: 8px;
+            transition: transform .1s, box-shadow .15s;
+            font-family: inherit;
         }
-        
-        .btn-primary {
-            background: #007bff;
-            color: white;
-        }
-        
-        .btn-success {
-            background: #28a745;
-            color: white;
-        }
-        
-        .btn-warning {
-            background: #ffc107;
-            color: #212529;
-        }
-        
-        .btn-danger {
-            background: #dc3545;
-            color: white;
-        }
-        
-        .btn:hover {
-            opacity: 0.9;
-        }
+        .btn:hover { transform: translateY(-1px); }
+
+        .btn-primary { background: #6c5ce7; color: #fff; }
+        .btn-primary:hover { box-shadow: 0 4px 16px rgba(108,92,231,.3); }
+        .btn-success { background: #22c55e; color: #fff; }
+        .btn-success:hover { box-shadow: 0 4px 16px rgba(34,197,94,.3); }
+        .btn-warning { background: #f59e0b; color: #fff; }
+        .btn-warning:hover { box-shadow: 0 4px 16px rgba(245,158,11,.3); }
+        .btn-danger { background: #ef4444; color: #fff; }
+        .btn-danger:hover { box-shadow: 0 4px 16px rgba(239,68,68,.3); }
     </style>
 {% endblock %}
 
 {% block content %}
     <div class="invoice-viewer">
-        <h1 style="text-align: center; margin-bottom: 30px; color: #495057;">
+        <h1 style="text-align: center; margin-bottom: 28px; font-size: 1.5em; font-weight: 800; color: #1a1a2e;">
             Инвойс #{{ original.number }}
         </h1>
         
@@ -263,7 +246,7 @@
                     {% endfor %}
                 </div>
             {% else %}
-                <div style="text-align: center; color: #6c757d; padding: 40px;">
+                <div style="text-align: center; color: #7c7c9a; padding: 40px;">
                     В этом инвойсе нет автомобилей
                 </div>
             {% endif %}
@@ -271,7 +254,7 @@
         
         <!-- Действия -->
         <div class="actions-section">
-            <h3 style="margin-top: 0; color: #495057;">Действия</h3>
+            <h3>Действия</h3>
             <a href="{% url 'admin:core_invoice_change' original.pk %}" class="btn btn-primary">Редактировать</a>
             <a href="{% url 'admin:core_invoice_changelist' %}" class="btn btn-success">Вернуться к списку</a>
             {% if not original.paid %}

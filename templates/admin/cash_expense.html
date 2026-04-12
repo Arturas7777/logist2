@@ -4,15 +4,25 @@
 {% block title %}Записать расход{% endblock %}
 {% block content_title %}<h1>💸 Записать личный расход</h1>{% endblock %}
 
-{% block content %}
+{% block extrastyle %}
+{{ block.super }}
 <style>
+    main#content-start, main.content { padding: 0 !important; }
+    #content {
+        background: #f4f2ff;
+        min-height: 100vh;
+        max-width: 100% !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    #content-main { padding: 0; }
     .wallet-form {
         max-width: 520px;
         margin: 0 auto;
-        background: #1e1e2e;
-        border-radius: 16px;
         padding: 32px;
-        border: 1px solid rgba(255,255,255,.06);
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+        border: 1px solid rgba(108,92,231,.14);
     }
     .wallet-form .field-group {
         margin-bottom: 20px;
@@ -21,7 +31,7 @@
         display: block;
         font-weight: 600;
         margin-bottom: 6px;
-        color: #c0c0e0;
+        color: #4a4a68;
         font-size: .9em;
     }
     .wallet-form input[type="number"],
@@ -30,20 +40,17 @@
     .wallet-form textarea {
         width: 100%;
         padding: 10px 14px;
-        border: 1px solid rgba(255,255,255,.12);
-        border-radius: 8px;
-        background: #16162a;
-        color: #e0e0f0;
+        border: 1.5px solid #e0dcf8;
+        border-radius: 10px;
+        background: #faf9ff;
+        color: #1a1a2e;
         font-size: 16px;
         box-sizing: border-box;
+        font-family: inherit;
     }
     .wallet-form select {
         -webkit-appearance: menulist;
         appearance: menulist;
-    }
-    .wallet-form select option {
-        background: #fff;
-        color: #111;
     }
     .wallet-form textarea {
         resize: vertical;
@@ -54,7 +61,8 @@
     .wallet-form textarea:focus {
         outline: none;
         border-color: #6c5ce7;
-        box-shadow: 0 0 0 3px rgba(108,92,231,.2);
+        box-shadow: 0 0 0 3px rgba(108,92,231,.12);
+        background: #fff;
     }
     .wallet-form .submit-btn {
         width: 100%;
@@ -68,6 +76,7 @@
         cursor: pointer;
         margin-top: 8px;
         transition: transform .1s, box-shadow .15s;
+        font-family: inherit;
     }
     .wallet-form .submit-btn:hover {
         transform: translateY(-1px);
@@ -77,21 +86,84 @@
         text-align: center;
         margin-bottom: 24px;
         padding: 14px;
-        background: rgba(34,197,94,.08);
-        border: 1px solid rgba(34,197,94,.15);
-        border-radius: 10px;
+        background: rgba(34,197,94,.06);
+        border: 1px solid rgba(34,197,94,.12);
+        border-radius: 12px;
     }
-    .cash-badge .label { font-size: .85em; color: #a0a0c8; }
-    .cash-badge .value { font-size: 1.6em; font-weight: 700; color: #22c55e; }
-</style>
+    .cash-badge .label { font-size: .85em; color: #7c7c9a; }
+    .cash-badge .value { font-size: 1.6em; font-weight: 800; color: #22c55e; }
 
+    .receipt-drop {
+        border: 2px dashed #e0dcf8;
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+        cursor: pointer;
+        transition: border-color .2s, background .2s;
+        background: #faf9ff;
+    }
+    .receipt-drop:hover,
+    .receipt-drop.dragover {
+        border-color: #6c5ce7;
+        background: #f4f2ff;
+    }
+    .receipt-drop .drop-icon {
+        font-size: 2em;
+        margin-bottom: 6px;
+        opacity: .5;
+    }
+    .receipt-drop .drop-text {
+        font-size: .85em;
+        color: #7c7c9a;
+    }
+    .receipt-drop .drop-hint {
+        font-size: .75em;
+        color: #a29bcc;
+        margin-top: 4px;
+    }
+    .receipt-preview {
+        display: none;
+        margin-top: 10px;
+        position: relative;
+    }
+    .receipt-preview img {
+        max-width: 100%;
+        max-height: 200px;
+        border-radius: 10px;
+        border: 1px solid #e0dcf8;
+    }
+    .receipt-preview .remove-btn {
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: #ef4444;
+        color: #fff;
+        border: none;
+        cursor: pointer;
+        font-size: 14px;
+        line-height: 24px;
+        text-align: center;
+    }
+    .receipt-preview .file-name {
+        font-size: .8em;
+        color: #7c7c9a;
+        margin-top: 6px;
+        word-break: break-all;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
 <div class="wallet-form">
     <div class="cash-badge">
         <div class="label">Наличные на руках</div>
         <div class="value">{{ current_cash|floatformat:2 }} €</div>
     </div>
 
-    <form method="post">
+    <form method="post" enctype="multipart/form-data">
         {% csrf_token %}
         <div class="field-group">
             <label for="id_amount">Сумма (€)</label>
@@ -108,7 +180,7 @@
                 {% endfor %}
             </select>
             {% else %}
-            <div style="padding:12px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:8px;color:#ef4444;font-size:.9em">
+            <div style="padding:12px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15);border-radius:10px;color:#ef4444;font-size:.9em">
                 Категории не найдены. Обновите страницу или добавьте категории типа PERSONAL в <a href="/admin/core/expensecategory/" style="color:#6c5ce7">админке</a>.
             </div>
             {% endif %}
@@ -119,6 +191,22 @@
             <input type="text" id="id_description" name="description" placeholder="Бутылка воды, такси...">
         </div>
 
+        <div class="field-group">
+            <label>Фото чека (необязательно)</label>
+            <div class="receipt-drop" id="receiptDrop">
+                <div class="drop-icon">📷</div>
+                <div class="drop-text">Нажмите или перетащите фото чека</div>
+                <div class="drop-hint">JPG, PNG — до 10 МБ</div>
+            </div>
+            <input type="file" name="receipt" id="receiptInput" accept="image/*"
+                   style="display:none">
+            <div class="receipt-preview" id="receiptPreview">
+                <button type="button" class="remove-btn" id="receiptRemove">&times;</button>
+                <img id="receiptImg" src="" alt="Превью чека">
+                <div class="file-name" id="receiptName"></div>
+            </div>
+        </div>
+
         <button type="submit" class="submit-btn">Записать расход</button>
     </form>
 
@@ -126,4 +214,55 @@
         <a href="{% url 'company_dashboard' %}" style="color:#6c5ce7;text-decoration:none;font-size:.9em">← Вернуться на дашборд</a>
     </div>
 </div>
+
+<script>
+(function() {
+    var drop = document.getElementById('receiptDrop');
+    var input = document.getElementById('receiptInput');
+    var preview = document.getElementById('receiptPreview');
+    var img = document.getElementById('receiptImg');
+    var nameEl = document.getElementById('receiptName');
+    var removeBtn = document.getElementById('receiptRemove');
+
+    drop.addEventListener('click', function() { input.click(); });
+
+    drop.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        drop.classList.add('dragover');
+    });
+    drop.addEventListener('dragleave', function() {
+        drop.classList.remove('dragover');
+    });
+    drop.addEventListener('drop', function(e) {
+        e.preventDefault();
+        drop.classList.remove('dragover');
+        if (e.dataTransfer.files.length) {
+            input.files = e.dataTransfer.files;
+            showPreview(e.dataTransfer.files[0]);
+        }
+    });
+
+    input.addEventListener('change', function() {
+        if (input.files.length) showPreview(input.files[0]);
+    });
+
+    removeBtn.addEventListener('click', function() {
+        input.value = '';
+        preview.style.display = 'none';
+        drop.style.display = 'block';
+    });
+
+    function showPreview(file) {
+        if (!file.type.startsWith('image/')) return;
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            img.src = e.target.result;
+            nameEl.textContent = file.name + ' (' + (file.size / 1024).toFixed(0) + ' КБ)';
+            preview.style.display = 'block';
+            drop.style.display = 'none';
+        };
+        reader.readAsDataURL(file);
+    }
+})();
+</script>
 {% endblock %}

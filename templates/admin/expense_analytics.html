@@ -1,0 +1,563 @@
+{% extends "admin/base_site.html" %}
+{% load static i18n %}
+
+{% block title %}Аналитика расходов{% endblock %}
+{% block content_title %}<h1>📊 Аналитика личных расходов</h1>{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+<style>
+    main#content-start, main.content { padding: 0 !important; }
+    #content {
+        background: #f4f2ff;
+        min-height: 100vh;
+        max-width: 100% !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    #content-main { padding: 0; }
+    .ea {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 28px 32px;
+    }
+
+    /* ── Period filter ── */
+    .ea-filters {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+    .ea-filters a {
+        padding: 8px 18px;
+        border-radius: 10px;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: .85em;
+        transition: all .2s;
+        border: 1.5px solid #e0dcf8;
+        color: #6c5ce7;
+        background: #fff;
+    }
+    .ea-filters a:hover {
+        background: #f4f2ff;
+        border-color: #6c5ce7;
+    }
+    .ea-filters a.active {
+        background: #6c5ce7;
+        color: #fff;
+        border-color: #6c5ce7;
+    }
+    .ea-filters .spacer { flex: 1; }
+    .ea-ai-btn {
+        padding: 8px 18px;
+        border-radius: 10px;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: .85em;
+        background: linear-gradient(135deg, #6c5ce7, #a78bfa);
+        color: #fff !important;
+        border: none;
+        cursor: pointer;
+        transition: all .2s;
+    }
+    .ea-ai-btn:hover {
+        box-shadow: 0 4px 14px rgba(108,92,231,.3);
+        transform: translateY(-1px);
+    }
+
+    /* ── KPI row ── */
+    .ea-kpi-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        margin-bottom: 28px;
+    }
+    .ea-kpi {
+        background: #fff;
+        padding: 20px 22px;
+        border-radius: 16px;
+        box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+        border: 1px solid rgba(108,92,231,.14);
+    }
+    .ea-kpi-label {
+        font-size: .8em;
+        font-weight: 600;
+        color: #7c7c9a;
+        text-transform: uppercase;
+        letter-spacing: .5px;
+        margin-bottom: 6px;
+    }
+    .ea-kpi-value {
+        font-size: 1.6em;
+        font-weight: 800;
+        color: #1a1a2e;
+    }
+    .ea-kpi-value.red { color: #ef4444; }
+    .ea-kpi-value.green { color: #22c55e; }
+    .ea-kpi-value.indigo { color: #6c5ce7; }
+
+    /* ── Charts grid ── */
+    .ea-charts {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-bottom: 28px;
+    }
+    .ea-chart-card {
+        background: #fff;
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+        border: 1px solid rgba(108,92,231,.14);
+    }
+    .ea-chart-card h3 {
+        margin: 0 0 16px;
+        font-size: .95em;
+        font-weight: 700;
+        color: #1a1a2e;
+    }
+    .ea-chart-card canvas {
+        max-height: 280px;
+    }
+
+    /* ── Top items ── */
+    .ea-section {
+        background: #fff;
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 20px;
+        box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+        border: 1px solid rgba(108,92,231,.14);
+    }
+    .ea-section h3 {
+        margin: 0 0 16px;
+        font-size: .95em;
+        font-weight: 700;
+        color: #1a1a2e;
+    }
+    .ea-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .ea-table th {
+        text-align: left;
+        font-size: .78em;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .5px;
+        color: #7c7c9a;
+        padding: 8px 12px;
+        border-bottom: 2px solid #f0eef8;
+    }
+    .ea-table td {
+        padding: 10px 12px;
+        font-size: .9em;
+        color: #1a1a2e;
+        border-bottom: 1px solid #f5f3ff;
+    }
+    .ea-table tr:hover td {
+        background: #faf9ff;
+    }
+    .ea-table .amount {
+        text-align: right;
+        font-weight: 600;
+        color: #ef4444;
+    }
+    .ea-table .num {
+        text-align: right;
+        color: #7c7c9a;
+    }
+
+    /* ── AI Insights ── */
+    .ea-ai-block {
+        background: linear-gradient(135deg, #f8f7ff 0%, #ede9fe 100%);
+        border: 1px solid rgba(108,92,231,.12);
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 20px;
+    }
+    .ea-ai-block h3 {
+        margin: 0 0 14px;
+        font-size: 1em;
+        font-weight: 700;
+        color: #6c5ce7;
+    }
+    .ea-ai-block h3 i { margin-right: 6px; vertical-align: middle; }
+    .ea-ai-summary {
+        font-size: .95em;
+        line-height: 1.6;
+        color: #1a1a2e;
+        margin-bottom: 16px;
+    }
+    .ea-ai-list {
+        list-style: none;
+        padding: 0;
+        margin: 0 0 12px;
+    }
+    .ea-ai-list li {
+        padding: 6px 0 6px 22px;
+        position: relative;
+        font-size: .9em;
+        color: #333;
+        line-height: 1.5;
+    }
+    .ea-ai-list li::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 12px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
+    .ea-ai-list.highlights li::before { background: #f59e0b; }
+    .ea-ai-list.recommendations li::before { background: #22c55e; }
+    .ea-ai-label {
+        font-size: .78em;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .5px;
+        color: #7c7c9a;
+        margin-bottom: 8px;
+    }
+
+    .ea-empty {
+        text-align: center;
+        padding: 60px 20px;
+        color: #7c7c9a;
+        font-size: .95em;
+    }
+    .ea-empty i { font-size: 3em; display: block; margin-bottom: 12px; opacity: .3; }
+
+    .ea-back {
+        text-align: center;
+        margin-top: 20px;
+    }
+    .ea-back a {
+        color: #6c5ce7;
+        text-decoration: none;
+        font-size: .9em;
+        font-weight: 500;
+    }
+
+    @media (max-width: 768px) {
+        .ea-kpi-row { grid-template-columns: 1fr; }
+        .ea-charts { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ea">
+    <!-- Period filter -->
+    <div class="ea-filters">
+        {% with periods="1m:Месяц,3m:3 месяца,6m:6 месяцев,1y:Год,all:Всё время" %}
+        {% for p in periods|cut:" " %}
+            {% with key=p|truncatechars_html:2 %}
+            {% endwith %}
+        {% endfor %}
+        {% endwith %}
+        <a href="?period=1m{% if generate_ai %}&ai=1{% endif %}" class="{% if period == '1m' %}active{% endif %}">Месяц</a>
+        <a href="?period=3m{% if generate_ai %}&ai=1{% endif %}" class="{% if period == '3m' %}active{% endif %}">3 месяца</a>
+        <a href="?period=6m{% if generate_ai %}&ai=1{% endif %}" class="{% if period == '6m' %}active{% endif %}">6 месяцев</a>
+        <a href="?period=1y{% if generate_ai %}&ai=1{% endif %}" class="{% if period == '1y' %}active{% endif %}">Год</a>
+        <a href="?period=all{% if generate_ai %}&ai=1{% endif %}" class="{% if period == 'all' %}active{% endif %}">Всё время</a>
+        <span class="spacer"></span>
+        {% if not generate_ai %}
+        <a href="?period={{ period }}&ai=1" class="ea-ai-btn"><i class="bx bx-brain" style="vertical-align:middle;margin-right:4px"></i>AI-анализ</a>
+        {% endif %}
+    </div>
+
+    {% if not breakdown %}
+    <div class="ea-empty">
+        <i class="bx bx-receipt"></i>
+        Нет данных о расходах за выбранный период.<br>
+        <a href="{% url 'add_cash_expense' %}" style="color:#6c5ce7">Записать расход</a>
+    </div>
+    {% else %}
+
+    <!-- KPI cards -->
+    <div class="ea-kpi-row">
+        <div class="ea-kpi">
+            <div class="ea-kpi-label">Всего потрачено</div>
+            <div class="ea-kpi-value red">{{ total_spent|floatformat:2 }} €</div>
+        </div>
+        <div class="ea-kpi">
+            <div class="ea-kpi-label">Категорий</div>
+            <div class="ea-kpi-value indigo">{{ breakdown|length }}</div>
+        </div>
+        <div class="ea-kpi">
+            <div class="ea-kpi-label">Топ категория</div>
+            <div class="ea-kpi-value">{{ top_category }}</div>
+        </div>
+    </div>
+
+    <!-- AI Insights block -->
+    {% if ai_insights %}
+    <div class="ea-ai-block">
+        <h3><i class="bx bx-brain"></i> AI-анализ расходов</h3>
+        <div class="ea-ai-summary">{{ ai_insights.summary }}</div>
+
+        {% if ai_insights.highlights %}
+        <div class="ea-ai-label">Наблюдения</div>
+        <ul class="ea-ai-list highlights">
+            {% for h in ai_insights.highlights %}
+            <li>{{ h }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+
+        {% if ai_insights.recommendations %}
+        <div class="ea-ai-label">Рекомендации</div>
+        <ul class="ea-ai-list recommendations">
+            {% for r in ai_insights.recommendations %}
+            <li>{{ r }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+
+        {% if ai_insights.error %}
+        <div style="font-size:.8em;color:#ef4444;margin-top:8px">
+            <i class="bx bx-error-circle"></i> AI-анализ сгенерирован частично: {{ ai_insights.error }}
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Charts -->
+    <div class="ea-charts">
+        <div class="ea-chart-card">
+            <h3><i class="bx bx-pie-chart-alt-2" style="vertical-align:middle;margin-right:4px;color:#6c5ce7"></i> По категориям</h3>
+            <canvas id="categoryChart"></canvas>
+        </div>
+        <div class="ea-chart-card">
+            <h3><i class="bx bx-bar-chart-alt-2" style="vertical-align:middle;margin-right:4px;color:#6c5ce7"></i> Динамика по месяцам</h3>
+            {% if trend %}
+            <canvas id="trendChart"></canvas>
+            {% else %}
+            <div style="text-align:center;padding:40px;color:#7c7c9a;font-size:.9em">Недостаточно данных</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Category breakdown table -->
+    <div class="ea-section">
+        <h3><i class="bx bx-category-alt" style="vertical-align:middle;margin-right:4px;color:#6c5ce7"></i> Расходы по категориям</h3>
+        <table class="ea-table">
+            <thead>
+                <tr>
+                    <th>Категория</th>
+                    <th class="num">Операций</th>
+                    <th class="num">Доля</th>
+                    <th style="text-align:right">Сумма</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for b in breakdown %}
+                <tr>
+                    <td>{{ b.category }}</td>
+                    <td class="num">{{ b.count }}</td>
+                    <td class="num">{{ b.percentage }}%</td>
+                    <td class="amount">{{ b.total|floatformat:2 }} €</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr style="font-weight:700">
+                    <td>Итого</td>
+                    <td></td>
+                    <td></td>
+                    <td class="amount">{{ total_spent|floatformat:2 }} €</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    <!-- Top items from receipts -->
+    {% if top_items %}
+    <div class="ea-section">
+        <h3><i class="bx bx-receipt" style="vertical-align:middle;margin-right:4px;color:#6c5ce7"></i> Топ покупок (из чеков)</h3>
+        <table class="ea-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Товар / Услуга</th>
+                    <th class="num">Раз</th>
+                    <th class="num">Кол-во</th>
+                    <th style="text-align:right">Сумма</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for item in top_items %}
+                <tr>
+                    <td class="num">{{ forloop.counter }}</td>
+                    <td>{{ item.name }}</td>
+                    <td class="num">{{ item.count }}</td>
+                    <td class="num">{{ item.qty }}</td>
+                    <td class="amount">{{ item.total|floatformat:2 }} €</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    {% endif %}
+
+    {% if no_receipt_expenses %}
+    <div class="ea-section">
+        <h3><i class="bx bx-upload" style="vertical-align:middle;margin-right:4px;color:#f59e0b"></i> Расходы без чека</h3>
+        <p style="font-size:.88em;color:#7c7c9a;margin:0 0 12px">Загрузите фото чеков — AI извлечёт детали покупок для аналитики.</p>
+        <table class="ea-table">
+            <thead>
+                <tr>
+                    <th>Дата</th>
+                    <th>Категория</th>
+                    <th>Описание</th>
+                    <th style="text-align:right">Сумма</th>
+                    <th style="text-align:center;width:80px">Загрузить</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for tx in no_receipt_expenses %}
+                <tr>
+                    <td>{{ tx.date|date:"d.m.Y" }}</td>
+                    <td>{{ tx.category.name|default:"—" }}</td>
+                    <td>{{ tx.description|default:"—" }}</td>
+                    <td class="amount">{{ tx.amount|floatformat:2 }} €</td>
+                    <td style="text-align:center">
+                        <form method="post" action="{% url 'upload_expense_receipt' tx.id %}" enctype="multipart/form-data" style="display:inline;margin:0">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{% url 'expense_analytics' %}?period={{ period }}">
+                            <input type="file" name="receipt" accept="image/*,.pdf" style="display:none" id="ea-receipt-{{ tx.id }}" onchange="this.form.submit()">
+                            <label for="ea-receipt-{{ tx.id }}" title="Загрузить чек" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:8px;background:rgba(108,92,231,.08);color:#6c5ce7;font-size:.82em;font-weight:600;transition:background .15s">
+                                <i class="bx bx-camera" style="font-size:1.1em"></i> Чек
+                            </label>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <div class="ea-back">
+        <a href="{% url 'company_dashboard' %}"><i class="bx bx-arrow-back" style="vertical-align:middle"></i> Вернуться на дашборд</a>
+    </div>
+</div>
+
+{% if breakdown %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+{{ breakdown_json|json_script:"breakdown-data" }}
+{{ trend_json|json_script:"trend-data" }}
+<script>
+(function() {
+    var COLORS = [
+        '#6c5ce7', '#a78bfa', '#f59e0b', '#ef4444', '#22c55e',
+        '#3b82f6', '#ec4899', '#14b8a6', '#f97316', '#8b5cf6',
+        '#06b6d4', '#84cc16'
+    ];
+
+    function initCharts() {
+        if (typeof Chart === 'undefined') return;
+
+        Chart.defaults.font.family = "'Inter', sans-serif";
+
+        var breakdown = JSON.parse(document.getElementById('breakdown-data').textContent);
+        var trend = JSON.parse(document.getElementById('trend-data').textContent);
+
+        var catLabels = breakdown.map(function(b) { return b.category; });
+        var catData = breakdown.map(function(b) { return b.total; });
+        var catColors = catLabels.map(function(_, i) { return COLORS[i % COLORS.length]; });
+
+        var catCanvas = document.getElementById('categoryChart');
+        if (catCanvas && catData.length) {
+            new Chart(catCanvas, {
+                type: 'doughnut',
+                data: {
+                    labels: catLabels,
+                    datasets: [{
+                        data: catData,
+                        backgroundColor: catColors,
+                        borderWidth: 0,
+                        hoverOffset: 6,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { padding: 14, usePointStyle: true, pointStyle: 'circle', font: { size: 12 } }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctx) {
+                                    var total = ctx.dataset.data.reduce(function(a, b) { return a + b; }, 0);
+                                    var pct = total > 0 ? (ctx.parsed / total * 100).toFixed(1) : 0;
+                                    return ctx.label + ': ' + ctx.parsed.toFixed(2) + ' € (' + pct + '%)';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        var trendCanvas = document.getElementById('trendChart');
+        if (trendCanvas && trend.length) {
+            var tLabels = trend.map(function(t) { return t.month; });
+            var tData = trend.map(function(t) { return t.total; });
+
+            new Chart(trendCanvas, {
+                type: 'bar',
+                data: {
+                    labels: tLabels,
+                    datasets: [{
+                        label: 'Расходы (€)',
+                        data: tData,
+                        backgroundColor: '#6c5ce7',
+                        borderRadius: 6,
+                        barPercentage: 0.6,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { callback: function(v) { return v + ' €'; } },
+                            grid: { color: 'rgba(108,92,231,.06)' }
+                        },
+                        x: {
+                            grid: { display: false }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctx) { return ctx.parsed.y.toFixed(2) + ' €'; }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() { setTimeout(initCharts, 100); });
+    } else {
+        setTimeout(initCharts, 100);
+    }
+})();
+</script>
+{% endif %}
+{% endblock %}

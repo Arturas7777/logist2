@@ -6,218 +6,221 @@
     <script src="{% static 'js/htmx.min.js' %}"></script>
     <style>
         .invoice-builder { max-width: 1200px; margin: 0 auto; }
-        
-        .step-container { 
-            background: #f8f9fa; 
-            border: 2px solid #e9ecef; 
-            border-radius: 8px; 
-            padding: 20px; 
-            margin-bottom: 20px; 
+
+        .step-container {
+            background: #fff;
+            border: 1px solid rgba(108,92,231,.14);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
         }
-        
-        .step-header { 
-            font-size: 18px; 
-            font-weight: bold; 
-            color: #495057; 
-            margin-bottom: 15px; 
-            display: flex; 
-            align-items: center; 
-            gap: 10px; 
+
+        .step-header {
+            font-size: 1em;
+            font-weight: 700;
+            color: #1a1a2e;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
-        
-        .step-number { 
-            background: #007bff; 
-            color: white; 
-            width: 30px; 
-            height: 30px; 
-            border-radius: 50%; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            font-size: 16px; 
+
+        .step-number {
+            background: #6c5ce7;
+            color: #fff;
+            width: 30px;
+            height: 30px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: .9em;
+            font-weight: 700;
         }
-        
-        .step-content { display: flex; gap: 20px; align-items: flex-start; }
-        
+
+        .step-content { display: flex; gap: 16px; align-items: flex-start; }
+
         .entity-selector { flex: 1; }
-        
-        .entity-type-select { 
-            width: 100%; 
-            padding: 10px; 
-            border: 1px solid #ced4da; 
-            border-radius: 4px; 
-            margin-bottom: 10px; 
+
+        .entity-type-select {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1.5px solid #e0dcf8;
+            border-radius: 10px;
+            background: #faf9ff;
+            margin-bottom: 10px;
+            font-family: inherit;
+            font-size: .95em;
+            color: #1a1a2e;
         }
-        
-        .entity-search { 
-            width: 100%; 
-            padding: 10px; 
-            border: 1px solid #ced4da; 
-            border-radius: 4px; 
-            font-size: 14px; 
+
+        .entity-search {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1.5px solid #e0dcf8;
+            border-radius: 10px;
+            background: #faf9ff;
+            font-size: .95em;
+            font-family: inherit;
+            color: #1a1a2e;
         }
-        
-        .entity-results { 
-            max-height: 200px; 
-            overflow-y: auto; 
-            border: 1px solid #ced4da; 
-            border-top: none; 
-            border-radius: 0 0 4px 4px; 
-            background: white; 
-            display: none; 
+        .entity-type-select:focus, .entity-search:focus {
+            outline: none;
+            border-color: #6c5ce7;
+            box-shadow: 0 0 0 3px rgba(108,92,231,.12);
+            background: #fff;
         }
-        
-        .entity-result { 
-            padding: 10px; 
-            cursor: pointer; 
-            border-bottom: 1px solid #f1f3f4; 
-            transition: background-color 0.2s; 
+
+        .entity-results {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1.5px solid #e0dcf8;
+            border-top: none;
+            border-radius: 0 0 10px 10px;
+            background: #fff;
+            display: none;
         }
-        
-        .entity-result:hover { background-color: #f8f9fa; }
-        
-        .entity-result.selected { background-color: #e3f2fd; }
-        
-        .entity-name { font-weight: bold; color: #212529; }
-        .entity-type { color: #6c757d; font-size: 12px; }
-        
-        .selected-entity { 
-            background: var(--cm-green-bg); 
-            border: 1px solid var(--cm-green); 
-            border-radius: 4px; 
-            padding: 10px; 
-            margin-top: 10px; 
-            display: none; 
+
+        .entity-result {
+            padding: 10px 14px;
+            cursor: pointer;
+            border-bottom: 1px solid #f0eef8;
+            transition: background .15s;
         }
-        
+        .entity-result:hover { background: #faf9ff; }
+        .entity-result.selected { background: rgba(108,92,231,.06); }
+
+        .entity-name { font-weight: 700; color: #1a1a2e; }
+        .entity-type { color: #7c7c9a; font-size: .8em; }
+
+        .selected-entity {
+            background: rgba(34,197,94,.06);
+            border: 1px solid rgba(34,197,94,.15);
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-top: 10px;
+            display: none;
+            font-size: .92em;
+        }
         .selected-entity.show { display: block; }
-        
-        .cars-section { 
-            background: #fff3cd; 
-            border: 1px solid #ffeaa7; 
-            border-radius: 8px; 
-            padding: 20px; 
-            margin: 20px 0; 
+
+        .cars-section {
+            background: rgba(245,158,11,.06);
+            border: 1px solid rgba(245,158,11,.15);
+            border-radius: 14px;
+            padding: 20px;
+            margin: 20px 0;
         }
-        
-        .cars-grid { 
-            display: grid; 
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); 
-            gap: 15px; 
-            margin-top: 15px; 
+
+        .cars-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 14px;
+            margin-top: 14px;
         }
-        
-        .car-card { 
-            background: white; 
-            border: 1px solid #dee2e6; 
-            border-radius: 6px; 
-            padding: 15px; 
-            cursor: pointer; 
-            transition: all 0.2s; 
+
+        .car-card {
+            background: #fff;
+            border: 1.5px solid #e0dcf8;
+            border-radius: 12px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all .2s;
         }
-        
-        .car-card:hover { 
-            border-color: #007bff; 
-            box-shadow: 0 2px 8px rgba(0,123,255,0.15); 
+        .car-card:hover {
+            border-color: #6c5ce7;
+            box-shadow: 0 4px 12px rgba(108,92,231,.12);
         }
-        
-        .car-card.selected { 
-            border-color: #28a745; 
-            background-color: #f8fff9; 
+        .car-card.selected {
+            border-color: #22c55e;
+            background: rgba(34,197,94,.04);
         }
-        
-        .car-vin { 
-            font-family: monospace; 
-            font-weight: bold; 
-            color: #495057; 
-            margin-bottom: 5px; 
+
+        .car-vin {
+            font-family: monospace;
+            font-weight: 700;
+            color: #1a1a2e;
+            margin-bottom: 4px;
         }
-        
-        .car-details { 
-            color: #6c757d; 
-            font-size: 13px; 
-            margin-bottom: 8px; 
+        .car-details {
+            color: #7c7c9a;
+            font-size: .88em;
+            margin-bottom: 6px;
         }
-        
-        .car-costs { 
-            color: var(--cm-green); 
-            font-weight: bold; 
-            font-size: 14px; 
+        .car-costs { color: #22c55e; font-weight: 700; font-size: .95em; }
+
+        .invoice-summary {
+            background: rgba(108,92,231,.06);
+            border: 1px solid rgba(108,92,231,.14);
+            border-radius: 14px;
+            padding: 20px;
+            margin-top: 20px;
         }
-        
-        .invoice-summary { 
-            background: #e7f3ff; 
-            border: 1px solid #b3d9ff; 
-            border-radius: 8px; 
-            padding: 20px; 
-            margin-top: 20px; 
+
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(108,92,231,.08);
         }
-        
-        .summary-row { 
-            display: flex; 
-            justify-content: space-between; 
-            margin-bottom: 10px; 
-            padding: 8px 0; 
-            border-bottom: 1px solid #d1ecf1; 
+        .summary-label { font-weight: 700; color: #1a1a2e; }
+        .summary-value { color: #22c55e; font-weight: 700; }
+
+        .form-actions {
+            margin-top: 28px;
+            text-align: center;
         }
-        
-        .summary-label { font-weight: bold; color: #495057; }
-        .summary-value { color: var(--cm-green); font-weight: bold; }
-        
-        .form-actions { 
-            margin-top: 30px; 
-            text-align: center; 
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1em;
+            font-weight: 700;
+            cursor: pointer;
+            margin: 0 8px;
+            transition: transform .1s, box-shadow .15s;
+            font-family: inherit;
         }
-        
-        .btn { 
-            padding: 12px 24px; 
-            border: none; 
-            border-radius: 6px; 
-            font-size: 16px; 
-            cursor: pointer; 
-            margin: 0 10px; 
-            transition: all 0.2s; 
-        }
-        
-        .btn-primary { 
-            background: #007bff; 
-            color: white; 
-        }
-        
-        .btn-primary:hover { background: #0056b3; }
-        
-        .btn-success { 
-            background: var(--cm-green); 
-            color: white; 
-        }
-        
-        .btn-success:hover { background: #1e7e34; }
-        
-        .btn-secondary { 
-            background: #6c757d; 
-            color: white; 
-        }
-        
-        .btn-secondary:hover { background: #545b62; }
-        
+        .btn:hover { transform: translateY(-1px); }
+        .btn-primary { background: #6c5ce7; color: #fff; }
+        .btn-primary:hover { box-shadow: 0 4px 16px rgba(108,92,231,.3); }
+        .btn-success { background: #22c55e; color: #fff; }
+        .btn-success:hover { box-shadow: 0 4px 16px rgba(34,197,94,.3); }
+        .btn-secondary { background: #faf9ff; border: 1.5px solid #e0dcf8; color: #4a4a68; }
+        .btn-secondary:hover { border-color: #6c5ce7; }
+
         .hidden { display: none !important; }
-        
-        .error-message { 
-            color: #dc3545; 
-            background: #f8d7da; 
-            border: 1px solid #f5c6cb; 
-            border-radius: 4px; 
-            padding: 10px; 
-            margin: 10px 0; 
+
+        .error-message {
+            color: #ef4444;
+            background: rgba(239,68,68,.06);
+            border: 1px solid rgba(239,68,68,.15);
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin: 10px 0;
+            font-size: .92em;
         }
-        
-        .success-message { 
-            color: #155724; 
-            background: var(--cm-green-bg); 
-            border: 1px solid var(--cm-green); 
-            border-radius: 4px; 
-            padding: 10px; 
-            margin: 10px 0; 
+        .success-message {
+            color: #22c55e;
+            background: rgba(34,197,94,.06);
+            border: 1px solid rgba(34,197,94,.15);
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin: 10px 0;
+            font-size: .92em;
+        }
+
+        .service-description {
+            margin-top: 10px;
+            padding: 14px 16px;
+            background: #faf9ff;
+            border: 1px solid #e0dcf8;
+            border-radius: 10px;
+            font-size: .88em;
+            color: #4a4a68;
         }
     </style>
 {% endblock %}
@@ -229,7 +232,7 @@
     {% else %}
         <!-- Создание нового инвойса - показываем кастомный интерфейс -->
         <div class="invoice-builder">
-            <h1 style="text-align: center; margin-bottom: 30px; color: #495057;">
+            <h1 style="text-align: center; margin-bottom: 28px; font-size: 1.5em; font-weight: 800; color: #1a1a2e;">
                 Создание нового инвойса
             </h1>
         
@@ -386,7 +389,7 @@
                             <option value="TRANSPORT_SERVICES">Транспортные услуги</option>
                             <option value="OTHER_SERVICES">Прочие услуги</option>
                         </select>
-                        <div class="service-description" style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px; font-size: 14px; color: #6c757d;">
+                        <div class="service-description">
                             <strong>Описание типов услуг:</strong><br>
                             • <strong>Услуги склада</strong> - только стоимость хранения автомобилей<br>
                             • <strong>Услуги линий</strong> - стоимость перевозки (ocean freight) + THS сбор<br>
@@ -409,7 +412,7 @@
                         <input type="text" id="car_search" class="entity-search" placeholder="Поиск по VIN, марке или году...">
                     </div>
                     <div id="available_cars" class="cars-grid">
-                        <div style="text-align: center; color: #6c757d; padding: 40px;">
+                        <div style="text-align: center; color: #7c7c9a; padding: 40px;">
                             Сначала выберите отправителя и получателя
                         </div>
                     </div>
@@ -418,7 +421,7 @@
             
             <!-- Сводка инвойса -->
             <div class="invoice-summary" id="invoice_summary" style="display: none;">
-                <h3 style="margin-top: 0; color: #495057;">Сводка инвойса</h3>
+                <h3 style="margin: 0 0 12px; font-size: 1em; font-weight: 700; color: #1a1a2e;">Сводка инвойса</h3>
                 <div class="summary-row">
                     <span class="summary-label">Количество автомобилей:</span>
                     <span class="summary-value" id="cars_count">0</span>

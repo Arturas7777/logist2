@@ -3,173 +3,386 @@
 
 {% block title %}Оплата инвойса {{ invoice.number }}{% endblock %}
 
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    main#content-start, main.content { padding: 0 !important; }
+    #content {
+        background: #f4f2ff;
+        min-height: 100vh;
+        max-width: 100% !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    #content-main { padding: 0; }
+    .ip-wrap {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 28px 32px;
+    }
+    .ip-wrap h1 {
+        font-size: 1.5em;
+        font-weight: 800;
+        color: #1a1a2e;
+        margin: 0 0 20px;
+    }
+    .ip-card {
+        background: #fff;
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 20px;
+        box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+        border: 1px solid rgba(108,92,231,.14);
+    }
+    .ip-info-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        flex-wrap: wrap;
+        gap: 20px;
+    }
+    .ip-info-row h2 {
+        margin: 0 0 14px;
+        font-size: 1.2em;
+        font-weight: 800;
+        color: #1a1a2e;
+    }
+    .ip-info-row p {
+        margin: 0 0 6px;
+        font-size: .92em;
+        color: #4a4a68;
+    }
+    .ip-info-row strong { color: #1a1a2e; }
+    .ip-total-box {
+        text-align: right;
+        background: #faf9ff;
+        padding: 16px 22px;
+        border-radius: 14px;
+        border: 1.5px solid #e0dcf8;
+    }
+    .ip-total-box .label { font-size: .85em; color: #7c7c9a; }
+    .ip-total-box .value { font-size: 2em; font-weight: 800; color: #1a1a2e; }
+    .ip-total-box .paid { font-size: .85em; color: #22c55e; margin-top: 4px; }
+    .ip-total-box .remaining {
+        font-size: 1.2em;
+        color: #ef4444;
+        font-weight: 700;
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1.5px solid #e0dcf8;
+    }
+    .ip-overdue {
+        color: #ef4444;
+        font-weight: 700;
+        font-size: .85em;
+    }
+    .ip-balance-hint {
+        background: rgba(34,197,94,.06);
+        border: 1px solid rgba(34,197,94,.15);
+        border-radius: 14px;
+        padding: 14px 18px;
+        margin-bottom: 20px;
+        font-size: .92em;
+        color: #166534;
+    }
+    .ip-balance-hint strong { color: #15803d; }
+    .ip-balance-hint small { color: #4a4a68; }
+    .ip-form-card {
+        background: #fff;
+        border-radius: 16px;
+        padding: 28px;
+        margin-bottom: 20px;
+        box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+        border: 1px solid rgba(108,92,231,.14);
+    }
+    .ip-form-card h2 {
+        margin: 0 0 20px;
+        font-size: 1.15em;
+        font-weight: 800;
+        color: #6c5ce7;
+    }
+    .ip-field { margin-bottom: 18px; }
+    .ip-field label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+        color: #4a4a68;
+        font-size: .9em;
+    }
+    .ip-field input[type="number"],
+    .ip-field textarea {
+        width: 100%;
+        padding: 10px 14px;
+        border: 1.5px solid #e0dcf8;
+        border-radius: 10px;
+        background: #faf9ff;
+        color: #1a1a2e;
+        font-size: 1em;
+        box-sizing: border-box;
+        font-family: inherit;
+    }
+    .ip-field textarea { resize: vertical; min-height: 50px; }
+    .ip-field input:focus,
+    .ip-field textarea:focus {
+        outline: none;
+        border-color: #6c5ce7;
+        box-shadow: 0 0 0 3px rgba(108,92,231,.12);
+        background: #fff;
+    }
+    .ip-field small { font-size: .8em; color: #7c7c9a; }
+    .ip-method-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 10px;
+    }
+    .ip-method-option {
+        display: flex;
+        align-items: center;
+        padding: 14px 16px;
+        background: #faf9ff;
+        border: 1.5px solid #e0dcf8;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 500;
+        font-size: .92em;
+        color: #1a1a2e;
+        transition: border-color .2s, background .2s;
+    }
+    .ip-method-option:hover { border-color: #6c5ce7; background: #f4f2ff; }
+    .ip-method-option.balance-option {
+        background: rgba(34,197,94,.04);
+        border-color: rgba(34,197,94,.25);
+    }
+    .ip-method-option input[type="radio"] { margin-right: 10px; accent-color: #6c5ce7; }
+    .ip-actions {
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+    }
+    .ip-actions .cancel-btn {
+        padding: 12px 22px;
+        border-radius: 10px;
+        background: #faf9ff;
+        border: 1.5px solid #e0dcf8;
+        color: #4a4a68;
+        text-decoration: none;
+        font-size: .95em;
+        font-weight: 600;
+        transition: border-color .2s;
+        display: flex;
+        align-items: center;
+    }
+    .ip-actions .cancel-btn:hover { border-color: #6c5ce7; }
+    .ip-actions .submit-btn {
+        padding: 12px 28px;
+        border: none;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #22c55e, #4ade80);
+        color: #fff;
+        font-size: 1.05em;
+        font-weight: 700;
+        cursor: pointer;
+        transition: transform .1s, box-shadow .15s;
+        font-family: inherit;
+    }
+    .ip-actions .submit-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(34,197,94,.3);
+    }
+    .ip-overdue-alert {
+        background: rgba(239,68,68,.06);
+        border: 1px solid rgba(239,68,68,.15);
+        border-radius: 14px;
+        padding: 14px 18px;
+        margin-top: 20px;
+        font-size: .9em;
+        color: #b91c1c;
+    }
+    .ip-overdue-alert strong { color: #991b1b; }
+    .ip-items-card {
+        background: #fff;
+        border-radius: 16px;
+        padding: 24px;
+        margin-top: 20px;
+        box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+        border: 1px solid rgba(108,92,231,.14);
+    }
+    .ip-items-card h3 {
+        margin: 0 0 16px;
+        font-size: 1em;
+        font-weight: 700;
+        color: #1a1a2e;
+    }
+    .ip-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    .ip-table th {
+        text-align: left;
+        font-size: .78em;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .5px;
+        color: #7c7c9a;
+        padding: 10px 12px;
+        border-bottom: 2px solid #f0eef8;
+    }
+    .ip-table td {
+        padding: 10px 12px;
+        font-size: .9em;
+        color: #1a1a2e;
+        border-bottom: 1px solid #f5f3ff;
+    }
+    .ip-table tr:hover td { background: #faf9ff; }
+    .ip-table .r { text-align: right; }
+    .ip-table .c { text-align: center; }
+    .ip-table tfoot td {
+        font-weight: 800;
+        font-size: 1em;
+        border-top: 2px solid #f0eef8;
+        border-bottom: none;
+    }
+    .ip-table small { color: #7c7c9a; }
+</style>
+{% endblock %}
+
 {% block content %}
-<div style="max-width: 900px; margin: 20px auto;">
-    <h1 style="margin-bottom: 20px;">💳 Оплата инвойса {{ invoice.number }}</h1>
-    
-    <!-- Информация об инвойсе -->
-    <div style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-        <div style="display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 20px;">
+<div class="ip-wrap">
+    <h1>Оплата инвойса {{ invoice.number }}</h1>
+
+    <div class="ip-card">
+        <div class="ip-info-row">
             <div>
-                <h2 style="margin-top: 0; margin-bottom: 15px;">📄 {{ invoice.number }}</h2>
+                <h2>{{ invoice.number }}</h2>
                 <p><strong>Дата:</strong> {{ invoice.date|date:"d.m.Y" }}</p>
-                <p><strong>Срок оплаты:</strong> {{ invoice.due_date|date:"d.m.Y" }}
+                <p>
+                    <strong>Срок оплаты:</strong> {{ invoice.due_date|date:"d.m.Y" }}
                     {% if invoice.is_overdue %}
-                        <span style="color: #dc3545; font-weight: bold;">⚠ ПРОСРОЧЕН</span>
+                        <span class="ip-overdue">ПРОСРОЧЕН</span>
                     {% endif %}
                 </p>
                 <p><strong>Получатель:</strong> {{ invoice.recipient }}</p>
             </div>
-            <div style="text-align: right; background: white; padding: 15px 25px; border-radius: 8px; border: 2px solid #dee2e6;">
-                <div style="font-size: 0.9em; color: #666;">Итого к оплате:</div>
-                <div style="font-size: 2em; font-weight: bold; color: #333;">{{ invoice.total }} €</div>
+            <div class="ip-total-box">
+                <div class="label">Итого к оплате:</div>
+                <div class="value">{{ invoice.total }} €</div>
                 {% if invoice.paid_amount > 0 %}
-                <div style="font-size: 0.9em; color: #28a745; margin-top: 5px;">Оплачено: {{ invoice.paid_amount }} €</div>
+                <div class="paid">Оплачено: {{ invoice.paid_amount }} €</div>
                 {% endif %}
-                <div style="font-size: 1.3em; color: #dc3545; font-weight: bold; margin-top: 10px; padding-top: 10px; border-top: 2px solid #dee2e6;">
-                    Остаток: {{ remaining }} €
-                </div>
+                <div class="remaining">Остаток: {{ remaining }} €</div>
             </div>
         </div>
     </div>
-    
-    <!-- Баланс клиента -->
+
     {% if client_balance and client_balance > 0 %}
-    <div style="background: #d4edda; border: 2px solid #28a745; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-        <strong style="color: #155724;">💰 На балансе клиента: {{ client_balance }} €</strong>
+    <div class="ip-balance-hint">
+        <strong>На балансе клиента: {{ client_balance }} €</strong>
         <br><small>Можно использовать для оплаты этого инвойса</small>
     </div>
     {% endif %}
-    
-    <!-- Форма оплаты -->
-    <div style="background: white; border: 2px solid #007bff; border-radius: 8px; padding: 20px;">
-        <h2 style="margin-top: 0; color: #007bff;">💳 Оплатить инвойс</h2>
-        
+
+    <div class="ip-form-card">
+        <h2>Оплатить инвойс</h2>
         <form method="post" action="">
             {% csrf_token %}
-            
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; font-weight: bold; margin-bottom: 8px;">
-                    Сумма платежа (€):
-                </label>
-                <input 
-                    type="number" 
-                    name="amount" 
-                    step="0.01" 
-                    min="0.01" 
-                    max="{{ remaining }}"
-                    value="{{ remaining }}"
-                    required
-                    style="width: 100%; padding: 12px; font-size: 1.2em; border: 2px solid #dee2e6; border-radius: 6px;"
-                >
-                <small style="color: #666;">Максимум: {{ remaining }} €</small>
+
+            <div class="ip-field">
+                <label for="id_amount">Сумма платежа (€)</label>
+                <input type="number" id="id_amount" name="amount" step="0.01" min="0.01"
+                       max="{{ remaining }}" value="{{ remaining }}" required>
+                <small>Максимум: {{ remaining }} €</small>
             </div>
-            
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; font-weight: bold; margin-bottom: 8px;">
-                    Способ оплаты:
-                </label>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
-                    <label style="display: flex; align-items: center; padding: 15px; background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 6px; cursor: pointer;">
-                        <input type="radio" name="method" value="CASH" checked style="margin-right: 10px; width: 18px; height: 18px;">
-                        💵 Наличные
+
+            <div class="ip-field">
+                <label>Способ оплаты</label>
+                <div class="ip-method-grid">
+                    <label class="ip-method-option">
+                        <input type="radio" name="method" value="CASH" checked>
+                        Наличные
                     </label>
-                    <label style="display: flex; align-items: center; padding: 15px; background: #f8f9fa; border: 2px solid #dee2e6; border-radius: 6px; cursor: pointer;">
-                        <input type="radio" name="method" value="CARD" style="margin-right: 10px; width: 18px; height: 18px;">
-                        💳 Перевод / Карта
+                    <label class="ip-method-option">
+                        <input type="radio" name="method" value="CARD">
+                        Перевод / Карта
                     </label>
                     {% if client_balance and client_balance > 0 %}
-                    <label style="display: flex; align-items: center; padding: 15px; background: #d4edda; border: 2px solid #28a745; border-radius: 6px; cursor: pointer;">
-                        <input type="radio" name="method" value="BALANCE" style="margin-right: 10px; width: 18px; height: 18px;">
-                        💰 С баланса ({{ client_balance }} €)
+                    <label class="ip-method-option balance-option">
+                        <input type="radio" name="method" value="BALANCE">
+                        С баланса ({{ client_balance }} €)
                     </label>
                     {% endif %}
                 </div>
             </div>
-            
-            <div style="margin-bottom: 20px;">
-                <label style="display: block; font-weight: bold; margin-bottom: 8px;">
-                    Описание (опционально):
-                </label>
-                <textarea 
-                    name="description" 
-                    rows="2"
-                    placeholder="Примечание к платежу..."
-                    style="width: 100%; padding: 12px; font-size: 1em; border: 2px solid #dee2e6; border-radius: 6px; resize: vertical;"
-                ></textarea>
+
+            <div class="ip-field">
+                <label for="id_description">Описание (необязательно)</label>
+                <textarea id="id_description" name="description" placeholder="Примечание к платежу..."></textarea>
             </div>
-            
-            <div style="display: flex; gap: 15px; justify-content: flex-end;">
-                <a 
-                    href="{% url 'admin:core_newinvoice_change' invoice.id %}" 
-                    style="padding: 12px 24px; background: #6c757d; color: white; text-decoration: none; border-radius: 6px;"
-                >
-                    Отмена
-                </a>
-                <button 
-                    type="submit" 
-                    style="padding: 12px 30px; background: #28a745; color: white; border: none; border-radius: 6px; font-size: 1.1em; cursor: pointer; font-weight: bold;"
-                >
-                    ✅ Оплатить {{ remaining }} €
-                </button>
+
+            <div class="ip-actions">
+                <a href="{% url 'admin:core_newinvoice_change' invoice.id %}" class="cancel-btn">Отмена</a>
+                <button type="submit" class="submit-btn">Оплатить {{ remaining }} €</button>
             </div>
         </form>
     </div>
-    
-    <!-- Предупреждения -->
+
     {% if invoice.is_overdue %}
-    <div style="background: #f8d7da; border: 2px solid #dc3545; border-radius: 8px; padding: 15px; margin-top: 20px;">
-        <strong style="color: #721c24;">⚠ ВНИМАНИЕ!</strong><br>
-        Инвойс просрочен. Срок оплаты истек {{ invoice.due_date|date:"d.m.Y" }}.
+    <div class="ip-overdue-alert">
+        <strong>ВНИМАНИЕ!</strong> Инвойс просрочен. Срок оплаты истек {{ invoice.due_date|date:"d.m.Y" }}.
     </div>
     {% endif %}
-    
-    <!-- Список услуг (внизу) -->
+
     {% if invoice.items.exists %}
-    <div style="background: white; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin-top: 20px;">
-        <h3 style="margin-top: 0;">📋 Позиции инвойса</h3>
-        <table style="width: 100%; border-collapse: collapse;">
+    <div class="ip-items-card">
+        <h3>Позиции инвойса</h3>
+        <table class="ip-table">
             <thead>
-                <tr style="background: #f8f9fa;">
-                    <th style="padding: 10px; text-align: left; border-bottom: 2px solid #dee2e6;">Описание</th>
-                    <th style="padding: 10px; text-align: center; border-bottom: 2px solid #dee2e6;">Кол-во</th>
-                    <th style="padding: 10px; text-align: right; border-bottom: 2px solid #dee2e6;">Цена</th>
-                    <th style="padding: 10px; text-align: right; border-bottom: 2px solid #dee2e6;">Сумма</th>
+                <tr>
+                    <th>Описание</th>
+                    <th class="c">Кол-во</th>
+                    <th class="r">Цена</th>
+                    <th class="r">Сумма</th>
                 </tr>
             </thead>
             <tbody>
                 {% for item in invoice.items.all %}
                 <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">
+                    <td>
                         {{ item.description }}
-                        {% if item.car %}<br><small style="color: #666;">🚗 {{ item.car }}</small>{% endif %}
+                        {% if item.car %}<br><small>{{ item.car }}</small>{% endif %}
                     </td>
-                    <td style="padding: 10px; text-align: center; border-bottom: 1px solid #eee;">{{ item.quantity }}</td>
-                    <td style="padding: 10px; text-align: right; border-bottom: 1px solid #eee;">{{ item.unit_price }} €</td>
-                    <td style="padding: 10px; text-align: right; border-bottom: 1px solid #eee; font-weight: bold;">{{ item.total }} €</td>
+                    <td class="c">{{ item.quantity }}</td>
+                    <td class="r">{{ item.unit_price }} €</td>
+                    <td class="r" style="font-weight:600">{{ item.total }} €</td>
                 </tr>
                 {% endfor %}
             </tbody>
             <tfoot>
-                <tr style="background: #f8f9fa;">
-                    <td colspan="3" style="padding: 12px; text-align: right; font-weight: bold; font-size: 1.1em;">Итого:</td>
-                    <td style="padding: 12px; text-align: right; font-weight: bold; font-size: 1.2em;">{{ invoice.total }} €</td>
+                <tr>
+                    <td colspan="3" class="r">Итого:</td>
+                    <td class="r">{{ invoice.total }} €</td>
                 </tr>
             </tfoot>
         </table>
     </div>
     {% endif %}
-    
-    <!-- Автомобили (если позиций нет но есть авто) -->
+
     {% if invoice.cars.exists and not invoice.items.exists %}
-    <div style="background: white; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin-top: 20px;">
-        <h3 style="margin-top: 0;">🚗 Автомобили в инвойсе</h3>
-        <ul style="margin: 0; padding-left: 20px;">
-            {% for car in invoice.cars.all %}
-            <li style="padding: 5px 0;">{{ car }} - {{ car.total_services_cost }} €</li>
-            {% endfor %}
-        </ul>
+    <div class="ip-items-card">
+        <h3>Автомобили в инвойсе</h3>
+        <table class="ip-table">
+            <tbody>
+                {% for car in invoice.cars.all %}
+                <tr>
+                    <td>{{ car }}</td>
+                    <td class="r" style="font-weight:600">{{ car.total_services_cost }} €</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
     {% endif %}
+
+    <div style="text-align:center;margin-top:16px">
+        <a href="{% url 'company_dashboard' %}" style="color:#6c5ce7;text-decoration:none;font-size:.9em">← Вернуться на дашборд</a>
+    </div>
 </div>
 {% endblock %}
