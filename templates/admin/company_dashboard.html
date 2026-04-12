@@ -164,6 +164,7 @@
         border-radius: 16px;
         box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
         border: 1px solid rgba(108,92,231,.14);
+        border-top: 3px solid #e2e0f0;
         position: relative;
         transition: all .25s ease;
     }
@@ -223,23 +224,15 @@
     .kpi-icon.rose      { background: #fff1f2; color: #f43f5e; }
 
     /* Colored accent strip at top of card */
-    .kpi::before {
-        content: '';
-        position: absolute;
-        top: 0; left: 0; right: 0;
-        height: 3px;
-        border-radius: 16px 16px 0 0;
-        background: #e2e0f0;
-    }
-    .kpi.accent-blue::before    { background: linear-gradient(90deg, #6366f1, #818cf8); }
-    .kpi.accent-red::before     { background: linear-gradient(90deg, #ef4444, #f87171); }
-    .kpi.accent-green::before   { background: linear-gradient(90deg, #22c55e, #4ade80); }
-    .kpi.accent-purple::before  { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
-    .kpi.accent-amber::before   { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
-    .kpi.accent-cyan::before    { background: linear-gradient(90deg, #06b6d4, #22d3ee); }
-    .kpi.accent-rose::before    { background: linear-gradient(90deg, #f43f5e, #fb7185); }
-    .kpi.accent-indigo::before  { background: linear-gradient(90deg, #4f46e5, #6366f1); }
-    .kpi.accent-teal::before    { background: linear-gradient(90deg, #14b8a6, #2dd4bf); }
+    .kpi.accent-blue    { border-top-color: #6366f1; }
+    .kpi.accent-red     { border-top-color: #ef4444; }
+    .kpi.accent-green   { border-top-color: #22c55e; }
+    .kpi.accent-purple  { border-top-color: #8b5cf6; }
+    .kpi.accent-amber   { border-top-color: #f59e0b; }
+    .kpi.accent-cyan    { border-top-color: #06b6d4; }
+    .kpi.accent-rose    { border-top-color: #f43f5e; }
+    .kpi.accent-indigo  { border-top-color: #4f46e5; }
+    .kpi.accent-teal    { border-top-color: #14b8a6; }
 
     /* Value colors */
     .v-green  { color: #16a34a !important; }
