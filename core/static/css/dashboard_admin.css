@@ -1694,6 +1694,7 @@ body.popup #footer {
         margin-left: 0;
         padding: 10px 16px;
         justify-content: center;
+        min-height: auto;
     }
     .cm-topbar-left {
         width: 100%;
@@ -1702,7 +1703,7 @@ body.popup #footer {
         gap: 6px;
     }
     .cm-topbar-left a img {
-        max-width: calc(100vw - 32px);
+        max-width: calc(100% - 32px);
         height: auto;
     }
     .cm-topbar-left .cm-sidebar-toggle {
@@ -1715,10 +1716,12 @@ body.popup #footer {
         display: none;
     }
     main#content-start, main.content {
-        padding: 16px !important;
+        padding: 0 !important;
     }
     #footer {
         margin-left: 0 !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
     }
     .cm-kpi-row { grid-template-columns: 1fr; }
     .cm-grid-2 { grid-template-columns: 1fr; }
@@ -1734,6 +1737,22 @@ body.popup #footer {
     }
     .cm-sidebar-overlay.active {
         display: block;
+    }
+
+    /* Cards/modules: small margin from screen edges on mobile */
+    .module, .card-cm, fieldset, .inline-group {
+        border-radius: 0 !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+    }
+    .results, .paginator, .pagination, #changelist-filter,
+    #cm-unified-toolbar, #changelist .actions {
+        border-radius: 0 !important;
+    }
+
+    /* Ensure #content-main fills edge-to-edge */
+    #content, #content-main {
+        padding: 0 !important;
     }
 }
 
@@ -2788,7 +2807,7 @@ body.model-newinvoice.change-form #content > h2 {
     }
 
     main#content-start, main.content {
-        padding: 6px !important;
+        padding: 0 !important;
     }
 
     .cm-form-grid {
