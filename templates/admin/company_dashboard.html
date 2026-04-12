@@ -139,16 +139,11 @@
     }
     .db-section.collapsed { margin-bottom: 0; }
     .db-section-body {
-        overflow: hidden;
-        max-height: 3000px;
         opacity: 1;
-        transition: max-height .35s ease, opacity .25s ease, margin .25s ease;
+        transition: opacity .2s ease;
     }
     .db-section.collapsed + .db-section-body {
-        max-height: 0;
-        opacity: 0;
-        margin: 0;
-        pointer-events: none;
+        display: none;
     }
 
     /* ── KPI Cards ── */
