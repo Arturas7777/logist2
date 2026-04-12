@@ -20,6 +20,7 @@
     #content-main { padding: 0; }
 
     .db {
+        width: 100%;
         max-width: 100%;
         margin: 0;
         padding: 28px 32px;
@@ -465,17 +466,23 @@
         .summary-row   { grid-template-columns: 1fr; }
     }
     @media (max-width: 768px) {
-        .db { padding: 16px; }
+        .db { padding: 10px; }
         .db-header { flex-direction: column; gap: 12px; }
         .kpi-row.five,
         .kpi-row.four,
         .kpi-row.three,
         .kpi-row.six { grid-template-columns: repeat(2, 1fr); }
-        .kpi-value { font-size: 1.3em; word-break: break-word; }
-        .kpi-sub { word-break: break-word; white-space: normal; }
+        .kpi-row { gap: 10px; }
+        .kpi { padding: 14px 16px; }
+        .kpi-value { font-size: 1.2em; word-break: break-word; }
+        .kpi-sub { word-break: break-word; white-space: normal; font-size: .72em; }
         .db-actions { flex-direction: column; }
         .summary-row { grid-template-columns: 1fr; }
+        .tbl-card { padding: 14px; }
         .tbl-card h3 { flex-wrap: wrap; }
+        .chart-card { padding: 14px; }
+        .tables-grid { gap: 12px; }
+        .charts-donut-row { gap: 12px; }
     }
 </style>
 {% endblock %}
