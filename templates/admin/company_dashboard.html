@@ -165,7 +165,6 @@
         border: 1px solid rgba(108,92,231,.14);
         position: relative;
         transition: all .25s ease;
-        overflow: hidden;
     }
     .kpi:hover {
         transform: translateY(-3px);
@@ -268,6 +267,8 @@
         padding: 24px;
         box-shadow: 0 1px 3px rgba(108,92,231,.06), 0 6px 16px rgba(108,92,231,.04);
         border: 1px solid rgba(108,92,231,.05);
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
     }
     .chart-card h3 {
         margin: 0 0 16px;
@@ -318,6 +319,8 @@
         padding: 24px;
         box-shadow: 0 1px 3px rgba(108,92,231,.06), 0 6px 16px rgba(108,92,231,.04);
         border: 1px solid rgba(108,92,231,.05);
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
     }
     .tbl-card h3 {
         margin: 0 0 16px;
@@ -468,8 +471,11 @@
         .kpi-row.four,
         .kpi-row.three,
         .kpi-row.six { grid-template-columns: repeat(2, 1fr); }
+        .kpi-value { font-size: 1.3em; word-break: break-word; }
+        .kpi-sub { word-break: break-word; white-space: normal; }
         .db-actions { flex-direction: column; }
         .summary-row { grid-template-columns: 1fr; }
+        .tbl-card h3 { flex-wrap: wrap; }
     }
 </style>
 {% endblock %}
