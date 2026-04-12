@@ -1754,6 +1754,15 @@ body.popup #footer {
     #content, #content-main {
         padding: 0 !important;
     }
+
+    /* Hide scrollbar on mobile — users scroll by touch */
+    html, body {
+        scrollbar-width: none;
+    }
+    html::-webkit-scrollbar,
+    body::-webkit-scrollbar {
+        display: none;
+    }
 }
 
 /* ===== STACKED INLINE ===== */
