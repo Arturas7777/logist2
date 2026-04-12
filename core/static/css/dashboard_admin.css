@@ -101,7 +101,7 @@ html {
 body {
     overflow-x: hidden;
     width: 100%;
-    max-width: 100vw;
+    max-width: 100%;
     position: relative;
     overscroll-behavior-x: none;
 }
@@ -1688,7 +1688,7 @@ body.popup #footer {
     }
     div.main#main, div.main {
         margin-left: 0 !important;
-        max-width: 100vw !important;
+        max-width: 100% !important;
     }
     .cm-topbar {
         margin-left: 0;
