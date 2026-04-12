@@ -78,7 +78,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # ── Step 4: restart services ──
 Write-Host "[4/4] Restarting services..." -ForegroundColor Yellow
-ssh $SERVER "cd $PROJECT_DIR && chown -R www-root:www-root . && systemctl restart gunicorn && systemctl restart daphne" 2>$null
+ssh $SERVER "cd $PROJECT_DIR && chown -R www-root:www-root core/ templates/ staticfiles/ logist2/ 2>/dev/null; systemctl restart gunicorn && systemctl restart daphne" 2>$null
 
 $gunicorn = ssh $SERVER "systemctl is-active gunicorn" 2>$null
 $daphne = ssh $SERVER "systemctl is-active daphne" 2>$null
