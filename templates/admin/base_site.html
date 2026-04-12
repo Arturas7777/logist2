@@ -20,7 +20,7 @@
 {# — Icons — #}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
 {# — Design System — #}
-<link rel="stylesheet" type="text/css" href="{% static 'css/dashboard_admin.css' %}?v=22">
+<link rel="stylesheet" type="text/css" href="{% static 'css/dashboard_admin.css' %}?v=23">
 {# — AI Chat — #}
 <link rel="stylesheet" type="text/css" href="{% static 'admin/css/ai-chat.css' %}">
 <script>
@@ -383,7 +383,7 @@ document.addEventListener('DOMContentLoaded', function() {
 {# Login/logout page — simple centered header #}
 <header style="padding:32px 24px 0; text-align:center;">
     <a href="{% url 'admin:index' %}" style="text-decoration:none;">
-        <img src="{% static 'website/images/logo_caromoto.svg' %}" alt="Caromoto" style="height:40px; width:auto;">
+        <img src="{% static 'website/images/logo_caromoto.svg' %}" alt="Caromoto" style="height:40px; width:auto; max-width:100%;">
     </a>
 </header>
 {% else %}
