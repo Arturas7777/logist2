@@ -1696,20 +1696,14 @@ body.popup #footer {
         height: 56px;
     }
     .cm-topbar-left {
-        width: 100%;
-        display: grid;
-        grid-template-columns: 44px 1fr 44px;
+        width: auto;
+        display: flex;
+        flex-direction: row;
         align-items: center;
-        height: 100%;
+        gap: 12px;
     }
     .cm-topbar-left .cm-sidebar-toggle {
-        grid-column: 1;
-        justify-self: start;
         font-size: 1.5rem;
-    }
-    .cm-topbar-left a {
-        grid-column: 2;
-        justify-self: center;
     }
     .cm-topbar-left a img {
         height: 26px;
