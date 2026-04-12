@@ -92,13 +92,16 @@ nav.sticky {
 }
 
 /* ===== LAYOUT: Container ===== */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
 html {
-    overflow-x: hidden;
     overscroll-behavior-x: none;
 }
 body {
     overflow-x: hidden;
     width: 100%;
+    max-width: 100vw;
     position: relative;
     overscroll-behavior-x: none;
 }
@@ -1685,6 +1688,7 @@ body.popup #footer {
     }
     div.main#main, div.main {
         margin-left: 0 !important;
+        max-width: 100vw !important;
     }
     .cm-topbar {
         margin-left: 0;
@@ -2781,10 +2785,6 @@ body.model-newinvoice.change-form #content > h2 {
         min-width: 0 !important;
         box-sizing: border-box !important;
         flex: 1 1 100% !important;
-    }
-
-    html, body {
-        overflow-x: hidden !important;
     }
 
     main#content-start, main.content {
