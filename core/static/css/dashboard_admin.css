@@ -1692,22 +1692,26 @@ body.popup #footer {
     }
     .cm-topbar {
         margin-left: 0;
-        padding: 10px 16px;
-        justify-content: center;
+        padding: 8px 12px;
         min-height: auto;
     }
     .cm-topbar-left {
         width: 100%;
-        flex-direction: column;
+        flex-direction: row;
         align-items: center;
-        gap: 6px;
+        justify-content: center;
+        gap: 0;
+        position: relative;
     }
     .cm-topbar-left a img {
-        max-width: calc(100% - 32px);
-        height: auto;
+        height: 28px;
+        width: auto;
     }
     .cm-topbar-left .cm-sidebar-toggle {
-        order: 2;
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
     }
     .cm-topbar-center {
         display: none;
