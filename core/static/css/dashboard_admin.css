@@ -467,7 +467,7 @@ body.login .submit-row input[type="submit"]:hover {
     background: var(--cm-white);
     border-bottom: none;
     box-shadow: 0 2px 8px rgba(0,0,0,.05);
-    padding: 14px 32px;
+    padding: 0 32px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -475,7 +475,7 @@ body.login .submit-row input[type="submit"]:hover {
     top: 0;
     z-index: 50;
     margin-left: var(--cm-sidebar-w);
-    min-height: var(--cm-topbar-h);
+    height: var(--cm-topbar-h);
     overflow: visible;
 }
 .cm-topbar-left {
@@ -1692,14 +1692,15 @@ body.popup #footer {
     }
     .cm-topbar {
         margin-left: 0;
-        padding: 8px 12px;
-        min-height: auto;
+        padding: 0 12px;
+        height: 48px;
     }
     .cm-topbar-left {
         width: 100%;
         display: grid;
         grid-template-columns: 44px 1fr 44px;
         align-items: center;
+        height: 100%;
     }
     .cm-topbar-left .cm-sidebar-toggle {
         grid-column: 1;
@@ -1711,7 +1712,7 @@ body.popup #footer {
         justify-self: center;
     }
     .cm-topbar-left a img {
-        height: 28px;
+        height: 26px;
         width: auto;
     }
     .cm-topbar-center {
