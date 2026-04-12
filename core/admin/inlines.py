@@ -255,6 +255,7 @@ class CarInline(admin.TabularInline):
     show_change_link = True
     fields = ('year', 'brand', 'vehicle_type', 'vin', 'client', 'total_price', 'has_title')
     readonly_fields = ('total_price',)
+    autocomplete_fields = ['client']
 
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)

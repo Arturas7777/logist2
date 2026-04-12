@@ -287,6 +287,13 @@ class ClientAdmin(admin.ModelAdmin):
             return qs.with_balance_info()
         return qs
 
+    def get_search_results(self, request, queryset, search_term):
+        queryset, use_distinct = super().get_search_results(request, queryset, search_term)
+        if 'autocomplete' in request.path:
+            from django.db.models import Count
+            queryset = queryset.annotate(_car_count=Count('car')).order_by('-_car_count', 'name')
+        return queryset, use_distinct
+
     fieldsets = (
         ('Основная информация', {
             'fields': ('name', 'notification_enabled')
