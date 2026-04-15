@@ -1,8 +1,8 @@
 {% extends "admin/base_site.html" %}
 {% load i18n %}
 
-{% block title %}Пополнить кошелёк{% endblock %}
-{% block content_title %}<h1>💰 Пополнить кошелёк</h1>{% endblock %}
+{% block title %}Поступление на карту{% endblock %}
+{% block content_title %}<h1>💰 Поступление на карту</h1>{% endblock %}
 
 {% block extrastyle %}
 {{ block.super }}
@@ -24,9 +24,7 @@
         box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
         border: 1px solid rgba(108,92,231,.14);
     }
-    .wallet-form .field-group {
-        margin-bottom: 20px;
-    }
+    .wallet-form .field-group { margin-bottom: 20px; }
     .wallet-form label {
         display: block;
         font-weight: 600;
@@ -35,18 +33,20 @@
         font-size: .9em;
     }
     .wallet-form input[type="number"],
-    .wallet-form input[type="text"] {
+    .wallet-form input[type="text"],
+    .wallet-form select {
         width: 100%;
         padding: 10px 14px;
         border: 1.5px solid #e0dcf8;
         border-radius: 10px;
         background: #faf9ff;
         color: #1a1a2e;
-        font-size: 1em;
+        font-size: 16px;
         box-sizing: border-box;
         font-family: inherit;
     }
-    .wallet-form input:focus {
+    .wallet-form select { -webkit-appearance: menulist; appearance: menulist; }
+    .wallet-form input:focus, .wallet-form select:focus {
         outline: none;
         border-color: #22c55e;
         box-shadow: 0 0 0 3px rgba(34,197,94,.12);
@@ -70,28 +70,23 @@
         transform: translateY(-1px);
         box-shadow: 0 4px 16px rgba(34,197,94,.3);
     }
-    .cash-badge {
-        text-align: center;
-        margin-bottom: 24px;
-        padding: 14px;
-        background: rgba(34,197,94,.06);
-        border: 1px solid rgba(34,197,94,.12);
-        border-radius: 12px;
-    }
-    .cash-badge .label { font-size: .85em; color: #7c7c9a; }
-    .cash-badge .value { font-size: 1.6em; font-weight: 800; color: #22c55e; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="wallet-form">
-    <div class="cash-badge">
-        <div class="label">Наличные на руках</div>
-        <div class="value">{{ current_cash|floatformat:2 }} €</div>
-    </div>
-
     <form method="post">
         {% csrf_token %}
+        <div class="field-group">
+            <label for="id_card">Карта</label>
+            <select id="id_card" name="card" required>
+                <option value="">— Выберите карту —</option>
+                {% for card in cards %}
+                <option value="{{ card.pk }}">{{ card }} ({{ card.balance|floatformat:2 }} €)</option>
+                {% endfor %}
+            </select>
+        </div>
+
         <div class="field-group">
             <label for="id_amount">Сумма (€)</label>
             <input type="number" id="id_amount" name="amount" step="0.01" min="0.01"
@@ -101,14 +96,14 @@
         <div class="field-group">
             <label for="id_description">Источник / описание</label>
             <input type="text" id="id_description" name="description"
-                   placeholder="Клиент заплатил наличными, зарплата, возврат..." required>
+                   placeholder="Пособие на ребёнка, возврат, зарплата..." required>
         </div>
 
-        <button type="submit" class="submit-btn">Пополнить кошелёк</button>
+        <button type="submit" class="submit-btn">Записать поступление</button>
     </form>
 
     <div style="text-align:center;margin-top:16px">
-        <a href="{% url 'company_dashboard' %}" style="color:#6c5ce7;text-decoration:none;font-size:.9em">← Вернуться на дашборд</a>
+        <a href="{% url 'personal_cards_page' %}" style="color:#6c5ce7;text-decoration:none;font-size:.9em">← Назад к картам</a>
     </div>
 </div>
 {% endblock %}

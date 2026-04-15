@@ -503,6 +503,7 @@
         <a href="{% url 'admin:core_newinvoice_changelist' %}" class="db-action outline">Все инвойсы</a>
         <a href="{% url 'admin:core_transaction_changelist' %}" class="db-action outline">Все транзакции</a>
         <a href="{% url 'comparison_dashboard' %}" class="db-action outline">Сравнение сумм</a>
+        <a href="{% url 'personal_cards_page' %}" class="db-action outline">💳 Карты и переводы</a>
         <a href="{% url 'add_cash_expense' %}" class="db-action outline">💸 Личный расход</a>
         {% if company %}
         <a href="{% url 'admin:core_company_change' company.pk %}" class="db-action ghost">Компания →</a>
@@ -640,7 +641,7 @@
     </div>
 
     <!-- ════════════════ CASH WALLET ════════════════ -->
-    <div class="db-section" data-section="wallet"><i class="bx bxs-wallet" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Кошелёк (наличные)</div>
+    <div class="db-section" data-section="wallet"><i class="bx bxs-wallet" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Кошелёк и карты</div>
     <div class="db-section-body">
     <div class="kpi-row five" style="margin-bottom:12px">
         <div class="kpi accent-green">
@@ -651,6 +652,15 @@
             </div>
             <div class="kpi-sub"><a href="{% url 'cash_wallet_reset' %}" style="color:#6c5ce7;text-decoration:none">Сверить баланс</a></div>
         </div>
+        {% for card in cash_wallet.personal_cards %}
+        <div class="kpi" style="border-top: 3px solid {{ card.color }}">
+            <div class="kpi-icon" style="background: {{ card.color }}15; color: {{ card.color }}"><i class="bx bxs-credit-card"></i></div>
+            <div class="kpi-label">{{ card.name }}{% if card.last_four %} ·{{ card.last_four }}{% endif %}</div>
+            <div class="kpi-value" style="{% if card.balance < 0 %}color:#dc2626{% endif %}">
+                {{ card.balance|floatformat:2 }} €
+            </div>
+        </div>
+        {% endfor %}
         <div class="kpi accent-amber">
             <div class="kpi-icon amber"><i class="bx bxs-purchase-tag"></i></div>
             <div class="kpi-label">Личные расходы (мес.)</div>
@@ -661,16 +671,12 @@
             <div class="kpi-label">Личные расходы (всего)</div>
             <div class="kpi-value v-red">{{ cash_wallet.personal_total|floatformat:2 }} €</div>
         </div>
-        <div class="kpi accent-green" style="cursor:pointer" onclick="location.href='{% url 'add_cash_income' %}'">
-            <div class="kpi-icon green"><i class="bx bx-plus-circle"></i></div>
-            <div class="kpi-label">Пополнить</div>
-            <div class="kpi-value" style="font-size:1.3em;color:#22c55e">💰</div>
-        </div>
-        <div class="kpi accent-indigo" style="cursor:pointer" onclick="location.href='{% url 'add_cash_expense' %}'">
-            <div class="kpi-icon indigo"><i class="bx bx-minus-circle"></i></div>
-            <div class="kpi-label">Записать расход</div>
-            <div class="kpi-value" style="font-size:1.3em;color:#6c5ce7">💸</div>
-        </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+        <a href="{% url 'personal_cards_page' %}" class="db-action outline">💳 Карты и переводы</a>
+        <a href="{% url 'add_cash_income' %}" class="db-action outline">💰 Пополнить наличные</a>
+        <a href="{% url 'add_cash_expense' %}" class="db-action outline">💸 Расход наличными</a>
+        <a href="{% url 'personal_card_expense' %}" class="db-action outline">💸 Расход с карты</a>
     </div>
     {% if cash_wallet.recent_personal %}
     <div style="background:#fff;border-radius:16px;padding:20px 24px;margin-bottom:16px;box-shadow:0 1px 4px rgba(30,20,60,.06),0 4px 14px rgba(30,20,60,.05);border:1px solid rgba(108,92,231,.14)">
@@ -1476,36 +1482,16 @@
 <script>
 (function() {
     'use strict';
-    var STORAGE_KEY = 'dashboard_collapsed';
-
-    function loadState() {
-        try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
-        catch(e) { return {}; }
-    }
-
-    function saveState(state) {
-        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
-        catch(e) {}
-    }
 
     function init() {
-        var state = loadState();
         var sections = document.querySelectorAll('.db-section[data-section]');
 
         sections.forEach(function(el) {
-            var id = el.getAttribute('data-section');
-            if (state[id]) el.classList.add('collapsed');
+            el.classList.add('collapsed');
 
             el.addEventListener('click', function(e) {
                 if (e.target.closest('a')) return;
                 el.classList.toggle('collapsed');
-                var s = loadState();
-                if (el.classList.contains('collapsed')) {
-                    s[id] = true;
-                } else {
-                    delete s[id];
-                }
-                saveState(s);
             });
         });
     }

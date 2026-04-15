@@ -3,7 +3,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
-from core.views import car_list_api, get_invoice_total, get_container_data, register_payment, get_client_balance, company_dashboard, get_payment_objects, search_partners_api, get_warehouse_cars_api, get_invoice_cars_api, comparison_dashboard, compare_car_costs_api, compare_client_costs_api, compare_warehouse_costs_api, get_discrepancies_api, get_available_services, add_services, get_warehouses, get_companies, add_cash_expense, add_cash_income, cash_wallet_reset, expense_analytics, upload_expense_receipt
+from core.views import car_list_api, get_invoice_total, get_container_data, register_payment, get_client_balance, company_dashboard, get_payment_objects, search_partners_api, get_warehouse_cars_api, get_invoice_cars_api, comparison_dashboard, compare_car_costs_api, compare_client_costs_api, compare_warehouse_costs_api, get_discrepancies_api, get_available_services, add_services, get_warehouses, get_companies, add_cash_expense, add_cash_income, cash_wallet_reset, expense_analytics, upload_expense_receipt, personal_cards_page, personal_card_add, personal_transfer, personal_card_expense, personal_card_income, personal_card_deactivate, personal_card_delete, personal_card_balance_reset
 from core.routing import websocket_urlpatterns
 from core.api import CarViewSet, InvoiceViewSet
 from core.views_invoice_audit import (
@@ -66,6 +66,15 @@ urlpatterns = [
     path('admin/cash-wallet/reset/', cash_wallet_reset, name='cash_wallet_reset'),
     path('admin/expense-analytics/', expense_analytics, name='expense_analytics'),
     path('admin/expense-receipt/<int:tx_id>/', upload_expense_receipt, name='upload_expense_receipt'),
+    path('admin/personal-cards/', personal_cards_page, name='personal_cards_page'),
+    path('admin/personal-cards/add/', personal_card_add, name='personal_card_add'),
+    path('admin/personal-cards/<int:card_id>/edit/', personal_card_add, name='personal_card_edit'),
+    path('admin/personal-cards/<int:card_id>/deactivate/', personal_card_deactivate, name='personal_card_deactivate'),
+    path('admin/personal-cards/<int:card_id>/delete/', personal_card_delete, name='personal_card_delete'),
+    path('admin/personal-transfer/', personal_transfer, name='personal_transfer'),
+    path('admin/personal-card-expense/', personal_card_expense, name='personal_card_expense'),
+    path('admin/personal-card-income/', personal_card_income, name='personal_card_income'),
+    path('admin/personal-cards/<int:card_id>/balance-reset/', personal_card_balance_reset, name='personal_card_balance_reset'),
     path('comparison-dashboard/', comparison_dashboard, name='comparison_dashboard'),
 
     # ── Проверка счетов ──────────────────────────────────────────────────────

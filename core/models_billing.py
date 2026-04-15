@@ -1641,3 +1641,234 @@ class Transaction(models.Model):
                 self.number = self.generate_number()
 
         super().save(*args, **kwargs)
+
+
+# ============================================================================
+# ЛИЧНЫЕ КАРТЫ
+# ============================================================================
+
+class PersonalCard(models.Model):
+    """Личная банковская карта для учёта личных финансов"""
+
+    name = models.CharField(
+        max_length=100,
+        verbose_name="Название",
+        help_text="Например: Revolut, SEB, Swedbank"
+    )
+    last_four = models.CharField(
+        max_length=4,
+        blank=True,
+        default='',
+        verbose_name="Последние 4 цифры",
+    )
+    balance = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        default=0,
+        verbose_name="Баланс",
+    )
+    color = models.CharField(
+        max_length=7,
+        default='#6366f1',
+        verbose_name="Цвет",
+        help_text="HEX-цвет для отображения на дашборде"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Активна",
+    )
+    order = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Порядок",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Создана",
+    )
+
+    class Meta:
+        verbose_name = "Личная карта"
+        verbose_name_plural = "Личные карты"
+        ordering = ['order', 'name']
+
+    def __str__(self):
+        label = self.name
+        if self.last_four:
+            label += f" ·{self.last_four}"
+        return label
+
+    @property
+    def display_name(self):
+        return str(self)
+
+
+# ============================================================================
+# ПЕРЕВОДЫ МЕЖДУ КАРТАМИ / НАЛИЧНЫМИ
+# ============================================================================
+
+class PersonalTransfer(models.Model):
+    """Перевод средств между наличными и личными картами"""
+
+    TRANSFER_TYPE_CHOICES = [
+        ('CASH_TO_CARD', 'Наличные → Карта'),
+        ('CARD_TO_CASH', 'Карта → Наличные'),
+        ('CARD_TO_CARD', 'Карта → Карта'),
+        ('CARD_INCOME', 'Поступление на карту'),
+        ('CARD_EXPENSE', 'Расход с карты'),
+    ]
+
+    transfer_type = models.CharField(
+        max_length=20,
+        choices=TRANSFER_TYPE_CHOICES,
+        verbose_name="Тип операции",
+    )
+    from_card = models.ForeignKey(
+        PersonalCard,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='transfers_out',
+        verbose_name="Карта-источник",
+    )
+    to_card = models.ForeignKey(
+        PersonalCard,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='transfers_in',
+        verbose_name="Карта-получатель",
+    )
+    amount = models.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))],
+        verbose_name="Сумма",
+    )
+    description = models.TextField(
+        blank=True,
+        default='',
+        verbose_name="Описание",
+    )
+    category = models.ForeignKey(
+        ExpenseCategory,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='personal_transfers',
+        verbose_name="Категория",
+        help_text="Для расходов с карты"
+    )
+    date = models.DateTimeField(
+        default=timezone.now,
+        verbose_name="Дата",
+    )
+    linked_transaction = models.ForeignKey(
+        Transaction,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='personal_transfers',
+        verbose_name="Связанная транзакция",
+        help_text="Транзакция в кассе (для переводов нал↔карта)"
+    )
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='personal_transfers',
+        verbose_name="Создал",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Создана",
+    )
+
+    class Meta:
+        verbose_name = "Личный перевод"
+        verbose_name_plural = "Личные переводы"
+        ordering = ['-date']
+
+    def __str__(self):
+        return f"{self.get_transfer_type_display()} — {self.amount}"
+
+    def clean(self):
+        errors = {}
+        tt = self.transfer_type
+
+        if tt == 'CASH_TO_CARD' and not self.to_card_id:
+            errors['to_card'] = "Укажите карту-получатель"
+        if tt == 'CARD_TO_CASH' and not self.from_card_id:
+            errors['from_card'] = "Укажите карту-источник"
+        if tt == 'CARD_TO_CARD':
+            if not self.from_card_id:
+                errors['from_card'] = "Укажите карту-источник"
+            if not self.to_card_id:
+                errors['to_card'] = "Укажите карту-получатель"
+            if self.from_card_id and self.to_card_id and self.from_card_id == self.to_card_id:
+                errors['to_card'] = "Карта-источник и карта-получатель должны быть разными"
+        if tt == 'CARD_INCOME' and not self.to_card_id:
+            errors['to_card'] = "Укажите карту-получатель"
+        if tt == 'CARD_EXPENSE' and not self.from_card_id:
+            errors['from_card'] = "Укажите карту-источник"
+
+        if errors:
+            raise ValidationError(errors)
+
+    def execute(self, company=None):
+        """
+        Выполнить перевод: обновить балансы карт и создать Transaction для кассы.
+        Вызывается из view после создания объекта.
+        """
+        from django.db import transaction as db_transaction
+
+        tt = self.transfer_type
+
+        with db_transaction.atomic():
+            if tt in ('CASH_TO_CARD', 'CARD_INCOME'):
+                card = PersonalCard.objects.select_for_update().get(pk=self.to_card_id)
+                card.balance += self.amount
+                card.save(update_fields=['balance'])
+
+            if tt in ('CARD_TO_CASH', 'CARD_EXPENSE'):
+                card = PersonalCard.objects.select_for_update().get(pk=self.from_card_id)
+                card.balance -= self.amount
+                card.save(update_fields=['balance'])
+
+            if tt == 'CARD_TO_CARD':
+                src = PersonalCard.objects.select_for_update().get(pk=self.from_card_id)
+                dst = PersonalCard.objects.select_for_update().get(pk=self.to_card_id)
+                src.balance -= self.amount
+                dst.balance += self.amount
+                src.save(update_fields=['balance'])
+                dst.save(update_fields=['balance'])
+
+            if tt == 'CASH_TO_CARD' and company:
+                tx = Transaction.objects.create(
+                    type='ADJUSTMENT',
+                    method='CASH',
+                    amount=self.amount,
+                    currency='EUR',
+                    from_company=company,
+                    description=self.description or f'Перевод на карту {self.to_card}',
+                    status='COMPLETED',
+                    date=self.date,
+                    created_by=self.created_by,
+                )
+                self.linked_transaction = tx
+                self.save(update_fields=['linked_transaction'])
+
+            if tt == 'CARD_TO_CASH' and company:
+                tx = Transaction.objects.create(
+                    type='ADJUSTMENT',
+                    method='CASH',
+                    amount=self.amount,
+                    currency='EUR',
+                    to_company=company,
+                    description=self.description or f'Снятие с карты {self.from_card}',
+                    status='COMPLETED',
+                    date=self.date,
+                    created_by=self.created_by,
+                )
+                self.linked_transaction = tx
+                self.save(update_fields=['linked_transaction'])

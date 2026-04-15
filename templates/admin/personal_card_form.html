@@ -1,0 +1,217 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}{% if card %}Редактировать карту{% else %}Добавить карту{% endif %}{% endblock %}
+{% block content_title %}<h1>💳 {% if card %}Редактировать карту{% else %}Добавить карту{% endif %}</h1>{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    main#content-start, main.content { padding: 0 !important; }
+    #content {
+        background: #f4f2ff;
+        min-height: 100vh;
+        max-width: 100% !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    #content-main { padding: 0; }
+    .wallet-form {
+        max-width: 520px;
+        margin: 32px auto 0;
+        padding: 32px;
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+        border: 1px solid rgba(108,92,231,.14);
+    }
+    .wallet-form .field-group { margin-bottom: 20px; }
+    .wallet-form label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+        color: #4a4a68;
+        font-size: .9em;
+    }
+    .wallet-form input[type="text"],
+    .wallet-form input[type="number"],
+    .wallet-form input[type="color"] {
+        width: 100%;
+        padding: 10px 14px;
+        border: 1.5px solid #e0dcf8;
+        border-radius: 10px;
+        background: #faf9ff;
+        color: #1a1a2e;
+        font-size: 16px;
+        box-sizing: border-box;
+        font-family: inherit;
+    }
+    .wallet-form input[type="color"] {
+        height: 44px;
+        padding: 4px;
+        cursor: pointer;
+    }
+    .wallet-form input:focus {
+        outline: none;
+        border-color: #6c5ce7;
+        box-shadow: 0 0 0 3px rgba(108,92,231,.12);
+        background: #fff;
+    }
+    .wallet-form .submit-btn {
+        width: 100%;
+        padding: 12px;
+        border: none;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #6c5ce7, #a78bfa);
+        color: #fff;
+        font-size: 1.05em;
+        font-weight: 700;
+        cursor: pointer;
+        margin-top: 8px;
+        transition: transform .1s, box-shadow .15s;
+        font-family: inherit;
+    }
+    .wallet-form .submit-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(108,92,231,.3);
+    }
+    .color-presets {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+        flex-wrap: wrap;
+    }
+    .color-presets .cp {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        cursor: pointer;
+        border: 2px solid transparent;
+        transition: border-color .15s, transform .15s;
+    }
+    .color-presets .cp:hover { transform: scale(1.15); }
+    .color-presets .cp.active { border-color: #1a1a2e; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wallet-form">
+    <form method="post">
+        {% csrf_token %}
+        <div class="field-group">
+            <label for="id_name">Название карты</label>
+            <input type="text" id="id_name" name="name" placeholder="Revolut, SEB, Swedbank..."
+                   value="{{ card.name|default:'' }}" required autofocus>
+        </div>
+
+        <div class="field-group">
+            <label for="id_last_four">Последние 4 цифры (необязательно)</label>
+            <input type="text" id="id_last_four" name="last_four" maxlength="4"
+                   placeholder="1234" value="{{ card.last_four|default:'' }}">
+        </div>
+
+        <div class="field-group">
+            <label for="id_color">Цвет</label>
+            <input type="color" id="id_color" name="color"
+                   value="{{ card.color|default:'#6366f1' }}">
+            <div class="color-presets">
+                <div class="cp" style="background:#6366f1" data-color="#6366f1" title="Indigo"></div>
+                <div class="cp" style="background:#8b5cf6" data-color="#8b5cf6" title="Violet"></div>
+                <div class="cp" style="background:#a855f7" data-color="#a855f7" title="Purple"></div>
+                <div class="cp" style="background:#d946ef" data-color="#d946ef" title="Fuchsia"></div>
+                <div class="cp" style="background:#ec4899" data-color="#ec4899" title="Pink"></div>
+                <div class="cp" style="background:#f43f5e" data-color="#f43f5e" title="Rose"></div>
+                <div class="cp" style="background:#ef4444" data-color="#ef4444" title="Red"></div>
+                <div class="cp" style="background:#f97316" data-color="#f97316" title="Orange"></div>
+                <div class="cp" style="background:#f59e0b" data-color="#f59e0b" title="Amber"></div>
+                <div class="cp" style="background:#eab308" data-color="#eab308" title="Yellow"></div>
+                <div class="cp" style="background:#84cc16" data-color="#84cc16" title="Lime"></div>
+                <div class="cp" style="background:#22c55e" data-color="#22c55e" title="Green"></div>
+                <div class="cp" style="background:#10b981" data-color="#10b981" title="Emerald"></div>
+                <div class="cp" style="background:#14b8a6" data-color="#14b8a6" title="Teal"></div>
+                <div class="cp" style="background:#06b6d4" data-color="#06b6d4" title="Cyan"></div>
+                <div class="cp" style="background:#0ea5e9" data-color="#0ea5e9" title="Sky"></div>
+                <div class="cp" style="background:#3b82f6" data-color="#3b82f6" title="Blue"></div>
+                <div class="cp" style="background:#2563eb" data-color="#2563eb" title="Royal Blue"></div>
+                <div class="cp" style="background:#64748b" data-color="#64748b" title="Slate"></div>
+                <div class="cp" style="background:#1a1a2e" data-color="#1a1a2e" title="Dark"></div>
+            </div>
+        </div>
+
+        {% if not card %}
+        <div class="field-group">
+            <label for="id_initial_balance">Начальный баланс (€)</label>
+            <input type="number" id="id_initial_balance" name="initial_balance"
+                   step="0.01" value="0" placeholder="0.00">
+        </div>
+        {% endif %}
+
+        <button type="submit" class="submit-btn">
+            {% if card %}Сохранить{% else %}Добавить карту{% endif %}
+        </button>
+    </form>
+
+    {% if card %}
+    <div style="margin-top:24px;padding-top:20px;border-top:1px solid #e0dcf8">
+        {% if card.is_active %}
+        <form method="post" action="{% url 'personal_card_deactivate' card.pk %}"
+              onsubmit="return confirm('Деактивировать карту «{{ card }}»?\n\nКарта скроется из списков, но история операций сохранится.')">
+            {% csrf_token %}
+            <button type="submit" style="width:100%;padding:10px;border:1.5px solid #f59e0b;border-radius:10px;background:#fffbeb;color:#b45309;font-size:.9em;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s">
+                Деактивировать карту
+            </button>
+        </form>
+        {% else %}
+        <div style="text-align:center;padding:10px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.12);border-radius:10px;margin-bottom:12px">
+            <span style="color:#b91c1c;font-weight:600;font-size:.9em">Карта деактивирована</span>
+        </div>
+        <form method="post" action="{% url 'personal_card_deactivate' card.pk %}" style="margin-bottom:8px">
+            {% csrf_token %}
+            <button type="submit" style="width:100%;padding:10px;border:1.5px solid #22c55e;border-radius:10px;background:#f0fdf4;color:#15803d;font-size:.9em;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s">
+                Активировать карту
+            </button>
+        </form>
+        {% endif %}
+
+        {% if can_delete %}
+        <form method="post" action="{% url 'personal_card_delete' card.pk %}" style="margin-top:8px"
+              onsubmit="return confirm('Удалить карту «{{ card }}» навсегда?\n\nЭто действие необратимо.')">
+            {% csrf_token %}
+            <button type="submit" style="width:100%;padding:10px;border:1.5px solid #ef4444;border-radius:10px;background:#fff;color:#ef4444;font-size:.9em;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s">
+                Удалить карту навсегда
+            </button>
+        </form>
+        {% else %}
+        {% if card.transfers_in.exists or card.transfers_out.exists %}
+        <div style="text-align:center;margin-top:8px;font-size:.8em;color:#9898b0">
+            Удалить нельзя — есть история операций. Используйте деактивацию.
+        </div>
+        {% endif %}
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div style="text-align:center;margin-top:16px">
+        <a href="{% url 'personal_cards_page' %}" style="color:#6c5ce7;text-decoration:none;font-size:.9em">← Назад к картам</a>
+    </div>
+</div>
+
+<script>
+(function() {
+    var colorInput = document.getElementById('id_color');
+    var presets = document.querySelectorAll('.cp');
+    function setActive() {
+        presets.forEach(function(p) {
+            p.classList.toggle('active', p.dataset.color === colorInput.value);
+        });
+    }
+    presets.forEach(function(p) {
+        p.addEventListener('click', function() {
+            colorInput.value = p.dataset.color;
+            setActive();
+        });
+    });
+    colorInput.addEventListener('input', setActive);
+    setActive();
+})();
+</script>
+{% endblock %}
