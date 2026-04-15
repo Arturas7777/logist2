@@ -1,0 +1,197 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Перевод{% endblock %}
+{% block content_title %}<h1>🔄 Перевод средств</h1>{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    main#content-start, main.content { padding: 0 !important; }
+    #content {
+        background: #f4f2ff;
+        min-height: 100vh;
+        max-width: 100% !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    #content-main { padding: 0; }
+    .wallet-form {
+        max-width: 520px;
+        margin: 32px auto 0;
+        padding: 32px;
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+        border: 1px solid rgba(108,92,231,.14);
+    }
+    .wallet-form .field-group { margin-bottom: 20px; }
+    .wallet-form label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+        color: #4a4a68;
+        font-size: .9em;
+    }
+    .wallet-form input[type="number"],
+    .wallet-form input[type="text"],
+    .wallet-form select {
+        width: 100%;
+        padding: 10px 14px;
+        border: 1.5px solid #e0dcf8;
+        border-radius: 10px;
+        background: #faf9ff;
+        color: #1a1a2e;
+        font-size: 16px;
+        box-sizing: border-box;
+        font-family: inherit;
+    }
+    .wallet-form select { -webkit-appearance: menulist; appearance: menulist; }
+    .wallet-form input:focus, .wallet-form select:focus {
+        outline: none;
+        border-color: #6c5ce7;
+        box-shadow: 0 0 0 3px rgba(108,92,231,.12);
+        background: #fff;
+    }
+    .wallet-form .submit-btn {
+        width: 100%;
+        padding: 12px;
+        border: none;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #22c55e, #4ade80);
+        color: #fff;
+        font-size: 1.05em;
+        font-weight: 700;
+        cursor: pointer;
+        margin-top: 8px;
+        transition: transform .1s, box-shadow .15s;
+        font-family: inherit;
+    }
+    .wallet-form .submit-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(34,197,94,.3);
+    }
+    .cash-badge {
+        text-align: center;
+        margin-bottom: 24px;
+        padding: 14px;
+        background: rgba(34,197,94,.06);
+        border: 1px solid rgba(34,197,94,.12);
+        border-radius: 12px;
+    }
+    .cash-badge .label { font-size: .85em; color: #7c7c9a; }
+    .cash-badge .value { font-size: 1.6em; font-weight: 800; color: #22c55e; }
+    .type-tabs {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+    }
+    .type-tab {
+        padding: 8px 16px;
+        border-radius: 10px;
+        border: 1.5px solid #e0dcf8;
+        background: #fff;
+        cursor: pointer;
+        font-size: .85em;
+        font-weight: 600;
+        color: #7c7c9a;
+        transition: all .2s;
+    }
+    .type-tab:hover { border-color: #6c5ce7; color: #6c5ce7; }
+    .type-tab.active {
+        background: #6c5ce7;
+        color: #fff;
+        border-color: #6c5ce7;
+    }
+    .dynamic-field { display: none; }
+    .dynamic-field.visible { display: block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wallet-form">
+    <div class="cash-badge">
+        <div class="label">Наличные на руках</div>
+        <div class="value">{{ current_cash|floatformat:2 }} €</div>
+    </div>
+
+    <form method="post" id="transferForm">
+        {% csrf_token %}
+        <input type="hidden" name="transfer_type" id="id_transfer_type" value="CASH_TO_CARD">
+
+        <div class="field-group">
+            <label>Тип перевода</label>
+            <div class="type-tabs">
+                <div class="type-tab active" data-type="CASH_TO_CARD">Нал → Карта</div>
+                <div class="type-tab" data-type="CARD_TO_CASH">Карта → Нал</div>
+                <div class="type-tab" data-type="CARD_TO_CARD">Карта → Карта</div>
+            </div>
+        </div>
+
+        <div class="field-group dynamic-field" id="from-card-group">
+            <label for="id_from_card">Карта-источник</label>
+            <select id="id_from_card" name="from_card">
+                <option value="">— Выберите карту —</option>
+                {% for card in cards %}
+                <option value="{{ card.pk }}">{{ card }} ({{ card.balance|floatformat:2 }} €)</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="field-group dynamic-field visible" id="to-card-group">
+            <label for="id_to_card">Карта-получатель</label>
+            <select id="id_to_card" name="to_card">
+                <option value="">— Выберите карту —</option>
+                {% for card in cards %}
+                <option value="{{ card.pk }}">{{ card }} ({{ card.balance|floatformat:2 }} €)</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="field-group">
+            <label for="id_amount">Сумма (€)</label>
+            <input type="number" id="id_amount" name="amount" step="0.01" min="0.01"
+                   placeholder="0.00" required>
+        </div>
+
+        <div class="field-group">
+            <label for="id_description">Описание (необязательно)</label>
+            <input type="text" id="id_description" name="description"
+                   placeholder="Пополнение карты, перевод...">
+        </div>
+
+        <button type="submit" class="submit-btn">Выполнить перевод</button>
+    </form>
+
+    <div style="text-align:center;margin-top:16px">
+        <a href="{% url 'personal_cards_page' %}" style="color:#6c5ce7;text-decoration:none;font-size:.9em">← Назад к картам</a>
+    </div>
+</div>
+
+<script>
+(function() {
+    var tabs = document.querySelectorAll('.type-tab');
+    var hiddenInput = document.getElementById('id_transfer_type');
+    var fromGroup = document.getElementById('from-card-group');
+    var toGroup = document.getElementById('to-card-group');
+
+    var visibility = {
+        'CASH_TO_CARD': { from: false, to: true },
+        'CARD_TO_CASH': { from: true, to: false },
+        'CARD_TO_CARD': { from: true, to: true },
+    };
+
+    function setType(type) {
+        hiddenInput.value = type;
+        tabs.forEach(function(t) { t.classList.toggle('active', t.dataset.type === type); });
+        var v = visibility[type] || { from: false, to: false };
+        fromGroup.classList.toggle('visible', v.from);
+        toGroup.classList.toggle('visible', v.to);
+    }
+
+    tabs.forEach(function(tab) {
+        tab.addEventListener('click', function() { setType(tab.dataset.type); });
+    });
+})();
+</script>
+{% endblock %}

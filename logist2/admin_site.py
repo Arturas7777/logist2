@@ -30,6 +30,8 @@ MODEL_ICONS = {
     'newinvoice': 'bi-receipt',
     'transaction': 'bi-wallet2',
     'expensecategory': 'bi-tags',
+    'personalcard': 'bi-credit-card-2-front',
+    'personaltransfer': 'bi-arrow-left-right',
     'bankconnection': 'bi-bank2',
     'bankaccount': 'bi-credit-card',
     'banktransaction': 'bi-arrow-left-right',
@@ -60,7 +62,7 @@ ADMIN_GROUPS = OrderedDict([
         'order': 2,
     }),
     ('Финансы', {
-        'models': ['newinvoice', 'transaction', 'expensecategory'],
+        'models': ['newinvoice', 'transaction', 'expensecategory', 'personalcard', 'personaltransfer'],
         'icon': 'bi-cash-stack',
         'order': 3,
     }),

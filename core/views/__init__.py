@@ -34,6 +34,14 @@ from .admin_views import (  # noqa: F401
     cash_wallet_reset,
     expense_analytics,
     upload_expense_receipt,
+    personal_cards_page,
+    personal_card_add,
+    personal_transfer,
+    personal_card_expense,
+    personal_card_income,
+    personal_card_deactivate,
+    personal_card_delete,
+    personal_card_balance_reset,
 )
 
 from .comparison import (  # noqa: F401

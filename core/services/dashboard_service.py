@@ -183,14 +183,15 @@ class DashboardService:
     # ========================================================================
 
     def get_cash_wallet(self):
-        """Наличные на руках + личные расходы."""
+        """Наличные на руках + личные расходы + личные карты."""
         if not self.company:
             return {
                 'total_cash': Decimal('0'), 'personal_month': Decimal('0'),
                 'personal_total': Decimal('0'), 'recent_personal': [],
+                'personal_cards': [],
             }
 
-        from ..models_billing import Transaction, ExpenseCategory
+        from ..models_billing import Transaction, ExpenseCategory, PersonalCard
         breakdown = self.company.get_balance_breakdown()
         total_cash = breakdown.get('cash', Decimal('0'))
 
@@ -236,23 +237,30 @@ class DashboardService:
                 for d in cat_data
             ]
 
+        personal_cards = list(
+            PersonalCard.objects.filter(is_active=True).order_by('order', 'name')
+        )
+        total_cards = sum(c.balance for c in personal_cards)
+
         return {
             'total_cash': total_cash,
             'personal_month': personal_month,
             'personal_total': personal_total,
             'recent_personal': recent_personal,
             'category_breakdown': category_breakdown,
+            'personal_cards': personal_cards,
+            'total_cards': total_cards,
         }
 
     def get_total_assets(self):
-        """Всего активов = наличные + EUR-банковские счета."""
+        """Всего активов = наличные + личные карты + EUR-банковские счета."""
         wallet = self.get_cash_wallet()
         bank_accounts = self.get_bank_balances()
         bank_eur = sum(
             Decimal(str(acc['balance'] or 0))
             for acc in bank_accounts if acc['currency'] == 'EUR'
         )
-        return wallet['total_cash'] + bank_eur
+        return wallet['total_cash'] + wallet.get('total_cards', Decimal('0')) + bank_eur
 
     # ========================================================================
     # CHARTS

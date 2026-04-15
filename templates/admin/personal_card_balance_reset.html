@@ -1,8 +1,8 @@
 {% extends "admin/base_site.html" %}
 {% load i18n l10n %}
 
-{% block title %}Сверка кошелька{% endblock %}
-{% block content_title %}<h1>🔄 Сверка баланса кошелька</h1>{% endblock %}
+{% block title %}Сверка баланса карты{% endblock %}
+{% block content_title %}<h1>🔄 Сверка баланса карты</h1>{% endblock %}
 
 {% block extrastyle %}
 {{ block.super }}
@@ -71,17 +71,38 @@
         transform: translateY(-1px);
         box-shadow: 0 4px 16px rgba(108,92,231,.3);
     }
-    .current-balance {
+    .card-badge {
         text-align: center;
         margin-bottom: 28px;
         padding: 20px;
-        background: rgba(108,92,231,.04);
-        border: 1px solid rgba(108,92,231,.1);
         border-radius: 12px;
+        border: 1px solid rgba(108,92,231,.1);
     }
-    .current-balance .label { font-size: .85em; color: #7c7c9a; margin-bottom: 4px; }
-    .current-balance .value { font-size: 2em; font-weight: 800; color: #6c5ce7; }
-    .current-balance .hint { font-size: .8em; color: #a29bcc; margin-top: 6px; }
+    .card-badge .card-name {
+        font-size: .85em;
+        color: #7c7c9a;
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+    .card-badge .card-name .dot {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 4px;
+    }
+    .card-badge .value {
+        font-size: 2em;
+        font-weight: 800;
+        color: #6c5ce7;
+    }
+    .card-badge .hint {
+        font-size: .8em;
+        color: #a29bcc;
+        margin-top: 6px;
+    }
     .diff-preview {
         text-align: center;
         padding: 12px;
@@ -95,18 +116,21 @@
 
 {% block content %}
 <div class="wallet-form">
-    <div class="current-balance">
-        <div class="label">Текущий расчётный баланс</div>
-        <div class="value" id="computed_balance">{{ current_cash|floatformat:2 }} €</div>
-        <div class="hint">По книгам системы (все CASH-транзакции)</div>
+    <div class="card-badge" style="background: {{ card.color }}08;">
+        <div class="card-name">
+            <span class="dot" style="background: {{ card.color }};"></span>
+            {{ card.name }}{% if card.last_four %} •••• {{ card.last_four }}{% endif %}
+        </div>
+        <div class="value" id="computed_balance">{{ card.balance|floatformat:2 }} €</div>
+        <div class="hint">Текущий расчётный баланс по системе</div>
     </div>
 
     <form method="post">
         {% csrf_token %}
         <div class="field-group">
-            <label for="id_real_amount">Реальная сумма в кошельке (€)</label>
+            <label for="id_real_amount">Реальная сумма на карте (€)</label>
             <input type="number" id="id_real_amount" name="real_amount" step="0.01" min="0"
-                   placeholder="Посчитайте наличные..." required autofocus
+                   placeholder="Введите актуальный баланс..." required autofocus
                    oninput="showDiff()">
         </div>
 
@@ -116,14 +140,14 @@
     </form>
 
     <div style="text-align:center;margin-top:16px">
-        <a href="{% url 'company_dashboard' %}" style="color:#6c5ce7;text-decoration:none;font-size:.9em">← Вернуться на дашборд</a>
+        <a href="{% url 'personal_cards_page' %}" style="color:#6c5ce7;text-decoration:none;font-size:.9em">← Вернуться к картам</a>
     </div>
 </div>
 
 <script>
 function showDiff() {
     var real = parseFloat(document.getElementById('id_real_amount').value) || 0;
-    var computed = {{ current_cash|unlocalize }};
+    var computed = {{ card.balance|unlocalize }};
     var diff = real - computed;
     var el = document.getElementById('diff_preview');
     if (Math.abs(diff) < 0.01) {

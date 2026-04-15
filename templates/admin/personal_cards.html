@@ -1,0 +1,285 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Личные карты и переводы{% endblock %}
+{% block content_title %}<h1>💳 Личные карты и переводы</h1>{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+<style>
+    main#content-start, main.content { padding: 0 !important; }
+    #content {
+        background: #f4f2ff;
+        min-height: 100vh;
+        max-width: 100% !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    #content-main { padding: 0; }
+    .pc-wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 32px 32px;
+    }
+    .pc-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 24px;
+    }
+    .pc-action {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 9px 18px;
+        border-radius: 10px;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: .84em;
+        transition: all .2s ease;
+        border: none;
+        cursor: pointer;
+    }
+    .pc-action.primary { background: #6c5ce7; color: #fff; }
+    .pc-action.primary:hover { background: #5a4bd1; box-shadow: 0 4px 14px rgba(108,92,231,.3); transform: translateY(-1px); color: #fff; }
+    .pc-action.green { background: #22c55e; color: #fff; }
+    .pc-action.green:hover { background: #16a34a; box-shadow: 0 4px 14px rgba(34,197,94,.3); transform: translateY(-1px); color: #fff; }
+    .pc-action.amber { background: #f59e0b; color: #fff; }
+    .pc-action.amber:hover { background: #d97706; color: #fff; }
+    .pc-action.outline { background: #fff; color: #6c5ce7; border: 1.5px solid #e0dcf8; }
+    .pc-action.outline:hover { background: #f4f2ff; border-color: #6c5ce7; color: #6c5ce7; }
+
+    .cards-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 16px;
+        margin-bottom: 28px;
+    }
+    .wallet-card {
+        background: #fff;
+        padding: 20px 22px;
+        border-radius: 16px;
+        box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+        border: 1px solid rgba(108,92,231,.14);
+        border-top: 4px solid #22c55e;
+        position: relative;
+        transition: all .25s ease;
+    }
+    .wallet-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 4px 12px rgba(30,20,60,.1), 0 12px 28px rgba(30,20,60,.08);
+    }
+    .wallet-card .wc-label {
+        font-size: .78em;
+        text-transform: uppercase;
+        letter-spacing: .6px;
+        color: #9898b0;
+        font-weight: 600;
+        margin-bottom: 6px;
+    }
+    .wallet-card .wc-value {
+        font-size: 1.6em;
+        font-weight: 800;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+    }
+    .wallet-card .wc-sub {
+        font-size: .8em;
+        color: #b0b0c8;
+        margin-top: 6px;
+        font-weight: 500;
+    }
+    .wallet-card .wc-actions {
+        position: absolute;
+        top: 12px;
+        right: 14px;
+        display: flex;
+        gap: 8px;
+    }
+    .wallet-card .wc-actions a {
+        color: #b0b0c8;
+        text-decoration: none;
+        font-size: 1.1em;
+        transition: color .2s;
+    }
+    .wallet-card .wc-actions a:hover { color: #6c5ce7; }
+
+    .summary-strip {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+    }
+    .summary-chip {
+        padding: 12px 20px;
+        border-radius: 12px;
+        font-weight: 700;
+        font-size: .92em;
+    }
+    .summary-chip.total {
+        background: linear-gradient(135deg, #6c5ce7, #a78bfa);
+        color: #fff;
+    }
+
+    .tbl-card {
+        background: #fff;
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 1px 3px rgba(108,92,231,.06), 0 6px 16px rgba(108,92,231,.04);
+        border: 1px solid rgba(108,92,231,.05);
+    }
+    .tbl-card h3 {
+        margin: 0 0 16px;
+        font-size: .92em;
+        font-weight: 700;
+        color: #1a1a2e;
+    }
+    .dt {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: .84em;
+    }
+    .dt th, .dt td {
+        padding: 11px 14px;
+        text-align: left;
+        white-space: nowrap;
+    }
+    .dt th {
+        background: #f8f7fc;
+        font-weight: 700;
+        color: #9898b0;
+        font-size: .78em;
+        text-transform: uppercase;
+        letter-spacing: .5px;
+        border-bottom: 2px solid #eeecf6;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+    .dt td {
+        color: #4a4a68;
+        border-bottom: 1px solid #f3f1fa;
+    }
+    .dt tbody tr:hover td { background: #faf9ff; }
+    .tbl-scroll {
+        max-height: 500px;
+        overflow-y: auto;
+    }
+    .tbl-scroll::-webkit-scrollbar { width: 4px; }
+    .tbl-scroll::-webkit-scrollbar-thumb { background: #ddd8f3; border-radius: 4px; }
+    .amount-in  { color: #16a34a; font-weight: 700; }
+    .amount-out { color: #dc2626; font-weight: 700; }
+    .badge-type {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-size: .73em;
+        font-weight: 700;
+    }
+    .badge-CASH_TO_CARD   { background: #eef2ff; color: #4f46e5; }
+    .badge-CARD_TO_CASH   { background: #f0fdf4; color: #15803d; }
+    .badge-CARD_TO_CARD   { background: #faf5ff; color: #7c3aed; }
+    .badge-CARD_INCOME    { background: #ecfdf5; color: #059669; }
+    .badge-CARD_EXPENSE   { background: #fef2f2; color: #b91c1c; }
+
+    @media (max-width: 768px) {
+        .pc-wrap { padding: 10px; }
+        .cards-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        .wallet-card { padding: 14px 16px; }
+        .wallet-card .wc-value { font-size: 1.2em; }
+        .pc-actions { flex-direction: column; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pc-wrap">
+    <div class="pc-actions">
+        <a href="{% url 'personal_card_add' %}" class="pc-action primary"><i class="bx bx-plus"></i> Добавить карту</a>
+        <a href="{% url 'personal_transfer' %}" class="pc-action green"><i class="bx bx-transfer"></i> Перевод</a>
+        <a href="{% url 'personal_card_expense' %}" class="pc-action amber"><i class="bx bx-minus-circle"></i> Расход с карты</a>
+        <a href="{% url 'personal_card_income' %}" class="pc-action outline"><i class="bx bx-plus-circle"></i> Поступление на карту</a>
+        <a href="{% url 'company_dashboard' %}" class="pc-action outline"><i class="bx bx-arrow-back"></i> Дашборд</a>
+    </div>
+
+    <div class="cards-grid">
+        <div class="wallet-card" style="border-top-color: #22c55e">
+            <div class="wc-label">Наличные</div>
+            <div class="wc-value" style="color: {% if current_cash >= 0 %}#16a34a{% else %}#dc2626{% endif %}">
+                {{ current_cash|floatformat:2 }} €
+            </div>
+            <div class="wc-sub">Касса компании</div>
+        </div>
+        {% for card in cards %}
+        <div class="wallet-card" style="border-top-color: {{ card.color }}">
+            <div class="wc-actions">
+                <a href="{% url 'personal_card_balance_reset' card.pk %}" title="Коррекция баланса"><i class="bx bx-revision"></i></a>
+                <a href="{% url 'personal_card_edit' card.pk %}" title="Редактировать"><i class="bx bx-pencil"></i></a>
+            </div>
+            <div class="wc-label">{{ card.name }}{% if card.last_four %} ·{{ card.last_four }}{% endif %}</div>
+            <div class="wc-value" style="color: {% if card.balance >= 0 %}#1a1a2e{% else %}#dc2626{% endif %}">
+                {{ card.balance|floatformat:2 }} €
+            </div>
+        </div>
+        {% empty %}
+        <div class="wallet-card" style="border-top-color: #e0dcf8; text-align: center; padding: 30px">
+            <div style="color: #b0b0c8; font-size: .9em">Нет карт</div>
+            <a href="{% url 'personal_card_add' %}" style="color: #6c5ce7; text-decoration: none; font-weight: 600; font-size: .9em">+ Добавить первую карту</a>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="summary-strip">
+        <div class="summary-chip total">
+            Всего: {{ total_all|floatformat:2 }} €
+        </div>
+        {% if cards %}
+        <div class="summary-chip" style="background: rgba(108,92,231,.08); color: #6c5ce7">
+            На картах: {{ total_cards|floatformat:2 }} €
+        </div>
+        {% endif %}
+    </div>
+
+    {% if recent_transfers %}
+    <div class="tbl-card">
+        <h3><i class="bx bx-history" style="vertical-align:middle;margin-right:6px;color:#6c5ce7"></i>История переводов</h3>
+        <div class="tbl-scroll">
+        <table class="dt">
+            <thead>
+                <tr>
+                    <th>Дата</th>
+                    <th>Тип</th>
+                    <th>Откуда</th>
+                    <th>Куда</th>
+                    <th style="text-align:right">Сумма</th>
+                    <th>Описание</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for t in recent_transfers %}
+                <tr>
+                    <td>{{ t.date|date:"d.m.Y H:i" }}</td>
+                    <td><span class="badge-type badge-{{ t.transfer_type }}">{{ t.get_transfer_type_display }}</span></td>
+                    <td>
+                        {% if t.transfer_type == 'CASH_TO_CARD' %}Наличные
+                        {% elif t.from_card %}{{ t.from_card }}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td>
+                        {% if t.transfer_type == 'CARD_TO_CASH' %}Наличные
+                        {% elif t.to_card %}{{ t.to_card }}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td style="text-align:right" class="{% if t.transfer_type == 'CARD_EXPENSE' %}amount-out{% elif t.transfer_type == 'CARD_INCOME' %}amount-in{% endif %}">
+                        {% if t.transfer_type == 'CARD_EXPENSE' %}−{% endif %}{{ t.amount|floatformat:2 }} €
+                    </td>
+                    <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.description|default:"—" }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,123 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Расход с карты{% endblock %}
+{% block content_title %}<h1>💸 Расход с карты</h1>{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    main#content-start, main.content { padding: 0 !important; }
+    #content {
+        background: #f4f2ff;
+        min-height: 100vh;
+        max-width: 100% !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    #content-main { padding: 0; }
+    .wallet-form {
+        max-width: 520px;
+        margin: 32px auto 0;
+        padding: 32px;
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+        border: 1px solid rgba(108,92,231,.14);
+    }
+    .wallet-form .field-group { margin-bottom: 20px; }
+    .wallet-form label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+        color: #4a4a68;
+        font-size: .9em;
+    }
+    .wallet-form input[type="number"],
+    .wallet-form input[type="text"],
+    .wallet-form select {
+        width: 100%;
+        padding: 10px 14px;
+        border: 1.5px solid #e0dcf8;
+        border-radius: 10px;
+        background: #faf9ff;
+        color: #1a1a2e;
+        font-size: 16px;
+        box-sizing: border-box;
+        font-family: inherit;
+    }
+    .wallet-form select { -webkit-appearance: menulist; appearance: menulist; }
+    .wallet-form input:focus, .wallet-form select:focus {
+        outline: none;
+        border-color: #6c5ce7;
+        box-shadow: 0 0 0 3px rgba(108,92,231,.12);
+        background: #fff;
+    }
+    .wallet-form .submit-btn {
+        width: 100%;
+        padding: 12px;
+        border: none;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #ef4444, #f87171);
+        color: #fff;
+        font-size: 1.05em;
+        font-weight: 700;
+        cursor: pointer;
+        margin-top: 8px;
+        transition: transform .1s, box-shadow .15s;
+        font-family: inherit;
+    }
+    .wallet-form .submit-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(239,68,68,.3);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wallet-form">
+    <form method="post">
+        {% csrf_token %}
+        <div class="field-group">
+            <label for="id_card">Карта</label>
+            <select id="id_card" name="card" required>
+                <option value="">— Выберите карту —</option>
+                {% for card in cards %}
+                <option value="{{ card.pk }}">{{ card }} ({{ card.balance|floatformat:2 }} €)</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="field-group">
+            <label for="id_amount">Сумма (€)</label>
+            <input type="number" id="id_amount" name="amount" step="0.01" min="0.01"
+                   placeholder="0.00" required autofocus>
+        </div>
+
+        <div class="field-group">
+            <label for="id_category">Категория</label>
+            {% if personal_categories %}
+            <select id="id_category" name="category" required>
+                {% for cat in personal_categories %}
+                <option value="{{ cat.id }}">{{ cat.name }}</option>
+                {% endfor %}
+            </select>
+            {% else %}
+            <div style="padding:12px;background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.15);border-radius:10px;color:#ef4444;font-size:.9em">
+                Категории не найдены.
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="field-group">
+            <label for="id_description">Описание (необязательно)</label>
+            <input type="text" id="id_description" name="description" placeholder="Покупка, подписка...">
+        </div>
+
+        <button type="submit" class="submit-btn">Записать расход</button>
+    </form>
+
+    <div style="text-align:center;margin-top:16px">
+        <a href="{% url 'personal_cards_page' %}" style="color:#6c5ce7;text-decoration:none;font-size:.9em">← Назад к картам</a>
+    </div>
+</div>
+{% endblock %}
