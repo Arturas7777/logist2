@@ -10,6 +10,7 @@ $DUMP_FILE = "logist2_dump.sql.gz"
 $LOCAL_DB = "logist2_db"
 $LOCAL_USER = "arturas"
 $LOCAL_PASSWORD = "7154032tut"
+$SSH_OPTS = @("-o", "ConnectTimeout=15", "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=3")
 
 $env:PGPASSWORD = $LOCAL_PASSWORD
 
@@ -19,7 +20,7 @@ Write-Host ""
 # [1/3] Create dump on server
 Write-Host "[1/3] Creating dump on server..." -ForegroundColor Yellow
 $dumpCmd = "cd $REMOTE_DIR && PGPASSWORD=7154032tut pg_dump -h localhost -U arturas -Fc --no-owner --no-acl $LOCAL_DB > /tmp/$DUMP_FILE && ls -lh /tmp/$DUMP_FILE | awk '{print `$5}'"
-$size = ssh -o ConnectTimeout=30 -o ServerAliveInterval=10 -o ServerAliveCountMax=6 $SERVER $dumpCmd
+$size = ssh @SSH_OPTS $SERVER $dumpCmd
 if ($LASTEXITCODE -ne 0) {
     Write-Host "      ERROR: pg_dump failed on server" -ForegroundColor Red
     exit 1
@@ -29,15 +30,24 @@ Write-Host "      Dump created ($size)" -ForegroundColor Green
 # [2/3] Download dump
 Write-Host "[2/3] Downloading..." -ForegroundColor Yellow
 $localDump = "$env:TEMP\$DUMP_FILE"
-scp -o ConnectTimeout=30 "${SERVER}:/tmp/$DUMP_FILE" $localDump
+scp @SSH_OPTS "${SERVER}:/tmp/$DUMP_FILE" $localDump
 if ($LASTEXITCODE -ne 0) {
     Write-Host "      ERROR: Download failed" -ForegroundColor Red
     exit 1
 }
 Write-Host "      Downloaded to $localDump" -ForegroundColor Green
 
-# Cleanup remote dump
-ssh -o ConnectTimeout=30 $SERVER "rm -f /tmp/$DUMP_FILE" 2>$null
+# Cleanup remote dump (non-blocking, best-effort with 15s timeout)
+$cleanupJob = Start-Job -ScriptBlock {
+    param($srv, $file, $opts)
+    & ssh @opts $srv "rm -f /tmp/$file" 2>$null
+} -ArgumentList $SERVER, $DUMP_FILE, $SSH_OPTS
+$null = Wait-Job $cleanupJob -Timeout 15
+if ($cleanupJob.State -eq 'Running') {
+    Stop-Job $cleanupJob
+    Write-Host "      Remote cleanup timed out (non-critical, skipped)" -ForegroundColor DarkYellow
+}
+Remove-Job $cleanupJob -Force
 
 # [3/3] Restore locally
 Write-Host "[3/3] Restoring to local database..." -ForegroundColor Yellow
