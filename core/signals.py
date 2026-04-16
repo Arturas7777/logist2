@@ -626,6 +626,10 @@ def save_old_invoice_status(sender, instance, **kwargs):
 
 @receiver(post_save, sender=NewInvoice)
 def auto_push_invoice_to_sitepro(sender, instance, created, **kwargs):
+    """Ставит пуш в site.pro в очередь Celery после commit транзакции.
+
+    Синхронный fallback — если Celery недоступен.
+    """
     if not instance.pk:
         return
 
@@ -638,31 +642,49 @@ def auto_push_invoice_to_sitepro(sender, instance, created, **kwargs):
     if getattr(instance, '_pushing_to_sitepro', False):
         return
 
-    def _do_push():
-        try:
-            from core.models_accounting import SiteProConnection
-            connection = SiteProConnection.objects.filter(
-                is_active=True, auto_push_on_issue=True
-            ).first()
-            if not connection:
-                return
-            instance._pushing_to_sitepro = True
-            try:
-                from core.services.sitepro_service import SiteProService
-                SiteProService(connection).push_invoice(instance)
-                logger.info('[SitePro] Auto-pushed invoice %s on ISSUED', instance.number)
-            finally:
-                instance._pushing_to_sitepro = False
-        except Exception as e:
-            logger.error('[SitePro] Error auto-pushing invoice %s: %s', instance.number, e)
+    invoice_id = instance.pk
+    invoice_number = instance.number
 
-    transaction.on_commit(_do_push)
+    def _queue():
+        try:
+            from core.tasks import push_invoice_to_sitepro_task
+            push_invoice_to_sitepro_task.delay(invoice_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[SitePro] Celery unavailable for invoice %s, pushing inline: %s",
+                invoice_number, exc,
+            )
+            try:
+                from core.models_accounting import SiteProConnection
+                connection = SiteProConnection.objects.filter(
+                    is_active=True, auto_push_on_issue=True
+                ).first()
+                if not connection:
+                    return
+                instance._pushing_to_sitepro = True
+                try:
+                    from core.services.sitepro_service import SiteProService
+                    SiteProService(connection).push_invoice(instance)
+                    logger.info('[SitePro] Auto-pushed invoice %s on ISSUED (sync)', invoice_number)
+                finally:
+                    instance._pushing_to_sitepro = False
+            except Exception as e:  # noqa: BLE001
+                logger.error('[SitePro] Error auto-pushing invoice %s: %s', invoice_number, e)
+
+    transaction.on_commit(_queue)
 
 
 @receiver(post_save, sender=NewInvoice)
 def sync_linked_invoice_status(sender, instance, **kwargs):
-    """When an invoice becomes PAID, mark its linked pair as PAID too."""
-    if instance.status != 'PAID':
+    """When an invoice becomes PAID, mark its linked pair as LINKED_PAID.
+
+    LINKED_PAID — отдельный статус, показывающий что инвойс закрыт не
+    собственным платежом, а через связанный документ (BLC ↔ PARDP/FACT).
+    Он не учитывается как обычный PAID в `check_balance_consistency` —
+    оплата уже прошла по парному инвойсу, дублирующий Transaction
+    создавать нельзя, иначе поедет баланс склада/линии/перевозчика.
+    """
+    if instance.status not in ('PAID', 'LINKED_PAID'):
         return
     if getattr(instance, '_syncing_linked', False):
         return
@@ -678,13 +700,13 @@ def sync_linked_invoice_status(sender, instance, **kwargs):
             except NewInvoice.DoesNotExist:
                 linked = None
 
-    if linked and linked.status != 'PAID':
+    if linked and linked.status not in ('PAID', 'LINKED_PAID', 'CANCELLED'):
         linked._syncing_linked = True
         linked.paid_amount = linked.total
-        linked.status = 'PAID'
+        linked.status = 'LINKED_PAID'
         linked.save(update_fields=['paid_amount', 'status', 'updated_at'])
         logger.info(
-            'Linked invoice %s marked PAID (paired with %s)',
+            'Linked invoice %s marked LINKED_PAID (paired with %s)',
             linked.number, instance.number,
         )
 
@@ -938,15 +960,33 @@ def auto_sync_photos_on_container_change(sender, instance, created, **kwargs):
 # AUTOTRANSPORT
 # ============================================================================
 
+def _queue_or_run_generate_invoices(autotransport):
+    """Ставит задачу в Celery; при недоступности брокера — выполняет синхронно."""
+    from core.tasks import generate_autotransport_invoices_task
+    try:
+        transaction.on_commit(
+            lambda: generate_autotransport_invoices_task.delay(autotransport.pk)
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "AutoTransport %s: Celery unavailable, generating invoices inline: %s",
+            autotransport.number, exc,
+        )
+        try:
+            invoices = autotransport.generate_invoices()
+            if invoices:
+                logger.info(
+                    "AutoTransport %s: created/updated %d invoices (sync fallback)",
+                    autotransport.number, len(invoices),
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.error("AutoTransport %s invoice error: %s", autotransport.number, e)
+
+
 @receiver(post_save, sender='core.AutoTransport')
 def autotransport_post_save(sender, instance, created, **kwargs):
     if instance.status == 'FORMED':
-        try:
-            invoices = instance.generate_invoices()
-            if invoices:
-                logger.info("AutoTransport %s: created/updated %d invoices", instance.number, len(invoices))
-        except Exception as e:
-            logger.error("AutoTransport %s invoice error: %s", instance.number, e)
+        _queue_or_run_generate_invoices(instance)
 
     if instance.status in ('LOADED', 'IN_TRANSIT', 'DELIVERED'):
         transfer_date = getattr(instance, '_transfer_date_override', None)
@@ -976,35 +1016,36 @@ def _mark_cars_as_transferred(autotransport, transfer_date=None):
 
 
 def _update_container_status_if_all_transferred(container_id):
-    """Set container to TRANSFERRED if all its cars are TRANSFERRED."""
+    """Set container to TRANSFERRED if all its cars are TRANSFERRED.
+
+    Один агрегат вместо 3-4 отдельных запросов.
+    """
+    from django.db.models import Count, Q
     try:
-        container = Container.objects.get(pk=container_id)
+        container = Container.objects.only('id', 'status', 'number').get(pk=container_id)
     except Container.DoesNotExist:
         return
     if container.status == 'TRANSFERRED':
         return
-    cars = container.container_cars.all()
-    if not cars.exists():
-        return
-    if cars.exclude(status='TRANSFERRED').exists():
+    stats = container.container_cars.aggregate(
+        total=Count('id'),
+        transferred=Count('id', filter=Q(status='TRANSFERRED')),
+    )
+    total = stats['total'] or 0
+    if total == 0 or stats['transferred'] != total:
         return
     container.status = 'TRANSFERRED'
     container.save(update_fields=['status'])
     logger.info(
         "Container %s -> TRANSFERRED (all %d cars transferred)",
-        container.number, cars.count(),
+        container.number, total,
     )
 
 
 def autotransport_cars_changed_handler(sender, instance, action, **kwargs):
     if action in ('post_add', 'post_remove', 'post_clear'):
         if instance.status == 'FORMED':
-            try:
-                invoices = instance.generate_invoices()
-                if invoices:
-                    logger.info("AutoTransport %s: invoices updated after car list change", instance.number)
-            except Exception as e:
-                logger.error("AutoTransport %s error updating invoices: %s", instance.number, e)
+            _queue_or_run_generate_invoices(instance)
 
 
 def connect_autotransport_signals():
@@ -1015,14 +1056,66 @@ def connect_autotransport_signals():
         logger.warning("Failed to connect AutoTransport signals: %s", e)
 
 
+# ============================================================================
+# CACHE INVALIDATION (company/client/warehouse stats, comparison, payment_objects)
+# ============================================================================
+
+_CACHE_INVALIDATION_MODELS = {
+    'Client', 'Warehouse', 'Company', 'Line', 'Carrier',
+    'NewInvoice', 'Transaction', 'Car', 'Container',
+}
+
+
+def _invalidate_stats_cache(sender, instance, **kwargs):
+    """Инвалидирует кэш статистики/отчётов при изменении ключевых моделей.
+
+    Раньше `invalidate_related_cache` был написан, но нигде не вызывался,
+    поэтому `company_stats`, `client_stats`, `warehouse_stats` и
+    `payment_objects:*` жили до TTL (30 минут) и показывали устаревшие цифры.
+    """
+    model_name = sender.__name__
+    if model_name not in _CACHE_INVALIDATION_MODELS:
+        return
+    try:
+        from .cache_utils import invalidate_related_cache
+        # Откладываем до commit, чтобы инвалидация происходила после записи в БД.
+        instance_id = getattr(instance, 'pk', None)
+        transaction.on_commit(lambda: invalidate_related_cache(model_name, instance_id))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Cache invalidation skipped for %s: %s", model_name, exc)
+
+
+def connect_cache_invalidation_signals():
+    from django.apps import apps as _apps
+    for model_name in _CACHE_INVALIDATION_MODELS:
+        try:
+            model = _apps.get_model('core', model_name)
+        except LookupError:
+            continue
+        post_save.connect(
+            _invalidate_stats_cache,
+            sender=model,
+            dispatch_uid=f'cache_invalidate_save_{model_name}',
+            weak=False,
+        )
+        post_delete.connect(
+            _invalidate_stats_cache,
+            sender=model,
+            dispatch_uid=f'cache_invalidate_delete_{model_name}',
+            weak=False,
+        )
+
+
 from django.apps import apps
 if apps.ready:
     connect_autotransport_signals()
+    connect_cache_invalidation_signals()
 else:
     from django.db.models.signals import post_migrate
 
     def setup_autotransport_signals(sender, **kwargs):
         if sender.name == 'core':
             connect_autotransport_signals()
+            connect_cache_invalidation_signals()
 
     post_migrate.connect(setup_autotransport_signals)

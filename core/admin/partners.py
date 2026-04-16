@@ -280,11 +280,11 @@ class ClientAdmin(admin.ModelAdmin):
     inlines = [ClientTariffRateInline]
 
     def get_queryset(self, request):
-        """OPTIMIZATION: Use with_balance_info for pre-calculated data"""
+        """OPTIMIZATION: Use with_balance_info for pre-calculated data."""
         qs = super().get_queryset(request)
-        # For list view use optimized manager with annotate
         if 'changelist' in request.path:
-            return qs.with_balance_info()
+            from django.db.models import Count
+            return qs.with_balance_info().annotate(_tariff_rates_count=Count('tariff_rates'))
         return qs
 
     def get_search_results(self, request, queryset, search_term):
@@ -316,7 +316,9 @@ class ClientAdmin(admin.ModelAdmin):
         """Tariff display in client list"""
         if obj.tariff_type == 'NONE':
             return format_html('<span style="color: #999;">—</span>')
-        rates_count = obj.tariff_rates.count()
+        rates_count = getattr(obj, '_tariff_rates_count', None)
+        if rates_count is None:
+            rates_count = obj.tariff_rates.count()
         if obj.tariff_type == 'FIXED':
             return format_html('<span style="color: #007bff;">Фикс. ({} ставок)</span>', rates_count)
         return format_html('<span style="color: #28a745;">Гибкий ({} ставок)</span>', rates_count)

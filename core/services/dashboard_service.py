@@ -599,6 +599,82 @@ class DashboardService:
     # AGGREGATE
     # ========================================================================
 
+    def get_operational_day(self):
+        """Что важного произошло и что требует внимания сегодня.
+
+        Возвращает словарь:
+            - today_cars_unloaded: сколько машин разгружено за сегодня
+            - today_containers_unloaded: сколько контейнеров разгружено за сегодня
+            - today_payments_in / out: суммы COMPLETED-транзакций сегодня
+            - today_invoices_issued: выставленные сегодня инвойсы (кол-во, сумма)
+            - pending_reconciliation: сколько BankTransaction ждут привязки
+            - overdue_invoices_count: просроченные
+            - unmatched_incoming_bank_amount: сумма непривязанных входящих
+        """
+        cache_key = get_cache_key('dashboard', 'operational_day')
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        from ..models import Car, Container
+        from ..models_billing import NewInvoice, Transaction
+        from ..models_banking import BankTransaction
+
+        today = timezone.now().date()
+
+        today_cars_unloaded = Car.objects.filter(unload_date=today).count()
+        today_containers_unloaded = Container.objects.filter(unload_date=today).count()
+
+        try:
+            tx_today = Transaction.objects.filter(
+                status='COMPLETED', date__date=today,
+            )
+        except Exception:
+            tx_today = Transaction.objects.filter(
+                status='COMPLETED', date=today,
+            )
+
+        today_in = tx_today.filter(
+            type__in=['PAYMENT', 'BALANCE_TOPUP'], to_company=self.company,
+        ).aggregate(s=Sum('amount'))['s'] or Decimal('0')
+        today_out = tx_today.filter(
+            type__in=['PAYMENT', 'ADJUSTMENT'], from_company=self.company,
+        ).aggregate(s=Sum('amount'))['s'] or Decimal('0')
+
+        today_invoices = NewInvoice.objects.filter(date=today).exclude(status='CANCELLED')
+        today_invoices_stats = today_invoices.aggregate(
+            cnt=Count('id'),
+            total=Sum('total'),
+        )
+
+        pending_rec = BankTransaction.objects.filter(
+            matched_invoice__isnull=True,
+            matched_transaction__isnull=True,
+            reconciliation_skipped=False,
+        )
+        pending_rec_count = pending_rec.count()
+        unmatched_incoming_amount = pending_rec.filter(amount__gt=0).aggregate(
+            s=Sum('amount')
+        )['s'] or Decimal('0')
+
+        overdue_count = self.get_overdue_invoices_count()
+
+        data = {
+            'today': today,
+            'today_cars_unloaded': today_cars_unloaded,
+            'today_containers_unloaded': today_containers_unloaded,
+            'today_payments_in': today_in,
+            'today_payments_out': today_out,
+            'today_net': today_in - today_out,
+            'today_invoices_count': today_invoices_stats['cnt'] or 0,
+            'today_invoices_total': today_invoices_stats['total'] or Decimal('0'),
+            'pending_reconciliation_count': pending_rec_count,
+            'unmatched_incoming_amount': unmatched_incoming_amount,
+            'overdue_invoices_count': overdue_count,
+        }
+        cache.set(cache_key, data, CACHE_TIMEOUTS['short'])
+        return data
+
     def get_full_dashboard_context(self):
         cars_by_status = self.get_cars_by_status()
         containers_by_status = self.get_containers_by_status()
@@ -609,6 +685,7 @@ class DashboardService:
 
         return {
             'company': self.company,
+            'operational_day': self.get_operational_day(),
             # Operational KPIs
             'cars_by_status': cars_by_status,
             'containers_by_status': containers_by_status,

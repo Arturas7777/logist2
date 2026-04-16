@@ -155,11 +155,16 @@ class BillingService:
                     service_name = service.get_service_name()
                     description = f"{service_prefix}: {service_name} для {car.vin}"
                     
+                    unit_price = (
+                        service.custom_price
+                        if service.custom_price is not None
+                        else service.get_default_price()
+                    )
                     invoice_item = InvoiceItem(
                         invoice=invoice,
                         description=description,
                         quantity=service.quantity,
-                        unit_price=service.custom_price if service.custom_price else service.get_default_price(),
+                        unit_price=unit_price,
                         car=car,
                         order=order
                     )

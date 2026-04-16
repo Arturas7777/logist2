@@ -91,41 +91,102 @@ def check_balance_consistency(self):
     """
     Periodic task: validates that stored balances match transaction history.
     Logs warnings for any mismatches found. Run weekly via celery beat.
+
+    Оптимизировано: вместо O(N entities * 2 aggregates + N invoices * 2 aggregates)
+    — несколько SQL-агрегатов с группировкой и одно сканирование инвойсов
+    с подзапросами.
     """
     from decimal import Decimal
-    from django.db.models import Sum
+    from django.db.models import Sum, Q, DecimalField, Value
+    from django.db.models.functions import Coalesce
     from core.models import Client, Warehouse, Line, Company, Carrier
     from core.models_billing import Transaction, NewInvoice
 
     mismatches = []
+    ZERO = Decimal('0.00')
 
-    for model in [Client, Warehouse, Line, Company, Carrier]:
-        model_name = model.__name__.lower()
-        for entity in model.objects.all():
-            incoming = Transaction.objects.filter(
-                status='COMPLETED', **{f'to_{model_name}': entity}
-            ).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
-            outgoing = Transaction.objects.filter(
-                status='COMPLETED', **{f'from_{model_name}': entity}
-            ).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
+    ENTITY_MODELS = [
+        ('client',    Client),
+        ('warehouse', Warehouse),
+        ('line',      Line),
+        ('company',   Company),
+        ('carrier',   Carrier),
+    ]
+
+    # 1) Балансы: один SQL на каждую модель (incoming + outgoing группировкой).
+    for key, model in ENTITY_MODELS:
+        to_field = f'to_{key}'
+        from_field = f'from_{key}'
+
+        incoming_by_id = dict(
+            Transaction.objects
+            .filter(status='COMPLETED', **{f'{to_field}__isnull': False})
+            .values_list(to_field)
+            .annotate(s=Sum('amount'))
+        )
+        outgoing_by_id = dict(
+            Transaction.objects
+            .filter(status='COMPLETED', **{f'{from_field}__isnull': False})
+            .values_list(from_field)
+            .annotate(s=Sum('amount'))
+        )
+
+        all_ids = set(incoming_by_id) | set(outgoing_by_id)
+        # Прибавляем только сущности с ненулевым стартовым балансом, чтобы
+        # случайно не сбрасывать в 0 активных клиентов без транзакций
+        # (у них balance = 0 и так).
+        stored = model.objects.filter(
+            Q(pk__in=all_ids) | ~Q(balance=0)
+        ).only('pk', 'balance')
+
+        for entity in stored:
+            incoming = incoming_by_id.get(entity.pk) or ZERO
+            outgoing = outgoing_by_id.get(entity.pk) or ZERO
             expected = incoming - outgoing
             if entity.balance != expected:
                 mismatches.append(
-                    f'{model.__name__} "{entity}" (id={entity.pk}): '
+                    f'{model.__name__} id={entity.pk}: '
                     f'stored={entity.balance}, expected={expected}'
                 )
                 entity.balance = expected
                 entity.save(update_fields=['balance', 'balance_updated_at'])
 
+    # 2) Инвойсы: одно сканирование с подзапросом-агрегатом.
+    # LINKED_PAID не трогаем — это косвенная оплата через связанный инвойс,
+    # своих транзакций у неё нет, пересчёт сбросил бы статус обратно.
     invoice_issues = 0
-    for inv in NewInvoice.objects.exclude(status='CANCELLED').iterator():
-        payments = inv.transactions.filter(
-            type='PAYMENT', status='COMPLETED'
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        refunds = inv.transactions.filter(
-            type='REFUND', status='COMPLETED'
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        expected_paid = max(Decimal('0.00'), payments - refunds)
+    qs = (
+        NewInvoice.objects
+        .exclude(status__in=['CANCELLED', 'LINKED_PAID'])
+        .annotate(
+            _paid=Coalesce(
+                Sum(
+                    'transactions__amount',
+                    filter=Q(
+                        transactions__status='COMPLETED',
+                        transactions__type='PAYMENT',
+                    ),
+                ),
+                Value(ZERO),
+                output_field=DecimalField(max_digits=15, decimal_places=2),
+            ),
+            _refund=Coalesce(
+                Sum(
+                    'transactions__amount',
+                    filter=Q(
+                        transactions__status='COMPLETED',
+                        transactions__type='REFUND',
+                    ),
+                ),
+                Value(ZERO),
+                output_field=DecimalField(max_digits=15, decimal_places=2),
+            ),
+        )
+        .only('id', 'number', 'status', 'paid_amount', 'total', 'updated_at', 'due_date')
+    )
+
+    for inv in qs.iterator():
+        expected_paid = max(ZERO, (inv._paid or ZERO) - (inv._refund or ZERO))
         if inv.paid_amount != expected_paid:
             invoice_issues += 1
             inv.paid_amount = expected_paid
@@ -135,7 +196,7 @@ def check_balance_consistency(self):
     if mismatches:
         logger.warning(
             '[check_balance_consistency] Fixed %d balance mismatches:\n%s',
-            len(mismatches), '\n'.join(mismatches),
+            len(mismatches), '\n'.join(mismatches[:50]),
         )
     if invoice_issues:
         logger.warning(
@@ -338,4 +399,76 @@ def send_car_unload_notification_task(self, car_id):
             logger.info(f"Car unload notification sent for {car.vin}")
     except Exception as exc:
         logger.error(f"Failed car unload notification for car {car_id}: {exc}")
+        raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=60, time_limit=300)
+def generate_autotransport_invoices_task(self, autotransport_id):
+    """Фоновая генерация инвойсов автовоза.
+
+    Переносит тяжёлый `AutoTransport.generate_invoices()` из сигнала
+    `post_save` / `m2m_changed` в Celery, чтобы сохранение автовоза
+    не блокировало пользователя (генерация инвойсов на десятки машин
+    может занимать секунды).
+    """
+    from core.models import AutoTransport
+    try:
+        at = AutoTransport.objects.get(pk=autotransport_id)
+    except AutoTransport.DoesNotExist:
+        logger.warning("generate_autotransport_invoices_task: AutoTransport %s not found",
+                       autotransport_id)
+        return {'created': 0, 'missing': True}
+
+    if at.status != 'FORMED':
+        logger.info(
+            "generate_autotransport_invoices_task: AT %s not FORMED (%s), skip",
+            at.number, at.status,
+        )
+        return {'created': 0, 'skipped': True}
+
+    try:
+        invoices = at.generate_invoices()
+        count = len(invoices) if invoices else 0
+        logger.info("AutoTransport %s: %d invoices generated (async)", at.number, count)
+        return {'created': count}
+    except Exception as exc:
+        logger.error(
+            "AutoTransport %s invoice error (async): %s",
+            at.number, exc, exc_info=True,
+        )
+        raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60, time_limit=120)
+def push_invoice_to_sitepro_task(self, invoice_id):
+    """Асинхронный пуш инвойса в site.pro (серия PARDP).
+
+    Выносит внешний HTTP-вызов из request cycle в фон, чтобы админка
+    не ждала сетевого ответа site.pro при сохранении инвойса.
+    """
+    from core.models_billing import NewInvoice
+    from core.services.sitepro_service import SiteProService
+    from core.models_accounting import SiteProConnection
+
+    try:
+        invoice = NewInvoice.objects.get(pk=invoice_id)
+    except NewInvoice.DoesNotExist:
+        logger.warning("push_invoice_to_sitepro_task: invoice %s not found", invoice_id)
+        return {'ok': False, 'missing': True}
+
+    if invoice.document_type != 'INVOICE':
+        return {'ok': False, 'skipped': 'not PARDP'}
+    if invoice.status != 'ISSUED':
+        return {'ok': False, 'skipped': f'status={invoice.status}'}
+
+    try:
+        conn = SiteProConnection.objects.filter(is_active=True).first()
+        if not conn or not getattr(conn, 'auto_push_on_issue', False):
+            return {'ok': False, 'skipped': 'auto_push disabled'}
+        service = SiteProService(conn)
+        result = service.push_invoice(invoice)
+        logger.info("site.pro push for %s: %s", invoice.number, result)
+        return {'ok': True, 'result': str(result)[:200]}
+    except Exception as exc:
+        logger.error("site.pro push failed for invoice %s: %s", invoice_id, exc, exc_info=True)
         raise self.retry(exc=exc)

@@ -307,6 +307,14 @@ class BankTransaction(models.Model):
             models.UniqueConstraint(fields=['connection', 'external_id'], name='unique_bank_transaction'),
         ]
         ordering = ['-created_at']
+        indexes = [
+            # Основные фильтры админки: сопоставление + дата.
+            models.Index(fields=['matched_invoice'], name='bt_matched_invoice_idx'),
+            models.Index(fields=['matched_transaction'], name='bt_matched_tx_idx'),
+            models.Index(fields=['reconciliation_skipped', 'created_at'], name='bt_skipped_created_idx'),
+            # Сортировка + фильтр по валюте — частый запрос дашбордов.
+            models.Index(fields=['currency', 'created_at'], name='bt_ccy_created_idx'),
+        ]
 
     def __str__(self):
         sign = '+' if self.amount >= 0 else ''

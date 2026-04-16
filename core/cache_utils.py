@@ -275,15 +275,26 @@ def cache_comparison_data(start_date, end_date):
 
 def invalidate_cache(pattern):
     """Инвалидирует кэш по паттерну.
-    
-    Поддерживает Redis (через django-redis) и FileBasedCache.
+
+    Поддерживает Redis (через django-redis) и FileBasedCache / LocMem.
     Для Redis использует SCAN вместо KEYS для production-safety.
+    Все ошибки глушатся — инвалидация кэша не должна ронять основной flow.
     """
     try:
-        backend = cache.__class__.__name__
-        if 'Redis' in backend:
-            from django.core.cache.backends.redis import RedisCache
-            if isinstance(cache, RedisCache):
+        # django-redis
+        try:
+            from django_redis.cache import RedisCache as DjangoRedisCache
+            if isinstance(cache, DjangoRedisCache):
+                cache.delete_pattern(pattern)
+                logger.debug(f"Cache invalidated (django-redis): {pattern}")
+                return
+        except Exception:
+            pass
+
+        # Native Django Redis backend (Django 4.1+)
+        try:
+            from django.core.cache.backends.redis import RedisCache as NativeRedisCache
+            if isinstance(cache, NativeRedisCache):
                 client = cache._cache.get_client()
                 prefix = getattr(cache, 'key_prefix', '') or ''
                 full_pattern = f"{prefix}:{pattern}" if prefix else pattern
@@ -296,18 +307,26 @@ def invalidate_cache(pattern):
                         break
                 if keys_to_delete:
                     client.delete(*keys_to_delete)
-                logger.info(f"Cache invalidated for pattern: {pattern} ({len(keys_to_delete)} keys)")
+                logger.debug(f"Cache invalidated (native redis): {pattern}, keys={len(keys_to_delete)}")
                 return
-        
-        keys = [
-            'company_stats:', 'client_stats:', 'warehouse_stats:', 'comparison_data:',
+        except Exception:
+            pass
+
+        # Fallback для LocMem / FileBasedCache — точечная очистка известных префиксов.
+        # get_cache_key всегда ставит ':' в конце, поэтому пустые ключи совпадают с паттерном.
+        base_keys = [
+            'company_stats:',
+            'client_stats:',
+            'warehouse_stats:',
+            'comparison_data:',
         ]
-        matching = [k for k in keys if pattern.replace('*', '') in k]
+        pattern_stripped = pattern.rstrip('*').rstrip(':')
+        matching = [k for k in base_keys if pattern_stripped in k]
         if matching:
             cache.delete_many(matching)
-        logger.info(f"Cache invalidated for pattern: {pattern}")
+        logger.debug(f"Cache invalidated (fallback): {pattern}")
     except Exception as e:
-        logger.error(f"Error invalidating cache for pattern {pattern}: {e}")
+        logger.debug(f"Error invalidating cache for pattern {pattern}: {e}")
 
 def invalidate_related_cache(model_name, instance_id):
     """Инвалидирует связанный кэш при изменении объекта"""

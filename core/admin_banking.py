@@ -64,8 +64,17 @@ class BankConnectionAdmin(admin.ModelAdmin):
         }),
     )
 
+    def get_queryset(self, request):
+        from django.db.models import Count, Q
+        qs = super().get_queryset(request).select_related('company')
+        return qs.annotate(
+            _active_accounts=Count('accounts', filter=Q(accounts__state='active'), distinct=True)
+        )
+
     def display_accounts_count(self, obj):
-        count = obj.accounts.filter(state='active').count()
+        count = getattr(obj, '_active_accounts', None)
+        if count is None:
+            count = obj.accounts.filter(state='active').count()
         return f'{count} счетов'
     display_accounts_count.short_description = 'Счета'
 
@@ -220,8 +229,11 @@ class BankReconciliationFilter(admin.SimpleListFilter):
         return queryset
 
 
+from .admin_export import CSVExportMixin
+
+
 @admin.register(BankTransaction)
-class BankTransactionAdmin(admin.ModelAdmin):
+class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
     list_display = (
         'created_at', 'transaction_type',
         'display_amount', 'display_counterparty', 'display_description',
@@ -242,6 +254,24 @@ class BankTransactionAdmin(admin.ModelAdmin):
         'mark_skip_reconciliation', 'unmark_skip_reconciliation',
         'link_to_invoice', 'create_expenses_bulk',
         'download_revolut_receipts',
+        'export_selected_as_csv',
+    ]
+
+    csv_export_filename_prefix = 'bank_transactions'
+    csv_export_fields = [
+        ('created_at', 'Дата'),
+        ('connection__name', 'Банк'),
+        ('transaction_type', 'Тип'),
+        ('amount', 'Сумма'),
+        ('currency', 'Валюта'),
+        ('counterparty_name', 'Контрагент'),
+        ('description', 'Назначение'),
+        ('state', 'Статус'),
+        ('matched_invoice__number', 'Инвойс'),
+        ('matched_transaction__number', 'Транзакция'),
+        ('reconciliation_skipped', 'Пропущено'),
+        ('reconciliation_note', 'Заметка'),
+        ('external_id', 'External ID'),
     ]
 
     fieldsets = (
@@ -275,6 +305,18 @@ class BankTransactionAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+    def get_queryset(self, request):
+        """select_related для matched_invoice/matched_transaction/connection.
+        Без этого на каждую строку списка — до 3 доп. запросов.
+        У BankTransaction нет FK `account` — не включаем его сюда.
+        """
+        qs = super().get_queryset(request)
+        return qs.select_related(
+            'matched_invoice',
+            'matched_transaction',
+            'connection',
+        )
 
     def display_amount(self, obj):
         color = '#16a34a' if obj.amount >= 0 else '#dc2626'

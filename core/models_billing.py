@@ -199,6 +199,7 @@ class NewInvoice(models.Model):
         ('ISSUED', 'Выставлен'),
         ('PARTIALLY_PAID', 'Частично оплачен'),
         ('PAID', 'Оплачен'),
+        ('LINKED_PAID', 'Оплачен косвенно (связанный)'),
         ('OVERDUE', 'Просрочен'),
         ('CANCELLED', 'Отменен'),
     ]
@@ -530,6 +531,11 @@ class NewInvoice(models.Model):
             models.Index(fields=['issuer_warehouse', 'status']),
             models.Index(fields=['issuer_line', 'status']),
             models.Index(fields=['issuer_carrier', 'status']),
+            # Часто фильтруем по серии + дате в админке/отчётах.
+            models.Index(fields=['document_type', 'date']),
+            models.Index(fields=['document_type', 'status']),
+            # Связанные инвойсы — запросы вида WHERE linked_invoice_id = ...
+            models.Index(fields=['linked_invoice']),
         ]
         constraints = [
             models.CheckConstraint(
@@ -664,7 +670,13 @@ class NewInvoice(models.Model):
         return self.total
 
     def recalculate_paid_amount(self):
-        """Пересчитать paid_amount из реальных COMPLETED-транзакций привязанных к этому инвойсу."""
+        """Пересчитать paid_amount из реальных COMPLETED-транзакций привязанных к этому инвойсу.
+
+        LINKED_PAID пропускается: у него нет собственных транзакций,
+        пересчёт сбросил бы paid_amount и статус.
+        """
+        if self.status == 'LINKED_PAID':
+            return
         from django.db.models import Sum
         payments = self.transactions.filter(
             type='PAYMENT', status='COMPLETED'
@@ -817,7 +829,9 @@ class NewInvoice(models.Model):
     
     def update_status(self):
         """Обновить статус на основе оплаты"""
-        if self.status == 'CANCELLED':
+        if self.status in ('CANCELLED', 'LINKED_PAID'):
+            # LINKED_PAID — косвенная оплата через связанный документ,
+            # своих COMPLETED-транзакций нет, не пересчитываем.
             return
         if self.total > 0 and self.paid_amount >= self.total:
             self.status = 'PAID'
@@ -1583,6 +1597,39 @@ class Transaction(models.Model):
                 f"Валюта транзакции ({self.currency}) не совпадает "
                 f"с валютой инвойса ({self.invoice.currency})."
             )
+
+        # Защита от переплаты по инвойсу: суммарные COMPLETED PAYMENT минус REFUND
+        # не должны превышать invoice.total (с учётом текущей транзакции).
+        if (
+            self.invoice_id
+            and self.invoice
+            and self.type in ('PAYMENT', 'REFUND')
+            and self.status == 'COMPLETED'
+            and (self.amount or Decimal('0')) > 0
+        ):
+            inv = self.invoice
+            # Сумма всех уже существующих COMPLETED платежей/возвратов по инвойсу (без self)
+            qs = inv.transactions.filter(status='COMPLETED').exclude(pk=self.pk) if self.pk \
+                else inv.transactions.filter(status='COMPLETED')
+            paid_now = qs.filter(type='PAYMENT').aggregate(s=models.Sum('amount'))['s'] or Decimal('0')
+            refunded_now = qs.filter(type='REFUND').aggregate(s=models.Sum('amount'))['s'] or Decimal('0')
+            if self.type == 'PAYMENT':
+                projected = paid_now + Decimal(self.amount) - refunded_now
+            else:  # REFUND
+                projected = paid_now - (refunded_now + Decimal(self.amount))
+            # Небольшой допуск на округление (1 цент)
+            tolerance = Decimal('0.01')
+            if self.type == 'PAYMENT' and projected > (inv.total + tolerance):
+                overpay = (projected - inv.total).quantize(Decimal('0.01'))
+                errors['amount'] = (
+                    f"Переплата по инвойсу {inv.number}: сумма платежей превысит total "
+                    f"({inv.total} {inv.currency}) на {overpay} {inv.currency}. "
+                    f"Разбейте платёж, уменьшите сумму или используйте BALANCE_TOPUP."
+                )
+            if self.type == 'REFUND' and projected < -tolerance:
+                errors['amount'] = (
+                    f"Возврат по инвойсу {inv.number} больше, чем сумма уже полученных платежей."
+                )
 
         if errors:
             raise ValidationError(errors)

@@ -676,6 +676,17 @@ def _load_service_mapping():
         with open(mapping_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         data.pop('_comment', None)
+        # Runtime-валидация дублей service_id у одного контрагента
+        for key, conf in data.items():
+            seen: dict[int, str] = {}
+            for ai_type, sid in (conf.get('services') or {}).items():
+                if sid in seen and seen[sid] != ai_type:
+                    logger.warning(
+                        "invoice_service_mapping: контрагент %s имеет дубль service_id=%s "
+                        "(AI-типы %s и %s) — проверьте mapping",
+                        key, sid, seen[sid], ai_type,
+                    )
+                seen[sid] = ai_type
         return data
     except FileNotFoundError:
         logger.warning(f"Файл маппинга не найден: {mapping_path}")
@@ -685,19 +696,58 @@ def _load_service_mapping():
         return {}
 
 
+# Минимальная длина ключа для substring-fallback. Короткие (2-3 символа)
+# ключи типа "ONE", "CMA", "TTG" категорически нельзя матчить подстрочно —
+# они ложно сработают в большинстве длинных названий.
+_FUZZY_MIN_KEY_LEN = 5
+
+
 def _resolve_counterparty(counterparty_name: str, mapping: dict) -> dict | None:
-    """Находит конфиг контрагента по имени или алиасу (нечувствителен к регистру)."""
-    name_upper = counterparty_name.strip().upper()
+    """Находит конфиг контрагента по имени или алиасу (нечувствителен к регистру).
+
+    Ступени:
+      1) точное совпадение ключа или алиаса;
+      2) токенизированное совпадение (целое слово);
+      3) substring-fallback — только для длинных ключей (>= _FUZZY_MIN_KEY_LEN).
+    """
+    import re
+
+    name_upper = (counterparty_name or '').strip().upper()
+    if not name_upper:
+        return None
+
+    # 1) Точное совпадение
     for key, conf in mapping.items():
         if key.upper() == name_upper:
             return conf
-        for alias in conf.get('aliases', []):
+        for alias in conf.get('aliases', []) or []:
             if alias.upper() == name_upper:
                 return conf
-    # Fuzzy: если имя содержит ключ
+
+    # 2) Совпадение по целому слову
+    tokens = set(re.findall(r'[A-ZА-ЯЁ0-9]+', name_upper))
     for key, conf in mapping.items():
-        if key.upper() in name_upper or name_upper in key.upper():
+        if key.upper() in tokens:
             return conf
+        for alias in conf.get('aliases', []) or []:
+            alias_u = alias.upper()
+            if alias_u in tokens:
+                return conf
+            alias_tokens = set(re.findall(r'[A-ZА-ЯЁ0-9]+', alias_u))
+            if alias_tokens and alias_tokens.issubset(tokens):
+                return conf
+
+    # 3) Substring-fallback — только для длинных ключей
+    for key, conf in mapping.items():
+        key_u = key.upper()
+        if len(key_u) >= _FUZZY_MIN_KEY_LEN and (key_u in name_upper):
+            logger.info(
+                "invoice_service_mapping: substring-match для %r → %s "
+                "(подозрительно, проверьте вручную)",
+                counterparty_name, key,
+            )
+            return conf
+
     return None
 
 

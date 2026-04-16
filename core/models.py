@@ -1097,9 +1097,14 @@ class Car(models.Model):
         Доход — сумма по OUTGOING инвойсам (issuer_company = default), привязанным к этому авто.
         Себестоимость — сумма по INCOMING инвойсам (recipient_company = default), привязанным к этому авто.
         Прибыль = доход − себестоимость.
+
+        Защита от двойного учёта хранения: если в INCOMING-инвойсах уже есть
+        позиция хранения (SupplierCost с service_type='STORAGE' для этого авто
+        ИЛИ строка инвойса, чьё описание содержит "хран"/"storage"), то
+        отдельно `self.storage_cost` не прибавляем.
         """
         from core.models_billing import InvoiceItem
-        from django.db.models import Sum
+        from django.db.models import Sum, Q
 
         default_company_id = Company.get_default_id()
 
@@ -1109,14 +1114,33 @@ class Car(models.Model):
             invoice__status__in=['ISSUED', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'],
         ).aggregate(s=Sum('total_price'))['s'] or Decimal('0.00')
 
-        cost_total = InvoiceItem.objects.filter(
+        incoming_items = InvoiceItem.objects.filter(
             car=self,
             invoice__recipient_company_id=default_company_id,
             invoice__status__in=['ISSUED', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'],
-        ).aggregate(s=Sum('total_price'))['s'] or Decimal('0.00')
+        )
+        cost_total = incoming_items.aggregate(s=Sum('total_price'))['s'] or Decimal('0.00')
 
-        # Добавляем хранение как расход
-        storage = self.storage_cost or Decimal('0.00')
+        storage_in_items = False
+        try:
+            from core.models_invoice_audit import SupplierCost
+            storage_in_items = SupplierCost.objects.filter(
+                car=self,
+                service_type='STORAGE',
+                audit__invoice__recipient_company_id=default_company_id,
+                audit__invoice__status__in=['ISSUED', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'],
+            ).exists()
+        except Exception:
+            storage_in_items = False
+
+        if not storage_in_items:
+            storage_in_items = incoming_items.filter(
+                Q(description__icontains='хран')
+                | Q(description__icontains='storage')
+            ).exists()
+
+        storage_attr = self.storage_cost or Decimal('0.00')
+        storage = Decimal('0.00') if storage_in_items else storage_attr
 
         total_cost = cost_total + storage
         profit = income_total - total_cost
@@ -1127,6 +1151,7 @@ class Car(models.Model):
             'cost': total_cost,
             'cost_services': cost_total,
             'cost_storage': storage,
+            'storage_double_counted_protected': storage_in_items,
             'profit': profit,
             'margin_percent': margin.quantize(Decimal('0.1')) if isinstance(margin, Decimal) else Decimal('0.0'),
         }
