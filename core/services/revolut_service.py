@@ -479,15 +479,23 @@ class RevolutService:
         ).exclude(expense_id='').order_by('-created_at')[:limit]
 
         downloaded = 0
+        consecutive_errors = 0
         for bt in qs:
             try:
                 expense = self._api_get(f'{self.EXPENSES_ENDPOINT}/{bt.expense_id}')
-            except RevolutAPIError:
+                consecutive_errors = 0
+            except RevolutAPIError as e:
+                consecutive_errors += 1
+                if e.status_code == 429:
+                    wait = min(60, 2 ** consecutive_errors)
+                    logger.info(f'[Revolut] 429 на expense details, пауза {wait}с')
+                    time.sleep(wait)
                 continue
+            time.sleep(0.4)  # пауза между expense details GET
             receipt_ids = (expense or {}).get('receipt_ids') or []
             if receipt_ids and self._download_receipt(bt, bt.expense_id, receipt_ids[0]):
                 downloaded += 1
-                time.sleep(0.6)  # throttle для Revolut rate limits
+                time.sleep(0.6)  # throttle между download'ами
 
         logger.info(f'[Revolut] Догружено чеков: {downloaded}')
         return downloaded
