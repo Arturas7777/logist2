@@ -1,0 +1,273 @@
+{% extends "website/base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Личный кабинет" %} - {{ client.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .dashboard-hero {
+        background: linear-gradient(135deg, var(--primary-color, #2c3e50) 0%, #34495e 100%);
+        color: #fff;
+        padding: 2rem 0 3rem;
+        margin-bottom: 2rem;
+    }
+    .stat-card {
+        border: 0;
+        border-radius: 16px;
+        box-shadow: 0 6px 18px rgba(0,0,0,.06);
+        transition: transform .15s ease, box-shadow .15s ease;
+        height: 100%;
+    }
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 24px rgba(0,0,0,.08);
+    }
+    .stat-card .icon-wrap {
+        width: 48px;
+        height: 48px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 12px;
+        font-size: 1.4rem;
+    }
+    .table-cars td, .table-cars th { vertical-align: middle; }
+    .status-badge {
+        padding: .35em .6em;
+        font-weight: 500;
+        border-radius: 10px;
+    }
+    .status-FLOATING  { background:#d1ecf1; color:#0c5460; }
+    .status-IN_PORT   { background:#f8d7da; color:#721c24; }
+    .status-UNLOADED  { background:#d4edda; color:#155724; }
+    .status-TRANSFERRED { background:#e2d9f3; color:#4b2e83; }
+    .status-PENDING, .status-NEW { background:#fff3cd; color:#856404; }
+    .empty-state {
+        text-align:center;
+        padding: 3rem 1rem;
+        color:#7b8794;
+    }
+    .empty-state i { font-size: 3rem; opacity:.35; }
+    .section-title {
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        margin-bottom:1rem;
+    }
+    .balance-positive { color:#155724; }
+    .balance-negative { color:#721c24; }
+    @media (max-width: 576px) {
+        .dashboard-hero { padding: 1.25rem 0 1.75rem; }
+        .stat-card .display-6 { font-size: 1.5rem; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="dashboard-hero">
+    <div class="container">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div>
+                <div class="text-white-50 small mb-1">{% trans "Личный кабинет" %}</div>
+                <h1 class="h3 mb-0">{{ client.name }}</h1>
+            </div>
+            <div class="text-end">
+                <div class="text-white-50 small">{% trans "Баланс" %}</div>
+                <div class="h4 mb-0 {% if client.balance and client.balance < 0 %}text-warning{% else %}text-white{% endif %}">
+                    {{ client.balance|default:"0.00" }} EUR
+                </div>
+                {% if client.balance and client.balance < 0 %}
+                    <small class="text-warning">{% trans "Задолженность" %}</small>
+                {% elif client.balance and client.balance > 0 %}
+                    <small class="text-white-50">{% trans "Переплата" %}</small>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</section>
+
+<div class="container pb-5">
+    <!-- Статистика -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-6 col-lg-3">
+            <div class="stat-card p-3 bg-white">
+                <div class="icon-wrap mb-2" style="background:#e3f2fd;color:#1565c0;">
+                    <i class="bi bi-car-front-fill"></i>
+                </div>
+                <div class="text-muted small">{% trans "Автомобилей" %}</div>
+                <div class="display-6 fw-bold">{{ cars_count }}</div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-3">
+            <div class="stat-card p-3 bg-white">
+                <div class="icon-wrap mb-2" style="background:#e8f5e9;color:#2e7d32;">
+                    <i class="bi bi-box-seam-fill"></i>
+                </div>
+                <div class="text-muted small">{% trans "Контейнеров" %}</div>
+                <div class="display-6 fw-bold">{{ containers_count }}</div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-3">
+            <div class="stat-card p-3 bg-white">
+                <div class="icon-wrap mb-2" style="background:#fff3e0;color:#e65100;">
+                    <i class="bi bi-clock-history"></i>
+                </div>
+                <div class="text-muted small">{% trans "В пути / в порту" %}</div>
+                <div class="display-6 fw-bold">{{ cars_in_transit|default:"0" }}</div>
+            </div>
+        </div>
+        <div class="col-md-6 col-lg-3">
+            <div class="stat-card p-3 bg-white">
+                <div class="icon-wrap mb-2" style="background:#f3e5f5;color:#6a1b9a;">
+                    <i class="bi bi-check2-square"></i>
+                </div>
+                <div class="text-muted small">{% trans "Переданы" %}</div>
+                <div class="display-6 fw-bold">{{ cars_transferred|default:"0" }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Автомобили -->
+    <div class="section-title">
+        <h4 class="mb-0"><i class="bi bi-car-front text-primary"></i> {% trans "Мои автомобили" %}</h4>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-0">
+            {% if cars %}
+            <div class="table-responsive">
+                <table class="table table-cars table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>{% trans "Фото" %}</th>
+                            <th>VIN</th>
+                            <th>{% trans "Марка / Год" %}</th>
+                            <th>{% trans "Контейнер" %}</th>
+                            <th>{% trans "Склад" %}</th>
+                            <th>{% trans "Статус" %}</th>
+                            <th>{% trans "Разгрузка" %}</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for car in cars %}
+                        <tr>
+                            <td style="width:56px;">
+                                {% with first_photo=car.photos.all|first %}
+                                    {% if first_photo %}
+                                        <img src="{{ first_photo.photo.url }}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px;">
+                                    {% else %}
+                                        <div class="bg-light text-muted d-flex align-items-center justify-content-center rounded" style="width:40px;height:40px;">
+                                            <i class="bi bi-image"></i>
+                                        </div>
+                                    {% endif %}
+                                {% endwith %}
+                            </td>
+                            <td><code>{{ car.vin }}</code></td>
+                            <td>
+                                <div class="fw-semibold">{{ car.brand|default:"—" }}</div>
+                                <div class="text-muted small">{{ car.year|default:"" }}</div>
+                            </td>
+                            <td>
+                                {% if car.container %}
+                                    <span class="text-monospace">{{ car.container.number }}</span>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ car.warehouse.name|default:"—" }}</td>
+                            <td>
+                                <span class="status-badge status-{{ car.status }}">
+                                    {{ car.get_status_display }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if car.unload_date %}
+                                    {{ car.unload_date|date:"d.m.Y" }}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <a class="btn btn-sm btn-outline-primary" href="{% url 'website:car_detail' car.id %}">
+                                    {% trans "Подробнее" %} <i class="bi bi-arrow-right"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <i class="bi bi-car-front"></i>
+                <p class="mt-3 mb-0">{% trans "Автомобилей пока нет." %}</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Контейнеры -->
+    <div class="section-title">
+        <h4 class="mb-0"><i class="bi bi-box-seam text-success"></i> {% trans "Мои контейнеры" %}</h4>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-0">
+            {% if containers %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>{% trans "Номер" %}</th>
+                            <th>{% trans "Линия" %}</th>
+                            <th>{% trans "Склад" %}</th>
+                            <th>{% trans "Машин" %}</th>
+                            <th>{% trans "Статус" %}</th>
+                            <th>{% trans "Разгрузка" %}</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for container in containers %}
+                        <tr>
+                            <td><span class="text-monospace fw-semibold">{{ container.number }}</span></td>
+                            <td>{{ container.line.name|default:"—" }}</td>
+                            <td>{{ container.warehouse.name|default:"—" }}</td>
+                            <td>{{ container.container_cars.all|length }}</td>
+                            <td>
+                                <span class="status-badge status-{{ container.status }}">
+                                    {{ container.get_status_display }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if container.unload_date %}
+                                    {{ container.unload_date|date:"d.m.Y" }}
+                                {% elif container.planned_unload_date %}
+                                    <span class="text-muted">
+                                        {% trans "план" %}: {{ container.planned_unload_date|date:"d.m.Y" }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <a class="btn btn-sm btn-outline-success" href="{% url 'website:container_detail' container.id %}">
+                                    {% trans "Подробнее" %} <i class="bi bi-arrow-right"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <i class="bi bi-box-seam"></i>
+                <p class="mt-3 mb-0">{% trans "Контейнеров пока нет." %}</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

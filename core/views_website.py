@@ -107,28 +107,37 @@ def client_dashboard(request):
         client_user = request.user.clientuser
         client = client_user.client
         
-        cars = Car.objects.filter(client=client).select_related(
-            'warehouse', 'container'
-        ).prefetch_related(
-            Prefetch('photos', queryset=CarPhoto.objects.filter(is_public=True)),
-            Prefetch('container__photos', queryset=ContainerPhoto.objects.filter(is_public=True)),
-        ).order_by('-id')
-        
-        containers = Container.objects.filter(client=client).select_related(
-            'line', 'warehouse'
-        ).prefetch_related(
-            Prefetch('photos', queryset=ContainerPhoto.objects.filter(is_public=True)),
-            'container_cars',
-        ).order_by('-id')
-        
+        cars = list(
+            Car.objects.filter(client=client).select_related(
+                'warehouse', 'container'
+            ).prefetch_related(
+                Prefetch('photos', queryset=CarPhoto.objects.filter(is_public=True)),
+                Prefetch('container__photos', queryset=ContainerPhoto.objects.filter(is_public=True)),
+            ).order_by('-id')
+        )
+
+        containers = list(
+            Container.objects.filter(client=client).select_related(
+                'line', 'warehouse'
+            ).prefetch_related(
+                Prefetch('photos', queryset=ContainerPhoto.objects.filter(is_public=True)),
+                'container_cars',
+            ).order_by('-id')
+        )
+
+        cars_in_transit = sum(1 for c in cars if c.status in ('FLOATING', 'IN_PORT'))
+        cars_transferred = sum(1 for c in cars if c.status == 'TRANSFERRED')
+
         context = {
             'client': client,
             'cars': cars,
             'containers': containers,
-            'cars_count': cars.count(),
-            'containers_count': containers.count(),
+            'cars_count': len(cars),
+            'containers_count': len(containers),
+            'cars_in_transit': cars_in_transit,
+            'cars_transferred': cars_transferred,
         }
-        
+
         return render(request, 'website/client_dashboard.html', context)
     except ClientUser.DoesNotExist:
         return render(request, 'website/not_authorized.html', status=403)

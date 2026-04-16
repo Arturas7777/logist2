@@ -496,6 +496,54 @@
         </div>
     </div>
 
+    <!-- ════════════════ ОПЕРАЦИОННЫЙ ДЕНЬ ════════════════ -->
+    {% if operational_day %}
+    <div class="db-section" data-section="opday">Операционный день — {{ operational_day.today|date:"d.m.Y" }}</div>
+    <div class="db-section-body">
+    <div class="summary-row" style="gap:14px;">
+        <div class="summary-card" style="flex:1;min-width:200px;">
+            <div class="sc-label">Разгружено сегодня</div>
+            <div class="sc-value">{{ operational_day.today_cars_unloaded }}
+                <span style="font-size:0.6em;color:#7c7c9a;font-weight:500">авто</span></div>
+            <div class="sc-sub">Контейнеров: {{ operational_day.today_containers_unloaded }}</div>
+        </div>
+        <div class="summary-card green" style="flex:1;min-width:200px;">
+            <div class="sc-label">Кэш-флоу за день</div>
+            <div class="sc-value">{{ operational_day.today_net|floatformat:2 }} €</div>
+            <div class="sc-sub">
+                Приход {{ operational_day.today_payments_in|floatformat:0 }} € ·
+                Расход {{ operational_day.today_payments_out|floatformat:0 }} €
+            </div>
+        </div>
+        <div class="summary-card" style="flex:1;min-width:200px;">
+            <div class="sc-label">Выставлено сегодня</div>
+            <div class="sc-value">{{ operational_day.today_invoices_total|floatformat:2 }} €</div>
+            <div class="sc-sub">{{ operational_day.today_invoices_count }} инвойсов</div>
+        </div>
+        <div class="summary-card amber" style="flex:1;min-width:200px;">
+            <div class="sc-label">Требует внимания</div>
+            <div class="sc-value">{{ operational_day.pending_reconciliation_count }}
+                <span style="font-size:0.6em;color:#7c7c9a;font-weight:500">банк</span>
+            </div>
+            <div class="sc-sub">
+                Просрочено: <strong>{{ operational_day.overdue_invoices_count }}</strong>
+                · Непривязано вх.: {{ operational_day.unmatched_incoming_amount|floatformat:0 }} €
+            </div>
+        </div>
+    </div>
+    <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
+        {% if operational_day.pending_reconciliation_count %}
+            <a href="{% url 'admin:core_banktransaction_changelist' %}?reconciliation_status=unmatched"
+               class="db-action outline">🔎 Разобрать банковские транзакции</a>
+        {% endif %}
+        {% if operational_day.overdue_invoices_count %}
+            <a href="{% url 'admin:core_newinvoice_changelist' %}?status__exact=OVERDUE"
+               class="db-action outline">⚠ Просроченные инвойсы</a>
+        {% endif %}
+    </div>
+    </div>
+    {% endif %}
+
     <!-- ════════════════ QUICK ACTIONS ════════════════ -->
     <div class="db-actions">
         <a href="{% url 'admin:core_newinvoice_add' %}" class="db-action primary">＋ Инвойс</a>

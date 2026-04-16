@@ -16,6 +16,7 @@ from core.models import (
     CarrierService, CompanyService, DeletedCarService,
 )
 from core.admin_filters import MultiStatusFilter, MultiWarehouseFilter, ClientAutocompleteFilter
+from core.admin_export import CSVExportMixin
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +85,7 @@ def find_car_image(year, brand):
 
 
 @admin.register(Car)
-class CarAdmin(admin.ModelAdmin):
+class CarAdmin(CSVExportMixin, admin.ModelAdmin):
     change_form_template = 'admin/core/car/change_form.html'
     change_list_template = 'admin/core/car/change_list.html'
     list_display = (
@@ -97,6 +98,26 @@ class CarAdmin(admin.ModelAdmin):
     search_fields = ('vin', 'brand')
     list_per_page = 50
     show_full_result_count = False
+
+    csv_export_filename_prefix = 'cars'
+    csv_export_fields = [
+        ('vin', 'VIN'),
+        ('brand', 'Марка'),
+        ('vehicle_type', 'Тип'),
+        ('year', 'Год'),
+        ('client__name', 'Клиент'),
+        ('container__number', 'Контейнер'),
+        ('warehouse__name', 'Склад'),
+        ('line__name', 'Линия'),
+        ('carrier__name', 'Перевозчик'),
+        ('status', 'Статус'),
+        ('unload_date', 'Разгрузка'),
+        ('transfer_date', 'Передача'),
+        ('days', 'Дней хранения'),
+        ('storage_cost', 'Стоимость хранения'),
+        ('total_price', 'Итого'),
+        ('has_title', 'Есть тайтл'),
+    ]
     # OPTIMIZATION: Preload related objects for list view
     list_select_related = ('client', 'warehouse', 'line', 'carrier', 'container')
 
@@ -154,7 +175,7 @@ class CarAdmin(admin.ModelAdmin):
             )
         }),
     )
-    actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'set_transferred_today', 'set_title_with_us', 'resend_car_unload_notification']
+    actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'set_transferred_today', 'set_title_with_us', 'resend_car_unload_notification', 'export_selected_as_csv']
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)

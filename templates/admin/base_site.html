@@ -21,6 +21,32 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
 {# — Design System — #}
 <link rel="stylesheet" type="text/css" href="{% static 'css/dashboard_admin.css' %}?v=30">
+<style>
+/* Sticky first columns for wide changelists so VIN/status don't scroll out of view */
+#result_list.cm-sticky-cols thead th:nth-child(1),
+#result_list.cm-sticky-cols tbody td:nth-child(1) {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: #fff;
+    box-shadow: 2px 0 4px -2px rgba(0,0,0,.05);
+}
+#result_list.cm-sticky-cols thead th:nth-child(2),
+#result_list.cm-sticky-cols tbody td:nth-child(2) {
+    position: sticky;
+    left: 40px;
+    z-index: 2;
+    background: #fff;
+    box-shadow: 2px 0 4px -2px rgba(0,0,0,.05);
+}
+#result_list.cm-sticky-cols thead th:nth-child(1) { z-index: 3; }
+#result_list.cm-sticky-cols thead th:nth-child(2) { z-index: 3; }
+/* Hover keeps sticky cells aligned with row highlight */
+#result_list.cm-sticky-cols tbody tr:hover > td:nth-child(1),
+#result_list.cm-sticky-cols tbody tr:hover > td:nth-child(2) {
+    background: #f6f5ff;
+}
+</style>
 {# — AI Chat — #}
 <link rel="stylesheet" type="text/css" href="{% static 'admin/css/ai-chat.css' %}">
 <script>
@@ -179,11 +205,21 @@ document.addEventListener('DOMContentLoaded', function() {
             'margin-bottom':'16px',
             width:'100%', 'max-width':'100%', 'box-sizing':'border-box'
         });
-        // Scroll to the right on page load so financial columns are visible
+        // Persist horizontal scroll position per page in sessionStorage
+        // instead of hard-scrolling to the right on every load.
+        var storageKey = 'cm-scroll:' + location.pathname + location.search;
         (function(target) {
-            requestAnimationFrame(function() {
-                target.scrollLeft = target.scrollWidth;
-            });
+            try {
+                var saved = sessionStorage.getItem(storageKey);
+                requestAnimationFrame(function() {
+                    if (saved !== null) {
+                        target.scrollLeft = parseInt(saved, 10) || 0;
+                    }
+                });
+                target.addEventListener('scroll', function() {
+                    try { sessionStorage.setItem(storageKey, String(target.scrollLeft)); } catch(e) {}
+                }, {passive: true});
+            } catch(e) {}
         })(el);
     });
     // #result_list — no own shadow
@@ -197,6 +233,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 'min-width':'1600px', 'width':'100%',
                 'table-layout':'auto'
             });
+            rl.classList.add('cm-sticky-cols');
         } else {
             s(rl, {'width':'100%', 'table-layout':'auto'});
         }

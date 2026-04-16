@@ -18,6 +18,7 @@ class ClientUserAdmin(admin.ModelAdmin):
     """Управление клиентскими пользователями"""
     list_display = ['user', 'client', 'phone', 'language', 'is_verified', 'created_at']
     list_filter = ['is_verified', 'language', 'created_at']
+    list_select_related = ('user', 'client')
     search_fields = ['user__username', 'user__email', 'client__name', 'phone']
     readonly_fields = ['created_at', 'last_login']
     
@@ -44,6 +45,7 @@ class AIChatAdmin(admin.ModelAdmin):
     """История чатов с ИИ"""
     list_display = ['user_display', 'message_preview', 'created_at', 'was_helpful']
     list_filter = ['was_helpful', 'created_at']
+    list_select_related = ('user', 'client')
     search_fields = ['user__username', 'client__name', 'message', 'response']
     readonly_fields = ['session_id', 'user', 'client', 'message', 'response', 
                       'created_at', 'processing_time']
@@ -140,6 +142,7 @@ class TrackingRequestAdmin(admin.ModelAdmin):
     """Запросы на отслеживание"""
     list_display = ['tracking_number', 'result_display', 'created_at', 'ip_address']
     list_filter = ['created_at']
+    list_select_related = ('car', 'container')
     search_fields = ['tracking_number', 'email']
     readonly_fields = ['created_at', 'ip_address']
     date_hierarchy = 'created_at'
@@ -173,6 +176,7 @@ class NotificationLogAdmin(admin.ModelAdmin):
     """Просмотр истории отправленных уведомлений"""
     list_display = ['sent_at', 'notification_type_display', 'container', 'client', 'email_to', 'success_display', 'created_by']
     list_filter = ['notification_type', 'success', 'sent_at']
+    list_select_related = ('container', 'client', 'created_by')
     search_fields = ['container__number', 'client__name', 'email_to', 'subject']
     readonly_fields = ['container', 'client', 'notification_type', 'email_to', 'subject', 'cars_info', 'sent_at', 'success', 'error_message', 'created_by']
     ordering = ['-sent_at']

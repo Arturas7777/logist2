@@ -25,6 +25,7 @@ from decimal import Decimal, InvalidOperation
 
 from .models_billing import NewInvoice, InvoiceItem, Transaction, ExpenseCategory, PersonalCard, PersonalTransfer
 from .services.billing_service import BillingService
+from .admin_export import CSVExportMixin
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ class InvoiceItemInline(admin.TabularInline):
 # ============================================================================
 
 @admin.register(NewInvoice)
-class NewInvoiceAdmin(admin.ModelAdmin):
+class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
     """
     Простая и понятная админка для инвойсов
     """
@@ -106,6 +107,32 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     change_form_template = 'admin/core/newinvoice/change_form.html'
     list_per_page = 50
     show_full_result_count = False
+
+    csv_export_filename_prefix = 'invoices'
+    csv_export_fields = [
+        ('number', 'Номер'),
+        ('external_number', 'Внеш. номер'),
+        ('document_type', 'Серия'),
+        ('date', 'Дата'),
+        ('due_date', 'Срок оплаты'),
+        ('issuer_company__name', 'Выставитель (компания)'),
+        ('issuer_warehouse__name', 'Выставитель (склад)'),
+        ('issuer_line__name', 'Выставитель (линия)'),
+        ('issuer_carrier__name', 'Выставитель (перевозчик)'),
+        ('recipient_client__name', 'Получатель (клиент)'),
+        ('recipient_warehouse__name', 'Получатель (склад)'),
+        ('recipient_line__name', 'Получатель (линия)'),
+        ('recipient_carrier__name', 'Получатель (перевозчик)'),
+        ('recipient_company__name', 'Получатель (компания)'),
+        ('subtotal', 'Подытог'),
+        ('discount', 'Скидка'),
+        ('tax', 'Налог'),
+        ('total', 'Итого'),
+        ('paid_amount', 'Оплачено'),
+        ('currency', 'Валюта'),
+        ('status', 'Статус'),
+        ('notes', 'Примечания'),
+    ]
     
     class Media:
         css = {
@@ -204,7 +231,21 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     
     autocomplete_fields = ['linked_invoice']
     filter_horizontal = ('cars',)
-    
+
+    def get_queryset(self, request):
+        """Оптимизация N+1 для списка инвойсов.
+
+        list_display обращается к issuer_* / recipient_* / category / linked_invoice /
+        audit / created_by — без select_related на каждую строку было до 8 доп. запросов.
+        """
+        qs = super().get_queryset(request)
+        return qs.select_related(
+            'issuer_company', 'issuer_warehouse', 'issuer_line', 'issuer_carrier',
+            'recipient_client', 'recipient_warehouse', 'recipient_line',
+            'recipient_carrier', 'recipient_company',
+            'category', 'linked_invoice', 'created_by',
+        )
+
     def add_view(self, request, form_url='', extra_context=None):
         """Кастомная обработка добавления инвойса"""
         from core.models import Company, Client, Car
@@ -703,7 +744,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             logging.getLogger(__name__).exception(f'Error triggering invoice audit for NewInvoice #{obj.pk}: {e}')
             messages.warning(request, f'Не удалось запустить AI-анализ PDF: {e}')
 
-    actions = ['mark_as_issued', 'mark_as_paid', 'cancel_invoices', 'regenerate_items', 'push_to_sitepro', 'change_series', 'delete_invoices_with_transactions', 'recalculate_all_balances']
+    actions = ['mark_as_issued', 'mark_as_paid', 'cancel_invoices', 'regenerate_items', 'push_to_sitepro', 'change_series', 'delete_invoices_with_transactions', 'recalculate_all_balances', 'export_selected_as_csv']
 
     # ========================================================================
     # ОТОБРАЖЕНИЕ ПОЛЕЙ В СПИСКЕ
@@ -1416,12 +1457,36 @@ class NewInvoiceAdmin(admin.ModelAdmin):
 # ============================================================================
 
 @admin.register(Transaction)
-class TransactionAdmin(admin.ModelAdmin):
+class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
     """
     Простая админка для транзакций
     """
     list_per_page = 50
     show_full_result_count = False
+
+    actions = ['export_selected_as_csv']
+    csv_export_filename_prefix = 'transactions'
+    csv_export_fields = [
+        ('number', 'Номер'),
+        ('date', 'Дата'),
+        ('type', 'Тип'),
+        ('method', 'Метод'),
+        ('amount', 'Сумма'),
+        ('currency', 'Валюта'),
+        ('status', 'Статус'),
+        ('from_client__name', 'От клиента'),
+        ('from_warehouse__name', 'От склада'),
+        ('from_line__name', 'От линии'),
+        ('from_carrier__name', 'От перевозчика'),
+        ('from_company__name', 'От компании'),
+        ('to_client__name', 'Клиенту'),
+        ('to_warehouse__name', 'Складу'),
+        ('to_line__name', 'Линии'),
+        ('to_carrier__name', 'Перевозчику'),
+        ('to_company__name', 'Компании'),
+        ('invoice__number', 'Инвойс'),
+        ('description', 'Описание'),
+    ]
 
     list_display = (
         'number_display',
