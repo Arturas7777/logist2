@@ -180,10 +180,12 @@ class BankReceiptFilter(admin.SimpleListFilter):
         ]
 
     def queryset(self, request, queryset):
+        from django.db.models import Q
+        empty = Q(receipt_file='') | Q(receipt_file__isnull=True)
         if self.value() == 'yes':
-            return queryset.exclude(receipt_file='')
+            return queryset.exclude(empty)
         if self.value() == 'no_file':
-            return queryset.filter(receipt_file='').exclude(expense_id='')
+            return queryset.filter(empty).exclude(expense_id='')
         if self.value() == 'no':
             return queryset.filter(expense_id='')
         return queryset

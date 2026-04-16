@@ -471,9 +471,11 @@ class RevolutService:
         """
         from ..models_banking import BankTransaction
 
+        from django.db.models import Q
         qs = BankTransaction.objects.filter(
             connection=self.connection,
-            receipt_file='',
+        ).filter(
+            Q(receipt_file='') | Q(receipt_file__isnull=True)
         ).exclude(expense_id='').order_by('-created_at')[:limit]
 
         downloaded = 0
