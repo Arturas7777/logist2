@@ -116,6 +116,8 @@
                             {% if inv.document_type == 'INVOICE' %}background:#dbeafe;color:#1e40af;
                             {% elif inv.document_type == 'PROFORMA' %}background:#fef3c7;color:#92400e;
                             {% elif inv.document_type == 'INVOICE_BLC' %}background:#1e293b;color:#f8fafc;
+                            {% elif inv.document_type == 'INVOICE_FACT' %}background:#fce7f3;color:#9d174d;
+                            {% elif inv.document_type == 'INVOICE_INCBLC' %}background:#e8d4b0;color:#6b4423;
                             {% else %}background:#e2e8f0;color:#475569;{% endif %}
                         ">{{ inv.get_document_type_display }}</span>
                     </td>

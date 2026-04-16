@@ -210,6 +210,7 @@ class NewInvoice(models.Model):
         ('INVOICE_BLC', 'Неофициальный счёт (PARBLC)'),
         ('PROFORMA_BLC', 'Неофициальное предложение (AVBLC)'),
         ('INVOICE_FACT', 'Входящий счёт от контрагента (FACT)'),
+        ('INVOICE_INCBLC', 'Входящий неофициальный счёт (INCBLC)'),
     ]
 
     DOCTYPE_PREFIX_MAP = {
@@ -218,7 +219,11 @@ class NewInvoice(models.Model):
         'INVOICE_BLC': 'PARBLC',
         'PROFORMA_BLC': 'AVBLC',
         'INVOICE_FACT': 'FACT',
+        'INVOICE_INCBLC': 'INCBLC',
     }
+
+    # Серии, которые всегда оплачиваются наличными и не пушатся в site.pro
+    CASH_DOCUMENT_TYPES = frozenset({'INVOICE_BLC', 'INVOICE_INCBLC'})
     
     # ========================================================================
     # ИДЕНТИФИКАЦИЯ
@@ -230,8 +235,9 @@ class NewInvoice(models.Model):
         default='PROFORMA',
         verbose_name="Тип документа",
         help_text="PARDP — официальный счёт (site.pro). AV — коммерческое предложение. "
-                  "PARBLC — неофициальный счёт (нал). AVBLC — неофициальное предложение. "
-                  "FACT — входящий счёт от контрагента к оплате."
+                  "PARBLC — исходящий неофициальный счёт (нал). AVBLC — неофиц. предложение. "
+                  "FACT — входящий официальный счёт от контрагента. "
+                  "INCBLC — входящий неофициальный счёт (нал, не в site.pro)."
     )
     
     number = models.CharField(
@@ -830,7 +836,7 @@ class NewInvoice(models.Model):
         """Сгенерировать уникальный номер документа.
 
         Серия определяется по document_type через DOCTYPE_PREFIX_MAP:
-        PARDP-NNNNNN, AV-NNNNNN, PARBLC-NNNNNN, AVBLC-NNNNNN.
+        PARDP-NNNNNN, AV-NNNNNN, PARBLC-NNNNNN, AVBLC-NNNNNN, FACT-NNNNNN, INCBLC-NNNNNN.
         """
         prefix = self.DOCTYPE_PREFIX_MAP.get(self.document_type, 'AV')
         pad = 6
@@ -857,8 +863,11 @@ class NewInvoice(models.Model):
     def change_series(self, new_document_type, created_by=None):
         """Перевести инвойс в другую серию с автоматическим перенумерованием.
 
-        При переходе на INVOICE_BLC (PARBLC) автоматически создаётся
-        кассовый платёж (CASH) на оставшуюся сумму и инвойс закрывается.
+        При переходе на любую кассовую серию (INVOICE_BLC / INVOICE_INCBLC)
+        автоматически создаётся кассовый платёж (CASH) на оставшуюся сумму
+        и инвойс закрывается. При уходе с кассовой серии на некассовую —
+        кассовые платежи отменяются. Переход между кассовыми сериями
+        (PARBLC ↔ INCBLC) не трогает платежи, только меняет номер.
 
         Returns the old number for logging purposes.
         """
@@ -874,9 +883,12 @@ class NewInvoice(models.Model):
             self.number = self.generate_number()
             self.save(update_fields=['document_type', 'number', 'updated_at'])
 
-            if new_document_type == 'INVOICE_BLC' and self.remaining_amount > 0:
+            was_cash = old_type in self.CASH_DOCUMENT_TYPES
+            is_cash = new_document_type in self.CASH_DOCUMENT_TYPES
+
+            if is_cash and not was_cash and self.remaining_amount > 0:
                 self._register_cash_payment(created_by=created_by)
-            elif old_type == 'INVOICE_BLC' and new_document_type != 'INVOICE_BLC':
+            elif was_cash and not is_cash:
                 self._reverse_cash_payments(created_by=created_by)
 
         return old_number

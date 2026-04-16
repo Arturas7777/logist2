@@ -5,10 +5,7 @@
 
 {% block extrastyle %}{{ block.super }}
 <style>
-    .expense-form {
-        max-width: 700px;
-        margin: 0 auto;
-    }
+    .expense-form { max-width: 820px; margin: 0 auto; }
     .bank-info {
         background: #f0f4ff;
         border: 1px solid #c7d2fe;
@@ -16,39 +13,46 @@
         padding: 20px;
         margin-bottom: 24px;
     }
-    .bank-info h3 {
-        margin: 0 0 12px 0;
-        color: #3730a3;
-        font-size: 16px;
-    }
-    .bank-info-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-    }
-    .bank-info-item {
-        display: flex;
-        flex-direction: column;
-    }
+    .bank-info h3 { margin: 0 0 12px 0; color: #3730a3; font-size: 16px; }
+    .bank-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .bank-info-item { display: flex; flex-direction: column; }
     .bank-info-item .label {
-        font-size: 11px;
-        color: #6b7280;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-bottom: 2px;
+        font-size: 11px; color: #6b7280; text-transform: uppercase;
+        letter-spacing: 0.5px; margin-bottom: 2px;
     }
-    .bank-info-item .value {
-        font-size: 15px;
-        font-weight: 600;
-        color: #1e293b;
+    .bank-info-item .value { font-size: 15px; font-weight: 600; color: #1e293b; }
+    .bank-info-item.full-width { grid-column: 1 / -1; }
+    .amount-highlight { font-size: 22px !important; color: #dc2626 !important; }
+
+    .candidates-box {
+        background: #ecfdf5;
+        border: 1px solid #a7f3d0;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 24px;
     }
-    .bank-info-item.full-width {
-        grid-column: 1 / -1;
+    .candidates-box h3 { margin: 0 0 12px 0; color: #065f46; font-size: 16px; }
+    .candidates-box .subtitle { font-size: 13px; color: #047857; margin-bottom: 12px; }
+    .candidate-list { display: flex; flex-direction: column; gap: 8px; }
+    .candidate-item {
+        display: flex; align-items: center; gap: 10px;
+        background: #fff; border: 1px solid #d1fae5; border-radius: 6px;
+        padding: 10px 14px; cursor: pointer; transition: all 0.15s;
     }
-    .amount-highlight {
-        font-size: 22px !important;
-        color: #dc2626 !important;
+    .candidate-item:hover { border-color: #10b981; box-shadow: 0 1px 3px rgba(16,185,129,0.15); }
+    .candidate-item input[type="radio"] { margin: 0; }
+    .candidate-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+    .candidate-number { font-weight: 600; color: #1e293b; font-size: 14px; }
+    .candidate-meta { font-size: 12px; color: #6b7280; }
+    .candidate-amount { font-weight: 600; color: #dc2626; font-size: 14px; }
+    .candidate-badge {
+        display: inline-block; padding: 1px 6px; font-size: 10px;
+        border-radius: 8px; font-weight: 600; margin-left: 6px;
     }
+    .candidate-badge.fact { background: #fce7f3; color: #9d174d; }
+    .candidate-badge.other { background: #e2e8f0; color: #475569; }
+    .candidate-badge.match { background: #fef3c7; color: #92400e; }
+
     .form-section {
         background: #fff;
         border: 1px solid #e5e7eb;
@@ -57,88 +61,63 @@
         margin-bottom: 24px;
     }
     .form-section h3 {
-        margin: 0 0 16px 0;
-        color: #1e293b;
-        font-size: 16px;
-        border-bottom: 1px solid #e5e7eb;
-        padding-bottom: 10px;
+        margin: 0 0 16px 0; color: #1e293b; font-size: 16px;
+        border-bottom: 1px solid #e5e7eb; padding-bottom: 10px;
     }
-    .form-row {
-        margin-bottom: 16px;
+    .form-section .hint-top {
+        font-size: 12px; color: #6b7280; margin: -8px 0 14px 0;
     }
+    .form-row { margin-bottom: 16px; }
     .form-row label {
-        display: block;
-        font-weight: 600;
-        margin-bottom: 4px;
-        color: #374151;
-        font-size: 13px;
+        display: block; font-weight: 600; margin-bottom: 4px;
+        color: #374151; font-size: 13px;
     }
-    .form-row .hint {
-        font-size: 11px;
-        color: #9ca3af;
-        margin-top: 2px;
-    }
+    .form-row .hint { font-size: 11px; color: #9ca3af; margin-top: 2px; }
     .form-row select,
     .form-row input[type="text"],
+    .form-row input[type="file"],
     .form-row textarea {
-        width: 100%;
-        padding: 8px 12px;
-        border: 1px solid #d1d5db;
-        border-radius: 6px;
-        font-size: 14px;
-        box-sizing: border-box;
+        width: 100%; padding: 8px 12px; border: 1px solid #d1d5db;
+        border-radius: 6px; font-size: 14px; box-sizing: border-box;
     }
     .form-row select:focus,
     .form-row input:focus,
     .form-row textarea:focus {
-        border-color: #6366f1;
-        outline: none;
+        border-color: #6366f1; outline: none;
         box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
     }
-    .form-row textarea {
-        min-height: 60px;
-        resize: vertical;
+    .form-row textarea { min-height: 60px; resize: vertical; }
+    .issuer-grid {
+        display: grid; grid-template-columns: 1fr 2fr; gap: 10px;
     }
-    .required-mark {
-        color: #dc2626;
-    }
+    .required-mark { color: #dc2626; }
     .action-buttons {
-        display: flex;
-        gap: 12px;
-        justify-content: flex-end;
-        margin-top: 20px;
+        display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px;
     }
     .btn {
-        display: inline-block;
-        padding: 10px 24px;
-        border: none;
-        border-radius: 6px;
-        font-size: 14px;
-        font-weight: 600;
-        cursor: pointer;
-        text-decoration: none;
-        transition: opacity 0.2s;
+        display: inline-block; padding: 10px 24px; border: none;
+        border-radius: 6px; font-size: 14px; font-weight: 600;
+        cursor: pointer; text-decoration: none; transition: opacity 0.2s;
     }
-    .btn:hover {
-        opacity: 0.85;
-    }
-    .btn-primary {
-        background: #4f46e5;
-        color: #fff;
-    }
-    .btn-cancel {
-        background: #e5e7eb;
-        color: #374151;
-    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: #4f46e5; color: #fff; }
+    .btn-link { background: #10b981; color: #fff; }
+    .btn-cancel { background: #e5e7eb; color: #374151; }
     .error-msg {
-        background: #fef2f2;
-        border: 1px solid #fecaca;
-        color: #991b1b;
-        padding: 12px 16px;
-        border-radius: 6px;
-        margin-bottom: 16px;
-        font-size: 14px;
+        background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
+        padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; font-size: 14px;
     }
+    .divider {
+        text-align: center; color: #9ca3af; font-size: 12px;
+        margin: 24px 0 16px 0; letter-spacing: 1px; text-transform: uppercase;
+        position: relative;
+    }
+    .divider::before, .divider::after {
+        content: ''; position: absolute; top: 50%; width: 42%; height: 1px;
+        background: #e5e7eb;
+    }
+    .divider::before { left: 0; }
+    .divider::after  { right: 0; }
 </style>
 {% endblock %}
 
@@ -153,11 +132,9 @@
 {% block content %}
 <div class="expense-form">
 
-    {% if error %}
-    <div class="error-msg">{{ error }}</div>
-    {% endif %}
+    {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
 
-    <!-- Данные из банка (read-only) -->
+    <!-- Данные из банка -->
     <div class="bank-info">
         <h3>🏦 Банковская операция</h3>
         <div class="bank-info-grid">
@@ -181,53 +158,195 @@
                 <span class="label">Описание</span>
                 <span class="value">{{ bank_trx.description|default:"—" }}</span>
             </div>
+            {% if bank_trx.revolut_category %}
+            <div class="bank-info-item full-width">
+                <span class="label">Категория Revolut</span>
+                <span class="value">{{ bank_trx.revolut_category }}</span>
+            </div>
+            {% endif %}
         </div>
+
+        {% if bank_trx.receipt_file %}
+        <div style="margin-top:16px;padding:14px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;">
+            <div style="display:flex;align-items:center;gap:10px;font-weight:600;color:#92400e;margin-bottom:8px;">
+                📎 Чек из Revolut уже загружен
+                {% if bank_trx.receipt_fetched_at %}
+                <span style="font-weight:400;font-size:11px;color:#b45309;">
+                    ({{ bank_trx.receipt_fetched_at|date:"d.m.Y H:i" }})
+                </span>
+                {% endif %}
+            </div>
+            <div style="font-size:12px;color:#78350f;margin-bottom:8px;">
+                Автоматически подгружен из приложения Revolut. Будет прикреплён к FACT-инвойсу,
+                если не загрузите свой файл ниже.
+            </div>
+            <a href="{{ bank_trx.receipt_file.url }}" target="_blank"
+               style="display:inline-block;padding:6px 12px;background:#f59e0b;color:#fff;
+                      text-decoration:none;border-radius:4px;font-size:12px;font-weight:600;">
+                Открыть чек
+            </a>
+        </div>
+        {% endif %}
     </div>
 
-    <!-- Форма -->
-    <form method="post">
+    <!-- Кандидаты на привязку -->
+    {% if candidates %}
+    <div class="candidates-box">
+        <h3>🔗 Возможно, это оплата по существующему инвойсу?</h3>
+        <div class="subtitle">
+            Найдены входящие инвойсы с подходящей суммой. Привяжите транзакцию — система
+            автоматически создаст платёж и пометит инвойс как «Оплачен».
+        </div>
+
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="link">
+            <div class="candidate-list">
+                {% for inv in candidates %}
+                <label class="candidate-item">
+                    <input type="radio" name="candidate_invoice_id" value="{{ inv.pk }}" {% if forloop.first %}checked{% endif %}>
+                    <div class="candidate-info">
+                        <div class="candidate-number">
+                            {{ inv.number }}
+                            <span class="candidate-badge {% if inv.document_type == 'INVOICE_FACT' %}fact{% else %}other{% endif %}">
+                                {{ inv.get_document_type_display }}
+                            </span>
+                            {% if inv.match_score >= 20 %}
+                            <span class="candidate-badge match">имя совпадает</span>
+                            {% endif %}
+                        </div>
+                        <div class="candidate-meta">
+                            {{ inv.date|date:"d.m.Y" }}
+                            {% if inv.issuer_display_name %} · {{ inv.issuer_display_name }}{% endif %}
+                            {% if inv.external_number %} · внеш. №{{ inv.external_number }}{% endif %}
+                        </div>
+                    </div>
+                    <div class="candidate-amount">{{ inv.total|floatformat:2 }} {{ inv.currency }}</div>
+                </label>
+                {% endfor %}
+            </div>
+
+            <div class="action-buttons">
+                <button type="submit" class="btn btn-link">🔗 Привязать к выбранному инвойсу</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="divider">или создать новый расход</div>
+    {% endif %}
+
+    <!-- Новый FACT-инвойс -->
+    <form method="post" enctype="multipart/form-data">
         {% csrf_token %}
+        <input type="hidden" name="action" value="create">
 
         <div class="form-section">
-            <h3>📝 Оформление расхода</h3>
+            <h3>📄 Создать новый FACT-инвойс (входящий расход)</h3>
+            <div class="hint-top">
+                Новый инвойс серии <strong>FACT</strong> — официальный входящий счёт от контрагента.
+                Прикрепите чек или PDF-счёт, чтобы сохранить документальное основание оплаты.
+            </div>
+
+            <div class="form-row">
+                <label>Контрагент-выставитель <span class="required-mark">*</span></label>
+                <div class="issuer-grid">
+                    <select name="issuer_type" id="id_issuer_type">
+                        <option value="">— Тип —</option>
+                        <option value="warehouse" {% if suggested_issuer_type == 'warehouse' %}selected{% endif %}>Склад</option>
+                        <option value="line"      {% if suggested_issuer_type == 'line' %}selected{% endif %}>Линия</option>
+                        <option value="carrier"   {% if suggested_issuer_type == 'carrier' %}selected{% endif %}>Перевозчик</option>
+                        <option value="company"   {% if suggested_issuer_type == 'company' %}selected{% endif %}>Компания</option>
+                    </select>
+
+                    <select name="issuer_id" id="id_issuer_id">
+                        <option value="">— Выберите контрагента —</option>
+                        <optgroup label="Склады" data-type="warehouse">
+                            {% for w in warehouses %}
+                            <option value="{{ w.pk }}" data-type="warehouse" {% if suggested_issuer_type == 'warehouse' and suggested_issuer_id == w.pk %}selected{% endif %}>{{ w.name }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        <optgroup label="Линии" data-type="line">
+                            {% for ln in lines %}
+                            <option value="{{ ln.pk }}" data-type="line" {% if suggested_issuer_type == 'line' and suggested_issuer_id == ln.pk %}selected{% endif %}>{{ ln.name }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        <optgroup label="Перевозчики" data-type="carrier">
+                            {% for c in carriers %}
+                            <option value="{{ c.pk }}" data-type="carrier" {% if suggested_issuer_type == 'carrier' and suggested_issuer_id == c.pk %}selected{% endif %}>{{ c.name }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        <optgroup label="Компании" data-type="company">
+                            {% for cp in companies %}
+                            <option value="{{ cp.pk }}" data-type="company" {% if suggested_issuer_type == 'company' and suggested_issuer_id == cp.pk %}selected{% endif %}>{{ cp.name }}</option>
+                            {% endfor %}
+                        </optgroup>
+                    </select>
+                </div>
+                <div class="hint">Тип и конкретный контрагент, выставивший счёт.</div>
+            </div>
 
             <div class="form-row">
                 <label>Категория расхода <span class="required-mark">*</span></label>
                 <select name="category" required>
                     <option value="">— Выберите категорию —</option>
                     {% for cat in categories %}
-                    <option value="{{ cat.pk }}" {% if selected_category == cat.pk %}selected{% endif %}>
+                    <option value="{{ cat.pk }}">
                         {{ cat.name }}{% if cat.short_name %} ({{ cat.short_name }}){% endif %}
                     </option>
                     {% endfor %}
                 </select>
-                <div class="hint">Обязательное поле</div>
             </div>
 
             <div class="form-row">
-                <label>Контрагент (компания)</label>
-                <select name="company">
-                    <option value="">— Не указан —</option>
-                    {% for comp in companies %}
-                    <option value="{{ comp.pk }}" {% if suggested_company == comp.pk %}selected{% endif %}>
-                        {{ comp.name }}
-                    </option>
-                    {% endfor %}
-                </select>
-                <div class="hint">Компания-поставщик услуги/товара. Необязательно.</div>
-            </div>
-
-            <div class="form-row">
-                <label>Описание</label>
+                <label>Описание расхода</label>
                 <textarea name="description">{{ default_description }}</textarea>
-                <div class="hint">Будет указано в позиции инвойса</div>
+                <div class="hint">Будет указано в позиции инвойса.</div>
+            </div>
+
+            <div class="form-row">
+                <label>Чек / PDF-инвойс</label>
+                <input type="file" name="attachment" accept=".pdf,.jpg,.jpeg,.png,.webp,.heic">
+                <div class="hint">
+                    {% if bank_trx.receipt_file %}
+                    ✅ Чек уже подгружен из Revolut — используется автоматически. Загрузите свой файл, только если хотите заменить.
+                    {% else %}
+                    Прикрепите документ-основание (чек, счёт). Необязательно, но рекомендуется.
+                    {% endif %}
+                </div>
             </div>
         </div>
 
         <div class="action-buttons">
             <a href="{% url 'admin:core_banktransaction_changelist' %}" class="btn btn-cancel">Отмена</a>
-            <button type="submit" class="btn btn-primary">💰 Создать расход</button>
+            <button type="submit" class="btn btn-primary">💰 Создать FACT-инвойс</button>
         </div>
     </form>
 </div>
+
+<script>
+(function() {
+    // Фильтруем список контрагентов по выбранному типу
+    const typeSelect = document.getElementById('id_issuer_type');
+    const idSelect = document.getElementById('id_issuer_id');
+    if (!typeSelect || !idSelect) return;
+
+    function applyFilter() {
+        const t = typeSelect.value;
+        const groups = idSelect.querySelectorAll('optgroup');
+        groups.forEach(g => {
+            const show = !t || g.dataset.type === t;
+            g.style.display = show ? '' : 'none';
+            g.disabled = !show;
+            g.querySelectorAll('option').forEach(o => { o.disabled = !show; });
+        });
+        // Если выбранная опция скрыта — сбросить
+        const cur = idSelect.selectedOptions[0];
+        if (cur && cur.dataset.type && t && cur.dataset.type !== t) {
+            idSelect.value = '';
+        }
+    }
+    typeSelect.addEventListener('change', applyFilter);
+    applyFilter();
+})();
+</script>
 {% endblock %}

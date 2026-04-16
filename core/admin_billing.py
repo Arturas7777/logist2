@@ -311,11 +311,12 @@ class NewInvoiceAdmin(admin.ModelAdmin):
             issuer_type = issuer.__class__.__name__.lower()
             qs = qs.filter(**{f'issuer_{issuer_type}': issuer})
 
-        is_blc = invoice.document_type in ('INVOICE_BLC', 'PROFORMA_BLC')
-        if is_blc:
-            qs = qs.filter(document_type__in=['INVOICE', 'PROFORMA', 'INVOICE_FACT'])
+        cash_or_proposal = ('INVOICE_BLC', 'PROFORMA_BLC', 'INVOICE_INCBLC')
+        official = ('INVOICE', 'PROFORMA', 'INVOICE_FACT')
+        if invoice.document_type in cash_or_proposal:
+            qs = qs.filter(document_type__in=official)
         else:
-            qs = qs.filter(document_type__in=['INVOICE_BLC', 'PROFORMA_BLC'])
+            qs = qs.filter(document_type__in=cash_or_proposal)
 
         return list(qs.order_by('-date')[:5])
     
@@ -462,8 +463,8 @@ class NewInvoiceAdmin(admin.ModelAdmin):
                     self._handle_manual_items(request, invoice)
                 messages.success(request, f'✅ Инвойс {invoice.number} сохранен! Сумма: {invoice.total:.2f} €')
             
-            # Авто-регистрация кассового платежа для новых PARBLC-инвойсов
-            if not object_id and invoice.document_type == 'INVOICE_BLC' and invoice.remaining_amount > 0:
+            # Авто-регистрация кассового платежа для новых кассовых инвойсов (PARBLC / INCBLC)
+            if not object_id and invoice.document_type in NewInvoice.CASH_DOCUMENT_TYPES and invoice.remaining_amount > 0:
                 cash_amount = invoice.remaining_amount
                 invoice._register_cash_payment(created_by=request.user)
                 messages.info(request, f'💵 Оплата наличными зарегистрирована: {cash_amount:.2f} €')
@@ -717,11 +718,12 @@ class NewInvoiceAdmin(admin.ModelAdmin):
 
     def doc_type_badge(self, obj):
         badge_map = {
-            'INVOICE':      ('#dbeafe', '#1e40af', 'PARDP'),
-            'PROFORMA':     ('#fef3c7', '#92400e', 'AV'),
-            'INVOICE_BLC':  ('#1e293b', '#f8fafc', 'PARBLC'),
-            'PROFORMA_BLC': ('#e2e8f0', '#475569', 'AVBLC'),
-            'INVOICE_FACT': ('#fce7f3', '#9d174d', 'FACT'),
+            'INVOICE':        ('#dbeafe', '#1e40af', 'PARDP'),
+            'PROFORMA':       ('#fef3c7', '#92400e', 'AV'),
+            'INVOICE_BLC':    ('#1e293b', '#f8fafc', 'PARBLC'),
+            'PROFORMA_BLC':   ('#e2e8f0', '#475569', 'AVBLC'),
+            'INVOICE_FACT':   ('#fce7f3', '#9d174d', 'FACT'),
+            'INVOICE_INCBLC': ('#e8d4b0', '#6b4423', 'INCBLC'),
         }
         bg, fg, label = badge_map.get(obj.document_type, ('#e2e8f0', '#475569', '?'))
         return format_html(
@@ -984,17 +986,20 @@ class NewInvoiceAdmin(admin.ModelAdmin):
     
     def mark_as_paid(self, request, queryset):
         """Пометить как оплаченные — создаёт транзакцию через BillingService.
-        Для BLC-серий (AVBLC/PARBLC) переводит в PARBLC + CASH-платёж."""
+        Для AVBLC переводит в PARBLC + CASH-платёж. Для INCBLC/PARBLC регистрирует кассовый платёж на остаток."""
         updated = 0
         errors = 0
         for invoice in queryset:
             if invoice.status == 'PAID':
                 continue
 
-            is_blc = invoice.document_type in ('PROFORMA_BLC', 'INVOICE_BLC')
-
-            if is_blc and invoice.document_type != 'INVOICE_BLC':
+            if invoice.document_type == 'PROFORMA_BLC':
                 invoice.change_series('INVOICE_BLC', created_by=request.user)
+                updated += 1
+                continue
+
+            if invoice.document_type in NewInvoice.CASH_DOCUMENT_TYPES and invoice.remaining_amount > 0:
+                invoice._register_cash_payment(created_by=request.user)
                 updated += 1
                 continue
 
@@ -1009,7 +1014,7 @@ class NewInvoiceAdmin(admin.ModelAdmin):
                 errors += 1
                 continue
             try:
-                method = 'CASH' if is_blc else 'OTHER'
+                method = 'OTHER'
                 BillingService.pay_invoice(
                     invoice=invoice,
                     amount=remaining,
@@ -1354,11 +1359,15 @@ class NewInvoiceAdmin(admin.ModelAdmin):
         
         if request.method == 'POST':
             try:
-                is_blc = invoice.document_type in ('PROFORMA_BLC', 'INVOICE_BLC')
-
-                if is_blc and invoice.document_type != 'INVOICE_BLC':
+                if invoice.document_type == 'PROFORMA_BLC':
                     old_num = invoice.change_series('INVOICE_BLC', created_by=request.user)
                     messages.success(request, f'Серия {old_num} → {invoice.number}, оплата наличными зарегистрирована.')
+                    return redirect('admin:core_newinvoice_change', invoice_id)
+
+                if invoice.document_type in NewInvoice.CASH_DOCUMENT_TYPES and invoice.remaining_amount > 0:
+                    cash_amount = invoice.remaining_amount
+                    invoice._register_cash_payment(created_by=request.user)
+                    messages.success(request, f'💵 Оплата наличными зарегистрирована: {cash_amount:.2f} €')
                     return redirect('admin:core_newinvoice_change', invoice_id)
 
                 amount = Decimal(request.POST.get('amount', 0))

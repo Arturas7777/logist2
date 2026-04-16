@@ -247,8 +247,9 @@ def sync_bank_and_reconcile(self):
             else:
                 n_tx = len(result['transactions'])
                 total_transactions += n_tx
-                logger.info('[sync_bank] %s: %d accounts, %d transactions',
-                            conn, len(result['accounts']), n_tx)
+                logger.info('[sync_bank] %s: %d accounts, %d transactions, %d expenses',
+                            conn, len(result['accounts']), n_tx,
+                            result.get('expenses_updated', 0))
         except Exception as exc:
             errors += 1
             logger.error('[sync_bank] %s failed: %s', conn, exc, exc_info=True)
