@@ -13,6 +13,7 @@ API Reference: https://developer.revolut.com/docs/business/business-api
 
 import requests
 import logging
+import time
 from datetime import timedelta
 from decimal import Decimal
 from django.utils import timezone
@@ -151,25 +152,36 @@ class RevolutService:
             logger.error(f'[Revolut] {error_msg}')
             raise RevolutAPIError(error_msg, status, body)
 
-    def _api_get_binary(self, endpoint: str) -> tuple[bytes, str]:
+    def _api_get_binary(self, endpoint: str, max_retries: int = 3) -> tuple[bytes, str]:
         """
         GET бинарного контента (для скачивания чеков).
         Возвращает (body_bytes, content_type).
+        Обрабатывает 429 Too Many Requests с exponential backoff.
         """
         url = f'{self.base_url}{endpoint}'
-        try:
-            resp = self._session.get(
-                url,
-                headers=self._get_auth_headers(),
-                timeout=60,
-            )
-            resp.raise_for_status()
-            return resp.content, resp.headers.get('Content-Type', 'application/octet-stream')
-        except requests.RequestException as e:
-            status = getattr(e.response, 'status_code', None) if hasattr(e, 'response') else None
-            error_msg = f'API GET (binary) {endpoint} ошибка: {e}'
-            logger.error(f'[Revolut] {error_msg}')
-            raise RevolutAPIError(error_msg, status)
+        attempt = 0
+        while True:
+            try:
+                resp = self._session.get(
+                    url,
+                    headers=self._get_auth_headers(),
+                    timeout=60,
+                )
+                if resp.status_code == 429 and attempt < max_retries:
+                    retry_after = int(resp.headers.get('Retry-After', 2 ** attempt))
+                    logger.info(
+                        f'[Revolut] 429 Rate limit на {endpoint}, пауза {retry_after}с'
+                    )
+                    time.sleep(max(retry_after, 1))
+                    attempt += 1
+                    continue
+                resp.raise_for_status()
+                return resp.content, resp.headers.get('Content-Type', 'application/octet-stream')
+            except requests.RequestException as e:
+                status = getattr(e.response, 'status_code', None) if hasattr(e, 'response') else None
+                error_msg = f'API GET (binary) {endpoint} ошибка: {e}'
+                logger.error(f'[Revolut] {error_msg}')
+                raise RevolutAPIError(error_msg, status)
 
     # ========================================================================
     # ACCOUNTS
@@ -410,7 +422,9 @@ class RevolutService:
             # Сразу тянем чеки, если есть receipt_ids и нет файла
             receipt_ids = item.get('receipt_ids') or []
             if receipt_ids and not bt.receipt_file:
-                self._download_receipt(bt, expense_id, receipt_ids[0])
+                if self._download_receipt(bt, expense_id, receipt_ids[0]):
+                    # Троттлинг: Revolut лимитирует ~100 req/мин, даём паузу
+                    time.sleep(0.6)
 
         logger.info(f'[Revolut] Expenses: обновлено {updated_count} BankTransaction')
         return updated_count
@@ -471,6 +485,7 @@ class RevolutService:
             receipt_ids = (expense or {}).get('receipt_ids') or []
             if receipt_ids and self._download_receipt(bt, bt.expense_id, receipt_ids[0]):
                 downloaded += 1
+                time.sleep(0.6)  # throttle для Revolut rate limits
 
         logger.info(f'[Revolut] Догружено чеков: {downloaded}')
         return downloaded
