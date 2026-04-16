@@ -167,6 +167,28 @@ class BankDirectionFilter(admin.SimpleListFilter):
         return queryset
 
 
+class BankReceiptFilter(admin.SimpleListFilter):
+    """Фильтр: наличие чека из Revolut"""
+    title = 'Чек из Revolut'
+    parameter_name = 'has_receipt'
+
+    def lookups(self, request, model_admin):
+        return [
+            ('yes', 'Есть чек'),
+            ('no_file', 'Expense есть, чек не прикреплён'),
+            ('no', 'Нет данных Expense'),
+        ]
+
+    def queryset(self, request, queryset):
+        if self.value() == 'yes':
+            return queryset.exclude(receipt_file='')
+        if self.value() == 'no_file':
+            return queryset.filter(receipt_file='').exclude(expense_id='')
+        if self.value() == 'no':
+            return queryset.filter(expense_id='')
+        return queryset
+
+
 class BankReconciliationFilter(admin.SimpleListFilter):
     """Фильтр: статус сопоставления банковской операции"""
     title = 'Сопоставление'
@@ -201,13 +223,14 @@ class BankTransactionAdmin(admin.ModelAdmin):
     list_display = (
         'created_at', 'transaction_type',
         'display_amount', 'display_counterparty', 'display_description',
-        'display_reconciled', 'display_action',
+        'display_receipt', 'display_reconciled', 'display_action',
     )
-    list_filter = (BankReconciliationFilter, BankDirectionFilter, 'transaction_type', 'state', 'currency', 'connection')
+    list_filter = (BankReconciliationFilter, BankDirectionFilter, BankReceiptFilter, 'transaction_type', 'state', 'currency', 'connection')
     search_fields = ('description', 'counterparty_name', 'external_id')
     readonly_fields = (
         'connection', 'external_id', 'transaction_type', 'amount', 'currency',
         'description', 'counterparty_name', 'state', 'created_at', 'fetched_at',
+        'expense_id', 'receipt_fetched_at', 'revolut_category', 'display_receipt_detail',
     )
     autocomplete_fields = ['matched_invoice', 'matched_transaction']
     date_hierarchy = 'created_at'
@@ -216,6 +239,7 @@ class BankTransactionAdmin(admin.ModelAdmin):
     actions = [
         'mark_skip_reconciliation', 'unmark_skip_reconciliation',
         'link_to_invoice', 'create_expenses_bulk',
+        'download_revolut_receipts',
     ]
 
     fieldsets = (
@@ -233,6 +257,14 @@ class BankTransactionAdmin(admin.ModelAdmin):
                 'reconciliation_skipped', 'reconciliation_note',
             ),
             'description': 'Привяжите банковскую операцию к инвойсу и/или транзакции для сверки',
+        }),
+        ('Revolut Expenses (чек и категория из приложения)', {
+            'fields': (
+                'expense_id', 'revolut_category',
+                'receipt_fetched_at', 'display_receipt_detail',
+            ),
+            'classes': ('collapse',),
+            'description': 'Данные, подгруженные из Revolut Expenses API',
         }),
     )
 
@@ -360,6 +392,50 @@ class BankTransactionAdmin(admin.ModelAdmin):
         return format_html('<span style="color:#9898b0;">—</span>')
     display_action.short_description = 'Действие'
 
+    def display_receipt(self, obj):
+        """Иконка-ссылка на чек из Revolut в списке."""
+        if obj.receipt_file:
+            return format_html(
+                '<a href="{}" target="_blank" title="Чек из Revolut" '
+                'style="text-decoration:none;font-size:16px;">📎</a>',
+                obj.receipt_file.url,
+            )
+        if obj.expense_id:
+            return format_html(
+                '<span title="Revolut Expense без чека" style="color:#d1d5db;font-size:14px;">—</span>'
+            )
+        return ''
+    display_receipt.short_description = '📎'
+
+    def display_receipt_detail(self, obj):
+        """Preview чека на странице редактирования."""
+        if not obj.receipt_file:
+            if obj.expense_id:
+                return format_html(
+                    '<span style="color:#6b7280;">Expense {} — чек не прикреплён в приложении</span>',
+                    obj.expense_id[:12] + '…',
+                )
+            return format_html('<span style="color:#9ca3af;">Нет данных из Revolut Expenses</span>')
+
+        url = obj.receipt_file.url
+        name = obj.receipt_file.name.rsplit('/', 1)[-1]
+        is_image = any(name.lower().endswith(ext) for ext in ('.jpg', '.jpeg', '.png', '.webp'))
+        if is_image:
+            return format_html(
+                '<div><a href="{}" target="_blank">'
+                '<img src="{}" style="max-width:300px;max-height:400px;border:1px solid #e5e7eb;'
+                'border-radius:6px;"></a><br>'
+                '<a href="{}" target="_blank" style="font-size:12px;">{}</a></div>',
+                url, url, url, name,
+            )
+        return format_html(
+            '<a href="{}" target="_blank" '
+            'style="display:inline-block;padding:8px 14px;background:#4f46e5;color:#fff;'
+            'border-radius:6px;text-decoration:none;font-weight:600;">📎 {}</a>',
+            url, name,
+        )
+    display_receipt_detail.short_description = 'Чек из Revolut'
+
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
@@ -372,127 +448,258 @@ class BankTransactionAdmin(admin.ModelAdmin):
         return custom_urls + urls
 
     def create_expense_view(self, request, pk):
-        """Создать расход (NewInvoice) из банковской транзакции"""
+        """Создать расход из банковской транзакции.
+
+        Два режима:
+        1. Привязать к существующему входящему инвойсу (FACT/INCBLC/AV). После привязки
+           сигнал auto_create_payment_on_bt_match создаёт Transaction и инвойс становится PAID.
+        2. Создать новый FACT-инвойс (входящий от контрагента) с прикреплённым чеком/PDF,
+           затем Transaction(PAYMENT, TRANSFER, COMPLETED) → статус PAID.
+
+        Если у банковской транзакции уже есть чек из Revolut (receipt_file),
+        он автоматически прикрепляется к новому инвойсу при создании FACT.
+        """
         from core.models_billing import NewInvoice, InvoiceItem, ExpenseCategory
-        from core.models import Company
+        from core.models import Company, Warehouse, Line, Carrier
 
         bank_trx = get_object_or_404(BankTransaction, pk=pk)
         expense_amount = abs(bank_trx.amount)
+
+        # Поиск существующих кандидатов — входящих инвойсов на ту же сумму (±1€),
+        # без привязанных банковских платежей, не CANCELLED/PAID.
+        candidates = self._find_expense_invoice_candidates(bank_trx, expense_amount)
+
         categories = ExpenseCategory.objects.filter(is_active=True).order_by('order', 'name')
         companies = Company.objects.all().order_by('name')
+        warehouses = Warehouse.objects.all().order_by('name')
+        lines = Line.objects.all().order_by('name')
+        carriers = Carrier.objects.all().order_by('name')
 
-        # Авто-подбор компании по counterparty_name
-        suggested_company = None
+        # Авто-подбор поставщика по counterparty_name среди всех типов
+        suggested_issuer_type = ''
+        suggested_issuer_id = ''
         if bank_trx.counterparty_name:
-            match = Company.objects.filter(
-                name__icontains=bank_trx.counterparty_name
-            ).first()
-            if not match:
-                # Обратный поиск: имя компании содержится в counterparty_name
-                for comp in companies:
-                    if comp.name.lower() in bank_trx.counterparty_name.lower():
-                        match = comp
+            ct = bank_trx.counterparty_name.lower()
+            for qs, ttype in (
+                (warehouses, 'warehouse'), (lines, 'line'),
+                (carriers, 'carrier'), (companies, 'company'),
+            ):
+                for ent in qs:
+                    if ent.name and ent.name.lower() in ct:
+                        suggested_issuer_type = ttype
+                        suggested_issuer_id = ent.pk
                         break
-            if match:
-                suggested_company = match.pk
+                if suggested_issuer_type:
+                    break
 
         default_description = bank_trx.description or bank_trx.counterparty_name or ''
 
         context = {
+            **self.admin_site.each_context(request),
             'bank_trx': bank_trx,
             'expense_amount': f'{expense_amount:,.2f}',
+            'candidates': candidates,
             'categories': categories,
             'companies': companies,
-            'suggested_company': suggested_company,
+            'warehouses': warehouses,
+            'lines': lines,
+            'carriers': carriers,
+            'suggested_issuer_type': suggested_issuer_type,
+            'suggested_issuer_id': suggested_issuer_id,
             'default_description': default_description,
             'title': 'Создать расход',
             'opts': self.model._meta,
             'has_view_permission': True,
         }
 
-        if request.method == 'POST':
-            category_id = request.POST.get('category')
-            company_id = request.POST.get('company')
-            description = request.POST.get('description', '').strip()
+        if request.method != 'POST':
+            return render(request, 'admin/core/banktransaction/create_expense.html', context)
 
-            if not category_id:
-                context['error'] = 'Выберите категорию расхода'
+        action = request.POST.get('action', '')
+
+        # ── Режим 1: Привязать к существующему инвойсу ─────────────────────────
+        if action == 'link':
+            invoice_id = request.POST.get('candidate_invoice_id')
+            if not invoice_id:
+                context['error'] = 'Выберите инвойс из списка кандидатов.'
                 return render(request, 'admin/core/banktransaction/create_expense.html', context)
-
             try:
-                category = ExpenseCategory.objects.get(pk=category_id)
-            except ExpenseCategory.DoesNotExist:
-                context['error'] = 'Категория не найдена'
+                invoice = NewInvoice.objects.get(pk=invoice_id)
+            except NewInvoice.DoesNotExist:
+                context['error'] = 'Выбранный инвойс не найден.'
                 return render(request, 'admin/core/banktransaction/create_expense.html', context)
 
-            issuer_company = None
-            if company_id:
-                try:
-                    issuer_company = Company.objects.get(pk=company_id)
-                except Company.DoesNotExist:
-                    pass
+            bank_trx.matched_invoice = invoice
+            bank_trx.reconciliation_note = f'Привязано вручную к {invoice.number}'
+            bank_trx.save(update_fields=['matched_invoice', 'reconciliation_note', 'fetched_at'])
 
-            try:
-                with transaction.atomic():
-                    caromoto = Company.get_default()
-                    if not caromoto:
-                        raise Company.DoesNotExist("Компания по умолчанию не найдена")
+            messages.success(
+                request,
+                f'Транзакция привязана к инвойсу {invoice.number}. '
+                f'Платёж будет создан автоматически, инвойс станет «Оплачен».',
+            )
+            return redirect('admin:core_banktransaction_changelist')
 
-                    # Создаём входящий инвойс (расход)
-                    invoice = NewInvoice(
-                        date=bank_trx.created_at.date(),
-                        status='PAID',
-                        category=category,
-                        recipient_company=caromoto,
-                        notes=f'Авто-создано из банковской операции {bank_trx.external_id}',
-                    )
-                    if issuer_company:
-                        invoice.issuer_company = issuer_company
+        # ── Режим 2: Создать новый FACT-инвойс ─────────────────────────────────
+        category_id = request.POST.get('category')
+        issuer_type = request.POST.get('issuer_type', '').strip()
+        issuer_id = request.POST.get('issuer_id', '').strip()
+        description = request.POST.get('description', '').strip()
+        attachment = request.FILES.get('attachment')
 
-                    invoice.save()  # Генерирует номер
+        if not category_id:
+            context['error'] = 'Выберите категорию расхода.'
+            return render(request, 'admin/core/banktransaction/create_expense.html', context)
+        if not issuer_type or not issuer_id:
+            context['error'] = 'Укажите контрагента-выставителя счёта.'
+            return render(request, 'admin/core/banktransaction/create_expense.html', context)
 
-                    # Создаём позицию
-                    item_desc = description or bank_trx.counterparty_name or f'Расход ({category.name})'
-                    InvoiceItem.objects.create(
-                        invoice=invoice,
-                        description=item_desc,
-                        quantity=Decimal('1'),
-                        unit_price=expense_amount,
-                        total_price=expense_amount,
-                        order=0,
-                    )
+        try:
+            category = ExpenseCategory.objects.get(pk=category_id)
+        except ExpenseCategory.DoesNotExist:
+            context['error'] = 'Категория не найдена.'
+            return render(request, 'admin/core/banktransaction/create_expense.html', context)
 
-                    # Пересчитываем итоги и помечаем оплаченным
-                    invoice.calculate_totals()
-                    invoice.paid_amount = invoice.total
-                    invoice.status = 'PAID'
-                    invoice.save()
+        model_map = {'company': Company, 'warehouse': Warehouse, 'line': Line, 'carrier': Carrier}
+        issuer_model = model_map.get(issuer_type)
+        if not issuer_model:
+            context['error'] = 'Неверный тип контрагента.'
+            return render(request, 'admin/core/banktransaction/create_expense.html', context)
+        try:
+            issuer = issuer_model.objects.get(pk=issuer_id)
+        except issuer_model.DoesNotExist:
+            context['error'] = 'Контрагент не найден.'
+            return render(request, 'admin/core/banktransaction/create_expense.html', context)
 
-                    # Привязываем банковскую транзакцию
-                    bank_trx.matched_invoice = invoice
-                    bank_trx.reconciliation_note = f'Расход создан автоматически: {category.name}'
-                    bank_trx.save(update_fields=['matched_invoice', 'reconciliation_note'])
+        try:
+            with transaction.atomic():
+                caromoto = Company.get_default()
+                if not caromoto:
+                    raise Company.DoesNotExist('Компания по умолчанию не найдена')
 
-                    logger.info(
-                        f'[create_expense] BankTrx {bank_trx.pk} → Invoice {invoice.number} '
-                        f'({expense_amount} {bank_trx.currency}, {category.name})'
-                    )
-                    messages.success(
-                        request,
-                        f'Расход создан: инвойс {invoice.number} на сумму '
-                        f'{expense_amount:,.2f} {bank_trx.currency} ({category.name})'
-                    )
-                    return redirect('admin:core_banktransaction_changelist')
+                invoice = NewInvoice(
+                    document_type='INVOICE_FACT',
+                    date=bank_trx.created_at.date(),
+                    status='ISSUED',
+                    category=category,
+                    recipient_company=caromoto,
+                    currency=bank_trx.currency or 'EUR',
+                    notes=f'Авто-создано из банковской операции {bank_trx.external_id}',
+                )
+                setattr(invoice, f'issuer_{issuer_type}', issuer)
+                if attachment:
+                    invoice.attachment = attachment
+                elif bank_trx.receipt_file:
+                    # Автоматически прикрепляем чек, подгруженный из Revolut
+                    from django.core.files.base import ContentFile
+                    import os
+                    bank_trx.receipt_file.open('rb')
+                    try:
+                        content = bank_trx.receipt_file.read()
+                    finally:
+                        bank_trx.receipt_file.close()
+                    fname = os.path.basename(bank_trx.receipt_file.name)
+                    invoice.attachment.save(fname, ContentFile(content), save=False)
+                invoice.save()  # генерирует номер серии FACT
 
-            except Company.DoesNotExist:
-                context['error'] = 'Компания Caromoto Lithuania (id=1) не найдена в базе'
-                return render(request, 'admin/core/banktransaction/create_expense.html', context)
-            except Exception as e:
-                logger.error(f'[create_expense] Ошибка: {e}')
-                context['error'] = f'Ошибка при создании расхода: {e}'
-                return render(request, 'admin/core/banktransaction/create_expense.html', context)
+                item_desc = description or bank_trx.counterparty_name or f'Расход ({category.name})'
+                InvoiceItem.objects.create(
+                    invoice=invoice,
+                    description=item_desc,
+                    quantity=Decimal('1'),
+                    unit_price=expense_amount,
+                    total_price=expense_amount,
+                    order=0,
+                )
+                invoice.calculate_totals()
+                invoice.save(update_fields=['subtotal', 'total', 'updated_at'])
 
-        return render(request, 'admin/core/banktransaction/create_expense.html', context)
+                bank_trx.matched_invoice = invoice
+                bank_trx.reconciliation_note = f'FACT-расход создан: {category.name}'
+                bank_trx.save(update_fields=['matched_invoice', 'reconciliation_note', 'fetched_at'])
+
+                logger.info(
+                    '[create_expense] BT %s → FACT %s (%s %s, issuer=%s:%s, attachment=%s)',
+                    bank_trx.pk, invoice.number, expense_amount, bank_trx.currency,
+                    issuer_type, issuer_id, bool(attachment),
+                )
+
+            messages.success(
+                request,
+                f'FACT-инвойс {invoice.number} создан на сумму {expense_amount:,.2f} '
+                f'{bank_trx.currency}. Платёж будет зарегистрирован автоматически.',
+            )
+            return redirect('admin:core_banktransaction_changelist')
+
+        except Company.DoesNotExist:
+            context['error'] = 'Компания Caromoto Lithuania не найдена в базе.'
+            return render(request, 'admin/core/banktransaction/create_expense.html', context)
+        except Exception as e:
+            logger.error('[create_expense] Ошибка: %s', e, exc_info=True)
+            context['error'] = f'Ошибка при создании расхода: {e}'
+            return render(request, 'admin/core/banktransaction/create_expense.html', context)
+
+    def _find_expense_invoice_candidates(self, bank_trx, expense_amount, tolerance=Decimal('1.00'), limit=10):
+        """Найти входящие инвойсы — кандидаты на привязку к расходной банковской транзакции.
+
+        Критерии:
+        - Входящий инвойс (recipient_company=Caromoto, либо direction=INCOMING)
+        - Не CANCELLED, не PAID
+        - Не привязан к другой банковской транзакции
+        - Остаток к оплате совпадает с суммой BT в пределах tolerance
+        - Предпочтение сериям FACT / INVOICE_FACT
+        - Сортировка: сначала совпадение по имени контрагента, затем по дате
+        """
+        from core.models_billing import NewInvoice
+        from core.models import Company
+        from django.db.models import F, Q
+
+        caromoto = Company.get_default()
+        if not caromoto:
+            return []
+
+        qs = NewInvoice.objects.filter(
+            recipient_company=caromoto,
+        ).exclude(
+            status__in=['CANCELLED', 'PAID'],
+        ).exclude(
+            bank_transactions__isnull=False,
+        )
+
+        low = expense_amount - tolerance
+        high = expense_amount + tolerance
+        qs = qs.annotate(
+            remaining=F('total') - F('paid_amount'),
+        ).filter(
+            remaining__gte=low,
+            remaining__lte=high,
+        )
+
+        ct_name = (bank_trx.counterparty_name or '').strip().lower()
+        qs = qs.select_related(
+            'issuer_company', 'issuer_warehouse', 'issuer_line', 'issuer_carrier',
+        ).order_by('-date')[:limit * 3]
+
+        results = []
+        for inv in qs:
+            issuer = inv.issuer
+            issuer_name = getattr(issuer, 'name', '') or ''
+            name_match = 0
+            if ct_name and issuer_name:
+                low_issuer = issuer_name.lower()
+                if low_issuer in ct_name or ct_name in low_issuer:
+                    name_match = 2
+                else:
+                    parts = {p for p in low_issuer.split() if len(p) > 2}
+                    if parts and any(p in ct_name for p in parts):
+                        name_match = 1
+            type_boost = 1 if inv.document_type == 'INVOICE_FACT' else 0
+            inv.match_score = name_match * 10 + type_boost
+            inv.issuer_display_name = issuer_name
+            results.append(inv)
+
+        results.sort(key=lambda i: (-i.match_score, -i.date.toordinal()))
+        return results[:limit]
 
     @admin.action(description='Привязать к инвойсу')
     def link_to_invoice(self, request, queryset):
@@ -584,6 +791,52 @@ class BankTransactionAdmin(admin.ModelAdmin):
         count = queryset.update(reconciliation_skipped=False)
         messages.success(request, f'Пометка снята с {count} операций.')
 
+    @admin.action(description='Подгрузить чеки из Revolut')
+    def download_revolut_receipts(self, request, queryset):
+        """Массово подтягивает expenses/чеки из Revolut для выбранных транзакций."""
+        from core.services.revolut_service import RevolutService, RevolutAPIError
+
+        connections = {}
+        for bt in queryset.select_related('connection'):
+            if bt.connection.bank_type == 'REVOLUT' and bt.connection.is_active:
+                connections.setdefault(bt.connection.pk, bt.connection)
+
+        if not connections:
+            messages.warning(request, 'Среди выбранных транзакций нет активных Revolut-подключений.')
+            return None
+
+        total_downloaded = 0
+        total_updated = 0
+        errors = 0
+
+        for conn in connections.values():
+            service = RevolutService(conn)
+            try:
+                updated = service.fetch_expenses(days=90)
+                total_updated += updated
+                downloaded = service.fetch_receipts_for_existing()
+                total_downloaded += downloaded
+            except RevolutAPIError as e:
+                errors += 1
+                if e.status_code == 403:
+                    messages.error(
+                        request,
+                        f'{conn}: Expenses API недоступен (403). Проверьте, что план Grow/Scale/Enterprise.',
+                    )
+                else:
+                    messages.error(request, f'{conn}: {e}')
+            except Exception as e:
+                errors += 1
+                messages.error(request, f'{conn}: {e}')
+
+        if total_downloaded or total_updated:
+            messages.success(
+                request,
+                f'Revolut: обновлено {total_updated} expenses, скачано {total_downloaded} чеков.',
+            )
+        elif not errors:
+            messages.info(request, 'Новых чеков из Revolut не найдено.')
+
     @admin.action(description='Создать расходы (массово)')
     def create_expenses_bulk(self, request, queryset):
         """Массовое создание расходов из банковских транзакций"""
@@ -635,10 +888,12 @@ class BankTransactionAdmin(admin.ModelAdmin):
                     with transaction.atomic():
                         expense_amount = abs(bank_trx.amount)
                         invoice = NewInvoice(
+                            document_type='INVOICE_FACT',
                             date=bank_trx.created_at.date(),
-                            status='PAID',
+                            status='ISSUED',
                             category=category,
                             recipient_company=caromoto,
+                            currency=bank_trx.currency or 'EUR',
                             notes=f'Авто-создано (массово) из банковской операции {bank_trx.external_id}',
                         )
                         invoice.save()
@@ -652,15 +907,12 @@ class BankTransactionAdmin(admin.ModelAdmin):
                             total_price=expense_amount,
                             order=0,
                         )
-
                         invoice.calculate_totals()
-                        invoice.paid_amount = invoice.total
-                        invoice.status = 'PAID'
-                        invoice.save()
+                        invoice.save(update_fields=['subtotal', 'total', 'updated_at'])
 
                         bank_trx.matched_invoice = invoice
-                        bank_trx.reconciliation_note = f'Расход (массово): {category.name}'
-                        bank_trx.save(update_fields=['matched_invoice', 'reconciliation_note'])
+                        bank_trx.reconciliation_note = f'FACT-расход (массово): {category.name}'
+                        bank_trx.save(update_fields=['matched_invoice', 'reconciliation_note', 'fetched_at'])
                         created_count += 1
                 except Exception as e:
                     logger.error(f'[create_expenses_bulk] BankTrx {bank_trx.pk}: {e}')

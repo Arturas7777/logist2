@@ -455,6 +455,7 @@
                             <option value="PROFORMA_BLC" {% if original.document_type == 'PROFORMA_BLC' %}selected{% endif %}>AVBLC — неофиц. предл.</option>
                             <option value="INVOICE_BLC" {% if original.document_type == 'INVOICE_BLC' %}selected{% endif %}>PARBLC — неофиц. счёт</option>
                             <option value="INVOICE_FACT" {% if original.document_type == 'INVOICE_FACT' %}selected{% endif %}>FACT — входящий от контрагента</option>
+                            <option value="INVOICE_INCBLC" {% if original.document_type == 'INVOICE_INCBLC' %}selected{% endif %}>INCBLC — входящий неофиц. (нал)</option>
                         </select>
                     </div>
                     <div class="form-group">

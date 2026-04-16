@@ -52,6 +52,7 @@ class RevolutService:
     TOKEN_ENDPOINT = '/api/1.0/auth/token'
     ACCOUNTS_ENDPOINT = '/api/1.0/accounts'
     TRANSACTIONS_ENDPOINT = '/api/1.0/transactions'
+    EXPENSES_ENDPOINT = '/api/1.0/expenses'
 
     def __init__(self, connection):
         """
@@ -149,6 +150,26 @@ class RevolutService:
             error_msg = f'API GET {endpoint} ошибка: {e}'
             logger.error(f'[Revolut] {error_msg}')
             raise RevolutAPIError(error_msg, status, body)
+
+    def _api_get_binary(self, endpoint: str) -> tuple[bytes, str]:
+        """
+        GET бинарного контента (для скачивания чеков).
+        Возвращает (body_bytes, content_type).
+        """
+        url = f'{self.base_url}{endpoint}'
+        try:
+            resp = self._session.get(
+                url,
+                headers=self._get_auth_headers(),
+                timeout=60,
+            )
+            resp.raise_for_status()
+            return resp.content, resp.headers.get('Content-Type', 'application/octet-stream')
+        except requests.RequestException as e:
+            status = getattr(e.response, 'status_code', None) if hasattr(e, 'response') else None
+            error_msg = f'API GET (binary) {endpoint} ошибка: {e}'
+            logger.error(f'[Revolut] {error_msg}')
+            raise RevolutAPIError(error_msg, status)
 
     # ========================================================================
     # ACCOUNTS
@@ -313,23 +334,171 @@ class RevolutService:
         return updated_transactions
 
     # ========================================================================
+    # EXPENSES (чеки и категории из приложения Revolut)
+    # ========================================================================
+
+    def fetch_expenses(self, days: int = 30, limit: int = 500) -> int:
+        """
+        Тянет expenses из Revolut и привязывает expense_id/категорию к BankTransaction.
+        
+        Expense в Revolut = карточная транзакция (или transfer) + прикреплённый чек/категория.
+        Мы обновляем соответствующую BankTransaction по external_id == expense.transaction_id.
+        
+        Returns:
+            число BankTransaction, у которых обновлён expense_id
+        """
+        from ..models_banking import BankTransaction
+
+        logger.info(f'[Revolut] Загружаем expenses за {days} дней для {self.connection}')
+
+        from_date = (timezone.now() - timedelta(days=days)).date().isoformat()
+        params = {'from': from_date, 'limit': min(limit, 1000)}
+
+        try:
+            data = self._api_get(self.EXPENSES_ENDPOINT, params=params)
+        except RevolutAPIError as e:
+            if e.status_code == 403:
+                logger.warning(
+                    '[Revolut] Expenses API недоступен (403): возможно, план ниже Grow'
+                )
+                return 0
+            raise
+
+        updated_count = 0
+        for item in data or []:
+            expense_id = item.get('id', '')
+            tx_id = item.get('transaction_id', '')
+            if not expense_id or not tx_id:
+                continue
+
+            bt = BankTransaction.objects.filter(
+                connection=self.connection,
+                external_id=tx_id,
+            ).first()
+            if not bt:
+                continue
+
+            update_fields = []
+
+            if bt.expense_id != expense_id:
+                bt.expense_id = expense_id
+                update_fields.append('expense_id')
+
+            # Категория из splits/labels
+            category = ''
+            splits = item.get('splits') or []
+            if splits:
+                cat_obj = (splits[0] or {}).get('category') or {}
+                category = cat_obj.get('name', '') or cat_obj.get('code', '')
+            if not category:
+                labels = item.get('labels') or {}
+                if isinstance(labels, dict):
+                    first_group = next(iter(labels.values()), None)
+                    if isinstance(first_group, list) and first_group:
+                        category = str(first_group[0])
+                    elif isinstance(first_group, str):
+                        category = first_group
+
+            if category and bt.revolut_category != category[:100]:
+                bt.revolut_category = category[:100]
+                update_fields.append('revolut_category')
+
+            if update_fields:
+                bt.save(update_fields=update_fields)
+                updated_count += 1
+
+            # Сразу тянем чеки, если есть receipt_ids и нет файла
+            receipt_ids = item.get('receipt_ids') or []
+            if receipt_ids and not bt.receipt_file:
+                self._download_receipt(bt, expense_id, receipt_ids[0])
+
+        logger.info(f'[Revolut] Expenses: обновлено {updated_count} BankTransaction')
+        return updated_count
+
+    def _download_receipt(self, bt, expense_id: str, receipt_id: str) -> bool:
+        """
+        Скачивает чек из Revolut Expenses API и сохраняет в bt.receipt_file.
+        
+        Returns:
+            True если успешно скачан и сохранён, False при ошибке
+        """
+        from django.core.files.base import ContentFile
+        import mimetypes
+
+        endpoint = f'{self.EXPENSES_ENDPOINT}/{expense_id}/receipts/{receipt_id}/content'
+        try:
+            body, content_type = self._api_get_binary(endpoint)
+        except RevolutAPIError as e:
+            logger.warning(
+                f'[Revolut] Не удалось скачать чек {receipt_id} для BT {bt.pk}: {e}'
+            )
+            return False
+
+        if not body:
+            return False
+
+        ext = mimetypes.guess_extension((content_type or '').split(';')[0].strip()) or '.bin'
+        if ext == '.jpe':
+            ext = '.jpg'
+        filename = f'revolut_receipt_{bt.external_id[:20]}_{receipt_id[:8]}{ext}'
+
+        bt.receipt_file.save(filename, ContentFile(body), save=False)
+        bt.receipt_fetched_at = timezone.now()
+        bt.save(update_fields=['receipt_file', 'receipt_fetched_at'])
+        logger.info(
+            f'[Revolut] Чек сохранён: BT {bt.pk} → {filename} ({len(body)} байт)'
+        )
+        return True
+
+    def fetch_receipts_for_existing(self, limit: int = 200) -> int:
+        """
+        Догружает чеки для BankTransaction, у которых уже есть expense_id, но нет файла.
+        Полезно после изменения настроек или ручного теста.
+        """
+        from ..models_banking import BankTransaction
+
+        qs = BankTransaction.objects.filter(
+            connection=self.connection,
+            receipt_file='',
+        ).exclude(expense_id='').order_by('-created_at')[:limit]
+
+        downloaded = 0
+        for bt in qs:
+            try:
+                expense = self._api_get(f'{self.EXPENSES_ENDPOINT}/{bt.expense_id}')
+            except RevolutAPIError:
+                continue
+            receipt_ids = (expense or {}).get('receipt_ids') or []
+            if receipt_ids and self._download_receipt(bt, bt.expense_id, receipt_ids[0]):
+                downloaded += 1
+
+        logger.info(f'[Revolut] Догружено чеков: {downloaded}')
+        return downloaded
+
+    # ========================================================================
     # SYNC ALL
     # ========================================================================
 
     def sync_all(self) -> dict:
         """
-        Полная синхронизация: счета + транзакции.
+        Полная синхронизация: счета + транзакции + expenses (чеки).
         Возвращает dict с результатами.
         """
         result = {
             'accounts': [],
             'transactions': [],
+            'expenses_updated': 0,
             'error': None,
         }
 
         try:
             result['accounts'] = self.fetch_accounts()
             result['transactions'] = self.fetch_transactions()
+
+            try:
+                result['expenses_updated'] = self.fetch_expenses()
+            except Exception as e:
+                logger.warning(f'[Revolut] Expenses sync failed (non-fatal): {e}')
 
             self.connection.last_synced_at = timezone.now()
             self.connection.last_error = ''
@@ -338,7 +507,8 @@ class RevolutService:
             logger.info(
                 f'[Revolut] Синхронизация завершена: '
                 f'{len(result["accounts"])} счетов, '
-                f'{len(result["transactions"])} транзакций'
+                f'{len(result["transactions"])} транзакций, '
+                f'{result["expenses_updated"]} expenses'
             )
 
         except RevolutAPIError as e:

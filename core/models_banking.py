@@ -272,6 +272,34 @@ class BankTransaction(models.Model):
         help_text='Отметьте для операций, не связанных с инвойсами (комиссии, обмены валют и т.д.)'
     )
 
+    # ── Revolut Expenses API: чек и категория из приложения ──
+    expense_id = models.CharField(
+        max_length=100,
+        blank=True,
+        default='',
+        verbose_name='Revolut Expense ID',
+        help_text='ID связанного expense в Revolut Business (для подгрузки чеков)',
+    )
+    receipt_file = models.FileField(
+        upload_to='bank_receipts/%Y/%m/',
+        blank=True,
+        null=True,
+        verbose_name='Чек из Revolut',
+        help_text='Файл чека, автоматически скачанный из Revolut Expenses API',
+    )
+    receipt_fetched_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Чек загружен',
+    )
+    revolut_category = models.CharField(
+        max_length=100,
+        blank=True,
+        default='',
+        verbose_name='Категория Revolut',
+        help_text='Категория, назначенная в приложении Revolut (labels/category)',
+    )
+
     class Meta:
         verbose_name = 'Банковская транзакция'
         verbose_name_plural = 'Банковские транзакции'
