@@ -316,11 +316,16 @@ def _get_agreed_total(client, vehicle_type, total_cars_in_container):
 
 
 def _distribute_markup_for_car(car, agreed_total, total_cars_in_container):
-    """Распределяет скрытую наценку ТОЛЬКО по услугам склада (кроме хранения).
+    """Обеспечивает, что сумма услуг склада (кроме хранения) не меньше тарифа.
+
+    Тариф клиента = МИНИМАЛЬНАЯ цена за складской пакет.
+    - Если текущая сумма склада (с учётом наценок) < тарифа — наценка
+      равномерно перераспределяется, чтобы итог = тарифу.
+    - Если текущая сумма склада (с учётом наценок) >= тарифа — наценки
+      не трогаются: пользователь намеренно поднял цену выше тарифа.
 
     Услуги перевозчика (CARRIER) и отдельные услуги компаний (COMPANY)
-    не затрагиваются — пользователь задаёт их цены и наценки вручную,
-    и они добавляются к итогу сверх тарифа.
+    в тариф не входят и никогда не затрагиваются этой логикой.
     """
     from core.models import CarService
 
@@ -344,6 +349,16 @@ def _distribute_markup_for_car(car, agreed_total, total_cars_in_container):
         )
         return
 
+    current_invoice_total = sum(Decimal(str(svc.invoice_price)) for svc in warehouse_non_storage)
+
+    if current_invoice_total >= agreed_total:
+        logger.info(
+            "Tariff for %s (%s): agreed=%s, текущий склад с наценкой=%s — уже >= тарифа, наценки не трогаем",
+            car.vin, car.client.name if car.client else '?',
+            agreed_total, current_invoice_total,
+        )
+        return
+
     actual_warehouse_total = sum(Decimal(str(svc.final_price)) for svc in warehouse_non_storage)
     diff = agreed_total - actual_warehouse_total
 
@@ -357,7 +372,7 @@ def _distribute_markup_for_car(car, agreed_total, total_cars_in_container):
         svc.save(update_fields=['markup_amount'])
 
     logger.info(
-        "Tariff for %s (%s): agreed=%s, warehouse_actual=%s, diff=%s, cars_count=%s, распределено по %d услугам склада",
+        "Tariff for %s (%s): agreed=%s, warehouse_final=%s, diff=%s, cars_count=%s, распределено по %d услугам склада",
         car.vin, car.client.name if car.client else '?',
         agreed_total, actual_warehouse_total, diff, total_cars_in_container, len(warehouse_non_storage),
     )
