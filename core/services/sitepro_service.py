@@ -386,44 +386,93 @@ class SiteProService:
                     f'и default_location_id в настройках подключения.'
                 )
 
-            # Шаг 2: Создаём продажу (sale)
+            # Шаг 2: Создаём продажу (sale) — или линкуем существующую если дубликат.
             sale_data = self._build_sale_data(invoice, client_id)
             logger.info(
                 f'[SitePro] Отправка инвойса {invoice.number} '
                 f'(получатель: {invoice.recipient_name}, сумма: {invoice.total})'
             )
-            sale_result = self._api_post(self.SALES_CREATE, sale_data)
+
+            sale_id = None
+            sale_number = ''
+            sale_result = None
+            linked_existing = False
+
+            try:
+                sale_result = self._api_post(self.SALES_CREATE, sale_data)
+            except SiteProAPIError as create_err:
+                # Fallback: если site.pro говорит что запись уже существует
+                # (т.к. series+number занято другим пользователем или ручной записью),
+                # находим её и линкуемся вместо падения. Это спасает инвойсы,
+                # которые накопились во время breaking change API.
+                if create_err.status_code == 400 and 'already exists' in str(create_err).lower():
+                    existing_id = self._find_existing_sale_id(
+                        series=sale_data.get('series'),
+                        number=sale_data.get('number'),
+                    )
+                    if existing_id:
+                        logger.warning(
+                            f'[SitePro] Sale {sale_data.get("series")}-{sale_data.get("number")} '
+                            f'уже существует в site.pro (id={existing_id}) — линкую SiteProInvoiceSync '
+                            f'к существующей записи вместо создания новой.'
+                        )
+                        sale_id = existing_id
+                        sale_number = sale_data.get('number') or ''
+                        linked_existing = True
+                    else:
+                        raise
+                else:
+                    raise
 
             # Новый API возвращает: {'message': 'Data saved...', 'data': {'id': 197}, 'code': 200}
             # Старый API возвращал id/saleId на верхнем уровне — поддерживаем оба формата.
-            sale_id = sale_result.get('id') or sale_result.get('saleId')
-            sale_number = sale_result.get('number') or sale_result.get('invoiceNumber') or ''
-
-            if not sale_id and isinstance(sale_result.get('data'), dict):
-                sale_id = sale_result['data'].get('id') or sale_result['data'].get('saleId')
-                sale_number = (sale_number
-                               or sale_result['data'].get('number')
-                               or sale_result['data'].get('invoiceNumber')
-                               or '')
+            if not sale_id and isinstance(sale_result, dict):
+                sale_id = sale_result.get('id') or sale_result.get('saleId')
+                sale_number = sale_result.get('number') or sale_result.get('invoiceNumber') or ''
+                if not sale_id and isinstance(sale_result.get('data'), dict):
+                    sale_id = sale_result['data'].get('id') or sale_result['data'].get('saleId')
+                    sale_number = (sale_number
+                                   or sale_result['data'].get('number')
+                                   or sale_result['data'].get('invoiceNumber')
+                                   or '')
 
             if not sale_id:
                 raise SiteProAPIError(
                     f'API не вернул ID продажи. Ответ: {sale_result}'
                 )
 
-            # Шаг 3: Добавляем позиции
+            # Шаг 3: Добавляем позиции. Если прилинковались к существующей sale,
+            # проверяем есть ли там уже items — если да, не добавляем (иначе задублируем).
             items_errors = []
-            for item_data in self._build_sale_items(invoice, sale_id):
+            should_add_items = True
+            if linked_existing:
                 try:
-                    self._api_post(self.SALE_ITEMS_CREATE, item_data)
+                    existing_items = self.list_sale_items(int(sale_id))
+                    if existing_items:
+                        should_add_items = False
+                        logger.info(
+                            f'[SitePro] Связанная sale {sale_id} уже содержит {len(existing_items)} '
+                            f'позиций — пропускаю добавление items.'
+                        )
                 except SiteProAPIError as e:
-                    items_errors.append(str(e)[:200])
-                    logger.error(f'[SitePro] Ошибка создания позиции: {e}')
+                    logger.warning(f'[SitePro] Не удалось проверить items существующей sale: {e}')
+
+            if should_add_items:
+                for item_data in self._build_sale_items(invoice, sale_id):
+                    try:
+                        self._api_post(self.SALE_ITEMS_CREATE, item_data)
+                    except SiteProAPIError as e:
+                        items_errors.append(str(e)[:200])
+                        logger.error(f'[SitePro] Ошибка создания позиции: {e}')
 
             sync.external_id = str(sale_id)
             sync.external_number = str(sale_number)
-            sync.sync_status = 'PARTIAL' if items_errors else 'SENT'
-            sync.error_message = '; '.join(items_errors) if items_errors else ''
+            if linked_existing:
+                sync.sync_status = 'SENT'
+                sync.error_message = f'Linked to existing sale id={sale_id} (series+number already existed in site.pro)'
+            else:
+                sync.sync_status = 'PARTIAL' if items_errors else 'SENT'
+                sync.error_message = '; '.join(items_errors) if items_errors else ''
             sync.last_synced_at = timezone.now()
             sync.save()
 
@@ -606,6 +655,29 @@ class SiteProService:
 
         result = self._api_post(self.SALES_LIST, data)
         return result.get('data', []) if isinstance(result, dict) else []
+
+    def _find_existing_sale_id(self, series: str, number: str) -> int | None:
+        """Поиск существующей sale по точному совпадению series + number.
+
+        Используется когда sales/create вернул "record already exists" — мы
+        линкуемся к существующей записи вместо падения/создания дубликата.
+
+        Returns:
+            int id найденной sale или None.
+        """
+        if not number:
+            return None
+        try:
+            found = self.search_sales(number=number)
+        except SiteProAPIError:
+            return None
+        # Фильтруем по series тоже, т.к. number без series не уникален
+        # (разные серии могут иметь одинаковые номера).
+        for s in found:
+            if str(s.get('number')) == str(number):
+                if not series or s.get('series') == series:
+                    return s.get('id')
+        return None
 
     # ========================================================================
     # GET INVOICE PDF
