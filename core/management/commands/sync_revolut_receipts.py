@@ -11,8 +11,9 @@ Management-команда для загрузки чеков из Revolut Expens
     0 * * * * cd /var/www/logist2 && .venv/bin/python manage.py sync_revolut_receipts >> /var/log/logist2/revolut_receipts.log 2>&1
 """
 
-from django.core.management.base import BaseCommand
 import logging
+
+from django.core.management.base import BaseCommand
 
 logger = logging.getLogger(__name__)
 

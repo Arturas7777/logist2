@@ -1,16 +1,22 @@
 """Tests for car lifecycle service and signal consolidation."""
 from decimal import Decimal
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.utils import timezone
 
 from core.models import (
-    Car, Container, Client, Warehouse, Company, Line,
-    WarehouseService, CarService,
+    Car,
+    Client,
+    Company,
+    Container,
+    Line,
+    Warehouse,
 )
 from core.services.car_lifecycle_service import (
-    recalculate_car_price, check_container_status, after_car_save,
+    after_car_save,
+    check_container_status,
+    recalculate_car_price,
 )
 
 
@@ -49,7 +55,7 @@ class CheckContainerStatusTest(TestCase):
             status='TRANSFERRED', container=self.container,
             transfer_date=timezone.now().date(),
         )
-        car2 = Car.objects.create(
+        Car.objects.create(
             year=2023, brand='Audi', vin='CONTSTAT000000002',
             status='TRANSFERRED', container=self.container,
             transfer_date=timezone.now().date(),
@@ -64,7 +70,7 @@ class CheckContainerStatusTest(TestCase):
             status='TRANSFERRED', container=self.container,
             transfer_date=timezone.now().date(),
         )
-        car2 = Car.objects.create(
+        Car.objects.create(
             year=2023, brand='Audi', vin='CONTSTAT000000004',
             status='UNLOADED', container=self.container,
         )
@@ -149,6 +155,7 @@ class NormalizationModelsTest(TestCase):
 
     def test_warehouse_site_unique(self):
         from django.db import IntegrityError
+
         from core.models import WarehouseSite
         wh = Warehouse.objects.create(name='WH-Uniq')
         WarehouseSite.objects.create(warehouse=wh, number=1)
@@ -163,6 +170,7 @@ class NormalizationModelsTest(TestCase):
 
     def test_client_email_unique(self):
         from django.db import IntegrityError
+
         from core.models import ClientEmail
         client = Client.objects.create(name='Uniq Client')
         ClientEmail.objects.create(client=client, email='dup@example.com')

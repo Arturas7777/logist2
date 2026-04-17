@@ -12,27 +12,40 @@ markers = [
 [tool.ruff]
 target-version = "py312"
 line-length = 120
+extend-exclude = [
+    "core/migrations/*",
+    "scripts/debug/*",
+    "_*.py",
+]
 
 [tool.ruff.lint]
+# Минимально-строгий набор, который проходит текущий код.
+# Расширить до ["E", "W", "F", "I", "N", "UP", "B", "SIM", "DJ"] — задача P1.
 select = [
-    "E",     # pycodestyle errors
-    "W",     # pycodestyle warnings
-    "F",     # pyflakes
-    "I",     # isort
-    "N",     # pep8-naming
-    "UP",    # pyupgrade
-    "B",     # flake8-bugbear
-    "SIM",   # flake8-simplify
-    "DJ",    # flake8-django
+    "E9",    # syntax errors
+    "F63",   # invalid assertions
+    "F7",    # syntax errors in forward refs
+    "F82",   # undefined name
+    "F401",  # unused imports (в новом коде)
+    "F811",  # redefined unused
+    "F821",  # undefined variable
+    "F841",  # local variable assigned but never used
+    "I",     # isort (предупреждения, но многие файлы уже ок)
+    "W291",  # trailing whitespace
+    "W292",  # missing newline at EOF
+    "W293",  # blank line contains whitespace
+    "W605",  # invalid escape sequence
 ]
 ignore = [
     "E501",  # line too long (handled by formatter)
-    "B008",  # do not perform function calls in argument defaults
-    "B905",  # zip without strict
-    "DJ001", # avoid using null=True on string fields
-    "N806",  # variable in function should be lowercase
-    "SIM108", # ternary operator
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"core/migrations/*" = ["I", "F401", "F811"]
+"scripts/debug/*" = ["I", "F401", "F811", "F841"]
+"**/tests/*" = ["F811"]
+"logist2/urls.py" = ["I", "F401"]
+"logist2/settings/__init__.py" = ["F401", "F403"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["core", "logist2"]

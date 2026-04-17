@@ -1,5 +1,7 @@
 from django.core.management.base import BaseCommand
+
 from core.models import Company
+
 
 class Command(BaseCommand):
     help = 'Создает дефолтную компанию Caromoto Lithuania'
@@ -13,7 +15,7 @@ class Command(BaseCommand):
                 'card_balance': 0.00
             }
         )
-        
+
         if created:
             self.stdout.write(
                 self.style.SUCCESS(f'Успешно создана компания "{company.name}"')

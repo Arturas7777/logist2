@@ -9,8 +9,9 @@ Management command для синхронизации банковских сче
     */15 * * * * cd /var/www/logist2 && .venv/bin/python manage.py sync_bank_accounts >> /var/log/logist2/bank_sync.log 2>&1
 """
 
-from django.core.management.base import BaseCommand
 import logging
+
+from django.core.management.base import BaseCommand
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ class Command(BaseCommand):
         from core.services.revolut_service import RevolutService
 
         connection_id = options.get('id')
-        days = options.get('days', 30)
+        options.get('days', 30)
 
         if connection_id:
             connections = BankConnection.objects.filter(id=connection_id, is_active=True)

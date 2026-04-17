@@ -2,8 +2,12 @@
 from django.test import TestCase
 
 from core.service_codes import (
-    ServiceCode, NAME_TO_CODE, CODE_TO_NAME,
-    is_storage_service, is_ths_service, service_matches_code,
+    CODE_TO_NAME,
+    NAME_TO_CODE,
+    ServiceCode,
+    is_storage_service,
+    is_ths_service,
+    service_matches_code,
 )
 
 

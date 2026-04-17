@@ -20,8 +20,8 @@ from django.core.management.base import BaseCommand
 from django.db import transaction as db_transaction
 
 from core.models import Client, Company
-from core.models_billing import NewInvoice, Transaction
 from core.models_banking import BankTransaction
+from core.models_billing import NewInvoice, Transaction
 
 logger = logging.getLogger(__name__)
 

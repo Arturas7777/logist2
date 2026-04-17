@@ -4,9 +4,14 @@ from django.db import migrations, models
 
 
 def add_field_if_not_exists(apps, schema_editor):
-    """Add balance fields to Company only if they don't exist yet (idempotent)."""
-    connection = schema_editor.connection
-    cursor = connection.cursor()
+    """Add balance fields to Company only if they don't exist yet (idempotent).
+
+    Используется только на Postgres в продакшене; на SQLite (тесты) — no-op,
+    так как тестовая схема создаётся с нуля и колонок там и так нет в модели.
+    """
+    if schema_editor.connection.vendor != 'postgresql':
+        return
+    cursor = schema_editor.connection.cursor()
     cursor.execute(
         "SELECT column_name FROM information_schema.columns "
         "WHERE table_name = 'core_company'"

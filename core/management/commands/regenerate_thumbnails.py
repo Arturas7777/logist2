@@ -1,10 +1,12 @@
 """
 Management command для пересоздания миниатюр фотографий контейнеров
 """
+import os
+
 from django.core.management.base import BaseCommand
 from django.db.models import Q
+
 from core.models_website import ContainerPhoto
-import os
 
 
 class Command(BaseCommand):
@@ -25,16 +27,16 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         force = options.get('force', False)
         container_number = options.get('container')
-        
+
         # Получаем фотографии для обработки
         photos_query = ContainerPhoto.objects.select_related('container')
-        
+
         if container_number:
             photos_query = photos_query.filter(container__number=container_number)
             self.stdout.write(f"Обработка фотографий контейнера {container_number}...")
         else:
             self.stdout.write("Обработка всех фотографий контейнеров...")
-        
+
         if force:
             # Обрабатываем все фотографии
             photos = photos_query.all()
@@ -45,10 +47,10 @@ class Command(BaseCommand):
                 Q(thumbnail='') | Q(thumbnail__isnull=True)
             )
             self.stdout.write(f"Найдено {photos.count()} фотографий без миниатюр")
-        
+
         success_count = 0
         error_count = 0
-        
+
         for photo in photos:
             try:
                 # Проверяем существование оригинального файла
@@ -60,7 +62,7 @@ class Command(BaseCommand):
                     )
                     error_count += 1
                     continue
-                
+
                 # Удаляем старую миниатюру если force=True
                 if force and photo.thumbnail:
                     try:
@@ -73,7 +75,7 @@ class Command(BaseCommand):
                             )
                         )
                     photo.thumbnail = None
-                
+
                 # Создаем миниатюру
                 if photo.create_thumbnail():
                     photo.save(update_fields=['thumbnail'])
@@ -90,7 +92,7 @@ class Command(BaseCommand):
                             f"[ERROR] Ошибка создания миниатюры для фото ID {photo.id}"
                         )
                     )
-                    
+
             except Exception as e:
                 error_count += 1
                 self.stdout.write(
@@ -98,7 +100,7 @@ class Command(BaseCommand):
                         f"[ERROR] Ошибка обработки фото ID {photo.id}: {e}"
                     )
                 )
-        
+
         self.stdout.write("\n" + "="*50)
         self.stdout.write(
             self.style.SUCCESS(

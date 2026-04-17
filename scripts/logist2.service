@@ -1,5 +1,5 @@
 [Unit]
-Description=Logist2 Django Application
+Description=Logist2 Django Application (Gunicorn + WSGI)
 After=network.target postgresql.service
 Requires=postgresql.service
 
@@ -8,8 +8,9 @@ Type=notify
 User=www-data
 Group=www-data
 WorkingDirectory=/var/www/logist2
-Environment="DJANGO_SETTINGS_MODULE=logist2.settings_prod"
+Environment="DJANGO_SETTINGS_MODULE=logist2.settings.prod"
 Environment="PATH=/var/www/logist2/venv/bin"
+EnvironmentFile=-/var/www/logist2/.env
 
 ExecStart=/var/www/logist2/venv/bin/gunicorn \
           --config /var/www/logist2/gunicorn_config.py \
@@ -25,4 +26,3 @@ RestartSec=10s
 
 [Install]
 WantedBy=multi-user.target
-

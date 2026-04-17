@@ -17,7 +17,7 @@ class AdminRussianLanguageMiddleware:
         if request.path.startswith('/admin'):
             translation.activate('ru')
             request.LANGUAGE_CODE = 'ru'
-        
+
         response = self.get_response(request)
 
         if request.path.startswith('/admin') and prev_lang:

@@ -2,14 +2,14 @@
 API endpoints для системы автовозов на загрузку
 """
 
+import json
 import logging
 
-from django.http import JsonResponse
 from django.contrib.admin.views.decorators import staff_member_required
+from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_POST
-import json
 
-from .models import Carrier, CarrierTruck, CarrierDriver, AutoTransport
+from .models import AutoTransport, Carrier, CarrierDriver, CarrierTruck
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ def get_carrier_info(request, carrier_id):
     """API для получения информации о перевозчике (EORI код, автовозы, водители)"""
     try:
         carrier = Carrier.objects.get(pk=carrier_id)
-        
+
         # Список автовозов
         trucks = []
         for truck in carrier.trucks.filter(is_active=True):
@@ -30,7 +30,7 @@ def get_carrier_info(request, carrier_id):
                 'truck_number': truck.truck_number,
                 'trailer_number': truck.trailer_number,
             })
-        
+
         # Список водителей
         drivers = []
         for driver in carrier.drivers.filter(is_active=True):
@@ -41,7 +41,7 @@ def get_carrier_info(request, carrier_id):
                 'last_name': driver.last_name,
                 'phone': driver.phone,
             })
-        
+
         return JsonResponse({
             'success': True,
             'eori_code': carrier.eori_code or '',
@@ -81,14 +81,14 @@ def update_driver_phone(request):
         data = json.loads(request.body)
         driver_id = data.get('driver_id')
         new_phone = data.get('phone', '').strip()
-        
+
         if not driver_id or not new_phone:
             return JsonResponse({'success': False, 'error': 'Не указан ID водителя или телефон'}, status=400)
-        
+
         driver = CarrierDriver.objects.get(pk=driver_id)
         driver.phone = new_phone
         driver.save()
-        
+
         return JsonResponse({
             'success': True,
             'message': f'Телефон водителя {driver.full_name} обновлен'
@@ -108,9 +108,9 @@ def get_border_crossings(request):
         borders = AutoTransport.objects.exclude(
             border_crossing=''
         ).values_list('border_crossing', flat=True).distinct().order_by('border_crossing')
-        
+
         results = [{'id': border, 'text': border} for border in borders]
-        
+
         return JsonResponse({'success': True, 'results': results})
     except Exception as e:
         logger.error("Error in get_border_crossings: %s", e, exc_info=True)
@@ -126,33 +126,33 @@ def create_carrier_truck(request):
         carrier_id = data.get('carrier_id')
         truck_number = data.get('truck_number', '').strip()
         trailer_number = data.get('trailer_number', '').strip()
-        
+
         if not carrier_id or not truck_number:
             return JsonResponse({'success': False, 'error': 'Не указан перевозчик или номер тягача'}, status=400)
-        
+
         carrier = Carrier.objects.get(pk=carrier_id)
-        
+
         # Проверяем, нет ли уже такого автовоза
         existing = CarrierTruck.objects.filter(
             carrier=carrier,
             truck_number=truck_number,
             trailer_number=trailer_number
         ).first()
-        
+
         if existing:
             return JsonResponse({
                 'success': True,
                 'truck': {'id': existing.pk, 'text': existing.full_number},
                 'message': 'Такой автовоз уже существует'
             })
-        
+
         # Создаем новый автовоз
         truck = CarrierTruck.objects.create(
             carrier=carrier,
             truck_number=truck_number,
             trailer_number=trailer_number
         )
-        
+
         return JsonResponse({
             'success': True,
             'truck': {'id': truck.pk, 'text': truck.full_number},
@@ -175,12 +175,12 @@ def create_carrier_driver(request):
         first_name = data.get('first_name', '').strip()
         last_name = data.get('last_name', '').strip()
         phone = data.get('phone', '').strip()
-        
+
         if not carrier_id or not first_name or not last_name:
             return JsonResponse({'success': False, 'error': 'Не указан перевозчик, имя или фамилия'}, status=400)
-        
+
         carrier = Carrier.objects.get(pk=carrier_id)
-        
+
         # Создаем нового водителя
         driver = CarrierDriver.objects.create(
             carrier=carrier,
@@ -188,7 +188,7 @@ def create_carrier_driver(request):
             last_name=last_name,
             phone=phone
         )
-        
+
         return JsonResponse({
             'success': True,
             'driver': {'id': driver.pk, 'text': driver.full_name, 'phone': driver.phone},

@@ -44,7 +44,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING(f'Found {total_issues} issue(s).'))
 
     def _check_car_service_orphans(self, fix):
-        from core.models import CarService, LineService, WarehouseService, CarrierService, CompanyService
+        from core.models import CarrierService, CarService, CompanyService, LineService, WarehouseService
 
         self.stdout.write('\n--- CarService orphan check ---')
         model_map = {
@@ -73,7 +73,7 @@ class Command(BaseCommand):
         return orphans
 
     def _check_balance_consistency(self, fix):
-        from core.models import Client, Warehouse, Line, Company, Carrier
+        from core.models import Carrier, Client, Company, Line, Warehouse
         from core.models_billing import Transaction
 
         self.stdout.write('\n--- Balance consistency check ---')

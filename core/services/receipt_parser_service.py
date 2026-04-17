@@ -10,8 +10,6 @@ import json
 import logging
 import os
 
-from django.conf import settings
-
 logger = logging.getLogger(__name__)
 
 RECEIPT_SCHEMA = """{

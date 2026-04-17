@@ -11,11 +11,12 @@
 API Reference: https://developer.revolut.com/docs/business/business-api
 """
 
-import requests
 import logging
 import time
 from datetime import timedelta
 from decimal import Decimal
+
+import requests
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -235,11 +236,11 @@ class RevolutService:
     def fetch_transactions(self, days: int = 30, limit: int = 100) -> list:
         """
         Получает последние транзакции из Revolut и сохраняет в БД.
-        
+
         Args:
             days: за сколько дней загружать
             limit: макс. количество транзакций для сохранения
-            
+
         Returns:
             список обновлённых BankTransaction
         """
@@ -352,10 +353,10 @@ class RevolutService:
     def fetch_expenses(self, days: int = 30, limit: int = 500) -> int:
         """
         Тянет expenses из Revolut и привязывает expense_id/категорию к BankTransaction.
-        
+
         Expense в Revolut = карточная транзакция (или transfer) + прикреплённый чек/категория.
         Мы обновляем соответствующую BankTransaction по external_id == expense.transaction_id.
-        
+
         Returns:
             число BankTransaction, у которых обновлён expense_id
         """
@@ -432,12 +433,13 @@ class RevolutService:
     def _download_receipt(self, bt, expense_id: str, receipt_id: str) -> bool:
         """
         Скачивает чек из Revolut Expenses API и сохраняет в bt.receipt_file.
-        
+
         Returns:
             True если успешно скачан и сохранён, False при ошибке
         """
-        from django.core.files.base import ContentFile
         import mimetypes
+
+        from django.core.files.base import ContentFile
 
         endpoint = f'{self.EXPENSES_ENDPOINT}/{expense_id}/receipts/{receipt_id}/content'
         try:
@@ -469,9 +471,9 @@ class RevolutService:
         Догружает чеки для BankTransaction, у которых уже есть expense_id, но нет файла.
         Полезно после изменения настроек или ручного теста.
         """
-        from ..models_banking import BankTransaction
-
         from django.db.models import Q
+
+        from ..models_banking import BankTransaction
         qs = BankTransaction.objects.filter(
             connection=self.connection,
         ).filter(

@@ -1,0 +1,24 @@
+[Unit]
+Description=Daphne ASGI server for logist2 (WebSockets)
+After=network.target redis.service
+
+[Service]
+User=www-root
+Group=www-root
+WorkingDirectory=/var/www/www-root/data/www/logist2
+Environment="PATH=/var/www/www-root/data/www/logist2/.venv/bin"
+Environment="DJANGO_SETTINGS_MODULE=logist2.settings.prod"
+EnvironmentFile=-/var/www/www-root/data/www/logist2/.env
+
+ExecStart=/var/www/www-root/data/www/logist2/.venv/bin/daphne \
+    -b 127.0.0.1 -p 8001 \
+    logist2.asgi:application
+
+Restart=on-failure
+RestartSec=10
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,23 +1,21 @@
-from django.db import models
-from django.core.validators import MinValueValidator
-from .constants import STATUS_COLORS
-from django.utils import timezone
-from django.db.models import Sum, Q
-from django.db import transaction
-from decimal import Decimal
 import logging
+from decimal import Decimal
 
-from datetime import timedelta
+from django.core.validators import MinValueValidator
+from django.db import models, transaction
+from django.db.models import Q, Sum
+from django.utils import timezone
 
-from .mixins import BalanceMethodsMixin
-from .service_codes import ServiceCode, is_storage_service, is_ths_service
-
+from .constants import STATUS_COLORS
 from .managers import (
-    OptimizedCarManager, OptimizedContainerManager, OptimizedClientManager, 
-    OptimizedWarehouseManager, OptimizedCompanyManager
+    OptimizedCarManager,
+    OptimizedClientManager,
+    OptimizedCompanyManager,
+    OptimizedContainerManager,
+    OptimizedWarehouseManager,
 )
-
-
+from .mixins import BalanceMethodsMixin
+from .service_codes import ServiceCode
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +40,11 @@ VEHICLE_TYPE_CHOICES = [
 # Справочники
 class Line(BalanceMethodsMixin, models.Model):
     name = models.CharField(max_length=100, verbose_name="Название линии", db_index=True)
-    
+
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс",
                                   help_text="Положительный = нам должны, отрицательный = мы должны")
     balance_updated_at = models.DateTimeField(auto_now=True, verbose_name="Баланс обновлен")
-    
+
     # Услуги и цены
     ocean_freight_rate = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Стоимость перевозки (за авто)")
     documentation_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Стоимость документов")
@@ -64,29 +62,29 @@ class Line(BalanceMethodsMixin, models.Model):
 
 class LineTHSCoefficient(models.Model):
     """Коэффициент THS для типа ТС у конкретной линии.
-    
+
     Используется для распределения общей суммы THS контейнера между ТС
     пропорционально их "весу" (коэффициенту).
-    
+
     Пример: Контейнер THS = 500 EUR
     3 машины: легковой(1.0) + джип(2.0) + мото(0.5) = сумма весов 3.5
     - Легковой: 500 × (1.0/3.5) = 143 EUR
-    - Джип: 500 × (2.0/3.5) = 286 EUR  
+    - Джип: 500 × (2.0/3.5) = 286 EUR
     - Мото: 500 × (0.5/3.5) = 71 EUR
     """
     line = models.ForeignKey(Line, on_delete=models.CASCADE, related_name='ths_coefficients', verbose_name="Линия")
     vehicle_type = models.CharField(max_length=20, choices=VEHICLE_TYPE_CHOICES, verbose_name="Тип ТС")
-    coefficient = models.DecimalField(max_digits=5, decimal_places=2, default=1.00, 
+    coefficient = models.DecimalField(max_digits=5, decimal_places=2, default=1.00,
                                       verbose_name="Коэффициент",
                                       help_text="Вес типа ТС при распределении THS (1.0 = стандарт, 2.0 = двойной, 0.5 = половина)")
-    
+
     class Meta:
         verbose_name = "Коэффициент THS для типа ТС"
         verbose_name_plural = "Коэффициенты THS для типов ТС"
         constraints = [
             models.UniqueConstraint(fields=['line', 'vehicle_type'], name='unique_line_vehicle_type'),
         ]
-    
+
     def __str__(self):
         return f"{self.line.name} - {self.get_vehicle_type_display()}: ×{self.coefficient}"
 
@@ -99,24 +97,24 @@ class Carrier(BalanceMethodsMixin, models.Model):
     email = models.EmailField(blank=True, null=True, verbose_name="Email")
     eori_code = models.CharField(max_length=50, blank=True, null=True, verbose_name="EORI код",
                                   help_text="Код EORI перевозчика для таможенного оформления")
-    
+
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс",
                                   help_text="Положительный = нам должны, отрицательный = мы должны")
     balance_updated_at = models.DateTimeField(auto_now=True, verbose_name="Баланс обновлен")
-    
+
     transport_rate = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Стоимость перевозки (за км)")
     loading_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Стоимость погрузки")
     unloading_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Стоимость разгрузки")
     fuel_surcharge = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Топливная надбавка")
     additional_fees = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Дополнительные сборы")
-    
+
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
-    
+
     class Meta:
         verbose_name = "Перевозчик"
         verbose_name_plural = "Перевозчики"
-    
+
     def __str__(self):
         return self.name
 
@@ -131,7 +129,7 @@ class CarrierTruck(models.Model):
     is_active = models.BooleanField(default=True, verbose_name="Активен")
     notes = models.TextField(blank=True, verbose_name="Примечания")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
-    
+
     class Meta:
         verbose_name = "Автовоз перевозчика"
         verbose_name_plural = "Автовозы перевозчиков"
@@ -139,12 +137,12 @@ class CarrierTruck(models.Model):
             models.UniqueConstraint(fields=['carrier', 'truck_number', 'trailer_number'], name='unique_carrier_truck_trailer'),
         ]
         ordering = ['-created_at']
-    
+
     def __str__(self):
         if self.trailer_number:
             return f"{self.truck_number} / {self.trailer_number}"
         return self.truck_number
-    
+
     @property
     def full_number(self):
         """Полный номер автовоза в формате XXXXX / XXXXX"""
@@ -163,15 +161,15 @@ class CarrierDriver(models.Model):
     notes = models.TextField(blank=True, verbose_name="Примечания")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
-    
+
     class Meta:
         verbose_name = "Водитель перевозчика"
         verbose_name_plural = "Водители перевозчиков"
         ordering = ['last_name', 'first_name']
-    
+
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
-    
+
     @property
     def full_name(self):
         """Полное имя водителя"""
@@ -184,7 +182,7 @@ class Client(BalanceMethodsMixin, models.Model):
         ('FIXED', 'Фикс. цена (не зависит от кол-ва)'),
         ('FLEXIBLE', 'Гибкая цена (зависит от кол-ва авто)'),
     ]
-    
+
     name = models.CharField(max_length=100, verbose_name="Имя клиента", db_index=True)
     email = models.EmailField(blank=True, null=True, verbose_name="Email 1",
                               help_text="Основной email для уведомлений о разгрузке контейнеров")
@@ -202,19 +200,19 @@ class Client(BalanceMethodsMixin, models.Model):
         help_text="NONE=обычные наценки, FIXED=фикс.цена (не зависит от кол-ва), FLEXIBLE=цена зависит от кол-ва авто в контейнере"
     )
 
-    balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс", 
+    balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс",
                                    help_text="Положительный = переплата, отрицательный = долг")
     balance_updated_at = models.DateTimeField(auto_now=True, verbose_name="Баланс обновлен")
-    
+
     objects = OptimizedClientManager()
-    
+
     class Meta:
         verbose_name = "Клиент"
         verbose_name_plural = "Клиенты"
-    
+
     def __str__(self):
         return self.name
-    
+
     def get_notification_emails(self):
         """
         Возвращает список всех заполненных email-адресов для уведомлений.
@@ -225,11 +223,11 @@ class Client(BalanceMethodsMixin, models.Model):
             if field and field.strip():
                 emails.append(field.strip())
         return emails
-    
+
     def has_notification_emails(self):
         """Проверяет, есть ли хотя бы один email для уведомлений"""
         return len(self.get_notification_emails()) > 0
-    
+
     @property
     def balance_status(self):
         """Статус баланса для отображения"""
@@ -238,7 +236,7 @@ class Client(BalanceMethodsMixin, models.Model):
         elif self.balance < 0:
             return "ДОЛГ"
         return "БАЛАНС"
-    
+
     @property
     def balance_color(self):
         """Цвет для отображения баланса"""
@@ -251,10 +249,10 @@ class Client(BalanceMethodsMixin, models.Model):
 class ClientTariffRate(models.Model):
     """
     Тариф клиента: общая согласованная цена за авто (все услуги кроме хранения).
-    
+
     FIXED: цена не зависит от кол-ва авто в контейнере.
     FLEXIBLE: цена зависит от общего кол-ва ТС в контейнере (диапазоны min_cars/max_cars).
-    
+
     Примеры:
       FIXED:    (SEDAN, min=1, max=None, price=300) — легковой всегда 300€
       FLEXIBLE: (SEDAN, min=3, max=3, price=290)    — легковой при 3 ТС → 290€
@@ -280,12 +278,12 @@ class ClientTariffRate(models.Model):
         verbose_name="Цена за авто (€)",
         help_text="Общая согласованная цена за все услуги (кроме хранения) для этого типа ТС"
     )
-    
+
     class Meta:
         verbose_name = "Тариф"
         verbose_name_plural = "Тарифы по типам ТС"
         ordering = ['vehicle_type', 'min_cars']
-    
+
     def __str__(self):
         vtype = dict(VEHICLE_TYPE_CHOICES).get(self.vehicle_type, self.vehicle_type)
         if self.max_cars:
@@ -331,7 +329,7 @@ class Warehouse(BalanceMethodsMixin, models.Model):
     additional_expenses = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Доп.расходы")
 
     objects = OptimizedWarehouseManager()
-    
+
     class Meta:
         verbose_name = "Склад"
         verbose_name_plural = "Склады"
@@ -424,7 +422,7 @@ class Container(models.Model):
         ('LINE', 'Напрямую линии'),
         ('WAREHOUSE', 'Через склад'),
     ]
-    
+
     ths = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Оплата линиям",
                               validators=[MinValueValidator(0)])
     ths_payer = models.CharField(max_length=20, choices=THS_PAYER_CHOICES, default='LINE',
@@ -453,9 +451,9 @@ class Container(models.Model):
                                validators=[MinValueValidator(0)])
     storage_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Складирование")
     notes = models.CharField(max_length=200, blank=True, verbose_name="Примечания")
-    
+
     # Google Drive integration
-    google_drive_folder_url = models.URLField(max_length=500, blank=True, verbose_name="Google Drive папка", 
+    google_drive_folder_url = models.URLField(max_length=500, blank=True, verbose_name="Google Drive папка",
                                                help_text="Прямая ссылка на папку с фотографиями контейнера в Google Drive")
 
     objects = OptimizedContainerManager()
@@ -580,12 +578,12 @@ class Container(models.Model):
         """Проверяет статус всех автомобилей в контейнере и обновляет статус контейнера"""
         if not self.pk:
             return
-            
+
         if not self.container_cars.exists():
             return
-            
+
         has_non_transferred = self.container_cars.exclude(status='TRANSFERRED').exists()
-        
+
         if not has_non_transferred and self.status != 'TRANSFERRED':
             self.status = 'TRANSFERRED'
             self.save(update_fields=['status'])
@@ -621,7 +619,7 @@ class Container(models.Model):
 class Car(models.Model):
     # Ссылка на единый список типов ТС (определён на уровне модуля)
     VEHICLE_TYPE_CHOICES = VEHICLE_TYPE_CHOICES
-    
+
     year = models.PositiveIntegerField(verbose_name="Год выпуска")
     brand = models.CharField(max_length=50, verbose_name="Марка")
     vehicle_type = models.CharField(max_length=20, choices=VEHICLE_TYPE_CHOICES, default='SEDAN', verbose_name="Тип ТС")
@@ -655,10 +653,10 @@ class Car(models.Model):
     declaration_fee = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Декларация", validators=[MinValueValidator(0)])
     markup = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('20.00'), null=True, blank=True, verbose_name="Наценка", validators=[MinValueValidator(0)])
     hide_markup_in = models.ForeignKey(
-        'CarService', 
-        on_delete=models.SET_NULL, 
-        null=True, 
-        blank=True, 
+        'CarService',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name='cars_with_hidden_markup',
         verbose_name="Скрыть наценку в услуге",
         help_text="Выберите услугу, в которую добавить наценку (вместо отдельной строки в инвойсе)"
@@ -698,7 +696,7 @@ class Car(models.Model):
 
         # Получаем кастомные услуги склада
         warehouse_services = WarehouseService.objects.filter(warehouse=self.warehouse, is_active=True)
-        
+
         from .service_codes import NAME_TO_CODE, ServiceCode
 
         code_to_car_field = {
@@ -746,14 +744,14 @@ class Car(models.Model):
         """Возвращает дефолтные цены на услуги из склада из кастомных услуг."""
         if not self.warehouse:
             return {"message": "Склад не назначен"}
-        
+
         # Получаем кастомные услуги склада
         warehouse_services = WarehouseService.objects.filter(warehouse=self.warehouse, is_active=True)
-        
+
         details = {"Название": self.warehouse.name}
         for service in warehouse_services:
             details[service.name] = str(service.default_price)
-        
+
         return details
 
     def set_initial_warehouse_values(self):
@@ -831,10 +829,10 @@ class Car(models.Model):
 
     def update_days_and_storage(self):
         """Обновляет платные дни и стоимость хранения для автомобиля.
-        
+
         Цена за день берётся из услуги "Хранение" в списке услуг склада.
         Стоимость = платные_дни × цена_за_день.
-        
+
         НЕ обновляет CarService и НЕ пересчитывает total_price.
         Для полного пересчёта используйте calculate_total_price().
         """
@@ -848,10 +846,10 @@ class Car(models.Model):
         end_date = self.transfer_date if self.status == 'TRANSFERRED' and self.transfer_date else timezone.now().date()
         total_days = (end_date - self.unload_date).days + 1
         self.days = max(0, total_days - free_days)
-        
+
         daily_rate = self._get_storage_daily_rate()
         self.storage_cost = Decimal(str(self.days)) * daily_rate
-    
+
     def _get_storage_daily_rate(self):
         """Получает ставку хранения за день из услуги 'Хранение' склада.
         Кэшируется на экземпляре для избежания повторных запросов в рамках одного save().
@@ -883,19 +881,19 @@ class Car(models.Model):
         setattr(self, cache_attr, rate)
         setattr(self, cached_wh, self.warehouse_id)
         return rate
-    
+
     def _update_storage_service_price(self):
         """Обновляет цену услуги 'Хранение' в CarService.
-        
+
         Цена = платные_дни × ставка_за_день (из WarehouseService)
-        
+
         ВАЖНО: markup_amount НЕ обновляется автоматически!
         Наценка устанавливается только при создании услуги (из default_markup)
         или вручную пользователем в админке.
         """
         if not self.pk or not self.warehouse:
             return
-        
+
         try:
             storage_service = WarehouseService.objects.filter(
                 warehouse=self.warehouse,
@@ -903,12 +901,12 @@ class Car(models.Model):
             ).filter(
                 Q(code=ServiceCode.STORAGE) | Q(name='Хранение'),
             ).first()
-            
+
             if storage_service:
                 days = Decimal(str(self.days))
                 # Стоимость = платные_дни × цена_за_день
                 storage_price = days * Decimal(str(storage_service.default_price or 0))
-                
+
                 # Обновляем ТОЛЬКО цену в CarService (markup_amount не трогаем!)
                 # Наценка устанавливается при создании услуги или вручную в админке
                 from core.models import CarService
@@ -917,7 +915,7 @@ class Car(models.Model):
                     service_type='WAREHOUSE',
                     service_id=storage_service.id
                 ).update(custom_price=storage_price)
-                
+
                 # Сбрасываем prefetch кэш чтобы получить актуальные данные
                 if hasattr(self, '_prefetched_objects_cache'):
                     self._prefetched_objects_cache.pop('car_services', None)
@@ -957,7 +955,7 @@ class Car(models.Model):
     def warehouse_payment(self) -> Decimal:
         # удобное свойство, если где-то понадобится
         return self.warehouse_payment_amount()
-    
+
     def get_line_services(self):
         """Получает услуги линии для этого автомобиля"""
         if not self.line or not self.pk:
@@ -965,7 +963,7 @@ class Car(models.Model):
         # Получаем ID услуг линии
         line_service_ids = LineService.objects.only('id').filter(line=self.line).values_list('id', flat=True)
         return self.car_services.filter(service_type='LINE', service_id__in=line_service_ids)
-    
+
     def get_carrier_services(self):
         """Получает услуги перевозчика для этого автомобиля"""
         if not self.carrier or not self.pk:
@@ -973,23 +971,23 @@ class Car(models.Model):
         # Получаем ID услуг перевозчика
         carrier_service_ids = CarrierService.objects.only('id').filter(carrier=self.carrier).values_list('id', flat=True)
         return self.car_services.filter(service_type='CARRIER', service_id__in=carrier_service_ids)
-    
+
     def get_company_services(self):
         """Получает услуги компаний для этого автомобиля"""
         if not self.pk:
             return self.car_services.none()
         return self.car_services.filter(service_type='COMPANY')
-    
+
     def get_warehouse_services(self):
         """Получает все услуги складов для этого автомобиля (включая услуги от других складов)"""
         if not self.pk:
             return self.car_services.none()
         # Получаем ВСЕ услуги складов, привязанные к этому автомобилю
         return self.car_services.filter(service_type='WAREHOUSE')
-    
+
     def get_services_total_by_provider(self, provider_type):
         """Получает общую стоимость услуг по типу поставщика.
-        
+
         Для склада: стоимость хранения уже включена в услугу "Хранение" (CarService).
         """
         total = Decimal('0.00')
@@ -1003,47 +1001,47 @@ class Car(models.Model):
             services = self.get_warehouse_services()
         else:
             return total
-            
+
         for service in services:
             total += Decimal(str(service.final_price))
         return total
-    
+
     def get_warehouse_services_total(self):
         """Получает стоимость только услуг склада (без хранения)"""
         if not self.warehouse:
             return Decimal('0.00')
-        
+
         services = self.get_warehouse_services()
         total = Decimal('0.00')
-        
+
         for service in services:
             total += Decimal(str(service.final_price))
-        
+
         return total
-    
+
     def calculate_storage_cost(self):
         """Рассчитывает стоимость хранения на складе.
-        
+
         Ставка берётся из услуги "Хранение" в списке услуг склада.
         """
         if not self.warehouse or not self.unload_date:
             return Decimal('0.00')
-        
+
         # Получаем ставку из услуги "Хранение" и бесплатные дни со склада
         daily_rate = self._get_storage_daily_rate()
         free_days = self.warehouse.free_days or 0
-        
+
         # Рассчитываем общее количество дней хранения
         # Включаем день разгрузки и день забора авто
         end_date = self.transfer_date if self.status == 'TRANSFERRED' and self.transfer_date else timezone.now().date()
         total_days = (end_date - self.unload_date).days + 1
-        
+
         # Рассчитываем платные дни (общие дни минус бесплатные)
         chargeable_days = max(0, total_days - free_days)
-        
+
         # Рассчитываем стоимость
         storage_cost = daily_rate * chargeable_days
-        
+
         return storage_cost
 
     def clean(self):
@@ -1103,8 +1101,9 @@ class Car(models.Model):
         ИЛИ строка инвойса, чьё описание содержит "хран"/"storage"), то
         отдельно `self.storage_cost` не прибавляем.
         """
+        from django.db.models import Q
+
         from core.models_billing import InvoiceItem
-        from django.db.models import Sum, Q
 
         default_company_id = Company.get_default_id()
 
@@ -1177,29 +1176,29 @@ class Car(models.Model):
 
 class Company(BalanceMethodsMixin, models.Model):
     """Модель для логистической компании Caromoto Lithuania"""
-    
+
     name = models.CharField(max_length=100, default="Caromoto Lithuania", verbose_name="Название компании", db_index=True)
-    
+
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс",
                                   help_text="Положительный = нам должны, отрицательный = мы должны")
     balance_updated_at = models.DateTimeField(auto_now=True, verbose_name="Баланс обновлен")
-    
+
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
-    
+
     objects = OptimizedCompanyManager()
-    
+
     class Meta:
         verbose_name = "Компания"
         verbose_name_plural = "Компании"
-    
+
     def __str__(self):
         return self.name
 
     @classmethod
     def get_default(cls):
         """Возвращает компанию по умолчанию (из settings.COMPANY_NAME).
-        
+
         Используйте вместо Company.objects.get(pk=1) или
         Company.objects.filter(name='Caromoto Lithuania').first()
         """
@@ -1250,10 +1249,10 @@ class BaseService(models.Model):
 class CompanyService(BaseService):
     """Услуги компаний"""
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='services', verbose_name="Компания")
-    
+
     def __str__(self):
         return f"{self.company.name} - {self.name}"
-    
+
     class Meta:
         verbose_name = "Услуга компании"
         verbose_name_plural = "Услуги компаний"
@@ -1262,10 +1261,10 @@ class CompanyService(BaseService):
 class LineService(BaseService):
     """Услуги морских линий"""
     line = models.ForeignKey(Line, on_delete=models.CASCADE, related_name='services', verbose_name="Линия")
-    
+
     def __str__(self):
         return f"{self.line.name} - {self.name}"
-    
+
     class Meta:
         verbose_name = "Услуга линии"
         verbose_name_plural = "Услуги линий"
@@ -1274,10 +1273,10 @@ class LineService(BaseService):
 class CarrierService(BaseService):
     """Услуги перевозчиков"""
     carrier = models.ForeignKey(Carrier, on_delete=models.CASCADE, related_name='services', verbose_name="Перевозчик")
-    
+
     def __str__(self):
         return f"{self.carrier.name} - {self.name}"
-    
+
     class Meta:
         verbose_name = "Услуга перевозчика"
         verbose_name_plural = "Услуги перевозчиков"
@@ -1286,10 +1285,10 @@ class CarrierService(BaseService):
 class WarehouseService(BaseService):
     """Услуги складов"""
     warehouse = models.ForeignKey(Warehouse, on_delete=models.CASCADE, related_name='services', verbose_name="Склад")
-    
+
     def __str__(self):
         return f"{self.warehouse.name} - {self.name}"
-    
+
     class Meta:
         verbose_name = "Услуга склада"
         verbose_name_plural = "Услуги складов"
@@ -1306,7 +1305,7 @@ class DeletedCarService(models.Model):
     ], verbose_name="Тип поставщика")
     service_id = models.PositiveIntegerField(verbose_name="ID услуги")
     deleted_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата удаления")
-    
+
     class Meta:
         constraints = [
             models.UniqueConstraint(fields=['car', 'service_type', 'service_id'], name='unique_deleted_car_service'),
@@ -1323,27 +1322,27 @@ class CarService(models.Model):
         ('WAREHOUSE', 'Склад'),
         ('COMPANY', 'Компания'),
     ]
-    
+
     car = models.ForeignKey(Car, on_delete=models.CASCADE, related_name='car_services', verbose_name="Автомобиль")
     service_type = models.CharField(max_length=20, choices=SERVICE_TYPES, verbose_name="Тип поставщика")
     service_id = models.PositiveIntegerField(verbose_name="ID услуги")
     custom_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Индивидуальная цена")
     markup_amount = models.DecimalField(
-        max_digits=10, 
-        decimal_places=2, 
-        default=0, 
+        max_digits=10,
+        decimal_places=2,
+        default=0,
         verbose_name="Скрытая наценка",
         help_text="Сумма наценки, которая будет добавлена к цене услуги в инвойсе (скрыто от клиента)"
     )
     quantity = models.PositiveIntegerField(default=1, verbose_name="Количество")
     notes = models.TextField(blank=True, verbose_name="Примечания")
-    
+
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
-    
+
     def __str__(self):
         return f"{self.car.vin} - {self.get_service_name()}: {self.final_price}"
-    
+
     SERVICE_MODEL_MAP = {
         'LINE': LineService,
         'CARRIER': CarrierService,
@@ -1392,14 +1391,14 @@ class CarService(models.Model):
         if service:
             return service.default_price
         return 0
-    
+
     @property
     def final_price(self):
         """Итоговая цена с учетом количества (БЕЗ скрытой наценки - для внутреннего учёта)"""
         # Используем custom_price если он задан (даже если 0), иначе default_price
         price = self.custom_price if self.custom_price is not None else self.get_default_price()
         return price * self.quantity
-    
+
     @property
     def invoice_price(self):
         """Цена для инвойса (С учётом скрытой наценки)"""
@@ -1407,7 +1406,7 @@ class CarService(models.Model):
         base_price = self.custom_price if self.custom_price is not None else self.get_default_price()
         markup = self.markup_amount if self.markup_amount is not None else Decimal('0')
         return (base_price + markup) * self.quantity
-    
+
     def get_total_distributed_markup(self):
         """Возвращает сумму распределённой наценки для этого авто"""
         if not self.car_id:
@@ -1415,7 +1414,7 @@ class CarService(models.Model):
         return CarService.objects.filter(car_id=self.car_id).aggregate(
             total=models.Sum('markup_amount')
         )['total'] or Decimal('0')
-    
+
     class Meta:
         verbose_name = "Услуга автомобиля"
         verbose_name_plural = "Услуги автомобилей"
@@ -1439,18 +1438,18 @@ class AutoTransport(models.Model):
         ('DELIVERED', 'Доставлен'),
         ('CANCELLED', 'Отменен'),
     ]
-    
+
     # Основная информация
     number = models.CharField(max_length=50, unique=True, verbose_name="Номер автовоза",
                                help_text="Уникальный номер рейса")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT', verbose_name="Статус")
-    
+
     # Перевозчик и его данные
-    carrier = models.ForeignKey(Carrier, on_delete=models.PROTECT, related_name='auto_transports', 
+    carrier = models.ForeignKey(Carrier, on_delete=models.PROTECT, related_name='auto_transports',
                                  verbose_name="Перевозчик")
     eori_code = models.CharField(max_length=50, blank=True, verbose_name="EORI код",
                                   help_text="Автоматически подтягивается из перевозчика")
-    
+
     # Автовоз (тягач + прицеп)
     truck = models.ForeignKey(CarrierTruck, on_delete=models.SET_NULL, null=True, blank=True,
                                related_name='transports', verbose_name="Автовоз")
@@ -1458,7 +1457,7 @@ class AutoTransport(models.Model):
                                             help_text="Если автовоза нет в списке")
     trailer_number_manual = models.CharField(max_length=20, blank=True, verbose_name="Номер прицепа (вручную)",
                                               help_text="Если автовоза нет в списке")
-    
+
     # Водитель
     driver = models.ForeignKey(CarrierDriver, on_delete=models.SET_NULL, null=True, blank=True,
                                 related_name='transports', verbose_name="Водитель")
@@ -1466,37 +1465,37 @@ class AutoTransport(models.Model):
                                            help_text="Если водителя нет в списке")
     driver_phone = models.CharField(max_length=20, blank=True, verbose_name="Телефон водителя",
                                      help_text="Автоматически подтягивается из водителя или вводится вручную")
-    
+
     # Граница пересечения
     border_crossing = models.CharField(max_length=100, blank=True, verbose_name="Граница пересечения",
                                         help_text="Название пункта пересечения границы")
-    
+
     # Автомобили в автовозе
-    cars = models.ManyToManyField('Car', related_name='auto_transports', blank=True, 
+    cars = models.ManyToManyField('Car', related_name='auto_transports', blank=True,
                                    verbose_name="Автомобили")
-    
+
     # Даты
     loading_date = models.DateField(null=True, blank=True, verbose_name="Дата загрузки")
     departure_date = models.DateField(null=True, blank=True, verbose_name="Дата отправления")
     estimated_delivery_date = models.DateField(null=True, blank=True, verbose_name="Планируемая дата доставки")
     actual_delivery_date = models.DateField(null=True, blank=True, verbose_name="Фактическая дата доставки")
-    
+
     # Дополнительная информация
     notes = models.TextField(blank=True, verbose_name="Примечания")
-    
+
     # Технические поля
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
     created_by = models.CharField(max_length=100, blank=True, verbose_name="Создал")
-    
+
     class Meta:
         verbose_name = "Автовоз на загрузку"
         verbose_name_plural = "Автовозы на загрузку"
         ordering = ['-created_at']
-    
+
     def __str__(self):
         return f"Автовоз {self.number} - {self.carrier.name}"
-    
+
     ALLOWED_TRANSITIONS = {
         'DRAFT':      {'FORMED', 'CANCELLED'},
         'FORMED':     {'LOADED', 'DRAFT', 'CANCELLED'},
@@ -1509,15 +1508,15 @@ class AutoTransport(models.Model):
     def save(self, *args, **kwargs):
         if not self.eori_code and self.carrier:
             self.eori_code = self.carrier.eori_code or ''
-        
+
         if not self.number:
             from django.db import transaction as db_transaction
             with db_transaction.atomic():
                 self.number = self._generate_number()
-        
+
         if self.driver and not self.driver_phone:
             self.driver_phone = self.driver.phone
-        
+
         if self.pk:
             old_status = AutoTransport.objects.filter(pk=self.pk).values_list('status', flat=True).first()
             if old_status and old_status != self.status:
@@ -1528,9 +1527,9 @@ class AutoTransport(models.Model):
                         f"Недопустимый переход статуса автовоза: {old_status} → {self.status}. "
                         f"Допустимые: {', '.join(sorted(allowed)) or 'нет'}"
                     )
-        
+
         super().save(*args, **kwargs)
-    
+
     @staticmethod
     def _generate_number():
         """Generate unique number using select_for_update to prevent duplicates."""
@@ -1552,7 +1551,7 @@ class AutoTransport(models.Model):
         else:
             next_num = 1
         return f'{prefix}-{next_num:03d}'
-    
+
     @property
     def truck_full_number(self):
         """Полный номер автовоза"""
@@ -1563,48 +1562,49 @@ class AutoTransport(models.Model):
                 return f"{self.truck_number_manual} / {self.trailer_number_manual}"
             return self.truck_number_manual
         return "Не указан"
-    
+
     @property
     def driver_full_name(self):
         """Полное имя водителя"""
         if self.driver:
             return self.driver.full_name
         return self.driver_name_manual or "Не указан"
-    
+
     @property
     def cars_count(self):
         """Количество автомобилей в автовозе"""
         return self.cars.count()
-    
+
     def get_clients(self):
         """Получить список уникальных клиентов автомобилей в автовозе"""
         return Client.objects.filter(car__in=self.cars.all()).distinct()
-    
+
     def generate_invoices(self):
         """Создать/обновить инвойсы для клиентов.
-        
+
         Skips invoices that are already PAID or CANCELLED to avoid corrupting
         finalized financial records.
         """
-        from .models_billing import NewInvoice
         from django.utils import timezone
-        
+
+        from .models_billing import NewInvoice
+
         clients = self.get_clients()
         created_invoices = []
-        
+
         for client in clients:
             client_cars = self.cars.filter(client=client)
-            
+
             if not client_cars.exists():
                 continue
-            
+
             existing_invoice = NewInvoice.objects.filter(
                 auto_transport=self,
                 recipient_client=client
             ).exclude(
                 status__in=['PAID', 'CANCELLED']
             ).first()
-            
+
             if existing_invoice:
                 existing_invoice.cars.set(client_cars)
                 existing_invoice.regenerate_items_from_cars()
@@ -1620,7 +1620,7 @@ class AutoTransport(models.Model):
 
                 from .models import Company
                 company = Company.get_default()
-                
+
                 if company:
                     invoice = NewInvoice.objects.create(
                         issuer_company=company,
@@ -1633,7 +1633,7 @@ class AutoTransport(models.Model):
                     invoice.cars.set(client_cars)
                     invoice.regenerate_items_from_cars()
                     created_invoices.append(invoice)
-        
+
         return created_invoices
 
 
@@ -1642,12 +1642,6 @@ class AutoTransport(models.Model):
 # ==============================================================================
 # Импортируем новые модели, чтобы Django их видел
 
-from .models_billing import (
-    NewInvoice,
-    InvoiceItem,
-    Transaction,
-    SimpleBalanceMixin,  # kept for backward compatibility
-)
 from .models_invoice_audit import InvoiceAudit, SupplierCost  # noqa: F401
 
 # ==============================================================================
@@ -1655,22 +1649,8 @@ from .models_invoice_audit import InvoiceAudit, SupplierCost  # noqa: F401
 # ==============================================================================
 # Импортируем модели для клиентского портала
 
-from .models_website import (
-    ClientUser,
-    CarPhoto,
-    ContainerPhoto,
-    AIChat,
-    NewsPost,
-    ContactMessage,
-    TrackingRequest
-)
 
 # ==============================================================================
 # 🏦 МОДЕЛИ ДЛЯ БАНКОВСКИХ ИНТЕГРАЦИЙ
 # ==============================================================================
 
-from .models_banking import (
-    BankConnection,
-    BankAccount,
-    BankTransaction,
-)

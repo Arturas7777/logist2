@@ -2,14 +2,14 @@
 Сервис агрегации данных для дашборда компании
 """
 
+import logging
+from decimal import Decimal
+
+from dateutil.relativedelta import relativedelta
 from django.core.cache import cache
-from django.db.models import Sum, Count, Q, F
+from django.db.models import Count, F, Q, Sum
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
-from datetime import timedelta
-from dateutil.relativedelta import relativedelta
-from decimal import Decimal
-import logging
 
 from ..cache_utils import CACHE_TIMEOUTS, get_cache_key
 
@@ -191,7 +191,7 @@ class DashboardService:
                 'personal_cards': [],
             }
 
-        from ..models_billing import Transaction, ExpenseCategory, PersonalCard
+        from ..models_billing import ExpenseCategory, PersonalCard, Transaction
         breakdown = self.company.get_balance_breakdown()
         total_cash = breakdown.get('cash', Decimal('0'))
 
@@ -467,9 +467,10 @@ class DashboardService:
         if cached is not None:
             return cached
 
+        from django.db.models import F
+
         from ..models import Company
         from ..models_billing import NewInvoice
-        from django.db.models import F
 
         default_company_id = Company.get_default_id()
         today = timezone.now().date()
@@ -528,9 +529,10 @@ class DashboardService:
         if cached is not None:
             return cached
 
+        from django.db.models import F
+
         from ..models import Company
         from ..models_billing import NewInvoice
-        from django.db.models import F
 
         default_company_id = Company.get_default_id()
         today = timezone.now().date()
@@ -617,8 +619,8 @@ class DashboardService:
             return cached
 
         from ..models import Car, Container
-        from ..models_billing import NewInvoice, Transaction
         from ..models_banking import BankTransaction
+        from ..models_billing import NewInvoice, Transaction
 
         today = timezone.now().date()
 

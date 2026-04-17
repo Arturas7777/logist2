@@ -2,12 +2,14 @@
 Скрипт для создания тестового клиента
 """
 import os
+
 import django
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'logist2.settings')
 django.setup()
 
 from django.contrib.auth.models import User
+
 from core.models import Client
 from core.models_website import ClientUser
 
@@ -34,7 +36,7 @@ try:
         print(f"[+] Создан клиент: {client.name}")
     else:
         print(f"[+] Используется существующий клиент: {client.name}")
-except Exception as e:
+except Exception:
     client = Client.objects.create(name='Тестовый клиент')
     print(f"[+] Создан клиент: {client.name}")
 

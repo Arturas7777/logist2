@@ -80,3 +80,9 @@ container_photos/
 
 # Temporary/debug scripts
 _*.py
+scripts/debug/_*.py
+!scripts/debug/README.md
+
+# Local data (AI RAG index, generated dumps, etc.)
+/data/
+!/data/.gitkeep

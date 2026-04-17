@@ -2,30 +2,32 @@
 Comprehensive test suite for Logist2.
 Runs against the real database - uses atomic() + intentional rollback.
 """
+import io
 import os
 import sys
-import io
 import uuid
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 os.environ['DJANGO_SETTINGS_MODULE'] = 'logist2.settings'
 
 import logging
+
 logging.disable(logging.DEBUG)
 
 import django
+
 django.setup()
 
 from decimal import Decimal
-from django.db import transaction
-from django.utils import timezone
-from django.contrib.auth.models import User
-from django.test import RequestFactory
-from django.contrib import admin
 
-from core.models import Car, Container, Client, Warehouse, Company
-from core.models_billing import NewInvoice, InvoiceItem, Transaction, ExpenseCategory
+from django.contrib import admin
+from django.contrib.auth.models import User
+from django.db import transaction
+from django.test import RequestFactory
+
+from core.models import Car, Client, Company, Container, Warehouse
 from core.models_banking import BankTransaction
+from core.models_billing import ExpenseCategory, NewInvoice, Transaction
 
 errors = []
 passed = []
@@ -310,6 +312,7 @@ try:
         section("BillingService.pay_invoice signature")
         # =============================================================
         import inspect
+
         from core.services.billing_service import BillingService
 
         sig = inspect.signature(BillingService.pay_invoice)

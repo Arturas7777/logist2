@@ -4,12 +4,18 @@ Tests for core.services.car_service_manager.
 Run: python manage.py test core.tests.test_car_service_manager
 """
 from decimal import Decimal
+
 from django.test import TestCase
 
 from core.models import (
-    Car, Container, Client, Warehouse, Line, Company,
-    CarService, WarehouseService, LineService,
+    Car,
+    CarService,
+    Container,
+    Line,
+    LineService,
     LineTHSCoefficient,
+    Warehouse,
+    WarehouseService,
 )
 
 
@@ -117,10 +123,10 @@ class ServiceLookupHelperTest(TestCase):
 
     def test_find_returns_empty_for_none(self):
         from core.services.car_service_manager import (
-            find_warehouse_services_for_car,
-            find_line_services_for_car,
             find_carrier_services_for_car,
             find_company_services_for_car,
+            find_line_services_for_car,
+            find_warehouse_services_for_car,
         )
         self.assertEqual(find_warehouse_services_for_car(None), [])
         self.assertEqual(find_line_services_for_car(None), [])

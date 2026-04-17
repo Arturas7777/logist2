@@ -1,0 +1,25 @@
+[Unit]
+Description=Celery Worker for logist2
+After=network.target redis.service
+
+[Service]
+User=www-root
+Group=www-root
+WorkingDirectory=/var/www/www-root/data/www/logist2
+Environment="PATH=/var/www/www-root/data/www/logist2/.venv/bin"
+Environment="DJANGO_SETTINGS_MODULE=logist2.settings.prod"
+EnvironmentFile=-/var/www/www-root/data/www/logist2/.env
+
+ExecStart=/var/www/www-root/data/www/logist2/.venv/bin/celery \
+    -A logist2 worker \
+    --loglevel=info \
+    --concurrency=2
+
+Restart=always
+RestartSec=10
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

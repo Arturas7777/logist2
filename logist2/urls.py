@@ -3,7 +3,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
-from core.views import car_list_api, get_invoice_total, get_container_data, register_payment, get_client_balance, company_dashboard, get_payment_objects, search_partners_api, get_warehouse_cars_api, get_invoice_cars_api, comparison_dashboard, compare_car_costs_api, compare_client_costs_api, compare_warehouse_costs_api, get_discrepancies_api, get_available_services, add_services, get_warehouses, get_companies, add_cash_expense, add_cash_income, cash_wallet_reset, expense_analytics, upload_expense_receipt, personal_cards_page, personal_card_add, personal_transfer, personal_card_expense, personal_card_income, personal_card_deactivate, personal_card_delete, personal_card_balance_reset
+from core.views import car_list_api, get_invoice_total, get_container_data, register_payment, get_client_balance, company_dashboard, get_payment_objects, search_partners_api, get_warehouse_cars_api, get_invoice_cars_api, comparison_dashboard, compare_car_costs_api, compare_client_costs_api, compare_warehouse_costs_api, get_discrepancies_api, get_available_services, add_services, get_warehouses, get_companies, add_cash_expense, add_cash_income, cash_wallet_reset, expense_analytics, upload_expense_receipt, personal_cards_page, personal_card_add, personal_transfer, personal_card_expense, personal_card_income, personal_card_deactivate, personal_card_delete, personal_card_balance_reset, health, ready
 from core.routing import websocket_urlpatterns
 from core.api import CarViewSet, InvoiceViewSet
 from core.views_invoice_audit import (
@@ -25,7 +25,7 @@ router.register(r'invoices', InvoiceViewSet, basename='invoice')
 api_v1_patterns = [
     # DRF ViewSets (JSON API)
     path('', include(router.urls)),
-    
+
     # Кастомные API эндпоинты
     path('cars/select/', car_list_api, name='car_list_api'),
     path('invoice-total/', get_invoice_total, name='get_invoice_total'),
@@ -49,15 +49,19 @@ api_v1_patterns = [
 api_legacy_patterns = api_v1_patterns
 
 urlpatterns = [
+    # ========== HEALTH / READINESS PROBES ==========
+    path('health/', health, name='health'),
+    path('ready/', ready, name='ready'),
+
     # ========== МЕЖДУНАРОДНАЯ ПОДДЕРЖКА ==========
     path('i18n/', include('django.conf.urls.i18n')),
-    
+
     # ========== API v1 (основной) ==========
     path('api/v1/', include(api_v1_patterns)),
-    
+
     # ========== API legacy (обратная совместимость, deprecated) ==========
     path('api/', include(api_legacy_patterns)),
-    
+
     # ========== АДМИН-СПЕЦИФИЧНЫЕ ЭНДПОИНТЫ ==========
     path('admin/register-payment/', register_payment, name='register_payment'),
     path('admin/dashboard/', company_dashboard, name='company_dashboard'),
@@ -96,7 +100,7 @@ urlpatterns = [
     path('admin/reconciliation/supplier-cost/<int:sc_id>/services/', supplier_cost_car_services, name='supplier_cost_car_services'),
     path('admin/newinvoice/<int:pk>/reanalyze/', reanalyze_newinvoice, name='reanalyze_newinvoice'),
     path('admin/newinvoice/<int:pk>/audit-poll/', newinvoice_audit_poll, name='newinvoice_audit_poll'),
-    
+
     path('ws/', include(websocket_urlpatterns)),
 ]
 
@@ -104,10 +108,10 @@ urlpatterns = [
 urlpatterns += [
     # ========== КЛИЕНТСКИЙ САЙТ (главная страница) ==========
     path('', include('core.urls_website')),
-    
+
     # ========== CORE APP URLS ==========
     path('core/', include('core.urls')),
-    
+
     # ========== АДМИН ПАНЕЛЬ ==========
     path('admin/', admin.site.urls),
 ]

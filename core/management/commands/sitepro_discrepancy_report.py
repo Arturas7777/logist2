@@ -11,16 +11,13 @@
 """
 
 import sys
-from collections import defaultdict
-from datetime import timedelta
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 
-from core.models import Client
-from core.models_billing import NewInvoice
 from core.models_accounting import SiteProConnection, SiteProInvoiceSync
 from core.models_banking import BankTransaction
+from core.models_billing import NewInvoice
 from core.services.sitepro_service import SiteProService
 
 

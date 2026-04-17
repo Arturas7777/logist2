@@ -11,8 +11,9 @@
     python manage.py setup_sitepro
 """
 
-from django.core.management.base import BaseCommand
 import logging
+
+from django.core.management.base import BaseCommand
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +45,8 @@ class Command(BaseCommand):
         self.stdout.write(self.style.MIGRATE_HEADING('\nШаг 2: Тестовая аутентификация'))
         self.stdout.write('  Проверяем подключение к https://site.pro/My-Accounting/api...\n')
 
-        from core.models_accounting import SiteProConnection
         from core.models import Company
+        from core.models_accounting import SiteProConnection
 
         company = Company.objects.filter(name__icontains='Caromoto').first()
         if not company:
@@ -108,7 +109,7 @@ class Command(BaseCommand):
 
         # ── Шаг 3: Получаем справочные данные ──
         self.stdout.write(self.style.MIGRATE_HEADING('Шаг 3: Справочные данные'))
-        
+
         if result['success']:
             try:
                 vat_rates = service.get_vat_rates()

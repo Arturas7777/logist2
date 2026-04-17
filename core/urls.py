@@ -1,6 +1,6 @@
 from django.urls import path
-from . import views
-from . import views_autotransport
+
+from . import views, views_autotransport
 
 app_name = 'core'
 

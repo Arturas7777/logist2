@@ -10,9 +10,10 @@
 - Валидации консистентности
 """
 
-from decimal import Decimal, ROUND_HALF_UP
-from django.db import transaction
 import logging
+from decimal import ROUND_HALF_UP, Decimal
+
+from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ class BalanceManager:
     @classmethod
     def recalculate_all_balances(cls):
         """Пересчитать балансы ВСЕХ сущностей по транзакциям."""
-        from core.models import Client, Warehouse, Line, Company, Carrier
+        from core.models import Carrier, Client, Company, Line, Warehouse
         from core.models_billing import Transaction
 
         updated = 0
@@ -70,8 +71,9 @@ class BalanceManager:
     @classmethod
     def validate_balance_consistency(cls, entity) -> dict:
         """Проверить, совпадает ли entity.balance с расчётом из транзакций."""
-        from core.models_billing import Transaction
         from django.db.models import Sum
+
+        from core.models_billing import Transaction
 
         if not hasattr(entity, 'balance'):
             return {'is_valid': True, 'issues': [], 'entity': str(entity)}

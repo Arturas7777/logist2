@@ -10,10 +10,12 @@
 Дата: Февраль 2026
 """
 
+import logging
+
 from django.db import models
 from django.utils import timezone
-from .models_banking import encrypt_value, decrypt_value
-import logging
+
+from .models_banking import decrypt_value, encrypt_value
 
 logger = logging.getLogger(__name__)
 

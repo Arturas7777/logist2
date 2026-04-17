@@ -4,8 +4,8 @@ Reusable model mixins.
 These mixins provide shared behaviour without defining database fields,
 so they can be added to existing models without generating migrations.
 """
-from decimal import Decimal
 import logging
+from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ class BalanceMethodsMixin:
     """
 
     def get_balance_breakdown(self):
-        from django.db.models import Sum, Q
+        from django.db.models import Q, Sum
 
         model_name = self.__class__.__name__.lower()
         from core.models_billing import Transaction

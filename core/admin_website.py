@@ -8,9 +8,8 @@
 """
 from django.contrib import admin
 from django.utils.html import format_html
-from .models_website import (
-    ClientUser, AIChat, NewsPost, ContactMessage, TrackingRequest, NotificationLog
-)
+
+from .models_website import AIChat, ClientUser, ContactMessage, NewsPost, NotificationLog, TrackingRequest
 
 
 @admin.register(ClientUser)
@@ -21,7 +20,7 @@ class ClientUserAdmin(admin.ModelAdmin):
     list_select_related = ('user', 'client')
     search_fields = ['user__username', 'user__email', 'client__name', 'phone']
     readonly_fields = ['created_at', 'last_login']
-    
+
     fieldsets = (
         ('Основная информация', {
             'fields': ('user', 'client', 'phone')
@@ -47,10 +46,10 @@ class AIChatAdmin(admin.ModelAdmin):
     list_filter = ['was_helpful', 'created_at']
     list_select_related = ('user', 'client')
     search_fields = ['user__username', 'client__name', 'message', 'response']
-    readonly_fields = ['session_id', 'user', 'client', 'message', 'response', 
+    readonly_fields = ['session_id', 'user', 'client', 'message', 'response',
                       'created_at', 'processing_time']
     date_hierarchy = 'created_at'
-    
+
     fieldsets = (
         ('Информация о чате', {
             'fields': ('session_id', 'user', 'client', 'created_at')
@@ -62,13 +61,13 @@ class AIChatAdmin(admin.ModelAdmin):
             'fields': ('processing_time', 'was_helpful')
         }),
     )
-    
+
     def user_display(self, obj):
         if obj.user:
             return obj.user.username
         return 'Анонимный'
     user_display.short_description = 'Пользователь'
-    
+
     def message_preview(self, obj):
         return obj.message[:50] + '...' if len(obj.message) > 50 else obj.message
     message_preview.short_description = 'Сообщение'
@@ -84,7 +83,7 @@ class NewsPostAdmin(admin.ModelAdmin):
     prepopulated_fields = {'slug': ('title',)}
     list_editable = ['published']
     date_hierarchy = 'published_at'
-    
+
     fieldsets = (
         ('Основное', {
             'fields': ('title', 'slug', 'excerpt', 'content', 'image')
@@ -97,7 +96,7 @@ class NewsPostAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
-    
+
     class Media:
         css = {
             'all': ('admin/css/news_admin.css',)
@@ -113,7 +112,7 @@ class ContactMessageAdmin(admin.ModelAdmin):
     readonly_fields = ['created_at']
     list_editable = ['is_read', 'replied']
     date_hierarchy = 'created_at'
-    
+
     fieldsets = (
         ('Отправитель', {
             'fields': ('name', 'email', 'phone')
@@ -125,13 +124,13 @@ class ContactMessageAdmin(admin.ModelAdmin):
             'fields': ('is_read', 'replied', 'created_at')
         }),
     )
-    
+
     actions = ['mark_as_read', 'mark_as_replied']
-    
+
     def mark_as_read(self, request, queryset):
         queryset.update(is_read=True)
     mark_as_read.short_description = 'Отметить как прочитанное'
-    
+
     def mark_as_replied(self, request, queryset):
         queryset.update(replied=True)
     mark_as_replied.short_description = 'Отметить как отвеченное'
@@ -146,7 +145,7 @@ class TrackingRequestAdmin(admin.ModelAdmin):
     search_fields = ['tracking_number', 'email']
     readonly_fields = ['created_at', 'ip_address']
     date_hierarchy = 'created_at'
-    
+
     fieldsets = (
         ('Запрос', {
             'fields': ('tracking_number', 'email')
@@ -158,7 +157,7 @@ class TrackingRequestAdmin(admin.ModelAdmin):
             'fields': ('created_at', 'ip_address')
         }),
     )
-    
+
     def result_display(self, obj):
         if obj.car:
             return format_html('<span style="color: green;">✓ Авто: {}</span>', obj.car.vin)
@@ -181,7 +180,7 @@ class NotificationLogAdmin(admin.ModelAdmin):
     readonly_fields = ['container', 'client', 'notification_type', 'email_to', 'subject', 'cars_info', 'sent_at', 'success', 'error_message', 'created_by']
     ordering = ['-sent_at']
     date_hierarchy = 'sent_at'
-    
+
     fieldsets = (
         ('Уведомление', {
             'fields': ('notification_type', 'container', 'client', 'email_to', 'subject')
@@ -194,7 +193,7 @@ class NotificationLogAdmin(admin.ModelAdmin):
             'fields': ('sent_at', 'success', 'error_message', 'created_by')
         }),
     )
-    
+
     def notification_type_display(self, obj):
         """Красивое отображение типа уведомления"""
         colors = {
@@ -209,7 +208,7 @@ class NotificationLogAdmin(admin.ModelAdmin):
         )
     notification_type_display.short_description = 'Тип'
     notification_type_display.admin_order_field = 'notification_type'
-    
+
     def success_display(self, obj):
         """Красивое отображение статуса"""
         if obj.success:
@@ -217,15 +216,15 @@ class NotificationLogAdmin(admin.ModelAdmin):
         return format_html('<span style="color: red;">✗ Ошибка</span>')
     success_display.short_description = 'Статус'
     success_display.admin_order_field = 'success'
-    
+
     def has_add_permission(self, request):
         """Запрещаем создание записей вручную"""
         return False
-    
+
     def has_change_permission(self, request, obj=None):
         """Запрещаем редактирование"""
         return False
-    
+
     def has_delete_permission(self, request, obj=None):
         """Разрешаем удаление для очистки старых записей"""
         return True

@@ -8,13 +8,11 @@
 Дата: Февраль 2026
 """
 
-from django.contrib import admin
-from django.utils.html import format_html
-from django.contrib import messages
+from django.contrib import admin, messages
 from django.utils import timezone
+from django.utils.html import format_html
 
 from .models_accounting import SiteProConnection, SiteProInvoiceSync
-
 
 # ============================================================================
 # SITE.PRO CONNECTION ADMIN
@@ -234,7 +232,7 @@ class SiteProInvoiceSyncAdmin(admin.ModelAdmin):
                 sync.save(update_fields=['sync_status'])
                 service.push_invoice(sync.invoice)
                 retried += 1
-            except Exception as e:
+            except Exception:
                 errors += 1
 
         if retried:

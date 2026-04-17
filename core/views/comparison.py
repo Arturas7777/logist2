@@ -2,15 +2,15 @@
 import logging
 from datetime import datetime
 
-from django.http import JsonResponse
-from django.views.decorators.http import require_GET
-from django.core.cache import cache
-from django.shortcuts import render
 from django.contrib.admin.views.decorators import staff_member_required
+from django.core.cache import cache
+from django.http import JsonResponse
+from django.shortcuts import render
+from django.views.decorators.http import require_GET
 
+from core.cache_utils import CACHE_TIMEOUTS
 from core.models import Car, Client, Warehouse
 from core.services.comparison_service import ComparisonService
-from core.cache_utils import CACHE_TIMEOUTS
 
 logger = logging.getLogger(__name__)
 

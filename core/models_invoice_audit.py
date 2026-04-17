@@ -1,8 +1,9 @@
 """
 InvoiceAudit + SupplierCost — модели для проверки счетов и сверки затрат.
 """
-from django.db import models
 from django.contrib.auth.models import User
+from django.db import models
+
 from core.models import Car, CarService
 
 

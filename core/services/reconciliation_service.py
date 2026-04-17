@@ -4,9 +4,10 @@ ReconciliationService
 Расчёт прибыли per car/container, статус подтверждённости затрат, генерация подсказок.
 Работает на основе SupplierCost (фактические затраты) и CarService (выручка).
 """
-from decimal import Decimal
 from collections import defaultdict
-from django.db.models import Sum, Exists, OuterRef, Subquery, Count, Q
+from decimal import Decimal
+
+from django.db.models import Count, Sum
 
 from core.models import Car, CarService
 from core.models_invoice_audit import SupplierCost
@@ -309,7 +310,7 @@ def generate_hints(audit_ids=None):
         })
 
     # 6. Контрагент без маппинга
-    no_mapping = cost_qs.filter(car__isnull=False, car_service__isnull=True).values_list(
+    cost_qs.filter(car__isnull=False, car_service__isnull=True).values_list(
         'counterparty', flat=True
     ).distinct()
     # already covered by "unlinked" hint — skip duplicate

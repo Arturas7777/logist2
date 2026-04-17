@@ -11,12 +11,13 @@
 Дата: Февраль 2026
 """
 
-from django.db import models
-from django.utils import timezone
-from cryptography.fernet import Fernet
-from django.conf import settings
 import base64
 import logging
+
+from cryptography.fernet import Fernet
+from django.conf import settings
+from django.db import models
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 

@@ -52,3 +52,6 @@ zope.interface==7.2
 pdfplumber>=0.11.0
 pymupdf>=1.24.0
 anthropic>=0.40.0
+
+# ── Monitoring ───────────────────────────────────────────────────────────────
+sentry-sdk[django,celery]>=2.58.0,<3.0.0

@@ -1,14 +1,19 @@
+from django import forms
 from django.contrib import admin
 from django.utils.html import format_html
-from django import forms
 
 from core.models import (
-    Car, Container, CarService, WarehouseService, LineService,
-    CarrierService, CompanyService, ClientTariffRate,
-    CarrierTruck, CarrierDriver,
+    Car,
+    CarrierDriver,
+    CarrierService,
+    CarrierTruck,
+    CarService,
+    ClientTariffRate,
+    CompanyService,
+    LineService,
+    WarehouseService,
 )
 from core.models_website import ContainerPhoto
-
 
 # Inline forms for managing services directly in partner cards
 
@@ -75,7 +80,6 @@ class CarrierServiceInline(admin.TabularInline):
 
 class CarrierTruckInline(admin.TabularInline):
     """Inline for carrier trucks"""
-    from core.models import CarrierTruck
     model = CarrierTruck
     extra = 1
     fields = ('truck_number', 'trailer_number', 'is_active', 'notes')
@@ -85,7 +89,6 @@ class CarrierTruckInline(admin.TabularInline):
 
 class CarrierDriverInline(admin.TabularInline):
     """Inline for carrier drivers"""
-    from core.models import CarrierDriver
     model = CarrierDriver
     extra = 1
     fields = ('first_name', 'last_name', 'phone', 'is_active', 'notes')

@@ -1,0 +1,27 @@
+[Unit]
+Description=Celery Beat scheduler for logist2 (periodic tasks)
+After=network.target redis.service celery.service
+Requires=celery.service
+
+[Service]
+User=www-root
+Group=www-root
+WorkingDirectory=/var/www/www-root/data/www/logist2
+Environment="PATH=/var/www/www-root/data/www/logist2/.venv/bin"
+Environment="DJANGO_SETTINGS_MODULE=logist2.settings.prod"
+EnvironmentFile=-/var/www/www-root/data/www/logist2/.env
+
+ExecStart=/var/www/www-root/data/www/logist2/.venv/bin/celery \
+    -A logist2 beat \
+    --loglevel=info \
+    --pidfile=/tmp/celerybeat.pid \
+    --schedule=/tmp/celerybeat-schedule
+
+Restart=always
+RestartSec=10
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

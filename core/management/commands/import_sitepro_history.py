@@ -12,10 +12,10 @@
     python manage.py import_sitepro_history --force        # повторный импорт (перезаписать)
 """
 
-import sys
 import re
-from collections import defaultdict
-from datetime import date as date_type, datetime
+import sys
+from datetime import date as date_type
+from datetime import datetime
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand
@@ -37,8 +37,8 @@ def parse_date(value) -> date_type | None:
         return None
 
 from core.models import Client, Company
-from core.models_billing import NewInvoice
 from core.models_accounting import SiteProConnection, SiteProInvoiceSync
+from core.models_billing import NewInvoice
 from core.services.sitepro_service import SiteProService
 
 

@@ -11,6 +11,8 @@ import os
 
 from django.core.wsgi import get_wsgi_application
 
+# Fallback only: on the server systemd unit (gunicorn.service) must export
+# DJANGO_SETTINGS_MODULE=logist2.settings.prod.
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'logist2.settings')
 
 application = get_wsgi_application()

@@ -2,12 +2,12 @@
 Утилиты для кэширования часто запрашиваемых данных
 """
 
-from django.core.cache import cache
-from django.db.models import Sum, Count, Avg, Q
-from django.utils import timezone
-from datetime import timedelta
-from decimal import Decimal
 import logging
+from datetime import timedelta
+
+from django.core.cache import cache
+from django.db.models import Avg, Count, Q, Sum
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ def cache_company_stats():
     if cached_data is not None:
         return cached_data
 
-    from .models import Company, Car
+    from .models import Car, Company
     from .models_billing import NewInvoice, Transaction
 
     try:
@@ -107,7 +107,7 @@ def cache_client_stats(client_id):
     if cached_data is not None:
         return cached_data
 
-    from .models import Client, Car
+    from .models import Car, Client
     from .models_billing import NewInvoice, Transaction
 
     try:
@@ -178,7 +178,7 @@ def cache_warehouse_stats(warehouse_id):
     if cached_data is not None:
         return cached_data
 
-    from .models import Warehouse, Car, Container
+    from .models import Car, Container, Warehouse
     from .models_billing import NewInvoice, Transaction
 
     try:
@@ -340,14 +340,6 @@ def invalidate_related_cache(model_name, instance_id):
     for pattern in patterns:
         invalidate_cache(pattern)
 
-    REF_CACHE_KEYS = [
-        'ref:warehouses_list', 'ref:companies_list',
-    ]
-    PAYMENT_KEYS = [
-        'payment_objects:client', 'payment_objects:warehouse',
-        'payment_objects:line', 'payment_objects:carrier',
-        'payment_objects:company',
-    ]
     model_lower = model_name.lower()
     if model_lower in ('client', 'warehouse', 'line', 'carrier', 'company'):
         cache.delete(f'payment_objects:{model_lower}')

@@ -11,10 +11,9 @@ InvoiceAuditService
 
 import json
 import logging
-from datetime import datetime, date
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
-from django.conf import settings
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -272,8 +271,8 @@ def _fuzzy_match_service_name(description: str, entity_name_map: dict) -> int | 
     Handles OCR errors via fuzzy matching (SequenceMatcher).
     Returns service_id or None.
     """
-    from difflib import SequenceMatcher
     import unicodedata
+    from difflib import SequenceMatcher
 
     if not entity_name_map or not description:
         return None
@@ -341,7 +340,7 @@ def compare_with_db(extracted: dict) -> dict:
       - cars_missing: int
       - issues_count: int
     """
-    from core.models import Car, CarService
+    from core.models import CarService
 
     discrepancies = []
     cars_found    = 0
@@ -1073,6 +1072,7 @@ def _sync_audit_to_newinvoice(audit, found_cars: dict, extracted: dict):
 
     try:
         from collections import OrderedDict
+
         from core.models_billing import InvoiceItem
         invoice = audit.invoice
         car_objects = [car for car in found_cars.values() if car is not None]
