@@ -195,6 +195,13 @@
     }
   },
 
+  "MAXER": {
+    "provider_type": "CARRIER",
+    "entity_id": 11,
+    "aliases": ["MAXER", "MAXER TRANSPORT", "MAXER TRANSPORT SP. Z O.O.", "MAXER TRANSPORT SP.ZO.O", "MAXER TRANSPORT SP.Z.O.O", "MAXER TRANSPORT, SP. Z O.O.", "MAXER TRANSPORT SP Z O O"],
+    "services": {}
+  },
+
   "Caromoto Lithuania": {
     "provider_type": "COMPANY",
     "entity_id": 1,
