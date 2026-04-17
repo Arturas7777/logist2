@@ -1021,31 +1021,21 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             except Exception as e:
                 logger.error(f"Ошибка при пересчете стоимости хранения: {e}")
 
-        # Apply client tariff markup (FIXED / FLEXIBLE) ONLY when key fields
-        # changed — not on every save, to preserve manual markup edits.
-        tariff_trigger_fields = {'client', 'warehouse', 'line', 'carrier'}
-        should_apply_tariff = (
-            not change
-            or bool(tariff_trigger_fields.intersection(changed_data))
-        )
-        if should_apply_tariff and obj.status != 'TRANSFERRED':
+        # Применяем тариф клиента (FIXED / FLEXIBLE) при КАЖДОМ сохранении —
+        # тариф должен всегда удерживать итог складских услуг равным agreed_total.
+        # Наценки на перевозчика и отдельные услуги компаний не трогаются,
+        # только наценка на услуги склада перераспределяется.
+        client_cleared = change and 'client' in changed_data and not obj.client
+        if obj.status != 'TRANSFERRED':
             client = obj.client
-            if client and client.tariff_type in ('FIXED', 'FLEXIBLE'):
-                try:
-                    from core.services.car_service_manager import apply_client_tariff_for_car
+            try:
+                from core.services.car_service_manager import apply_client_tariff_for_car
+                if (client and client.tariff_type in ('FIXED', 'FLEXIBLE')) or client_cleared:
                     apply_client_tariff_for_car(obj)
                     obj.calculate_total_price()
                     Car.objects.filter(pk=obj.pk).update(total_price=obj.total_price)
-                except Exception as e:
-                    logger.error(f"Ошибка при пересчете тарифа клиента: {e}")
-            elif change and 'client' in changed_data:
-                try:
-                    from core.services.car_service_manager import apply_client_tariff_for_car
-                    apply_client_tariff_for_car(obj)
-                    obj.calculate_total_price()
-                    Car.objects.filter(pk=obj.pk).update(total_price=obj.total_price)
-                except Exception as e:
-                    logger.error(f"Ошибка при сбросе тарифа клиента: {e}")
+            except Exception as e:
+                logger.error(f"Ошибка при пересчете тарифа клиента: {e}")
 
     def warehouse_services_display(self, obj):
         """Displays editable fields for all warehouse services"""
