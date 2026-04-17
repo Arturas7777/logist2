@@ -552,12 +552,14 @@ class SiteProService:
             if item.car:
                 item_name = f'{item.description} ({item.car.vin})'
 
+            # API использует `addition` как описание позиции (наш текст с услугой+VIN);
+            # `name` не отображается в интерфейсе — его перекрывает itemName из справочника.
             items.append({
                 'saleId': sale_id,
                 'itemId': item_id,
                 'warehouseId': warehouse_id,
                 'calculationMode': calc_mode,
-                'name': item_name,
+                'addition': item_name,
                 'quantity': float(item.quantity),
                 'priceWithoutVat': float(item.unit_price),
             })
