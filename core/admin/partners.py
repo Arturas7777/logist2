@@ -377,8 +377,11 @@ class ClientAdmin(admin.ModelAdmin):
     balance_status_display.short_description = 'Статус'
 
     def new_balance_display(self, obj):
-        """NEW SYSTEM - unified balance"""
-        balance = obj.balance
+        """Полный баланс клиента = сальдо транзакций − долг по открытым инвойсам."""
+        balance = obj.total_balance
+        debt = obj.open_invoices_debt
+        cash = obj.balance
+
         if balance > 0:
             color = '#28a745'
             text = f'+{balance:.2f}'
@@ -389,16 +392,17 @@ class ClientAdmin(admin.ModelAdmin):
             color = '#6c757d'
             text = '0.00'
 
+        tooltip = f'Сальдо транзакций: {cash:.2f} €\nДолг по открытым инвойсам: {debt:.2f} €'
         return format_html(
-            '<span style="color:{}; font-weight:bold; font-size:15px;">{}</span>',
-            color, text
+            '<span title="{}" style="color:{}; font-weight:bold; font-size:15px;">{}</span>',
+            tooltip, color, text
         )
     new_balance_display.short_description = 'Баланс'
     new_balance_display.admin_order_field = 'balance'
 
     def balance_status_new(self, obj):
-        """New balance status"""
-        balance = obj.balance
+        """Статус по полному балансу (с учётом открытых инвойсов)."""
+        balance = obj.total_balance
         if balance > 0:
             return format_html('<span style="background:#28a745; color:white; padding:3px 8px; border-radius:3px;">ПЕРЕПЛАТА</span>')
         elif balance < 0:
