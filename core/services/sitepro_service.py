@@ -515,8 +515,14 @@ class SiteProService:
         """
         Формирует список позиций для добавления к продаже.
 
-        Суммы в site.pro API хранятся как есть (не умножать на 100,
-        это только для банковских операций).
+        Новый API sale-items/create требует:
+        - saleId, itemId (справочник), warehouseId, calculationMode, name,
+          quantity, priceWithoutVat.
+
+        Логистические услуги мапятся на один reference-book item
+        (`default_item_id`, обычно 24 = 'Paslauga (vnt.)'). Детали позиции
+        Logist2 (описание услуги + VIN авто) кладутся в `name`, так что
+        в site.pro позиции будут читаемы.
 
         Args:
             invoice: экземпляр NewInvoice
@@ -525,8 +531,21 @@ class SiteProService:
         Returns:
             список dict для каждой позиции
         """
+        if not self.connection.default_item_id:
+            raise SiteProAPIError(
+                'default_item_id не задан в настройках подключения site.pro. '
+                'Укажите ID справочного товара (обычно 24 = Paslauga vnt.) или '
+                'используйте action "Загрузить справочники".'
+            )
+        if not self.connection.default_warehouse_id:
+            raise SiteProAPIError(
+                'default_warehouse_id не задан в настройках подключения site.pro.'
+            )
+
         items = []
-        vat_rate = float(self.connection.default_vat_rate)
+        item_id = self.connection.default_item_id
+        warehouse_id = self.connection.default_warehouse_id
+        calc_mode = self.connection.default_calculation_mode or 1
 
         for item in invoice.items.all().select_related('car').order_by('order'):
             item_name = item.description or ''
@@ -535,10 +554,12 @@ class SiteProService:
 
             items.append({
                 'saleId': sale_id,
+                'itemId': item_id,
+                'warehouseId': warehouse_id,
+                'calculationMode': calc_mode,
                 'name': item_name,
                 'quantity': float(item.quantity),
-                'price': float(item.unit_price),
-                'vatPercent': vat_rate,
+                'priceWithoutVat': float(item.unit_price),
             })
 
         return items

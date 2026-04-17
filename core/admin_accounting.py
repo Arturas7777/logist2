@@ -77,10 +77,13 @@ class SiteProConnectionAdmin(admin.ModelAdmin):
                 'default_operation_type_id',
                 'default_series_id',
                 'default_location_id',
+                'default_item_id',
+                'default_calculation_mode',
             ),
             'description': (
                 'API site.pro требует ID склада, типа операции и клиента при создании sale, '
-                'а также locationId (Tax Residency) при создании клиента. '
+                'locationId (Tax Residency) при создании клиента, и itemId + warehouseId + '
+                'calculationMode при создании позиций. '
                 'Используйте action "Загрузить справочники site.pro" — он выведет '
                 'доступные значения с их ID, чтобы вы могли вписать нужные.'
             ),
@@ -206,10 +209,23 @@ class SiteProConnectionAdmin(admin.ModelAdmin):
                     ]
                     parts.append('<b>Серии:</b><br>' + '<br>'.join(ser_rows))
 
+                # Reference-book items: нужны для sale-items/create (поле itemId).
+                items_ref = service._api_post(service.ITEMS_LIST, {'page': 1, 'rows': 100})
+                active_items = [
+                    it for it in (items_ref.get('data', []) if isinstance(items_ref, dict) else [])
+                    if it.get('isActive')
+                ]
+                if active_items:
+                    it_rows = [
+                        f'<code>id={i["id"]} name={i.get("name")} unit={i.get("measurementUnitName")}</code>'
+                        for i in active_items
+                    ]
+                    parts.append('<b>Items (справочник для позиций):</b><br>' + '<br>'.join(it_rows))
+
                 parts.append(
                     '<b>Location (Tax Residency):</b> 1 = Lietuva, 2 = Europos Sąjunga, '
-                    '3 = Trečiosios šalys. Выберите подходящее значение и впишите '
-                    'в default_location_id.'
+                    '3 = Trečiosios šalys.<br>'
+                    '<b>Calculation Mode:</b> 1 = без НДС (стандарт для Caromoto).'
                 )
 
                 messages.success(
