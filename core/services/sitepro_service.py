@@ -76,6 +76,9 @@ class SiteProService:
     VAT_RATES_LIST = '/reference-book/vat-rates/list'
     CURRENCIES_LIST = '/reference-book/currencies/list'
     SERIES_LIST = '/reference-book/series/list'
+    WAREHOUSES_LIST = '/reference-book/warehouses/list'
+    OPERATION_TYPES_LIST = '/reference-book/operation-types/list'
+    COUNTRIES_LIST = '/reference-book/countries/list'
 
     # E-commerce (альтернативный путь создания)
     ECOMMERCE_ORDERS_CREATE_SALE = '/e-commerce/orders/create-sale'
@@ -245,12 +248,17 @@ class SiteProService:
         """
         Создаёт клиента в site.pro.
 
+        API site.pro требует locationId (Tax Residency): 1=Lietuva, 2=EU, 3=3rd.
+        Берётся из connection.default_location_id (по умолчанию 1=LT).
+
         Args:
             client: экземпляр core.Client
 
         Returns:
             dict с данными созданного клиента
         """
+        location_id = self.connection.default_location_id or 1
+
         data = {
             'name': client.name or '',
             'code': getattr(client, 'company_code', '') or '',
@@ -258,36 +266,59 @@ class SiteProService:
             'address': getattr(client, 'address', '') or '',
             'email': getattr(client, 'email', '') or '',
             'phone': getattr(client, 'phone', '') or '',
+            'locationId': location_id,
         }
 
-        # Удаляем пустые значения
-        data = {k: v for k, v in data.items() if v}
+        data = {k: v for k, v in data.items() if v not in (None, '')}
 
-        logger.info(f'[SitePro] Создание клиента: {client.name}')
+        logger.info(f'[SitePro] Создание клиента: {client.name} (locationId={location_id})')
         result = self._api_post(self.CLIENTS_CREATE, data)
-        logger.info(f'[SitePro] Клиент создан: {result}')
+        logger.info(f'[SitePro] Клиент создан: id={result.get("id")}')
         return result
 
     def get_or_create_client(self, client) -> int:
         """
         Находит или создаёт клиента в site.pro.
 
+        Порядок поиска:
+        1. По company_code (точное совпадение) — самый надёжный.
+        2. По полному имени (contains).
+        3. По первому слову имени (чтобы "S-LINE Sergii Cherksasov (71544)"
+           находил существующего "S-LINE" в site.pro).
+
+        Только если ничего не найдено — создаётся новый клиент.
+
         Returns:
-            ID клиента в site.pro
+            ID клиента в site.pro (int)
         """
-        # Сначала ищем по коду компании
-        company_code = getattr(client, 'company_code', '') or ''
+        company_code = (getattr(client, 'company_code', '') or '').strip()
         if company_code:
             existing = self.search_clients(code=company_code)
             if existing:
+                logger.debug(f'[SitePro] Клиент найден по code={company_code}: id={existing[0].get("id")}')
                 return existing[0].get('id')
 
-        # Ищем по имени
-        existing = self.search_clients(name=client.name)
-        if existing:
-            return existing[0].get('id')
+        name = (client.name or '').strip()
+        if name:
+            existing = self.search_clients(name=name)
+            if existing:
+                logger.debug(f'[SitePro] Клиент найден по полному имени: id={existing[0].get("id")}')
+                return existing[0].get('id')
 
-        # Создаём нового
+            # Fallback: ищем по первому значимому слову имени (до пробела или скобки).
+            # Это закрывает случай когда в Logist2 имя расширено доп. инфой
+            # ("S-LINE Sergii Cherksasov (71544)"), а в site.pro компактное "S-LINE".
+            import re
+            first_token = re.split(r'[\s(]', name, maxsplit=1)[0].strip()
+            if first_token and first_token != name and len(first_token) >= 2:
+                existing = self.search_clients(name=first_token)
+                if existing:
+                    logger.info(
+                        f'[SitePro] Клиент найден по первому слову {first_token!r}: '
+                        f'id={existing[0].get("id")} (полное имя в site.pro: {existing[0].get("name")!r})'
+                    )
+                    return existing[0].get('id')
+
         result = self.create_client(client)
         return result.get('id')
 
@@ -338,13 +369,17 @@ class SiteProService:
         )
 
         try:
-            # Шаг 1: Находим или создаём клиента
+            # Шаг 1: Находим или создаём клиента (clientId обязателен в new API)
             client_id = None
             if invoice.recipient_client:
-                try:
-                    client_id = self.get_or_create_client(invoice.recipient_client)
-                except SiteProAPIError as e:
-                    logger.warning(f'[SitePro] Ошибка создания клиента, продолжаем без ID: {e}')
+                client_id = self.get_or_create_client(invoice.recipient_client)
+
+            if not client_id:
+                raise SiteProAPIError(
+                    f'Не удалось получить clientId для инвойса {invoice.number}. '
+                    f'Проверьте связанного клиента (recipient_client={invoice.recipient_client_id}) '
+                    f'и default_location_id в настройках подключения.'
+                )
 
             # Шаг 2: Создаём продажу (sale)
             sale_data = self._build_sale_data(invoice, client_id)
@@ -408,32 +443,55 @@ class SiteProService:
             logger.error(f'[SitePro] Ошибка отправки инвойса {invoice.number}: {e}')
             raise
 
-    def _build_sale_data(self, invoice, client_id: int = None) -> dict:
+    def _build_sale_data(self, invoice, client_id: int) -> dict:
         """
         Формирует данные для создания продажи в site.pro.
 
+        Обязательные поля новой версии API:
+        - saleDate, currencyCode, warehouseId, operationTypeId, clientId.
+
+        warehouseId / operationTypeId / seriesId тянутся из SiteProConnection.
+        Если default_warehouse_id или default_operation_type_id не заданы,
+        будет выброшена SiteProAPIError — нужно задать их в админке.
+
         Args:
             invoice: экземпляр NewInvoice
-            client_id: ID клиента в site.pro (опционально)
+            client_id: ID клиента в site.pro (обязательный)
         """
+        if not self.connection.default_warehouse_id:
+            raise SiteProAPIError(
+                'default_warehouse_id не задан в настройках подключения site.pro. '
+                'Используйте action "Загрузить справочники" в админке.'
+            )
+        if not self.connection.default_operation_type_id:
+            raise SiteProAPIError(
+                'default_operation_type_id не задан в настройках подключения site.pro. '
+                'Используйте action "Загрузить справочники" в админке.'
+            )
+
         sale_data = {
-            'date': invoice.date.strftime('%Y-%m-%d') if invoice.date else timezone.now().strftime('%Y-%m-%d'),
+            'saleDate': (
+                invoice.date.strftime('%Y-%m-%d')
+                if invoice.date else timezone.now().strftime('%Y-%m-%d')
+            ),
             'currencyCode': self.connection.default_currency,
+            'warehouseId': self.connection.default_warehouse_id,
+            'operationTypeId': self.connection.default_operation_type_id,
+            'clientId': client_id,
         }
 
-        # Номер инвойса
         if invoice.number:
             sale_data['number'] = invoice.number
 
-        # Серия
+        # Серия: шлём seriesId если настроен, иначе текстом через series.
+        # site.pro принимает оба формата.
+        if self.connection.default_series_id:
+            sale_data['seriesId'] = self.connection.default_series_id
         if self.connection.invoice_series:
             sale_data['series'] = self.connection.invoice_series
 
-        # Клиент
-        if client_id:
-            sale_data['clientId'] = client_id
-
-        # Имя получателя
+        # Имя получателя дополнительно (site.pro подставит clientName из clientId,
+        # но мы шлём расширенную версию из Logist2, если она длиннее).
         if invoice.recipient_name:
             sale_data['clientName'] = invoice.recipient_name
 
@@ -573,16 +631,56 @@ class SiteProService:
         result = self._api_post(self.SERIES_LIST, {'page': 1, 'rows': 100})
         return result.get('data', []) if isinstance(result, dict) else []
 
+    def get_warehouses(self) -> list:
+        """Получает список складов из site.pro."""
+        result = self._api_post(self.WAREHOUSES_LIST, {'page': 1, 'rows': 100})
+        return result.get('data', []) if isinstance(result, dict) else []
+
+    def get_operation_types(self) -> list:
+        """Получает список типов операций (isSale=True → подходит для инвойсов)."""
+        result = self._api_post(self.OPERATION_TYPES_LIST, {'page': 1, 'rows': 100})
+        return result.get('data', []) if isinstance(result, dict) else []
+
+    def get_countries(self) -> list:
+        """Получает список стран (для locationId клиентов).
+
+        Возвращает ПЕРВУЮ страницу (100 стран). Список длинный, но первая
+        страница обычно содержит основные EU-страны. Для полного списка
+        используйте list_all_countries().
+        """
+        result = self._api_post(self.COUNTRIES_LIST, {'page': 1, 'rows': 100})
+        return result.get('data', []) if isinstance(result, dict) else []
+
+    def list_all_countries(self) -> list:
+        """Paginate through all countries (254+ записей в base справочнике)."""
+        return self._paginate_list(self.COUNTRIES_LIST, rows=100)
+
     # ========================================================================
     # PULL DATA (import from site.pro)
     # ========================================================================
 
-    def _paginate_list(self, endpoint: str, filters: dict = None, max_pages: int = 100) -> list:
-        """Paginate through a list endpoint collecting all records."""
+    # site.pro API валидирует `rows` в фиксированном списке значений.
+    # Только эти значения допустимы для list-эндпоинтов.
+    _VALID_ROWS = (10, 20, 25, 50, 100)
+
+    def _paginate_list(self, endpoint: str, filters: dict = None, max_pages: int = 100,
+                       rows: int = 50) -> list:
+        """Paginate through a list endpoint collecting all records.
+
+        Args:
+            endpoint: API path
+            filters: optional jqGrid-style filters dict
+            max_pages: safety cap to avoid infinite loops
+            rows: page size; must be one of _VALID_ROWS (10/20/25/50/100).
+                  Использует 50 по умолчанию — баланс между количеством запросов
+                  и размером ответа.
+        """
+        if rows not in self._VALID_ROWS:
+            rows = 50
         all_data = []
         page = 1
         while page <= max_pages:
-            payload = {'page': page, 'rows': 100}
+            payload = {'page': page, 'rows': rows}
             if filters:
                 payload['filters'] = filters
             result = self._api_post(endpoint, payload)
@@ -611,16 +709,19 @@ class SiteProService:
         return self._paginate_list(self.SALES_LIST, filters)
 
     def list_sale_items(self, sale_id: int) -> list:
-        """Fetch line items for a specific sale."""
-        result = self._api_post(self.SALE_ITEMS_LIST, {
-            'page': 1,
-            'rows': 200,
-            'filters': {
+        """Fetch line items for a specific sale.
+
+        Использует пагинацию, потому что API валидирует rows по фиксированному
+        списку {10,20,25,50,100}, и у больших продаж может быть > 100 позиций.
+        """
+        return self._paginate_list(
+            self.SALE_ITEMS_LIST,
+            filters={
                 'groupOp': 'AND',
                 'rules': [{'field': 'saleId', 'op': 'eq', 'data': str(sale_id)}],
             },
-        })
-        return result.get('data', []) if isinstance(result, dict) else []
+            rows=100,
+        )
 
     def get_client_balance(self, client_id: int) -> dict:
         """Fetch balance for a specific client in site.pro."""

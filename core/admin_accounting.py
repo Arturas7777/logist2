@@ -71,6 +71,20 @@ class SiteProConnectionAdmin(admin.ModelAdmin):
                 'invoice_series',
             ),
         }),
+        ('Справочники site.pro (обязательно для sales/create)', {
+            'fields': (
+                'default_warehouse_id',
+                'default_operation_type_id',
+                'default_series_id',
+                'default_location_id',
+            ),
+            'description': (
+                'API site.pro требует ID склада, типа операции и клиента при создании sale, '
+                'а также locationId (Tax Residency) при создании клиента. '
+                'Используйте action "Загрузить справочники site.pro" — он выведет '
+                'доступные значения с их ID, чтобы вы могли вписать нужные.'
+            ),
+        }),
         ('Состояние подключения (только чтение)', {
             'fields': (
                 'sitepro_user_id',
@@ -89,7 +103,7 @@ class SiteProConnectionAdmin(admin.ModelAdmin):
         'last_error',
     )
 
-    actions = ['test_connection', 'sync_now']
+    actions = ['test_connection', 'sync_now', 'load_reference_books']
 
     def is_active_display(self, obj):
         if obj.is_active:
@@ -152,6 +166,59 @@ class SiteProConnectionAdmin(admin.ModelAdmin):
             else:
                 messages.error(request, f'{conn.name}: ошибка — {result["error"]}')
     sync_now.short_description = "Sync Now — проверить подключение"
+
+    def load_reference_books(self, request, queryset):
+        """Загружает справочники из site.pro и выводит их ID для настройки.
+
+        Админ выбирает подходящие значения и вручную прописывает их в
+        default_warehouse_id, default_operation_type_id, default_series_id,
+        default_location_id.
+        """
+        from .services.sitepro_service import SiteProAPIError, SiteProService
+
+        for conn in queryset:
+            service = SiteProService(conn)
+            parts = [f'<b>{conn.name}</b>']
+            try:
+                wh = service.get_warehouses()
+                if wh:
+                    wh_rows = [
+                        f'<code>id={w["id"]} name={w.get("name")} isPrimary={w.get("isPrimary")}</code>'
+                        for w in wh
+                    ]
+                    parts.append('<b>Склады:</b><br>' + '<br>'.join(wh_rows))
+
+                ops = service.get_operation_types()
+                sale_ops = [o for o in ops if o.get('isSale') and o.get('isActive')]
+                if sale_ops:
+                    op_rows = [
+                        f'<code>id={o["id"]} code={o.get("code")} name={o.get("name")}</code>'
+                        for o in sale_ops
+                    ]
+                    parts.append('<b>Типы операций (только SALE):</b><br>' + '<br>'.join(op_rows))
+
+                series = service.get_series()
+                if series:
+                    ser_rows = [
+                        f'<code>id={s["id"]} series={s.get("series")} opType={s.get("operationTypeId")} '
+                        f'({s.get("operationTypeName")})</code>'
+                        for s in series
+                    ]
+                    parts.append('<b>Серии:</b><br>' + '<br>'.join(ser_rows))
+
+                parts.append(
+                    '<b>Location (Tax Residency):</b> 1 = Lietuva, 2 = Europos Sąjunga, '
+                    '3 = Trečiosios šalys. Выберите подходящее значение и впишите '
+                    'в default_location_id.'
+                )
+
+                messages.success(
+                    request,
+                    format_html('<br><br>'.join(parts)),
+                )
+            except SiteProAPIError as e:
+                messages.error(request, f'{conn.name}: ошибка загрузки справочников — {e}')
+    load_reference_books.short_description = 'Загрузить справочники site.pro (warehouse/operation/series)'
 
 
 # ============================================================================
