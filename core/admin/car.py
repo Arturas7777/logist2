@@ -1,22 +1,26 @@
 import logging
 import os
+from decimal import Decimal
 
-from django.contrib import admin
 from django.conf import settings
+from django.contrib import admin
 from django.db import transaction
+from django.templatetags.static import static
 from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
-from django.db import models
-from django.templatetags.static import static
-from decimal import Decimal
 
-from core.models import (
-    Car, CarService, WarehouseService, LineService,
-    CarrierService, CompanyService, DeletedCarService,
-)
-from core.admin_filters import MultiStatusFilter, MultiWarehouseFilter, ClientAutocompleteFilter
 from core.admin_export import CSVExportMixin
+from core.admin_filters import ClientAutocompleteFilter, MultiStatusFilter, MultiWarehouseFilter
+from core.models import (
+    Car,
+    CarrierService,
+    CarService,
+    CompanyService,
+    DeletedCarService,
+    LineService,
+    WarehouseService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +55,7 @@ def _cost_badge_html(car_service_pk, current_price=None):
 
 def find_car_image(year, brand):
     """Find best matching image for a car by year+brand.
-    
+
     Priority: exact match "2018 BMW 430I.png" > brand-only match > fallback.
     Matching is case-insensitive.
     """
@@ -189,7 +193,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
 
     def change_view(self, request, object_id, form_url='', extra_context=None):
         """Auto-update storage days and CarService price when viewing car detail.
-        
+
         Платные дни растут каждый день, но CarService.custom_price для «Хранения»
         обновляется только при save(). Здесь пересчитываем при открытии карточки,
         чтобы сводка и услуги показывали актуальные данные.
@@ -262,10 +266,9 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
 
     def services_summary_display(self, obj):
         """Displays summary of all services with Caromoto Lithuania markup"""
-        from decimal import Decimal
-        from core.models import CarService
-        from core.service_codes import is_ths_service
         from django.db.models import Sum
+
+        from core.service_codes import is_ths_service
 
         line_total = Decimal('0.00')
         warehouse_total = Decimal('0.00')
@@ -293,7 +296,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         distributed_markup = obj.car_services.aggregate(total=Sum('markup_amount'))['total'] or Decimal('0')
 
         # Legacy markup field (no longer used for distribution)
-        markup_field_amount = obj.markup or Decimal('0.00')
+        obj.markup or Decimal('0.00')
 
         # Total markup = only distributed
         total_markup = distributed_markup
@@ -514,7 +517,6 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             return f"{obj._total_markup:.2f}" if obj._total_markup else "0.00"
 
         # Fallback for car card or if annotation failed
-        from decimal import Decimal
         from django.db.models import Sum
 
         total_markup = obj.car_services.aggregate(
@@ -533,7 +535,6 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         and passes it to template context.
         """
         from django.db.models import Sum
-        from decimal import Decimal
 
         # Call parent method to get response
         response = super().changelist_view(request, extra_context)
@@ -1073,7 +1074,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
                             <input type="hidden" name="remove_warehouse_service_{service.id}" id="remove_warehouse_service_{service.id}" value="">
                         </div>
                         '''
-                    except Exception as e:
+                    except Exception:
                         continue
 
             html += '</div>'

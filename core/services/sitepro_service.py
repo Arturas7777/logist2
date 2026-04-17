@@ -15,11 +15,10 @@
 Документация: https://site.pro/My-Accounting/doc/api
 """
 
-import requests
-import logging
 import json
-from datetime import timedelta
-from decimal import Decimal
+import logging
+
+import requests
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -37,7 +36,7 @@ class SiteProAPIError(Exception):
 class SiteProService:
     """
     Клиент для site.pro Accounting API.
-    
+
     Аутентификация через B1-Api-Key заголовок.
     Base URL: https://site.pro/My-Accounting/api
     """
@@ -117,11 +116,11 @@ class SiteProService:
     def _api_post(self, endpoint: str, json_data: dict = None) -> dict:
         """
         Выполняет POST-запрос к site.pro Accounting API.
-        
+
         Args:
             endpoint: путь к API (например '/sale/sales/create')
             json_data: данные для отправки
-            
+
         Returns:
             dict с ответом API
         """
@@ -166,7 +165,7 @@ class SiteProService:
         """
         Проверяет подключение к site.pro.
         Делает простой запрос к /sale/vat-rates/list для проверки.
-        
+
         Returns:
             dict с результатом: success, error, details
         """
@@ -216,11 +215,11 @@ class SiteProService:
     def search_clients(self, name: str = None, code: str = None) -> list:
         """
         Поиск клиентов в site.pro.
-        
+
         Args:
             name: имя клиента (частичное совпадение)
             code: код компании (точное совпадение)
-            
+
         Returns:
             список клиентов
         """
@@ -245,10 +244,10 @@ class SiteProService:
     def create_client(self, client) -> dict:
         """
         Создаёт клиента в site.pro.
-        
+
         Args:
             client: экземпляр core.Client
-            
+
         Returns:
             dict с данными созданного клиента
         """
@@ -272,7 +271,7 @@ class SiteProService:
     def get_or_create_client(self, client) -> int:
         """
         Находит или создаёт клиента в site.pro.
-        
+
         Returns:
             ID клиента в site.pro
         """
@@ -299,15 +298,15 @@ class SiteProService:
     def push_invoice(self, invoice) -> dict:
         """
         Отправляет инвойс в site.pro как продажу (sale).
-        
+
         Процесс:
         1. Находим или создаём клиента
         2. Создаём продажу (sale)
         3. Добавляем позиции (sale-items)
-        
+
         Args:
             invoice: экземпляр NewInvoice
-            
+
         Returns:
             dict с результатом (external_id, external_number, etc.)
         """
@@ -412,7 +411,7 @@ class SiteProService:
     def _build_sale_data(self, invoice, client_id: int = None) -> dict:
         """
         Формирует данные для создания продажи в site.pro.
-        
+
         Args:
             invoice: экземпляр NewInvoice
             client_id: ID клиента в site.pro (опционально)
@@ -443,14 +442,14 @@ class SiteProService:
     def _build_sale_items(self, invoice, sale_id: int) -> list:
         """
         Формирует список позиций для добавления к продаже.
-        
+
         Суммы в site.pro API хранятся как есть (не умножать на 100,
         это только для банковских операций).
-        
+
         Args:
             invoice: экземпляр NewInvoice
             sale_id: ID продажи в site.pro
-            
+
         Returns:
             список dict для каждой позиции
         """
@@ -479,7 +478,7 @@ class SiteProService:
     def search_sales(self, number: str = None, date_from: str = None, date_to: str = None) -> list:
         """
         Поиск продаж в site.pro.
-        
+
         Args:
             number: номер инвойса
             date_from: дата с (yyyy-MM-dd)
@@ -512,10 +511,10 @@ class SiteProService:
     def get_invoice_pdf_url(self, invoice) -> str:
         """
         Получает ссылку на PDF инвойса из site.pro.
-        
+
         Args:
             invoice: экземпляр NewInvoice
-            
+
         Returns:
             URL на PDF или пустая строка
         """
@@ -654,10 +653,10 @@ class SiteProService:
     def push_invoices(self, invoices) -> dict:
         """
         Отправляет несколько инвойсов в site.pro.
-        
+
         Args:
             invoices: QuerySet или список NewInvoice
-            
+
         Returns:
             dict с результатами: {'sent': int, 'skipped': int, 'failed': int, 'errors': list}
         """

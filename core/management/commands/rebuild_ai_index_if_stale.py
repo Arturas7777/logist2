@@ -1,5 +1,5 @@
-from django.core.management.base import BaseCommand
 from django.conf import settings
+from django.core.management.base import BaseCommand
 
 from core.services.ai_rag import build_rag_index, get_default_rag_sources, is_rag_index_stale
 

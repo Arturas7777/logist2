@@ -15,7 +15,7 @@ def _get_index_path() -> str:
     return getattr(
         settings,
         "AI_RAG_INDEX_PATH",
-        os.path.join(settings.BASE_DIR, "core", "ai_rag_index.json"),
+        os.path.join(settings.BASE_DIR, "data", "ai_rag_index.json"),
     )
 
 

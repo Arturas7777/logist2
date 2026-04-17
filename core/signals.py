@@ -4,24 +4,34 @@ Signal handlers for core models.
 Each handler is a thin wrapper that delegates to the appropriate service.
 Business logic lives in core.services.*, NOT here.
 """
+import logging
+from decimal import Decimal
+
+from django.db import OperationalError, transaction
+from django.db.models import Q
 from django.db.models.signals import (
-    post_save, post_delete, pre_delete, pre_save, m2m_changed,
+    m2m_changed,
+    post_delete,
+    post_save,
+    pre_delete,
+    pre_save,
 )
 from django.dispatch import receiver
-from django.db import transaction, OperationalError
-from django.db.models import Sum, Q
 from django.utils import timezone
-from decimal import Decimal
-import logging
 
 from .models import (
-    Car, Container,
-    WarehouseService, LineService, CarrierService, CompanyService,
-    Company, CarService, DeletedCarService, LineTHSCoefficient,
+    Car,
+    CarrierService,
+    CarService,
+    CompanyService,
+    Container,
+    DeletedCarService,
+    LineService,
+    WarehouseService,
 )
-from .models_billing import NewInvoice, Transaction
 from .models_banking import BankTransaction
-from .service_codes import ServiceCode, is_storage_service, is_ths_service
+from .models_billing import NewInvoice, Transaction
+from .service_codes import ServiceCode, is_storage_service
 
 logger = logging.getLogger(__name__)
 
@@ -268,10 +278,10 @@ def _create_car_services_if_needed(instance, *, created, kwargs):
     preserving services (and manual edits) of unaffected types.
     """
     from .services.car_service_manager import (
-        find_warehouse_services_for_car,
-        find_line_services_for_car,
         find_carrier_services_for_car,
         find_company_services_for_car,
+        find_line_services_for_car,
+        find_warehouse_services_for_car,
         get_main_company,
     )
 
@@ -1107,6 +1117,7 @@ def connect_cache_invalidation_signals():
 
 
 from django.apps import apps
+
 if apps.ready:
     connect_autotransport_signals()
     connect_cache_invalidation_signals()

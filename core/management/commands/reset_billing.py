@@ -22,9 +22,10 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING('Операция отменена'))
                 return
 
-        from core.models import Client, Warehouse, Line, Carrier, Company
-        from core.models_billing import Transaction, InvoiceItem, NewInvoice
         from decimal import Decimal
+
+        from core.models import Carrier, Client, Company, Line, Warehouse
+        from core.models_billing import InvoiceItem, NewInvoice, Transaction
 
         with transaction.atomic():
             # Удаляем транзакции

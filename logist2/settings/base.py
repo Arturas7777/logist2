@@ -1,7 +1,8 @@
-from dotenv import load_dotenv
 import os
 import sys
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -99,6 +100,8 @@ ASGI_APPLICATION = 'logist2.asgi.application'
 # Database
 # ---------------------------------------------------------------------------
 
+_use_pgbouncer = os.getenv('USE_PGBOUNCER', 'false').lower() == 'true'
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -107,11 +110,13 @@ DATABASES = {
         'PASSWORD': os.getenv('DB_PASSWORD'),
         'HOST': os.getenv('DB_HOST', '127.0.0.1'),
         'PORT': os.getenv('DB_PORT', '5432'),
-        'CONN_MAX_AGE': 0 if os.getenv('USE_PGBOUNCER', 'false').lower() == 'true' else 600,
+        'CONN_MAX_AGE': 0 if _use_pgbouncer else 600,
+        # Validates connections before using (avoids stale-conn errors).
+        'CONN_HEALTH_CHECKS': not _use_pgbouncer,
         'OPTIONS': {
             'connect_timeout': 10,
         },
-        'DISABLE_SERVER_SIDE_CURSORS': os.getenv('USE_PGBOUNCER', 'false').lower() == 'true',
+        'DISABLE_SERVER_SIDE_CURSORS': _use_pgbouncer,
     }
 }
 
@@ -268,6 +273,14 @@ REST_FRAMEWORK = {
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ---------------------------------------------------------------------------
+# Upload limits
+# ---------------------------------------------------------------------------
+# PDF-инвойсы и архивы фото бывают по 10-20 МБ; дефолт 2.5 МБ слишком мал.
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv('DATA_UPLOAD_MAX_MEMORY_SIZE', 26214400))
+FILE_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv('FILE_UPLOAD_MAX_MEMORY_SIZE', 26214400))
+DATA_UPLOAD_MAX_NUMBER_FIELDS = int(os.getenv('DATA_UPLOAD_MAX_NUMBER_FIELDS', 5000))
+
+# ---------------------------------------------------------------------------
 # Session
 # ---------------------------------------------------------------------------
 
@@ -383,7 +396,7 @@ AI_TEMPERATURE = float(os.getenv('AI_TEMPERATURE', '0.2'))
 AI_REQUEST_TIMEOUT = int(os.getenv('AI_REQUEST_TIMEOUT', '40'))
 AI_EMBEDDINGS_MODEL = os.getenv('AI_EMBEDDINGS_MODEL', 'text-embedding-3-small')
 AI_RAG_INDEX_PATH = os.getenv(
-    'AI_RAG_INDEX_PATH', os.path.join(BASE_DIR, 'core', 'ai_rag_index.json')
+    'AI_RAG_INDEX_PATH', os.path.join(BASE_DIR, 'data', 'ai_rag_index.json')
 )
 AI_RAG_TOP_K = int(os.getenv('AI_RAG_TOP_K', '4'))
 AI_RAG_MAX_AGE_HOURS = int(os.getenv('AI_RAG_MAX_AGE_HOURS', '24'))
@@ -396,3 +409,49 @@ COMPANY_NAME = 'Caromoto Lithuania'
 COMPANY_PHONE = '+37068830450'
 COMPANY_EMAIL = os.getenv('COMPANY_EMAIL', 'info@caromoto-lt.com')
 COMPANY_WEBSITE = 'https://caromoto-lt.com'
+
+# ---------------------------------------------------------------------------
+# Sentry (error monitoring) — optional, enabled only when SENTRY_DSN is set
+# ---------------------------------------------------------------------------
+
+SENTRY_DSN = os.getenv('SENTRY_DSN', '').strip()
+SENTRY_ENVIRONMENT = os.getenv('SENTRY_ENVIRONMENT', 'development' if DEBUG else 'production')
+SENTRY_RELEASE = os.getenv('SENTRY_RELEASE', '')
+SENTRY_TRACES_SAMPLE_RATE = float(os.getenv('SENTRY_TRACES_SAMPLE_RATE', '0.05'))
+SENTRY_PROFILES_SAMPLE_RATE = float(os.getenv('SENTRY_PROFILES_SAMPLE_RATE', '0.0'))
+SENTRY_SEND_PII = str(os.getenv('SENTRY_SEND_PII', 'False')).lower() == 'true'
+
+if SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.celery import CeleryIntegration
+        from sentry_sdk.integrations.django import DjangoIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
+        from sentry_sdk.integrations.redis import RedisIntegration
+
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            environment=SENTRY_ENVIRONMENT,
+            release=SENTRY_RELEASE or None,
+            integrations=[
+                DjangoIntegration(
+                    transaction_style='url',
+                    middleware_spans=False,
+                    signals_spans=False,
+                ),
+                CeleryIntegration(monitor_beat_tasks=True),
+                RedisIntegration(),
+                LoggingIntegration(level=None, event_level=None),
+            ],
+            traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
+            profiles_sample_rate=SENTRY_PROFILES_SAMPLE_RATE,
+            send_default_pii=SENTRY_SEND_PII,
+            attach_stacktrace=True,
+            max_breadcrumbs=50,
+        )
+        sentry_sdk.set_tag('service', 'logist2')
+    except ImportError:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "SENTRY_DSN is set but sentry-sdk is not installed. Run: pip install 'sentry-sdk[django,celery]'"
+        )

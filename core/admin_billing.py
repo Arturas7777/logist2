@@ -13,19 +13,16 @@
 
 import json
 import logging
-
-from django.contrib import admin
-from django.utils.html import format_html
-from django.urls import reverse, path
-from django.shortcuts import render, redirect
-from django.contrib import messages
-from django.db.models import Sum, Q
-from django.utils import timezone
 from decimal import Decimal, InvalidOperation
 
-from .models_billing import NewInvoice, InvoiceItem, Transaction, ExpenseCategory, PersonalCard, PersonalTransfer
-from .services.billing_service import BillingService
+from django.contrib import admin, messages
+from django.shortcuts import redirect, render
+from django.urls import path, reverse
+from django.utils.html import format_html
+
 from .admin_export import CSVExportMixin
+from .models_billing import ExpenseCategory, InvoiceItem, NewInvoice, PersonalCard, PersonalTransfer, Transaction
+from .services.billing_service import BillingService
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +34,7 @@ logger = logging.getLogger(__name__)
 @admin.register(ExpenseCategory)
 class ExpenseCategoryAdmin(admin.ModelAdmin):
     """Управление категориями расходов/доходов"""
-    
+
     list_display = ('name', 'short_name', 'category_type', 'order', 'is_active')
     list_editable = ('short_name', 'order', 'is_active')
     list_filter = ('category_type', 'is_active')
@@ -53,13 +50,13 @@ class InvoiceDirectionFilter(admin.SimpleListFilter):
     """Фильтр входящих/исходящих инвойсов"""
     title = 'Направление'
     parameter_name = 'direction'
-    
+
     def lookups(self, request, model_admin):
         return [
             ('outgoing', 'Исходящие (мы выставили)'),
             ('incoming', 'Входящие (нам выставили)'),
         ]
-    
+
     def queryset(self, request, queryset):
         from .models import Company
         default_id = Company.get_default_id()
@@ -76,16 +73,16 @@ class InvoiceDirectionFilter(admin.SimpleListFilter):
 
 class InvoiceItemInline(admin.TabularInline):
     """Inline для редактирования позиций инвойса"""
-    
+
     model = InvoiceItem
     extra = 3  # 3 пустые строки для новых позиций
     fields = ('description', 'car', 'quantity', 'unit_price', 'total_price')
     readonly_fields = ('total_price',)
     autocomplete_fields = ['car']
-    
+
     verbose_name = "Позиция инвойса"
     verbose_name_plural = "📦 Позиции инвойса (редактируемые)"
-    
+
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)
         # Убираем help_text для компактности
@@ -133,13 +130,13 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         ('status', 'Статус'),
         ('notes', 'Примечания'),
     ]
-    
+
     class Media:
         css = {
             'all': ('admin/css/widgets.css',)
         }
         js = ('admin/js/SelectBox.js', 'admin/js/SelectFilter2.js',)
-    
+
     list_display = (
         'number_display',
         'doc_type_badge',
@@ -155,7 +152,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         'status_display',
         'actions_display'
     )
-    
+
     list_filter = (
         'document_type',
         InvoiceDirectionFilter,
@@ -164,14 +161,14 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         'date',
         'recipient_client',
     )
-    
+
     search_fields = (
         'number',
         'external_number',
         'recipient_client__name',
         'notes',
     )
-    
+
     readonly_fields = (
         'number',
         'subtotal',
@@ -182,7 +179,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         'created_by',
         'audit_status_display',
     )
-    
+
     fieldsets = (
         ('📋 Основная информация', {
             'fields': (
@@ -226,9 +223,9 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
             'classes': ('collapse',),
         }),
     )
-    
+
     inlines = [InvoiceItemInline]
-    
+
     autocomplete_fields = ['linked_invoice']
     filter_horizontal = ('cars',)
 
@@ -248,43 +245,44 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
 
     def add_view(self, request, form_url='', extra_context=None):
         """Кастомная обработка добавления инвойса"""
-        from core.models import Company, Client, Car
-        
+
         if request.method == 'POST':
             return self._handle_custom_form(request, None)
-        
+
         extra_context = self._get_extra_context(None, extra_context)
         return super().add_view(request, form_url, extra_context)
-    
+
     def change_view(self, request, object_id, form_url='', extra_context=None):
         """Кастомная обработка изменения инвойса"""
         if request.method == 'POST':
             return self._handle_custom_form(request, object_id)
-        
+
         extra_context = self._get_extra_context(object_id, extra_context)
         return super().change_view(request, object_id, form_url, extra_context)
-    
+
     def _get_extra_context(self, object_id, extra_context=None):
         """Получаем контекст для шаблона"""
         import os
+
         from django.conf import settings
-        from core.models import Company, Client, Car
-        
+
+        from core.models import Car, Client, Company
+
         extra_context = extra_context or {}
-        
+
         # Получаем queryset для всех полей
         extra_context['companies'] = Company.objects.all().order_by('name')
         extra_context['clients'] = Client.objects.all().order_by('name')
         extra_context['cars'] = Car.objects.all().select_related('client').order_by('-id')[:500]
         extra_context['expense_categories'] = ExpenseCategory.objects.filter(is_active=True).order_by('order', 'name')
-        
+
         # Определяем Caromoto Lithuania по умолчанию
         try:
             caromoto = Company.objects.get(name="Caromoto Lithuania")
             extra_context['default_company_id'] = caromoto.pk
         except Company.DoesNotExist:
             extra_context['default_company_id'] = None
-        
+
         # Получаем ID выбранных машин для редактирования
         selected_car_ids = []
         if object_id:
@@ -300,7 +298,6 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                     extra_context['attachment_exists'] = False
                 # AI audit status badge
                 try:
-                    audit = invoice.audit
                     extra_context['audit_status'] = self.audit_status_display(invoice)
                 except Exception:
                     extra_context['audit_status'] = None
@@ -315,7 +312,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
             except NewInvoice.DoesNotExist:
                 pass
         extra_context['selected_car_ids'] = selected_car_ids
-        
+
         return extra_context
 
     def _find_link_candidates(self, invoice):
@@ -360,31 +357,31 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
             qs = qs.filter(document_type__in=cash_or_proposal)
 
         return list(qs.order_by('-date')[:5])
-    
+
     def _handle_custom_form(self, request, object_id):
         """Обрабатываем кастомную форму"""
-        from core.models import Company, Client, Car
-        from django.utils import timezone
         from datetime import datetime
-        
+
+        from core.models import Car, Client, Company
+
         try:
             # Получаем или создаем инвойс
             if object_id:
                 invoice = NewInvoice.objects.get(pk=object_id)
             else:
                 invoice = NewInvoice()
-            
+
             # Заполняем поля из POST
             date_str = request.POST.get('date')
             if date_str:
                 invoice.date = datetime.strptime(date_str, '%Y-%m-%d').date()
-            
+
             due_date_str = request.POST.get('due_date')
             if due_date_str:
                 invoice.due_date = datetime.strptime(due_date_str, '%Y-%m-%d').date()
             else:
                 invoice.due_date = None
-            
+
             invoice.status = request.POST.get('status', 'ISSUED')
             invoice.notes = request.POST.get('notes', '')
             invoice.external_number = request.POST.get('external_number', '')
@@ -397,14 +394,14 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 messages.info(request, f'Серия изменена: {old_num} → {invoice.number}')
             else:
                 invoice.document_type = new_doc_type
-            
+
             # Категория
             category_id = request.POST.get('category')
             if category_id:
                 invoice.category = ExpenseCategory.objects.filter(pk=category_id).first()
             else:
                 invoice.category = None
-            
+
             # Вложение
             if 'attachment' in request.FILES:
                 invoice.attachment = request.FILES['attachment']
@@ -422,7 +419,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 invoice.linked_invoice = None
 
             invoice.skip_ai_comparison = 'skip_ai_comparison' in request.POST
-            
+
             # Очищаем все поля выставителя и получателя перед установкой новых
             invoice.issuer_company = None
             invoice.issuer_warehouse = None
@@ -433,7 +430,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
             invoice.recipient_warehouse = None
             invoice.recipient_line = None
             invoice.recipient_carrier = None
-            
+
             # Выставитель (парсим формат "type_id", например "company_123")
             issuer_value = request.POST.get('issuer', '')
             if issuer_value and '_' in issuer_value:
@@ -455,7 +452,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                     invoice.issuer_company = Company.objects.get(name="Caromoto Lithuania")
                 except Company.DoesNotExist:
                     pass
-            
+
             # Получатель (парсим формат "type_id", например "client_456")
             recipient_value = request.POST.get('recipient', '')
             if recipient_value and '_' in recipient_value:
@@ -473,10 +470,10 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 elif recipient_type == 'carrier':
                     from core.models import Carrier
                     invoice.recipient_carrier = Carrier.objects.get(pk=recipient_id)
-            
+
             # Сохраняем инвойс
             invoice.save()
-            
+
             # Обрабатываем автомобили (ManyToMany)
             car_ids = request.POST.getlist('cars')
             if car_ids:
@@ -503,7 +500,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 if not has_audit:
                     self._handle_manual_items(request, invoice)
                 messages.success(request, f'✅ Инвойс {invoice.number} сохранен! Сумма: {invoice.total:.2f} €')
-            
+
             # Авто-регистрация кассового платежа для новых кассовых инвойсов (PARBLC / INCBLC)
             if not object_id and invoice.document_type in NewInvoice.CASH_DOCUMENT_TYPES and invoice.remaining_amount > 0:
                 cash_amount = invoice.remaining_amount
@@ -528,21 +525,21 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 return redirect('admin:core_newinvoice_add')
             else:
                 return redirect('admin:core_newinvoice_changelist')
-                
+
         except Exception as e:
             messages.error(request, f'Ошибка при сохранении инвойса: {str(e)}')
             import traceback
             traceback.print_exc()
-            
+
             if object_id:
                 return redirect('admin:core_newinvoice_change', object_id)
             else:
                 return redirect('admin:core_newinvoice_add')
-    
+
     def _handle_manual_items(self, request, invoice):
         """
         Обработка ручного ввода суммы и позиций (для инвойсов без автомобилей).
-        
+
         Логика:
         1. Если переданы ручные позиции (manual_items_json) — создаём InvoiceItem для каждой,
            пересчитываем total из позиций.
@@ -552,13 +549,13 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         """
         manual_total_str = request.POST.get('manual_total', '0')
         manual_items_raw = request.POST.get('manual_items_json', '[]')
-        
+
         # Парсим manual_total
         try:
             manual_total = Decimal(manual_total_str)
         except (InvalidOperation, ValueError, TypeError):
             manual_total = Decimal('0')
-        
+
         # Парсим ручные позиции
         manual_items = []
         try:
@@ -567,10 +564,10 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 manual_items = []
         except (json.JSONDecodeError, TypeError):
             manual_items = []
-        
+
         # Удаляем старые ручные позиции (без привязки к авто)
         invoice.items.filter(car__isnull=True).delete()
-        
+
         if manual_items:
             # Создаём позиции из ручного ввода
             order = 0
@@ -583,10 +580,10 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                     price = Decimal(str(item_data.get('unit_price', 0)))
                 except (InvalidOperation, ValueError, TypeError):
                     continue
-                
+
                 if qty <= 0 and price <= 0:
                     continue
-                
+
                 total_price = qty * price
                 InvoiceItem.objects.create(
                     invoice=invoice,
@@ -597,16 +594,16 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                     order=order,
                 )
                 order += 1
-            
+
             # Пересчитываем total из позиций
             invoice.calculate_totals()
             invoice.save(update_fields=['subtotal', 'total'])
-        
+
         elif manual_total > 0:
             # Нет ручных позиций, но задана сумма — создаём одну позицию
             ext_num = invoice.external_number or invoice.number
             description = f"Оплата по счёту {ext_num}"
-            
+
             InvoiceItem.objects.create(
                 invoice=invoice,
                 description=description,
@@ -615,11 +612,11 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 total_price=manual_total,
                 order=0,
             )
-            
+
             # Устанавливаем total
             invoice.calculate_totals()
             invoice.save(update_fields=['subtotal', 'total'])
-    
+
     def save_model(self, request, obj, form, change):
         """Сохраняем инвойс и автоматически генерируем позиции из автомобилей"""
         # Автоматически устанавливаем Caromoto Lithuania как выставителя по умолчанию
@@ -635,12 +632,12 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.warning("Компания Caromoto Lithuania не найдена в базе данных")
-        
+
         # Сначала сохраняем объект
         super().save_model(request, obj, form, change)
-        
+
         # Сохраняем связь cars (ManyToMany сохраняется в save_related)
-    
+
     def save_related(self, request, form, formsets, change):
         """После сохранения ManyToMany создаем позиции из автомобилей и запускаем AI-анализ PDF."""
         super().save_related(request, form, formsets, change)
@@ -666,7 +663,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
             pass
         if obj.attachment and obj.direction == 'INCOMING' and not has_audit:
             self._trigger_invoice_audit(request, obj)
-    
+
     def audit_status_display(self, obj):
         """Shows AI audit status badge for the invoice."""
         if not obj.pk:
@@ -712,8 +709,9 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
 
     def _trigger_invoice_audit(self, request, obj):
         """Create InvoiceAudit from NewInvoice attachment and start background processing."""
-        import threading
         import os
+        import threading
+
         from core.models_invoice_audit import InvoiceAudit
         from core.services.invoice_audit_service import process_invoice_audit
 
@@ -749,7 +747,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
     # ========================================================================
     # ОТОБРАЖЕНИЕ ПОЛЕЙ В СПИСКЕ
     # ========================================================================
-    
+
     def number_display(self, obj):
         """Номер инвойса с ссылкой"""
         url = reverse('admin:core_newinvoice_change', args=[obj.pk])
@@ -822,7 +820,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         return format_html('<span style="color:#ccc;">—</span>')
     category_display.short_description = 'Кат.'
     category_display.admin_order_field = 'category'
-    
+
     def notes_display(self, obj):
         """Примечания инвойса"""
         if obj.notes:
@@ -832,7 +830,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         return format_html('<span style="color: #999;">—</span>')
     notes_display.short_description = 'Примечания'
     notes_display.admin_order_field = 'notes'
-    
+
     def issuer_display(self, obj):
         """Выставитель"""
         issuer = obj.issuer
@@ -843,7 +841,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
             )
         return '-'
     issuer_display.short_description = 'Выставитель'
-    
+
     def recipient_display(self, obj):
         """Получатель"""
         recipient = obj.recipient
@@ -854,7 +852,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
             )
         return '-'
     recipient_display.short_description = 'Получатель'
-    
+
     def total_display(self, obj):
         """Итого с форматированием"""
         amount = f"{obj.total:.2f}"
@@ -864,7 +862,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         )
     total_display.short_description = 'Итого'
     total_display.admin_order_field = 'total'
-    
+
     def paid_amount_display(self, obj):
         """Оплачено"""
         if obj.paid_amount > 0:
@@ -878,7 +876,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         return format_html('<span style="color: #999;">0.00</span>')
     paid_amount_display.short_description = 'Оплачено'
     paid_amount_display.admin_order_field = 'paid_amount'
-    
+
     def remaining_display(self, obj):
         """Остаток"""
         remaining = obj.remaining_amount
@@ -890,7 +888,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
             )
         return format_html('<span style="color: #28a745;">✓</span>')
     remaining_display.short_description = 'Остаток'
-    
+
     def status_display(self, obj):
         """Статус с цветом"""
         colors = {
@@ -902,12 +900,12 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
             'CANCELLED': '#6c757d',
         }
         color = colors.get(obj.status, '#6c757d')
-        
+
         # Добавляем предупреждение для просроченных
         icon = ''
         if obj.is_overdue:
             icon = '⚠ '
-        
+
         return format_html(
             '<span style="background-color: {}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 0.9em;">{}{}</span>',
             color,
@@ -916,7 +914,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         )
     status_display.short_description = 'Статус'
     status_display.admin_order_field = 'status'
-    
+
     def actions_display(self, obj):
         """Быстрые действия"""
         if obj.status in ['ISSUED', 'PARTIALLY_PAID', 'OVERDUE']:
@@ -929,11 +927,11 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
             return format_html('<span style="color: #28a745;">✓ Оплачен</span>')
         return '-'
     actions_display.short_description = 'Действия'
-    
+
     # ========================================================================
     # ДОПОЛНИТЕЛЬНЫЕ READONLY ПОЛЯ
     # ========================================================================
-    
+
     def remaining_amount_display(self, obj):
         """Остаток к оплате"""
         remaining = obj.remaining_amount
@@ -945,11 +943,11 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
             )
         return format_html('<span style="color: #28a745; font-size: 1.2em;">✓ Полностью оплачен</span>')
     remaining_amount_display.short_description = 'Остаток к оплате'
-    
+
     def status_info_display(self, obj):
         """Информация о статусе"""
         info = []
-        
+
         if obj.is_overdue:
             days_overdue = abs(obj.days_until_due)
             info.append(format_html(
@@ -967,7 +965,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 '</div>',
                 obj.days_until_due
             ))
-        
+
         if obj.paid_amount > obj.total:
             overpayment = obj.paid_amount - obj.total
             overpayment_str = f"{overpayment:.2f}"
@@ -978,20 +976,20 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 '</div>',
                 overpayment_str
             ))
-        
+
         return format_html(''.join(info)) if info else 'Нет предупреждений'
     status_info_display.short_description = 'Статус и предупреждения'
-    
+
     def payment_history_display(self, obj):
         """История платежей"""
         transactions = obj.transactions.all().order_by('-date')
-        
+
         if not transactions:
             return format_html('<p style="color: #999;">Платежей еще не было</p>')
-        
+
         html = '<table style="width: 100%; border-collapse: collapse;">'
         html += '<tr style="background: #f5f5f5;"><th style="padding: 8px; text-align: left;">Дата</th><th style="padding: 8px; text-align: left;">Номер</th><th style="padding: 8px; text-align: left;">Тип</th><th style="padding: 8px; text-align: left;">Способ</th><th style="padding: 8px; text-align: right;">Сумма</th></tr>'
-        
+
         for trx in transactions:
             color = '#28a745' if trx.type == 'PAYMENT' else '#dc3545'
             trx_amount = f"{trx.amount:.2f}"
@@ -1004,15 +1002,15 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 <td style="padding: 8px; text-align: right; color: {color}; font-weight: bold;">{trx_amount}</td>
             </tr>
             '''
-        
+
         html += '</table>'
         return format_html(html)
     payment_history_display.short_description = 'История платежей'
-    
+
     # ========================================================================
     # ДЕЙСТВИЯ
     # ========================================================================
-    
+
     def mark_as_issued(self, request, queryset):
         """Пометить как выставленные"""
         updated = 0
@@ -1021,10 +1019,10 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 invoice.status = 'ISSUED'
                 invoice.save(update_fields=['status', 'updated_at'])
                 updated += 1
-        
+
         self.message_user(request, f'Выставлено: {updated} инвойсов', messages.SUCCESS)
     mark_as_issued.short_description = "📤 Пометить как выставленные"
-    
+
     def mark_as_paid(self, request, queryset):
         """Пометить как оплаченные — создаёт транзакцию через BillingService.
         Для AVBLC переводит в PARBLC + CASH-платёж. Для INCBLC/PARBLC регистрирует кассовый платёж на остаток."""
@@ -1074,25 +1072,25 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         if errors:
             self.message_user(request, f'Ошибок: {errors} (проверьте получателя инвойса)', messages.WARNING)
     mark_as_paid.short_description = "✓ Пометить как оплаченные"
-    
+
     def cancel_invoices(self, request, queryset):
         """Отменить инвойсы"""
         cancelled = 0
         errors = 0
-        
+
         for invoice in queryset:
             try:
                 BillingService.cancel_invoice(invoice, reason="Массовая отмена через админку")
                 cancelled += 1
-            except ValueError as e:
+            except ValueError:
                 errors += 1
-        
+
         if cancelled > 0:
             self.message_user(request, f'Отменено: {cancelled} инвойсов', messages.SUCCESS)
         if errors > 0:
             self.message_user(request, f'Ошибок: {errors} инвойсов (возможно, уже были платежи)', messages.WARNING)
     cancel_invoices.short_description = "✗ Отменить инвойсы"
-    
+
     def regenerate_items(self, request, queryset):
         """Пересоздать позиции из автомобилей (пропускает PAID и CANCELLED)"""
         count = 0
@@ -1104,7 +1102,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
             if invoice.cars.exists():
                 invoice.regenerate_items_from_cars()
                 count += 1
-        
+
         if count > 0:
             self.message_user(request, f'Позиции пересозданы для {count} инвойсов', messages.SUCCESS)
         if skipped > 0:
@@ -1112,11 +1110,11 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         if count == 0 and skipped == 0:
             self.message_user(request, 'Выберите инвойсы с автомобилями', messages.WARNING)
     regenerate_items.short_description = "Пересоздать позиции из автомобилей"
-    
+
     def push_to_sitepro(self, request, queryset):
         """Отправить выбранные инвойсы в site.pro (бухгалтерия)"""
         from .models_accounting import SiteProConnection
-        
+
         # Находим активное подключение к site.pro
         connection = SiteProConnection.objects.filter(is_active=True).first()
         if not connection:
@@ -1127,10 +1125,10 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 messages.ERROR
             )
             return
-        
-        from .services.sitepro_service import SiteProService, SiteProAPIError
+
+        from .services.sitepro_service import SiteProService
         service = SiteProService(connection)
-        
+
         eligible = queryset.filter(
             status__in=['ISSUED', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'],
             document_type='INVOICE',
@@ -1151,9 +1149,9 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                     messages.WARNING
                 )
             return
-        
+
         result = service.push_invoices(eligible)
-        
+
         if result['sent'] > 0:
             self.message_user(
                 request,
@@ -1273,7 +1271,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
 
     def recalculate_all_balances(self, request, queryset):
         """Recalculate balances for all entities and paid_amount for all invoices."""
-        from .models import Client, Company, Warehouse, Line, Carrier
+        from .models import Carrier, Client, Company, Line, Warehouse
 
         report = []
         for Model, label in [
@@ -1303,7 +1301,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
     # ========================================================================
     # КАСТОМНЫЕ УРЛЫ
     # ========================================================================
-    
+
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
@@ -1311,19 +1309,20 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
             path('calc-cars-total/', self.admin_site.admin_view(self.calc_cars_total_view), name='calc_cars_total'),
         ]
         return custom_urls + urls
-    
+
     def calc_cars_total_view(self, request):
         """AJAX: расчёт предварительной суммы по выбранным автомобилям и выставителю."""
+
         from django.http import JsonResponse
-        from core.models import Car, Company, Warehouse, Line, Carrier
-        from collections import OrderedDict
-        
+
+        from core.models import Car, Carrier, Company, Line, Warehouse
+
         car_ids = request.GET.getlist('car_ids[]') or request.GET.getlist('car_ids')
         issuer_value = request.GET.get('issuer', '')
-        
+
         if not car_ids:
             return JsonResponse({'total': '0.00', 'count': 0})
-        
+
         # Определяем выставителя
         issuer = None
         issuer_type = ''
@@ -1344,7 +1343,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                     issuer_type = 'Carrier'
             except Exception:
                 pass
-        
+
         if not issuer:
             # По умолчанию Caromoto Lithuania
             try:
@@ -1352,15 +1351,15 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 issuer_type = 'Company'
             except Company.DoesNotExist:
                 return JsonResponse({'total': '0.00', 'count': 0})
-        
+
         is_company = (issuer_type == 'Company')
         cars = Car.objects.filter(pk__in=car_ids)
         grand_total = Decimal('0')
-        
+
         for car in cars:
             car.update_days_and_storage()
             car.calculate_total_price()
-            
+
             if issuer_type == 'Warehouse':
                 services = car.get_warehouse_services()
             elif issuer_type == 'Line':
@@ -1371,7 +1370,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 services = car.car_services.all()
             else:
                 continue
-            
+
             for service in services:
                 sname = service.get_service_name()
                 from core.service_codes import NAME_TO_CODE, ServiceCode
@@ -1382,22 +1381,22 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 else:
                     price = service.custom_price if service.custom_price is not None else service.get_default_price()
                 grand_total += price * service.quantity
-            
+
             # Хранение
             if (is_company or issuer_type == 'Warehouse'):
                 if car.storage_cost and car.storage_cost > 0 and car.days and car.days > 0:
                     daily_rate = car._get_storage_daily_rate() if car.warehouse else Decimal('0')
                     grand_total += daily_rate * car.days
-        
+
         return JsonResponse({
             'total': str(grand_total.quantize(Decimal('0.01'))),
             'count': cars.count(),
         })
-    
+
     def pay_invoice_view(self, request, invoice_id):
         """Форма оплаты инвойса"""
         invoice = NewInvoice.objects.get(pk=invoice_id)
-        
+
         if request.method == 'POST':
             try:
                 if invoice.document_type == 'PROFORMA_BLC':
@@ -1414,9 +1413,9 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 amount = Decimal(request.POST.get('amount', 0))
                 method = request.POST.get('method', 'CASH')
                 description = request.POST.get('description', '')
-                
+
                 payer = invoice.recipient
-                
+
                 result = BillingService.pay_invoice(
                     invoice=invoice,
                     amount=amount,
@@ -1425,22 +1424,22 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                     description=description,
                     created_by=request.user
                 )
-                
+
                 messages.success(request, f'Платеж успешно проведен! Транзакция: {result["transaction"].number}')
-                
+
                 if result['overpayment'] > 0:
                     messages.warning(request, f'Внимание: переплата {result["overpayment"]:.2f}')
-                
+
                 return redirect('admin:core_newinvoice_change', invoice_id)
-                
+
             except Exception as e:
                 messages.error(request, f'Ошибка при проведении платежа: {str(e)}')
-        
+
         # Получаем баланс клиента если есть
         client_balance = None
         if invoice.recipient_client:
             client_balance = invoice.recipient_client.balance
-        
+
         context = {
             'invoice': invoice,
             'remaining': invoice.remaining_amount,
@@ -1448,7 +1447,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
             'opts': self.model._meta,
             'has_view_permission': self.has_view_permission(request),
         }
-        
+
         return render(request, 'admin/invoice_pay.html', context)
 
 
@@ -1500,7 +1499,7 @@ class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
         'status_display',
         'invoice_link',
     )
-    
+
     list_filter = (
         'type',
         'method',
@@ -1508,13 +1507,13 @@ class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
         'category',
         'date',
     )
-    
+
     search_fields = (
         'number',
         'description',
         'invoice__number',
     )
-    
+
     readonly_fields = (
         'number',
         'date',
@@ -1523,7 +1522,7 @@ class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
         'sender_info_display',
         'recipient_info_display',
     )
-    
+
     fieldsets = (
         ('Основная информация', {
             'fields': (
@@ -1565,17 +1564,17 @@ class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
             'classes': ('collapse',),
         }),
     )
-    
+
     # ========================================================================
     # ОТОБРАЖЕНИЕ ПОЛЕЙ
     # ========================================================================
-    
+
     def number_display(self, obj):
         """Номер транзакции"""
         return format_html('<strong>{}</strong>', obj.number)
     number_display.short_description = 'Номер'
     number_display.admin_order_field = 'number'
-    
+
     def type_display(self, obj):
         """Тип с иконкой"""
         icons = {
@@ -1589,13 +1588,13 @@ class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
         return format_html('{} {}', icon, obj.get_type_display())
     type_display.short_description = 'Тип'
     type_display.admin_order_field = 'type'
-    
+
     def method_display(self, obj):
         """Способ оплаты"""
         return obj.get_method_display()
     method_display.short_description = 'Способ'
     method_display.admin_order_field = 'method'
-    
+
     def sender_display(self, obj):
         """Отправитель"""
         sender = obj.sender
@@ -1606,7 +1605,7 @@ class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
             )
         return '-'
     sender_display.short_description = 'Отправитель'
-    
+
     def recipient_display(self, obj):
         """Получатель"""
         recipient = obj.recipient
@@ -1617,7 +1616,7 @@ class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
             )
         return '-'
     recipient_display.short_description = 'Получатель'
-    
+
     def amount_display(self, obj):
         """Сумма с форматированием"""
         color = '#28a745' if obj.type == 'PAYMENT' else '#dc3545' if obj.type == 'REFUND' else '#007bff'
@@ -1629,7 +1628,7 @@ class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
         )
     amount_display.short_description = 'Сумма'
     amount_display.admin_order_field = 'amount'
-    
+
     def status_display(self, obj):
         """Статус"""
         colors = {
@@ -1646,7 +1645,7 @@ class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
         )
     status_display.short_description = 'Статус'
     status_display.admin_order_field = 'status'
-    
+
     def trx_category_display(self, obj):
         """Категория транзакции"""
         if obj.category:
@@ -1657,7 +1656,7 @@ class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
         return format_html('<span style="color:#ccc;">—</span>')
     trx_category_display.short_description = 'Кат.'
     trx_category_display.admin_order_field = 'category'
-    
+
     def invoice_link(self, obj):
         """Ссылка на инвойс"""
         if obj.invoice:
@@ -1665,42 +1664,42 @@ class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
             return format_html('<a href="{}">{}</a>', url, obj.invoice.number)
         return '-'
     invoice_link.short_description = 'Инвойс'
-    
+
     def save_model(self, request, obj, form, change):
         """Автозаполнение категории из связанного инвойса"""
         if not obj.category and obj.invoice and obj.invoice.category:
             obj.category = obj.invoice.category
         super().save_model(request, obj, form, change)
-    
+
     def sender_info_display(self, obj):
         """Детальная информация об отправителе"""
         sender = obj.sender
         if not sender:
             return 'Не указан'
-        
+
         info = f'<strong>{sender}</strong><br>'
         info += f'Тип: {sender.__class__.__name__}<br>'
-        
+
         if hasattr(sender, 'balance'):
             balance_str = f"{sender.balance:.2f}"
             info += f'Баланс: {balance_str}'
-        
+
         return format_html(info)
     sender_info_display.short_description = 'Информация об отправителе'
-    
+
     def recipient_info_display(self, obj):
         """Детальная информация о получателе"""
         recipient = obj.recipient
         if not recipient:
             return 'Не указан'
-        
+
         info = f'<strong>{recipient}</strong><br>'
         info += f'Тип: {recipient.__class__.__name__}<br>'
-        
+
         if hasattr(recipient, 'balance'):
             balance_str = f"{recipient.balance:.2f}"
             info += f'Баланс: {balance_str}'
-        
+
         return format_html(info)
     recipient_info_display.short_description = 'Информация о получателе'
 

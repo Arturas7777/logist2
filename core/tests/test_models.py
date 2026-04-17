@@ -4,15 +4,17 @@
 Используется стандартный Django TestCase с тестовой БД (SQLite).
 Запуск: python manage.py test core.tests.test_models
 """
-from decimal import Decimal
-from django.test import TestCase
 from django.core.exceptions import ValidationError
+from django.test import TestCase
 from django.utils import timezone
 
 from core.models import (
-    Car, Container, Client, Warehouse, Company, Line,
-    CarService, WarehouseService, LineService, CarrierService,
     VEHICLE_TYPE_CHOICES,
+    Car,
+    Company,
+    Container,
+    Line,
+    Warehouse,
 )
 
 

@@ -9,7 +9,7 @@ from decimal import Decimal
 from django.db import models as db_models
 from django.db.models import Q
 
-from core.service_codes import ServiceCode, is_storage_service, is_ths_service
+from core.service_codes import ServiceCode, is_storage_service
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,10 @@ def create_ths_services_for_container(container):
     Returns the number of created services.
     """
     from core.models import (
-        Car, CarService, LineService, WarehouseService,
+        Car,
+        CarService,
+        LineService,
+        WarehouseService,
     )
 
     if not container or not container.line:
@@ -239,7 +242,6 @@ def apply_client_tariffs_for_container(container):
     if not container:
         return
 
-    from core.models import CarService, ClientTariffRate
 
     cars = list(container.container_cars.select_related('client').all())
     if not cars:
@@ -270,7 +272,6 @@ def apply_client_tariff_for_car(car):
 
     Resets markup to defaults if new client has tariff_type NONE.
     """
-    from core.models import CarService
 
     if not car or not car.pk:
         return

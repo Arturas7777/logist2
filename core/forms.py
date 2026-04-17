@@ -3,7 +3,8 @@ from decimal import Decimal, InvalidOperation
 
 from django import forms
 from django.forms import ModelForm
-from core.models import Line, Carrier, Warehouse, LineService, CarrierService, WarehouseService
+
+from core.models import Carrier, CarrierService, Line, LineService, Warehouse, WarehouseService
 
 logger = logging.getLogger(__name__)
 
@@ -12,10 +13,10 @@ class LineForm(ModelForm):
     class Meta:
         model = Line
         fields = '__all__'
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Добавляем динамические поля для услуг
         if self.instance.pk:
             for service in self.instance.services.all():
@@ -27,10 +28,10 @@ class LineForm(ModelForm):
                     decimal_places=2,
                     max_digits=10,
                 )
-    
+
     def save(self, commit=True):
         instance = super().save(commit=commit)
-        
+
         if commit and instance.pk:
             # Сохраняем значения динамических полей
             for field_name, value in self.cleaned_data.items():
@@ -42,7 +43,7 @@ class LineForm(ModelForm):
                         service.save()
                     except LineService.DoesNotExist:
                         pass
-        
+
         return instance
 
 
@@ -50,10 +51,10 @@ class CarrierForm(ModelForm):
     class Meta:
         model = Carrier
         fields = '__all__'
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Добавляем динамические поля для услуг
         if self.instance.pk:
             for service in self.instance.services.all():
@@ -65,10 +66,10 @@ class CarrierForm(ModelForm):
                     decimal_places=2,
                     max_digits=10,
                 )
-    
+
     def save(self, commit=True):
         instance = super().save(commit=commit)
-        
+
         if commit and instance.pk:
             # Сохраняем значения динамических полей
             for field_name, value in self.cleaned_data.items():
@@ -80,7 +81,7 @@ class CarrierForm(ModelForm):
                         service.save()
                     except CarrierService.DoesNotExist:
                         pass
-        
+
         return instance
 
 
@@ -88,10 +89,10 @@ class WarehouseForm(ModelForm):
     class Meta:
         model = Warehouse
         fields = '__all__'
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Добавляем динамические поля для услуг
         if self.instance.pk:
             for service in self.instance.services.all():
@@ -111,14 +112,14 @@ class WarehouseForm(ModelForm):
                     initial=False,
                     widget=forms.HiddenInput()  # Делаем скрытым
                 )
-    
+
     def save(self, commit=True):
         instance = super().save(commit=commit)
-        
+
         if commit and instance.pk:
             logger.debug("=== WAREHOUSE FORM SAVE ===")
             logger.debug("cleaned_data: %s", self.cleaned_data)
-            
+
             # Обрабатываем удаление услуг
             for field_name, value in self.cleaned_data.items():
                 if field_name.startswith('delete_service_'):
@@ -132,7 +133,7 @@ class WarehouseForm(ModelForm):
                         except WarehouseService.DoesNotExist:
                             logger.warning(f"Услуга с ID {service_id} не найдена")
                             pass
-            
+
             # Обрабатываем новые услуги
             for field_name, value in self.cleaned_data.items():
                 if field_name.startswith('new_service_name_'):
@@ -140,7 +141,7 @@ class WarehouseForm(ModelForm):
                     name = value
                     price_field = f'new_service_price_{index}'
                     price = self.cleaned_data.get(price_field, 0)
-                    
+
                     if name:
                         try:
                             decimal_price = Decimal(str(price)) if price else Decimal('0')
@@ -152,7 +153,7 @@ class WarehouseForm(ModelForm):
                             logger.debug(f"Создана новая услуга: {name} с ценой {price}")
                         except (ValueError, InvalidOperation) as e:
                             logger.error(f"Ошибка при создании услуги: {e}")
-            
+
             # Сохраняем значения существующих услуг
             for field_name, value in self.cleaned_data.items():
                 if field_name.startswith('service_') and not field_name.startswith('delete_service_') and not field_name.startswith('new_service_'):
@@ -164,5 +165,5 @@ class WarehouseForm(ModelForm):
                             service.save()
                         except WarehouseService.DoesNotExist:
                             pass
-        
+
         return instance

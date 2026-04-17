@@ -1,7 +1,9 @@
+import logging
+
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from core.models import Container, Car
-import logging
+
+from core.models import Container
 
 logger = logging.getLogger(__name__)
 
@@ -33,20 +35,20 @@ class Command(BaseCommand):
 
         # Получаем контейнеры для обновления
         containers_query = Container.objects.all()
-        
+
         if container_id:
             containers_query = containers_query.filter(id=container_id)
         elif status_filter:
             containers_query = containers_query.filter(status=status_filter)
-        
+
         containers = containers_query.prefetch_related('container_cars')
-        
+
         self.stdout.write(f"Найдено {containers.count()} контейнеров для проверки")
-        
+
         updated_count = 0
         skipped_count = 0
         error_count = 0
-        
+
         with transaction.atomic():
             for container in containers:
                 try:
@@ -58,12 +60,12 @@ class Command(BaseCommand):
                         )
                         skipped_count += 1
                         continue
-                    
+
                     # Проверяем, все ли автомобили переданы
                     all_transferred = all(car.status == 'TRANSFERRED' for car in cars)
                     transferred_cars_count = sum(1 for car in cars if car.status == 'TRANSFERRED')
                     total_cars_count = cars.count()
-                    
+
                     if all_transferred and container.status != 'TRANSFERRED':
                         if dry_run:
                             self.stdout.write(
@@ -96,21 +98,21 @@ class Command(BaseCommand):
                                 f"{transferred_cars_count}/{total_cars_count} автомобилей переданы - не обновляем"
                             )
                         skipped_count += 1
-                        
+
                 except Exception as e:
                     self.stdout.write(
                         self.style.ERROR(f"Ошибка при обработке контейнера {container.number}: {e}")
                     )
                     error_count += 1
                     logger.error(f"Error updating container {container.number}: {e}")
-        
+
         # Итоговая статистика
         self.stdout.write("\n" + "="*50)
         self.stdout.write("ИТОГОВАЯ СТАТИСТИКА:")
         self.stdout.write(f"Обновлено контейнеров: {updated_count}")
         self.stdout.write(f"Пропущено контейнеров: {skipped_count}")
         self.stdout.write(f"Ошибок: {error_count}")
-        
+
         if dry_run:
             self.stdout.write(self.style.WARNING("\nЭто был тестовый запуск (--dry-run). Никаких изменений не внесено."))
         else:

@@ -20,7 +20,6 @@ from django.utils.dateparse import parse_datetime
 
 from core.models_banking import BankConnection, BankTransaction
 
-
 REVOLUT_TYPE_MAP = {
     'card_payment': 'card_payment',
     'card_refund': 'card_refund',

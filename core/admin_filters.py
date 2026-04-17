@@ -1,9 +1,7 @@
-from django.contrib.admin import SimpleListFilter
-from django.db import models
-from django.utils.translation import gettext_lazy as _
-from django.utils.html import format_html
-from django.urls import reverse
 import json
+
+from django.contrib.admin import SimpleListFilter
+from django.utils.translation import gettext_lazy as _
 
 
 class MultiStatusFilter(SimpleListFilter):
@@ -16,7 +14,7 @@ class MultiStatusFilter(SimpleListFilter):
         """Возвращает список доступных статусов"""
         # Получаем все возможные статусы из модели
         status_choices = None
-        
+
         # Проверяем, есть ли STATUS_CHOICES в самой модели
         if hasattr(model_admin.model, 'STATUS_CHOICES'):
             status_choices = model_admin.model.STATUS_CHOICES
@@ -31,13 +29,13 @@ class MultiStatusFilter(SimpleListFilter):
                     status_choices = Container.STATUS_CHOICES
             except ImportError:
                 pass
-        
+
         if status_choices:
             choices = []
             for status_code, status_name in status_choices:
                 choices.append((status_code, status_name))
             return choices
-        
+
         # Если ничего не найдено, получаем из данных
         statuses = model_admin.model.objects.values_list('status', flat=True).distinct().order_by('status')
         choices = []
@@ -62,7 +60,7 @@ class MultiStatusFilter(SimpleListFilter):
             current_selections = []
         else:
             current_selections = request.GET.getlist(self.parameter_name)
-        
+
         for lookup, title in self.lookup_choices:
             yield {
                 'selected': lookup in current_selections,
@@ -102,7 +100,7 @@ class MultiWarehouseFilter(SimpleListFilter):
             current_selections = []
         else:
             current_selections = request.GET.getlist(self.parameter_name)
-        
+
         for lookup, title in self.lookup_choices:
             yield {
                 'selected': lookup in current_selections,
@@ -131,13 +129,13 @@ class ClientAutocompleteFilter(SimpleListFilter):
 
     def choices(self, changelist):
         clients_data = [{'id': str(pk), 'text': name} for pk, name in self.lookup_choices]
-        
+
         current_value = self.value()
         current_text = ''
         if current_value:
             lookup = {str(pk): name for pk, name in self.lookup_choices}
             current_text = lookup.get(str(current_value), '')
-        
+
         yield {
             'selected': current_value is None,
             'query_string': changelist.get_query_string(remove=[self.parameter_name]),

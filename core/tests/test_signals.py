@@ -4,12 +4,10 @@
 Проверяет thread-safe хранение старых значений на экземплярах (а не в глобальных dict).
 Запуск: python manage.py test core.tests.test_signals
 """
-from decimal import Decimal
-from unittest.mock import patch
 from django.test import TestCase
 from django.utils import timezone
 
-from core.models import Car, Container, Warehouse, Line, Company
+from core.models import Car, Container, Line, Warehouse
 
 
 class ContainerPreSaveSignalTest(TestCase):
@@ -29,7 +27,7 @@ class ContainerPreSaveSignalTest(TestCase):
         # При изменении статуса - pre_save сохранит старые значения
         container.status = "IN_PORT"
         container.save()
-        
+
         # После save, _pre_save_values должен быть очищен
         self.assertIsNone(getattr(container, '_pre_save_values', None))
 
@@ -44,7 +42,7 @@ class ContainerPreSaveSignalTest(TestCase):
         container.warehouse = self.warehouse
         container.unload_date = timezone.now().date()
         container.save()
-        
+
         container.refresh_from_db()
         self.assertIsNotNone(container.unloaded_status_at)
 
@@ -73,6 +71,6 @@ class CarPreSaveContractorSignalTest(TestCase):
         # Меняем склад
         car.warehouse = self.warehouse2
         car.save()
-        
+
         # _pre_save_contractors должен быть очищен после save
         self.assertIsNone(getattr(car, '_pre_save_contractors', None))

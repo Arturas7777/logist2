@@ -3,17 +3,24 @@ import logging
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
+from django.contrib import admin, messages
+from django.contrib.admin.views.decorators import staff_member_required
 from django.db import transaction as db_transaction
 from django.http import JsonResponse
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.admin.views.decorators import staff_member_required
-from django.contrib import messages, admin
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
-from core.models import Car, Container, Client, Company
+from core.models import Client, Company, Container
 from core.models_billing import (
-    NewInvoice as Invoice, Transaction as Payment,
-    PersonalCard, PersonalTransfer, ExpenseCategory,
+    ExpenseCategory,
+    PersonalCard,
+    PersonalTransfer,
+)
+from core.models_billing import (
+    NewInvoice as Invoice,
+)
+from core.models_billing import (
+    Transaction as Payment,
 )
 from core.services.billing_service import BillingService
 
@@ -58,7 +65,7 @@ def register_payment(request):
             if invoice:
                 if not payer:
                     payer = invoice.recipient
-                result = BillingService.pay_invoice(
+                BillingService.pay_invoice(
                     invoice=invoice,
                     amount=amount,
                     method=method,
@@ -99,6 +106,7 @@ def register_payment(request):
 @staff_member_required
 def company_dashboard(request):
     from django.contrib import admin
+
     from core.services.dashboard_service import DashboardService
 
     service = DashboardService()
@@ -124,7 +132,6 @@ def company_dashboard(request):
 @staff_member_required
 def get_container_photos_json(request, container_id):
     try:
-        from core.models_website import ContainerPhoto
 
         container = Container.objects.get(id=container_id)
 
@@ -211,7 +218,7 @@ def _ensure_personal_categories():
 @staff_member_required
 def add_cash_expense(request):
     """Quick form to record a personal cash expense."""
-    from core.models_billing import Transaction, ExpenseCategory
+    from core.models_billing import ExpenseCategory, Transaction
 
     _ensure_personal_categories()
 
@@ -333,14 +340,14 @@ def cash_wallet_reset(request):
                 return redirect('company_dashboard')
 
             if diff > 0:
-                tx = Transaction.objects.create(
+                Transaction.objects.create(
                     type='ADJUSTMENT', method='CASH', amount=abs(diff),
                     currency='EUR', to_company=company,
                     description='Сверка кошелька — корректировка вверх',
                     status='COMPLETED', date=timezone.now(),
                 )
             else:
-                tx = Transaction.objects.create(
+                Transaction.objects.create(
                     type='ADJUSTMENT', method='CASH', amount=abs(diff),
                     currency='EUR', from_company=company,
                     description='Сверка кошелька — корректировка вниз',
@@ -365,7 +372,8 @@ def cash_wallet_reset(request):
 def expense_analytics(request):
     """Personal expense analytics page with charts and AI insights."""
     import json
-    from core.models_billing import Transaction, ExpenseCategory
+
+    from core.models_billing import ExpenseCategory, Transaction
     from core.services.expense_analytics_service import ExpenseAnalyticsService
 
     period = request.GET.get('period', '3m')
@@ -418,7 +426,7 @@ def expense_analytics(request):
 @staff_member_required
 def upload_expense_receipt(request, tx_id):
     """Upload a receipt photo for an existing personal expense transaction."""
-    from core.models_billing import Transaction, ExpenseCategory
+    from core.models_billing import ExpenseCategory, Transaction
 
     personal_cats = list(
         ExpenseCategory.objects.filter(category_type='PERSONAL')

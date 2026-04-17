@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import shutil
-from typing import Optional, Tuple
 
 from django.conf import settings
 from django.core.management.base import BaseCommand

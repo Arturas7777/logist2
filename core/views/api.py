@@ -1,25 +1,34 @@
 """JSON API endpoints consumed by admin JS and templates."""
-import re
 import json
 import logging
+import re
 from datetime import timedelta
 from decimal import Decimal
 from typing import Optional
 
-from django.http import HttpResponse, JsonResponse
-from django.views.decorators.http import require_GET
-from django.utils import timezone
-from django.template.loader import render_to_string
-from django.db.models import Q, Sum
-from django.core.cache import cache
 from django.contrib.admin.views.decorators import staff_member_required
+from django.core.cache import cache
+from django.db.models import Q, Sum
+from django.http import HttpResponse, JsonResponse
+from django.template.loader import render_to_string
+from django.utils import timezone
+from django.views.decorators.http import require_GET
 
-from core.models import (
-    Car, Container, Client, Warehouse, Line, Company, Carrier,
-    CarService, WarehouseService, LineService, CarrierService, CompanyService,
-)
-from core.models_billing import NewInvoice as Invoice, Transaction as Payment
 from core.cache_utils import CACHE_TIMEOUTS
+from core.models import (
+    Car,
+    Carrier,
+    CarrierService,
+    CarService,
+    Client,
+    Company,
+    CompanyService,
+    Container,
+    Line,
+    LineService,
+    Warehouse,
+    WarehouseService,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -526,7 +535,7 @@ def add_services(request, car_id):
 
         added_count = 0
         if to_create:
-            created = CarService.objects.bulk_create(to_create, ignore_conflicts=True)
+            CarService.objects.bulk_create(to_create, ignore_conflicts=True)
             added_count = CarService.objects.filter(
                 car=car, service_type=service_type_upper,
                 service_id__in=[s.service_id for s in to_create]

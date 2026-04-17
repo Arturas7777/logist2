@@ -21,3 +21,12 @@ build/
 .cursor/
 agent-transcripts/
 terminals/
+
+# Local data and debug scripts (not for image)
+data/
+scripts/debug/_*.py
+_*.py
+
+# Tests / docs (не нужны в runtime-образе)
+core/tests/
+docs/

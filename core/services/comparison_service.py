@@ -2,33 +2,35 @@
 Сервис для автоматического сравнения сумм между расчетами и счетами склада
 """
 
-from decimal import Decimal
-from django.db import models
-from django.db.models import Sum, Q, Count
-from django.utils import timezone
-from datetime import timedelta
-from typing import Dict, List, Any
 import logging
+from datetime import timedelta
+from decimal import Decimal
+from typing import Any, Dict, List
 
-from ..models import Car, Warehouse, Client, Company
-from ..models_billing import NewInvoice as Invoice, Transaction as Payment
+from django.db import models
+from django.db.models import Count, Q, Sum
+from django.utils import timezone
+
+from ..models import Car, Client, Warehouse
+from ..models_billing import NewInvoice as Invoice
+from ..models_billing import Transaction as Payment
 
 logger = logging.getLogger(__name__)
 
 
 class ComparisonService:
     """Сервис для сравнения сумм между расчетами и счетами склада"""
-    
+
     def __init__(self):
         self.tolerance = Decimal('0.01')  # Допустимая разница в 1 цент
-    
+
     def compare_car_costs_with_warehouse_invoices(self, car: Car) -> Dict[str, Any]:
         """
         Сравнивает стоимость автомобиля с инвойсами склада
-        
+
         Args:
             car: Автомобиль для сравнения
-            
+
         Returns:
             Словарь с результатами сравнения
         """
@@ -41,22 +43,22 @@ class ComparisonService:
                 'warehouse_invoices_total': 0,
                 'difference': 0
             }
-        
+
         # Получаем общую стоимость автомобиля
         car_total_cost = car.total_price or Decimal('0.00')
-        
+
         warehouse_invoices = Invoice.objects.filter(
             cars=car,
             issuer_warehouse=car.warehouse,
         )
-        
+
         warehouse_invoices_total = warehouse_invoices.aggregate(
             total=Sum('total')
         )['total'] or Decimal('0.00')
-        
+
         # Вычисляем разницу
         difference = car_total_cost - warehouse_invoices_total
-        
+
         # Определяем статус
         if abs(difference) <= self.tolerance:
             status = 'match'
@@ -67,7 +69,7 @@ class ComparisonService:
         else:
             status = 'warehouse_higher'
             message = f'Стоимость склада выше на {abs(difference):.2f} €'
-        
+
         return {
             'status': status,
             'message': message,
@@ -80,31 +82,31 @@ class ComparisonService:
             'warehouse_name': car.warehouse.name,
             'invoices_count': warehouse_invoices.count()
         }
-    
-    def compare_client_costs_with_warehouse_invoices(self, client: Client, 
-                                                   start_date=None, 
+
+    def compare_client_costs_with_warehouse_invoices(self, client: Client,
+                                                   start_date=None,
                                                    end_date=None) -> Dict[str, Any]:
         """
         Сравнивает общую стоимость автомобилей клиента с инвойсами склада
-        
+
         Args:
             client: Клиент для сравнения
             start_date: Начальная дата (опционально)
             end_date: Конечная дата (опционально)
-            
+
         Returns:
             Словарь с результатами сравнения
         """
         # Получаем автомобили клиента
         cars_query = Car.objects.filter(client=client)
-        
+
         if start_date:
             cars_query = cars_query.filter(unload_date__gte=start_date)
         if end_date:
             cars_query = cars_query.filter(unload_date__lte=end_date)
-        
+
         cars = cars_query.all()
-        
+
         if not cars.exists():
             return {
                 'status': 'no_data',
@@ -114,7 +116,7 @@ class ComparisonService:
                 'warehouse_invoices_total': 0,
                 'difference': 0
             }
-        
+
         agg = cars_query.aggregate(
             total_cost=Sum('total_price'),
             cars_count=models.Count('id')
@@ -168,32 +170,32 @@ class ComparisonService:
                 'end_date': end_date
             }
         }
-    
-    def compare_warehouse_costs_with_payments(self, warehouse: Warehouse, 
-                                            start_date=None, 
+
+    def compare_warehouse_costs_with_payments(self, warehouse: Warehouse,
+                                            start_date=None,
                                             end_date=None) -> Dict[str, Any]:
         """
         Сравнивает стоимость услуг склада с фактическими платежами
-        
+
         Args:
             warehouse: Склад для сравнения
             start_date: Начальная дата (опционально)
             end_date: Конечная дата (опционально)
-            
+
         Returns:
             Словарь с результатами сравнения
         """
         invoices_query = Invoice.objects.filter(
             issuer_warehouse=warehouse,
         )
-        
+
         if start_date:
             invoices_query = invoices_query.filter(date__gte=start_date)
         if end_date:
             invoices_query = invoices_query.filter(date__lte=end_date)
-        
+
         invoices = invoices_query.all()
-        
+
         if not invoices.exists():
             return {
                 'status': 'no_data',
@@ -203,29 +205,29 @@ class ComparisonService:
                 'payments_total': 0,
                 'difference': 0
             }
-        
+
         # Суммируем стоимость всех инвойсов склада
         invoices_total = invoices.aggregate(
             total=Sum('total')
         )['total'] or Decimal('0.00')
-        
+
         # Получаем все платежи складу
         payments_query = Payment.objects.filter(
             to_warehouse=warehouse
         )
-        
+
         if start_date:
             payments_query = payments_query.filter(date__gte=start_date)
         if end_date:
             payments_query = payments_query.filter(date__lte=end_date)
-        
+
         payments_total = payments_query.aggregate(
             total=Sum('amount')
         )['total'] or Decimal('0.00')
-        
+
         # Вычисляем разницу
         difference = invoices_total - payments_total
-        
+
         # Определяем статус
         if abs(difference) <= self.tolerance:
             status = 'match'
@@ -236,7 +238,7 @@ class ComparisonService:
         else:
             status = 'payments_higher'
             message = f'Сумма платежей выше на {abs(difference):.2f} €'
-        
+
         return {
             'status': status,
             'message': message,
@@ -251,15 +253,15 @@ class ComparisonService:
                 'end_date': end_date
             }
         }
-    
+
     def get_comparison_report(self, start_date=None, end_date=None) -> Dict[str, Any]:
         """
         Генерирует общий отчет по сравнению сумм
-        
+
         Args:
             start_date: Начальная дата (опционально)
             end_date: Конечная дата (опционально)
-            
+
         Returns:
             Словарь с общим отчетом
         """
@@ -267,7 +269,7 @@ class ComparisonService:
             start_date = timezone.now().date() - timedelta(days=30)
         if not end_date:
             end_date = timezone.now().date()
-        
+
         cars_agg = Car.objects.filter(
             unload_date__gte=start_date, unload_date__lte=end_date
         ).aggregate(
@@ -312,7 +314,7 @@ class ComparisonService:
             },
             'status': 'success'
         }
-    
+
     def batch_compare_clients(self, start_date=None, end_date=None) -> List[Dict[str, Any]]:
         """Batch comparison for all clients with cars — 2-3 SQL queries instead of N+1."""
         car_filters = Q(unload_date__isnull=False)
@@ -433,11 +435,11 @@ class ComparisonService:
     def find_discrepancies(self, start_date=None, end_date=None) -> List[Dict[str, Any]]:
         """
         Находит расхождения в суммах
-        
+
         Args:
             start_date: Начальная дата (опционально)
             end_date: Конечная дата (опционально)
-            
+
         Returns:
             Список расхождений
         """

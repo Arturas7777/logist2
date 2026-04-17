@@ -2,10 +2,11 @@
 Оптимизированные менеджеры для моделей с улучшенными запросами
 """
 
-from django.db import models
-from django.db.models import Prefetch, Q, Sum, Count, Avg
-from django.utils import timezone
 from datetime import timedelta
+
+from django.db import models
+from django.db.models import Avg, Count, Q, Sum
+from django.utils import timezone
 
 
 class OptimizedCarManager(models.Manager):

@@ -1,7 +1,9 @@
-from django.core.management.base import BaseCommand
-from core.models_website import ContainerPhoto
 import os
+
 from django.conf import settings
+from django.core.management.base import BaseCommand
+
+from core.models_website import ContainerPhoto
 
 
 class Command(BaseCommand):
@@ -21,31 +23,31 @@ class Command(BaseCommand):
         else:
             photos = ContainerPhoto.objects.all()
             self.stdout.write("Исправляем все фотографии...")
-        
+
         updated_count = 0
 
         for photo in photos:
             if photo.photo and photo.photo.name:
                 # Получаем имя файла из базы данных
                 filename_in_db = os.path.basename(photo.photo.name)
-                
+
                 # Проверяем, есть ли суффикс в имени файла
                 if '_' in filename_in_db and '.' in filename_in_db:
                     parts = filename_in_db.split('.')
                     name_without_suffix = parts[0]
-                    
+
                     # Ищем суффикс (последний _ и 7 символов после него)
                     if '_' in name_without_suffix:
                         base_name_parts = name_without_suffix.rsplit('_', 1)
                         if len(base_name_parts) > 1 and len(base_name_parts[1]) == 7:
                             # Создаем правильное имя без суффикса
                             correct_name = f"{base_name_parts[0]}.{parts[-1]}"
-                            
+
                             # Проверяем, существует ли файл с правильным именем
                             photo_dir = os.path.dirname(photo.photo.name)
                             correct_path = os.path.join(photo_dir, correct_name)
                             full_correct_path = os.path.join(settings.MEDIA_ROOT, correct_path)
-                            
+
                             if os.path.exists(full_correct_path):
                                 # Обновляем запись в базе данных
                                 old_name = photo.photo.name

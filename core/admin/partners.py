@@ -1,28 +1,40 @@
 import logging
+from datetime import datetime
+from decimal import Decimal
 
 from django.contrib import admin, messages
-from django.utils import timezone
-from django.utils.html import format_html
-from django.utils.safestring import mark_safe
+from django.db import models
 from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import render
-from django.urls import reverse, path
-from django.db import models
-from decimal import Decimal
-from datetime import datetime
+from django.urls import path, reverse
+from django.utils import timezone
+from django.utils.html import format_html
 
+from core.admin.inlines import (
+    CarrierDriverInline,
+    CarrierServiceInline,
+    CarrierTruckInline,
+    ClientTariffRateInline,
+    CompanyServiceInline,
+    LineServiceInline,
+    LineTHSCoefficientInline,
+    WarehouseServiceInline,
+)
+from core.forms import CarrierForm, LineForm
 from core.models import (
-    Client, Warehouse, Car, Container, Line, Company, Carrier,
-    LineService, CarrierService, WarehouseService, CompanyService,
-    CarService, AutoTransport, CarrierTruck, CarrierDriver,
+    AutoTransport,
+    Car,
+    Carrier,
+    CarrierService,
+    Client,
+    Company,
+    Container,
+    Line,
+    LineService,
+    Warehouse,
+    WarehouseService,
 )
 from core.models_billing import NewInvoice
-from core.forms import LineForm, CarrierForm, WarehouseForm
-from core.admin.inlines import (
-    WarehouseServiceInline, LineServiceInline, LineTHSCoefficientInline,
-    CarrierServiceInline, CarrierTruckInline, CarrierDriverInline,
-    CompanyServiceInline, ClientTariffRateInline,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +174,7 @@ class WarehouseAdmin(admin.ModelAdmin):
     def reset_warehouse_balance(self, request, queryset):
         """Recalculates balances for selected warehouses from transaction history."""
         from django.contrib import messages
+
         from core.models_billing import Transaction
 
         try:
@@ -355,7 +368,7 @@ class ClientAdmin(admin.ModelAdmin):
         """Shows balance status with colored badge"""
         status = obj.balance_status
         color = obj.balance_color
-        bg_color = color.replace('#', '')
+        color.replace('#', '')
 
         return format_html(
             '<span style="background-color:{}; color:white; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">{}</span>',
@@ -557,9 +570,9 @@ class ClientAdmin(admin.ModelAdmin):
 
     def topup_balance_view(self, request, client_id):
         """Balance top-up page for client"""
-        from django.shortcuts import render, redirect
         from django.contrib import messages
-        from decimal import Decimal
+        from django.shortcuts import redirect, render
+
         from core.services.billing_service import BillingService
 
         client = Client.objects.get(pk=client_id)
@@ -601,9 +614,9 @@ class ClientAdmin(admin.ModelAdmin):
 
     def reset_balance_view(self, request, client_id):
         """Reset client balance by creating an adjustment transaction (POST only)."""
-        from django.shortcuts import redirect
         from django.contrib import messages
-        from decimal import Decimal
+        from django.shortcuts import redirect
+
         from core.services.billing_service import BillingService
 
         client = Client.objects.get(pk=client_id)
@@ -631,8 +644,9 @@ class ClientAdmin(admin.ModelAdmin):
 
     def recalc_balance_view(self, request, client_id):
         """Recalculate client balance using canonical logic (sum all COMPLETED transactions)."""
-        from django.shortcuts import redirect
         from django.contrib import messages
+        from django.shortcuts import redirect
+
         from core.models_billing import Transaction
 
         client = Client.objects.get(pk=client_id)
@@ -651,7 +665,6 @@ class ClientAdmin(admin.ModelAdmin):
     def cars_in_warehouse_view(self, request, client_id):
         """Shows list of all client's unloaded cars in warehouse"""
         from django.shortcuts import render
-        from django.http import JsonResponse
 
         client = Client.objects.get(pk=client_id)
 
@@ -1003,7 +1016,7 @@ class LineAdmin(admin.ModelAdmin):
                 '<span style="color:{}; font-weight:bold;">{} {:.2f}</span>',
                 color, sign, balance
             )
-        except Exception as e:
+        except Exception:
             return '-'
     balance_display.short_description = 'Баланс'
 
@@ -1034,12 +1047,17 @@ class LineAdmin(admin.ModelAdmin):
 
     def recalculate_ths_view(self, request, object_id):
         """Recalculates THS for all line cars with UNLOADED and IN_PORT status"""
-        from django.contrib import messages
-        from django.shortcuts import redirect
-        from django.db import transaction
-        from core.models import Container, Car, Line
-        from core.services.car_service_manager import create_ths_services_for_container, apply_client_tariffs_for_container
         import logging
+
+        from django.contrib import messages
+        from django.db import transaction
+        from django.shortcuts import redirect
+
+        from core.models import Line
+        from core.services.car_service_manager import (
+            apply_client_tariffs_for_container,
+            create_ths_services_for_container,
+        )
         logger = logging.getLogger(__name__)
 
         logger.info(f"=== RECALCULATE THS VIEW CALLED === object_id={object_id}")

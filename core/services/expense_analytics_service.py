@@ -13,7 +13,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.core.cache import cache
-from django.db.models import Sum, Count
+from django.db.models import Count, Sum
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ class ExpenseAnalyticsService:
         self.company = company or Company.objects.filter(name__icontains='Caromoto').first()
 
     def _base_queryset(self, period='1m'):
-        from core.models_billing import Transaction, ExpenseCategory
+        from core.models_billing import ExpenseCategory, Transaction
 
         personal_cats = list(ExpenseCategory.objects.filter(
             category_type='PERSONAL'
@@ -82,8 +82,9 @@ class ExpenseAnalyticsService:
 
     def get_monthly_trend(self, months=6):
         """Returns list of {month: 'YYYY-MM', total: float} for the last N months."""
-        from core.models_billing import Transaction, ExpenseCategory
         from django.db.models.functions import TruncMonth
+
+        from core.models_billing import ExpenseCategory, Transaction
 
         personal_cats = list(ExpenseCategory.objects.filter(
             category_type='PERSONAL'

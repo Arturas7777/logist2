@@ -12,10 +12,9 @@
                     TrackingRequest, NotificationLog
 """
 
-from django.contrib.admin import AdminSite as BaseAdminSite
-from django.urls import reverse, NoReverseMatch
 from collections import OrderedDict
 
+from django.contrib.admin import AdminSite as BaseAdminSite
 
 # ── Иконки моделей (Bootstrap Icons) ────────────────────────────────────────
 MODEL_ICONS = {

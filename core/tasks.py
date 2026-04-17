@@ -1,4 +1,5 @@
 import logging
+
 from celery import shared_task
 from django.utils import timezone
 
@@ -97,10 +98,12 @@ def check_balance_consistency(self):
     с подзапросами.
     """
     from decimal import Decimal
-    from django.db.models import Sum, Q, DecimalField, Value
+
+    from django.db.models import DecimalField, Q, Sum, Value
     from django.db.models.functions import Coalesce
-    from core.models import Client, Warehouse, Line, Company, Carrier
-    from core.models_billing import Transaction, NewInvoice
+
+    from core.models import Carrier, Client, Company, Line, Warehouse
+    from core.models_billing import NewInvoice, Transaction
 
     mismatches = []
     ZERO = Decimal('0.00')
@@ -215,10 +218,11 @@ def sync_sitepro_invoices(self):
     Periodic task: sync new invoices to site.pro and pull updated payment status.
     Runs daily via celery beat.
     """
+    from decimal import Decimal
+
     from core.models_accounting import SiteProConnection, SiteProInvoiceSync
     from core.models_billing import NewInvoice
     from core.services.sitepro_service import SiteProService
-    from decimal import Decimal
 
     conn = SiteProConnection.objects.filter(is_active=True).first()
     if not conn:
@@ -288,10 +292,10 @@ def sync_bank_and_reconcile(self):
     2. Outgoing reconciliation (we pay suppliers — match by external_number)
     3. Incoming reconciliation (clients pay us — match by invoice number/name+amount)
     """
-    from core.models_banking import BankConnection
-    from core.services.revolut_service import RevolutService
-    from core.services.billing_service import BillingService
     from core.management.commands.auto_reconcile import reconcile_incoming_payments
+    from core.models_banking import BankConnection
+    from core.services.billing_service import BillingService
+    from core.services.revolut_service import RevolutService
 
     total_transactions = 0
     errors = 0
@@ -361,7 +365,7 @@ def parse_receipt_task(self, transaction_id):
 @shared_task(bind=True, max_retries=0, time_limit=600)
 def parse_pending_receipts(self):
     """Fallback: parse receipts that were missed (have attachment but no receipt_data)."""
-    from core.models_billing import Transaction, ExpenseCategory
+    from core.models_billing import ExpenseCategory, Transaction
 
     personal_cats = list(ExpenseCategory.objects.filter(
         category_type='PERSONAL'
@@ -446,9 +450,9 @@ def push_invoice_to_sitepro_task(self, invoice_id):
     Выносит внешний HTTP-вызов из request cycle в фон, чтобы админка
     не ждала сетевого ответа site.pro при сохранении инвойса.
     """
+    from core.models_accounting import SiteProConnection
     from core.models_billing import NewInvoice
     from core.services.sitepro_service import SiteProService
-    from core.models_accounting import SiteProConnection
 
     try:
         invoice = NewInvoice.objects.get(pk=invoice_id)

@@ -5,10 +5,10 @@ from typing import Dict, Optional
 
 from django.conf import settings
 
-from core.models import Car, Carrier, Company, Container, Line, Warehouse, WarehouseService, CarService
+from core.models import Car, Carrier, CarService, Company, Container, Line, Warehouse, WarehouseService
 from core.models_billing import NewInvoice
-from core.models_website import ContainerPhoto, CarPhoto
-from core.services.ai_chat_service import _call_ai_api, AIServiceError
+from core.models_website import CarPhoto, ContainerPhoto
+from core.services.ai_chat_service import AIServiceError, _call_ai_api
 from core.services.ai_rag import build_rag_snippets
 
 logger = logging.getLogger(__name__)
@@ -236,8 +236,9 @@ def _diagnose_car(car: Car) -> list:
         if not car.warehouse:
             issues.append("Есть платные дни, но склад не указан.")
         else:
-            from core.service_codes import ServiceCode
             from django.db.models import Q
+
+            from core.service_codes import ServiceCode
             storage_service = WarehouseService.objects.filter(
                 warehouse=car.warehouse,
             ).filter(

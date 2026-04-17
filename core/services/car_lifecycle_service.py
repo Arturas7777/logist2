@@ -6,11 +6,10 @@ Call ``after_car_save()`` from model ``save()`` or admin ``save_model()``
 instead of scattering logic across signals and the model itself.
 """
 import logging
-from decimal import Decimal
 
-from django.db import transaction
-from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+from django.db import transaction
 
 logger = logging.getLogger(__name__)
 

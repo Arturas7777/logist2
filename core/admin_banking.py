@@ -4,14 +4,13 @@ Django Admin для банковских интеграций (Revolut и др.)
 import logging
 from decimal import Decimal
 
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
 from django.utils.html import format_html
-from django.contrib import messages
-from django.db import transaction
 
-from .models_banking import BankConnection, BankAccount, BankTransaction
+from .models_banking import BankAccount, BankConnection, BankTransaction
 
 logger = logging.getLogger(__name__)
 
@@ -329,7 +328,6 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
     display_amount.admin_order_field = 'amount'
 
     def display_counterparty(self, obj):
-        from django.utils.safestring import mark_safe
         name = obj.counterparty_name or ''
         if not name:
             return format_html('<span style="color:#9898b0;">—</span>')
@@ -503,8 +501,8 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
         Если у банковской транзакции уже есть чек из Revolut (receipt_file),
         он автоматически прикрепляется к новому инвойсу при создании FACT.
         """
-        from core.models_billing import NewInvoice, InvoiceItem, ExpenseCategory
-        from core.models import Company, Warehouse, Line, Carrier
+        from core.models import Carrier, Company, Line, Warehouse
+        from core.models_billing import ExpenseCategory, InvoiceItem, NewInvoice
 
         bank_trx = get_object_or_404(BankTransaction, pk=pk)
         expense_amount = abs(bank_trx.amount)
@@ -635,8 +633,9 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
                     invoice.attachment = attachment
                 elif bank_trx.receipt_file:
                     # Автоматически прикрепляем чек, подгруженный из Revolut
-                    from django.core.files.base import ContentFile
                     import os
+
+                    from django.core.files.base import ContentFile
                     bank_trx.receipt_file.open('rb')
                     try:
                         content = bank_trx.receipt_file.read()
@@ -694,9 +693,10 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
         - Предпочтение сериям FACT / INVOICE_FACT
         - Сортировка: сначала совпадение по имени контрагента, затем по дате
         """
-        from core.models_billing import NewInvoice
+        from django.db.models import F
+
         from core.models import Company
-        from django.db.models import F, Q
+        from core.models_billing import NewInvoice
 
         caromoto = Company.get_default()
         if not caromoto:
@@ -748,8 +748,9 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
     @admin.action(description='Привязать к инвойсу')
     def link_to_invoice(self, request, queryset):
         """Привязка выбранных транзакций к конкретному инвойсу через промежуточную страницу"""
-        from core.models_billing import NewInvoice, Transaction as BillingTransaction
         from core.models import Company
+        from core.models_billing import NewInvoice
+        from core.models_billing import Transaction as BillingTransaction
 
         eligible = queryset.filter(
             matched_invoice__isnull=True,
@@ -838,7 +839,7 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
     @admin.action(description='Подгрузить чеки из Revolut')
     def download_revolut_receipts(self, request, queryset):
         """Массово подтягивает expenses/чеки из Revolut для выбранных транзакций."""
-        from core.services.revolut_service import RevolutService, RevolutAPIError
+        from core.services.revolut_service import RevolutAPIError, RevolutService
 
         connections = {}
         for bt in queryset.select_related('connection'):
@@ -884,8 +885,8 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
     @admin.action(description='Создать расходы (массово)')
     def create_expenses_bulk(self, request, queryset):
         """Массовое создание расходов из банковских транзакций"""
-        from core.models_billing import NewInvoice, InvoiceItem, ExpenseCategory
         from core.models import Company
+        from core.models_billing import ExpenseCategory, InvoiceItem, NewInvoice
 
         # Фильтруем только несопоставленные транзакции
         eligible = queryset.filter(

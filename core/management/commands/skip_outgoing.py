@@ -23,7 +23,6 @@ from django.core.management.base import BaseCommand
 
 from core.models_banking import BankTransaction
 
-
 SKIP_RULES = [
     # (category_label, matching_function)
     ('Комиссия Revolut', lambda bt: bool(re.search(

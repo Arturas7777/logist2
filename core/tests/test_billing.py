@@ -3,13 +3,12 @@
 
 Запуск: python manage.py test core.tests.test_billing
 """
-from decimal import Decimal
-from django.test import TestCase
 from django.core.exceptions import ValidationError
+from django.test import TestCase
 from django.utils import timezone
 
-from core.models import Company, Client, Warehouse, Line
-from core.models_billing import NewInvoice, InvoiceItem, ExpenseCategory
+from core.models import Client, Company, Warehouse
+from core.models_billing import NewInvoice
 
 
 class NewInvoiceValidationTest(TestCase):

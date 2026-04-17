@@ -4,7 +4,6 @@
 Создает архив с необходимыми файлами
 """
 
-import os
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -58,7 +57,7 @@ EXCLUDE_PATTERNS = [
 def should_exclude(file_path):
     """Проверка, нужно ли исключить файл"""
     path_str = str(file_path)
-    
+
     # Проверяем паттерны исключения
     for pattern in EXCLUDE_PATTERNS:
         if pattern.startswith('*'):
@@ -66,7 +65,7 @@ def should_exclude(file_path):
                 return True
         elif pattern in path_str:
             return True
-    
+
     return False
 
 def create_deployment_archive():
@@ -75,24 +74,24 @@ def create_deployment_archive():
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     archive_name = f'logist2_deploy_{timestamp}.zip'
     archive_path = base_dir / archive_name
-    
+
     print(f"[*] Sozdanie arhiva dlya deploya: {archive_name}")
     print("=" * 60)
-    
+
     files_added = 0
-    
+
     with zipfile.ZipFile(archive_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
         # Dobavlyaem fajly po patternам
         for pattern in INCLUDE_PATTERNS:
             path = base_dir / pattern
-            
+
             if path.is_file():
                 if not should_exclude(path):
                     arcname = path.relative_to(base_dir)
                     zipf.write(path, arcname)
                     files_added += 1
                     print(f"[+] Dobavlen fajl: {arcname}")
-            
+
             elif path.is_dir():
                 for file_path in path.rglob('*'):
                     if file_path.is_file() and not should_exclude(file_path):
@@ -100,9 +99,9 @@ def create_deployment_archive():
                         zipf.write(file_path, arcname)
                         files_added += 1
                         print(f"[+] Dobavlen fajl: {arcname}")
-    
+
     archive_size = archive_path.stat().st_size / (1024 * 1024)  # MB
-    
+
     print("=" * 60)
     print(f"[OK] Arhiv sozdan uspeshno!")
     print(f"[FILE] {archive_path}")
@@ -117,7 +116,7 @@ def create_deployment_archive():
     print(f"   cd /var/www && unzip {archive_name}")
     print()
     print("3. Sledujte instrukciyam v DEPLOY_INSTRUCTIONS.md")
-    
+
     return archive_path
 
 if __name__ == '__main__':

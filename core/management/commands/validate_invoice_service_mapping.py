@@ -17,7 +17,6 @@ import sys
 
 from django.core.management.base import BaseCommand, CommandError
 
-
 PROVIDER_MODEL_MAP = {
     'WAREHOUSE': ('core', 'Warehouse', 'WarehouseService'),
     'LINE':      ('core', 'Line',      'LineService'),

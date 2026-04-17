@@ -19,14 +19,14 @@
     python manage.py setup_revolut
 """
 
-import json
 import base64
-import time
-import hashlib
-import requests
-from pathlib import Path
-from django.core.management.base import BaseCommand
+import json
 import logging
+import time
+from pathlib import Path
+
+import requests
+from django.core.management.base import BaseCommand
 
 logger = logging.getLogger(__name__)
 
@@ -155,10 +155,12 @@ class Command(BaseCommand):
         # ── Шаг 6: Сохраняем в БД ──
         self.stdout.write(self.style.MIGRATE_HEADING('Шаг 6: Сохранение в BankConnection'))
 
-        from core.models_banking import BankConnection
-        from core.models import Company
-        from django.utils import timezone
         from datetime import timedelta
+
+        from django.utils import timezone
+
+        from core.models import Company
+        from core.models_banking import BankConnection
 
         company = Company.objects.filter(name__icontains='Caromoto').first()
         if not company:
@@ -219,11 +221,11 @@ class Command(BaseCommand):
 
     def _generate_jwt(self, private_key_path: str, client_id: str, redirect_uri: str) -> str:
         """Генерирует JWT (client assertion) для Revolut API."""
-        from cryptography.hazmat.primitives import hashes, serialization
-        from cryptography.hazmat.primitives.asymmetric import padding
-
         # Извлекаем домен из redirect URI для iss
         from urllib.parse import urlparse
+
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import padding
         iss = urlparse(redirect_uri).hostname or 'localhost'
 
         # JWT Header

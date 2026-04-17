@@ -17,8 +17,8 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from core.models import Company
-from core.models_banking import BankConnection, BankTransaction
 from core.models_accounting import SiteProConnection
+from core.models_banking import BankConnection, BankTransaction
 from core.services.sitepro_service import SiteProService
 
 
@@ -88,7 +88,6 @@ class Command(BaseCommand):
 
         total_created = 0
         total_updated = 0
-        total_skipped = 0
 
         for t in paysera_txns:
             bank_name = t.get('accountingBankInternalName', 'Paysera')

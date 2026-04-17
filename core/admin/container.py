@@ -1,29 +1,28 @@
-import json
 import logging
 import time
 from contextlib import contextmanager
 
 from django.contrib import admin
 from django.db import transaction
-from django.db.models import Q
-from django.db.models.signals import post_save, post_delete
-from django.contrib.admin import SimpleListFilter
+from django.db.models.signals import post_delete, post_save
 from django.utils.html import format_html
-from decimal import Decimal
 
+from core.admin.inlines import CarInline
+from core.admin_filters import ClientAutocompleteFilter, MultiStatusFilter, MultiWarehouseFilter
 from core.models import (
-    Car, Container, CarService, WarehouseService, LineService,
-    CarrierService, CompanyService,
+    Car,
+    CarService,
+    Container,
+    LineService,
+    WarehouseService,
 )
 from core.signals import (
-    recalculate_car_price_on_service_save,
-    recalculate_car_price_on_service_delete,
     car_post_save,
-    recalculate_invoices_on_car_service_save,
+    recalculate_car_price_on_service_delete,
+    recalculate_car_price_on_service_save,
     recalculate_invoices_on_car_service_delete,
+    recalculate_invoices_on_car_service_save,
 )
-from core.admin_filters import MultiStatusFilter, MultiWarehouseFilter, ClientAutocompleteFilter
-from core.admin.inlines import CarInline
 
 logger = logging.getLogger(__name__)
 
@@ -201,8 +200,11 @@ class ContainerAdmin(admin.ModelAdmin):
         if should_create_ths:
             line_start = time.time()
             try:
-                from core.services.car_service_manager import create_ths_services_for_container, apply_client_tariffs_for_container
                 from core.models_billing import NewInvoice
+                from core.services.car_service_manager import (
+                    apply_client_tariffs_for_container,
+                    create_ths_services_for_container,
+                )
 
                 logger.info(f"[TIMING] THS-related change started for container {obj.id}, line: {obj.line}, ths: {obj.ths}, ths_payer: {obj.ths_payer}")
 
@@ -322,8 +324,9 @@ class ContainerAdmin(admin.ModelAdmin):
 
                 # For new cars, force create warehouse services with markup
                 if creating and obj.warehouse_id:
-                    from core.models import WarehouseService, CarService
                     from decimal import Decimal
+
+                    from core.models import CarService, WarehouseService
 
                     warehouse_services = WarehouseService.objects.filter(
                         warehouse=obj.warehouse,
@@ -378,8 +381,12 @@ class ContainerAdmin(admin.ModelAdmin):
         # to avoid wiping manual THS edits on unrelated container saves
         if cars_changed and parent.line and parent.ths:
             try:
-                from core.services.car_service_manager import create_ths_services_for_container, apply_client_tariffs_for_container
                 from django.db import transaction
+
+                from core.services.car_service_manager import (
+                    apply_client_tariffs_for_container,
+                    create_ths_services_for_container,
+                )
 
                 # Force refresh container data from DB
                 parent.refresh_from_db()
@@ -523,8 +530,8 @@ class ContainerAdmin(admin.ModelAdmin):
 
                 # Check if all cars are transferred
                 all_transferred = all(car.status == 'TRANSFERRED' for car in cars)
-                transferred_cars_count = sum(1 for car in cars if car.status == 'TRANSFERRED')
-                total_cars_count = cars.count()
+                sum(1 for car in cars if car.status == 'TRANSFERRED')
+                cars.count()
 
                 if all_transferred and container.status != 'TRANSFERRED':
                     old_status = container.status

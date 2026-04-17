@@ -20,13 +20,13 @@ SECURE_HSTS_PRELOAD = True
 SECURE_REFERRER_POLICY = 'same-origin'
 SECURE_CROSS_ORIGIN_OPENER_POLICY = 'same-origin'
 
-# Upload limits
-DATA_UPLOAD_MAX_MEMORY_SIZE = 5242880
-FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880
+# Upload limits — наследуются из base.py (26 MB). Переопределить через env если нужно.
 
 # Session hardening
 SESSION_COOKIE_AGE = 86400
-SESSION_SAVE_EVERY_REQUEST = True
+# SESSION_SAVE_EVERY_REQUEST=True создавало лишнюю нагрузку на Redis.
+# Сессия обновляется на логине/логауте, чего достаточно.
+SESSION_SAVE_EVERY_REQUEST = False
 SESSION_COOKIE_SAMESITE = 'Strict'
 
 # CSRF hardening
