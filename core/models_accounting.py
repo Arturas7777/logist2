@@ -90,7 +90,35 @@ class SiteProConnection(models.Model):
     invoice_series = models.CharField(
         max_length=20, blank=True, default='',
         verbose_name='Серия инвойсов в site.pro',
-        help_text='Серия нумерации инвойсов (например: CAR)',
+        help_text='Серия нумерации инвойсов (например: PARDP). '
+                  'Шлётся текстовым полем series в sales/create.',
+    )
+
+    # --- Справочники site.pro (обязательные в новом API) ---
+    default_warehouse_id = models.IntegerField(
+        null=True, blank=True,
+        verbose_name='Warehouse ID',
+        help_text='ID склада в site.pro (обязательно для sales/create). '
+                  'Узнать через action "Загрузить справочники". Обычно 1 = Pagrindinis.',
+    )
+    default_operation_type_id = models.IntegerField(
+        null=True, blank=True,
+        verbose_name='Operation Type ID',
+        help_text='ID типа операции (обязательно для sales/create). '
+                  'Для продаж обычно 2 = Pardavimai (isSale=True).',
+    )
+    default_series_id = models.IntegerField(
+        null=True, blank=True,
+        verbose_name='Series ID (опц.)',
+        help_text='ID серии в site.pro (опционально). '
+                  'Если не задан, серия шлётся только текстом через invoice_series.',
+    )
+    default_location_id = models.IntegerField(
+        null=True, blank=True,
+        verbose_name='Default Tax Residency',
+        help_text='Тип налогового резидентства по умолчанию для новых клиентов. '
+                  '1 = Lietuva, 2 = Europos Sąjunga, 3 = Trečiosios šalys. '
+                  'Обязательно для clients/create.',
     )
 
     # --- Статус ---
