@@ -86,14 +86,18 @@
 {% block content %}
     <!-- Панель управления балансом -->
     {% if original %}
-    <div style="margin-bottom: 20px; padding: 22px 24px; background: linear-gradient(135deg, {% if original.balance > 0 %}#22c55e, #4ade80{% elif original.balance < 0 %}#ef4444, #f87171{% else %}#6c5ce7, #a78bfa{% endif %}); border-radius: 16px; color: white;">
+    <div style="margin-bottom: 20px; padding: 22px 24px; background: linear-gradient(135deg, {% if original.total_balance > 0 %}#22c55e, #4ade80{% elif original.total_balance < 0 %}#ef4444, #f87171{% else %}#6c5ce7, #a78bfa{% endif %}); border-radius: 16px; color: white;">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
             <div>
                 <div style="font-size: 2em; font-weight: bold;">
-                    {% if original.balance >= 0 %}+{% endif %}{{ original.balance }} €
+                    {% if original.total_balance >= 0 %}+{% endif %}{{ original.total_balance }} €
                 </div>
                 <div style="opacity: 0.9; margin-top: 5px;">
-                    {% if original.balance < 0 %}📉 Долг{% elif original.balance > 0 %}💰 На балансе{% else %}⚖️ Нулевой баланс{% endif %}
+                    {% if original.total_balance < 0 %}📉 Долг{% elif original.total_balance > 0 %}💰 На балансе{% else %}⚖️ Нулевой баланс{% endif %}
+                </div>
+                <div style="opacity: 0.75; margin-top: 8px; font-size: 0.85em;">
+                    Сальдо транзакций: {% if original.balance >= 0 %}+{% endif %}{{ original.balance }} € &nbsp;|&nbsp;
+                    Долг по открытым инвойсам: {{ original.open_invoices_debt }} €
                 </div>
             </div>
             <div style="display: flex; gap: 10px; flex-wrap: wrap;">

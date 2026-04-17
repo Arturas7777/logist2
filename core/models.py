@@ -229,20 +229,53 @@ class Client(BalanceMethodsMixin, models.Model):
         return len(self.get_notification_emails()) > 0
 
     @property
+    def open_invoices_debt(self):
+        """Сумма остатков по открытым (не оплаченным) инвойсам клиента.
+
+        Считаются статусы ISSUED / OVERDUE / PARTIALLY_PAID — то есть все
+        выставленные документы, по которым клиент ещё нам должен.
+        Возвращает положительное число (или 0).
+        """
+        from decimal import Decimal
+
+        from django.db.models import F, Sum
+
+        from core.models_billing import NewInvoice
+
+        total = NewInvoice.objects.filter(
+            recipient_client=self,
+            status__in=['ISSUED', 'OVERDUE', 'PARTIALLY_PAID'],
+        ).aggregate(s=Sum(F('total') - F('paid_amount')))['s'] or Decimal('0.00')
+        return total
+
+    @property
+    def total_balance(self):
+        """Полный баланс клиента: сальдо транзакций минус долг по открытым инвойсам.
+
+        Показывает реальное состояние взаиморасчётов:
+        - отрицательное = клиент нам должен (с учётом ещё не оплаченных инвойсов);
+        - положительное = у клиента на счету аванс;
+        - ноль = всё сведено.
+        """
+        return self.balance - self.open_invoices_debt
+
+    @property
     def balance_status(self):
-        """Статус баланса для отображения"""
-        if self.balance > 0:
+        """Статус баланса для отображения (с учётом открытых инвойсов)."""
+        tb = self.total_balance
+        if tb > 0:
             return "ПЕРЕПЛАТА"
-        elif self.balance < 0:
+        elif tb < 0:
             return "ДОЛГ"
         return "БАЛАНС"
 
     @property
     def balance_color(self):
-        """Цвет для отображения баланса"""
-        if self.balance > 0:
+        """Цвет для отображения баланса (с учётом открытых инвойсов)."""
+        tb = self.total_balance
+        if tb > 0:
             return "#28a745"  # зеленый для переплаты
-        elif self.balance < 0:
+        elif tb < 0:
             return "#dc3545"  # красный для долга
         return "#6c757d"  # серый для нуля
 
