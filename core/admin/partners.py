@@ -325,13 +325,17 @@ class ClientAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         """OPTIMIZATION: Use with_balance_info for pre-calculated data.
 
-        Additionally annotates each client with `_open_debt` (sum of remaining
-        amounts on ISSUED/OVERDUE/PARTIALLY_PAID invoices) and `_total_balance`
-        (balance − open debt). These are used by the debt filter, by the
-        balance-column sort order, and can be reused in templates.
+        For the changelist view each client is additionally annotated with
+        `_open_debt` (sum of remaining amounts on ISSUED/OVERDUE/PARTIALLY_PAID
+        invoices) and `_total_balance` (balance − open debt). These are used by
+        the debt filter and by the balance-column sort order.
         """
         qs = super().get_queryset(request)
-        if 'changelist' in request.path:
+
+        url_name = getattr(getattr(request, 'resolver_match', None), 'url_name', '') or ''
+        is_changelist = url_name.endswith('_changelist')
+
+        if is_changelist:
             from django.db.models import Count, DecimalField, F, OuterRef, Subquery, Sum, Value
             from django.db.models.functions import Coalesce
 
