@@ -1580,6 +1580,11 @@ class Transaction(models.Model):
         if self.type == 'BALANCE_TOPUP':
             if to_count != 1:
                 errors['__all__'] = "Пополнение баланса: укажите ровно одного получателя."
+            if from_count > 0:
+                errors['__all__'] = (
+                    "Пополнение баланса: поле 'Отправитель' должно быть пустым. "
+                    "Эта операция только зачисляет средства на баланс получателя."
+                )
         elif self.type == 'ADJUSTMENT':
             if (from_count + to_count) != 1:
                 errors['__all__'] = "Корректировка: укажите ровно одну сторону (отправитель ИЛИ получатель)."
