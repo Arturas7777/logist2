@@ -350,8 +350,7 @@ class ClientAdmin(admin.ModelAdmin):
             zero = Value(Decimal('0'), output_field=dec_field)
 
             return (
-                qs.with_balance_info()
-                .annotate(
+                qs.annotate(
                     _tariff_rates_count=Count('tariff_rates'),
                     _open_debt=Coalesce(Subquery(open_debt_sq, output_field=dec_field), zero),
                 )
