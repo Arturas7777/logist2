@@ -229,9 +229,12 @@ def create_ths_services_for_container(container):
 
 def apply_client_tariffs_for_container(container):
     """
-    Apply client tariff markups to non-storage services after THS is calculated.
+    Apply client tariff markups to warehouse services after THS is calculated.
 
-    agreed_total_price is the total price per car (all services EXCEPT storage).
+    agreed_total_price — согласованная с клиентом цена за складской пакет
+    (все услуги WAREHOUSE кроме хранения). Услуги перевозчика (CARRIER) и
+    отдельные услуги компаний (COMPANY) в тариф НЕ входят — они добавляются
+    сверху как есть.
     """
     if not container:
         return
@@ -313,38 +316,50 @@ def _get_agreed_total(client, vehicle_type, total_cars_in_container):
 
 
 def _distribute_markup_for_car(car, agreed_total, total_cars_in_container):
+    """Распределяет скрытую наценку ТОЛЬКО по услугам склада (кроме хранения).
+
+    Услуги перевозчика (CARRIER) и отдельные услуги компаний (COMPANY)
+    не затрагиваются — пользователь задаёт их цены и наценки вручную,
+    и они добавляются к итогу сверх тарифа.
+    """
     from core.models import CarService
 
     all_services = list(CarService.objects.filter(car=car))
-    non_storage = [
+
+    warehouse_non_storage = [
         svc for svc in all_services
-        if not is_storage_service(svc)
+        if svc.service_type == 'WAREHOUSE' and not is_storage_service(svc)
     ]
-    if not non_storage:
-        return
-
-    actual_total = sum(Decimal(str(svc.final_price)) for svc in non_storage)
-    diff = agreed_total - actual_total
-
-    share = (diff / len(non_storage)).quantize(Decimal('0.01'))
-    remainder = diff - share * len(non_storage)
-
-    for i, svc in enumerate(non_storage):
-        svc.markup_amount = share
-        if i == len(non_storage) - 1:
-            svc.markup_amount = share + remainder
-        svc.save(update_fields=['markup_amount'])
 
     storage_services = [svc for svc in all_services if is_storage_service(svc)]
     for svc in storage_services:
         if svc.markup_amount != 0:
-            svc.markup_amount = 0
+            svc.markup_amount = Decimal('0')
             svc.save(update_fields=['markup_amount'])
 
+    if not warehouse_non_storage:
+        logger.info(
+            "Tariff for %s (%s): agreed=%s, но нет услуг склада (кроме хранения) — наценка не распределена",
+            car.vin, car.client.name if car.client else '?', agreed_total,
+        )
+        return
+
+    actual_warehouse_total = sum(Decimal(str(svc.final_price)) for svc in warehouse_non_storage)
+    diff = agreed_total - actual_warehouse_total
+
+    share = (diff / len(warehouse_non_storage)).quantize(Decimal('0.01'))
+    remainder = diff - share * len(warehouse_non_storage)
+
+    for i, svc in enumerate(warehouse_non_storage):
+        svc.markup_amount = share
+        if i == len(warehouse_non_storage) - 1:
+            svc.markup_amount = share + remainder
+        svc.save(update_fields=['markup_amount'])
+
     logger.info(
-        "Tariff for %s (%s): agreed=%s, actual_cost=%s, markup=%s, cars_count=%s, distributed over %d services",
+        "Tariff for %s (%s): agreed=%s, warehouse_actual=%s, diff=%s, cars_count=%s, распределено по %d услугам склада",
         car.vin, car.client.name if car.client else '?',
-        agreed_total, actual_total, diff, total_cars_in_container, len(non_storage),
+        agreed_total, actual_warehouse_total, diff, total_cars_in_container, len(warehouse_non_storage),
     )
 
 

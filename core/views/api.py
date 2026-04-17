@@ -532,6 +532,15 @@ def add_services(request, car_id):
                 service_id__in=[s.service_id for s in to_create]
             ).count() - len(existing_ids)
 
+            try:
+                if car.client and car.client.tariff_type in ('FIXED', 'FLEXIBLE') and car.status != 'TRANSFERRED':
+                    from core.services.car_service_manager import apply_client_tariff_for_car
+                    apply_client_tariff_for_car(car)
+                    car.calculate_total_price()
+                    Car.objects.filter(pk=car.pk).update(total_price=car.total_price)
+            except Exception as e:
+                logger.error("Error re-applying client tariff after add_services: %s", e)
+
         if added_count > 0:
             return JsonResponse({
                 'success': True,
