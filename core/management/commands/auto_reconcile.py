@@ -177,14 +177,38 @@ def reconcile_incoming_payments(dry_run=False):
 
             payment_amount = min(bt.amount, invoice.total - invoice.paid_amount)
             if payment_amount > 0:
+                client = invoice.recipient_client
+                #
+                # Банковский платёж отражаем ДВУМЯ транзакциями, чтобы баланс
+                # клиента был сведён к нулю (иначе авансовый счёт клиента
+                # уходит в минус, и total_balance показывает ложный долг):
+                #   1) BALANCE_TOPUP — деньги «зашли» на счёт клиента в системе
+                #   2) PAYMENT/BALANCE — оплата инвойса с баланса клиента
+                #
+                if client:
+                    topup = Transaction(
+                        type='BALANCE_TOPUP',
+                        method='TRANSFER',
+                        status='COMPLETED',
+                        amount=payment_amount,
+                        currency=invoice.currency or 'EUR',
+                        to_client=client,
+                        description=(
+                            f'Авто-пополнение с банковского платежа '
+                            f'{bt.counterparty_name or ""}'.strip()
+                        ),
+                        date=bt.created_at,
+                    )
+                    topup.save()
+
                 tx = Transaction(
                     type='PAYMENT',
-                    method='TRANSFER',
+                    method='BALANCE' if client else 'TRANSFER',
                     status='COMPLETED',
                     amount=payment_amount,
                     currency=invoice.currency or 'EUR',
                     invoice=invoice,
-                    from_client=invoice.recipient_client,
+                    from_client=client,
                     to_company=company,
                     description=(
                         f'Авто-сопоставление банковского платежа '
