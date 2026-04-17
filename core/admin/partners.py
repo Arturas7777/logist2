@@ -280,11 +280,41 @@ class WarehouseAdmin(admin.ModelAdmin):
 # ClientAdmin
 # ==============================================================================
 
+
+class ClientDebtFilter(admin.SimpleListFilter):
+    """Фильтр клиентов по состоянию полного баланса (с учётом открытых инвойсов)."""
+
+    title = 'Состояние баланса'
+    parameter_name = 'debt_state'
+
+    def lookups(self, request, model_admin):
+        return (
+            ('debt', 'С долгом'),
+            ('zero', 'Нулевой баланс'),
+            ('overpayment', 'Переплата'),
+            ('no_debt', 'Без долга (нулевой или переплата)'),
+        )
+
+    def queryset(self, request, queryset):
+        value = self.value()
+        if not value:
+            return queryset
+        if value == 'debt':
+            return queryset.filter(_total_balance__lt=0)
+        if value == 'zero':
+            return queryset.filter(_total_balance=0)
+        if value == 'overpayment':
+            return queryset.filter(_total_balance__gt=0)
+        if value == 'no_debt':
+            return queryset.filter(_total_balance__gte=0)
+        return queryset
+
+
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
     change_form_template = 'admin/client_change.html'
     list_display = ('name', 'tariff_display', 'emails_display', 'notification_enabled', 'new_balance_display', 'balance_status_new')
-    list_filter = ('name', 'notification_enabled', 'tariff_type')
+    list_filter = (ClientDebtFilter, 'notification_enabled', 'tariff_type')
     search_fields = ('name', 'email', 'email2', 'email3', 'email4')
     actions = ['reset_balances', 'recalculate_balance', 'reset_client_balance']
     list_per_page = 50
@@ -293,11 +323,36 @@ class ClientAdmin(admin.ModelAdmin):
     inlines = [ClientTariffRateInline]
 
     def get_queryset(self, request):
-        """OPTIMIZATION: Use with_balance_info for pre-calculated data."""
+        """OPTIMIZATION: Use with_balance_info for pre-calculated data.
+
+        Additionally annotates each client with `_open_debt` (sum of remaining
+        amounts on ISSUED/OVERDUE/PARTIALLY_PAID invoices) and `_total_balance`
+        (balance − open debt). These are used by the debt filter, by the
+        balance-column sort order, and can be reused in templates.
+        """
         qs = super().get_queryset(request)
         if 'changelist' in request.path:
-            from django.db.models import Count
-            return qs.with_balance_info().annotate(_tariff_rates_count=Count('tariff_rates'))
+            from django.db.models import Count, DecimalField, F, OuterRef, Subquery, Sum, Value
+            from django.db.models.functions import Coalesce
+
+            open_debt_sq = NewInvoice.objects.filter(
+                recipient_client=OuterRef('pk'),
+                status__in=['ISSUED', 'OVERDUE', 'PARTIALLY_PAID'],
+            ).values('recipient_client').annotate(
+                s=Sum(F('total') - F('paid_amount'))
+            ).values('s')[:1]
+
+            dec_field = DecimalField(max_digits=15, decimal_places=2)
+            zero = Value(Decimal('0'), output_field=dec_field)
+
+            return (
+                qs.with_balance_info()
+                .annotate(
+                    _tariff_rates_count=Count('tariff_rates'),
+                    _open_debt=Coalesce(Subquery(open_debt_sq, output_field=dec_field), zero),
+                )
+                .annotate(_total_balance=F('balance') - F('_open_debt'))
+            )
         return qs
 
     def get_search_results(self, request, queryset, search_term):
@@ -398,7 +453,7 @@ class ClientAdmin(admin.ModelAdmin):
             tooltip, color, text
         )
     new_balance_display.short_description = 'Баланс'
-    new_balance_display.admin_order_field = 'balance'
+    new_balance_display.admin_order_field = '_total_balance'
 
     def balance_status_new(self, obj):
         """Статус по полному балансу (с учётом открытых инвойсов)."""
