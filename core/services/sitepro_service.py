@@ -494,8 +494,16 @@ class SiteProService:
             'clientId': client_id,
         }
 
+        # В site.pro серия и номер хранятся РАЗДЕЛЬНО: series='PARDP', number='000103'.
+        # В Logist2 мы сохраняем полный номер 'PARDP-000103' — надо отрезать префикс
+        # серии перед отправкой, иначе в интерфейсе site.pro в колонке "Numeris"
+        # появляется дубль вида "PARDP-000103" вместо "000103".
         if invoice.number:
-            sale_data['number'] = invoice.number
+            num = invoice.number
+            series = (self.connection.invoice_series or '').strip()
+            if series and num.upper().startswith(series.upper() + '-'):
+                num = num[len(series) + 1:]
+            sale_data['number'] = num
 
         # Серия: шлём seriesId если настроен, иначе текстом через series.
         # site.pro принимает оба формата.
