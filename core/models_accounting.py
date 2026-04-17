@@ -120,6 +120,17 @@ class SiteProConnection(models.Model):
                   '1 = Lietuva, 2 = Europos Sąjunga, 3 = Trečiosios šalys. '
                   'Обязательно для clients/create.',
     )
+    default_item_id = models.IntegerField(
+        null=True, blank=True,
+        verbose_name='Default Item ID',
+        help_text='ID справочного товара/услуги для позиций инвойса (обязательно для sale-items/create). '
+                  'Для логистических услуг обычно 24 = Paslauga (vnt.).',
+    )
+    default_calculation_mode = models.IntegerField(
+        default=1,
+        verbose_name='Calculation Mode',
+        help_text='Режим расчёта позиций инвойса. 1 = без НДС (стандарт для Caromoto).',
+    )
 
     # --- Статус ---
     last_synced_at = models.DateTimeField(
