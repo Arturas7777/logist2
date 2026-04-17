@@ -273,6 +273,11 @@ class SiteProService:
 
         logger.info(f'[SitePro] Создание клиента: {client.name} (locationId={location_id})')
         result = self._api_post(self.CLIENTS_CREATE, data)
+        # Новый API: {'message': 'Data saved...', 'data': {'id': X}, 'code': 200}.
+        # Нормализуем — если id нет на верхнем уровне, поднимем его из data.
+        if not result.get('id') and isinstance(result.get('data'), dict):
+            nested = result['data']
+            result = {**result, **{k: v for k, v in nested.items() if k not in result}}
         logger.info(f'[SitePro] Клиент создан: id={result.get("id")}')
         return result
 
@@ -389,8 +394,17 @@ class SiteProService:
             )
             sale_result = self._api_post(self.SALES_CREATE, sale_data)
 
+            # Новый API возвращает: {'message': 'Data saved...', 'data': {'id': 197}, 'code': 200}
+            # Старый API возвращал id/saleId на верхнем уровне — поддерживаем оба формата.
             sale_id = sale_result.get('id') or sale_result.get('saleId')
             sale_number = sale_result.get('number') or sale_result.get('invoiceNumber') or ''
+
+            if not sale_id and isinstance(sale_result.get('data'), dict):
+                sale_id = sale_result['data'].get('id') or sale_result['data'].get('saleId')
+                sale_number = (sale_number
+                               or sale_result['data'].get('number')
+                               or sale_result['data'].get('invoiceNumber')
+                               or '')
 
             if not sale_id:
                 raise SiteProAPIError(
