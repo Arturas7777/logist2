@@ -2349,20 +2349,81 @@ body.model-newinvoice.change-form #content > h2 {
 /* ===== CarInline inside Container form: fixed layout with specific column widths ===== */
 
 /* Reduce fieldset padding inside inline groups in form grid */
+/* ─────────────────────────────────────────────────────────────────
+ * Container change_form: CarInline визуально идентичен обычному
+ * fieldset-разделу «Основные данные».
+ *
+ * Django 5 рендерит inline-collapse как:
+ *   <div class="inline-group">
+ *     <div class="tabular inline-related">
+ *       <fieldset class="module collapse">
+ *         <details><summary>
+ *           <h2 class="inline-heading">...</h2>
+ *         </summary>...</details>
+ *       </fieldset>
+ *     </div>
+ *   </div>
+ *
+ * У обычного fieldset-а («Основные данные») тех же двух обёрток нет,
+ * поэтому гасим их фон/тени/скролл — «карточку» рисует сам
+ * fieldset.module, как в регулярных секциях.
+ * ────────────────────────────────────────────────────────────────── */
+.cm-form-main .inline-group {
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 16px 0 !important;
+}
+.cm-form-main .inline-group .inline-related,
+.cm-form-main .inline-group .tabular {
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* Внутренний fieldset — «карточка» раздела (как у обычного fieldset). */
 .cm-form-main .inline-group fieldset.module {
-    padding: 6px !important;
+    padding: 24px !important;
+    background: var(--cm-card) !important;
+    border-radius: var(--cm-radius) !important;
+    box-shadow: var(--cm-shadow-card) !important;
+    overflow: hidden !important;
 }
 
-.cm-form-main .inline-group fieldset.module > h2,
-.cm-form-main .inline-group .inline-heading {
-    margin: -6px -6px 6px -6px !important;
-    padding: 12px 10px !important;
+/* Сброс h2.inline-heading / h2.fieldset-heading ВНУТРИ <summary> —
+ * иначе `.inline-group h2` выше накидывает свой фон+padding поверх
+ * уже-стилизованного summary, из-за чего шапка Автомобилей визуально
+ * выше и с «своим фоном». */
+.cm-form-main fieldset.collapse summary .fieldset-heading,
+.cm-form-main fieldset.collapse summary .inline-heading,
+.cm-form-main .inline-group fieldset.collapse summary > h2 {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    display: block !important;
+    font-size: .92rem !important;
+    font-weight: 700 !important;
+    color: var(--cm-text) !important;
 }
 
-/* Container card: match CarInline header look with Car admin's fieldset
- * collapse sections (Линии/Склад) — lighter background and no divider line. */
-.cm-form-main .inline-group h2 {
-    background: #fafafc !important;
+/* В свёрнутом состоянии убираем 24px нижнего padding'а fieldset'а,
+ * чтобы «шапка» заполняла всю высоту карточки без пустой белой полосы.
+ * Одно правило одинаково работает и для «Основные данные», и для
+ * «Автомобили», т.к. оба живут внутри fieldset.collapse > details. */
+.cm-form-main fieldset.collapse:has(> details:not([open])) {
+    padding: 0 !important;
+}
+.cm-form-main fieldset.collapse:has(> details:not([open])) > details > summary {
+    margin: 0 !important;
+    border-radius: var(--cm-radius) !important;
     border-bottom: none !important;
 }
 
