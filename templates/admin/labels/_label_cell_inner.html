@@ -1,0 +1,17 @@
+<div class="top-row">
+    <div class="container-num">{{ cell.number }}{% if cell.eta %}<span class="eta">ETA {{ cell.eta }}</span>{% endif %}</div>
+    {% if cell.lines %}<div class="lines">{{ cell.lines }}</div>{% endif %}
+</div>
+<div class="cars">
+    {% for car in cell.cars %}
+        <div class="car-row">
+            <div class="car-main">
+                <div class="car-line1">
+                    {{ car.brand }}{% if car.vin_tail %}<span class="vin">· …{{ car.vin_tail }}</span>{% endif %}
+                </div>
+                {% if car.client %}<div class="car-client">{{ car.client }}</div>{% endif %}
+            </div>
+            <div class="checkbox{% if car.has_title %} checked{% endif %}" title="Тайтл забран"></div>
+        </div>
+    {% endfor %}
+</div>

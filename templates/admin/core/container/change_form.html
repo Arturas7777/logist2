@@ -177,6 +177,11 @@
           <a href="{% url 'admin:core_container_changelist' %}" class="cm-btn cm-btn-outline-action">
             Отмена
           </a>
+          {% if original %}
+          <a href="{% url 'labels_print_settings' %}?container_ids={{ original.pk }}" class="cm-btn cm-btn-outline-action" target="_blank">
+            🏷️ Распечатать наклейку
+          </a>
+          {% endif %}
           {% if original and has_delete_permission %}
           <div class="cm-sidebar-divider"></div>
           <a href="{% url 'admin:core_container_delete' original.pk %}" class="cm-btn cm-btn-delete">

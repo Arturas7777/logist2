@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+{% load i18n %}
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Наклейки · печать</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        @page {
+            size: A4 portrait;
+            margin: 0;
+        }
+
+        html, body {
+            background: #e5e5ef;
+            font-family: 'Arial', 'Helvetica', 'Liberation Sans', sans-serif;
+            color: #000;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        .screen-toolbar {
+            position: sticky;
+            top: 0;
+            background: #1a1a2e;
+            color: #fff;
+            padding: 10px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+            box-shadow: 0 2px 8px rgba(0,0,0,.2);
+        }
+        .screen-toolbar .info { font-size: 14px; }
+        .screen-toolbar button {
+            background: #6c5ce7;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-left: 8px;
+        }
+        .screen-toolbar button:hover { background: #7e6ff0; }
+        .screen-toolbar button.secondary {
+            background: #fff;
+            color: #1a1a2e;
+        }
+
+        .sheet {
+            position: relative;
+            width: 210mm;
+            height: 297mm;
+            background: #fff;
+            margin: 16px auto;
+            box-shadow: 0 4px 20px rgba(0,0,0,.12);
+            page-break-after: always;
+            overflow: hidden;
+        }
+        .sheet:last-child { page-break-after: auto; }
+
+        .cell {
+            position: absolute;
+            overflow: hidden;
+            padding: 1.2mm 3.2mm;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .cell .top-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 2mm;
+            border-bottom: 0.25mm solid #000;
+            padding-bottom: 0.3mm;
+            margin-bottom: 0.4mm;
+            flex: 0 0 auto;
+        }
+        .cell .container-num {
+            font-weight: 900;
+            letter-spacing: .02em;
+            font-size: 5.2mm;
+            line-height: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex: 0 1 auto;
+        }
+        .cell .container-num .eta {
+            font-size: 2.6mm;
+            font-weight: 600;
+            color: #333;
+            letter-spacing: 0;
+            margin-left: 2mm;
+            vertical-align: baseline;
+        }
+        .cell .lines {
+            font-size: 2.4mm;
+            font-weight: 600;
+            color: #333;
+            text-align: right;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex: 1 1 auto;
+        }
+
+        .cars {
+            flex: 1 1 auto;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: 0.8mm;
+        }
+        .car-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            column-gap: 1.5mm;
+            font-size: 2.9mm;
+            line-height: 1.2;
+            border-bottom: 0.15mm dotted #666;
+            padding-bottom: 0.4mm;
+        }
+        .car-row:last-child { border-bottom: none; }
+        .car-main {
+            min-width: 0;
+            overflow: hidden;
+            flex: 1 1 auto;
+        }
+        .car-line1 {
+            font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .car-line1 .vin {
+            font-weight: 500;
+            color: #222;
+            margin-left: 1mm;
+            letter-spacing: .02em;
+        }
+        .car-client {
+            font-size: 2.5mm;
+            color: #444;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-top: 0.1mm;
+        }
+        .checkbox {
+            width: 3.5mm;
+            height: 3.5mm;
+            border: 0.4mm solid #000;
+            display: inline-block;
+            position: relative;
+            flex-shrink: 0;
+        }
+        .checkbox.checked::before,
+        .checkbox.checked::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 4mm;
+            height: 0.5mm;
+            background: #000;
+        }
+        .checkbox.checked::before { transform: translate(-50%, -50%) rotate(45deg); }
+        .checkbox.checked::after  { transform: translate(-50%, -50%) rotate(-45deg); }
+
+        /* Compact for smaller labels */
+        .sheet[data-compact="1"] .cell .container-num { font-size: 4.2mm; }
+        .sheet[data-compact="1"] .cell .container-num .eta { font-size: 2.1mm; margin-left: 1.5mm; }
+        .sheet[data-compact="1"] .cell .lines { font-size: 2.2mm; }
+        .sheet[data-compact="1"] .cars { gap: 1.1mm; }
+        .sheet[data-compact="1"] .car-row { font-size: 2.5mm; padding-bottom: 0.6mm; }
+        .sheet[data-compact="1"] .car-client { font-size: 2.3mm; }
+        .sheet[data-compact="1"] .checkbox { width: 2.8mm; height: 2.8mm; }
+
+        .sheet[data-compact="2"] .cell { padding: 0.6mm 1mm; }
+        .sheet[data-compact="2"] .cell .container-num { font-size: 3.4mm; }
+        .sheet[data-compact="2"] .cell .container-num .eta { font-size: 1.8mm; margin-left: 1mm; }
+        .sheet[data-compact="2"] .cell .lines { font-size: 1.8mm; }
+        .sheet[data-compact="2"] .cars { gap: 0.6mm; }
+        .sheet[data-compact="2"] .car-row { font-size: 2mm; column-gap: 0.8mm; padding-bottom: 0.3mm; }
+        .sheet[data-compact="2"] .car-client { font-size: 1.8mm; }
+        .sheet[data-compact="2"] .checkbox { width: 2.2mm; height: 2.2mm; border-width: 0.3mm; }
+
+        @media print {
+            html, body { background: #fff; }
+            .screen-toolbar { display: none !important; }
+            .sheet {
+                margin: 0 !important;
+                box-shadow: none !important;
+                page-break-after: always;
+            }
+            .sheet:last-child { page-break-after: auto; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="screen-toolbar">
+    <div class="info">
+        Формат: <b>{{ fmt.name }}</b> · Наклеек: <b>{{ labels_count }}</b> · Листов: <b>{{ pages_positioned|length }}</b>
+    </div>
+    <div>
+        <button type="button" class="secondary" onclick="window.close()">Закрыть</button>
+        <button type="button" onclick="window.print()">🖨️ Печать</button>
+    </div>
+</div>
+
+{% if fmt.h <= 22 or fmt.w <= 40 %}
+    {% with compact_level="2" %}
+    {% for page in pages_positioned %}
+        <div class="sheet" data-compact="{{ compact_level }}">
+            {% for item in page %}
+                <div class="cell" style="{{ item.style }}">
+                    {% include "admin/labels/_label_cell_inner.html" with cell=item.label %}
+                </div>
+            {% endfor %}
+        </div>
+    {% endfor %}
+    {% endwith %}
+{% elif fmt.h <= 30 or fmt.w <= 55 %}
+    {% with compact_level="1" %}
+    {% for page in pages_positioned %}
+        <div class="sheet" data-compact="{{ compact_level }}">
+            {% for item in page %}
+                <div class="cell" style="{{ item.style }}">
+                    {% include "admin/labels/_label_cell_inner.html" with cell=item.label %}
+                </div>
+            {% endfor %}
+        </div>
+    {% endfor %}
+    {% endwith %}
+{% else %}
+    {% for page in pages_positioned %}
+        <div class="sheet" data-compact="0">
+            {% for item in page %}
+                <div class="cell" style="{{ item.style }}">
+                    {% include "admin/labels/_label_cell_inner.html" with cell=item.label %}
+                </div>
+            {% endfor %}
+        </div>
+    {% endfor %}
+{% endif %}
+
+<script>
+    {% if auto_print %}
+    window.addEventListener('load', function() {
+        setTimeout(function() { window.print(); }, 300);
+    });
+    {% endif %}
+</script>
+
+</body>
+</html>
