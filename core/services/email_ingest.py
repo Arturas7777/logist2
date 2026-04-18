@@ -273,7 +273,16 @@ def _persist_attachments(
             'attachment_id': att.attachment_id,
             'storage_path': '',
             'skipped_reason': '',
+            'is_inline': att.is_inline,
+            'content_id': att.content_id,
         }
+        # Inline-картинки из HTML-вёрстки (логотипы, иконки соцсетей,
+        # трекинг-пиксели) не скачиваем — только помечаем, чтобы UI их скрыл.
+        if att.is_inline:
+            meta['skipped_reason'] = 'inline'
+            result.append(meta)
+            skipped += 1
+            continue
         if att.size and att.size > limit_bytes:
             meta['skipped_reason'] = 'too_large'
             result.append(meta)
