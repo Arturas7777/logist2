@@ -2359,6 +2359,13 @@ body.model-newinvoice.change-form #content > h2 {
     padding: 12px 10px !important;
 }
 
+/* Container card: match CarInline header look with Car admin's fieldset
+ * collapse sections (Линии/Склад) — lighter background and no divider line. */
+.cm-form-main .inline-group h2 {
+    background: #fafafc !important;
+    border-bottom: none !important;
+}
+
 /* CarInline: fixed layout for predictable column widths */
 .cm-form-main .inline-group .tabular table {
     table-layout: fixed;
