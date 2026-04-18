@@ -447,7 +447,12 @@
             <h3>Выбранные контейнеры</h3>
             {% for lbl in labels_preview %}
                 <div class="lbl-preview-item">
-                    <span><b>{{ lbl.number }}</b>{% if lbl.lines %} <span class="muted">· {{ lbl.lines }}</span>{% endif %}</span>
+                    <span>
+                        <b>{{ lbl.number }}</b>{% if lbl.lines %} <span class="muted">· {{ lbl.lines }}</span>{% endif %}
+                        {% if lbl.labels_printed_at %}
+                            <br><span style="color: #9999b5; font-size: .82em;">🖨️ печаталось: {{ lbl.labels_printed_at }}</span>
+                        {% endif %}
+                    </span>
                     <span class="muted">{{ lbl.cars_count }} авто</span>
                 </div>
             {% endfor %}
