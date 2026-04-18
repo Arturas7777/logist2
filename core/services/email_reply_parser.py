@@ -300,6 +300,12 @@ _NOISE_INLINE = [
     re.compile(r'\[(?:cid|image):[^\]]*\]', re.IGNORECASE),
     # <mailto:x@y.com>, <http://...>, <https://...>
     re.compile(r'<(?:mailto:|https?://)[^>]+>', re.IGNORECASE),
+    # Markdown-style «Label ( https://tracker/long-url )» — типичный вид
+    # plain-text альтернативы письма от SendGrid / Mailgun / Mandrill, где
+    # каждая ссылка раскрывается в скобки, а URL — трекинговый (100+ симв.).
+    # Убираем только URL-часть: якорь «Label» остаётся и остаётся читаемым;
+    # исходную ссылку можно увидеть в full view (raw HTML).
+    re.compile(r'[ \t]*\(\s*https?://[^\s)]+\s*\)', re.IGNORECASE),
 ]
 
 
