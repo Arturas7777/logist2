@@ -81,10 +81,10 @@ class LabelsPrintedFilter(SimpleListFilter):
 @admin.register(Container)
 class ContainerAdmin(admin.ModelAdmin):
     change_form_template = 'admin/core/container/change_form.html'
-    list_display = ('number', 'colored_status', 'eta', 'planned_unload_date', 'unload_date', 'line', 'warehouse', 'photos_count_display', 'labels_printed_display')
+    list_display = ('number', 'booking_number', 'colored_status', 'eta', 'planned_unload_date', 'unload_date', 'line', 'warehouse', 'photos_count_display', 'labels_printed_display')
     list_display_links = ('number',)
     list_filter = (MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter, LabelsPrintedFilter)
-    search_fields = ('number',)
+    search_fields = ('number', 'booking_number')
     ordering = ['-unload_date', '-id']
     list_per_page = 50
     show_full_result_count = False
@@ -92,7 +92,7 @@ class ContainerAdmin(admin.ModelAdmin):
     fieldsets = (
         ('Основные данные', {
             'fields': (
-                ('number', 'line', 'ths', 'ths_payer', 'warehouse', 'unload_site', 'status'),
+                ('number', 'booking_number', 'line', 'ths', 'ths_payer', 'warehouse', 'unload_site', 'status'),
                 ('eta', 'planned_unload_date', 'unload_date'),
                 'google_drive_folder_url',
             )
