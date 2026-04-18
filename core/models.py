@@ -445,6 +445,15 @@ class Container(models.Model):
     )
 
     number = models.CharField(max_length=100, unique=True, verbose_name="Номер контейнера")
+    booking_number = models.CharField(
+        max_length=50,
+        blank=True,
+        default='',
+        db_index=True,
+        verbose_name="Номер букинга",
+        help_text="Booking number (букинг) — используется для сопоставления писем с контейнером, "
+                  "когда номер контейнера ещё не известен.",
+    )
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='FLOATING', verbose_name="Статус")
     line = models.ForeignKey('Line', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Морская линия")
     eta = models.DateField(null=True, blank=True, verbose_name="ETA")
