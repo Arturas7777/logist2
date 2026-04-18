@@ -1,0 +1,42 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Главная</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+  &rsaquo; <a href="{% url 'admin:core_containeremail_changelist' %}">Письма контейнеров</a>
+  &rsaquo; {{ title }}
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>{{ title }}</h1>
+
+<form method="post">{% csrf_token %}
+  <p>Выбрано писем: <strong>{{ emails.count }}</strong></p>
+
+  {% for email in emails|slice:":10" %}
+    <div style="padding:6px 0;border-bottom:1px solid #eee;font-size:0.85rem;">
+      <strong>{{ email.received_at|date:"d.m.Y H:i" }}</strong> —
+      {{ email.from_addr|truncatechars:40 }} —
+      {{ email.subject|truncatechars:60|default:"(без темы)" }}
+    </div>
+  {% endfor %}
+  {% if emails.count > 10 %}
+    <p style="color:var(--cm-text-secondary);">…и ещё {{ emails.count|add:"-10" }}</p>
+  {% endif %}
+
+  <table class="form-row" style="margin-top:16px;">
+    {{ form.as_table }}
+  </table>
+
+  <input type="hidden" name="action" value="{{ action }}">
+  <input type="hidden" name="apply" value="1">
+
+  <div class="submit-row">
+    <input type="submit" class="default" value="Привязать">
+    <a href="{% url 'admin:core_containeremail_changelist' %}" class="button cancel-link">Отмена</a>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,554 @@
+{# ──────────────────────────────────────────────────────────────────────────
+ # Блок «Переписка» для карточки контейнера — messenger-стиль.
+ # Сворачиваемый fieldset по образцу photos_gallery.html; JS перемещает его
+ # в основную колонку сразу ПОСЛЕ последнего inline («Автомобили»).
+ # Все тела писем подгружены сразу через ORM; отображаются как чат-бабблы:
+ #   * левая сторона — входящие (INCOMING)
+ #   * правая — исходящие (OUTGOING, мы отправили сами)
+ #   * подпись/«Kind regards» и т.п. вырезаны через фильтр messenger_body
+ #   * цитата переписки прячется под <details>
+ # При первом раскрытии панели все письма автоматически помечаются прочитанными.
+ # ───────────────────────────────────────────────────────────────────────── #}
+{% load static %}
+{% load email_extras %}
+
+{% if original and original.pk %}
+{% with emails=original.emails.all %}
+
+<style>
+/* ═══ Каркас секции ═══ */
+#container-emails-section {
+    margin: 20px 0;
+    padding: 0;
+    background: #fff;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    clear: both !important;
+    width: 100% !important;
+    max-width: none !important;
+    box-sizing: border-box;
+}
+#container-emails-section h2 {
+    margin: 0;
+    padding: 10px 15px;
+    background: linear-gradient(to bottom, #f8f8f8, #eee);
+    border-bottom: 1px solid #ccc;
+    font-size: 13px;
+    font-weight: bold;
+    color: #333;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+#container-emails-section h2:hover {
+    background: linear-gradient(to bottom, #fff, #f5f5f5);
+}
+#container-emails-section h2 .cm-email-badge {
+    background: #9ca3af;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+#container-emails-section h2 .cm-email-badge.has-unread {
+    background: #2563eb;
+}
+#container-emails-section h2 .cm-email-toggle {
+    margin-left: auto;
+}
+#container-emails-section .cm-emails-body {
+    padding: 0;
+    display: none;
+}
+
+/* ═══ Actions bar ═══ */
+#container-emails-section .cm-emails-actions {
+    padding: 10px 15px;
+    border-bottom: 1px solid #e5e7eb;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: #fafafa;
+    flex-wrap: wrap;
+}
+#container-emails-section .cm-emails-actions button {
+    padding: 4px 10px;
+    font-size: 12px;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+}
+#container-emails-section .cm-emails-actions button:hover {
+    background: #f0f8ff;
+    border-color: #79aec8;
+}
+#container-emails-section .cm-emails-actions button:disabled {
+    opacity: 0.5;
+    cursor: wait;
+}
+#container-emails-section .cm-emails-status {
+    font-size: 12px;
+    color: #666;
+    margin-left: auto;
+}
+
+/* ═══ Messenger-лента ═══ */
+#container-emails-section .cm-chat {
+    padding: 14px 12px 20px;
+    background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+    max-height: 720px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* Разделитель по дате */
+#container-emails-section .cm-chat-date {
+    align-self: center;
+    margin: 10px 0 4px;
+    padding: 3px 12px;
+    background: rgba(100, 116, 139, 0.12);
+    color: #475569;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 10px;
+    letter-spacing: 0.02em;
+    text-transform: capitalize;
+}
+
+/* ── Сообщение ── */
+#container-emails-section .cm-msg {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    max-width: 82%;
+}
+#container-emails-section .cm-msg.cm-in  { align-self: flex-start; }
+#container-emails-section .cm-msg.cm-out { align-self: flex-end; flex-direction: row-reverse; }
+
+/* Аватар */
+#container-emails-section .cm-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+    user-select: none;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    letter-spacing: 0.02em;
+}
+
+/* Обёртка с именем + баблом */
+#container-emails-section .cm-msg-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+}
+#container-emails-section .cm-msg.cm-out .cm-msg-col { align-items: flex-end; }
+
+#container-emails-section .cm-msg-header {
+    padding: 0 10px 2px;
+    font-size: 11px;
+    color: #64748b;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    max-width: 100%;
+}
+#container-emails-section .cm-msg-header .cm-msg-from {
+    font-weight: 600;
+    color: #334155;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 300px;
+}
+#container-emails-section .cm-msg-header .cm-msg-time {
+    color: #94a3b8;
+    font-size: 10px;
+}
+#container-emails-section .cm-msg-header .cm-msg-matched {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: #e2e8f0;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+#container-emails-section .cm-msg-header .cm-msg-matched[data-kind="CONTAINER_NUMBER"] { background:#dcfce7; color:#166534; }
+#container-emails-section .cm-msg-header .cm-msg-matched[data-kind="BOOKING_NUMBER"]   { background:#dbeafe; color:#1e40af; }
+#container-emails-section .cm-msg-header .cm-msg-matched[data-kind="THREAD"]           { background:#cffafe; color:#155e75; }
+#container-emails-section .cm-msg-header .cm-msg-matched[data-kind="MANUAL"]           { background:#ede9fe; color:#5b21b6; }
+#container-emails-section .cm-msg-header .cm-msg-matched[data-kind="UNMATCHED"]        { background:#fee2e2; color:#991b1b; }
+
+/* Баббл */
+#container-emails-section .cm-bubble {
+    padding: 8px 12px;
+    border-radius: 14px;
+    font-size: 13px;
+    line-height: 1.45;
+    color: #111827;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.03);
+    overflow-wrap: break-word;
+    word-break: break-word;
+    max-width: 100%;
+    position: relative;
+}
+#container-emails-section .cm-msg.cm-in  .cm-bubble { border-top-left-radius: 4px; }
+#container-emails-section .cm-msg.cm-out .cm-bubble {
+    background: #dbeafe;
+    border-color: #bfdbfe;
+    color: #1e3a8a;
+    border-top-right-radius: 4px;
+}
+#container-emails-section .cm-msg[data-unread="1"] .cm-bubble {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 1px #3b82f6;
+}
+
+#container-emails-section .cm-subj {
+    font-weight: 600;
+    margin-bottom: 4px;
+    padding-bottom: 4px;
+    border-bottom: 1px dashed rgba(100,116,139,0.2);
+    color: inherit;
+    font-size: 12px;
+}
+
+#container-emails-section .cm-body {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+#container-emails-section .cm-body a { color: inherit; text-decoration: underline; }
+
+/* Цитата */
+#container-emails-section .cm-quote-details {
+    margin-top: 6px;
+}
+#container-emails-section .cm-quote-details > summary {
+    cursor: pointer;
+    font-size: 10.5px;
+    color: #64748b;
+    user-select: none;
+    padding: 2px 6px;
+    background: rgba(100,116,139,0.08);
+    border-radius: 4px;
+    display: inline-block;
+    list-style: none;
+}
+#container-emails-section .cm-quote-details > summary::-webkit-details-marker { display: none; }
+#container-emails-section .cm-quote-details > summary::before { content: '▸ '; }
+#container-emails-section .cm-quote-details[open] > summary::before { content: '▾ '; }
+#container-emails-section .cm-quote-body {
+    margin-top: 6px;
+    padding: 8px 10px;
+    background: rgba(148, 163, 184, 0.08);
+    border-left: 3px solid #cbd5e1;
+    border-radius: 4px;
+    color: #64748b;
+    font-size: 11.5px;
+    white-space: pre-wrap;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+/* Вложения */
+#container-emails-section .cm-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+}
+#container-emails-section .cm-attachment {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: rgba(255,255,255,0.7);
+    border: 1px solid rgba(100,116,139,0.25);
+    border-radius: 10px;
+    font-size: 11px;
+    color: #334155;
+    text-decoration: none;
+    max-width: 260px;
+}
+#container-emails-section .cm-attachment:hover {
+    background: #fff;
+    border-color: #3b82f6;
+    color: #1e40af;
+}
+#container-emails-section .cm-attachment .cm-att-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
+}
+#container-emails-section .cm-attachment .cm-att-size {
+    color: #94a3b8;
+    font-size: 10px;
+}
+#container-emails-section .cm-attachment.cm-att-missing {
+    opacity: 0.6;
+    cursor: not-allowed;
+    color: #9ca3af;
+}
+
+/* Пустое состояние */
+#container-emails-section .cm-no-emails {
+    padding: 36px 20px;
+    text-align: center;
+    color: #94a3b8;
+    font-size: 13px;
+    background: #f8fafc;
+}
+#container-emails-section .cm-no-emails .cm-no-emails-icon {
+    font-size: 36px;
+    opacity: 0.5;
+    display: block;
+    margin-bottom: 8px;
+}
+</style>
+
+<fieldset id="container-emails-section" class="module aligned collapse"
+          data-container-id="{{ original.pk }}"
+          data-emails-count="{{ emails|length }}">
+    <h2 id="cm-emails-toggle-header">
+        <span>📧 Переписка</span>
+        <span class="cm-email-badge" id="cm-emails-badge"
+              title="Всего писем: {{ emails|length }}">
+            {{ emails|length }}
+        </span>
+        <span class="cm-email-toggle" id="cm-emails-toggle-icon">▶</span>
+    </h2>
+
+    <div class="cm-emails-body" id="cm-emails-body">
+        <div class="cm-emails-actions">
+            <button type="button" id="cm-emails-sync-btn" title="Подтянуть новые письма из Gmail">
+                ↻ Синхронизировать
+            </button>
+            <span class="cm-emails-status" id="cm-emails-status"></span>
+        </div>
+
+        {% if not emails %}
+            <div class="cm-no-emails">
+                <span class="cm-no-emails-icon">📭</span>
+                <div>Писем пока нет.</div>
+                <div style="font-size:11px;margin-top:4px;">
+                    Письма появятся автоматически, если в теме или теле встретится
+                    номер контейнера <strong>{{ original.number }}</strong>
+                    {% if original.booking_number %}
+                    или букинг <strong>{{ original.booking_number }}</strong>
+                    {% endif %}.
+                </div>
+            </div>
+        {% else %}
+            <div class="cm-chat" id="cm-emails-list">
+                {# Сверху свежие, внизу старые — обратный хронологический порядок. #}
+                {% for email in emails %}
+                    {% ifchanged email.received_at|date:"Y-m-d" %}
+                        <div class="cm-chat-date">{{ email.received_at|date:"l, d F Y" }}</div>
+                    {% endifchanged %}
+
+                    {% with from_name=email.from_addr|display_name %}
+                    <div class="cm-msg {% if email.direction == 'OUTGOING' %}cm-out{% else %}cm-in{% endif %}"
+                         data-email-id="{{ email.pk }}"
+                         data-unread="{{ email.is_read|yesno:'0,1' }}">
+                        <div class="cm-avatar"
+                             style="background-color: {{ email.from_addr|avatar_color }};"
+                             title="{{ email.from_addr }}">
+                            {{ from_name|initials }}
+                        </div>
+                        <div class="cm-msg-col">
+                            <div class="cm-msg-header">
+                                <span class="cm-msg-from"
+                                      title="{{ email.from_addr }}">
+                                    {{ from_name }}
+                                </span>
+                                <span class="cm-msg-time">{{ email.received_at|date:"H:i" }}</span>
+                                <span class="cm-msg-matched" data-kind="{{ email.matched_by }}">
+                                    {{ email.get_matched_by_display }}
+                                </span>
+                            </div>
+                            <div class="cm-bubble">
+                                {% if email.subject %}
+                                    <div class="cm-subj">{{ email.subject|fix_mojibake }}</div>
+                                {% endif %}
+                                {% with cleaned=email.body_text|messenger_body %}
+                                    {% if cleaned %}
+                                        <div class="cm-body">{{ cleaned|linkify_urls }}</div>
+                                    {% elif email.snippet %}
+                                        <div class="cm-body" style="color:#94a3b8;font-style:italic;">
+                                            {{ email.snippet }}
+                                        </div>
+                                    {% endif %}
+                                {% endwith %}
+
+                                {% if email.attachments_json %}
+                                    <div class="cm-attachments">
+                                        {% for att in email.attachments_json %}
+                                            {% if att.storage_path %}
+                                                <a class="cm-attachment"
+                                                   href="{% url 'core:email_attachment' email.pk forloop.counter0 %}"
+                                                   target="_blank"
+                                                   rel="noopener"
+                                                   title="{{ att.filename }} ({{ att.size|filesizeformat }})">
+                                                    <span>📎</span>
+                                                    <span class="cm-att-name">{{ att.filename|default:"file" }}</span>
+                                                    <span class="cm-att-size">{{ att.size|filesizeformat }}</span>
+                                                </a>
+                                            {% else %}
+                                                <span class="cm-attachment cm-att-missing"
+                                                      title="{{ att.skipped_reason|default:'Вложение не сохранено локально' }}">
+                                                    <span>📎</span>
+                                                    <span class="cm-att-name">{{ att.filename|default:"file" }}</span>
+                                                </span>
+                                            {% endif %}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+
+                                {% with quote=email.body_text|quote_part %}
+                                    {% if quote %}
+                                        <details class="cm-quote-details">
+                                            <summary>цитируемая переписка</summary>
+                                            <div class="cm-quote-body">{{ quote }}</div>
+                                        </details>
+                                    {% endif %}
+                                {% endwith %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endwith %}
+                {% endfor %}
+            </div>
+        {% endif %}
+    </div>
+</fieldset>
+
+<script>
+(function() {
+    var section = document.getElementById('container-emails-section');
+    if (!section) return;
+
+    // ── Позиционируем сразу ПОСЛЕ последнего inline («Автомобили»). ──
+    var inlineGroups = document.querySelectorAll('.inline-group');
+    var lastInline = inlineGroups[inlineGroups.length - 1];
+    var submitRow = document.querySelector('.submit-row');
+    if (lastInline && lastInline.parentNode) {
+        lastInline.parentNode.insertBefore(section, lastInline.nextSibling);
+    } else if (submitRow && submitRow.parentNode) {
+        submitRow.parentNode.insertBefore(section, submitRow);
+    }
+
+    var header  = document.getElementById('cm-emails-toggle-header');
+    var body    = document.getElementById('cm-emails-body');
+    var icon    = document.getElementById('cm-emails-toggle-icon');
+    var list    = document.getElementById('cm-emails-list');
+    var syncBtn = document.getElementById('cm-emails-sync-btn');
+    var status  = document.getElementById('cm-emails-status');
+    var badge   = document.getElementById('cm-emails-badge');
+    var containerId = section.dataset.containerId;
+
+    function countUnread() {
+        if (!list) return 0;
+        return list.querySelectorAll('.cm-msg[data-unread="1"]').length;
+    }
+    function totalMsgs() {
+        if (!list) return 0;
+        return list.querySelectorAll('.cm-msg').length;
+    }
+    function refreshBadge() {
+        if (!badge) return;
+        var unread = countUnread();
+        var total  = totalMsgs();
+        if (unread > 0) {
+            badge.classList.add('has-unread');
+            badge.textContent = unread + '/' + total;
+            badge.title = unread + ' непрочитанных из ' + total;
+        } else {
+            badge.classList.remove('has-unread');
+            badge.textContent = total;
+            badge.title = 'Всего писем: ' + total;
+        }
+    }
+    refreshBadge();
+
+    var csrfToken = (document.querySelector('[name=csrfmiddlewaretoken]') || {}).value || '';
+
+    function markAllRead() {
+        var unreadEls = list ? list.querySelectorAll('.cm-msg[data-unread="1"]') : [];
+        if (!unreadEls.length) return;
+        fetch('/core/emails/container/' + containerId + '/mark-all-read/', {
+            method: 'POST',
+            headers: {'X-CSRFToken': csrfToken},
+        }).then(function() {
+            unreadEls.forEach(function(el) { el.setAttribute('data-unread', '0'); });
+            refreshBadge();
+        }).catch(function() {});
+    }
+
+    var firstOpen = true;
+    header.addEventListener('click', function() {
+        var open = body.style.display === 'block';
+        body.style.display = open ? 'none' : 'block';
+        icon.textContent = open ? '▶' : '▼';
+        if (!open && firstOpen) {
+            firstOpen = false;
+            // Свежие сверху — оставляем скролл на нуле.
+            if (list) list.scrollTop = 0;
+            // Авто-отметка всех писем прочитанными
+            markAllRead();
+        }
+    });
+
+    // ── Кнопка синхронизации ──
+    if (syncBtn) {
+        syncBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            syncBtn.disabled = true;
+            syncBtn.textContent = '…синхронизация';
+            status.textContent = '';
+            fetch('/core/emails/sync/', {
+                method: 'POST',
+                headers: {'X-CSRFToken': csrfToken},
+            })
+            .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+            .then(function(res) {
+                if (res.ok && res.data.ok) {
+                    status.style.color = '#16a34a';
+                    status.textContent = '✓ Задача поставлена в очередь. Страница обновится через 3 сек…';
+                    setTimeout(function() { location.reload(); }, 3000);
+                } else {
+                    status.style.color = '#b91c1c';
+                    status.textContent = '✗ ' + (res.data && res.data.error || 'Ошибка');
+                    syncBtn.disabled = false;
+                    syncBtn.textContent = '↻ Синхронизировать';
+                }
+            })
+            .catch(function(err) {
+                status.style.color = '#b91c1c';
+                status.textContent = '✗ ' + err;
+                syncBtn.disabled = false;
+                syncBtn.textContent = '↻ Синхронизировать';
+            });
+        });
+    }
+})();
+</script>
+
+{% endwith %}
+{% endif %}

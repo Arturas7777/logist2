@@ -402,6 +402,24 @@ AI_RAG_TOP_K = int(os.getenv('AI_RAG_TOP_K', '4'))
 AI_RAG_MAX_AGE_HOURS = int(os.getenv('AI_RAG_MAX_AGE_HOURS', '24'))
 
 # ---------------------------------------------------------------------------
+# Gmail OAuth — переписка по контейнерам (Phase 1: read-only)
+# ---------------------------------------------------------------------------
+
+GMAIL_ENABLED = str(os.getenv('GMAIL_ENABLED', 'False')).lower() == 'true'
+GMAIL_CLIENT_ID = os.getenv('GMAIL_CLIENT_ID', '').strip()
+GMAIL_CLIENT_SECRET = os.getenv('GMAIL_CLIENT_SECRET', '').strip()
+GMAIL_REFRESH_TOKEN = os.getenv('GMAIL_REFRESH_TOKEN', '').strip()
+GMAIL_USER_EMAIL = os.getenv('GMAIL_USER_EMAIL', '').strip()
+GMAIL_INITIAL_LOOKBACK_DAYS = int(os.getenv('GMAIL_INITIAL_LOOKBACK_DAYS', '30'))
+GMAIL_MAX_ATTACHMENT_MB = int(os.getenv('GMAIL_MAX_ATTACHMENT_MB', '25'))
+GMAIL_TOKEN_URI = 'https://oauth2.googleapis.com/token'
+# Scopes: только чтение на Phase 1. Для отправки — добавить 'gmail.send'
+# и перегенерировать refresh_token через scripts/get_gmail_refresh_token.py.
+GMAIL_SCOPES = [
+    'https://www.googleapis.com/auth/gmail.readonly',
+]
+
+# ---------------------------------------------------------------------------
 # Company info (used in email templates)
 # ---------------------------------------------------------------------------
 

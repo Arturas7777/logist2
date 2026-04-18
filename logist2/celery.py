@@ -28,4 +28,8 @@ app.conf.beat_schedule = {
         'task': 'core.tasks.sync_bank_and_reconcile',
         'schedule': crontab(minute='*/30'),
     },
+    'sync-emails-from-gmail': {
+        'task': 'core.tasks_email.sync_emails_from_gmail',
+        'schedule': crontab(minute='*/5'),
+    },
 }
