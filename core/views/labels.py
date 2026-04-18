@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.contrib import admin
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
@@ -186,6 +187,7 @@ def print_labels_settings(request) -> HttpResponse:
     formats_list = [_fmt_spec(code) for code in LABEL_FORMATS.keys()]
 
     context = {
+        **admin.site.each_context(request),
         'title': 'Печать наклеек',
         'container_ids_csv': ','.join(str(i) for i in container_ids),
         'containers': containers,
