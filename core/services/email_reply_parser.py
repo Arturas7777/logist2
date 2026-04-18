@@ -391,7 +391,25 @@ def clean_message_body(text: str) -> str:
     for pat in _SIGNATURE_SEPARATORS:
         cutoff = min(cutoff, _earliest(lambda ln, p=pat: bool(p.match(ln))))
 
-    cutoff = min(cutoff, _earliest(lambda ln: bool(_CLOSING_PHRASE.match(ln))))
+    # Closing phrase — срезаем, только если перед ней уже есть реальный
+    # контент. Иначе короткие ответы вида «Ačiū», «Thanks», «OK» сами
+    # воспринимаются как подпись и уничтожают весь текст (из-за чего
+    # fallback-ветка потом возвращает нечищеный оригинал с подписью).
+    def _earliest_closing() -> int:
+        has_prior_content = False
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if _CLOSING_PHRASE.match(line):
+                if has_prior_content:
+                    return i
+                # Первая «прощальная» фраза без предыдущего контента —
+                # это, вероятно, сам текст ответа, а не начало подписи.
+                continue
+            if stripped:
+                has_prior_content = True
+        return len(lines)
+
+    cutoff = min(cutoff, _earliest_closing())
 
     head = lines[:cutoff]
     head_joined = '\n'.join(head)
