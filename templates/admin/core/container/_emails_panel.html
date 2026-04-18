@@ -16,52 +16,34 @@
 {% with emails=original.emails.all %}
 
 <style>
-/* ═══ Каркас секции ═══ */
+/* ═══ Каркас секции ═══
+ * Используем глобальный fieldset.module (фон, тень, padding, радиус) и
+ * нативный <details>/<summary> — так секция визуально и по поведению
+ * совпадает с «Основные данные» / «Автомобили» и в свёрнутом виде
+ * схлопывается до одной полосы-шапки.                                    */
 #container-emails-section {
-    margin: 20px 0;
-    padding: 0;
-    background: #fff;
-    border-radius: 8px;
-    border: 1px solid #ccc;
     clear: both !important;
     width: 100% !important;
     max-width: none !important;
     box-sizing: border-box;
 }
-#container-emails-section h2 {
-    margin: 0;
-    padding: 10px 15px;
-    background: linear-gradient(to bottom, #f8f8f8, #eee);
-    border-bottom: 1px solid #ccc;
-    font-size: 13px;
-    font-weight: bold;
-    color: #333;
-    cursor: pointer;
-    user-select: none;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-#container-emails-section h2:hover {
-    background: linear-gradient(to bottom, #fff, #f5f5f5);
-}
-#container-emails-section h2 .cm-email-badge {
+
+/* Бейдж со счётчиком в шапке секции */
+#container-emails-section .cm-email-badge {
     background: #9ca3af;
-    color: white;
+    color: #fff;
     padding: 2px 8px;
     border-radius: 10px;
     font-size: 11px;
     font-weight: 600;
+    margin-left: 8px;
+    vertical-align: middle;
 }
-#container-emails-section h2 .cm-email-badge.has-unread {
+#container-emails-section .cm-email-badge.has-unread {
     background: #2563eb;
-}
-#container-emails-section h2 .cm-email-toggle {
-    margin-left: auto;
 }
 #container-emails-section .cm-emails-body {
     padding: 0;
-    display: none;
 }
 
 /* ═══ Actions bar ═══ */
@@ -326,16 +308,18 @@
 <fieldset id="container-emails-section" class="module aligned collapse"
           data-container-id="{{ original.pk }}"
           data-emails-count="{{ emails|length }}">
-    <h2 id="cm-emails-toggle-header">
-        <span>📧 Переписка</span>
-        <span class="cm-email-badge" id="cm-emails-badge"
-              title="Всего писем: {{ emails|length }}">
-            {{ emails|length }}
-        </span>
-        <span class="cm-email-toggle" id="cm-emails-toggle-icon">▶</span>
-    </h2>
+    <details>
+        <summary>
+            <h2 class="fieldset-heading">
+                📧 Переписка
+                <span class="cm-email-badge" id="cm-emails-badge"
+                      title="Всего писем: {{ emails|length }}">
+                    {{ emails|length }}
+                </span>
+            </h2>
+        </summary>
 
-    <div class="cm-emails-body" id="cm-emails-body">
+        <div class="cm-emails-body" id="cm-emails-body">
         <div class="cm-emails-actions">
             <button type="button" id="cm-emails-sync-btn" title="Подтянуть новые письма из Gmail">
                 ↻ Синхронизировать
@@ -438,7 +422,8 @@
                 {% endfor %}
             </div>
         {% endif %}
-    </div>
+        </div>
+    </details>
 </fieldset>
 
 <script>
@@ -456,9 +441,8 @@
         submitRow.parentNode.insertBefore(section, submitRow);
     }
 
-    var header  = document.getElementById('cm-emails-toggle-header');
+    var details = section.querySelector(':scope > details');
     var body    = document.getElementById('cm-emails-body');
-    var icon    = document.getElementById('cm-emails-toggle-icon');
     var list    = document.getElementById('cm-emails-list');
     var syncBtn = document.getElementById('cm-emails-sync-btn');
     var status  = document.getElementById('cm-emails-status');
@@ -504,18 +488,16 @@
     }
 
     var firstOpen = true;
-    header.addEventListener('click', function() {
-        var open = body.style.display === 'block';
-        body.style.display = open ? 'none' : 'block';
-        icon.textContent = open ? '▶' : '▼';
-        if (!open && firstOpen) {
-            firstOpen = false;
-            // Свежие сверху — оставляем скролл на нуле.
-            if (list) list.scrollTop = 0;
-            // Авто-отметка всех писем прочитанными
-            markAllRead();
-        }
-    });
+    if (details) {
+        details.addEventListener('toggle', function() {
+            if (!details.open) return;
+            if (firstOpen) {
+                firstOpen = false;
+                if (list) list.scrollTop = 0;
+                markAllRead();
+            }
+        });
+    }
 
     // ── Кнопка синхронизации ──
     if (syncBtn) {

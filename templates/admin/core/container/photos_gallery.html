@@ -2,37 +2,32 @@
 {# Галерея фотографий контейнера с разделением по типам и lazy loading #}
 
 <style>
-/* Контейнер галереи */
+/* Контейнер галереи — используем глобальный «карточный» вид fieldset.module
+ * (padding, фон, тень, радиус). Локально задаём только очистку и ширину.   */
 #container-photos-gallery {
-    margin: 20px 0;
-    padding: 0;
-    background: #fff;
-    border-radius: 8px;
-    border: 1px solid #ccc;
     clear: both !important;
     width: 100% !important;
     max-width: none !important;
     box-sizing: border-box;
 }
 
-#container-photos-gallery h2 {
-    margin: 0;
-    padding: 10px 15px;
-    background: linear-gradient(to bottom, #f8f8f8, #eee);
-    border-bottom: 1px solid #ccc;
-    font-size: 13px;
-    font-weight: bold;
-    color: #333;
-    cursor: pointer;
-    user-select: none;
+/* Бейдж со счётчиком фото в шапке секции */
+#container-photos-gallery .photos-count-badge {
+    background: #9ca3af;
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 8px;
+    vertical-align: middle;
 }
-
-#container-photos-gallery h2:hover {
-    background: linear-gradient(to bottom, #fff, #f5f5f5);
+#container-photos-gallery .photos-count-badge.has-photos {
+    background: #2563eb;
 }
 
 .photos-gallery-content {
-    padding: 15px;
+    padding: 0;
 }
 
 .photos-tabs {
@@ -228,26 +223,31 @@
 </style>
 
 <fieldset id="container-photos-gallery" class="module aligned collapse">
-    <h2 onclick="togglePhotosGallery()" style="cursor: pointer;">
-        📷 Фотографии контейнера 
-        <span id="photos-count-badge" style="background: #417690; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; margin-left: 8px;">{{ photos_count|default:0 }}</span>
-        <span id="photos-toggle-icon" style="float: right; margin-right: 10px;">▶</span>
-    </h2>
-    
-    <div class="photos-gallery-content" id="photosGalleryContent" style="display: none;">
-        <div id="photosLoading" style="text-align: center; padding: 20px; color: #666;">
-            ⏳ Загрузка фотографий...
-        </div>
-        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;">
-            <div class="photos-tabs" id="photosTabs" style="display: none;">
-                <!-- Tabs -->
+    <details>
+        <summary>
+            <h2 class="fieldset-heading">
+                📷 Фотографии контейнера
+                <span id="photos-count-badge" class="photos-count-badge{% if photos_count %} has-photos{% endif %}">
+                    {{ photos_count|default:0 }}
+                </span>
+            </h2>
+        </summary>
+
+        <div class="photos-gallery-content" id="photosGalleryContent">
+            <div id="photosLoading" style="text-align: center; padding: 20px; color: #666;">
+                ⏳ Загрузка фотографий...
             </div>
-            <div id="gdrive-field-slot" style="margin-left: auto;"></div>
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;">
+                <div class="photos-tabs" id="photosTabs" style="display: none;">
+                    <!-- Tabs -->
+                </div>
+                <div id="gdrive-field-slot" style="margin-left: auto;"></div>
+            </div>
+            <div id="photosContent">
+                <!-- Photo sections -->
+            </div>
         </div>
-        <div id="photosContent">
-            <!-- Photo sections -->
-        </div>
-    </div>
+    </details>
 </fieldset>
 
 <!-- Lightbox -->
@@ -288,55 +288,47 @@
     let photosData = [];
     let types = null;
     let observer = null;
-    
-    // Toggle gallery - загружаем фото через AJAX только при первом открытии
-    window.togglePhotosGallery = function() {
-        const content = document.getElementById('photosGalleryContent');
-        const icon = document.getElementById('photos-toggle-icon');
-        const loading = document.getElementById('photosLoading');
-        
-        if (content.style.display === 'none') {
-            content.style.display = 'block';
-            icon.textContent = '▼';
-            
-            // Загружаем фото через AJAX только при первом открытии
-            if (!photosLoaded && containerId) {
-                loading.style.display = 'block';
-                loading.innerHTML = '⏳ Загрузка фотографий...';
-                
-                fetch(`/core/container/${containerId}/photos-json/`)
-                    .then(response => response.json())
-                    .then(data => {
-                        loading.style.display = 'none';
-                        if (data.success) {
-                            photosData = data.photos;
-                            renderPhotos();
-                        } else {
-                            document.getElementById('photosContent').innerHTML = `
-                                <div class="no-photos">
-                                    <div class="no-photos-icon">⚠️</div>
-                                    <p>Ошибка загрузки: ${data.error}</p>
-                                </div>
-                            `;
-                        }
-                    })
-                    .catch(error => {
-                        loading.style.display = 'none';
+
+    // Загружаем фото через AJAX при первом раскрытии <details>.
+    const detailsEl = gallery ? gallery.querySelector(':scope > details') : null;
+    if (detailsEl) {
+        detailsEl.addEventListener('toggle', function() {
+            if (!detailsEl.open) return;
+            if (photosLoaded || !containerId) return;
+
+            const loading = document.getElementById('photosLoading');
+            loading.style.display = 'block';
+            loading.innerHTML = '⏳ Загрузка фотографий...';
+
+            fetch(`/core/container/${containerId}/photos-json/`)
+                .then(response => response.json())
+                .then(data => {
+                    loading.style.display = 'none';
+                    if (data.success) {
+                        photosData = data.photos;
+                        renderPhotos();
+                    } else {
                         document.getElementById('photosContent').innerHTML = `
                             <div class="no-photos">
                                 <div class="no-photos-icon">⚠️</div>
-                                <p>Ошибка загрузки фотографий</p>
+                                <p>Ошибка загрузки: ${data.error}</p>
                             </div>
                         `;
-                    });
-                
-                photosLoaded = true;
-            }
-        } else {
-            content.style.display = 'none';
-            icon.textContent = '▶';
-        }
-    };
+                    }
+                })
+                .catch(error => {
+                    loading.style.display = 'none';
+                    document.getElementById('photosContent').innerHTML = `
+                        <div class="no-photos">
+                            <div class="no-photos-icon">⚠️</div>
+                            <p>Ошибка загрузки фотографий</p>
+                        </div>
+                    `;
+                });
+
+            photosLoaded = true;
+        });
+    }
     
     // Функция рендеринга фото после загрузки через AJAX
     function renderPhotos() {
