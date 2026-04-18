@@ -1,0 +1,617 @@
+{% extends "admin/base_site.html" %}
+{% load static i18n %}
+
+{% block title %}Печать наклеек | Caromoto CRM{% endblock %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <style>
+        main#content-start, main.content { padding: 0 !important; }
+        #content {
+            background: #f4f2ff;
+            min-height: 100vh;
+            max-width: 100% !important;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+        #content-main { padding: 0; }
+
+        .lbl-wrap {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 28px 32px;
+            display: grid;
+            grid-template-columns: 380px 1fr;
+            gap: 28px;
+            align-items: start;
+        }
+        @media (max-width: 1100px) {
+            .lbl-wrap { grid-template-columns: 1fr; }
+        }
+
+        .lbl-card {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+            border: 1px solid rgba(108,92,231,.14);
+            padding: 24px;
+        }
+        .lbl-card h2 {
+            margin: 0 0 18px;
+            font-size: 1.15em;
+            font-weight: 800;
+            color: #1a1a2e;
+        }
+        .lbl-card h3 {
+            margin: 0 0 10px;
+            font-size: .98em;
+            font-weight: 700;
+            color: #4a4a68;
+        }
+        .lbl-card .hint {
+            color: #7c7c9a;
+            font-size: .85em;
+            margin: 0 0 14px;
+            line-height: 1.45;
+        }
+        .lbl-card label {
+            display: block;
+            font-weight: 600;
+            color: #4a4a68;
+            font-size: .88em;
+            margin: 0 0 6px;
+        }
+        .lbl-card select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid rgba(108,92,231,.25);
+            border-radius: 10px;
+            font-size: .95em;
+            background: #fff;
+            color: #1a1a2e;
+            font-family: inherit;
+            margin-bottom: 16px;
+        }
+        .lbl-card select:focus {
+            outline: none;
+            border-color: #6c5ce7;
+            box-shadow: 0 0 0 3px rgba(108,92,231,.15);
+        }
+
+        .lbl-stats {
+            background: #f4f2ff;
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-bottom: 16px;
+            font-size: .88em;
+            color: #4a4a68;
+        }
+        .lbl-stats b { color: #1a1a2e; }
+        .lbl-stats .ok { color: #2e7d32; }
+        .lbl-stats .warn { color: #c62828; }
+
+        .lbl-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 12px 16px;
+            background: linear-gradient(135deg, #6c5ce7, #8b7bff);
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            font-size: 1em;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform .1s, box-shadow .15s;
+            font-family: inherit;
+            text-decoration: none;
+        }
+        .lbl-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(108,92,231,.35);
+        }
+        .lbl-btn.secondary {
+            background: #fff;
+            color: #6c5ce7;
+            border: 1px solid rgba(108,92,231,.3);
+        }
+        .lbl-btn.secondary:hover {
+            background: #f4f2ff;
+            box-shadow: 0 4px 10px rgba(108,92,231,.15);
+        }
+
+        .lbl-tools {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+        .lbl-tools .lbl-btn { width: auto; padding: 8px 12px; font-size: .85em; font-weight: 600; }
+
+        .lbl-advanced {
+            border: 1px solid rgba(108,92,231,.18);
+            border-radius: 10px;
+            margin-bottom: 16px;
+            background: #faf9ff;
+        }
+        .lbl-advanced > summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 10px 14px;
+            font-weight: 700;
+            color: #4a4a68;
+            font-size: .9em;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            user-select: none;
+            border-radius: 10px;
+        }
+        .lbl-advanced > summary::-webkit-details-marker { display: none; }
+        .lbl-advanced > summary::after {
+            content: "▸";
+            color: #9999b5;
+            font-size: 1em;
+            transition: transform .15s;
+        }
+        .lbl-advanced[open] > summary::after { transform: rotate(90deg); }
+        .lbl-advanced > summary:hover { background: #f4f2ff; }
+        .lbl-advanced > .lbl-advanced-body {
+            padding: 4px 14px 14px;
+            border-top: 1px solid rgba(108,92,231,.12);
+        }
+        .lbl-advanced > .lbl-advanced-body > label:first-child { margin-top: 10px; }
+
+        .lbl-sheet-box {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+            border: 1px solid rgba(108,92,231,.14);
+            padding: 24px;
+        }
+        .lbl-sheet-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .lbl-sheet-header h2 {
+            margin: 0;
+            font-size: 1.15em;
+            font-weight: 800;
+            color: #1a1a2e;
+        }
+
+        /* Визуальный лист A4 с ячейками */
+        .lbl-sheet {
+            background: #fafafc;
+            border: 1px solid #d9d6e8;
+            border-radius: 8px;
+            margin: 0 auto;
+            position: relative;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,.5);
+        }
+        .lbl-sheet-grid {
+            display: grid;
+            width: 100%;
+            height: 100%;
+        }
+        .lbl-cell {
+            position: relative;
+            border: 1px dashed #b4aee0;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 11px;
+            color: #6c5ce7;
+            font-weight: 600;
+            transition: background .12s, border-color .12s;
+            user-select: none;
+            overflow: hidden;
+        }
+        .lbl-cell:hover {
+            background: #f4f2ff;
+        }
+        .lbl-cell.used {
+            background: repeating-linear-gradient(45deg, #ffe3e3, #ffe3e3 6px, #ffd0d0 6px, #ffd0d0 12px);
+            border-color: #c62828;
+            color: #c62828;
+        }
+        .lbl-cell.used::after {
+            content: "✕";
+            position: absolute;
+            font-size: 18px;
+            font-weight: 900;
+        }
+        .lbl-cell .cell-num {
+            opacity: .5;
+        }
+        .lbl-cell.filled {
+            background: #e8f5e9;
+            border-color: #2e7d32;
+            color: #2e7d32;
+        }
+        .lbl-cell.filled::after {
+            content: "📦";
+            position: absolute;
+            font-size: 14px;
+            bottom: 2px;
+            right: 2px;
+        }
+
+        .lbl-legend {
+            display: flex;
+            gap: 14px;
+            margin-top: 14px;
+            flex-wrap: wrap;
+            font-size: .82em;
+            color: #4a4a68;
+        }
+        .lbl-legend span {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .lbl-legend .swatch {
+            width: 14px;
+            height: 14px;
+            border-radius: 3px;
+            border: 1px solid #b4aee0;
+            display: inline-block;
+        }
+        .lbl-legend .swatch.free { background: #fff; }
+        .lbl-legend .swatch.used {
+            background: repeating-linear-gradient(45deg, #ffe3e3, #ffe3e3 4px, #ffd0d0 4px, #ffd0d0 8px);
+            border-color: #c62828;
+        }
+        .lbl-legend .swatch.filled { background: #e8f5e9; border-color: #2e7d32; }
+
+        .lbl-preview-list {
+            margin-top: 20px;
+            border-top: 1px solid #ece9f7;
+            padding-top: 18px;
+        }
+        .lbl-preview-list h3 {
+            margin: 0 0 12px;
+            font-size: .98em;
+            font-weight: 700;
+            color: #1a1a2e;
+        }
+        .lbl-preview-item {
+            background: #f8f7fc;
+            border-radius: 10px;
+            padding: 10px 14px;
+            margin-bottom: 8px;
+            font-size: .88em;
+            color: #4a4a68;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .lbl-preview-item b { color: #1a1a2e; font-size: 1.05em; }
+        .lbl-preview-item .muted { color: #9999b5; }
+    </style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Главная</a>
+    &rsaquo; <a href="{% url 'admin:core_container_changelist' %}">Контейнеры</a>
+    &rsaquo; Печать наклеек
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="lbl-wrap">
+    <div class="lbl-card">
+        <h2>Настройки печати</h2>
+        <p class="hint">Выберите формат листа Forpus и отметьте ячейки, которые уже использованы, — наклейки будут размещены только на свободных позициях.</p>
+
+        <form id="print-form" method="post" action="{{ print_url }}" target="_blank">
+            {% csrf_token %}
+            <input type="hidden" name="container_ids" value="{{ container_ids_csv }}">
+            <input type="hidden" name="skipped_cells" id="skipped-cells" value="">
+
+            <label for="format-select">Формат листа</label>
+            <select name="format" id="format-select">
+                {% for f in formats_list %}
+                    <option value="{{ f.code }}" data-cols="{{ f.cols }}" data-rows="{{ f.rows }}"
+                            data-w="{{ f.w }}" data-h="{{ f.h }}"
+                            data-mx="{{ f.margin_x }}" data-my="{{ f.margin_y }}"
+                            data-count="{{ f.count }}"
+                            {% if f.code == default_format %}selected{% endif %}>{{ f.name }}</option>
+                {% endfor %}
+            </select>
+
+            <details class="lbl-advanced">
+                <summary>⚙️ Тонкая настройка принтера</summary>
+                <div class="lbl-advanced-body">
+
+                    <label for="safe-margin">
+                        Безопасный отступ от края листа (мм)
+                        <span style="font-weight: 400; color: #7c7c9a; font-size: .85em;">
+                            · непечатаемая зона ~3–5 мм
+                        </span>
+                    </label>
+                    <input type="number" name="safe_margin" id="safe-margin"
+                           value="{{ default_safe_margin }}" min="0" max="15" step="0.5"
+                           style="width: 100%; padding: 10px 12px; border: 1px solid rgba(108,92,231,.25); border-radius: 10px; font-size: .95em; background: #fff; color: #1a1a2e; font-family: inherit; margin-bottom: 6px;">
+                    <p class="hint">
+                        Для Brother DCP-L2620DW рекомендуется 4 мм. Если обрезается — увеличьте.
+                    </p>
+
+                    <label>
+                        Калибровка смещения (мм)
+                        <span style="font-weight: 400; color: #7c7c9a; font-size: .85em;">
+                            · если лист «уходит» в сторону
+                        </span>
+                    </label>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px;">
+                        <div>
+                            <label for="offset-x" style="font-weight: 500; font-size: .82em; color: #7c7c9a; margin-bottom: 4px;">
+                                Сдвиг X <span style="color: #9999b5;">(+ вправо / − влево)</span>
+                            </label>
+                            <input type="number" name="offset_x" id="offset-x"
+                                   value="0" min="-15" max="15" step="0.5"
+                                   style="width: 100%; padding: 10px 12px; border: 1px solid rgba(108,92,231,.25); border-radius: 10px; font-size: .95em; background: #fff; color: #1a1a2e; font-family: inherit;">
+                        </div>
+                        <div>
+                            <label for="offset-y" style="font-weight: 500; font-size: .82em; color: #7c7c9a; margin-bottom: 4px;">
+                                Сдвиг Y <span style="color: #9999b5;">(+ вниз / − вверх)</span>
+                            </label>
+                            <input type="number" name="offset_y" id="offset-y"
+                                   value="0" min="-15" max="15" step="0.5"
+                                   style="width: 100%; padding: 10px 12px; border: 1px solid rgba(108,92,231,.25); border-radius: 10px; font-size: .95em; background: #fff; color: #1a1a2e; font-family: inherit;">
+                        </div>
+                    </div>
+                    <p class="hint" style="margin-top: 0; margin-bottom: 16px;">
+                        Если левый край обрезается — поставьте <b>Сдвиг X = −2</b>.
+                    </p>
+
+                    <label>
+                        Сжать содержимое наклейки (мм на сторону)
+                        <span style="font-weight: 400; color: #7c7c9a; font-size: .85em;">
+                            · уменьшает общую ширину/высоту печати
+                        </span>
+                    </label>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px;">
+                        <div>
+                            <label for="inset-h" style="font-weight: 500; font-size: .82em; color: #7c7c9a; margin-bottom: 4px;">
+                                По ширине <span style="color: #9999b5;">(слева + справа)</span>
+                            </label>
+                            <input type="number" name="inset_h" id="inset-h"
+                                   value="3" min="0" max="10" step="0.5"
+                                   style="width: 100%; padding: 10px 12px; border: 1px solid rgba(108,92,231,.25); border-radius: 10px; font-size: .95em; background: #fff; color: #1a1a2e; font-family: inherit;">
+                        </div>
+                        <div>
+                            <label for="inset-v" style="font-weight: 500; font-size: .82em; color: #7c7c9a; margin-bottom: 4px;">
+                                По высоте <span style="color: #9999b5;">(сверху + снизу)</span>
+                            </label>
+                            <input type="number" name="inset_v" id="inset-v"
+                                   value="1" min="0" max="10" step="0.5"
+                                   style="width: 100%; padding: 10px 12px; border: 1px solid rgba(108,92,231,.25); border-radius: 10px; font-size: .95em; background: #fff; color: #1a1a2e; font-family: inherit;">
+                        </div>
+                    </div>
+                    <p class="hint" style="margin-top: 0; margin-bottom: 16px;">
+                        Больше значение — больше запас под механические смещения принтера.
+                    </p>
+
+                    <label>
+                        Доп. шаг между наклейками (мм)
+                        <span style="font-weight: 400; color: #7c7c9a; font-size: .85em;">
+                            · если ряды «сползают»
+                        </span>
+                    </label>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px;">
+                        <div>
+                            <label for="row-gap" style="font-weight: 500; font-size: .82em; color: #7c7c9a; margin-bottom: 4px;">
+                                Между рядами <span style="color: #9999b5;">(по вертикали)</span>
+                            </label>
+                            <input type="number" name="row_gap" id="row-gap"
+                                   value="0" min="-5" max="10" step="0.5"
+                                   style="width: 100%; padding: 10px 12px; border: 1px solid rgba(108,92,231,.25); border-radius: 10px; font-size: .95em; background: #fff; color: #1a1a2e; font-family: inherit;">
+                        </div>
+                        <div>
+                            <label for="col-gap" style="font-weight: 500; font-size: .82em; color: #7c7c9a; margin-bottom: 4px;">
+                                Между колонками <span style="color: #9999b5;">(по горизонтали)</span>
+                            </label>
+                            <input type="number" name="col_gap" id="col-gap"
+                                   value="0" min="-5" max="10" step="0.5"
+                                   style="width: 100%; padding: 10px 12px; border: 1px solid rgba(108,92,231,.25); border-radius: 10px; font-size: .95em; background: #fff; color: #1a1a2e; font-family: inherit;">
+                        </div>
+                    </div>
+                    <p class="hint" style="margin-top: 0; margin-bottom: 4px;">
+                        Если 3-я/4-я наклейка печатается поверх 1-й/2-й — увеличивайте <b>Между рядами</b> на 0.5–1 мм. Эффект накапливается: +1 мм значит 2-й ряд сдвигается на 1 мм вниз, 3-й на 2 мм, и т.д.
+                    </p>
+                </div>
+            </details>
+
+            <div class="lbl-stats">
+                Контейнеров к печати: <b>{{ labels_count }}</b><br>
+                Ячеек на листе: <b id="stat-total">—</b><br>
+                Свободно на текущем листе: <b id="stat-free" class="ok">—</b><br>
+                <span id="stat-pages-wrap">Листов понадобится: <b id="stat-pages">—</b></span>
+            </div>
+
+            <button type="submit" class="lbl-btn">
+                🖨️ Распечатать
+            </button>
+        </form>
+
+        {% if labels_count %}
+        <div class="lbl-preview-list">
+            <h3>Выбранные контейнеры</h3>
+            {% for lbl in labels_preview %}
+                <div class="lbl-preview-item">
+                    <span><b>{{ lbl.number }}</b>{% if lbl.lines %} <span class="muted">· {{ lbl.lines }}</span>{% endif %}</span>
+                    <span class="muted">{{ lbl.cars_count }} авто</span>
+                </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="lbl-preview-list">
+            <p class="hint">Контейнеры не выбраны. Вернитесь в список контейнеров, выделите нужные и выберите действие «Распечатать наклейки».</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="lbl-sheet-box">
+        <div class="lbl-sheet-header">
+            <h2>Схема листа</h2>
+            <div class="lbl-tools">
+                <button type="button" class="lbl-btn secondary" id="btn-clear">Очистить</button>
+                <button type="button" class="lbl-btn secondary" id="btn-invert">Инверт.</button>
+            </div>
+        </div>
+        <p class="hint" style="margin: 0 0 14px;">Кликните по ячейке, чтобы отметить её как уже использованную (крестик). Оставшиеся будут заполнены наклейками.</p>
+
+        <div id="sheet-container"></div>
+
+        <div class="lbl-legend">
+            <span><span class="swatch free"></span> свободно</span>
+            <span><span class="swatch used"></span> уже использовано</span>
+            <span><span class="swatch filled"></span> будет наклейка</span>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const DISPLAY_MAX_WIDTH = 520; // px — visible sheet width
+    const labelsCount = {{ labels_count }};
+    const select = document.getElementById('format-select');
+    const container = document.getElementById('sheet-container');
+    const skippedInput = document.getElementById('skipped-cells');
+    const statTotal = document.getElementById('stat-total');
+    const statFree = document.getElementById('stat-free');
+    const statPages = document.getElementById('stat-pages');
+
+    const skippedByFormat = {}; // remember per-format selections
+
+    function currentKey() { return select.value; }
+
+    function getSkipped() {
+        const k = currentKey();
+        if (!skippedByFormat[k]) skippedByFormat[k] = new Set();
+        return skippedByFormat[k];
+    }
+
+    function renderSheet() {
+        const opt = select.selectedOptions[0];
+        const cols = parseInt(opt.dataset.cols);
+        const rows = parseInt(opt.dataset.rows);
+        const w = parseFloat(opt.dataset.w);
+        const h = parseFloat(opt.dataset.h);
+        const mx = parseFloat(opt.dataset.mx);
+        const my = parseFloat(opt.dataset.my);
+        const count = parseInt(opt.dataset.count);
+
+        // px per mm to fit DISPLAY_MAX_WIDTH at 210 mm
+        const scale = DISPLAY_MAX_WIDTH / 210.0;
+        const pageW = 210 * scale;
+        const pageH = 297 * scale;
+
+        let html = '<div class="lbl-sheet" style="width:' + pageW + 'px; height:' + pageH + 'px;">';
+        html += '<div class="lbl-sheet-grid" style="'
+             + 'grid-template-columns: repeat(' + cols + ', ' + (w*scale) + 'px);'
+             + 'grid-template-rows: repeat(' + rows + ', ' + (h*scale) + 'px);'
+             + 'padding: ' + (my*scale) + 'px ' + (mx*scale) + 'px;'
+             + 'box-sizing: border-box;'
+             + '">';
+        const skipped = getSkipped();
+        for (let i = 0; i < count; i++) {
+            const isUsed = skipped.has(i);
+            let cellClass = 'lbl-cell';
+            let labelForCell = '';
+            if (isUsed) {
+                cellClass += ' used';
+            } else {
+                // compute which fill order
+                // we need to know index among non-used cells in page 1
+            }
+            html += '<div class="' + cellClass + '" data-idx="' + i + '"><span class="cell-num">' + (i+1) + '</span></div>';
+        }
+        html += '</div></div>';
+        container.innerHTML = html;
+
+        // Now mark cells that will be filled with a label (up to labelsCount)
+        markFilled();
+        updateStats();
+        updateSkippedInput();
+
+        container.querySelectorAll('.lbl-cell').forEach(cell => {
+            cell.addEventListener('click', () => {
+                const idx = parseInt(cell.dataset.idx);
+                const s = getSkipped();
+                if (s.has(idx)) s.delete(idx); else s.add(idx);
+                renderSheet();
+            });
+        });
+    }
+
+    function markFilled() {
+        const skipped = getSkipped();
+        const cells = container.querySelectorAll('.lbl-cell');
+        let placed = 0;
+        cells.forEach(cell => {
+            const idx = parseInt(cell.dataset.idx);
+            if (skipped.has(idx)) return;
+            if (placed < labelsCount) {
+                cell.classList.add('filled');
+                placed++;
+            }
+        });
+    }
+
+    function updateStats() {
+        const opt = select.selectedOptions[0];
+        const count = parseInt(opt.dataset.count);
+        const skipped = getSkipped();
+        const free = count - skipped.size;
+        statTotal.textContent = count;
+        statFree.textContent = free;
+        statFree.classList.toggle('warn', free < labelsCount && labelsCount > 0);
+        statFree.classList.toggle('ok', free >= labelsCount || labelsCount === 0);
+        if (labelsCount === 0) {
+            statPages.textContent = '0';
+        } else if (labelsCount <= free) {
+            statPages.textContent = '1';
+        } else {
+            const remaining = labelsCount - free;
+            const extra = Math.ceil(remaining / count);
+            statPages.textContent = (1 + extra) + '';
+        }
+    }
+
+    function updateSkippedInput() {
+        const skipped = getSkipped();
+        skippedInput.value = Array.from(skipped).sort((a,b)=>a-b).join(',');
+    }
+
+    document.getElementById('btn-clear').addEventListener('click', () => {
+        skippedByFormat[currentKey()] = new Set();
+        renderSheet();
+    });
+    document.getElementById('btn-invert').addEventListener('click', () => {
+        const opt = select.selectedOptions[0];
+        const count = parseInt(opt.dataset.count);
+        const s = getSkipped();
+        const inv = new Set();
+        for (let i = 0; i < count; i++) if (!s.has(i)) inv.add(i);
+        skippedByFormat[currentKey()] = inv;
+        renderSheet();
+    });
+    select.addEventListener('change', renderSheet);
+
+    document.getElementById('print-form').addEventListener('submit', () => {
+        updateSkippedInput();
+    });
+
+    renderSheet();
+})();
+</script>
+{% endblock %}

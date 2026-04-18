@@ -79,7 +79,7 @@ class ContainerAdmin(admin.ModelAdmin):
         }),
     )
     readonly_fields = ('days', 'storage_cost')
-    actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'check_container_status', 'bulk_update_container_statuses', 'sync_photos_from_gdrive', 'resend_planned_notifications', 'resend_unload_notifications']
+    actions = ['print_labels_action', 'set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'check_container_status', 'bulk_update_container_statuses', 'sync_photos_from_gdrive', 'resend_planned_notifications', 'resend_unload_notifications']
 
     class Media:
         css = {'all': ('css/dashboard_admin.css',)}
@@ -688,6 +688,16 @@ class ContainerAdmin(admin.ModelAdmin):
             )
 
     resend_unload_notifications.short_description = "📧 Повторить уведомление о разгрузке"
+
+    def print_labels_action(self, request, queryset):
+        """Редиректит на страницу настройки печати наклеек с выбранными контейнерами."""
+        from core.views.labels import redirect_to_print_settings
+        ids = list(queryset.values_list('id', flat=True))
+        if not ids:
+            self.message_user(request, "Выберите хотя бы один контейнер.", level='WARNING')
+            return None
+        return redirect_to_print_settings(ids)
+    print_labels_action.short_description = "🏷️ Распечатать наклейки"
 
     def change_view(self, request, object_id, form_url='', extra_context=None):
         """Override change_view to pass photo data to template"""

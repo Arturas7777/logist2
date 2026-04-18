@@ -14,6 +14,7 @@ from core.views_invoice_audit import (
     supplier_cost_confirm, supplier_cost_confirm_all,
     supplier_cost_link, supplier_cost_car_services,
 )
+from core.views.labels import print_labels_settings, print_labels_sheet
 
 router = DefaultRouter()
 router.register(r'cars', CarViewSet, basename='car')
@@ -100,6 +101,10 @@ urlpatterns = [
     path('admin/reconciliation/supplier-cost/<int:sc_id>/services/', supplier_cost_car_services, name='supplier_cost_car_services'),
     path('admin/newinvoice/<int:pk>/reanalyze/', reanalyze_newinvoice, name='reanalyze_newinvoice'),
     path('admin/newinvoice/<int:pk>/audit-poll/', newinvoice_audit_poll, name='newinvoice_audit_poll'),
+
+    # ── Печать наклеек (Forpus self-adhesive labels) ─────────────────────────
+    path('admin/labels/print/', print_labels_settings, name='labels_print_settings'),
+    path('admin/labels/sheet/', print_labels_sheet, name='labels_print_sheet'),
 
     path('ws/', include(websocket_urlpatterns)),
 ]
