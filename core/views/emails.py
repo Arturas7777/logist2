@@ -52,11 +52,21 @@ def email_detail(request, email_id: int):
         if quoted_html:
             safe_html_quoted = _sanitize_html(quoted_html)
 
+    # Фильтруем inline-картинки из HTML-сигнатуры (логотипы, Outlook-… .png)
+    # — пользователю они не нужны. Индекс сохраняем оригинальный, чтобы
+    # email_attachment мог открыть файл по тому же attachments_json.
+    from core.templatetags.email_extras import _INLINE_IMG_FILENAME
+
     attachments = []
     for idx, att in enumerate(email.attachments_json or []):
+        filename = att.get('filename') or ''
+        if att.get('is_inline') or att.get('skipped_reason') == 'inline':
+            continue
+        if filename and _INLINE_IMG_FILENAME.match(filename):
+            continue
         attachments.append({
             'index': idx,
-            'filename': att.get('filename') or f'attachment_{idx}',
+            'filename': filename or f'attachment_{idx}',
             'size': att.get('size') or 0,
             'mime_type': att.get('content_type') or 'application/octet-stream',
             'available': bool(att.get('storage_path')),

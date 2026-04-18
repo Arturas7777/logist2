@@ -46,6 +46,8 @@ class ParsedAttachment:
     size: int
     attachment_id: str  # Gmail attachmentId для messages.attachments.get
     data: bytes | None = None  # заполняется только если уже скачано
+    is_inline: bool = False     # картинка из <img src="cid:…"> (логотип, подпись)
+    content_id: str = ''        # значение Content-ID для связи с HTML (без <>)
 
 
 @dataclass
@@ -281,11 +283,14 @@ def _walk_payload(
     attachment_id = body.get('attachmentId') or ''
 
     if filename and attachment_id:
+        is_inline, content_id = _detect_inline(part, mime)
         attachments.append(ParsedAttachment(
             filename=_decode_header_value(filename),
             mime_type=mime or 'application/octet-stream',
             size=int(body_size or 0),
             attachment_id=attachment_id,
+            is_inline=is_inline,
+            content_id=content_id,
         ))
         return
 
@@ -304,6 +309,38 @@ def _walk_payload(
             body_text_parts.append(decoded)
         elif mime == 'text/html':
             body_html_parts.append(decoded)
+
+
+def _detect_inline(part: dict[str, Any], mime: str) -> tuple[bool, str]:
+    """Возвращает (is_inline, content_id).
+
+    MIME-часть считается inline, если:
+      * присутствует заголовок ``Content-ID`` (значит, HTML ссылается через
+        ``cid:…``), ИЛИ
+      * ``Content-Disposition`` начинается с ``inline``.
+    В обоих случаях это элемент вёрстки/подписи (логотип, иконка, трекер),
+    а не пользовательское вложение.
+    """
+    content_id = ''
+    disposition = ''
+    for h in part.get('headers') or []:
+        name = (h.get('name') or '').lower()
+        value = h.get('value') or ''
+        if name == 'content-id':
+            content_id = value.strip().strip('<>').strip()
+        elif name == 'content-disposition':
+            disposition = value.strip().lower()
+    is_inline = bool(content_id) or disposition.startswith('inline')
+    # Страхуем: если имя файла явно автосгенерировано Gmail/Outlook под
+    # inline-картинку (``image001.png``, ``Outlook-abc123.jpg``) — тоже
+    # считаем inline, даже если Content-ID потерялся.
+    filename_lower = (part.get('filename') or '').lower()
+    if mime.startswith('image/') and not is_inline:
+        if re.match(r'^image\d+\.(png|jpe?g|gif|bmp)$', filename_lower):
+            is_inline = True
+        elif re.match(r'^outlook-[\w-]+\.(png|jpe?g|gif|bmp)$', filename_lower):
+            is_inline = True
+    return is_inline, content_id
 
 
 def _guess_charset(part: dict[str, Any]) -> str:

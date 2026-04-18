@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 
 from django import template
 from django.utils.safestring import mark_safe
@@ -89,6 +90,44 @@ def avatar_color_filter(name_or_addr: str) -> str:
         return _AVATAR_COLORS[0]
     h = int(hashlib.md5(key.encode('utf-8')).hexdigest(), 16)
     return _AVATAR_COLORS[h % len(_AVATAR_COLORS)]
+
+
+# Inline-картинки, сохранённые ДО того как парсер научился их определять.
+# Фильтруем по имени: Gmail/Outlook автосгенерированные имена для embedded
+# изображений в HTML-сигнатурах.
+_INLINE_IMG_FILENAME = re.compile(
+    r'^(?:image\d+|outlook-[\w-]+)\.(?:png|jpe?g|gif|bmp)$',
+    re.IGNORECASE,
+)
+
+
+@register.filter(name='visible_attachments')
+def visible_attachments_filter(attachments):
+    """Оставляет только «настоящие» вложения — без inline-картинок подписи.
+
+    Поддерживает три признака:
+      * ``is_inline: True`` (новые записи, после правки парсера);
+      * ``skipped_reason == 'inline'`` — синоним первого;
+      * эвристика по имени файла ``image001.png`` / ``Outlook-xxx.jpg`` —
+        для уже сохранённых писем, где ``is_inline`` не был выставлен.
+    """
+    if not attachments:
+        return []
+    result = []
+    for idx, att in enumerate(attachments):
+        if not isinstance(att, dict):
+            continue
+        if att.get('is_inline'):
+            continue
+        if att.get('skipped_reason') == 'inline':
+            continue
+        filename = (att.get('filename') or '').strip()
+        if filename and _INLINE_IMG_FILENAME.match(filename):
+            continue
+        # Прокидываем оригинальный индекс — view email_attachment открывает
+        # файл по индексу в attachments_json, а мы смещаемся при фильтрации.
+        result.append({**att, 'orig_index': idx})
+    return result
 
 
 @register.filter(name='linkify_urls', is_safe=True)

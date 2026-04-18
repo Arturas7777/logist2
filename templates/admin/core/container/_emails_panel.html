@@ -397,12 +397,13 @@
                                     {% endif %}
                                 {% endwith %}
 
-                                {% if email.attachments_json %}
+                                {% with visible=email.attachments_json|visible_attachments %}
+                                {% if visible %}
                                     <div class="cm-attachments">
-                                        {% for att in email.attachments_json %}
+                                        {% for att in visible %}
                                             {% if att.storage_path %}
                                                 <a class="cm-attachment"
-                                                   href="{% url 'core:email_attachment' email.pk forloop.counter0 %}"
+                                                   href="{% url 'core:email_attachment' email.pk att.orig_index %}"
                                                    target="_blank"
                                                    rel="noopener"
                                                    title="{{ att.filename }} ({{ att.size|filesizeformat }})">
@@ -420,6 +421,7 @@
                                         {% endfor %}
                                     </div>
                                 {% endif %}
+                                {% endwith %}
 
                                 {% with quote=email.body_text|quote_part %}
                                     {% if quote %}
