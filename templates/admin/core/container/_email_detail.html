@@ -1,0 +1,112 @@
+{# Развёрнутое содержимое одного письма (inline-expand в сайдбаре) #}
+{% load static %}
+
+<div class="cm-email-detail" style="border-top:1px solid var(--cm-border,#eee);padding:12px 0 0;font-size:0.82rem;">
+  <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;color:var(--cm-text-secondary);font-size:0.75rem;">
+    <span><strong>От:</strong> {{ email.from_addr }}</span>
+    {% if email.to_addrs %}
+      <span><strong>Кому:</strong> {{ email.to_addrs|truncatechars:80 }}</span>
+    {% endif %}
+    {% if email.cc_addrs %}
+      <span><strong>Копия:</strong> {{ email.cc_addrs|truncatechars:80 }}</span>
+    {% endif %}
+    <span><strong>Дата:</strong> {{ email.received_at|date:"d.m.Y H:i" }}</span>
+  </div>
+
+  {% if email.subject %}
+    <div style="font-weight:600;margin-bottom:8px;">{{ email.subject }}</div>
+  {% endif %}
+
+  {% if show_html and safe_html_reply %}
+    <div class="cm-email-html"
+         style="max-height:400px;overflow-y:auto;padding:8px;border:1px solid var(--cm-border,#eee);
+                border-radius:4px;background:#fff;">
+      {{ safe_html_reply|safe }}
+    </div>
+    {% if safe_html_quoted %}
+      <details style="margin-top:6px;">
+        <summary style="cursor:pointer;color:#64748b;font-size:0.72rem;user-select:none;
+                        padding:4px 6px;border-radius:4px;background:#f8fafc;display:inline-block;">
+          ▾ Показать цитируемую переписку
+        </summary>
+        <div class="cm-email-html cm-email-quoted"
+             style="max-height:400px;overflow-y:auto;padding:8px;margin-top:4px;
+                    border:1px dashed var(--cm-border,#e5e7eb);border-radius:4px;
+                    background:#f8fafc;color:#64748b;">
+          {{ safe_html_quoted|safe }}
+        </div>
+      </details>
+    {% endif %}
+    <div style="margin-top:6px;text-align:right;">
+      <a href="?" class="cm-btn cm-btn-outline-action"
+         style="padding:2px 10px;font-size:0.7rem;"
+         onclick="event.preventDefault();this.closest('.cm-email-body').innerHTML='';this.closest('.cm-email-body').dataset.loaded='';this.closest('.cm-email-item').click();">
+        Показать текст
+      </a>
+    </div>
+  {% else %}
+    <pre style="white-space:pre-wrap;word-wrap:break-word;margin:0;padding:8px;
+                border:1px solid var(--cm-border,#eee);border-radius:4px;background:#fafafa;
+                max-height:400px;overflow-y:auto;font-family:ui-monospace,Menlo,monospace;font-size:0.78rem;">{{ reply_text|default:email.snippet }}</pre>
+    {% if quoted_text %}
+      <details style="margin-top:6px;">
+        <summary style="cursor:pointer;color:#64748b;font-size:0.72rem;user-select:none;
+                        padding:4px 6px;border-radius:4px;background:#f1f5f9;display:inline-block;">
+          ▾ Показать цитируемую переписку
+        </summary>
+        <pre class="cm-email-quoted"
+             style="white-space:pre-wrap;word-wrap:break-word;margin:4px 0 0;padding:8px;
+                    border:1px dashed var(--cm-border,#e5e7eb);border-radius:4px;
+                    background:#f8fafc;color:#94a3b8;
+                    max-height:400px;overflow-y:auto;
+                    font-family:ui-monospace,Menlo,monospace;font-size:0.76rem;">{{ quoted_text }}</pre>
+      </details>
+    {% endif %}
+    {% if email.body_html %}
+      <div style="margin-top:6px;text-align:right;">
+        <a href="?html=1" class="cm-btn cm-btn-outline-action"
+           style="padding:2px 10px;font-size:0.7rem;"
+           onclick="event.preventDefault();
+                    var body=this.closest('.cm-email-body');
+                    fetch('/core/emails/{{ email.pk }}/?html=1',{headers:{'X-Requested-With':'XMLHttpRequest'}})
+                      .then(function(r){return r.text();})
+                      .then(function(html){body.innerHTML=html;});">
+          Показать HTML
+        </a>
+      </div>
+    {% endif %}
+  {% endif %}
+
+  {% if attachments %}
+    <div style="margin-top:10px;">
+      <div style="font-weight:600;font-size:0.75rem;margin-bottom:4px;">Вложения</div>
+      <ul style="list-style:none;margin:0;padding:0;">
+        {% for att in attachments %}
+          <li style="padding:4px 0;font-size:0.78rem;display:flex;align-items:center;gap:6px;">
+            <span>📎</span>
+            {% if att.available %}
+              <a href="{% url 'core:email_attachment' email.pk att.index %}"
+                 target="_blank">{{ att.filename }}</a>
+            {% else %}
+              <span style="color:var(--cm-text-secondary);" title="{{ att.skipped_reason }}">
+                {{ att.filename }} (недоступно)
+              </span>
+            {% endif %}
+            <span style="color:var(--cm-text-secondary);font-size:0.7rem;">
+              {{ att.size|filesizeformat }}
+            </span>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <div style="margin-top:10px;display:flex;gap:8px;font-size:0.72rem;color:var(--cm-text-secondary);">
+    <span>Статус привязки: <strong>{{ email.get_matched_by_display }}</strong></span>
+    {% if email.container and email.container != original %}
+      <span>Контейнер:
+        <a href="{% url 'admin:core_container_change' email.container_id %}">{{ email.container.number }}</a>
+      </span>
+    {% endif %}
+  </div>
+</div>

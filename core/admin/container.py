@@ -78,12 +78,36 @@ class LabelsPrintedFilter(SimpleListFilter):
         return queryset
 
 
+class HasUnreadEmailsFilter(SimpleListFilter):
+    """Фильтр по наличию писем и непрочитанных писем в карточке контейнера."""
+
+    title = 'Переписка'
+    parameter_name = 'emails'
+
+    def lookups(self, request, model_admin):
+        return (
+            ('unread', 'Есть непрочитанные'),
+            ('any', 'Есть переписка'),
+            ('none', 'Нет писем'),
+        )
+
+    def queryset(self, request, queryset):
+        value = self.value()
+        if value == 'unread':
+            return queryset.filter(emails__is_read=False).distinct()
+        if value == 'any':
+            return queryset.filter(emails__isnull=False).distinct()
+        if value == 'none':
+            return queryset.filter(emails__isnull=True)
+        return queryset
+
+
 @admin.register(Container)
 class ContainerAdmin(admin.ModelAdmin):
     change_form_template = 'admin/core/container/change_form.html'
-    list_display = ('number', 'booking_number', 'colored_status', 'eta', 'planned_unload_date', 'unload_date', 'line', 'warehouse', 'photos_count_display', 'labels_printed_display')
-    list_display_links = ('number',)
-    list_filter = (MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter, LabelsPrintedFilter)
+    list_display = ('number_with_unread', 'booking_number', 'colored_status', 'eta', 'planned_unload_date', 'unload_date', 'line', 'warehouse', 'photos_count_display', 'labels_printed_display')
+    list_display_links = ('number_with_unread',)
+    list_filter = (MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter, LabelsPrintedFilter, HasUnreadEmailsFilter)
     search_fields = ('number', 'booking_number')
     ordering = ['-unload_date', '-id']
     list_per_page = 50
@@ -106,11 +130,19 @@ class ContainerAdmin(admin.ModelAdmin):
         js = ('js/htmx.min.js', 'js/warehouse_address.js')
 
     def get_queryset(self, request):
-        from django.db.models import Count
+        from django.db.models import Count, Q
         qs = super().get_queryset(request)
         return qs.select_related('line', 'client', 'warehouse').prefetch_related(
             'container_cars'
-        ).annotate(_photos_count=Count('photos'))
+        ).annotate(
+            _photos_count=Count('photos', distinct=True),
+            _emails_total=Count('emails', distinct=True),
+            _emails_unread=Count(
+                'emails',
+                filter=Q(emails__is_read=False),
+                distinct=True,
+            ),
+        )
 
     def save_model(self, request, obj, form, change):
         start_time = time.time()
@@ -468,6 +500,33 @@ class ContainerAdmin(admin.ModelAdmin):
         return '-'
     photos_count_display.short_description = 'Фото'
     photos_count_display.admin_order_field = '_photos_count'
+
+    def number_with_unread(self, obj):
+        """Номер контейнера с маленьким бейджем непрочитанных писем слева.
+
+        * Красный — есть хотя бы одно непрочитанное сообщение
+        * Зелёный «0» — писем либо нет вовсе, либо все прочитаны
+        """
+        unread = getattr(obj, '_emails_unread', None)
+        if unread is None:
+            unread = obj.emails.filter(is_read=False).count() if obj.pk else 0
+
+        if unread > 0:
+            bg, title = '#dc2626', f'{unread} непрочитанных письма'
+        else:
+            bg, title = '#10b981', 'Непрочитанных писем нет'
+
+        return format_html(
+            '<span style="display:inline-flex;align-items:center;gap:6px;">'
+            '<span>{}</span>'
+            '<span title="{}" style="background:{};color:#fff;padding:1px 7px;'
+            'border-radius:10px;font-size:11px;font-weight:700;min-width:20px;'
+            'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">{}</span>'
+            '</span>',
+            obj.number or '—', title, bg, unread,
+        )
+    number_with_unread.short_description = '№'
+    number_with_unread.admin_order_field = 'number'
 
     def set_status_floating(self, request, queryset):
         pks = list(queryset.values_list('pk', flat=True))

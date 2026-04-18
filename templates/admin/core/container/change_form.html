@@ -252,8 +252,13 @@
 
 {% block after_related_objects %}
   {{ block.super }}
-  {# Photo gallery — separate block under all inlines #}
+  {# Photos сначала — JS позиционирует их после последнего inline. #}
   {% if original.pk %}
   {% include "admin/core/container/photos_gallery.html" with photos_json=photos_json %}
+  {% endif %}
+  {# Emails вторым — JS вставляет сразу после inline «Автомобили», #}
+  {# поэтому оказывается МЕЖДУ inlines и галереей фотографий. #}
+  {% if original.pk %}
+  {% include "admin/core/container/_emails_panel.html" %}
   {% endif %}
 {% endblock %}

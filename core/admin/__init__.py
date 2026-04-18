@@ -3,6 +3,7 @@ from core.admin.inlines import *  # noqa
 from core.admin.container import *  # noqa
 from core.admin.car import *  # noqa
 from core.admin.partners import *  # noqa
+from core.admin.email import *  # noqa
 
 # Import website admin
 from core.admin_website import (
