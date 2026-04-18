@@ -15,6 +15,7 @@ from core.services.email_reply_parser import (
     _fix_mojibake,
     extract_display_name,
     messenger_body,
+    messenger_body_from_email,
     split_reply_and_quote,
 )
 
@@ -25,6 +26,21 @@ register = template.Library()
 def messenger_body_filter(text: str) -> str:
     """Чистит письмо для messenger-просмотра: только «суть» без подписи/цитат."""
     return messenger_body(text or '')
+
+
+@register.filter(name='messenger_body_auto')
+def messenger_body_auto_filter(email) -> str:
+    """Берёт body_text, а если пусто — извлекает text из body_html.
+
+    Нужен для автонотификаций с одним HTML-альтернативом
+    (тогда без этого фильтра в шаблоне показывается серый snippet).
+    """
+    if not email:
+        return ''
+    return messenger_body_from_email(
+        getattr(email, 'body_text', '') or '',
+        getattr(email, 'body_html', '') or '',
+    )
 
 
 @register.filter(name='quote_part')

@@ -387,7 +387,7 @@
                                 {% if email.subject %}
                                     <div class="cm-subj">{{ email.subject|fix_mojibake }}</div>
                                 {% endif %}
-                                {% with cleaned=email.body_text|messenger_body %}
+                                {% with cleaned=email|messenger_body_auto %}
                                     {% if cleaned %}
                                         <div class="cm-body">{{ cleaned|linkify_urls }}</div>
                                     {% elif email.snippet %}

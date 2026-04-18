@@ -86,6 +86,8 @@ __all__ = [
     'split_reply_and_quote_html',
     'clean_message_body',
     'messenger_body',
+    'messenger_body_from_email',
+    'html_to_plain',
     'extract_display_name',
 ]
 
@@ -439,6 +441,54 @@ def clean_message_body(text: str) -> str:
 def messenger_body(text: str) -> str:
     """Композиция: split_reply_and_quote → clean_message_body для reply."""
     reply, _ = split_reply_and_quote(text or '')
+    return clean_message_body(reply)
+
+
+# ---------------------------------------------------------------------------
+# HTML → plain text (fallback, если у письма нет text/plain alternative)
+# ---------------------------------------------------------------------------
+
+import html as _html_module  # stdlib; импорт локальный чтобы не торчал в шапке
+
+_BR_RE = re.compile(r'<br\s*/?\s*>', re.IGNORECASE)
+_BLOCK_CLOSE_RE = re.compile(
+    r'</\s*(?:p|div|li|tr|h[1-6])\s*>', re.IGNORECASE,
+)
+_TAG_RE = re.compile(r'<[^>]+>')
+
+
+def html_to_plain(html: str) -> str:
+    """Быстрая HTML→text-конвертация для писем без plain-text alternative.
+
+    Не претендует на bleach-grade качество — задача скромная: сделать
+    notification-письма (``Container: XXX<br>Booking: YYY<br>…``) читаемыми
+    в messenger-ленте. Полный HTML-просмотр живёт в expand-view.
+    """
+    if not html:
+        return ''
+    t = re.sub(r'<style[\s\S]*?</style>', '', html, flags=re.IGNORECASE)
+    t = re.sub(r'<script[\s\S]*?</script>', '', t, flags=re.IGNORECASE)
+    t = _BR_RE.sub('\n', t)
+    t = _BLOCK_CLOSE_RE.sub('\n\n', t)
+    t = _TAG_RE.sub('', t)
+    t = _html_module.unescape(t)
+    t = t.replace('\xa0', ' ')
+    return t.strip()
+
+
+def messenger_body_from_email(body_text: str, body_html: str) -> str:
+    """Выбирает источник текста: plain, а если пусто — извлекает из HTML.
+
+    Используется в шаблоне через фильтр ``messenger_body_auto`` —
+    покрывает HTML-only автонотификации, у которых ``body_text == ''``
+    и в fallback раньше показывался серый Gmail-snippet.
+    """
+    if (body_text or '').strip():
+        return messenger_body(body_text)
+    plain = html_to_plain(body_html or '')
+    if not plain:
+        return ''
+    reply, _ = split_reply_and_quote(plain)
     return clean_message_body(reply)
 
 
