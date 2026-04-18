@@ -489,6 +489,13 @@ class Container(models.Model):
     google_drive_folder_url = models.URLField(max_length=500, blank=True, verbose_name="Google Drive папка",
                                                help_text="Прямая ссылка на папку с фотографиями контейнера в Google Drive")
 
+    labels_printed_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Наклейки напечатаны",
+        help_text="Дата последней печати наклеек для этого контейнера. "
+                  "Автоматически проставляется при открытии листа печати.",
+    )
+
     objects = OptimizedContainerManager()
 
     def update_days_and_storage(self):

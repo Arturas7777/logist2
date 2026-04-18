@@ -14,6 +14,7 @@ from django.contrib.admin.views.decorators import staff_member_required
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils import timezone
 
 from core.models import Container
 
@@ -149,6 +150,10 @@ def _build_label_data(container: Container) -> dict[str, Any]:
             seen.add(car.line.name)
 
     eta_str = container.eta.strftime('%d.%m.%Y') if container.eta else ''
+    printed_str = (
+        timezone.localtime(container.labels_printed_at).strftime('%d.%m.%Y %H:%M')
+        if container.labels_printed_at else ''
+    )
 
     return {
         'id': container.id,
@@ -157,6 +162,7 @@ def _build_label_data(container: Container) -> dict[str, Any]:
         'lines': ', '.join(lines),
         'cars': cars,
         'cars_count': len(cars),
+        'labels_printed_at': printed_str,
     }
 
 
@@ -272,6 +278,15 @@ def print_labels_sheet(request) -> HttpResponse:
 
     containers = _load_containers(container_ids)
     labels = [_build_label_data(c) for c in containers]
+
+    # Отмечаем все распечатанные контейнеры как «напечатанные» — проставляем
+    # текущее время. Так пользователь в админке видит, для каких контейнеров
+    # наклейки уже сделаны, и когда именно это было.
+    if containers:
+        printed_ids = [c.id for c in containers]
+        Container.objects.filter(id__in=printed_ids).update(
+            labels_printed_at=timezone.now()
+        )
 
     # Раскладываем наклейки по ячейкам с учётом пропущенных
     pages: list[list[dict[str, Any] | None]] = []

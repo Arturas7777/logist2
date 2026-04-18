@@ -3,8 +3,10 @@ import time
 from contextlib import contextmanager
 
 from django.contrib import admin
+from django.contrib.admin import SimpleListFilter
 from django.db import transaction
 from django.db.models.signals import post_delete, post_save
+from django.utils import timezone
 from django.utils.html import format_html
 
 from core.admin.inlines import CarInline
@@ -58,12 +60,30 @@ CONTAINER_STATUS_COLORS = {
 }
 
 
+class LabelsPrintedFilter(SimpleListFilter):
+    title = 'Наклейки'
+    parameter_name = 'labels_printed'
+
+    def lookups(self, request, model_admin):
+        return (
+            ('yes', 'Напечатаны'),
+            ('no', 'Не напечатаны'),
+        )
+
+    def queryset(self, request, queryset):
+        if self.value() == 'yes':
+            return queryset.filter(labels_printed_at__isnull=False)
+        if self.value() == 'no':
+            return queryset.filter(labels_printed_at__isnull=True)
+        return queryset
+
+
 @admin.register(Container)
 class ContainerAdmin(admin.ModelAdmin):
     change_form_template = 'admin/core/container/change_form.html'
-    list_display = ('number', 'colored_status', 'eta', 'planned_unload_date', 'unload_date', 'line', 'warehouse', 'photos_count_display')
+    list_display = ('number', 'colored_status', 'eta', 'planned_unload_date', 'unload_date', 'line', 'warehouse', 'photos_count_display', 'labels_printed_display')
     list_display_links = ('number',)
-    list_filter = (MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter)
+    list_filter = (MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter, LabelsPrintedFilter)
     search_fields = ('number',)
     ordering = ['-unload_date', '-id']
     list_per_page = 50
@@ -79,7 +99,7 @@ class ContainerAdmin(admin.ModelAdmin):
         }),
     )
     readonly_fields = ('days', 'storage_cost')
-    actions = ['print_labels_action', 'set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'check_container_status', 'bulk_update_container_statuses', 'sync_photos_from_gdrive', 'resend_planned_notifications', 'resend_unload_notifications']
+    actions = ['print_labels_action', 'reset_labels_printed_action', 'set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'check_container_status', 'bulk_update_container_statuses', 'sync_photos_from_gdrive', 'resend_planned_notifications', 'resend_unload_notifications']
 
     class Media:
         css = {'all': ('css/dashboard_admin.css',)}
@@ -698,6 +718,38 @@ class ContainerAdmin(admin.ModelAdmin):
             return None
         return redirect_to_print_settings(ids)
     print_labels_action.short_description = "🏷️ Распечатать наклейки"
+
+    def labels_printed_display(self, obj):
+        """Колонка-индикатор: напечатаны ли наклейки для контейнера."""
+        if obj.labels_printed_at:
+            local = timezone.localtime(obj.labels_printed_at)
+            return format_html(
+                '<span title="{}" style="background-color: #2e7d32; color: #fff; padding: 2px 8px; border-radius: 10px; white-space: nowrap;">🏷️ {}</span>',
+                local.strftime('%d.%m.%Y %H:%M'),
+                local.strftime('%d.%m'),
+            )
+        return format_html(
+            '<span style="color: #9999b5;">—</span>'
+        )
+    labels_printed_display.short_description = 'Наклейки'
+    labels_printed_display.admin_order_field = 'labels_printed_at'
+
+    def reset_labels_printed_action(self, request, queryset):
+        """Сбрасывает отметку о печати наклеек — чтобы можно было перепечатать с «чистого листа»."""
+        updated = queryset.filter(labels_printed_at__isnull=False).update(labels_printed_at=None)
+        if updated:
+            self.message_user(
+                request,
+                f"Отметка о печати наклеек сброшена для {updated} контейнеров.",
+                level='SUCCESS',
+            )
+        else:
+            self.message_user(
+                request,
+                "Выбранные контейнеры не имели отметки о печати.",
+                level='INFO',
+            )
+    reset_labels_printed_action.short_description = "🏷️ Сбросить отметку о печати наклеек"
 
     def change_view(self, request, object_id, form_url='', extra_context=None):
         """Override change_view to pass photo data to template"""

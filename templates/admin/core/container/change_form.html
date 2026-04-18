@@ -181,6 +181,11 @@
           <a href="{% url 'labels_print_settings' %}?container_ids={{ original.pk }}" class="cm-btn cm-btn-outline-action" target="_blank">
             🏷️ Распечатать наклейку
           </a>
+          {% if original.labels_printed_at %}
+          <div style="text-align: center; font-size: .75rem; color: var(--cm-text-secondary); margin-top: -6px;">
+            печаталось: {{ original.labels_printed_at|date:"d.m.Y H:i" }}
+          </div>
+          {% endif %}
           {% endif %}
           {% if original and has_delete_permission %}
           <div class="cm-sidebar-divider"></div>
