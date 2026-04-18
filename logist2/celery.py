@@ -9,7 +9,10 @@ from celery.schedules import crontab
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'logist2.settings')
 app = Celery('logist2')
 app.config_from_object('django.conf:settings', namespace='CELERY')
-app.autodiscover_tasks()
+# autodiscover_tasks ищет только 'tasks.py' в каждом INSTALLED_APP.
+# Явно перечисляем нестандартные модули задач.
+app.autodiscover_tasks(related_name='tasks')
+app.autodiscover_tasks(related_name='tasks_email')
 
 app.conf.beat_schedule = {
     'check-overdue-invoices-daily': {

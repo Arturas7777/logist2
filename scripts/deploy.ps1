@@ -78,17 +78,19 @@ if ($LASTEXITCODE -ne 0) {
 
 # ── Step 4: restart services ──
 Write-Host "[4/4] Restarting services..." -ForegroundColor Yellow
-ssh $SERVER "cd $PROJECT_DIR && chown -R www-root:www-root core/ templates/ staticfiles/ logist2/ 2>/dev/null; systemctl restart gunicorn && systemctl restart daphne" 2>$null
+ssh $SERVER "cd $PROJECT_DIR && chown -R www-root:www-root core/ templates/ staticfiles/ logist2/ 2>/dev/null; systemctl restart gunicorn daphne celery celerybeat" 2>$null
 
 $gunicorn = ssh $SERVER "systemctl is-active gunicorn" 2>$null
 $daphne = ssh $SERVER "systemctl is-active daphne" 2>$null
+$celery = ssh $SERVER "systemctl is-active celery" 2>$null
+$beat = ssh $SERVER "systemctl is-active celerybeat" 2>$null
 
-if ($gunicorn -eq "active" -and $daphne -eq "active") {
-    Write-Host "      gunicorn: active | daphne: active" -ForegroundColor Green
+if ($gunicorn -eq "active" -and $daphne -eq "active" -and $celery -eq "active" -and $beat -eq "active") {
+    Write-Host "      gunicorn/daphne/celery/celerybeat: all active" -ForegroundColor Green
     Write-Host ""
     Write-Host "=== DEPLOY COMPLETE ===" -ForegroundColor Green
 } else {
-    Write-Host "      gunicorn: $gunicorn | daphne: $daphne" -ForegroundColor Red
+    Write-Host "      gunicorn:$gunicorn  daphne:$daphne  celery:$celery  celerybeat:$beat" -ForegroundColor Red
     Write-Host ""
     Write-Host "=== DEPLOY COMPLETE (with warnings) ===" -ForegroundColor Yellow
 }
