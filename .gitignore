@@ -33,6 +33,11 @@ media/
 CREDENTIALS.md
 docs/CREDENTIALS.md
 
+# Gmail OAuth secrets — НИКОГДА не коммитить
+client_secret*.json
+token.json
+secrets/
+
 # Backup files
 *.zip
 *.sql
