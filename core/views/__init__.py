@@ -63,4 +63,7 @@ from .emails import (  # noqa: F401
     email_mark_read,
     email_mark_container_read,
     email_trigger_sync,
+    email_reply_draft,
+    email_reply_send,
+    email_compose_send,
 )

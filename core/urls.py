@@ -28,5 +28,10 @@ urlpatterns = [
     path('emails/<int:email_id>/mark-read/', views.email_mark_read, name='email_mark_read'),
     path('emails/container/<int:container_id>/mark-all-read/', views.email_mark_container_read, name='email_mark_container_read'),
     path('emails/sync/', views.email_trigger_sync, name='email_trigger_sync'),
+
+    # Phase 2: отправка писем из карточки контейнера
+    path('emails/<int:email_id>/reply/draft/', views.email_reply_draft, name='email_reply_draft'),
+    path('emails/<int:email_id>/reply/', views.email_reply_send, name='email_reply_send'),
+    path('emails/compose/', views.email_compose_send, name='email_compose_send'),
 ]
 

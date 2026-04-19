@@ -303,6 +303,232 @@
     display: block;
     margin-bottom: 8px;
 }
+
+/* ═══ Hover-кнопка «Ответить» на входящих бабблах ═══ */
+#container-emails-section .cm-bubble-actions {
+    margin-top: 6px;
+    display: flex;
+    gap: 6px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+#container-emails-section .cm-msg:hover .cm-bubble-actions,
+#container-emails-section .cm-msg.is-active .cm-bubble-actions {
+    opacity: 1;
+}
+#container-emails-section .cm-bubble-actions .cm-reply-btn {
+    padding: 2px 8px;
+    font-size: 12px;
+    background: rgba(255,255,255,0.85);
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #334155;
+}
+#container-emails-section .cm-bubble-actions .cm-reply-btn:hover {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: #fff;
+}
+
+/* ═══ Статус отправки (SENT / FAILED) у исходящих ═══ */
+#container-emails-section .cm-msg-send-status {
+    font-size: 11px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.02em;
+}
+#container-emails-section .cm-msg-send-status[data-status="SENT"]    { background:#dcfce7; color:#166534; }
+#container-emails-section .cm-msg-send-status[data-status="FAILED"]  { background:#fee2e2; color:#991b1b; }
+#container-emails-section .cm-msg-send-status[data-status="PENDING"] { background:#fef3c7; color:#92400e; }
+
+/* ═══ Composer ═══ */
+#cm-composer {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    width: 560px;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 64px);
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.25);
+    display: none;
+    flex-direction: column;
+    z-index: 1500;
+    overflow: hidden;
+}
+#cm-composer.is-open { display: flex; }
+#cm-composer.is-minimized { height: 44px; }
+#cm-composer.is-minimized .cm-composer-body { display: none; }
+#cm-composer .cm-composer-header {
+    padding: 8px 12px;
+    background: linear-gradient(180deg, #1f2937 0%, #0f172a 100%);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+}
+#cm-composer .cm-composer-header .cm-composer-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#cm-composer .cm-composer-header button {
+    background: transparent;
+    border: 0;
+    color: #cbd5e1;
+    font-size: 16px;
+    line-height: 1;
+    padding: 2px 6px;
+    cursor: pointer;
+    border-radius: 3px;
+}
+#cm-composer .cm-composer-header button:hover { color: #fff; background: rgba(255,255,255,0.1); }
+
+#cm-composer .cm-composer-body {
+    display: flex;
+    flex-direction: column;
+    padding: 10px 12px;
+    gap: 6px;
+    overflow-y: auto;
+    flex: 1;
+}
+#cm-composer .cm-composer-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 4px 0;
+}
+#cm-composer .cm-composer-field > label {
+    width: 60px;
+    font-size: 12px;
+    color: #64748b;
+    flex-shrink: 0;
+}
+#cm-composer .cm-composer-field > input {
+    flex: 1;
+    border: 0;
+    outline: 0;
+    padding: 4px 0;
+    font-size: 13px;
+    background: transparent;
+}
+#cm-composer details.cm-composer-extra {
+    margin: 0;
+}
+#cm-composer details.cm-composer-extra > summary {
+    font-size: 12px;
+    color: #64748b;
+    cursor: pointer;
+    padding: 4px 0;
+}
+#cm-composer textarea[name="body_text"] {
+    width: 100%;
+    min-height: 180px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    resize: vertical;
+    box-sizing: border-box;
+}
+#cm-composer .cm-composer-signature-hint {
+    font-size: 11px;
+    color: #94a3b8;
+    padding: 2px 4px;
+}
+#cm-composer .cm-composer-attachments {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+#cm-composer .cm-composer-attachments label.cm-att-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px dashed #94a3b8;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #475569;
+    background: #f8fafc;
+    align-self: flex-start;
+}
+#cm-composer .cm-composer-attachments label.cm-att-btn:hover { background: #e0f2fe; border-color: #3b82f6; color: #1e40af; }
+#cm-composer .cm-composer-attachments input[type=file] { display: none; }
+#cm-composer .cm-attached-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+#cm-composer .cm-attached-list .cm-att-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 12px;
+    background: #f1f5f9;
+    font-size: 12px;
+    color: #334155;
+}
+#cm-composer .cm-attached-list .cm-att-chip button {
+    background: transparent;
+    border: 0;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+}
+#cm-composer .cm-attached-list .cm-att-chip button:hover { color: #b91c1c; }
+
+#cm-composer .cm-composer-footer {
+    padding: 10px 12px;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: #f8fafc;
+}
+#cm-composer .cm-composer-status {
+    flex: 1;
+    font-size: 12px;
+    color: #64748b;
+}
+#cm-composer .cm-composer-send,
+#cm-composer .cm-composer-cancel {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+#cm-composer .cm-composer-send {
+    background: #2563eb;
+    color: #fff;
+    border-color: #2563eb;
+    font-weight: 600;
+}
+#cm-composer .cm-composer-send:hover { background: #1d4ed8; }
+#cm-composer .cm-composer-send:disabled { opacity: 0.55; cursor: wait; }
+#cm-composer .cm-composer-cancel {
+    background: #fff;
+    border-color: #cbd5e1;
+    color: #475569;
+}
+#cm-composer .cm-composer-cancel:hover { background: #f1f5f9; }
 </style>
 
 <fieldset id="container-emails-section" class="module aligned collapse"
@@ -323,6 +549,10 @@
         <div class="cm-emails-actions">
             <button type="button" id="cm-emails-sync-btn" title="Подтянуть новые письма из Gmail">
                 ↻ Синхронизировать
+            </button>
+            <button type="button" id="cm-email-compose-btn"
+                    title="Написать новое письмо по этому контейнеру">
+                ✍ Написать
             </button>
             <span class="cm-emails-status" id="cm-emails-status"></span>
         </div>
@@ -346,85 +576,60 @@
                     {% ifchanged email.received_at|date:"Y-m-d" %}
                         <div class="cm-chat-date">{{ email.received_at|date:"l, d F Y" }}</div>
                     {% endifchanged %}
-
-                    {% with from_name=email.from_addr|display_name %}
-                    <div class="cm-msg {% if email.direction == 'OUTGOING' %}cm-out{% else %}cm-in{% endif %}"
-                         data-email-id="{{ email.pk }}"
-                         data-unread="{{ email.is_read|yesno:'0,1' }}">
-                        <div class="cm-avatar"
-                             style="background-color: {{ email.from_addr|avatar_color }};"
-                             title="{{ email.from_addr }}">
-                            {{ from_name|initials }}
-                        </div>
-                        <div class="cm-msg-col">
-                            <div class="cm-msg-header">
-                                <span class="cm-msg-from"
-                                      title="{{ email.from_addr }}">
-                                    {{ from_name }}
-                                </span>
-                                <span class="cm-msg-time">{{ email.received_at|date:"H:i" }}</span>
-                                <span class="cm-msg-matched" data-kind="{{ email.matched_by }}">
-                                    {{ email.get_matched_by_display }}
-                                </span>
-                            </div>
-                            <div class="cm-bubble">
-                                {% if email.subject %}
-                                    <div class="cm-subj">{{ email.subject|fix_mojibake }}</div>
-                                {% endif %}
-                                {% with cleaned=email|messenger_body_auto %}
-                                    {% if cleaned %}
-                                        <div class="cm-body">{{ cleaned|linkify_urls }}</div>
-                                    {% elif email.snippet %}
-                                        <div class="cm-body" style="color:#94a3b8;font-style:italic;">
-                                            {{ email.snippet }}
-                                        </div>
-                                    {% endif %}
-                                {% endwith %}
-
-                                {% with visible=email.attachments_json|visible_attachments %}
-                                {% if visible %}
-                                    <div class="cm-attachments">
-                                        {% for att in visible %}
-                                            {% if att.storage_path %}
-                                                <a class="cm-attachment"
-                                                   href="{% url 'core:email_attachment' email.pk att.orig_index %}"
-                                                   target="_blank"
-                                                   rel="noopener"
-                                                   title="{{ att.filename }} ({{ att.size|filesizeformat }})">
-                                                    <span>📎</span>
-                                                    <span class="cm-att-name">{{ att.filename|default:"file" }}</span>
-                                                    <span class="cm-att-size">{{ att.size|filesizeformat }}</span>
-                                                </a>
-                                            {% else %}
-                                                <span class="cm-attachment cm-att-missing"
-                                                      title="{{ att.skipped_reason|default:'Вложение не сохранено локально' }}">
-                                                    <span>📎</span>
-                                                    <span class="cm-att-name">{{ att.filename|default:"file" }}</span>
-                                                </span>
-                                            {% endif %}
-                                        {% endfor %}
-                                    </div>
-                                {% endif %}
-                                {% endwith %}
-
-                                {% with quote=email.body_text|quote_part %}
-                                    {% if quote %}
-                                        <details class="cm-quote-details">
-                                            <summary>цитируемая переписка</summary>
-                                            <div class="cm-quote-body">{{ quote }}</div>
-                                        </details>
-                                    {% endif %}
-                                {% endwith %}
-                            </div>
-                        </div>
-                    </div>
-                    {% endwith %}
+                    {% include "admin/core/container/_email_bubble.html" with email=email %}
                 {% endfor %}
             </div>
         {% endif %}
         </div>
     </details>
 </fieldset>
+
+{# ═══════ Composer (скрыт по умолчанию, открывается из JS) ═══════ #}
+<div id="cm-composer" data-mode="" data-parent-id="" data-container-id="{{ original.pk }}">
+    <div class="cm-composer-header" id="cm-composer-header">
+        <span class="cm-composer-title" id="cm-composer-title">Новое письмо</span>
+        <button type="button" id="cm-composer-min" title="Свернуть">−</button>
+        <button type="button" id="cm-composer-close" title="Закрыть">×</button>
+    </div>
+    <div class="cm-composer-body">
+        <div class="cm-composer-field">
+            <label for="cm-composer-to">Кому</label>
+            <input type="text" id="cm-composer-to" name="to" placeholder="email@example.com, ещё@example.com" required>
+        </div>
+        <details class="cm-composer-extra">
+            <summary>Cc / Bcc</summary>
+            <div class="cm-composer-field">
+                <label for="cm-composer-cc">Cc</label>
+                <input type="text" id="cm-composer-cc" name="cc">
+            </div>
+            <div class="cm-composer-field">
+                <label for="cm-composer-bcc">Bcc</label>
+                <input type="text" id="cm-composer-bcc" name="bcc">
+            </div>
+        </details>
+        <div class="cm-composer-field">
+            <label for="cm-composer-subject">Тема</label>
+            <input type="text" id="cm-composer-subject" name="subject" required>
+        </div>
+        <textarea id="cm-composer-body" name="body_text" placeholder="Текст сообщения…" required></textarea>
+        <div class="cm-composer-signature-hint">
+            Подпись будет добавлена автоматически из настроек.
+            <span id="cm-composer-hint-extra"></span>
+        </div>
+        <div class="cm-composer-attachments">
+            <label class="cm-att-btn">
+                📎 Прикрепить файл
+                <input type="file" id="cm-composer-files" multiple>
+            </label>
+            <div class="cm-attached-list" id="cm-composer-attached"></div>
+        </div>
+    </div>
+    <div class="cm-composer-footer">
+        <span class="cm-composer-status" id="cm-composer-status"></span>
+        <button type="button" class="cm-composer-cancel" id="cm-composer-cancel">Отмена</button>
+        <button type="button" class="cm-composer-send" id="cm-composer-send">Отправить</button>
+    </div>
+</div>
 
 <script>
 (function() {
@@ -445,6 +650,7 @@
     var body    = document.getElementById('cm-emails-body');
     var list    = document.getElementById('cm-emails-list');
     var syncBtn = document.getElementById('cm-emails-sync-btn');
+    var composeBtn = document.getElementById('cm-email-compose-btn');
     var status  = document.getElementById('cm-emails-status');
     var badge   = document.getElementById('cm-emails-badge');
     var containerId = section.dataset.containerId;
@@ -531,6 +737,337 @@
             });
         });
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Composer (ответ / новое письмо)
+    // ═══════════════════════════════════════════════════════════════════
+    var composer = document.getElementById('cm-composer');
+    var composerHeader = document.getElementById('cm-composer-header');
+    var composerTitle  = document.getElementById('cm-composer-title');
+    var composerTo     = document.getElementById('cm-composer-to');
+    var composerCc     = document.getElementById('cm-composer-cc');
+    var composerBcc    = document.getElementById('cm-composer-bcc');
+    var composerSubj   = document.getElementById('cm-composer-subject');
+    var composerBody   = document.getElementById('cm-composer-body');
+    var composerFiles  = document.getElementById('cm-composer-files');
+    var composerChips  = document.getElementById('cm-composer-attached');
+    var composerStatus = document.getElementById('cm-composer-status');
+    var composerSend   = document.getElementById('cm-composer-send');
+    var composerCancel = document.getElementById('cm-composer-cancel');
+    var composerClose  = document.getElementById('cm-composer-close');
+    var composerMin    = document.getElementById('cm-composer-min');
+    var composerHint   = document.getElementById('cm-composer-hint-extra');
+
+    var attachedFiles = [];  // [{file, id}]
+    var attachedSeq = 0;
+    var currentMaxMb = 25;
+
+    function draftKey() {
+        var mode = composer.dataset.mode || 'compose';
+        var pid  = composer.dataset.parentId || '';
+        if (mode === 'reply' && pid) return 'cm-draft:reply:' + pid;
+        return 'cm-draft:compose:' + containerId;
+    }
+    function saveDraft() {
+        if (!composer.classList.contains('is-open')) return;
+        try {
+            localStorage.setItem(draftKey(), JSON.stringify({
+                to: composerTo.value, cc: composerCc.value, bcc: composerBcc.value,
+                subject: composerSubj.value, body: composerBody.value,
+                savedAt: Date.now(),
+            }));
+        } catch (e) {}
+    }
+    function loadDraft() {
+        try {
+            var raw = localStorage.getItem(draftKey());
+            if (!raw) return null;
+            var d = JSON.parse(raw);
+            return d;
+        } catch (e) { return null; }
+    }
+    function clearDraft() {
+        try { localStorage.removeItem(draftKey()); } catch (e) {}
+    }
+
+    function renderChips() {
+        composerChips.innerHTML = '';
+        attachedFiles.forEach(function(entry) {
+            var chip = document.createElement('span');
+            chip.className = 'cm-att-chip';
+            chip.innerHTML = '📎 ' + escapeHtml(entry.file.name) + ' <span style="color:#94a3b8;">(' + humanSize(entry.file.size) + ')</span>';
+            var rm = document.createElement('button');
+            rm.type = 'button';
+            rm.textContent = '×';
+            rm.title = 'Убрать';
+            rm.addEventListener('click', function() {
+                attachedFiles = attachedFiles.filter(function(x) { return x.id !== entry.id; });
+                renderChips();
+            });
+            chip.appendChild(rm);
+            composerChips.appendChild(chip);
+        });
+    }
+    function humanSize(n) {
+        if (n < 1024) return n + ' B';
+        if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+        return (n/1024/1024).toFixed(2) + ' MB';
+    }
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, function(c) {
+            return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+        });
+    }
+
+    if (composerFiles) {
+        composerFiles.addEventListener('change', function() {
+            Array.prototype.slice.call(composerFiles.files).forEach(function(f) {
+                attachedFiles.push({file: f, id: ++attachedSeq});
+            });
+            composerFiles.value = '';  // позволяем добавлять тот же файл повторно
+            renderChips();
+        });
+    }
+
+    function openComposer(mode, opts) {
+        opts = opts || {};
+        composer.dataset.mode = mode;
+        composer.dataset.parentId = opts.parentId || '';
+        composer.classList.remove('is-minimized');
+        composer.classList.add('is-open');
+
+        attachedFiles = [];
+        renderChips();
+        composerStatus.textContent = '';
+        composerStatus.style.color = '';
+        composerSend.disabled = false;
+        composerSend.textContent = 'Отправить';
+
+        if (mode === 'reply') {
+            composerTitle.textContent = opts.subject ? ('Ответ: ' + opts.subject) : 'Ответ';
+        } else {
+            composerTitle.textContent = 'Новое письмо по контейнеру';
+        }
+
+        composerTo.value     = opts.to || '';
+        composerCc.value     = opts.cc || '';
+        composerBcc.value    = opts.bcc || '';
+        composerSubj.value   = opts.subject || '';
+        composerBody.value   = opts.body || '';
+        currentMaxMb         = opts.maxMb || 25;
+        if (mode === 'reply') {
+            composerHint.textContent = ' Пишите ответ СВЕРХУ (до строки "On … wrote:"). ' +
+                                        'Цитата автоматически свернётся у получателя. Лимит вложений ~' +
+                                        currentMaxMb + ' МБ.';
+        } else {
+            composerHint.textContent = ' Лимит вложений ~' + currentMaxMb + ' МБ.';
+        }
+
+        // Восстановление черновика, если он свежее умолчаний
+        var draft = loadDraft();
+        if (draft) {
+            var ageMin = (Date.now() - (draft.savedAt || 0)) / 60000;
+            if (ageMin < 60 * 24 * 7) {
+                // Предложим использовать только если пользователь что-то писал.
+                if ((draft.body || '').length > 5 || (draft.subject && draft.subject !== opts.subject)) {
+                    if (confirm('Восстановить сохранённый черновик?')) {
+                        composerTo.value = draft.to || composerTo.value;
+                        composerCc.value = draft.cc || composerCc.value;
+                        composerBcc.value = draft.bcc || composerBcc.value;
+                        composerSubj.value = draft.subject || composerSubj.value;
+                        composerBody.value = draft.body || composerBody.value;
+                    }
+                }
+            }
+        }
+
+        setTimeout(function() {
+            if (mode === 'reply') {
+                // Курсор в самое начало textarea — чтобы пользователь писал
+                // СВЕРХУ, до "On ... wrote:" + цитаты. Так же ведёт себя Gmail.
+                composerBody.focus();
+                try { composerBody.setSelectionRange(0, 0); } catch (e) {}
+                composerBody.scrollTop = 0;
+            } else {
+                composerTo.focus();
+            }
+        }, 50);
+    }
+
+    function closeComposer() {
+        var hasText = composerBody.value.trim().length > 0;
+        if (hasText && !confirm('Закрыть окно? Несохранённый текст будет утерян.')) return;
+        composer.classList.remove('is-open');
+        composer.dataset.mode = '';
+        composer.dataset.parentId = '';
+        attachedFiles = [];
+        clearDraft();
+    }
+
+    function send() {
+        var mode = composer.dataset.mode;
+        var pid  = composer.dataset.parentId;
+        var url;
+        var fd = new FormData();
+        fd.append('to', composerTo.value);
+        fd.append('cc', composerCc.value);
+        fd.append('bcc', composerBcc.value);
+        fd.append('subject', composerSubj.value);
+        fd.append('body_text', composerBody.value);
+        attachedFiles.forEach(function(entry) {
+            fd.append('attachments', entry.file, entry.file.name);
+        });
+
+        if (mode === 'reply' && pid) {
+            url = '/core/emails/' + pid + '/reply/';
+        } else {
+            url = '/core/emails/compose/';
+            fd.append('container_id', containerId);
+        }
+
+        // Валидация размера — превью до отправки.
+        var total = attachedFiles.reduce(function(s, e) { return s + e.file.size; }, 0);
+        if (total > currentMaxMb * 1024 * 1024) {
+            composerStatus.style.color = '#b91c1c';
+            composerStatus.textContent = '✗ Превышен лимит вложений: ' + humanSize(total) + ' > ' + currentMaxMb + ' МБ';
+            return;
+        }
+
+        composerSend.disabled = true;
+        composerSend.textContent = '…отправка';
+        composerStatus.style.color = '#64748b';
+        composerStatus.textContent = 'Отправка…';
+
+        fetch(url, {
+            method: 'POST',
+            headers: {'X-CSRFToken': csrfToken},
+            body: fd,
+        })
+        .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+        .then(function(res) {
+            if (res.ok && res.data.ok) {
+                composerStatus.style.color = '#16a34a';
+                composerStatus.textContent = '✓ Отправлено';
+                clearDraft();
+                // Вставляем баббл вверх ленты
+                if (list && res.data.html) {
+                    var temp = document.createElement('div');
+                    temp.innerHTML = res.data.html;
+                    var node = temp.firstElementChild;
+                    if (node) {
+                        list.insertBefore(node, list.firstChild);
+                        refreshBadge();
+                    }
+                }
+                setTimeout(function() {
+                    composer.classList.remove('is-open');
+                    composer.dataset.mode = '';
+                    composer.dataset.parentId = '';
+                    attachedFiles = [];
+                }, 400);
+            } else {
+                composerStatus.style.color = '#b91c1c';
+                composerStatus.textContent = '✗ ' + ((res.data && res.data.error) || 'Ошибка отправки');
+                composerSend.disabled = false;
+                composerSend.textContent = 'Отправить';
+            }
+        })
+        .catch(function(err) {
+            composerStatus.style.color = '#b91c1c';
+            composerStatus.textContent = '✗ ' + err;
+            composerSend.disabled = false;
+            composerSend.textContent = 'Отправить';
+        });
+    }
+
+    // Delegated listeners
+    if (composeBtn) {
+        composeBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var defaultSubj = 'Container {{ original.number|default:"" }}';
+            {% if original.booking_number %}defaultSubj += ' / Booking {{ original.booking_number }}';{% endif %}
+            openComposer('compose', {
+                subject: defaultSubj,
+                body: '',
+                maxMb: 25,
+            });
+        });
+    }
+
+    if (list) {
+        list.addEventListener('click', function(e) {
+            var btn = e.target.closest('.cm-reply-btn');
+            if (!btn) return;
+            e.preventDefault();
+            e.stopPropagation();
+            var emailId = btn.dataset.emailId;
+            if (!emailId) return;
+            btn.disabled = true;
+            btn.textContent = '…загрузка';
+            fetch('/core/emails/' + emailId + '/reply/draft/')
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    btn.disabled = false;
+                    btn.textContent = '↩ Ответить';
+                    if (!d || !d.ok) {
+                        alert('Не удалось загрузить черновик: ' + (d && d.error || ''));
+                        return;
+                    }
+                    openComposer('reply', {
+                        parentId: emailId,
+                        to: d.to,
+                        cc: d.cc,
+                        bcc: d.bcc,
+                        subject: d.subject,
+                        body: (d.quote || ''),
+                        maxMb: d.max_mb || 25,
+                    });
+                })
+                .catch(function(err) {
+                    btn.disabled = false;
+                    btn.textContent = '↩ Ответить';
+                    alert('Ошибка: ' + err);
+                });
+        });
+    }
+
+    if (composerSend)   composerSend.addEventListener('click', send);
+    if (composerCancel) composerCancel.addEventListener('click', closeComposer);
+    if (composerClose)  composerClose.addEventListener('click', closeComposer);
+    if (composerMin) {
+        composerMin.addEventListener('click', function() {
+            composer.classList.toggle('is-minimized');
+        });
+    }
+    if (composerHeader) {
+        composerHeader.addEventListener('dblclick', function() {
+            composer.classList.toggle('is-minimized');
+        });
+    }
+
+    // Ctrl+Enter → отправить; Esc → закрыть
+    [composerBody, composerSubj, composerTo, composerCc, composerBcc].forEach(function(el) {
+        if (!el) return;
+        el.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                send();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                closeComposer();
+            }
+        });
+    });
+
+    // Черновик — сохраняем при вводе (throttle)
+    var saveTimer = null;
+    [composerBody, composerSubj, composerTo, composerCc, composerBcc].forEach(function(el) {
+        if (!el) return;
+        el.addEventListener('input', function() {
+            if (saveTimer) clearTimeout(saveTimer);
+            saveTimer = setTimeout(saveDraft, 500);
+        });
+    });
 })();
 </script>
 

@@ -1,0 +1,92 @@
+{% comment %}
+Одно сообщение-баббл в messenger-ленте переписки.
+Используется:
+  - в _emails_panel.html в цикле {% for email in emails %};
+  - в ответе JSON от /core/emails/<id>/reply/ и /core/emails/compose/ —
+    фронт подставляет готовый HTML наверх списка без перезагрузки страницы.
+
+Ожидает контекст:
+    email — ContainerEmail
+{% endcomment %}
+{% load email_extras %}
+{% with from_name=email.from_addr|display_name %}
+<div class="cm-msg {% if email.direction == 'OUTGOING' %}cm-out{% else %}cm-in{% endif %}"
+     data-email-id="{{ email.pk }}"
+     data-thread-id="{{ email.thread_id }}"
+     data-direction="{{ email.direction }}"
+     data-send-status="{{ email.send_status }}"
+     data-unread="{{ email.is_read|yesno:'0,1' }}">
+    <div class="cm-avatar"
+         style="background-color: {{ email.from_addr|avatar_color }};"
+         title="{{ email.from_addr }}">
+        {{ from_name|initials }}
+    </div>
+    <div class="cm-msg-col">
+        <div class="cm-msg-header">
+            <span class="cm-msg-from" title="{{ email.from_addr }}">{{ from_name }}</span>
+            <span class="cm-msg-time">{{ email.received_at|date:"d.m H:i" }}</span>
+            <span class="cm-msg-matched" data-kind="{{ email.matched_by }}">
+                {{ email.get_matched_by_display }}
+            </span>
+            {% if email.direction == 'OUTGOING' and email.send_status %}
+                <span class="cm-msg-send-status" data-status="{{ email.send_status }}"
+                      title="{{ email.send_error|default:'' }}">
+                    {% if email.send_status == 'SENT' %}✓ отправлено{% elif email.send_status == 'FAILED' %}✗ ошибка{% elif email.send_status == 'PENDING' %}…в очереди{% endif %}
+                </span>
+            {% endif %}
+        </div>
+        <div class="cm-bubble">
+            {% if email.subject %}
+                <div class="cm-subj">{{ email.subject|fix_mojibake }}</div>
+            {% endif %}
+            {% with cleaned=email|messenger_body_auto %}
+                {% if cleaned %}
+                    <div class="cm-body">{{ cleaned|linkify_urls }}</div>
+                {% elif email.snippet %}
+                    <div class="cm-body" style="color:#94a3b8;font-style:italic;">{{ email.snippet }}</div>
+                {% endif %}
+            {% endwith %}
+
+            {% with visible=email.attachments_json|visible_attachments %}
+            {% if visible %}
+                <div class="cm-attachments">
+                    {% for att in visible %}
+                        {% if att.storage_path %}
+                            <a class="cm-attachment"
+                               href="{% url 'core:email_attachment' email.pk att.orig_index %}"
+                               target="_blank" rel="noopener"
+                               title="{{ att.filename }} ({{ att.size|filesizeformat }})">
+                                <span>📎</span>
+                                <span class="cm-att-name">{{ att.filename|default:"file" }}</span>
+                                <span class="cm-att-size">{{ att.size|filesizeformat }}</span>
+                            </a>
+                        {% else %}
+                            <span class="cm-attachment cm-att-missing"
+                                  title="{{ att.skipped_reason|default:'Вложение не сохранено локально' }}">
+                                <span>📎</span>
+                                <span class="cm-att-name">{{ att.filename|default:"file" }}</span>
+                            </span>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            {% endif %}
+            {% endwith %}
+
+            {% if email.direction != 'OUTGOING' %}
+                <div class="cm-bubble-actions">
+                    <button type="button" class="cm-reply-btn" data-email-id="{{ email.pk }}">↩ Ответить</button>
+                </div>
+            {% endif %}
+
+            {% with quote=email.body_text|quote_part %}
+                {% if quote %}
+                    <details class="cm-quote-details">
+                        <summary>цитируемая переписка</summary>
+                        <div class="cm-quote-body">{{ quote }}</div>
+                    </details>
+                {% endif %}
+            {% endwith %}
+        </div>
+    </div>
+</div>
+{% endwith %}

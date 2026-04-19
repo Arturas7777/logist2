@@ -413,11 +413,34 @@ GMAIL_USER_EMAIL = os.getenv('GMAIL_USER_EMAIL', '').strip()
 GMAIL_INITIAL_LOOKBACK_DAYS = int(os.getenv('GMAIL_INITIAL_LOOKBACK_DAYS', '30'))
 GMAIL_MAX_ATTACHMENT_MB = int(os.getenv('GMAIL_MAX_ATTACHMENT_MB', '25'))
 GMAIL_TOKEN_URI = 'https://oauth2.googleapis.com/token'
-# Scopes: только чтение на Phase 1. Для отправки — добавить 'gmail.send'
-# и перегенерировать refresh_token через scripts/get_gmail_refresh_token.py.
+# Scopes: чтение + отправка (Phase 2).
+# При изменении — перегенерировать refresh_token через
+# scripts/get_gmail_refresh_token.py.
 GMAIL_SCOPES = [
     'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.send',
 ]
+
+# ─── Phase 2: параметры исходящих писем ────────────────────────────────────
+# Имя и email отправителя. Если GMAIL_FROM_EMAIL пустой — используется
+# authenticated аккаунт (GMAIL_USER_EMAIL). Чтобы слать от имени alias — alias
+# должен быть настроен в Gmail → Settings → Accounts → Send mail as.
+GMAIL_FROM_NAME = os.getenv('GMAIL_FROM_NAME', 'Caromoto Lithuania').strip()
+GMAIL_FROM_EMAIL = os.getenv('GMAIL_FROM_EMAIL', '').strip()
+# Подпись добавляется в конец исходящих писем (plain text + html).
+GMAIL_SIGNATURE_TEXT = os.getenv(
+    'GMAIL_SIGNATURE_TEXT',
+    '--\nCaromoto Lithuania\nhttps://caromoto-lt.com',
+)
+GMAIL_SIGNATURE_HTML = os.getenv(
+    'GMAIL_SIGNATURE_HTML',
+    '<p style="color:#6b7280;font-size:13px;">--<br>'
+    'Caromoto Lithuania<br>'
+    '<a href="https://caromoto-lt.com">caromoto-lt.com</a></p>',
+)
+# Максимальный суммарный размер вложений исходящего письма, МБ.
+# Gmail принимает до 35 МБ raw ≈ 25 МБ после base64.
+GMAIL_MAX_OUTBOUND_MB = int(os.getenv('GMAIL_MAX_OUTBOUND_MB', '25'))
 
 # ---------------------------------------------------------------------------
 # Company info (used in email templates)

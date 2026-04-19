@@ -11,7 +11,7 @@
 | Фаза    | Состояние        | Коротко                                                       |
 | ------- | ---------------- | ------------------------------------------------------------- |
 | Phase 1 | ✅ В проде        | Чтение Gmail, матчинг, messenger-UI, счётчики, ре-матчинг     |
-| Phase 2 | ⏳ **В работе**   | Ответы/новые письма из карточки контейнера через Gmail API    |
+| Phase 2 | ✅ **Реализовано** | Ответы/новые письма из карточки контейнера через Gmail API    |
 | Phase 3 | 🔜 Отложено      | Pub/Sub push-уведомления вместо polling                        |
 | Phase 4 | 🔜 Отложено      | AI-саммари тредов, авто-извлечение ETA, категоризация          |
 
@@ -431,49 +431,50 @@ def format_quoted_reply(parent: ContainerEmail) -> str:
 
 ### 2.4. Чеклист Phase 2
 
-- [ ] **0. OAuth scope upgrade**
-  - [ ] Обновить `SCOPES` в `scripts/get_gmail_refresh_token.py`
-  - [ ] Перегенерировать `refresh_token`
-  - [ ] Обновить `.env` локально и на сервере
-  - [ ] Проверить `creds.has_scopes([...])` в `GmailApiClient`
-- [ ] **1. Модель**
-  - [ ] Добавить поля `sent_by_user`, `send_status`, `send_error`
-  - [ ] Миграция `0153_add_container_email_sender.py`
-- [ ] **2. Сервисы**
-  - [ ] `core/services/gmail_sender.py` — `build_mime_message`, `send_message`
-  - [ ] `core/services/email_compose.py` — `reply_to_email`, `compose_new_email`
-  - [ ] `format_quoted_reply` в `email_reply_parser.py`
-  - [ ] Санитайзинг входящего body_text (XSS, стрип control chars)
-- [ ] **3. View-эндпоинты**
-  - [ ] `POST /core/emails/<id>/reply/`
-  - [ ] `POST /core/emails/compose/`
-  - [ ] URL-паттерны в `core/urls.py`
-  - [ ] Permission check (`is_staff`)
-  - [ ] Limit на размер вложений
-- [ ] **4. Settings / env**
-  - [ ] `GMAIL_SIGNATURE_TEXT` / `_HTML`
-  - [ ] `GMAIL_MAX_OUTBOUND_MB`
-  - [ ] `GMAIL_FROM_NAME`
-  - [ ] `env.example` + прочитать в `settings/base.py`
-- [ ] **5. UI**
-  - [ ] Кнопка «✍ Написать» в actions-bar
-  - [ ] Hover-кнопка «Ответить» у каждого входящего баббла
-  - [ ] Composer (inline под последним сообщением или fixed-bottom)
-  - [ ] Автозаполнение полей (To / Cc / Subject / цитата)
-  - [ ] Drag-n-drop вложений
-  - [ ] Индикатор статуса отправки («Отправляется…», «✓ Отправлено», «✗ Ошибка»)
-  - [ ] Черновик в localStorage
-- [ ] **6. Тесты**
+- [x] **0. OAuth scope upgrade**
+  - [x] Обновить `SCOPES` в `scripts/get_gmail_refresh_token.py`
+  - [ ] Перегенерировать `refresh_token` (**действие оператора**)
+  - [ ] Обновить `.env` локально и на сервере (**действие оператора**)
+  - [x] `GMAIL_SCOPES` в `settings/base.py` включает `gmail.send`
+- [x] **1. Модель**
+  - [x] Добавлены поля `sent_by_user`, `send_status`, `send_error`
+  - [x] Миграция `0153_add_container_email_sender.py`
+- [x] **2. Сервисы**
+  - [x] `core/services/gmail_sender.py` — `build_mime_message`, `send_message`, `get_from_address`
+  - [x] `core/services/email_compose.py` — `reply_to_email`, `compose_new_email`
+  - [x] `format_quoted_reply`, `plain_text_to_simple_html` в `email_reply_parser.py`
+- [x] **3. View-эндпоинты**
+  - [x] `GET  /core/emails/<id>/reply/draft/` — JSON с автозаполнением (to/cc/subject/quote)
+  - [x] `POST /core/emails/<id>/reply/`      — отправить ответ в тред
+  - [x] `POST /core/emails/compose/`         — новое письмо по контейнеру
+  - [x] URL-паттерны в `core/urls.py` + re-export в `core/views/__init__.py`
+  - [x] Permission check (`@staff_member_required`)
+  - [x] Limit на размер вложений (`GMAIL_MAX_OUTBOUND_MB`)
+- [x] **4. Settings / env**
+  - [x] `GMAIL_SIGNATURE_TEXT` / `_HTML`
+  - [x] `GMAIL_MAX_OUTBOUND_MB`
+  - [x] `GMAIL_FROM_NAME` / `GMAIL_FROM_EMAIL`
+  - [x] `env.example` обновлён
+- [x] **5. UI**
+  - [x] Кнопка «✍ Написать» в actions-bar
+  - [x] Hover-кнопка «↩ Ответить» у каждого входящего баббла (через шаблон `_email_bubble.html`)
+  - [x] Composer в виде fixed-bottom панели (right: 16px; bottom: 16px)
+  - [x] Автозаполнение To/Cc/Subject/цитаты через `/reply/draft/`
+  - [x] Мульти-аплоад вложений, список с удалением
+  - [x] Индикатор статуса отправки («Отправка…», «✓ Отправлено», «✗ Ошибка»)
+  - [x] Черновик в localStorage (ключ по mode+parentId/containerId)
+  - [x] `Ctrl+Enter` → отправить, `Esc` → закрыть, double-click на header → свернуть
+  - [x] После успеха — новый баббл сразу вставляется наверх ленты без reload
+- [ ] **6. Тесты** (в следующей итерации)
   - [ ] `build_mime_message` — правильные headers для треда (In-Reply-To, References)
   - [ ] `send_message` — с mocked Gmail API, проверка `raw` + `threadId`
   - [ ] `reply_to_email` — создаётся локальная запись с `direction=OUTGOING`,
     `matched_by=THREAD`, `sent_by_user=user`
   - [ ] Проверка лимита размера вложений
-  - [ ] E2E (Selenium или Playwright): открыть карточку → ответить → увидеть
-    баббл справа
-- [ ] **7. Документация**
-  - [ ] В `docs/README.md` раздел «Phase 2: обновление scope и тестирование»
-  - [ ] Комментарии в коде по threading headers
+  - [ ] E2E (Selenium / Playwright)
+- [x] **7. Документация**
+  - [x] Обновлён этот план
+  - [x] Комментарии в коде сервисов по threading headers
 
 ### 2.5. Потенциальные грабли Phase 2
 
