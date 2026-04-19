@@ -16,7 +16,7 @@ from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from core.models_email import ContainerEmail
+from core.models_email import ContainerEmail, EmailGroup
 from core.services.email_reply_parser import (
     format_quoted_reply,
     split_reply_and_quote,
@@ -279,6 +279,39 @@ def email_compose_send(request):
         return _compose_error_response(exc, status=500)
 
     return _render_bubble_response(request, sent)
+
+
+@staff_member_required
+@require_GET
+def email_groups_list(request):
+    """Список общих email-групп для composer.
+
+    Возвращает JSON:
+    ``[{id, name, description, count, addrs: [...]}, ...]``.
+
+    ``addrs`` уже в RFC 5322-формате (``Имя <email>`` если задано display_name,
+    иначе просто email) — фронтенду остаётся склеить их через запятую и
+    вставить в поле ``To`` / ``Cc`` / ``Bcc``.
+    """
+    groups = (
+        EmailGroup.objects
+        .all()
+        .prefetch_related('members')
+        .order_by('name')
+    )
+    data = []
+    for g in groups:
+        members = list(g.members.all())  # prefetched, дешёвая операция
+        if not members:
+            continue  # пустые группы не засоряют dropdown
+        data.append({
+            'id': g.pk,
+            'name': g.name,
+            'description': g.description or '',
+            'count': len(members),
+            'addrs': [m.as_header_format for m in members],
+        })
+    return JsonResponse({'ok': True, 'groups': data})
 
 
 def _render_bubble_response(request, email: ContainerEmail) -> JsonResponse:

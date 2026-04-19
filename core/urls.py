@@ -33,5 +33,8 @@ urlpatterns = [
     path('emails/<int:email_id>/reply/draft/', views.email_reply_draft, name='email_reply_draft'),
     path('emails/<int:email_id>/reply/', views.email_reply_send, name='email_reply_send'),
     path('emails/compose/', views.email_compose_send, name='email_compose_send'),
+
+    # Email-группы (для быстрой вставки получателей в composer)
+    path('emails/groups/', views.email_groups_list, name='email_groups_list'),
 ]
 
