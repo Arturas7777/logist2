@@ -170,6 +170,109 @@ class ContainerEmail(models.Model):
         return bool(self.attachments_json)
 
 
+class EmailGroup(models.Model):
+    """Общая группа контактов для быстрой вставки в поле получателей.
+
+    Общая для всех админов (scope нет). Администрируется через Django admin
+    (``/admin/core/emailgroup/``). В composer карточки контейнера доступна
+    через кнопку «📇 Группы» — клик по группе разворачивает участников в
+    активное поле (``To`` / ``Cc`` / ``Bcc``).
+
+    Если у участника заполнено ``display_name``, в заголовок подставится
+    в формате RFC 5322 ``Имя <email@host>``; иначе просто ``email@host``.
+    """
+
+    name = models.CharField(
+        max_length=120, unique=True,
+        verbose_name='Название',
+        help_text='Например "Таможня Klaipeda" или "MSC Agents".',
+    )
+    description = models.CharField(
+        max_length=255, blank=True, default='',
+        verbose_name='Описание',
+        help_text='Опционально — контекст, когда использовать группу.',
+    )
+    created_by = models.ForeignKey(
+        'auth.User', null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='+',
+        verbose_name='Создал',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Email-группа'
+        verbose_name_plural = 'Email-группы'
+        ordering = ['name']
+
+    def __str__(self) -> str:
+        return self.name
+
+    @property
+    def members_count(self) -> int:
+        # Используется в API/admin. Инкапсулирует prefetch-agnostic вариант.
+        return self.members.count()
+
+
+class EmailGroupMember(models.Model):
+    """Один участник email-группы.
+
+    ``display_name`` опционален: если задан — используется формат
+    ``Имя <email>`` при подстановке, иначе только ``email``.
+    """
+
+    group = models.ForeignKey(
+        EmailGroup,
+        on_delete=models.CASCADE,
+        related_name='members',
+        verbose_name='Группа',
+    )
+    email = models.EmailField(
+        max_length=254,
+        verbose_name='Email',
+    )
+    display_name = models.CharField(
+        max_length=120, blank=True, default='',
+        verbose_name='Имя (опционально)',
+        help_text='Если заполнено, в поле «Кому» подставится как '
+                  '"Имя <email@...>". Иначе — только email.',
+    )
+    position = models.PositiveIntegerField(
+        default=0,
+        verbose_name='Порядок',
+        help_text='Меньше → выше в списке. При равных — по email.',
+    )
+
+    class Meta:
+        verbose_name = 'Участник email-группы'
+        verbose_name_plural = 'Участники email-группы'
+        ordering = ['group', 'position', 'email']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['group', 'email'],
+                name='emailgroupmember_unique_email_per_group',
+            ),
+        ]
+
+    def __str__(self) -> str:
+        if self.display_name:
+            return f'{self.display_name} <{self.email}>'
+        return self.email
+
+    @property
+    def as_header_format(self) -> str:
+        """Возвращает RFC 5322-формат для вставки в поле получателей."""
+        name = (self.display_name or '').strip()
+        if not name:
+            return self.email
+        # Кавычим имя, если содержит символы, требующие экранирования
+        # (запятая, точка с запятой, угловые скобки, кавычки).
+        if any(ch in name for ch in ',;<>"'):
+            name = '"' + name.replace('"', '\\"') + '"'
+        return f'{name} <{self.email}>'
+
+
 class GmailSyncState(models.Model):
     """Храним последний обработанный historyId, чтобы тянуть инкрементально.
 

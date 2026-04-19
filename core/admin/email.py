@@ -14,7 +14,9 @@ from django.urls import path, reverse
 from django.utils.html import format_html
 
 from core.models import Container
-from core.models_email import ContainerEmail, GmailSyncState
+from core.models_email import (
+    ContainerEmail, EmailGroup, EmailGroupMember, GmailSyncState,
+)
 
 
 class MatchedByListFilter(admin.SimpleListFilter):
@@ -226,3 +228,63 @@ class GmailSyncStateAdmin(admin.ModelAdmin):
     list_display = ('user_email', 'last_history_id', 'last_sync_at', 'updated_at')
     readonly_fields = ('created_at', 'updated_at')
     search_fields = ('user_email',)
+
+
+# =====================================================================
+# Email-группы (для быстрой вставки получателей в composer)
+# =====================================================================
+
+
+class EmailGroupMemberInline(admin.TabularInline):
+    model = EmailGroupMember
+    extra = 1
+    fields = ('position', 'email', 'display_name')
+    ordering = ('position', 'email')
+
+
+@admin.register(EmailGroup)
+class EmailGroupAdmin(admin.ModelAdmin):
+    list_display = ('name', 'members_preview', 'members_count_display',
+                    'description', 'created_by', 'updated_at')
+    search_fields = ('name', 'description', 'members__email', 'members__display_name')
+    readonly_fields = ('created_at', 'updated_at', 'created_by')
+    inlines = [EmailGroupMemberInline]
+    ordering = ('name',)
+
+    fieldsets = (
+        (None, {
+            'fields': ('name', 'description'),
+            'description': (
+                'Группа используется в «Написать письмо» / «Ответить» карточки '
+                'контейнера — нажатие на кнопку «📇 Группы» разворачивает список '
+                'участников в активное поле получателей (To / Cc / Bcc).'
+            ),
+        }),
+        ('Служебное', {
+            'classes': ('collapse',),
+            'fields': ('created_by', 'created_at', 'updated_at'),
+        }),
+    )
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.prefetch_related('members')
+
+    @admin.display(description='Участники')
+    def members_preview(self, obj: EmailGroup) -> str:
+        names = []
+        for m in obj.members.all()[:6]:
+            names.append(m.display_name or m.email)
+        rest = max(0, obj.members.count() - 6)
+        if rest:
+            names.append(f'… и ещё {rest}')
+        return ', '.join(names) or '—'
+
+    @admin.display(description='Кол-во', ordering='name')
+    def members_count_display(self, obj: EmailGroup) -> int:
+        return obj.members.count()
+
+    def save_model(self, request, obj, form, change):
+        if not change and not obj.created_by_id:
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)
