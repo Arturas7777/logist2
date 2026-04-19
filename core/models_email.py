@@ -105,6 +105,34 @@ class ContainerEmail(models.Model):
     )
     is_read = models.BooleanField(default=False, verbose_name='Прочитано в UI')
 
+    # ── Phase 2: отслеживаем отправку исходящих писем из админки ─────────
+    SEND_STATUS_SENT = 'SENT'
+    SEND_STATUS_FAILED = 'FAILED'
+    SEND_STATUS_PENDING = 'PENDING'
+    SEND_STATUS_CHOICES = [
+        (SEND_STATUS_SENT, 'Отправлено'),
+        (SEND_STATUS_FAILED, 'Ошибка'),
+        (SEND_STATUS_PENDING, 'В очереди'),
+    ]
+
+    sent_by_user = models.ForeignKey(
+        'auth.User',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='sent_container_emails',
+        verbose_name='Отправил',
+        help_text='Пользователь, отправивший письмо из админки (только для OUTGOING).',
+    )
+    send_status = models.CharField(
+        max_length=10, choices=SEND_STATUS_CHOICES,
+        blank=True, default='',
+        help_text='Статус отправки для исходящих писем из админки.',
+    )
+    send_error = models.TextField(
+        blank=True, default='',
+        help_text='Текст последней ошибки Gmail API при попытке отправить.',
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

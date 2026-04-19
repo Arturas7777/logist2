@@ -89,6 +89,9 @@ __all__ = [
     'messenger_body_from_email',
     'html_to_plain',
     'extract_display_name',
+    'format_quoted_reply',
+    'plain_text_to_simple_html',
+    'compose_reply_html',
 ]
 
 
@@ -504,6 +507,139 @@ def messenger_body_from_email(body_text: str, body_html: str) -> str:
 
 _FROM_NAME = re.compile(r'^\s*"?([^"<]+?)"?\s*<[^>]+>\s*$')
 _EMAIL_ONLY = re.compile(r'^\s*<?([^\s<>@]+@[^\s<>]+)>?\s*$')
+
+
+def format_quoted_reply(parent, *, max_lines: int = 200) -> str:
+    """Формирует шапку цитаты для ответа в Gmail-стиле.
+
+    ``parent`` — объект с атрибутами ``received_at`` (datetime), ``from_addr``,
+    ``body_text``. Результат — готовый к подстановке в textarea текст:
+
+        \\n\\n\\nOn 17 Apr 2026, 14:23, ivan@example.com wrote:\\n
+        > первая строка\\n
+        > вторая строка\\n
+    """
+    if parent is None:
+        return ''
+    received = getattr(parent, 'received_at', None)
+    when = received.strftime('%d %b %Y, %H:%M') if received else ''
+    who = (getattr(parent, 'from_addr', '') or '').strip()
+    header = f"\n\n\nOn {when}, {who} wrote:" if when else f"\n\n\n{who} wrote:"
+    body = (getattr(parent, 'body_text', '') or '').strip()
+    if not body:
+        # fallback: plain из html
+        body = html_to_plain(getattr(parent, 'body_html', '') or '')
+    lines = body.splitlines()[:max_lines]
+    quoted = '\n'.join('> ' + ln for ln in lines)
+    return f"{header}\n{quoted}\n"
+
+
+_HTML_ESCAPE = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#x27;',
+}
+
+
+def plain_text_to_simple_html(text: str) -> str:
+    """Простейшая plain → HTML конвертация для body_html в исходящих письмах.
+
+    * Экранируем спецсимволы.
+    * ``\\n\\n`` → ``</p><p>``, одиночный ``\\n`` → ``<br>``.
+    * Строки, начинающиеся с ``>``, оборачиваются в ``<blockquote>``
+      (ограниченно — стандартная цитата для клиентов-получателей).
+    """
+    if not text:
+        return ''
+    escaped = ''.join(_HTML_ESCAPE.get(ch, ch) for ch in text)
+    paragraphs = escaped.split('\n\n')
+    rendered: list[str] = []
+    for para in paragraphs:
+        para_stripped = para.strip()
+        if not para_stripped:
+            continue
+        lines = para.split('\n')
+        # Если все строки цитата — выделим blockquote
+        if all(ln.lstrip().startswith('&gt;') for ln in lines if ln.strip()):
+            cleaned = '<br>'.join(ln.lstrip().removeprefix('&gt;').lstrip() for ln in lines)
+            rendered.append(
+                '<blockquote style="border-left:2px solid #cbd5e1;'
+                'padding-left:10px;color:#64748b;margin:8px 0;">'
+                f'{cleaned}</blockquote>'
+            )
+        else:
+            rendered.append('<p>' + '<br>'.join(lines) + '</p>')
+    return ''.join(rendered)
+
+
+# Attribution-заголовок, который мы сами генерируем в format_quoted_reply —
+# "On 17 Apr 2026, 14:23, ivan@example.com wrote:". Используется для того,
+# чтобы разделить в исходящем письме собственно reply и цитируемую историю
+# и обернуть цитату в Gmail-совместимый blockquote.
+_REPLY_ATTRIBUTION_RE = re.compile(
+    r'^On\s[^\n]{0,400}\bwrote:\s*$',
+    re.MULTILINE,
+)
+
+
+def compose_reply_html(text: str) -> str:
+    """Сериализует текст ответа в HTML с Gmail-совместимой цитатой.
+
+    Логика:
+      1) Ищем строку-атрибуцию ``On ... wrote:`` (та, что вставляет
+         ``format_quoted_reply``). Всё до неё — это непосредственно ответ
+         пользователя, всё после — процитированная история.
+      2) Ответ рендерим обычными ``<p>`` / ``<br>`` параграфами.
+      3) Цитату сначала очищаем от ``> `` префиксов (Gmail сам добавит
+         визуальный отступ через ``<blockquote>``), затем оборачиваем в
+         ``<blockquote class="gmail_quote">`` — ровно тот же маркап, что
+         генерирует веб-Gmail. В клиентах-получателях (Gmail, Outlook,
+         Apple Mail) этот блок автоматически схлопывается в «...».
+
+    Если атрибуция не найдена — делегируем в ``plain_text_to_simple_html``.
+    """
+    if not text:
+        return ''
+
+    match = _REPLY_ATTRIBUTION_RE.search(text)
+    if not match:
+        return plain_text_to_simple_html(text)
+
+    reply_part = text[:match.start()].rstrip()
+    attribution = match.group(0).strip()
+    quote_part = text[match.end():].lstrip('\n')
+
+    # Убираем один уровень '> ' из каждой строки цитаты — итоговый HTML
+    # рендерит цитату через <blockquote> (клиент сам нарисует левую полоску).
+    unquoted_lines: list[str] = []
+    for line in quote_part.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith('>'):
+            stripped = stripped[1:]
+            if stripped.startswith(' '):
+                stripped = stripped[1:]
+        unquoted_lines.append(stripped)
+    quote_clean = '\n'.join(unquoted_lines).strip('\n')
+
+    reply_html = plain_text_to_simple_html(reply_part) if reply_part.strip() else ''
+    quote_inner_html = plain_text_to_simple_html(quote_clean) if quote_clean else ''
+
+    attr_escaped = ''.join(_HTML_ESCAPE.get(ch, ch) for ch in attribution)
+
+    gmail_quote = (
+        '<div class="gmail_quote gmail_quote_container">'
+        f'<div dir="ltr" class="gmail_attr">{attr_escaped}<br></div>'
+        '<blockquote class="gmail_quote" '
+        'style="margin:0 0 0 0.8ex;border-left:1px solid rgb(204,204,204);'
+        'padding-left:1ex;color:#555;">'
+        f'{quote_inner_html}'
+        '</blockquote>'
+        '</div>'
+    )
+
+    return reply_html + gmail_quote
 
 
 def extract_display_name(from_addr: str) -> str:

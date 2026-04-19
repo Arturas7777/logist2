@@ -18,6 +18,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from core.models_email import ContainerEmail
 from core.services.email_reply_parser import (
+    format_quoted_reply,
     split_reply_and_quote,
     split_reply_and_quote_html,
 )
@@ -149,6 +150,152 @@ def email_mark_container_read(request, container_id: int):
 # ---------------------------------------------------------------------------
 # Ручной триггер Gmail-синхронизации
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Ответ в тред / новое письмо / черновик цитаты
+# ---------------------------------------------------------------------------
+
+
+def _compose_error_response(exc, status: int = 400) -> JsonResponse:
+    return JsonResponse({'ok': False, 'error': str(exc)[:500]}, status=status)
+
+
+@staff_member_required
+@require_GET
+def email_reply_draft(request, email_id: int):
+    """Возвращает автозаполненный черновик ответа (JSON) — к этому письму.
+
+    Используется UI-композером при клике на «Ответить»: фронту нужны значения
+    для подстановки в form (To/Cc/Subject/цитата).
+    """
+    email = get_object_or_404(
+        ContainerEmail.objects.select_related('container'), pk=email_id,
+    )
+
+    from_addr = getattr(settings, 'GMAIL_FROM_EMAIL', '') or getattr(settings, 'GMAIL_USER_EMAIL', '')
+    from_addr_lower = (from_addr or '').lower()
+
+    cc_raw = (email.cc_addrs or '') + ', ' + (email.to_addrs or '')
+    cc_addrs: list[str] = []
+    for item in (x.strip() for x in cc_raw.split(',') if x.strip()):
+        lower = item.lower()
+        if from_addr_lower and from_addr_lower in lower:
+            continue
+        if item not in cc_addrs:
+            cc_addrs.append(item)
+
+    subject_src = (email.subject or '').strip()
+    subject = subject_src if subject_src.lower().startswith('re:') else f'Re: {subject_src}'
+
+    quote = format_quoted_reply(email)
+
+    return JsonResponse({
+        'ok': True,
+        'to': email.from_addr or '',
+        'cc': ', '.join(cc_addrs),
+        'bcc': '',
+        'subject': subject.strip(),
+        'quote': quote,
+        'parent_email_id': email.pk,
+        'signature_text': getattr(settings, 'GMAIL_SIGNATURE_TEXT', ''),
+        'max_mb': int(getattr(settings, 'GMAIL_MAX_OUTBOUND_MB', 25)),
+    })
+
+
+@staff_member_required
+@require_POST
+def email_reply_send(request, email_id: int):
+    """Отправляет ответ в существующий тред."""
+    if not getattr(settings, 'GMAIL_ENABLED', False):
+        return JsonResponse({
+            'ok': False,
+            'error': 'GMAIL_ENABLED=False — отправка отключена.',
+        }, status=400)
+
+    parent = get_object_or_404(
+        ContainerEmail.objects.select_related('container'), pk=email_id,
+    )
+
+    try:
+        from core.services.email_compose import ComposeError, reply_to_email
+
+        sent = reply_to_email(
+            parent_email=parent,
+            user=request.user,
+            to=request.POST.get('to', ''),
+            cc=request.POST.get('cc', ''),
+            bcc=request.POST.get('bcc', ''),
+            subject=request.POST.get('subject', ''),
+            body_text=request.POST.get('body_text', ''),
+            attachments=request.FILES.getlist('attachments'),
+        )
+    except ComposeError as exc:
+        return _compose_error_response(exc, status=400)
+    except Exception as exc:
+        logger.exception('[email_reply_send] unexpected: %s', exc)
+        return _compose_error_response(exc, status=500)
+
+    return _render_bubble_response(request, sent)
+
+
+@staff_member_required
+@require_POST
+def email_compose_send(request):
+    """Новое письмо по контейнеру (без родителя)."""
+    if not getattr(settings, 'GMAIL_ENABLED', False):
+        return JsonResponse({
+            'ok': False,
+            'error': 'GMAIL_ENABLED=False — отправка отключена.',
+        }, status=400)
+
+    container_id = request.POST.get('container_id')
+    if not container_id:
+        return JsonResponse(
+            {'ok': False, 'error': 'container_id обязателен.'},
+            status=400,
+        )
+
+    from core.models import Container  # локально, чтобы избежать circular
+
+    container = get_object_or_404(Container, pk=container_id)
+
+    try:
+        from core.services.email_compose import ComposeError, compose_new_email
+
+        sent = compose_new_email(
+            container=container,
+            user=request.user,
+            to=request.POST.get('to', ''),
+            cc=request.POST.get('cc', ''),
+            bcc=request.POST.get('bcc', ''),
+            subject=request.POST.get('subject', ''),
+            body_text=request.POST.get('body_text', ''),
+            attachments=request.FILES.getlist('attachments'),
+        )
+    except ComposeError as exc:
+        return _compose_error_response(exc, status=400)
+    except Exception as exc:
+        logger.exception('[email_compose_send] unexpected: %s', exc)
+        return _compose_error_response(exc, status=500)
+
+    return _render_bubble_response(request, sent)
+
+
+def _render_bubble_response(request, email: ContainerEmail) -> JsonResponse:
+    """Рендерит один баббл и возвращает его в JSON (ok + html)."""
+    html = render(
+        request,
+        'admin/core/container/_email_bubble.html',
+        {'email': email},
+    ).content.decode('utf-8')
+    return JsonResponse({
+        'ok': True,
+        'email_id': email.pk,
+        'gmail_id': email.gmail_id,
+        'thread_id': email.thread_id,
+        'html': html,
+    })
+
 
 @staff_member_required
 @require_POST
