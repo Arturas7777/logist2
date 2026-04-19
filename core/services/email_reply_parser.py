@@ -522,9 +522,11 @@ def format_quoted_reply(parent, *, max_lines: int = 200) -> str:
     if parent is None:
         return ''
     received = getattr(parent, 'received_at', None)
-    when = received.strftime('%d %b %Y, %H:%M') if received else ''
+    # Формат повторяет веб-Gmail ("Sun, Apr 19, 2026 at 07:15") — увеличивает
+    # шанс, что Gmail у получателя распознает и автоматически свернёт цитату.
+    when = received.strftime('%a, %b %d, %Y at %H:%M') if received else ''
     who = (getattr(parent, 'from_addr', '') or '').strip()
-    header = f"\n\n\nOn {when}, {who} wrote:" if when else f"\n\n\n{who} wrote:"
+    header = f"\n\n\nOn {when} {who} wrote:" if when else f"\n\n\n{who} wrote:"
     body = (getattr(parent, 'body_text', '') or '').strip()
     if not body:
         # fallback: plain из html
@@ -643,7 +645,9 @@ def compose_reply_html(text: str, signature_html: str = '') -> str:
         '</div>'
     )
 
-    return reply_html + (signature_html or '') + gmail_quote
+    # <br> перед блоком цитаты — визуальная отбивка между (подписью/ответом)
+    # и цитатой, полностью повторяет верстку, которую генерирует веб-Gmail.
+    return reply_html + (signature_html or '') + '<br>' + gmail_quote
 
 
 def extract_display_name(from_addr: str) -> str:
