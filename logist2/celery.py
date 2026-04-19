@@ -33,6 +33,6 @@ app.conf.beat_schedule = {
     },
     'sync-emails-from-gmail': {
         'task': 'core.tasks_email.sync_emails_from_gmail',
-        'schedule': crontab(minute='*/5'),
+        'schedule': crontab(minute='*/1'),
     },
 }

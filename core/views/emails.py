@@ -569,6 +569,60 @@ def _render_bubble_response(request, email: ContainerEmail) -> JsonResponse:
 
 
 @staff_member_required
+@require_GET
+def email_container_updates(request, container_id: int):
+    """Лёгкий polling-эндпоинт: отдаёт новые письма контейнера с pk > since_id.
+
+    ``GET /core/emails/container/<container_id>/updates/?since_id=<N>``
+
+    Используется фронтом для авто-обновления списка переписки на открытой
+    карточке контейнера без необходимости reload страницы.
+
+    Ответ:
+        {
+          ok: true,
+          latest_id: <max pk среди всех писем контейнера>,
+          total: <всего писем>,
+          unread: <непрочитанных писем>,
+          bubbles: [{id, html}, ...]  // только письма с pk > since_id,
+                                       // уже отрендеренные в _email_bubble.html
+        }
+    """
+    try:
+        since_id = int(request.GET.get('since_id', 0))
+    except (TypeError, ValueError):
+        since_id = 0
+    since_id = max(0, since_id)
+
+    qs = ContainerEmail.objects.filter(container_id=container_id)
+    total = qs.count()
+    unread = qs.filter(is_read=False).count()
+
+    latest = qs.order_by('-pk').values_list('pk', flat=True).first() or 0
+
+    bubbles = []
+    if latest > since_id:
+        new_emails = qs.filter(pk__gt=since_id).order_by('-received_at', '-pk')
+        # Ограничиваем — если since_id=0 (первый вызов из неоткрытой ленты),
+        # не отдаём всё сразу: 50 штук уже покрывают 99% случаев.
+        for email in new_emails[:50]:
+            html = render(
+                request,
+                'admin/core/container/_email_bubble.html',
+                {'email': email},
+            ).content.decode('utf-8')
+            bubbles.append({'id': email.pk, 'html': html})
+
+    return JsonResponse({
+        'ok': True,
+        'latest_id': latest,
+        'total': total,
+        'unread': unread,
+        'bubbles': bubbles,
+    })
+
+
+@staff_member_required
 @require_POST
 def email_trigger_sync(request):
     if not getattr(settings, 'GMAIL_ENABLED', False):
