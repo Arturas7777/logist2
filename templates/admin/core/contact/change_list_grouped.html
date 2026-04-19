@@ -1,0 +1,280 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+.contacts-wrapper {
+    padding: 16px 20px 30px;
+}
+.contacts-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    background: #f8fafc;
+    padding: 10px 14px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+}
+.contacts-toolbar form { display:flex; gap:8px; align-items:center; margin: 0; }
+.contacts-toolbar input[type=search] {
+    padding: 5px 10px;
+    font-size: 13px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    min-width: 260px;
+}
+.contacts-toolbar .btn {
+    padding: 5px 12px;
+    font-size: 12px;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    color: #334155;
+}
+.contacts-toolbar .btn:hover { background: #eff6ff; border-color: #3b82f6; color: #1e40af; }
+.contacts-toolbar .btn.is-primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+.contacts-toolbar .btn.is-primary:hover { background: #1d4ed8; color: #fff; }
+.contacts-toolbar .muted { color: #64748b; font-size: 12px; margin-left: auto; }
+
+.contact-type-group {
+    margin-bottom: 28px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
+}
+.contact-type-group > h2 {
+    margin: 0;
+    padding: 10px 14px;
+    font-size: 15px;
+    background: linear-gradient(180deg, #1f2937 0%, #0f172a 100%);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.contact-type-group > h2 .cnt {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.15);
+    font-weight: 500;
+}
+
+.contact-counterparty {
+    border-top: 1px solid #e5e7eb;
+}
+.contact-counterparty:first-of-type { border-top: 0; }
+.contact-counterparty > h3 {
+    margin: 0;
+    padding: 8px 14px;
+    background: #f1f5f9;
+    font-size: 13px;
+    color: #1e293b;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.contact-counterparty > h3 .cnt {
+    font-size: 10px;
+    color: #64748b;
+    background: #e2e8f0;
+    padding: 1px 7px;
+    border-radius: 8px;
+    font-weight: 500;
+}
+
+.contact-position-block {
+    padding: 4px 14px 10px;
+}
+.contact-position-title {
+    margin: 10px 0 4px;
+    font-size: 12px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+}
+
+.contact-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 8px;
+}
+.contact-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 8px 12px;
+    background: #fafbfc;
+    position: relative;
+}
+.contact-item:hover { border-color: #3b82f6; background: #eff6ff; }
+.contact-item.is-primary { border-left: 3px solid #2563eb; }
+
+.contact-item .c-name { font-weight: 600; color: #0f172a; font-size: 14px; }
+.contact-item .c-name a { color: #0f172a; text-decoration: none; }
+.contact-item .c-name a:hover { color: #2563eb; text-decoration: underline; }
+.contact-item .c-primary-badge {
+    font-size: 10px;
+    background: #dbeafe;
+    color: #1e40af;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+.contact-item .c-email,
+.contact-item .c-phone {
+    font-size: 12px;
+    color: #475569;
+    margin-top: 2px;
+}
+.contact-item .c-email a { color: #2563eb; text-decoration: none; }
+.contact-item .c-email a:hover { text-decoration: underline; }
+.contact-item .c-comment {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px dashed #e2e8f0;
+    font-size: 11px;
+    color: #64748b;
+    font-style: italic;
+}
+.contact-item .c-edit {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    font-size: 11px;
+    color: #94a3b8;
+    text-decoration: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+.contact-item:hover .c-edit { opacity: 1; }
+.contact-item .c-edit:hover { color: #2563eb; }
+
+.contacts-empty {
+    padding: 40px 20px;
+    text-align: center;
+    color: #94a3b8;
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+}
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+    &rsaquo; {{ opts.verbose_name_plural|capfirst }}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="contacts-wrapper">
+    <div class="contacts-toolbar">
+        <form method="get" role="search">
+            <input type="search" name="q" value="{{ search_term }}"
+                   placeholder="Поиск по имени, должности, email, телефону…">
+            <select name="ct">
+                <option value="">Все типы</option>
+                <option value="line"      {% if ct_value == 'line' %}selected{% endif %}>Линии</option>
+                <option value="carrier"   {% if ct_value == 'carrier' %}selected{% endif %}>Перевозчики</option>
+                <option value="client"    {% if ct_value == 'client' %}selected{% endif %}>Клиенты</option>
+                <option value="warehouse" {% if ct_value == 'warehouse' %}selected{% endif %}>Склады</option>
+                <option value="company"   {% if ct_value == 'company' %}selected{% endif %}>Компании</option>
+            </select>
+            <select name="orphan_state">
+                <option value="">Все</option>
+                <option value="linked" {% if orphan_value == 'linked' %}selected{% endif %}>Привязанные</option>
+                <option value="orphan" {% if orphan_value == 'orphan' %}selected{% endif %}>Осиротевшие</option>
+            </select>
+            <button type="submit" class="btn is-primary">Найти</button>
+            {% if search_term or ct_value or orphan_value %}
+                <a href="{{ request.path }}" class="btn">Сбросить</a>
+            {% endif %}
+        </form>
+        <a href="{% url 'admin:core_contact_add' %}" class="btn is-primary">+ Новый контакт</a>
+        <a href="{{ table_view_url }}" class="btn">Табличный вид</a>
+        <span class="muted">Всего контактов: {{ total_contacts }}</span>
+    </div>
+
+    {% if groups %}
+        {% for type_label, buckets in groups.items %}
+            <section class="contact-type-group">
+                <h2>
+                    {{ type_label }}
+                    <span class="cnt">{{ buckets|length }} контрагентов</span>
+                </h2>
+
+                {% for cp_key, cp in buckets.items %}
+                    <div class="contact-counterparty">
+                        <h3>
+                            {{ cp.name }}
+                            {% with total_cp=0 %}
+                            {% for pos, items in cp.positions.items %}{% with _=items|length %}{% endwith %}{% endfor %}
+                            {% endwith %}
+                        </h3>
+                        <div class="contact-position-block">
+                        {% for pos, items in cp.positions.items %}
+                            {% if pos and pos != '—' %}
+                                <div class="contact-position-title">{{ pos }}</div>
+                            {% elif forloop.counter0 > 0 %}
+                                <div class="contact-position-title">Без должности</div>
+                            {% endif %}
+                            <ul class="contact-list">
+                                {% for c in items %}
+                                    <li class="contact-item{% if c.is_primary %} is-primary{% endif %}">
+                                        <a class="c-edit" href="{% url 'admin:core_contact_change' c.pk %}"
+                                           title="Изменить">✎ изменить</a>
+                                        <div class="c-name">
+                                            <a href="{% url 'admin:core_contact_change' c.pk %}">{{ c.name }}</a>
+                                            {% if c.is_primary %}<span class="c-primary-badge">основной</span>{% endif %}
+                                        </div>
+                                        {% for em in c.emails.all %}
+                                            <div class="c-email">
+                                                📧 <a href="mailto:{{ em.email }}">{{ em.email }}</a>
+                                                {% if em.is_primary %}<span class="c-primary-badge">осн.</span>{% endif %}
+                                            </div>
+                                        {% endfor %}
+                                        {% for ph in c.phones.all %}
+                                            <div class="c-phone">
+                                                📞 <a href="tel:{{ ph.phone }}">{{ ph.phone }}</a>
+                                                {% if ph.is_primary %}<span class="c-primary-badge">осн.</span>{% endif %}
+                                            </div>
+                                        {% endfor %}
+                                        {% if c.comment %}
+                                            <div class="c-comment">{{ c.comment|truncatechars:180 }}</div>
+                                        {% endif %}
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% endfor %}
+                        </div>
+                    </div>
+                {% endfor %}
+            </section>
+        {% endfor %}
+    {% else %}
+        <div class="contacts-empty">
+            <div style="font-size:36px;opacity:0.5;">📇</div>
+            <div>Контактов пока нет.</div>
+            <div style="margin-top:10px;">
+                <a href="{% url 'admin:core_contact_add' %}" class="btn is-primary">Добавить первый контакт</a>
+            </div>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

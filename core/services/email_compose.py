@@ -32,6 +32,7 @@ from django.core.files.uploadedfile import UploadedFile
 from django.utils import timezone
 
 from core.models_email import ContainerEmail
+from core.models_contact import Contact, ContactEmail
 from core.services.email_reply_parser import (
     compose_reply_html,
     format_quoted_reply,
@@ -86,6 +87,33 @@ def _parse_addrs(raw: str | Iterable[str] | None) -> list[str]:
         if not _EMAIL_RE.match(addr):
             raise ComposeError(f'Некорректный email-адрес: {addr!r}')
         out.append(addr)
+    return out
+
+
+def _parse_addrs_with_names(raw: str | Iterable[str] | None) -> list[tuple[str, str]]:
+    """Парсит raw-строки/список в ``[(email, display_name), ...]``.
+
+    Сохраняет display_name из ``"Имя <email>"`` — нужно для авто-создания
+    осиротевших контактов с осмысленным именем.
+    """
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        items = re.split(r'[,;\n]+', raw)
+    else:
+        items = list(raw)
+    out: list[tuple[str, str]] = []
+    for it in items:
+        addr = (it or '').strip()
+        if not addr:
+            continue
+        name = ''
+        m = re.search(r'^(.*?)<([^>]+)>\s*$', addr)
+        if m:
+            name = (m.group(1) or '').strip().strip('"')
+            addr = (m.group(2) or '').strip()
+        if _EMAIL_RE.match(addr):
+            out.append((addr, name))
     return out
 
 
@@ -243,6 +271,60 @@ def _build_references_header(parent: ContainerEmail) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Auto-create «осиротевших» контактов
+# ---------------------------------------------------------------------------
+
+
+def _autocreate_orphan_contacts(
+    raw_inputs: Iterable[tuple[str, str]],
+) -> list[Contact]:
+    """Для каждого ``(email, display_name)`` — если в ``ContactEmail`` нет
+    записи с таким ``email__iexact``, создаёт осиротевший ``Contact`` +
+    ``ContactEmail``. Ошибки глушим (не ломаем отправку письма).
+
+    Возвращает список созданных контактов (нужно для логов и тестов).
+    """
+    created: list[Contact] = []
+    try:
+        # Собираем существующие emails батчем (одним запросом).
+        candidates = [(e.lower(), n) for e, n in raw_inputs if e]
+        if not candidates:
+            return created
+        known = set(
+            ContactEmail.objects
+            .filter(email__in=[e for e, _ in candidates])
+            .values_list('email', flat=True)
+        )
+        known_lc = {e.lower() for e in known}
+
+        for email_addr, display_name in candidates:
+            if email_addr in known_lc:
+                continue
+            # Не создаём дубликаты если уже в этом же вызове.
+            known_lc.add(email_addr)
+
+            fallback_name = (display_name or '').strip() or email_addr.split('@')[0]
+            contact = Contact.objects.create(
+                name=fallback_name[:200],
+                is_orphan=True,
+                comment='Создан автоматически при отправке email из карточки контейнера.',
+            )
+            ContactEmail.objects.create(
+                contact=contact,
+                email=email_addr,
+                is_primary=True,
+            )
+            created.append(contact)
+            logger.info(
+                '[email_compose] auto-created orphan contact: %s <%s>',
+                fallback_name, email_addr,
+            )
+    except Exception as exc:  # pragma: no cover — защитная обёртка
+        logger.warning('[email_compose] failed to autocreate orphan contacts: %s', exc)
+    return created
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -265,6 +347,11 @@ def reply_to_email(
     bcc_list = _parse_addrs(bcc)
     if not to_list:
         raise ComposeError('Не указан хотя бы один получатель.')
+    # Сохраняем пары (email, name) для авто-создания контактов.
+    raw_pairs: list[tuple[str, str]] = []
+    raw_pairs.extend(_parse_addrs_with_names(to))
+    raw_pairs.extend(_parse_addrs_with_names(cc))
+    raw_pairs.extend(_parse_addrs_with_names(bcc))
 
     att_payload = _validate_and_read_attachments(attachments)
 
@@ -314,6 +401,7 @@ def reply_to_email(
         matched_by=ContainerEmail.MATCHED_BY_THREAD,
         in_reply_to=parent_email.message_id or '',
         references=references_hdr,
+        raw_recipient_pairs=raw_pairs,
     )
 
 
@@ -335,6 +423,10 @@ def compose_new_email(
     bcc_list = _parse_addrs(bcc)
     if not to_list:
         raise ComposeError('Не указан хотя бы один получатель.')
+    raw_pairs: list[tuple[str, str]] = []
+    raw_pairs.extend(_parse_addrs_with_names(to))
+    raw_pairs.extend(_parse_addrs_with_names(cc))
+    raw_pairs.extend(_parse_addrs_with_names(bcc))
 
     att_payload = _validate_and_read_attachments(attachments)
 
@@ -378,6 +470,7 @@ def compose_new_email(
         matched_by=ContainerEmail.MATCHED_BY_MANUAL,
         in_reply_to='',
         references='',
+        raw_recipient_pairs=raw_pairs,
     )
 
 
@@ -404,6 +497,7 @@ def _send_and_persist(
     matched_by,
     in_reply_to,
     references,
+    raw_recipient_pairs: list[tuple[str, str]] | None = None,
 ) -> ContainerEmail:
     now = timezone.now()
 
@@ -492,4 +586,10 @@ def _send_and_persist(
         email.pk, gmail_id, gmail_thread_id,
         getattr(container, 'pk', None),
     )
+
+    # После успешной отправки — подтягиваем/создаём контакты, чтобы в
+    # следующий раз autocomplete их предложил без ручного заведения.
+    if raw_recipient_pairs:
+        _autocreate_orphan_contacts(raw_recipient_pairs)
+
     return email
