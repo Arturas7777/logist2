@@ -423,8 +423,13 @@
 }
 
 /* ── Чип-поля адресатов (To/Cc/Bcc) ── */
+/* Вертикальная раскладка: label сверху, чипы ниже, input всегда под чипами,
+   на своей отдельной строке — чтобы email-input никогда не был в одной
+   строке с надписью "Кому". */
 #cm-composer .cm-chip-field {
-    align-items: flex-start;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
     position: relative;  /* чтобы autocomplete-dropdown позиционировался */
 }
 
@@ -432,8 +437,8 @@
 #cm-composer .cm-ac-dropdown {
     position: absolute;
     top: calc(100% + 2px);
-    left: 78px;                 /* выравнивание с началом chip-area (после лейбла) */
-    right: 8px;
+    left: 0;
+    right: 0;
     z-index: 20;
     max-height: 320px;
     overflow-y: auto;
@@ -498,17 +503,21 @@
 }
 
 #cm-composer .cm-chip-field > label {
-    padding-top: 6px;
+    width: auto;
+    padding: 0;
+    margin-bottom: 0;
 }
 #cm-composer .cm-chips {
-    flex: 1;
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
     align-items: center;
-    min-height: 28px;
-    padding: 2px 0;
+    min-height: 0;
+    padding: 0;
     cursor: text;
+}
+#cm-composer .cm-chips:empty {
+    display: none;  /* пустая строка не занимает место */
 }
 #cm-composer .cm-chip {
     display: inline-flex;
@@ -545,13 +554,16 @@
 }
 #cm-composer .cm-chip button:hover { opacity: 1; }
 #cm-composer .cm-chip-input {
-    flex: 1;
-    min-width: 140px;
+    width: 100%;
     border: 0;
     outline: 0;
     font-size: 13px;
     background: transparent;
-    padding: 2px 2px;
+    padding: 4px 0;
+    border-bottom: 1px dashed transparent;
+}
+#cm-composer .cm-chip-input:focus {
+    border-bottom-color: #cbd5e1;
 }
 
 /* ── Кнопка «Группы» + dropdown ── */
@@ -855,30 +867,27 @@
         </div>
         <div class="cm-composer-field cm-chip-field" data-chip-field="to">
             <label>Кому</label>
-            <div class="cm-chips" id="cm-composer-to-chips">
-                <input type="text" class="cm-chip-input" id="cm-composer-to-input"
-                       placeholder="email@example.com" autocomplete="off">
-            </div>
+            <div class="cm-chips" id="cm-composer-to-chips"></div>
+            <input type="text" class="cm-chip-input" id="cm-composer-to-input"
+                   placeholder="email@example.com" autocomplete="off">
+        </div>
+        <div class="cm-composer-field">
+            <label for="cm-composer-subject">Тема</label>
+            <input type="text" id="cm-composer-subject" name="subject" required>
         </div>
         <details class="cm-composer-extra" id="cm-composer-cc-details">
             <summary>Cc / Bcc</summary>
             <div class="cm-composer-field cm-chip-field" data-chip-field="cc">
                 <label>Cc</label>
-                <div class="cm-chips" id="cm-composer-cc-chips">
-                    <input type="text" class="cm-chip-input" id="cm-composer-cc-input" autocomplete="off">
-                </div>
+                <div class="cm-chips" id="cm-composer-cc-chips"></div>
+                <input type="text" class="cm-chip-input" id="cm-composer-cc-input" autocomplete="off">
             </div>
             <div class="cm-composer-field cm-chip-field" data-chip-field="bcc">
                 <label>Bcc</label>
-                <div class="cm-chips" id="cm-composer-bcc-chips">
-                    <input type="text" class="cm-chip-input" id="cm-composer-bcc-input" autocomplete="off">
-                </div>
+                <div class="cm-chips" id="cm-composer-bcc-chips"></div>
+                <input type="text" class="cm-chip-input" id="cm-composer-bcc-input" autocomplete="off">
             </div>
         </details>
-        <div class="cm-composer-field">
-            <label for="cm-composer-subject">Тема</label>
-            <input type="text" id="cm-composer-subject" name="subject" required>
-        </div>
         <textarea id="cm-composer-body" name="body_text" placeholder="Текст сообщения…" required></textarea>
         <div class="cm-composer-signature-hint">
             Подпись будет добавлена автоматически из настроек.
@@ -1123,11 +1132,14 @@
 
     function createChipField(container, input, kind) {
         var chips = [];
+        // Родитель (.cm-chip-field) — на него вешаем dropdown, чтобы он жил
+        // независимо от скрытого-при-отсутствии-чипов .cm-chips.
+        var chipField = container.parentElement;
 
         // Dropdown для autocomplete (один на поле).
         var dropdown = document.createElement('div');
         dropdown.className = 'cm-ac-dropdown';
-        container.appendChild(dropdown);
+        (chipField || container).appendChild(dropdown);
         var acItems = [];
         var acActiveIdx = -1;
         var acLastQuery = '';
@@ -1222,8 +1234,8 @@
         }
 
         function render() {
-            // Remove existing chip nodes (keep input).
-            Array.prototype.slice.call(container.querySelectorAll('.cm-chip')).forEach(function(n) { n.remove(); });
+            // container = .cm-chips (содержит только чипы, input — сосед).
+            container.innerHTML = '';
             chips.forEach(function(c, idx) {
                 var span = document.createElement('span');
                 span.className = 'cm-chip' + (c.invalid ? ' is-invalid' : '');
@@ -1245,7 +1257,7 @@
                     input.focus();
                 });
                 span.appendChild(x);
-                container.insertBefore(span, input);
+                container.appendChild(span);
             });
         }
         function addOne(raw) {
