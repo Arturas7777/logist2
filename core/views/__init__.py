@@ -68,4 +68,5 @@ from .emails import (  # noqa: F401
     email_compose_send,
     email_groups_list,
     contacts_autocomplete,
+    email_container_updates,
 )

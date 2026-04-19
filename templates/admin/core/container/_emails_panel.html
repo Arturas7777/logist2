@@ -1038,6 +1038,75 @@
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // Авто-обновление списка писем (polling)
+    // ═══════════════════════════════════════════════════════════════════
+    // Каждые 30 сек тихо опрашиваем /core/emails/container/<id>/updates/
+    // и подмешиваем новые письма наверх ленты. Полл работает только когда:
+    //  - details открыт (пользователь видит переписку),
+    //  - вкладка активна (document.visibilityState === 'visible'),
+    //  - нет уже летящего запроса.
+    (function setupEmailPolling() {
+        if (!list || !containerId) return;
+        var POLL_INTERVAL_MS = 30000;
+        var inFlight = false;
+
+        function latestIdInDom() {
+            var maxId = 0;
+            list.querySelectorAll('.cm-msg[data-email-id]').forEach(function(el) {
+                var id = parseInt(el.getAttribute('data-email-id'), 10) || 0;
+                if (id > maxId) maxId = id;
+            });
+            return maxId;
+        }
+
+        function shouldPoll() {
+            if (inFlight) return false;
+            if (document.visibilityState !== 'visible') return false;
+            if (!details || !details.open) return false;
+            return true;
+        }
+
+        function pollOnce() {
+            if (!shouldPoll()) return;
+            inFlight = true;
+            var sinceId = latestIdInDom();
+            var url = '/core/emails/container/' + containerId + '/updates/?since_id=' + sinceId;
+            fetch(url, { credentials: 'same-origin' })
+                .then(function(r) { return r.ok ? r.json() : null; })
+                .then(function(data) {
+                    if (!data || !data.ok) return;
+                    if (Array.isArray(data.bubbles) && data.bubbles.length) {
+                        // Вставляем новые баблы в начало (лента — newest first).
+                        // Порядок в ответе уже newest-first, так что «старейшие новые»
+                        // вставляем первыми — а затем более свежие поверх.
+                        data.bubbles.slice().reverse().forEach(function(b) {
+                            if (list.querySelector('.cm-msg[data-email-id="' + b.id + '"]')) {
+                                return;  // страховка от гонок — уже есть.
+                            }
+                            var tmp = document.createElement('div');
+                            tmp.innerHTML = b.html;
+                            var node = tmp.firstElementChild;
+                            if (node) list.insertBefore(node, list.firstChild);
+                        });
+                        refreshBadge();
+                        // Если панель открыта сейчас — сразу помечаем как прочитанные.
+                        if (details && details.open) {
+                            markAllRead();
+                        }
+                    }
+                })
+                .catch(function() { /* тихо игнорируем сеть-ошибки */ })
+                .finally(function() { inFlight = false; });
+        }
+
+        setInterval(pollOnce, POLL_INTERVAL_MS);
+        // И дополнительно сразу после возврата вкладки в foreground.
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible') pollOnce();
+        });
+    })();
+
+    // ═══════════════════════════════════════════════════════════════════
     // Composer (ответ / новое письмо)
     // ═══════════════════════════════════════════════════════════════════
     var composer = document.getElementById('cm-composer');
