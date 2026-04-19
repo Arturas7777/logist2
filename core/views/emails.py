@@ -282,6 +282,52 @@ def email_compose_send(request):
     return _render_bubble_response(request, sent)
 
 
+def _resolve_group_addrs(members) -> list:
+    """Возвращает RFC 5322-адреса участников группы, предпочитая имя из ``Contact``
+    над ``EmailGroupMember.display_name`` — чтобы имена одного email были
+    консистентны между группами, карточкой контакта и автодополнением.
+
+    Если email присутствует в ``ContactEmail`` — берём ``Contact.name`` (если
+    задано), иначе остаёмся на имени из группы.
+    """
+    if not members:
+        return []
+
+    emails_lc = {(m.email or '').lower(): m.email for m in members if m.email}
+    if not emails_lc:
+        return [m.as_header_format for m in members]
+
+    # Одним запросом собираем маппинг email_lc → Contact.name (если есть).
+    ce_qs = (
+        ContactEmail.objects
+        .filter(email__in=list(emails_lc.values()))
+        .select_related('contact')
+        .order_by('-is_primary', 'position')
+    )
+    name_map: dict = {}
+    for ce in ce_qs:
+        lc = (ce.email or '').lower()
+        if lc in name_map:
+            continue  # первый (is_primary раньше в order_by) — побеждает
+        cname = (ce.contact.name or '').strip() if ce.contact else ''
+        if cname:
+            name_map[lc] = cname
+
+    def _quote_if_needed(name: str) -> str:
+        if any(ch in name for ch in ',;<>"'):
+            return '"' + name.replace('"', '\\"') + '"'
+        return name
+
+    out: list = []
+    for m in members:
+        lc = (m.email or '').lower()
+        if lc in name_map:
+            out.append(f'{_quote_if_needed(name_map[lc])} <{m.email}>')
+        else:
+            out.append(m.as_header_format)
+    return out
+
+
 @staff_member_required
 @require_GET
 def email_groups_list(request):
@@ -310,7 +356,7 @@ def email_groups_list(request):
             'name': g.name,
             'description': g.description or '',
             'count': len(members),
-            'addrs': [m.as_header_format for m in members],
+            'addrs': _resolve_group_addrs(members),
         })
     return JsonResponse({'ok': True, 'groups': data})
 
@@ -365,7 +411,7 @@ def contacts_autocomplete(request):
             'id': g.pk,
             'label': g.name,
             'sub': f'{len(members)} адрес(ов)',
-            'addrs': [m.as_header_format for m in members],
+            'addrs': _resolve_group_addrs(members),
         })
 
     # ── 2. Контакты ────────────────────────────────────────────────────
