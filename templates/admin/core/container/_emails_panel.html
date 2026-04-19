@@ -422,6 +422,28 @@
     background: transparent;
 }
 
+/* Stacked-раскладка: label сверху, input полной ширины ниже.
+   Применяется к полю «Тема» и потенциально другим «одиночным» полям. */
+#cm-composer .cm-composer-field.cm-stacked-field {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+}
+#cm-composer .cm-composer-field.cm-stacked-field > label {
+    width: auto;
+    padding: 0;
+    margin-bottom: 0;
+}
+#cm-composer .cm-composer-field.cm-stacked-field > input {
+    width: 100%;
+    flex: 0 0 auto;
+    padding: 4px 0;
+    border-bottom: 1px dashed transparent;
+}
+#cm-composer .cm-composer-field.cm-stacked-field > input:focus {
+    border-bottom-color: #cbd5e1;
+}
+
 /* ── Чип-поля адресатов (To/Cc/Bcc) ── */
 /* Вертикальная раскладка: label сверху, чипы ниже, input всегда под чипами,
    на своей отдельной строке — чтобы email-input никогда не был в одной
@@ -871,7 +893,7 @@
             <input type="text" class="cm-chip-input" id="cm-composer-to-input"
                    placeholder="email@example.com" autocomplete="off">
         </div>
-        <div class="cm-composer-field">
+        <div class="cm-composer-field cm-stacked-field">
             <label for="cm-composer-subject">Тема</label>
             <input type="text" id="cm-composer-subject" name="subject" required>
         </div>
