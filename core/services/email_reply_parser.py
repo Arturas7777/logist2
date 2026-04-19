@@ -584,7 +584,7 @@ _REPLY_ATTRIBUTION_RE = re.compile(
 )
 
 
-def compose_reply_html(text: str) -> str:
+def compose_reply_html(text: str, signature_html: str = '') -> str:
     """Сериализует текст ответа в HTML с Gmail-совместимой цитатой.
 
     Логика:
@@ -592,20 +592,24 @@ def compose_reply_html(text: str) -> str:
          ``format_quoted_reply``). Всё до неё — это непосредственно ответ
          пользователя, всё после — процитированная история.
       2) Ответ рендерим обычными ``<p>`` / ``<br>`` параграфами.
-      3) Цитату сначала очищаем от ``> `` префиксов (Gmail сам добавит
+      3) Если передан ``signature_html`` — вставляем его **между** ответом
+         и блоком цитаты (как это делает веб-Gmail при клике «Ответить»).
+      4) Цитату сначала очищаем от ``> `` префиксов (Gmail сам добавит
          визуальный отступ через ``<blockquote>``), затем оборачиваем в
          ``<blockquote class="gmail_quote">`` — ровно тот же маркап, что
          генерирует веб-Gmail. В клиентах-получателях (Gmail, Outlook,
          Apple Mail) этот блок автоматически схлопывается в «...».
 
-    Если атрибуция не найдена — делегируем в ``plain_text_to_simple_html``.
+    Если атрибуция не найдена — делегируем в ``plain_text_to_simple_html``
+    и дописываем подпись в конец.
     """
     if not text:
-        return ''
+        return signature_html or ''
 
     match = _REPLY_ATTRIBUTION_RE.search(text)
     if not match:
-        return plain_text_to_simple_html(text)
+        base = plain_text_to_simple_html(text)
+        return base + (signature_html or '')
 
     reply_part = text[:match.start()].rstrip()
     attribution = match.group(0).strip()
@@ -639,7 +643,7 @@ def compose_reply_html(text: str) -> str:
         '</div>'
     )
 
-    return reply_html + gmail_quote
+    return reply_html + (signature_html or '') + gmail_quote
 
 
 def extract_display_name(from_addr: str) -> str:

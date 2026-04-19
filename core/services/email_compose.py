@@ -166,6 +166,8 @@ def _save_outgoing_attachments(
 
 
 def _append_signature(body_text: str, body_html: str) -> tuple[str, str]:
+    """Добавляет подпись В КОНЕЦ тела письма. Используется для compose_new_email,
+    где цитаты нет и подпись естественно ставится в самом низу."""
     sig_text = getattr(settings, 'GMAIL_SIGNATURE_TEXT', '') or ''
     sig_html = getattr(settings, 'GMAIL_SIGNATURE_HTML', '') or ''
     if sig_text:
@@ -173,6 +175,48 @@ def _append_signature(body_text: str, body_html: str) -> tuple[str, str]:
     if sig_html:
         body_html = (body_html or '') + sig_html
     return body_text, body_html
+
+
+# Регулярка для строки-атрибуции "On … wrote:", которую вставляет
+# format_quoted_reply(). По ней разрезаем plain-text ответ, чтобы вставить
+# подпись ПЕРЕД цитатой (как это делает веб-Gmail при клике "Ответить").
+_REPLY_ATTRIBUTION_TEXT_RE = re.compile(
+    r'^On\s[^\n]{0,400}\bwrote:\s*$',
+    re.MULTILINE,
+)
+
+
+def _build_reply_bodies(body_text: str) -> tuple[str, str]:
+    """Готовит финальные body_text / body_html для ответа.
+
+    Подпись вставляется **между** текстом пользователя и строкой-атрибуцией
+    "On ... wrote:" (и соответственно между <p>reply</p> и <blockquote>
+    в HTML-версии) — так делает веб-Gmail. Это даёт естественный вид:
+    получатель сначала видит ответ + подпись, цитата схлопывается в "...".
+    """
+    sig_text = getattr(settings, 'GMAIL_SIGNATURE_TEXT', '') or ''
+    sig_html = getattr(settings, 'GMAIL_SIGNATURE_HTML', '') or ''
+    src = body_text or ''
+
+    # --- plain text: вставляем подпись перед "On ... wrote:" ---
+    if sig_text:
+        sig_block = '\n\n' + sig_text.strip() + '\n'
+        m = _REPLY_ATTRIBUTION_TEXT_RE.search(src)
+        if m:
+            final_text = (
+                src[:m.start()].rstrip()
+                + sig_block
+                + '\n' + src[m.start():]
+            )
+        else:
+            final_text = src.rstrip() + sig_block
+    else:
+        final_text = src
+
+    # --- HTML: вставка делается внутри compose_reply_html ---
+    final_html = compose_reply_html(src, signature_html=sig_html)
+
+    return final_text, final_html
 
 
 # ---------------------------------------------------------------------------
@@ -226,12 +270,11 @@ def reply_to_email(
 
     subject = subject.strip() or f'Re: {parent_email.subject or ""}'.strip()
     body_text = body_text or ''
-    # Для ответа — используем Gmail-совместимую сериализацию:
-    # reply-часть как обычные <p>, цитата обёрнута в <blockquote class="gmail_quote">,
-    # чтобы клиенты-получатели (Gmail/Outlook) схлопнули её в «...».
-    body_text_final, body_html_final = _append_signature(
-        body_text, compose_reply_html(body_text)
-    )
+    # Для ответа — Gmail-совместимый layout: <p>reply</p> + <подпись> +
+    # <blockquote class="gmail_quote">...</blockquote>. Подпись ставится
+    # МЕЖДУ ответом и цитатой, как в веб-Gmail, а сам блок цитаты
+    # клиенты-получатели схлопывают в «...».
+    body_text_final, body_html_final = _build_reply_bodies(body_text)
 
     from_addr, from_name = get_from_address()
     references_hdr = _build_references_header(parent_email)
