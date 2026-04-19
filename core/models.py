@@ -1711,4 +1711,7 @@ from .models_invoice_audit import InvoiceAudit, SupplierCost  # noqa: F401
 from core.models_email import (  # noqa: E402,F401
     ContainerEmail, GmailSyncState, EmailGroup, EmailGroupMember,
 )
+from core.models_contact import (  # noqa: E402,F401
+    Contact, ContactEmail, ContactPhone,
+)
 

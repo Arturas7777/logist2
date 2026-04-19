@@ -36,5 +36,7 @@ urlpatterns = [
 
     # Email-группы (для быстрой вставки получателей в composer)
     path('emails/groups/', views.email_groups_list, name='email_groups_list'),
+    # Autocomplete контактов для composer (Gmail-style)
+    path('emails/contacts/search/', views.contacts_autocomplete, name='contacts_autocomplete'),
 ]
 

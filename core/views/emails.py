@@ -17,6 +17,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
 from core.models_email import ContainerEmail, EmailGroup
+from core.models_contact import Contact, ContactEmail
 from core.services.email_reply_parser import (
     format_quoted_reply,
     split_reply_and_quote,
@@ -312,6 +313,197 @@ def email_groups_list(request):
             'addrs': [m.as_header_format for m in members],
         })
     return JsonResponse({'ok': True, 'groups': data})
+
+
+@staff_member_required
+@require_GET
+def contacts_autocomplete(request):
+    """Gmail-style autocomplete для полей получателей в composer.
+
+    ``GET /core/emails/contacts/search/?q=<query>&limit=<n>``
+
+    Возвращает смешанный список из трёх источников:
+      1. Email-группы (``kind=group``) — name match.
+      2. Контакты (``kind=contact``) — по name/position/email/counterparty name.
+      3. Исторические адресаты (``kind=history``) — email-адреса, которые
+         встречались в from/to/cc существующих писем, но не являются контактом.
+
+    Группы всегда первыми. Далее контакты (приоритет: совпадение email →
+    совпадение имени → должности). Исторические последними, упорядочены по
+    частоте (``seen``).
+    """
+    from collections import Counter
+    import re
+
+    q_raw = (request.GET.get('q') or '').strip()
+    try:
+        limit = int(request.GET.get('limit', 12))
+    except (TypeError, ValueError):
+        limit = 12
+    limit = max(1, min(limit, 25))
+
+    # Пустой запрос → пустой список (иначе фронт может спамить БД впустую).
+    if not q_raw:
+        return JsonResponse({'ok': True, 'items': []})
+
+    q = q_raw.lower()
+    items: list = []
+
+    # ── 1. Email-группы ────────────────────────────────────────────────
+    groups_qs = (
+        EmailGroup.objects
+        .filter(name__icontains=q_raw)
+        .prefetch_related('members')
+        .order_by('name')[:limit]
+    )
+    for g in groups_qs:
+        members = list(g.members.all())
+        if not members:
+            continue
+        items.append({
+            'kind': 'group',
+            'id': g.pk,
+            'label': g.name,
+            'sub': f'{len(members)} адрес(ов)',
+            'addrs': [m.as_header_format for m in members],
+        })
+
+    # ── 2. Контакты ────────────────────────────────────────────────────
+    # Поиск по name / position / comment (у Contact) + email (через related).
+    # Джойним вручную, чтобы дедуплицировать и собрать лучший email на контакт.
+    contact_ids: set = set()
+
+    # a) По email (максимальный приоритет).
+    email_hits = (
+        ContactEmail.objects
+        .filter(email__icontains=q_raw)
+        .select_related('contact', 'contact__content_type')
+        .order_by('-is_primary', 'position', 'email')[:limit * 2]
+    )
+    seen_ids: set = set()
+    contact_entries: list = []
+    for ce in email_hits:
+        c = ce.contact
+        if c.pk in seen_ids:
+            continue
+        seen_ids.add(c.pk)
+        contact_entries.append((c, ce.email))
+
+    # b) По name / position / comment (без email-match выше).
+    name_hits = (
+        Contact.objects
+        .filter(
+            models_Q_name_or_position(q_raw)
+        )
+        .exclude(pk__in=seen_ids)
+        .select_related('content_type')
+        .prefetch_related('emails')
+        .order_by('name')[:limit * 2]
+    )
+    for c in name_hits:
+        if c.pk in seen_ids:
+            continue
+        seen_ids.add(c.pk)
+        em = c.emails.first()
+        email_str = em.email if em else ''
+        contact_entries.append((c, email_str))
+
+    for c, email_str in contact_entries[:limit]:
+        if not email_str:
+            continue
+        addr = email_str
+        if c.name:
+            name = c.name.strip()
+            if any(ch in name for ch in ',;<>"'):
+                name = '"' + name.replace('"', '\\"') + '"'
+            addr = f'{name} <{email_str}>'
+
+        sub_parts = []
+        if c.position:
+            sub_parts.append(c.position)
+        cp_name = c.counterparty_name if not c.is_orphan else ''
+        if cp_name and cp_name != '(Осиротевший)':
+            sub_parts.append(cp_name)
+        sub = ' · '.join(sub_parts) or 'Контакт'
+
+        items.append({
+            'kind': 'contact',
+            'id': c.pk,
+            'label': c.name or email_str,
+            'sub': sub,
+            'email': email_str,
+            'addr': addr,
+        })
+        contact_ids.add(c.pk)
+
+    # ── 3. Исторические адресаты ──────────────────────────────────────
+    # Собираем email-адреса из from_addr / to_addrs / cc_addrs — если
+    # они похожи на q_raw и ещё не покрыты контактами. Распарсить адрес
+    # из строк вида "Name <email@host>" через regex.
+    known_emails: set = set()
+    for c_id in contact_ids:
+        for em in ContactEmail.objects.filter(contact_id=c_id).values_list('email', flat=True):
+            known_emails.add(em.lower())
+
+    history_counter = Counter()
+    history_display: dict = {}
+
+    # Эвристика: ищем письма, где подстрока q встречается в from/to/cc.
+    email_pat = re.compile(r'[\w.+\-]+@[\w\-]+(?:\.[\w\-]+)+')
+
+    emails_scan = (
+        ContainerEmail.objects
+        .filter(
+            models_Q_email_contains(q_raw)
+        )
+        .values_list('from_addr', 'to_addrs', 'cc_addrs')[:200]
+    )
+    for from_addr, to_addrs, cc_addrs in emails_scan:
+        for raw in (from_addr, to_addrs, cc_addrs):
+            if not raw:
+                continue
+            for match in email_pat.findall(raw):
+                if q not in match.lower():
+                    continue
+                lc = match.lower()
+                if lc in known_emails:
+                    continue
+                history_counter[lc] += 1
+                if lc not in history_display:
+                    history_display[lc] = match
+
+    hist_sorted = history_counter.most_common(limit)
+    for lc, count in hist_sorted:
+        addr = history_display[lc]
+        items.append({
+            'kind': 'history',
+            'label': addr,
+            'sub': f'{count} письм(ам/о/а) в истории',
+            'email': addr,
+            'addr': addr,
+        })
+
+    return JsonResponse({'ok': True, 'items': items[:limit * 2]})
+
+
+def models_Q_name_or_position(q_raw: str):
+    """Helper — Q-фильтр поиска контактов по ключевым полям."""
+    from django.db.models import Q
+    return (
+        Q(name__icontains=q_raw)
+        | Q(position__icontains=q_raw)
+        | Q(comment__icontains=q_raw)
+    )
+
+
+def models_Q_email_contains(q_raw: str):
+    """Helper — Q-фильтр поиска писем с email-подстрокой в адресных полях."""
+    from django.db.models import Q
+    return (
+        Q(from_addr__icontains=q_raw)
+        | Q(to_addrs__icontains=q_raw)
+        | Q(cc_addrs__icontains=q_raw)
+    )
 
 
 def _render_bubble_response(request, email: ContainerEmail) -> JsonResponse:

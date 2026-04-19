@@ -425,7 +425,78 @@
 /* ── Чип-поля адресатов (To/Cc/Bcc) ── */
 #cm-composer .cm-chip-field {
     align-items: flex-start;
+    position: relative;  /* чтобы autocomplete-dropdown позиционировался */
 }
+
+/* ── Gmail-style autocomplete dropdown под chip-input ── */
+#cm-composer .cm-ac-dropdown {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 78px;                 /* выравнивание с началом chip-area (после лейбла) */
+    right: 8px;
+    z-index: 20;
+    max-height: 320px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.22);
+    padding: 4px;
+    display: none;
+    font-size: 13px;
+}
+#cm-composer .cm-ac-dropdown.is-open { display: block; }
+#cm-composer .cm-ac-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background 0.08s ease;
+}
+#cm-composer .cm-ac-item:hover,
+#cm-composer .cm-ac-item.is-active {
+    background: #eff6ff;
+}
+#cm-composer .cm-ac-item .cm-ac-icon {
+    font-size: 14px;
+    width: 20px;
+    text-align: center;
+    flex-shrink: 0;
+    color: #64748b;
+}
+#cm-composer .cm-ac-item.kind-group .cm-ac-icon { color: #2563eb; }
+#cm-composer .cm-ac-item.kind-contact .cm-ac-icon { color: #059669; }
+#cm-composer .cm-ac-item.kind-history .cm-ac-icon { color: #94a3b8; }
+#cm-composer .cm-ac-text { flex: 1; min-width: 0; }
+#cm-composer .cm-ac-label {
+    font-weight: 600;
+    color: #0f172a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#cm-composer .cm-ac-label mark {
+    background: #fef08a;
+    color: inherit;
+    padding: 0;
+}
+#cm-composer .cm-ac-sub {
+    font-size: 11px;
+    color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#cm-composer .cm-ac-empty,
+#cm-composer .cm-ac-loading {
+    padding: 8px 10px;
+    color: #94a3b8;
+    font-size: 12px;
+    font-style: italic;
+}
+
 #cm-composer .cm-chip-field > label {
     padding-top: 6px;
 }
@@ -1004,8 +1075,152 @@
         return c.name ? (c.name + ' <' + c.email + '>') : c.email;
     }
 
+    // ── Autocomplete ────────────────────────────────────────────────
+    // Общий in-memory кэш последних запросов чтобы не дёргать БД каждый
+    // раз при редактировании. Ключ — lower(query). Время жизни: 30 сек.
+    var acCache = {};
+    var acCacheTTL = 30 * 1000;
+    function acFetch(q, cb) {
+        var key = q.toLowerCase();
+        var cached = acCache[key];
+        var now = Date.now();
+        if (cached && (now - cached.ts) < acCacheTTL) {
+            cb(cached.items);
+            return;
+        }
+        fetch('/core/emails/contacts/search/?q=' + encodeURIComponent(q) + '&limit=12', {
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(function(r) { return r.ok ? r.json() : { items: [] }; })
+            .then(function(data) {
+                var items = (data && data.items) || [];
+                acCache[key] = { ts: now, items: items };
+                cb(items);
+            })
+            .catch(function() { cb([]); });
+    }
+
+    function escapeHtml(s) {
+        return String(s || '').replace(/[&<>"']/g, function(ch) {
+            return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[ch];
+        });
+    }
+
+    function highlightMatch(text, q) {
+        if (!text || !q) return escapeHtml(text);
+        var re;
+        try {
+            re = new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'ig');
+        } catch (_) {
+            return escapeHtml(text);
+        }
+        return escapeHtml(text).replace(
+            new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s/g, '\\s') + ')', 'ig'),
+            '<mark>$1</mark>'
+        );
+    }
+
     function createChipField(container, input, kind) {
         var chips = [];
+
+        // Dropdown для autocomplete (один на поле).
+        var dropdown = document.createElement('div');
+        dropdown.className = 'cm-ac-dropdown';
+        container.appendChild(dropdown);
+        var acItems = [];
+        var acActiveIdx = -1;
+        var acLastQuery = '';
+        var acTimer = null;
+
+        function acHide() {
+            dropdown.classList.remove('is-open');
+            acItems = [];
+            acActiveIdx = -1;
+        }
+        function acRender(items, query) {
+            dropdown.innerHTML = '';
+            acItems = items;
+            acActiveIdx = items.length ? 0 : -1;
+            if (!items.length) {
+                dropdown.innerHTML = '<div class="cm-ac-empty">Совпадений не найдено</div>';
+                dropdown.classList.add('is-open');
+                return;
+            }
+            items.forEach(function(it, idx) {
+                var el = document.createElement('div');
+                el.className = 'cm-ac-item kind-' + it.kind + (idx === 0 ? ' is-active' : '');
+                el.dataset.idx = idx;
+                var icon = it.kind === 'group' ? '📇' : (it.kind === 'contact' ? '👤' : '🕘');
+                el.innerHTML =
+                    '<span class="cm-ac-icon">' + icon + '</span>' +
+                    '<div class="cm-ac-text">' +
+                        '<div class="cm-ac-label">' + highlightMatch(it.label || '', query) + '</div>' +
+                        (it.sub ? '<div class="cm-ac-sub">' + escapeHtml(it.sub) + '</div>' : '') +
+                    '</div>';
+                el.addEventListener('mousedown', function(e) {
+                    // mousedown, а не click — чтобы не сработал blur раньше выбора.
+                    e.preventDefault();
+                    acSelect(idx);
+                });
+                el.addEventListener('mouseenter', function() {
+                    acActiveIdx = idx;
+                    updateAcActive();
+                });
+                dropdown.appendChild(el);
+            });
+            dropdown.classList.add('is-open');
+        }
+        function updateAcActive() {
+            Array.prototype.slice.call(dropdown.querySelectorAll('.cm-ac-item')).forEach(function(el, i) {
+                if (i === acActiveIdx) {
+                    el.classList.add('is-active');
+                    // Авто-прокрутка в пределах dropdown.
+                    var r = el.getBoundingClientRect();
+                    var pr = dropdown.getBoundingClientRect();
+                    if (r.bottom > pr.bottom) el.scrollIntoView({ block: 'nearest' });
+                    else if (r.top < pr.top) el.scrollIntoView({ block: 'nearest' });
+                } else {
+                    el.classList.remove('is-active');
+                }
+            });
+        }
+        function acSelect(idx) {
+            if (idx < 0 || idx >= acItems.length) return;
+            var it = acItems[idx];
+            input.value = '';
+            if (it.kind === 'group' && Array.isArray(it.addrs)) {
+                it.addrs.forEach(function(a) { addOne(a); });
+            } else if (it.addr) {
+                addOne(it.addr);
+            } else if (it.email) {
+                addOne(it.email);
+            }
+            render();
+            scheduleDraftSave();
+            acHide();
+            input.focus();
+        }
+        function acQuery() {
+            var q = input.value.trim();
+            // Не ищем очень короткие запросы (<2 символов), чтобы не шуметь.
+            if (q.length < 2) { acHide(); return; }
+            // Если вводят email-адрес целиком (с @) и уже нажали пробел/запятую —
+            // это комитится как чип, автокомплит не нужен. Но просто для "@" всё
+            // равно поищем: вдруг там контакт с таким доменом.
+            acLastQuery = q;
+            acFetch(q, function(items) {
+                // Защита от гонок: если пользователь уже ввёл другую строку —
+                // показ игнорируем (актуальный запрос придёт следом).
+                if (input.value.trim() !== acLastQuery) return;
+                acRender(items, q);
+            });
+        }
+        function acQueryDebounced() {
+            if (acTimer) clearTimeout(acTimer);
+            acTimer = setTimeout(acQuery, 180);
+        }
+
         function render() {
             // Remove existing chip nodes (keep input).
             Array.prototype.slice.call(container.querySelectorAll('.cm-chip')).forEach(function(n) { n.remove(); });
@@ -1067,11 +1282,39 @@
         }
 
         input.addEventListener('keydown', function(e) {
+            // Ctrl/Cmd + Enter — глобальный шорткат отправки, не трогаем.
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') return;
+            var acOpen = dropdown.classList.contains('is-open') && acItems.length > 0;
+            if (acOpen && e.key === 'ArrowDown') {
+                e.preventDefault();
+                acActiveIdx = (acActiveIdx + 1) % acItems.length;
+                updateAcActive();
+                return;
+            }
+            if (acOpen && e.key === 'ArrowUp') {
+                e.preventDefault();
+                acActiveIdx = (acActiveIdx - 1 + acItems.length) % acItems.length;
+                updateAcActive();
+                return;
+            }
+            if (acOpen && (e.key === 'Enter' || e.key === 'Tab')) {
+                // Подхватываем выбранный пункт — поведение Gmail.
+                e.preventDefault();
+                acSelect(acActiveIdx >= 0 ? acActiveIdx : 0);
+                return;
+            }
+            if (e.key === 'Escape' && acOpen) {
+                e.preventDefault();
+                acHide();
+                return;
+            }
+
             if (e.key === 'Enter' || e.key === 'Tab' || e.key === ',' || e.key === ';') {
                 var v = input.value.trim();
                 if (v) {
                     e.preventDefault();
                     commitInput();
+                    acHide();
                     if (e.key === 'Enter') return;  // stay in field
                 }
             } else if (e.key === 'Backspace' && !input.value && chips.length) {
@@ -1084,7 +1327,16 @@
                 scheduleDraftSave();
             }
         });
-        input.addEventListener('blur', function() { commitInput(); });
+        input.addEventListener('input', function() {
+            acQueryDebounced();
+        });
+        input.addEventListener('blur', function() {
+            // Небольшая задержка, чтобы mousedown по пункту dropdown'а успел отработать.
+            setTimeout(function() {
+                acHide();
+                commitInput();
+            }, 120);
+        });
         input.addEventListener('paste', function(e) {
             var t = (e.clipboardData || window.clipboardData).getData('text');
             if (t && /[,\n;]/.test(t)) {
