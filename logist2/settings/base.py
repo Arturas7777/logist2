@@ -417,7 +417,9 @@ GMAIL_TOKEN_URI = 'https://oauth2.googleapis.com/token'
 # При изменении — перегенерировать refresh_token через
 # scripts/get_gmail_refresh_token.py.
 GMAIL_SCOPES = [
-    'https://www.googleapis.com/auth/gmail.readonly',
+    # gmail.modify = readonly + менять лейблы (нужно для синхронизации UNREAD
+    # при пометке писем прочитанными в карточке контейнера).
+    'https://www.googleapis.com/auth/gmail.modify',
     'https://www.googleapis.com/auth/gmail.send',
 ]
 
