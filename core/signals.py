@@ -5,6 +5,7 @@ Each handler is a thin wrapper that delegates to the appropriate service.
 Business logic lives in core.services.*, NOT here.
 """
 import logging
+import threading
 from decimal import Decimal
 
 from django.db import OperationalError, transaction
@@ -396,6 +397,11 @@ def _create_car_services_if_needed(instance, *, created, kwargs):
 def recalculate_car_price_on_service_save(sender, instance, **kwargs):
     if getattr(instance.car, '_creating_services', False):
         return
+    # Админ car.py во время _save_model_inner делает много CarService.save()
+    # подряд — включает флаг _bulk_updating, чтобы дублирующих пересчётов
+    # Car не было; в конце _save_model_inner делает один пересчёт сам.
+    if getattr(instance.car, '_bulk_updating', False):
+        return
     try:
         instance.car.calculate_total_price()
         Car.objects.filter(id=instance.car.id).update(
@@ -410,6 +416,8 @@ def recalculate_car_price_on_service_save(sender, instance, **kwargs):
 @receiver(post_delete, sender=CarService)
 def recalculate_car_price_on_service_delete(sender, instance, **kwargs):
     if getattr(instance.car, '_creating_services', False):
+        return
+    if getattr(instance.car, '_bulk_updating', False):
         return
     try:
         instance.car.calculate_total_price()
@@ -426,7 +434,32 @@ def recalculate_car_price_on_service_delete(sender, instance, **kwargs):
 # CARSERVICE -> INVOICE REGENERATION
 # ============================================================================
 
+_regen_local = threading.local()
+
+
+def _get_pending_regen_cars():
+    """Thread-local множество car_id, для которых пересчёт уже запланирован
+    в рамках текущей транзакции. Очищается в on_commit.
+    """
+    bucket = getattr(_regen_local, 'cars', None)
+    if bucket is None:
+        bucket = set()
+        _regen_local.cars = bucket
+    return bucket
+
+
 def _deferred_invoice_regeneration(car_id):
+    """Планирует пересчёт инвойсов для car_id после коммита.
+
+    Дедуплицирует: если для этого car уже запланирован пересчёт в рамках
+    текущей транзакции (например, пришло 10 post_save от CarService подряд
+    при сохранении карточки авто), планируется только один общий вызов.
+    """
+    pending = _get_pending_regen_cars()
+    if car_id in pending:
+        return
+    pending.add(car_id)
+
     def _do_regenerate():
         try:
             invoice_ids = list(
@@ -446,6 +479,9 @@ def _deferred_invoice_regeneration(car_id):
                     pass
         except Exception as e:
             logger.error("Error in deferred invoice regeneration for car %s: %s", car_id, e)
+        finally:
+            _get_pending_regen_cars().discard(car_id)
+
     transaction.on_commit(_do_regenerate)
 
 

@@ -677,7 +677,46 @@ class DashboardService:
         cache.set(cache_key, data, CACHE_TIMEOUTS['short'])
         return data
 
+    # Ключи, которые будут читаться в get_full_dashboard_context.
+    # Вынесены, чтобы делать один Redis round-trip через get_many()
+    # вместо ~15 отдельных cache.get().
+    _DASHBOARD_CACHE_KEYS = (
+        ('cars_by_status', ()),
+        ('containers_by_status', ()),
+        ('cars_on_storage', ()),
+        ('active_auto_transports', ()),
+        ('outstanding_invoices', ()),
+        ('monthly_revenue', ()),
+        ('monthly_expenses', ()),
+        ('overdue_invoices', ()),
+        ('revenue_expenses_chart', (6,)),
+        ('invoices_by_status', ()),
+        ('expenses_by_category', ()),
+        ('income_by_category', ()),
+        ('aged_receivables', ()),
+        ('aged_payables', ()),
+        ('bank_balances', ()),
+        ('bank_transactions', (10,)),
+        ('operational_day', ()),
+    )
+
+    def _prime_dashboard_cache(self):
+        """Один Redis round-trip для всех dashboard-ключей.
+
+        Результат не используется напрямую — но после `get_many` Django
+        кладёт значения в локальный кэш-backend (а при Redis backend —
+        выигрыш за счёт одного MGET против множества GET). Также даёт
+        возможность в будущем использовать `cache.set_many` на вычисленные.
+        """
+        try:
+            keys = [get_cache_key('dashboard', name, *args)
+                    for name, args in self._DASHBOARD_CACHE_KEYS]
+            cache.get_many(keys)
+        except Exception:
+            logger.debug('dashboard cache prime failed', exc_info=True)
+
     def get_full_dashboard_context(self):
+        self._prime_dashboard_cache()
         cars_by_status = self.get_cars_by_status()
         containers_by_status = self.get_containers_by_status()
         monthly_revenue = self.get_monthly_revenue()

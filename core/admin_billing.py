@@ -328,7 +328,9 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         if not invoice.total or invoice.total <= 0:
             return []
 
-        tolerance = invoice.total * Decimal('0.01')
+        # Допуск ±1% суммы, но не меньше 0.05 € — защита от округлений и
+        # расхождений на копейки при конвертации валют или банковских комиссиях.
+        tolerance = max(invoice.total * Decimal('0.01'), Decimal('0.05'))
         total_min = invoice.total - tolerance
         total_max = invoice.total + tolerance
 
@@ -343,6 +345,11 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 linked_invoice__isnull=False
             ).values_list('linked_invoice_id', flat=True)
         )
+
+        # Валюты должны совпадать: нельзя связать EUR-инвойс с USD.
+        invoice_currency = getattr(invoice, 'currency', None)
+        if invoice_currency:
+            qs = qs.filter(currency=invoice_currency)
 
         issuer = invoice.issuer
         if issuer:
@@ -359,182 +366,179 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         return list(qs.order_by('-date')[:5])
 
     def _handle_custom_form(self, request, object_id):
-        """Обрабатываем кастомную форму"""
+        """Обрабатываем кастомную форму.
+
+        Всё тело операции — ОДНА атомарная транзакция. Если любая
+        из стадий (save, set M2M, regenerate items, register cash payment,
+        AI audit trigger) упадёт, мы откатим всё и не оставим orphan-инвойс
+        без позиций/без платежа.
+        """
         from datetime import datetime
+
+        from django.db import transaction as db_transaction
 
         from core.models import Car, Client, Company
 
         try:
-            # Получаем или создаем инвойс
-            if object_id:
-                invoice = NewInvoice.objects.get(pk=object_id)
-            else:
-                invoice = NewInvoice()
-
-            # Заполняем поля из POST
-            date_str = request.POST.get('date')
-            if date_str:
-                invoice.date = datetime.strptime(date_str, '%Y-%m-%d').date()
-
-            due_date_str = request.POST.get('due_date')
-            if due_date_str:
-                invoice.due_date = datetime.strptime(due_date_str, '%Y-%m-%d').date()
-            else:
-                invoice.due_date = None
-
-            invoice.status = request.POST.get('status', 'ISSUED')
-            invoice.notes = request.POST.get('notes', '')
-            invoice.external_number = request.POST.get('external_number', '')
-
-            new_doc_type = request.POST.get('document_type', 'PROFORMA')
-            if new_doc_type not in dict(NewInvoice.DOCUMENT_TYPE_CHOICES):
-                new_doc_type = 'PROFORMA'
-            if object_id and invoice.document_type != new_doc_type:
-                old_num = invoice.change_series(new_doc_type, created_by=request.user)
-                messages.info(request, f'Серия изменена: {old_num} → {invoice.number}')
-            else:
-                invoice.document_type = new_doc_type
-
-            # Категория
-            category_id = request.POST.get('category')
-            if category_id:
-                invoice.category = ExpenseCategory.objects.filter(pk=category_id).first()
-            else:
-                invoice.category = None
-
-            # Вложение
-            if 'attachment' in request.FILES:
-                invoice.attachment = request.FILES['attachment']
-
-            # Связанный счёт (принимаем номер или ID)
-            linked_val = request.POST.get('linked_invoice', '').strip()
-            if linked_val:
-                if linked_val.isdigit():
-                    invoice.linked_invoice = NewInvoice.objects.filter(pk=linked_val).first()
-                else:
-                    invoice.linked_invoice = NewInvoice.objects.filter(number=linked_val).first()
-                if not invoice.linked_invoice and linked_val:
-                    messages.warning(request, f'Связанный счёт «{linked_val}» не найден')
-            else:
-                invoice.linked_invoice = None
-
-            invoice.skip_ai_comparison = 'skip_ai_comparison' in request.POST
-
-            # Очищаем все поля выставителя и получателя перед установкой новых
-            invoice.issuer_company = None
-            invoice.issuer_warehouse = None
-            invoice.issuer_line = None
-            invoice.issuer_carrier = None
-            invoice.recipient_client = None
-            invoice.recipient_company = None
-            invoice.recipient_warehouse = None
-            invoice.recipient_line = None
-            invoice.recipient_carrier = None
-
-            # Выставитель (парсим формат "type_id", например "company_123")
-            issuer_value = request.POST.get('issuer', '')
-            if issuer_value and '_' in issuer_value:
-                issuer_type, issuer_id = issuer_value.rsplit('_', 1)
-                if issuer_type == 'company':
-                    invoice.issuer_company = Company.objects.get(pk=issuer_id)
-                elif issuer_type == 'warehouse':
-                    from core.models import Warehouse
-                    invoice.issuer_warehouse = Warehouse.objects.get(pk=issuer_id)
-                elif issuer_type == 'line':
-                    from core.models import Line
-                    invoice.issuer_line = Line.objects.get(pk=issuer_id)
-                elif issuer_type == 'carrier':
-                    from core.models import Carrier
-                    invoice.issuer_carrier = Carrier.objects.get(pk=issuer_id)
-            else:
-                # По умолчанию Caromoto Lithuania
-                try:
-                    invoice.issuer_company = Company.objects.get(name="Caromoto Lithuania")
-                except Company.DoesNotExist:
-                    pass
-
-            # Получатель (парсим формат "type_id", например "client_456")
-            recipient_value = request.POST.get('recipient', '')
-            if recipient_value and '_' in recipient_value:
-                recipient_type, recipient_id = recipient_value.rsplit('_', 1)
-                if recipient_type == 'client':
-                    invoice.recipient_client = Client.objects.get(pk=recipient_id)
-                elif recipient_type == 'company':
-                    invoice.recipient_company = Company.objects.get(pk=recipient_id)
-                elif recipient_type == 'warehouse':
-                    from core.models import Warehouse
-                    invoice.recipient_warehouse = Warehouse.objects.get(pk=recipient_id)
-                elif recipient_type == 'line':
-                    from core.models import Line
-                    invoice.recipient_line = Line.objects.get(pk=recipient_id)
-                elif recipient_type == 'carrier':
-                    from core.models import Carrier
-                    invoice.recipient_carrier = Carrier.objects.get(pk=recipient_id)
-
-            # Сохраняем инвойс
-            invoice.save()
-
-            # Обрабатываем автомобили (ManyToMany)
-            car_ids = request.POST.getlist('cars')
-            if car_ids:
-                cars = Car.objects.filter(pk__in=car_ids)
-                invoice.cars.set(cars)
-                # Для входящих инвойсов с AI-анализом не перезаписываем позиции
-                has_audit = False
-                try:
-                    has_audit = (invoice.direction == 'INCOMING'
-                                 and invoice.audit is not None)
-                except Exception:
-                    pass
-                if not has_audit:
-                    invoice.regenerate_items_from_cars()
-                messages.success(request, f'✅ Инвойс {invoice.number} сохранен! Создано {invoice.items.count()} позиций.')
-            else:
-                invoice.cars.clear()
-                has_audit = False
-                try:
-                    has_audit = (invoice.direction == 'INCOMING'
-                                 and invoice.audit is not None)
-                except Exception:
-                    pass
-                if not has_audit:
-                    self._handle_manual_items(request, invoice)
-                messages.success(request, f'✅ Инвойс {invoice.number} сохранен! Сумма: {invoice.total:.2f} €')
-
-            # Авто-регистрация кассового платежа для новых кассовых инвойсов (PARBLC / INCBLC)
-            if not object_id and invoice.document_type in NewInvoice.CASH_DOCUMENT_TYPES and invoice.remaining_amount > 0:
-                cash_amount = invoice.remaining_amount
-                invoice._register_cash_payment(created_by=request.user)
-                messages.info(request, f'💵 Оплата наличными зарегистрирована: {cash_amount:.2f} €')
-
-            # AI-анализ PDF для входящих инвойсов
-            has_audit = False
-            try:
-                has_audit = invoice.audit is not None
-            except Exception:
-                pass
-            if invoice.attachment and invoice.direction == 'INCOMING' and not has_audit:
-                self._trigger_invoice_audit(request, invoice)
-
-            # Определяем куда редиректить
-            if '_save' in request.POST:
-                return redirect('admin:core_newinvoice_changelist')
-            elif '_continue' in request.POST:
-                return redirect('admin:core_newinvoice_change', invoice.pk)
-            elif '_addanother' in request.POST:
-                return redirect('admin:core_newinvoice_add')
-            else:
-                return redirect('admin:core_newinvoice_changelist')
-
-        except Exception as e:
-            messages.error(request, f'Ошибка при сохранении инвойса: {str(e)}')
-            import traceback
-            traceback.print_exc()
-
+            with db_transaction.atomic():
+                return self._handle_custom_form_inner(
+                    request, object_id, Car, Client, Company, datetime,
+                )
+        except Exception:
+            logger.exception('Invoice form save failed (object_id=%s)', object_id)
+            messages.error(request, 'Ошибка при сохранении инвойса — см. логи.')
             if object_id:
                 return redirect('admin:core_newinvoice_change', object_id)
+            return redirect('admin:core_newinvoice_add')
+
+    def _handle_custom_form_inner(self, request, object_id, Car, Client, Company, datetime):
+        if object_id:
+            invoice = NewInvoice.objects.get(pk=object_id)
+        else:
+            invoice = NewInvoice()
+
+        date_str = request.POST.get('date')
+        if date_str:
+            invoice.date = datetime.strptime(date_str, '%Y-%m-%d').date()
+
+        due_date_str = request.POST.get('due_date')
+        if due_date_str:
+            invoice.due_date = datetime.strptime(due_date_str, '%Y-%m-%d').date()
+        else:
+            invoice.due_date = None
+
+        invoice.status = request.POST.get('status', 'ISSUED')
+        invoice.notes = request.POST.get('notes', '')
+        invoice.external_number = request.POST.get('external_number', '')
+
+        new_doc_type = request.POST.get('document_type', 'PROFORMA')
+        if new_doc_type not in dict(NewInvoice.DOCUMENT_TYPE_CHOICES):
+            new_doc_type = 'PROFORMA'
+        if object_id and invoice.document_type != new_doc_type:
+            old_num = invoice.change_series(new_doc_type, created_by=request.user)
+            messages.info(request, f'Серия изменена: {old_num} → {invoice.number}')
+        else:
+            invoice.document_type = new_doc_type
+
+        category_id = request.POST.get('category')
+        if category_id:
+            invoice.category = ExpenseCategory.objects.filter(pk=category_id).first()
+        else:
+            invoice.category = None
+
+        if 'attachment' in request.FILES:
+            invoice.attachment = request.FILES['attachment']
+
+        linked_val = request.POST.get('linked_invoice', '').strip()
+        if linked_val:
+            if linked_val.isdigit():
+                invoice.linked_invoice = NewInvoice.objects.filter(pk=linked_val).first()
             else:
-                return redirect('admin:core_newinvoice_add')
+                invoice.linked_invoice = NewInvoice.objects.filter(number=linked_val).first()
+            if not invoice.linked_invoice and linked_val:
+                messages.warning(request, f'Связанный счёт «{linked_val}» не найден')
+        else:
+            invoice.linked_invoice = None
+
+        invoice.skip_ai_comparison = 'skip_ai_comparison' in request.POST
+
+        invoice.issuer_company = None
+        invoice.issuer_warehouse = None
+        invoice.issuer_line = None
+        invoice.issuer_carrier = None
+        invoice.recipient_client = None
+        invoice.recipient_company = None
+        invoice.recipient_warehouse = None
+        invoice.recipient_line = None
+        invoice.recipient_carrier = None
+
+        issuer_value = request.POST.get('issuer', '')
+        if issuer_value and '_' in issuer_value:
+            issuer_type, issuer_id = issuer_value.rsplit('_', 1)
+            if issuer_type == 'company':
+                invoice.issuer_company = Company.objects.get(pk=issuer_id)
+            elif issuer_type == 'warehouse':
+                from core.models import Warehouse
+                invoice.issuer_warehouse = Warehouse.objects.get(pk=issuer_id)
+            elif issuer_type == 'line':
+                from core.models import Line
+                invoice.issuer_line = Line.objects.get(pk=issuer_id)
+            elif issuer_type == 'carrier':
+                from core.models import Carrier
+                invoice.issuer_carrier = Carrier.objects.get(pk=issuer_id)
+        else:
+            try:
+                invoice.issuer_company = Company.objects.get(name="Caromoto Lithuania")
+            except Company.DoesNotExist:
+                pass
+
+        recipient_value = request.POST.get('recipient', '')
+        if recipient_value and '_' in recipient_value:
+            recipient_type, recipient_id = recipient_value.rsplit('_', 1)
+            if recipient_type == 'client':
+                invoice.recipient_client = Client.objects.get(pk=recipient_id)
+            elif recipient_type == 'company':
+                invoice.recipient_company = Company.objects.get(pk=recipient_id)
+            elif recipient_type == 'warehouse':
+                from core.models import Warehouse
+                invoice.recipient_warehouse = Warehouse.objects.get(pk=recipient_id)
+            elif recipient_type == 'line':
+                from core.models import Line
+                invoice.recipient_line = Line.objects.get(pk=recipient_id)
+            elif recipient_type == 'carrier':
+                from core.models import Carrier
+                invoice.recipient_carrier = Carrier.objects.get(pk=recipient_id)
+
+        invoice.save()
+
+        car_ids = request.POST.getlist('cars')
+        if car_ids:
+            cars = Car.objects.filter(pk__in=car_ids)
+            invoice.cars.set(cars)
+            has_audit = False
+            try:
+                has_audit = (invoice.direction == 'INCOMING'
+                             and invoice.audit is not None)
+            except Exception:
+                logger.debug('audit check failed for invoice %s', invoice.pk, exc_info=True)
+            if not has_audit:
+                invoice.regenerate_items_from_cars()
+                # Помечаем, что save_related не должен делать ту же работу повторно
+                invoice._items_regenerated_in_form = True
+            messages.success(request, f'✅ Инвойс {invoice.number} сохранен! Создано {invoice.items.count()} позиций.')
+        else:
+            invoice.cars.clear()
+            has_audit = False
+            try:
+                has_audit = (invoice.direction == 'INCOMING'
+                             and invoice.audit is not None)
+            except Exception:
+                logger.debug('audit check failed for invoice %s', invoice.pk, exc_info=True)
+            if not has_audit:
+                self._handle_manual_items(request, invoice)
+            messages.success(request, f'✅ Инвойс {invoice.number} сохранен! Сумма: {invoice.total:.2f} €')
+
+        if not object_id and invoice.document_type in NewInvoice.CASH_DOCUMENT_TYPES and invoice.remaining_amount > 0:
+            cash_amount = invoice.remaining_amount
+            invoice._register_cash_payment(created_by=request.user)
+            messages.info(request, f'💵 Оплата наличными зарегистрирована: {cash_amount:.2f} €')
+
+        has_audit = False
+        try:
+            has_audit = invoice.audit is not None
+        except Exception:
+            logger.debug('audit check failed for invoice %s', invoice.pk, exc_info=True)
+        if invoice.attachment and invoice.direction == 'INCOMING' and not has_audit:
+            self._trigger_invoice_audit(request, invoice)
+
+        if '_save' in request.POST:
+            return redirect('admin:core_newinvoice_changelist')
+        elif '_continue' in request.POST:
+            return redirect('admin:core_newinvoice_change', invoice.pk)
+        elif '_addanother' in request.POST:
+            return redirect('admin:core_newinvoice_add')
+        else:
+            return redirect('admin:core_newinvoice_changelist')
 
     def _handle_manual_items(self, request, invoice):
         """
@@ -644,23 +648,29 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
 
         obj = form.instance
 
-        # Для входящих инвойсов с AI-анализом не перезаписываем позиции из PDF
-        has_audit = False
-        try:
-            has_audit = (obj.direction == 'INCOMING'
-                         and obj.audit is not None)
-        except Exception:
-            pass
-        if obj.cars.exists() and not has_audit:
-            obj.regenerate_items_from_cars()
-            messages.success(request, f"Автоматически создано {obj.items.count()} позиций из услуг автомобилей!")
+        # Если `_handle_custom_form_inner` уже перегенерировал позиции в рамках
+        # той же транзакции — не делаем это второй раз здесь. Иначе для каждого
+        # сохранения выполнялись бы ДВЕ регенерации позиций (и два email/invoice
+        # recalc сигнала).
+        if getattr(obj, '_items_regenerated_in_form', False):
+            obj._items_regenerated_in_form = False
+            # AI-анализ всё равно может быть нужен, так что не выходим.
+        else:
+            has_audit = False
+            try:
+                has_audit = (obj.direction == 'INCOMING'
+                             and obj.audit is not None)
+            except Exception:
+                logger.debug('audit check failed for invoice %s', obj.pk, exc_info=True)
+            if obj.cars.exists() and not has_audit:
+                obj.regenerate_items_from_cars()
+                messages.success(request, f"Автоматически создано {obj.items.count()} позиций из услуг автомобилей!")
 
-        # AI-анализ: входящий инвойс + есть PDF + audit ещё не создан
         has_audit = False
         try:
             has_audit = obj.audit is not None
         except Exception:
-            pass
+            logger.debug('audit check failed for invoice %s', obj.pk, exc_info=True)
         if obj.attachment and obj.direction == 'INCOMING' and not has_audit:
             self._trigger_invoice_audit(request, obj)
 
@@ -708,12 +718,17 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
     audit_status_display.short_description = 'AI-анализ PDF'
 
     def _trigger_invoice_audit(self, request, obj):
-        """Create InvoiceAudit from NewInvoice attachment and start background processing."""
+        """Create InvoiceAudit from NewInvoice attachment and enqueue background processing.
+
+        Использует Celery (process_invoice_audit_task). Если Celery временно
+        недоступен — деградируем к синхронному вызову в потоке, но уже
+        не теряем retry/visibility: задача ушла бы в брокер.
+        """
         import os
-        import threading
+
+        from django.db import transaction as db_transaction
 
         from core.models_invoice_audit import InvoiceAudit
-        from core.services.invoice_audit_service import process_invoice_audit
 
         try:
             audit = InvoiceAudit.objects.filter(invoice=obj).first()
@@ -729,18 +744,28 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 status=InvoiceAudit.STATUS_PENDING,
             )
 
-            thread = threading.Thread(
-                target=process_invoice_audit,
-                args=(audit.pk,),
-                daemon=True,
-            )
-            thread.start()
+            audit_pk = audit.pk
 
-            messages.info(request, f'AI-анализ PDF запущен в фоне (Audit #{audit.pk}). Обновите страницу через несколько секунд.')
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).exception(f'Error triggering invoice audit for NewInvoice #{obj.pk}: {e}')
-            messages.warning(request, f'Не удалось запустить AI-анализ PDF: {e}')
+            def _enqueue():
+                try:
+                    from core.tasks import process_invoice_audit_task
+                    process_invoice_audit_task.delay(audit_pk)
+                except Exception:
+                    logger.exception(
+                        'Celery unavailable for InvoiceAudit #%s — no sync fallback, will retry via cron',
+                        audit_pk,
+                    )
+
+            db_transaction.on_commit(_enqueue)
+
+            messages.info(
+                request,
+                f'AI-анализ PDF поставлен в очередь (Audit #{audit.pk}). '
+                'Обновите страницу через минуту.',
+            )
+        except Exception:
+            logger.exception('Error triggering invoice audit for NewInvoice #%s', obj.pk)
+            messages.warning(request, 'Не удалось запустить AI-анализ PDF — см. логи.')
 
     actions = ['mark_as_issued', 'mark_as_paid', 'cancel_invoices', 'regenerate_items', 'push_to_sitepro', 'change_series', 'delete_invoices_with_transactions', 'recalculate_all_balances', 'export_selected_as_csv']
 
@@ -1042,6 +1067,15 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                 updated += 1
                 continue
 
+            # Перед тем, как ставить PAID, подтянем актуальный paid_amount —
+            # могли остаться расхождения из-за удалённых транзакций или ручных
+            # правок. Защита: если реально остаток > 0, мы не должны
+            # молча проставить PAID.
+            try:
+                invoice.recalculate_paid_amount()
+            except Exception:
+                logger.exception('recalculate_paid_amount failed for invoice %s', invoice.pk)
+
             remaining = invoice.remaining_amount
             if remaining <= 0:
                 invoice.status = 'PAID'
@@ -1205,52 +1239,64 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
     change_series.short_description = "🔄 Сменить серию"
 
     def delete_invoices_with_transactions(self, request, queryset):
-        """Force-delete selected invoices together with linked transactions, then recalculate balances."""
+        """Force-delete selected invoices together with linked transactions, then recalculate balances.
+
+        Оптимизация: при удалении N инвойсов с M транзакциями КАЖДЫЙ delete
+        триггерил бы `Transaction.post_delete` → `recalculate_entity_balance`
+        → N*M лишних пересчётов. Глушим сигналы Transaction и NewInvoice
+        на время удаления, а в конце делаем ОДИН пересчёт для уникальных
+        затронутых сущностей.
+        """
+        from django.db.models.signals import post_delete, post_save
+
+        from core.signal_utils import signals_muted
+
         if 'confirm' in request.POST:
             affected_entities = set()
             total_tx = 0
             total_inv = 0
 
-            for inv in queryset.select_related(
-                'issuer_company', 'issuer_warehouse', 'issuer_line', 'issuer_carrier',
-                'recipient_client', 'recipient_company', 'recipient_warehouse',
-                'recipient_line', 'recipient_carrier',
-            ):
-                for field in [
-                    inv.issuer_company, inv.issuer_warehouse, inv.issuer_line, inv.issuer_carrier,
-                    inv.recipient_client, inv.recipient_company, inv.recipient_warehouse,
-                    inv.recipient_line, inv.recipient_carrier,
-                ]:
-                    if field and hasattr(field, 'balance'):
-                        affected_entities.add(field)
+            with signals_muted(post_save, post_delete, senders=(Transaction, NewInvoice)):
+                for inv in queryset.select_related(
+                    'issuer_company', 'issuer_warehouse', 'issuer_line', 'issuer_carrier',
+                    'recipient_client', 'recipient_company', 'recipient_warehouse',
+                    'recipient_line', 'recipient_carrier',
+                ):
+                    for field in [
+                        inv.issuer_company, inv.issuer_warehouse, inv.issuer_line, inv.issuer_carrier,
+                        inv.recipient_client, inv.recipient_company, inv.recipient_warehouse,
+                        inv.recipient_line, inv.recipient_carrier,
+                    ]:
+                        if field and hasattr(field, 'balance'):
+                            affected_entities.add(field)
 
-                txs = inv.transactions.all()
-                for tx in txs:
-                    for attr in ['from_client', 'from_warehouse', 'from_line', 'from_carrier', 'from_company',
-                                 'to_client', 'to_warehouse', 'to_line', 'to_carrier', 'to_company']:
-                        entity = getattr(tx, attr, None)
-                        if entity and hasattr(entity, 'balance'):
-                            affected_entities.add(entity)
-                tx_count = txs.count()
-                txs.delete()
-                total_tx += tx_count
+                    txs = inv.transactions.all()
+                    for tx in txs:
+                        for attr in ['from_client', 'from_warehouse', 'from_line', 'from_carrier', 'from_company',
+                                     'to_client', 'to_warehouse', 'to_line', 'to_carrier', 'to_company']:
+                            entity = getattr(tx, attr, None)
+                            if entity and hasattr(entity, 'balance'):
+                                affected_entities.add(entity)
+                    tx_count = txs.count()
+                    txs.delete()
+                    total_tx += tx_count
 
-                try:
-                    if hasattr(inv, 'audit'):
-                        inv.audit.delete()
-                except Exception:
-                    pass
+                    try:
+                        if hasattr(inv, 'audit'):
+                            inv.audit.delete()
+                    except Exception:
+                        logger.debug('No audit to delete for invoice %s', inv.pk, exc_info=True)
 
-                inv.items.all().delete()
-                inv.delete(force=True)
-                total_inv += 1
+                    inv.items.all().delete()
+                    inv.delete(force=True)
+                    total_inv += 1
 
             for entity in affected_entities:
                 try:
                     entity.refresh_from_db()
                     Transaction.recalculate_entity_balance(entity)
                 except Exception:
-                    pass
+                    logger.warning('Failed to recalc balance for %s', entity, exc_info=True)
 
             self.message_user(
                 request,

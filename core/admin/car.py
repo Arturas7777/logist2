@@ -28,8 +28,53 @@ logger = logging.getLogger(__name__)
 CAR_MODELS_DIR = os.path.join(settings.BASE_DIR, 'core', 'static', 'icons', 'car_models')
 
 
-def _cost_badge_html(car_service_pk, current_price=None):
-    """Генерирует HTML-бейдж подтверждённости затрат для CarService."""
+def _load_supplier_costs_map(car_service_pks):
+    """Батч-загрузка SupplierCost для списка CarService → {cs_pk: (total, sources)}.
+
+    Заменяет N+1 в `_cost_badge_html` на один запрос на всю карточку авто.
+    """
+    from core.models_invoice_audit import SupplierCost
+    result = {}
+    if not car_service_pks:
+        return result
+    for cost in SupplierCost.objects.filter(car_service_id__in=car_service_pks).only(
+        'car_service_id', 'amount', 'source'
+    ):
+        bucket = result.setdefault(cost.car_service_id, {'total': 0.0, 'sources': set()})
+        bucket['total'] += float(cost.amount or 0)
+        bucket['sources'].add(cost.source)
+    return result
+
+
+def _cost_badge_html(car_service_pk, current_price=None, costs_map=None):
+    """Генерирует HTML-бейдж подтверждённости затрат для CarService.
+
+    Если передан `costs_map` (dict от `_load_supplier_costs_map`) —
+    берёт данные оттуда без доп. SQL. Иначе (обратная совместимость)
+    делает отдельный запрос.
+    """
+    if costs_map is not None:
+        entry = costs_map.get(car_service_pk)
+        if entry:
+            total = entry['total']
+            sources = entry['sources']
+            icon = '📎' if 'INVOICE' in sources else '✍️'
+            return (
+                f'<div style="font-size:10px; margin-top:4px; padding:2px 6px; border-radius:6px; '
+                f'background:#dcfce7; color:#166534; display:inline-flex; align-items:center; gap:3px;">'
+                f'{icon} {total:.2f}\u20ac</div>'
+            )
+        prefill = current_price if current_price is not None else 0
+        return (
+            '<div style="margin-top:4px;">'
+            '<button type="button" class="confirm-cost-btn" '
+            'style="font-size:10px; padding:1px 6px; border:1px solid #d97706; border-radius:6px; '
+            'background:#fffbeb; color:#92400e; cursor:pointer;" '
+            f'onclick="openConfirmCostModal({car_service_pk}, {prefill})">'
+            '&#10003; Confirm cost</button>'
+            '</div>'
+        )
+
     from core.models_invoice_audit import SupplierCost
     costs = SupplierCost.objects.filter(car_service_id=car_service_pk)
     if costs.exists():
@@ -238,31 +283,17 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         return form
 
     def change_view(self, request, object_id, form_url='', extra_context=None):
-        """Auto-update storage days and CarService price when viewing car detail.
+        """Обогащает контекст (изображение авто). БД не мутируем на GET.
 
-        Платные дни растут каждый день, но CarService.custom_price для «Хранения»
-        обновляется только при save(). Здесь пересчитываем при открытии карточки,
-        чтобы сводка и услуги показывали актуальные данные.
+        Актуальные дни и суммы рассчитываются динамически в
+        `days_display` / `total_price_display` / `services_summary_display`,
+        поэтому переписывать БД при каждом открытии карточки не требуется —
+        это лишняя запись, провоцирующая post_save-сигналы и нарушающая
+        принцип "GET не изменяет состояние".
         """
         if object_id:
             try:
                 obj = self.get_object(request, object_id)
-                if obj and obj.status != 'TRANSFERRED' and obj.warehouse and obj.unload_date:
-                    old_days = obj.days
-                    obj.update_days_and_storage()
-                    if obj.days != old_days:
-                        obj.calculate_total_price()
-                        Car.objects.filter(pk=obj.pk).update(
-                            days=obj.days,
-                            storage_cost=obj.storage_cost,
-                            total_price=obj.total_price,
-                        )
-            except Exception as e:
-                logger.warning(f"Auto-update storage failed for car {object_id}: {e}")
-
-        if object_id:
-            try:
-                obj = obj if 'obj' in dir() else self.get_object(request, object_id)
                 if obj:
                     extra_context = extra_context or {}
                     img_path = find_car_image(obj.year, obj.brand)
@@ -270,8 +301,8 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
                         extra_context['car_header_image'] = static(img_path)
                     else:
                         extra_context['car_header_image'] = static('icons/car_unknown.png')
-            except Exception as e:
-                logger.warning(f"Car image lookup failed for {object_id}: {e}")
+            except Exception:
+                logger.warning("Car image lookup failed for %s", object_id, exc_info=True)
 
         return super().change_view(request, object_id, form_url, extra_context)
 
@@ -741,8 +772,15 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             self._save_model_inner(request, obj, form, change)
 
     def _save_model_inner(self, request, obj, form, change):
-        """Внутренний метод save_model, выполняемый внутри transaction.atomic()"""
+        """Внутренний метод save_model, выполняемый внутри transaction.atomic().
+
+        Включаем `_bulk_updating` — это глушит пересчёт цены автомобиля
+        внутри post_save/post_delete CarService (чтобы не делать N пересчётов
+        за одно сохранение карточки). Один итоговый пересчёт делает секция
+        тарифа клиента в конце метода.
+        """
         super().save_model(request, obj, form, change)
+        obj._bulk_updating = True
 
         # First handle service deletions
         removed_services = set()
@@ -1098,12 +1136,32 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             except Exception as e:
                 logger.error(f"Ошибка при пересчете стоимости хранения: {e}")
 
-        # Применяем тариф клиента (FIXED / FLEXIBLE) при КАЖДОМ сохранении —
-        # тариф должен всегда удерживать итог складских услуг равным agreed_total.
-        # Наценки на перевозчика и отдельные услуги компаний не трогаются,
-        # только наценка на услуги склада перераспределяется.
+        # Применяем тариф клиента (FIXED / FLEXIBLE) только когда реально
+        # изменилось что-то, влияющее на распределение: клиент / склад /
+        # линия / перевозчик, или были правки самих услуг (любые поля
+        # *_service_* / markup_* / remove_* в POST).
+        # Это убирает лишний пересчёт при сохранении карточки авто без
+        # изменений (например, после смены статуса в list_editable).
         client_cleared = change and 'client' in changed_data and not obj.client
-        if obj.status != 'TRANSFERRED':
+        services_touched = any(
+            key.startswith(prefix)
+            for key in request.POST.keys()
+            for prefix in (
+                'warehouse_service_', 'line_service_',
+                'carrier_service_', 'company_service_',
+                'markup_warehouse_service_', 'markup_line_service_',
+                'markup_carrier_service_', 'markup_company_service_',
+                'remove_warehouse_service_', 'remove_line_service_',
+                'remove_carrier_service_', 'remove_company_service_',
+            )
+        )
+        deps_touched = (
+            not change
+            or any(f in changed_data for f in ('client', 'warehouse', 'line', 'carrier'))
+            or services_touched
+            or client_cleared
+        )
+        if obj.status != 'TRANSFERRED' and deps_touched:
             client = obj.client
             try:
                 from core.services.car_service_manager import apply_client_tariff_for_car
@@ -1111,31 +1169,55 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
                     apply_client_tariff_for_car(obj)
                     obj.calculate_total_price()
                     Car.objects.filter(pk=obj.pk).update(total_price=obj.total_price)
-            except Exception as e:
-                logger.error(f"Ошибка при пересчете тарифа клиента: {e}")
+            except Exception:
+                logger.exception("Ошибка при пересчете тарифа клиента для car=%s", obj.pk)
+
+        # Финальный пересчёт цены авто после всех манипуляций с CarService.
+        # Сигналы CarService.post_save/post_delete были заглушены флагом
+        # `_bulk_updating` — делаем один итоговый UPDATE здесь.
+        obj._bulk_updating = False
+        try:
+            obj.calculate_total_price()
+            Car.objects.filter(pk=obj.pk).update(
+                total_price=obj.total_price,
+                days=obj.days,
+                storage_cost=obj.storage_cost,
+            )
+        except Exception:
+            logger.exception("Ошибка финального пересчёта цены авто %s", obj.pk)
 
     def warehouse_services_display(self, obj):
         """Displays editable fields for all warehouse services"""
         try:
-            # Get ALL warehouse services already linked to car (from any warehouses)
-            car_services = CarService.objects.filter(
+            car_services = list(CarService.objects.filter(
                 car=obj,
                 service_type='WAREHOUSE'
-            ).select_related('car')
+            ))
+
+            service_ids = [cs.service_id for cs in car_services]
+            services_by_id = {
+                s.id: s
+                for s in WarehouseService.objects
+                .select_related('warehouse')
+                .filter(id__in=service_ids)
+            }
+            costs_map = _load_supplier_costs_map([cs.pk for cs in car_services])
 
             html = '<div class="cm-svc-grid">'
 
             if car_services:
                 for car_service in car_services:
+                    service = services_by_id.get(car_service.service_id)
+                    if service is None:
+                        continue
                     try:
-                        service = WarehouseService.objects.select_related('warehouse').get(id=car_service.service_id)
                         current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
                         markup_value = car_service.markup_amount or 0
                         warehouse_name = service.warehouse.name
 
                         variant = "cm-svc-card--warehouse" if (obj.warehouse and service.warehouse.id == obj.warehouse.id) else "cm-svc-card--warehouse-other"
 
-                        cost_badge = _cost_badge_html(car_service.pk, current_value)
+                        cost_badge = _cost_badge_html(car_service.pk, current_value, costs_map=costs_map)
                         html += f'''
                         <div class="cm-svc-card {variant}">
                             <button type="button" onclick="removeService({service.id}, 'warehouse')" class="cm-svc-remove">×</button>
@@ -1189,21 +1271,28 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             return "Линия не выбрана"
 
         try:
-            # Get line services already linked to car
-            car_services = CarService.objects.filter(
+            car_services = list(CarService.objects.filter(
                 car=obj,
                 service_type='LINE'
-            )
+            ))
+
+            service_ids = [cs.service_id for cs in car_services]
+            services_by_id = {
+                s.id: s for s in LineService.objects.filter(id__in=service_ids)
+            }
+            costs_map = _load_supplier_costs_map([cs.pk for cs in car_services])
 
             html = '<div class="cm-svc-grid">'
 
             for car_service in car_services:
+                service = services_by_id.get(car_service.service_id)
+                if service is None:
+                    continue
                 try:
-                    service = LineService.objects.get(id=car_service.service_id)
                     current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
                     markup_value = car_service.markup_amount or 0
 
-                    cost_badge = _cost_badge_html(car_service.pk, current_value)
+                    cost_badge = _cost_badge_html(car_service.pk, current_value, costs_map=costs_map)
                     html += f'''
                     <div class="cm-svc-card cm-svc-card--line">
                         <button type="button" onclick="removeService({service.id}, 'line')" class="cm-svc-remove">×</button>
@@ -1247,21 +1336,28 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             return "Перевозчик не выбран"
 
         try:
-            # Get carrier services already linked to car
-            car_services = CarService.objects.filter(
+            car_services = list(CarService.objects.filter(
                 car=obj,
                 service_type='CARRIER'
-            )
+            ))
+
+            service_ids = [cs.service_id for cs in car_services]
+            services_by_id = {
+                s.id: s for s in CarrierService.objects.filter(id__in=service_ids)
+            }
+            costs_map = _load_supplier_costs_map([cs.pk for cs in car_services])
 
             html = '<div class="cm-svc-grid">'
 
             for car_service in car_services:
+                service = services_by_id.get(car_service.service_id)
+                if service is None:
+                    continue
                 try:
-                    service = CarrierService.objects.get(id=car_service.service_id)
                     current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
                     markup_value = car_service.markup_amount or 0
 
-                    cost_badge = _cost_badge_html(car_service.pk, current_value)
+                    cost_badge = _cost_badge_html(car_service.pk, current_value, costs_map=costs_map)
                     html += f'''
                     <div class="cm-svc-card cm-svc-card--carrier">
                         <button type="button" onclick="removeService({service.id}, 'carrier')" class="cm-svc-remove">×</button>
@@ -1302,21 +1398,32 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
     def company_services_display(self, obj):
         """Displays editable fields for company services"""
         try:
-            car_services = CarService.objects.filter(
+            car_services = list(CarService.objects.filter(
                 car=obj,
                 service_type='COMPANY'
-            )
+            ))
+
+            service_ids = [cs.service_id for cs in car_services]
+            services_by_id = {
+                s.id: s
+                for s in CompanyService.objects
+                .select_related('company')
+                .filter(id__in=service_ids)
+            }
+            costs_map = _load_supplier_costs_map([cs.pk for cs in car_services])
 
             html = '<div class="cm-svc-grid">'
 
             if car_services:
                 for car_service in car_services:
+                    service = services_by_id.get(car_service.service_id)
+                    if service is None:
+                        continue
                     try:
-                        service = CompanyService.objects.select_related('company').get(id=car_service.service_id)
                         current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
                         markup_value = car_service.markup_amount or 0
 
-                        cost_badge = _cost_badge_html(car_service.pk, current_value)
+                        cost_badge = _cost_badge_html(car_service.pk, current_value, costs_map=costs_map)
                         html += f'''
                         <div class="cm-svc-card cm-svc-card--company">
                             <button type="button" onclick="removeService({service.id}, 'company')" class="cm-svc-remove">×</button>

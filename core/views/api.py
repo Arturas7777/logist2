@@ -15,6 +15,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET
 
 from core.cache_utils import CACHE_TIMEOUTS
+from core.view_utils import ratelimit_staff
 from core.models import (
     Car,
     Carrier,
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 @staff_member_required
+@ratelimit_staff(rate=240, per=60, scope='car_list')
 def car_list_api(request):
     raw_client = (request.GET.get('client_id') or request.GET.get('client') or '').strip()
     m = re.search(r"\d+", raw_client)
@@ -173,6 +175,7 @@ def get_payment_objects(request):
 
 @staff_member_required
 @require_GET
+@ratelimit_staff(rate=240, per=60, scope='search_partners')
 def search_partners_api(request):
     entity_type = request.GET.get('entity_type', '').strip().upper()
     search_query = request.GET.get('search', '').strip()
@@ -332,22 +335,36 @@ def get_warehouse_cars_api(request):
             )
 
         limit = int(request.GET.get('limit', 200))
-        cars = cars[:limit]
+        cars = list(cars[:limit])
+
+        # Один агрегированный запрос к CarService для всех отобранных авто.
+        # Старый код суммировал legacy-поля Car.unload_fee/delivery_fee/... ,
+        # которые уже не заполняются — актуальные суммы лежат в CarService.
+        from django.db.models import DecimalField, F, Sum, Value
+        from django.db.models.functions import Coalesce
+
+        from core.models import CarService
+
+        car_ids = [c.id for c in cars]
+        svc_totals = {}
+        if car_ids:
+            zero = Value(Decimal('0.00'), output_field=DecimalField(max_digits=12, decimal_places=2))
+            rows = (
+                CarService.objects
+                .filter(car_id__in=car_ids, service_type='WAREHOUSE')
+                .values('car_id')
+                .annotate(
+                    total=Sum(
+                        Coalesce(F('custom_price'), zero)
+                        + Coalesce(F('markup_amount'), zero)
+                    )
+                )
+            )
+            svc_totals = {r['car_id']: r['total'] or Decimal('0.00') for r in rows}
 
         cars_data = []
         for car in cars:
-            warehouse_services = (
-                (car.unload_fee or Decimal('0.00')) +
-                (car.delivery_fee or Decimal('0.00')) +
-                (car.loading_fee or Decimal('0.00')) +
-                (car.docs_fee or Decimal('0.00')) +
-                (car.transfer_fee or Decimal('0.00')) +
-                (car.transit_declaration or Decimal('0.00')) +
-                (car.export_declaration or Decimal('0.00')) +
-                (car.extra_costs or Decimal('0.00')) +
-                (car.complex_fee or Decimal('0.00')) +
-                (car.storage_cost or Decimal('0.00'))
-            )
+            warehouse_services = svc_totals.get(car.id, Decimal('0.00'))
             cars_data.append({
                 'id': car.id,
                 'vin': car.vin,
@@ -580,6 +597,7 @@ def add_services(request, car_id):
 
 @staff_member_required
 @require_GET
+@ratelimit_staff(rate=240, per=60, scope='search_counterparties')
 def search_counterparties(request):
     query = request.GET.get('q', '').strip()
     if len(query) < 1:
@@ -614,6 +632,7 @@ def search_counterparties(request):
 
 @staff_member_required
 @require_GET
+@ratelimit_staff(rate=240, per=60, scope='search_cars')
 def search_cars(request):
     query = request.GET.get('q', '').strip()
     selected = request.GET.getlist('selected', [])
@@ -644,6 +663,7 @@ def search_cars(request):
 
 @staff_member_required
 @require_GET
+@ratelimit_staff(rate=240, per=60, scope='search_invoices')
 def search_invoices(request):
     """AJAX autocomplete for invoices — search by number, external_number, or counterparty name."""
     from core.models_billing import NewInvoice
