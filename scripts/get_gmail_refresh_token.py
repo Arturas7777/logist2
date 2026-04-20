@@ -22,11 +22,11 @@ from pathlib import Path
 
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-# Scopes нужны только для чтения почты и отправки ответов.
-# readonly — для Phase 1. Если позже добавим отправку — нужно перезапустить этот
-# скрипт с новым scope, refresh_token обновится.
+# gmail.modify = readonly + изменение лейблов (нужно для синхронизации
+# UNREAD при пометке писем прочитанными в карточке контейнера).
+# При смене scope нужно перезапустить этот скрипт — refresh_token обновится.
 SCOPES = [
-    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.modify',
     'https://www.googleapis.com/auth/gmail.send',
 ]
 
