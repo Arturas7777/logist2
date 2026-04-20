@@ -14,11 +14,35 @@ ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY', '')
 
 DEBUG = str(os.getenv('DEBUG', 'False')).lower() == 'true'
 
-if not DEBUG and SECRET_KEY in ('changeme-in-env', '', 'django-insecure'):
-    raise ValueError(
-        "SECRET_KEY не задан или использует дефолтное значение! "
-        "Установите переменную окружения SECRET_KEY для продакшена."
-    )
+
+def _is_insecure_secret(key: str) -> bool:
+    if not key:
+        return True
+    insecure_markers = ('changeme', 'django-insecure', 'default', 'secret', 'test')
+    lowered = key.lower()
+    for marker in insecure_markers:
+        if lowered.startswith(marker) or marker == lowered:
+            return True
+    if len(key) < 32:
+        return True
+    return False
+
+
+# Fail-fast на старте: в проде / при запуске воркера недопустимо
+# использовать дефолтный/слабый SECRET_KEY или пустой ENCRYPTION_KEY
+# (от него зависит шифрование токенов Revolut и Google Drive).
+if not DEBUG:
+    if _is_insecure_secret(SECRET_KEY):
+        raise ValueError(
+            "SECRET_KEY не задан, использует дефолтное значение или слишком короткий. "
+            "Установите переменную окружения SECRET_KEY длиной ≥32 символа для продакшена."
+        )
+    if not ENCRYPTION_KEY:
+        raise ValueError(
+            "ENCRYPTION_KEY не задан. Он нужен для шифрования токенов внешних API "
+            "(Revolut, Google). Сгенерируйте: `python -c \"from cryptography.fernet "
+            "import Fernet; print(Fernet.generate_key().decode())\"` и положите в .env."
+        )
 
 ALLOWED_HOSTS = [
     h.strip()

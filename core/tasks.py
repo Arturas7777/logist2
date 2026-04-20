@@ -443,6 +443,35 @@ def generate_autotransport_invoices_task(self, autotransport_id):
         raise self.retry(exc=exc)
 
 
+@shared_task(bind=True, max_retries=2, default_retry_delay=120, soft_time_limit=180, time_limit=240)
+def process_invoice_audit_task(self, audit_id):
+    """Асинхронный AI-разбор PDF инвойса через Anthropic.
+
+    Выносит долгий LLM-вызов из threading.Thread (который умирает вместе
+    с web-воркером и не имеет ретраев) в Celery. Retry — при сетевых
+    сбоях или временных 5xx Anthropic.
+    """
+    from core.models_invoice_audit import InvoiceAudit
+    from core.services.invoice_audit_service import process_invoice_audit
+
+    try:
+        audit = InvoiceAudit.objects.get(pk=audit_id)
+    except InvoiceAudit.DoesNotExist:
+        logger.warning("process_invoice_audit_task: audit %s not found", audit_id)
+        return {'ok': False, 'missing': True}
+
+    if audit.status in ('OK', 'HAS_ISSUES'):
+        return {'ok': True, 'skipped': f'already {audit.status}'}
+
+    try:
+        process_invoice_audit(audit_id)
+        audit.refresh_from_db()
+        return {'ok': True, 'status': audit.status}
+    except Exception as exc:
+        logger.exception("process_invoice_audit_task failed for audit %s", audit_id)
+        raise self.retry(exc=exc)
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60, time_limit=120)
 def push_invoice_to_sitepro_task(self, invoice_id):
     """Асинхронный пуш инвойса в site.pro (серия PARDP).
