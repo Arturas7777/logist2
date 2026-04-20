@@ -553,7 +553,6 @@ def _send_and_persist(
                 for f in attachments_payload
             ],
             matched_by=matched_by,
-            is_read=True,
             sent_by_user=user if (user and getattr(user, 'is_authenticated', False)) else None,
             send_status=ContainerEmail.SEND_STATUS_FAILED,
             send_error=str(exc)[:2000],
@@ -595,7 +594,6 @@ def _send_and_persist(
         labels_json=labels,
         attachments_json=stored_attachments,
         matched_by=matched_by,
-        is_read=True,
         sent_by_user=user if (user and getattr(user, 'is_authenticated', False)) else None,
         send_status=ContainerEmail.SEND_STATUS_SENT,
         send_error='',
@@ -647,7 +645,7 @@ def _link_outgoing_to_containers(
     seen: set[int] = set()
     links: list[ContainerEmailLink] = []
 
-    def _add(cid: int | None, matched_by: str) -> None:
+    def _add(cid: int | None, matched_by: str, is_read: bool) -> None:
         if not cid or cid in seen:
             return
         seen.add(cid)
@@ -655,28 +653,33 @@ def _link_outgoing_to_containers(
             email=email,
             container_id=cid,
             matched_by=matched_by,
+            is_read=is_read,
         ))
 
-    # 1) Карточка-источник (всегда)
+    # 1) Карточка-источник: сами отправили → уже «прочитано» здесь.
     if origin_container is not None and getattr(origin_container, 'pk', None):
-        _add(origin_container.pk, origin_matched_by or ContainerEmail.MATCHED_BY_MANUAL)
+        _add(
+            origin_container.pk,
+            origin_matched_by or ContainerEmail.MATCHED_BY_MANUAL,
+            is_read=True,
+        )
 
-    # 2) Все контейнеры родительского треда
+    # 2) Контейнеры родительского треда: cross-linked, ещё не видели → unread.
     if parent_email is not None and parent_email.pk:
         parent_cids = list(
             parent_email.containers.values_list('id', flat=True)
         )
         for cid in parent_cids:
-            _add(cid, ContainerEmail.MATCHED_BY_THREAD)
+            _add(cid, ContainerEmail.MATCHED_BY_THREAD, is_read=False)
 
-    # 3) Упомянутые в тексте (subject + body) контейнеры и букинги
+    # 3) Упомянутые в тексте контейнеры/букинги: тоже cross-linked → unread.
     if source_text:
         try:
             for cid in _match_by_container_numbers(source_text):
-                _add(cid, ContainerEmail.MATCHED_BY_CONTAINER_NUMBER)
+                _add(cid, ContainerEmail.MATCHED_BY_CONTAINER_NUMBER, is_read=False)
             booking_index = build_booking_index()
             for cid in _match_by_bookings(source_text, booking_index):
-                _add(cid, ContainerEmail.MATCHED_BY_BOOKING_NUMBER)
+                _add(cid, ContainerEmail.MATCHED_BY_BOOKING_NUMBER, is_read=False)
         except Exception as exc:  # pragma: no cover — защитная обёртка
             logger.warning('[email_compose] link-by-text failed: %s', exc)
 

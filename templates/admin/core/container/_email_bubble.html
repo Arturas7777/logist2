@@ -15,7 +15,7 @@
      data-thread-id="{{ email.thread_id }}"
      data-direction="{{ email.direction }}"
      data-send-status="{{ email.send_status }}"
-     data-unread="{{ email.is_read|yesno:'0,1' }}">
+     data-unread="{{ email.is_read_here|yesno:'0,1' }}">
     <div class="cm-avatar"
          style="background-color: {{ email.from_addr|avatar_color }};"
          title="{{ email.from_addr }}">

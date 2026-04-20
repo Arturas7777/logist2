@@ -16,7 +16,7 @@ from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from core.models_email import ContainerEmail, EmailGroup
+from core.models_email import ContainerEmail, ContainerEmailLink, EmailGroup
 from core.models_contact import Contact, ContactEmail
 from core.services.email_reply_parser import (
     format_quoted_reply,
@@ -126,23 +126,33 @@ def email_attachment(request, email_id: int, idx: int):
 @staff_member_required
 @require_POST
 def email_mark_read(request, email_id: int):
+    """Отметить письмо прочитанным/непрочитанным.
+
+    Если в POST передан ``container_id`` — правим только эту связь
+    (письмо остаётся непрочитанным в других карточках). Иначе обновляем
+    все связи этого письма.
+    """
     email = get_object_or_404(ContainerEmail, pk=email_id)
     new_val = request.POST.get('is_read', '1') == '1'
-    if email.is_read != new_val:
-        email.is_read = new_val
-        email.save(update_fields=['is_read'])
-    return JsonResponse({'ok': True, 'is_read': email.is_read})
+    container_id = request.POST.get('container_id')
+    qs = ContainerEmailLink.objects.filter(email_id=email.pk)
+    if container_id:
+        qs = qs.filter(container_id=container_id)
+    updated = qs.update(is_read=new_val)
+    return JsonResponse({'ok': True, 'is_read': new_val, 'updated': updated})
 
 
 @staff_member_required
 @require_POST
 def email_mark_container_read(request, container_id: int):
-    """Помечает всю переписку контейнера как прочитанную — для messenger-UI.
+    """Помечает всю переписку контейнера прочитанной — per-карточка.
 
     Вызывается автоматически при разворачивании блока «Переписка».
+    Трогаем только ссылки ``ContainerEmailLink`` этой карточки — в других
+    карточках письмо остаётся непрочитанным.
     """
-    updated = ContainerEmail.objects.filter(
-        containers__id=container_id,
+    updated = ContainerEmailLink.objects.filter(
+        container_id=container_id,
         is_read=False,
     ).update(is_read=True)
     return JsonResponse({'ok': True, 'updated': updated})
@@ -249,7 +259,10 @@ def email_reply_send(request, email_id: int):
         logger.exception('[email_reply_send] unexpected: %s', exc)
         return _compose_error_response(exc, status=500)
 
-    return _render_bubble_response(request, sent)
+    return _render_bubble_response(
+        request, sent,
+        container_id=getattr(origin_container, 'pk', None),
+    )
 
 
 @staff_member_required
@@ -292,7 +305,7 @@ def email_compose_send(request):
         logger.exception('[email_compose_send] unexpected: %s', exc)
         return _compose_error_response(exc, status=500)
 
-    return _render_bubble_response(request, sent)
+    return _render_bubble_response(request, sent, container_id=container.pk)
 
 
 def _resolve_group_addrs(members) -> list:
@@ -565,8 +578,32 @@ def models_Q_email_contains(q_raw: str):
     )
 
 
-def _render_bubble_response(request, email: ContainerEmail) -> JsonResponse:
-    """Рендерит один баббл и возвращает его в JSON (ok + html)."""
+def _render_bubble_response(
+    request,
+    email: ContainerEmail,
+    container_id: int | None = None,
+) -> JsonResponse:
+    """Рендерит один баббл и возвращает его в JSON (ok + html).
+
+    Если передан ``container_id`` — добавляем аннотацию ``is_read_here``
+    для этой карточки, чтобы баббл показывал корректный «прочитанный»
+    статус именно в контексте этой карточки.
+    """
+    if container_id:
+        from django.db.models import OuterRef, Subquery
+        email = (
+            ContainerEmail.objects
+            .filter(pk=email.pk)
+            .annotate(
+                is_read_here=Subquery(
+                    ContainerEmailLink.objects
+                    .filter(email=OuterRef('pk'), container_id=container_id)
+                    .values('is_read')[:1]
+                )
+            )
+            .prefetch_related('containers')
+            .first()
+        ) or email
     html = render(
         request,
         'admin/core/container/_email_bubble.html',
@@ -607,9 +644,23 @@ def email_container_updates(request, container_id: int):
         since_id = 0
     since_id = max(0, since_id)
 
-    qs = ContainerEmail.objects.filter(containers__id=container_id).distinct()
+    from django.db.models import OuterRef, Subquery
+    qs = (
+        ContainerEmail.objects
+        .filter(containers__id=container_id)
+        .annotate(
+            is_read_here=Subquery(
+                ContainerEmailLink.objects
+                .filter(email=OuterRef('pk'), container_id=container_id)
+                .values('is_read')[:1]
+            )
+        )
+        .distinct()
+    )
     total = qs.count()
-    unread = qs.filter(is_read=False).count()
+    unread = ContainerEmailLink.objects.filter(
+        container_id=container_id, is_read=False,
+    ).count()
 
     latest = qs.order_by('-pk').values_list('pk', flat=True).first() or 0
 

@@ -94,7 +94,7 @@ class HasUnreadEmailsFilter(SimpleListFilter):
     def queryset(self, request, queryset):
         value = self.value()
         if value == 'unread':
-            return queryset.filter(emails__is_read=False).distinct()
+            return queryset.filter(email_links__is_read=False).distinct()
         if value == 'any':
             return queryset.filter(emails__isnull=False).distinct()
         if value == 'none':
@@ -139,8 +139,8 @@ class ContainerAdmin(admin.ModelAdmin):
             _photos_count=Count('photos', distinct=True),
             _emails_total=Count('emails', distinct=True),
             _emails_unread=Count(
-                'emails',
-                filter=Q(emails__is_read=False),
+                'email_links',
+                filter=Q(email_links__is_read=False),
                 distinct=True,
             ),
         )
@@ -510,7 +510,7 @@ class ContainerAdmin(admin.ModelAdmin):
         """
         unread = getattr(obj, '_emails_unread', None)
         if unread is None:
-            unread = obj.emails.filter(is_read=False).count() if obj.pk else 0
+            unread = obj.email_links.filter(is_read=False).count() if obj.pk else 0
 
         if unread > 0:
             bg, title = '#dc2626', f'{unread} непрочитанных письма'

@@ -13,7 +13,7 @@
 {% load email_extras %}
 
 {% if original and original.pk %}
-{% with emails=original.emails.all %}
+{% with emails=original.emails_for_panel %}
 
 <style>
 /* ═══ Каркас секции ═══
