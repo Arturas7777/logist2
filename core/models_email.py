@@ -32,12 +32,14 @@ class ContainerEmail(models.Model):
     MATCHED_BY_THREAD = 'THREAD'
     MATCHED_BY_MANUAL = 'MANUAL'
     MATCHED_BY_UNMATCHED = 'UNMATCHED'
+    MATCHED_BY_VIN = 'VIN'
     MATCHED_BY_CHOICES = [
         (MATCHED_BY_CONTAINER_NUMBER, 'По номеру контейнера'),
         (MATCHED_BY_BOOKING_NUMBER, 'По номеру букинга'),
         (MATCHED_BY_THREAD, 'По треду'),
         (MATCHED_BY_MANUAL, 'Привязано вручную'),
         (MATCHED_BY_UNMATCHED, 'Не привязано'),
+        (MATCHED_BY_VIN, 'По VIN машины'),
     ]
 
     # Phase 2: одно письмо может быть привязано к нескольким контейнерам
@@ -51,6 +53,19 @@ class ContainerEmail(models.Model):
         related_name='emails',
         blank=True,
         verbose_name='Контейнеры',
+    )
+
+    # Phase 3: связь писем с машинами по VIN. Строгий режим без thread-
+    # наследования: только явный VIN в subject/body → ``CarEmailLink``.
+    # Используется для переписки в карточке ``Car`` и агрегирующей панели
+    # ``AutoTransport`` (через машины рейса).
+    cars = models.ManyToManyField(
+        'Car',
+        through='CarEmailLink',
+        through_fields=('email', 'car'),
+        related_name='emails',
+        blank=True,
+        verbose_name='Машины (по VIN)',
     )
 
     # Для исходящих писем — из какой карточки контейнера их отправили.
@@ -246,6 +261,60 @@ class ContainerEmailLink(models.Model):
 
     def __str__(self) -> str:
         return f'link<email={self.email_id}, container={self.container_id}, {self.matched_by}>'
+
+
+class CarEmailLink(models.Model):
+    """Связь «письмо ↔ машина» (through для ``ContainerEmail.cars``).
+
+    Строгий режим: линкуем только по явному VIN в subject/body письма.
+    Thread-наследование отключено, чтобы в мультиклиентском автовозе
+    переписка по машине клиента A не утекала в карточку машины клиента B
+    через общий тред.
+
+    ``is_read`` хранится per-ссылка — одно и то же письмо может быть
+    прочитано в карточке-источнике (откуда отправили) и непрочитано в
+    карточке, куда оно попало по упоминанию VIN.
+    """
+
+    email = models.ForeignKey(
+        ContainerEmail,
+        on_delete=models.CASCADE,
+        related_name='car_links',
+    )
+    car = models.ForeignKey(
+        'Car',
+        on_delete=models.CASCADE,
+        related_name='email_links',
+    )
+    matched_by = models.CharField(
+        max_length=20,
+        choices=ContainerEmail.MATCHED_BY_CHOICES,
+        default=ContainerEmail.MATCHED_BY_UNMATCHED,
+        verbose_name='Как сопоставлено',
+        help_text='Обычно VIN; MANUAL — если пришло из карточки Car.',
+    )
+    is_read = models.BooleanField(
+        default=False,
+        verbose_name='Прочитано в этой карточке авто',
+        help_text='Per-ссылка: в разных карточках авто флаг независим.',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Связь письма с машиной'
+        verbose_name_plural = 'Связи писем с машинами'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['email', 'car'],
+                name='caremaillink_unique_email_car',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['car', 'is_read']),
+        ]
+
+    def __str__(self) -> str:
+        return f'link<email={self.email_id}, car={self.car_id}, {self.matched_by}>'
 
 
 class EmailGroup(models.Model):

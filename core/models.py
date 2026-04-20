@@ -1227,6 +1227,33 @@ class Car(models.Model):
             'margin_percent': margin.quantize(Decimal('0.1')) if isinstance(margin, Decimal) else Decimal('0.0'),
         }
 
+    def emails_for_panel(self):
+        """Queryset писем для «Переписки» карточки машины (строгий режим).
+
+        Только явный VIN-матч: показываем ровно те письма, где VIN этой
+        машины упомянут в subject/body. Thread-наследование выключено,
+        чтобы в мультиклиентском автовозе переписка не утекала между
+        карточками машин разных клиентов.
+
+        Аннотирует ``is_read_here`` из ``CarEmailLink`` этой машины —
+        баблы на фронте показывают корректный per-карточка статус.
+        """
+        from django.db.models import OuterRef, Subquery
+        from core.models_email import ContainerEmail, CarEmailLink
+        return (
+            ContainerEmail.objects
+            .filter(cars__id=self.pk)
+            .annotate(
+                is_read_here=Subquery(
+                    CarEmailLink.objects
+                    .filter(email=OuterRef('pk'), car_id=self.pk)
+                    .values('is_read')[:1]
+                )
+            )
+            .distinct()
+            .order_by('-received_at')
+        )
+
     def __str__(self):
         return f"{self.brand} ({self.vin})"
 
@@ -1650,6 +1677,35 @@ class AutoTransport(models.Model):
     def get_clients(self):
         """Получить список уникальных клиентов автомобилей в автовозе"""
         return Client.objects.filter(car__in=self.cars.all()).distinct()
+
+    def emails_for_panel(self):
+        """Агрегирующая вьюха: все письма, привязанные к машинам рейса.
+
+        Отдельной таблицы для AutoTransport нет — переиспользуем
+        ``CarEmailLink`` через ``cars``. ``is_read_here`` = True только
+        если ВСЕ ссылки письма на машины этого рейса прочитаны; иначе
+        False (есть непрочитанные), чтобы бейдж «непрочитанное» показывался
+        до тех пор, пока хотя бы одна машина имеет непрочитанный link.
+        """
+        from django.db.models import Exists, OuterRef
+        from core.models_email import ContainerEmail, CarEmailLink
+        car_ids = list(self.cars.values_list('id', flat=True))
+        if not car_ids:
+            return ContainerEmail.objects.none()
+        has_unread = Exists(
+            CarEmailLink.objects.filter(
+                email=OuterRef('pk'),
+                car_id__in=car_ids,
+                is_read=False,
+            )
+        )
+        return (
+            ContainerEmail.objects
+            .filter(cars__id__in=car_ids)
+            .annotate(is_read_here=~has_unread)
+            .distinct()
+            .order_by('-received_at')
+        )
 
     def generate_invoices(self):
         """Создать/обновить инвойсы для клиентов.

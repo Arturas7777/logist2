@@ -16,6 +16,7 @@ from django.utils.safestring import mark_safe
 
 from core.models import Container
 from core.models_email import (
+    CarEmailLink,
     ContainerEmail, ContainerEmailLink,
     EmailGroup, EmailGroupMember, GmailSyncState,
 )
@@ -66,6 +67,20 @@ class ContainerEmailLinkInline(admin.TabularInline):
     readonly_fields = ('created_at',)
 
 
+class CarEmailLinkInline(admin.TabularInline):
+    """Инлайн-редактирование привязок письма к машинам (M2M through по VIN).
+
+    ``is_read`` per-ссылка; матч обычно по VIN. Ручная привязка из UI
+    появится позже (Phase 3) — пока редактируется только в админке.
+    """
+    model = CarEmailLink
+    extra = 0
+    fk_name = 'email'
+    autocomplete_fields = ('car',)
+    fields = ('car', 'matched_by', 'is_read', 'created_at')
+    readonly_fields = ('created_at',)
+
+
 class AttachToContainerForm(forms.Form):
     container = forms.ModelChoiceField(
         queryset=Container.objects.all().order_by('-id'),
@@ -84,7 +99,7 @@ class ContainerEmailAdmin(admin.ModelAdmin):
     list_filter = (MatchedByListFilter, 'direction', 'matched_by')
     search_fields = ('subject', 'from_addr', 'to_addrs', 'message_id', 'thread_id')
     autocomplete_fields = ('sent_from_container',)
-    inlines = [ContainerEmailLinkInline]
+    inlines = [ContainerEmailLinkInline, CarEmailLinkInline]
     readonly_fields = (
         'message_id', 'thread_id', 'in_reply_to', 'references',
         'gmail_id', 'gmail_history_id', 'labels_json', 'attachments_json',
@@ -97,7 +112,7 @@ class ContainerEmailAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         return qs.prefetch_related(
-            'containers', 'container_links',
+            'containers', 'container_links', 'cars', 'car_links',
         ).select_related(
             'sent_from_container',
         )
@@ -316,6 +331,17 @@ class ContainerEmailLinkAdmin(admin.ModelAdmin):
         'email__subject', 'email__message_id', 'container__number',
     )
     autocomplete_fields = ('email', 'container')
+    readonly_fields = ('created_at',)
+
+
+@admin.register(CarEmailLink)
+class CarEmailLinkAdmin(admin.ModelAdmin):
+    list_display = ('id', 'email', 'car', 'matched_by', 'is_read', 'created_at')
+    list_filter = ('matched_by', 'is_read')
+    search_fields = (
+        'email__subject', 'email__message_id', 'car__vin', 'car__brand',
+    )
+    autocomplete_fields = ('email', 'car')
     readonly_fields = ('created_at',)
 
 
