@@ -10,12 +10,13 @@
 {% endcomment %}
 {% load email_extras %}
 {% with from_name=email.from_addr|display_name %}
-<div class="cm-msg {% if email.direction == 'OUTGOING' %}cm-out{% else %}cm-in{% endif %}"
+<div class="cm-msg {% if email.direction == 'OUTGOING' %}cm-out{% else %}cm-in{% endif %}{% if email.needs_reply %} cm-needs-reply{% endif %}"
      data-email-id="{{ email.pk }}"
      data-thread-id="{{ email.thread_id }}"
      data-direction="{{ email.direction }}"
      data-send-status="{{ email.send_status }}"
-     data-unread="{{ email.is_read_here|yesno:'0,1' }}">
+     data-unread="{{ email.is_read_here|yesno:'0,1' }}"
+     data-needs-reply="{{ email.needs_reply|yesno:'1,0' }}">
     <div class="cm-avatar"
          style="background-color: {{ email.from_addr|avatar_color }};"
          title="{{ email.from_addr }}">
@@ -93,6 +94,13 @@
             {% if email.direction != 'OUTGOING' %}
                 <div class="cm-bubble-actions">
                     <button type="button" class="cm-reply-btn" data-email-id="{{ email.pk }}">↩ Ответить</button>
+                    <button type="button"
+                            class="cm-needs-reply-btn"
+                            data-email-id="{{ email.pk }}"
+                            data-active="{{ email.needs_reply|yesno:'1,0' }}"
+                            title="Пометить письмо как требующее ответа, чтобы быстро вернуться к нему позже">
+                        {% if email.needs_reply %}✓ Снять напоминание{% else %}🚩 Ответить позже{% endif %}
+                    </button>
                 </div>
             {% endif %}
 

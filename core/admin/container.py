@@ -87,6 +87,7 @@ class HasUnreadEmailsFilter(SimpleListFilter):
     def lookups(self, request, model_admin):
         return (
             ('unread', 'Есть непрочитанные'),
+            ('need_reply', 'Ждут ответа'),
             ('any', 'Есть переписка'),
             ('none', 'Нет писем'),
         )
@@ -95,6 +96,11 @@ class HasUnreadEmailsFilter(SimpleListFilter):
         value = self.value()
         if value == 'unread':
             return queryset.filter(email_links__is_read=False).distinct()
+        if value == 'need_reply':
+            return queryset.filter(
+                emails__needs_reply=True,
+                emails__direction='INCOMING',
+            ).distinct()
         if value == 'any':
             return queryset.filter(emails__isnull=False).distinct()
         if value == 'none':
@@ -141,6 +147,14 @@ class ContainerAdmin(admin.ModelAdmin):
             _emails_unread=Count(
                 'email_links',
                 filter=Q(email_links__is_read=False),
+                distinct=True,
+            ),
+            _emails_need_reply=Count(
+                'emails',
+                filter=Q(
+                    emails__needs_reply=True,
+                    emails__direction='INCOMING',
+                ),
                 distinct=True,
             ),
         )
@@ -503,19 +517,32 @@ class ContainerAdmin(admin.ModelAdmin):
     photos_count_display.admin_order_field = '_photos_count'
 
     def number_with_unread(self, obj):
-        """Номер контейнера с маленьким бейджем непрочитанных писем слева.
+        """Номер контейнера с маленьким бейджем непрочитанных писем + флажок.
 
         * Красный — есть хотя бы одно непрочитанное сообщение
         * Зелёный «0» — писем либо нет вовсе, либо все прочитаны
+        * Оранжевый 🚩 — есть входящие, помеченные «ответить позже»
         """
         unread = getattr(obj, '_emails_unread', None)
         if unread is None:
             unread = obj.email_links.filter(is_read=False).count() if obj.pk else 0
 
+        need_reply = getattr(obj, '_emails_need_reply', 0) or 0
+
         if unread > 0:
             bg, title = '#dc2626', f'{unread} непрочитанных письма'
         else:
             bg, title = '#10b981', 'Непрочитанных писем нет'
+
+        need_reply_html = ''
+        if need_reply > 0:
+            need_reply_html = format_html(
+                '<span title="{}" style="background:#f97316;color:#fff;padding:1px 7px;'
+                'border-radius:10px;font-size:11px;font-weight:700;min-width:20px;'
+                'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">🚩 {}</span>',
+                f'{need_reply} письмо(-а) ждут ответа',
+                need_reply,
+            )
 
         return format_html(
             '<span style="display:inline-flex;align-items:center;gap:6px;">'
@@ -523,8 +550,9 @@ class ContainerAdmin(admin.ModelAdmin):
             '<span title="{}" style="background:{};color:#fff;padding:1px 7px;'
             'border-radius:10px;font-size:11px;font-weight:700;min-width:20px;'
             'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">{}</span>'
+            '{}'
             '</span>',
-            obj.number or '—', title, bg, unread,
+            obj.number or '—', title, bg, unread, need_reply_html,
         )
     number_with_unread.short_description = '№'
     number_with_unread.admin_order_field = 'number'

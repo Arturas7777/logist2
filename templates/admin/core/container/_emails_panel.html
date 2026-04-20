@@ -331,6 +331,35 @@
     color: #fff;
 }
 
+/* ═══ «Ответить позже» (follow-up flag) ═══ */
+#container-emails-section .cm-bubble-actions .cm-needs-reply-btn {
+    padding: 2px 8px;
+    font-size: 12px;
+    background: rgba(255,255,255,0.85);
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #334155;
+}
+#container-emails-section .cm-bubble-actions .cm-needs-reply-btn:hover {
+    background: #f97316;
+    border-color: #f97316;
+    color: #fff;
+}
+#container-emails-section .cm-bubble-actions .cm-needs-reply-btn[data-active="1"] {
+    background: #fff7ed;
+    border-color: #fdba74;
+    color: #c2410c;
+    font-weight: 600;
+    opacity: 1 !important;
+}
+#container-emails-section .cm-msg.cm-needs-reply .cm-bubble {
+    border-left: 3px solid #f97316;
+}
+#container-emails-section .cm-msg.cm-needs-reply .cm-bubble-actions {
+    opacity: 1;
+}
+
 /* ═══ Статус отправки (SENT / FAILED) у исходящих ═══ */
 #container-emails-section .cm-msg-send-status {
     font-size: 11px;
@@ -1695,6 +1724,14 @@
                 composerStatus.style.color = '#16a34a';
                 composerStatus.textContent = '✓ Отправлено';
                 clearDraft();
+                // Если это был reply на помеченное «ответить позже» письмо —
+                // сервер автоматически сбросил needs_reply; синхронизируем UI.
+                if (mode === 'reply' && pid) {
+                    var srcBubble = document.querySelector('.cm-msg[data-email-id="' + String(pid) + '"]');
+                    if (srcBubble && srcBubble.classList.contains('cm-needs-reply')) {
+                        applyNeedsReplyToBubble(srcBubble, false);
+                    }
+                }
                 // Вставляем баббл вверх ленты
                 if (list && res.data.html) {
                     var temp = document.createElement('div');
@@ -1736,6 +1773,61 @@
                 subject: defaultSubj,
                 body: '',
                 maxMb: 25,
+            });
+        });
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // «Ответить позже» (follow-up flag)
+    // ────────────────────────────────────────────────────────────────
+    function applyNeedsReplyToBubble(bubble, active) {
+        if (!bubble) return;
+        if (active) bubble.classList.add('cm-needs-reply');
+        else bubble.classList.remove('cm-needs-reply');
+        bubble.setAttribute('data-needs-reply', active ? '1' : '0');
+        var fbtn = bubble.querySelector('.cm-needs-reply-btn');
+        if (fbtn) {
+            fbtn.setAttribute('data-active', active ? '1' : '0');
+            fbtn.textContent = active ? '✓ Снять напоминание' : '🚩 Ответить позже';
+        }
+    }
+
+    if (list) {
+        list.addEventListener('click', function(e) {
+            var fbtn = e.target.closest('.cm-needs-reply-btn');
+            if (!fbtn) return;
+            e.preventDefault();
+            e.stopPropagation();
+            var emailId = fbtn.dataset.emailId;
+            if (!emailId) return;
+            var wasActive = fbtn.dataset.active === '1';
+            var newVal = wasActive ? '0' : '1';
+            var bubble = fbtn.closest('.cm-msg');
+            applyNeedsReplyToBubble(bubble, newVal === '1');
+            fbtn.disabled = true;
+
+            var fd = new FormData();
+            fd.append('value', newVal);
+            fetch('/core/emails/' + emailId + '/needs-reply/', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'X-CSRFToken': csrfToken },
+                body: fd,
+            })
+            .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+            .then(function(res) {
+                fbtn.disabled = false;
+                if (!res.ok || !res.data || !res.data.ok) {
+                    applyNeedsReplyToBubble(bubble, wasActive);
+                    alert('Не удалось обновить флаг: ' + ((res.data && res.data.error) || 'ошибка'));
+                } else {
+                    applyNeedsReplyToBubble(bubble, !!res.data.needs_reply);
+                }
+            })
+            .catch(function(err) {
+                fbtn.disabled = false;
+                applyNeedsReplyToBubble(bubble, wasActive);
+                alert('Ошибка сети: ' + err);
             });
         });
     }
