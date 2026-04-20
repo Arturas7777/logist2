@@ -1454,6 +1454,9 @@ class AutoTransportAdmin(admin.ModelAdmin):
         }),
     )
 
+    class Media:
+        css = {'all': ('css/dashboard_admin.css',)}
+
     def get_changelist_instance(self, request):
         """Скрываем доставленные автовозы по умолчанию (только в списке, не в форме)"""
         # Подменяем queryset только если пользователь не выбрал фильтр по статусу
