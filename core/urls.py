@@ -26,6 +26,7 @@ urlpatterns = [
     path('emails/<int:email_id>/', views.email_detail, name='email_detail'),
     path('emails/<int:email_id>/attachment/<int:idx>/', views.email_attachment, name='email_attachment'),
     path('emails/<int:email_id>/mark-read/', views.email_mark_read, name='email_mark_read'),
+    path('emails/<int:email_id>/needs-reply/', views.email_set_needs_reply, name='email_set_needs_reply'),
     path('emails/container/<int:container_id>/mark-all-read/', views.email_mark_container_read, name='email_mark_container_read'),
     path('emails/container/<int:container_id>/updates/', views.email_container_updates, name='email_container_updates'),
     path('emails/car/<int:car_id>/mark-all-read/', views.email_mark_car_read, name='email_mark_car_read'),

@@ -61,6 +61,7 @@ from .emails import (  # noqa: F401
     email_detail,
     email_attachment,
     email_mark_read,
+    email_set_needs_reply,
     email_mark_container_read,
     email_mark_car_read,
     email_mark_autotransport_read,

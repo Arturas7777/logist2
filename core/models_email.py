@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from django.conf import settings
 from django.db import models
 
 
@@ -169,6 +170,27 @@ class ContainerEmail(models.Model):
     send_error = models.TextField(
         blank=True, default='',
         help_text='Текст последней ошибки Gmail API при попытке отправить.',
+    )
+
+    # ── «Ответить позже»: глобальный follow-up флаг на уровне письма.
+    # Ставится вручную из любой карточки (Container/Car/AutoTransport), виден
+    # везде, где письмо засветилось. Автоматически снимается при успешной
+    # отправке ответа через reply_to_email.
+    needs_reply = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name='Требует ответа',
+        help_text='Помечено вручную: письмо, на которое нужно вернуться и ответить.',
+    )
+    needs_reply_set_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name='Флаг установлен',
+    )
+    needs_reply_set_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='+',
+        verbose_name='Установил флаг',
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
