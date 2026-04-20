@@ -492,6 +492,12 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         invoice.save()
 
         car_ids = request.POST.getlist('cars')
+        # Режим «Без сверки с базой» = пользователь берёт на себя управление
+        # суммой и позициями. Мы обязаны уважать его ручной ввод даже если
+        # уже есть AI-аудит, иначе manual_total/manual_items из формы просто
+        # игнорируются и пользователь видит «сумма вернулась неправильная».
+        skip_ai = bool(getattr(invoice, 'skip_ai_comparison', False))
+
         if car_ids:
             cars = Car.objects.filter(pk__in=car_ids)
             invoice.cars.set(cars)
@@ -501,7 +507,11 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                              and invoice.audit is not None)
             except Exception:
                 logger.debug('audit check failed for invoice %s', invoice.pk, exc_info=True)
-            if not has_audit:
+            if skip_ai:
+                # Ручной override: выкидываем ВСЕ позиции (в т.ч. AI-позиции
+                # с привязкой к car) и строим из manual_items/manual_total.
+                self._handle_manual_items(request, invoice, wipe_all=True)
+            elif not has_audit:
                 invoice.regenerate_items_from_cars()
                 # Помечаем, что save_related не должен делать ту же работу повторно
                 invoice._items_regenerated_in_form = True
@@ -514,7 +524,9 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                              and invoice.audit is not None)
             except Exception:
                 logger.debug('audit check failed for invoice %s', invoice.pk, exc_info=True)
-            if not has_audit:
+            if skip_ai:
+                self._handle_manual_items(request, invoice, wipe_all=True)
+            elif not has_audit:
                 self._handle_manual_items(request, invoice)
             messages.success(request, f'✅ Инвойс {invoice.number} сохранен! Сумма: {invoice.total:.2f} €')
 
@@ -540,7 +552,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         else:
             return redirect('admin:core_newinvoice_changelist')
 
-    def _handle_manual_items(self, request, invoice):
+    def _handle_manual_items(self, request, invoice, wipe_all=False):
         """
         Обработка ручного ввода суммы и позиций (для инвойсов без автомобилей).
 
@@ -550,6 +562,11 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         2. Если нет позиций, но задан manual_total > 0 — создаём одну позицию
            "Оплата по счёту {номер}" с указанной суммой.
         3. Если manual_total = 0 и нет позиций — ничего не делаем (total остаётся 0).
+
+        wipe_all=True: удалить ВСЕ позиции (включая созданные AI-аудитом из PDF
+        с привязкой к car). Используется в режиме «Без сверки с базой», когда
+        пользователь явно перехватывает управление суммой и не хочет, чтобы
+        результаты AI остались в позициях.
         """
         manual_total_str = request.POST.get('manual_total', '0')
         manual_items_raw = request.POST.get('manual_items_json', '[]')
@@ -569,8 +586,12 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         except (json.JSONDecodeError, TypeError):
             manual_items = []
 
-        # Удаляем старые ручные позиции (без привязки к авто)
-        invoice.items.filter(car__isnull=True).delete()
+        if wipe_all:
+            # Режим ручного override — убираем и AI-позиции с car тоже.
+            invoice.items.all().delete()
+        else:
+            # Обычный режим — только ручные позиции (без car).
+            invoice.items.filter(car__isnull=True).delete()
 
         if manual_items:
             # Создаём позиции из ручного ввода
@@ -620,6 +641,11 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
             # Устанавливаем total
             invoice.calculate_totals()
             invoice.save(update_fields=['subtotal', 'total'])
+        elif wipe_all:
+            # Удалили все items и ничего не создали — total надо занулить,
+            # иначе останется старое AI-значение в БД.
+            invoice.calculate_totals()
+            invoice.save(update_fields=['subtotal', 'total'])
 
     def save_model(self, request, obj, form, change):
         """Сохраняем инвойс и автоматически генерируем позиции из автомобилей"""
@@ -662,7 +688,8 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
                              and obj.audit is not None)
             except Exception:
                 logger.debug('audit check failed for invoice %s', obj.pk, exc_info=True)
-            if obj.cars.exists() and not has_audit:
+            # skip_ai_comparison = пользователь берёт контроль, не перезаписываем.
+            if obj.cars.exists() and not has_audit and not obj.skip_ai_comparison:
                 obj.regenerate_items_from_cars()
                 messages.success(request, f"Автоматически создано {obj.items.count()} позиций из услуг автомобилей!")
 
