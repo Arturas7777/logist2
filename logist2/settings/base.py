@@ -28,20 +28,24 @@ def _is_insecure_secret(key: str) -> bool:
     return False
 
 
-# Fail-fast на старте: в проде / при запуске воркера недопустимо
-# использовать дефолтный/слабый SECRET_KEY или пустой ENCRYPTION_KEY
-# (от него зависит шифрование токенов Revolut и Google Drive).
+# Fail-fast на старте: в проде недопустим дефолтный/слабый SECRET_KEY.
+# ENCRYPTION_KEY — только предупреждение: в core/models_banking.py есть
+# fallback на SECRET_KEY, и ранее сохранённые токены Revolut/Google уже
+# зашифрованы этим fallback'ом. Принудительная генерация нового ключа
+# сломает расшифровку существующих токенов. Рекомендуется задать
+# ENCRYPTION_KEY ДО первого сохранения чувствительных токенов.
 if not DEBUG:
     if _is_insecure_secret(SECRET_KEY):
         raise ValueError(
             "SECRET_KEY не задан, использует дефолтное значение или слишком короткий. "
-            "Установите переменную окружения SECRET_KEY длиной ≥32 символа для продакшена."
+            "Установите переменную окружения SECRET_KEY длиной >=32 символа для продакшена."
         )
     if not ENCRYPTION_KEY:
-        raise ValueError(
-            "ENCRYPTION_KEY не задан. Он нужен для шифрования токенов внешних API "
-            "(Revolut, Google). Сгенерируйте: `python -c \"from cryptography.fernet "
-            "import Fernet; print(Fernet.generate_key().decode())\"` и положите в .env."
+        sys.stderr.write(
+            "[logist2] WARNING: ENCRYPTION_KEY не задан — шифрование токенов внешних "
+            "API использует SECRET_KEY как fallback. Для разделения ответственности "
+            "рекомендуется задать ENCRYPTION_KEY в .env (НО только до первого "
+            "сохранения токенов — иначе сломается их расшифровка).\n"
         )
 
 ALLOWED_HOSTS = [
