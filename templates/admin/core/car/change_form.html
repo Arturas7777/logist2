@@ -677,3 +677,10 @@
   </div>
 </div>
 {% endblock %}
+
+{% block after_related_objects %}
+  {{ block.super }}
+  {% if original and original.pk %}
+  {% include "admin/core/car/_emails_panel.html" %}
+  {% endif %}
+{% endblock %}
