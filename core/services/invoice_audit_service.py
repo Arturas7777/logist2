@@ -157,7 +157,54 @@ def _parse_llm_json(text: str) -> dict:
         lines = text.split('\n')
         lines = [l for l in lines if not l.strip().startswith('```')]
         text = '\n'.join(lines)
-    return json.loads(text)
+    parsed = json.loads(text)
+    return _sanitize_extracted(parsed)
+
+
+def _sanitize_extracted(data) -> dict:
+    """Приводит ответ LLM к ожидаемой форме.
+
+    LLM может возвращать null в любом поле (см. схему — там `invoice_number:
+    null`). Это ломает дальнейший код, когда мы делаем `value[:N]`,
+    `for v in value` или `value.items()` — получаем
+    "NoneType object is not subscriptable / iterable".
+
+    Нормализуем один раз на входе:
+      - верхний уровень: None → {};
+      - строковые поля → '' если None;
+      - items → [] если None; каждый элемент — такой же dict с vins=[],
+        storage_days_per_vin={}, description='', brand='', service_type='OTHER'.
+    """
+    if not isinstance(data, dict):
+        return {'items': []}
+
+    data.setdefault('items', [])
+    if data.get('items') is None:
+        data['items'] = []
+
+    for key in ('counterparty', 'invoice_number', 'invoice_date', 'currency', 'notes'):
+        if data.get(key) is None:
+            data[key] = ''
+
+    cleaned_items = []
+    for raw in data.get('items') or []:
+        if not isinstance(raw, dict):
+            continue
+        item = dict(raw)
+        if item.get('vins') is None:
+            item['vins'] = []
+        if item.get('storage_days_per_vin') is None:
+            item['storage_days_per_vin'] = {}
+        if item.get('description') is None:
+            item['description'] = ''
+        if item.get('brand') is None:
+            item['brand'] = ''
+        if item.get('service_type') is None:
+            item['service_type'] = 'OTHER'
+        cleaned_items.append(item)
+    data['items'] = cleaned_items
+
+    return data
 
 
 def call_llm_with_images(images_b64: list[str]) -> dict:
@@ -775,7 +822,10 @@ def create_supplier_costs(audit, extracted: dict, found_cars: dict) -> dict:
     from core.models_invoice_audit import SupplierCost
 
     mapping = _load_service_mapping()
-    counterparty = extracted.get('counterparty', '')[:200]
+    # LLM может вернуть null вместо строки — dict.get(k, default) не спасает:
+    # default применяется только если ключа НЕТ, а не если он = None. Поэтому
+    # везде используем (val or fallback).
+    counterparty = (extracted.get('counterparty') or '')[:200]
     counterparty_conf = _resolve_counterparty(counterparty, mapping)
 
     provider_type = counterparty_conf.get('provider_type') if counterparty_conf else None
@@ -828,7 +878,7 @@ def create_supplier_costs(audit, extracted: dict, found_cars: dict) -> dict:
         stype      = item.get('service_type', 'OTHER')
         vins       = [v.strip().upper() for v in item.get('vins', []) if v.strip()]
         unit_price = float(item.get('unit_price', 0) or 0)
-        descr      = item.get('description', '')[:300]
+        descr      = (item.get('description') or '')[:300]
         st         = stype if stype in valid_stypes else 'OTHER'
 
         if not vins:
@@ -996,11 +1046,14 @@ def process_invoice_audit(audit_id: int) -> None:
                 status = InvoiceAudit.STATUS_OK
 
         # 7. Сохраняем результаты
-        audit.counterparty_detected = extracted.get('counterparty', '')[:200]
-        audit.invoice_number        = extracted.get('invoice_number', '')[:100] or ''
+        # LLM может вернуть null в любом поле JSON — принудительно заменяем
+        # None на пустую строку / 'EUR', иначе str[:N] падает с
+        # "NoneType object is not subscriptable".
+        audit.counterparty_detected = (extracted.get('counterparty') or '')[:200]
+        audit.invoice_number        = (extracted.get('invoice_number') or '')[:100]
         audit.invoice_date          = invoice_date
         audit.total_amount          = total_amount
-        audit.currency              = extracted.get('currency', 'EUR')[:3]
+        audit.currency              = (extracted.get('currency') or 'EUR')[:3]
         audit.raw_extracted         = extracted
         audit.discrepancies         = comparison['discrepancies']
         audit.cars_found            = comparison['cars_found']
