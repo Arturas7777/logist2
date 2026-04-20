@@ -1340,6 +1340,7 @@ class AutoTransportHasUnreadEmailsFilter(admin.SimpleListFilter):
     def lookups(self, request, model_admin):
         return (
             ('unread', 'Есть непрочитанные'),
+            ('need_reply', 'Ждут ответа'),
             ('any', 'Есть переписка'),
             ('none', 'Нет писем'),
         )
@@ -1348,6 +1349,11 @@ class AutoTransportHasUnreadEmailsFilter(admin.SimpleListFilter):
         value = self.value()
         if value == 'unread':
             return queryset.filter(cars__email_links__is_read=False).distinct()
+        if value == 'need_reply':
+            return queryset.filter(
+                cars__email_links__email__needs_reply=True,
+                cars__email_links__email__direction='INCOMING',
+            ).distinct()
         if value == 'any':
             return queryset.filter(cars__email_links__isnull=False).distinct()
         if value == 'none':
@@ -1480,6 +1486,14 @@ class AutoTransportAdmin(admin.ModelAdmin):
                 filter=Q(cars__email_links__is_read=False),
                 distinct=True,
             ),
+            _emails_need_reply=Count(
+                'cars__email_links__email',
+                filter=Q(
+                    cars__email_links__email__needs_reply=True,
+                    cars__email_links__email__direction='INCOMING',
+                ),
+                distinct=True,
+            ),
         )
         return qs
 
@@ -1578,7 +1592,7 @@ class AutoTransportAdmin(admin.ModelAdmin):
                 )
 
     def number_with_unread(self, obj):
-        """Номер автовоза с бейджем непрочитанных писем среди его машин."""
+        """Номер автовоза с бейджем непрочитанных писем и флажком «ждут ответа»."""
         unread = getattr(obj, '_emails_unread', None)
         if unread is None:
             from core.models_email import ContainerEmail
@@ -1590,11 +1604,22 @@ class AutoTransportAdmin(admin.ModelAdmin):
                 .count()
                 if obj.pk else 0
             )
+        need_reply = getattr(obj, '_emails_need_reply', 0) or 0
 
         if unread > 0:
             bg, title = '#dc2626', f'{unread} непрочитанных письма'
         else:
             bg, title = '#10b981', 'Непрочитанных писем нет'
+
+        need_reply_html = ''
+        if need_reply > 0:
+            need_reply_html = format_html(
+                '<span title="{}" style="background:#f97316;color:#fff;padding:1px 7px;'
+                'border-radius:10px;font-size:11px;font-weight:700;min-width:20px;'
+                'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">🚩 {}</span>',
+                f'{need_reply} письмо(-а) ждут ответа',
+                need_reply,
+            )
 
         return format_html(
             '<span style="display:inline-flex;align-items:center;gap:6px;">'
@@ -1602,8 +1627,9 @@ class AutoTransportAdmin(admin.ModelAdmin):
             '<span title="{}" style="background:{};color:#fff;padding:1px 7px;'
             'border-radius:10px;font-size:11px;font-weight:700;min-width:20px;'
             'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">{}</span>'
+            '{}'
             '</span>',
-            obj.number or '—', title, bg, unread,
+            obj.number or '—', title, bg, unread, need_reply_html,
         )
     number_with_unread.short_description = '№'
     number_with_unread.admin_order_field = 'number'

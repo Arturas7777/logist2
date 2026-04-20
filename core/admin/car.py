@@ -98,6 +98,7 @@ class CarHasUnreadEmailsFilter(SimpleListFilter):
     def lookups(self, request, model_admin):
         return (
             ('unread', 'Есть непрочитанные'),
+            ('need_reply', 'Ждут ответа'),
             ('any', 'Есть переписка'),
             ('none', 'Нет писем'),
         )
@@ -106,6 +107,11 @@ class CarHasUnreadEmailsFilter(SimpleListFilter):
         value = self.value()
         if value == 'unread':
             return queryset.filter(email_links__is_read=False).distinct()
+        if value == 'need_reply':
+            return queryset.filter(
+                email_links__email__needs_reply=True,
+                email_links__email__direction='INCOMING',
+            ).distinct()
         if value == 'any':
             return queryset.filter(email_links__isnull=False).distinct()
         if value == 'none':
@@ -162,6 +168,14 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             _emails_unread=Count(
                 'email_links',
                 filter=Q(email_links__is_read=False),
+                distinct=True,
+            ),
+            _emails_need_reply=Count(
+                'email_links__email',
+                filter=Q(
+                    email_links__email__needs_reply=True,
+                    email_links__email__direction='INCOMING',
+                ),
                 distinct=True,
             ),
         )
@@ -441,11 +455,22 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         unread = getattr(obj, '_emails_unread', None)
         if unread is None:
             unread = obj.email_links.filter(is_read=False).count() if obj.pk else 0
+        need_reply = getattr(obj, '_emails_need_reply', 0) or 0
 
         if unread > 0:
             badge_bg, badge_title = '#dc2626', f'{unread} непрочитанных письма'
         else:
             badge_bg, badge_title = '#10b981', 'Непрочитанных писем нет'
+
+        need_reply_html = ''
+        if need_reply > 0:
+            need_reply_html = format_html(
+                '<span title="{}" style="background:#f97316;color:#fff;padding:1px 7px;'
+                'border-radius:10px;font-size:11px;font-weight:700;min-width:20px;'
+                'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">🚩 {}</span>',
+                f'{need_reply} письмо(-а) ждут ответа',
+                need_reply,
+            )
 
         return format_html(
             '<span style="display:inline-flex;align-items:center;gap:6px;">'
@@ -460,11 +485,13 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             '<span title="{badge_title}" style="background:{badge_bg};color:#fff;padding:1px 7px;'
             'border-radius:10px;font-size:11px;font-weight:700;min-width:20px;'
             'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">{unread}</span>'
+            '{need_reply_html}'
             '</span>',
             vin=obj.vin,
             unread=unread,
             badge_bg=badge_bg,
             badge_title=badge_title,
+            need_reply_html=need_reply_html,
         )
     vin_display.short_description = 'VIN'
     vin_display.admin_order_field = 'vin'

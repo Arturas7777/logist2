@@ -41,6 +41,41 @@ opts:
     color: #fff;
 }
 
+/* ═══ «Ответить позже» (follow-up flag) ═══ */
+/* Кнопка-флажок показывается по тем же правилам hover, что и reply. */
+.cm-panel-with-reply .cm-bubble-actions .cm-needs-reply-btn {
+    padding: 2px 8px;
+    font-size: 12px;
+    background: rgba(255,255,255,0.85);
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #334155;
+}
+.cm-panel-with-reply .cm-bubble-actions .cm-needs-reply-btn:hover {
+    background: #f97316;
+    border-color: #f97316;
+    color: #fff;
+}
+/* Активное состояние — флаг поставлен. */
+.cm-panel-with-reply .cm-bubble-actions .cm-needs-reply-btn[data-active="1"] {
+    background: #fff7ed;
+    border-color: #fdba74;
+    color: #c2410c;
+    font-weight: 600;
+    /* Видна всегда, а не только по hover — важно, т.к. помечает «ждёт ответа». */
+    opacity: 1 !important;
+}
+/* Левая полоска на баббле, если письмо помечено. */
+.cm-msg.cm-needs-reply .cm-bubble {
+    border-left: 3px solid #f97316;
+}
+/* Если активен хоть один needs-reply — показываем action-bar всегда,
+   чтобы флажок в «снять» режиме был видимым, а не исчезал после hover. */
+.cm-panel-with-reply .cm-msg.cm-needs-reply .cm-bubble-actions {
+    opacity: 1;
+}
+
 /* ═══ Composer ═══ */
 #cm-composer {
     position: fixed;
@@ -1025,6 +1060,11 @@ opts:
                 composerStatus.style.color = '#16a34a';
                 composerStatus.textContent = '✓ Отправлено';
                 clearDraft();
+                // Если это был reply на помеченное «ответить позже» письмо —
+                // сервер автоматически сбросил needs_reply; синхронизируем UI.
+                if (mode === 'reply' && pid) {
+                    syncParentBubbleAfterReply(pid);
+                }
                 try {
                     if (currentOpts && typeof currentOpts.onSuccess === 'function') {
                         currentOpts.onSuccess(res.data);
@@ -1161,6 +1201,73 @@ opts:
         if (e.target.closest('#cm-composer-groups')) return;
         hideGroupsDropdown();
     });
+
+    // ── «Ответить позже» (follow-up flag) ────────────────────────────
+    function applyNeedsReplyToBubble(bubble, active) {
+        if (!bubble) return;
+        if (active) bubble.classList.add('cm-needs-reply');
+        else bubble.classList.remove('cm-needs-reply');
+        bubble.setAttribute('data-needs-reply', active ? '1' : '0');
+        var btn = bubble.querySelector('.cm-needs-reply-btn');
+        if (btn) {
+            btn.setAttribute('data-active', active ? '1' : '0');
+            btn.textContent = active ? '✓ Снять напоминание' : '🚩 Ответить позже';
+        }
+    }
+
+    // Делегирование клика на кнопку флажка. Один обработчик на документ —
+    // ловит кнопки во всех панелях (Container/Car/AutoTransport), в том
+    // числе в бабблах, добавленных динамически после отправки/polling.
+    document.addEventListener('click', function(ev) {
+        var btn = ev.target && ev.target.closest && ev.target.closest('.cm-needs-reply-btn');
+        if (!btn) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        var emailId = btn.dataset.emailId;
+        if (!emailId) return;
+        var wasActive = btn.dataset.active === '1';
+        var newVal = wasActive ? '0' : '1';
+        // Оптимистичное обновление UI.
+        var bubble = btn.closest('.cm-msg');
+        applyNeedsReplyToBubble(bubble, newVal === '1');
+        btn.disabled = true;
+
+        var fd = new FormData();
+        fd.append('value', newVal);
+        fetch('/core/emails/' + emailId + '/needs-reply/', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'X-CSRFToken': getCsrf() },
+            body: fd,
+        })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(res) {
+            btn.disabled = false;
+            if (!res.ok || !res.data || !res.data.ok) {
+                // Откат оптимистичного апдейта.
+                applyNeedsReplyToBubble(bubble, wasActive);
+                alert('Не удалось обновить флаг: ' + ((res.data && res.data.error) || 'ошибка'));
+            } else {
+                applyNeedsReplyToBubble(bubble, !!res.data.needs_reply);
+            }
+        })
+        .catch(function(err) {
+            btn.disabled = false;
+            applyNeedsReplyToBubble(bubble, wasActive);
+            alert('Ошибка сети: ' + err);
+        });
+    });
+
+    // После успешной отправки reply сервер автоматически снимает флаг
+    // с родительского письма → синхронизируем баббл на странице, чтобы
+    // оранжевая полоска и надпись исчезли без перезагрузки.
+    function syncParentBubbleAfterReply(parentId) {
+        if (!parentId) return;
+        var bubble = document.querySelector('.cm-msg[data-email-id="' + String(parentId) + '"]');
+        if (bubble && bubble.classList.contains('cm-needs-reply')) {
+            applyNeedsReplyToBubble(bubble, false);
+        }
+    }
 
     // ── Public API ───────────────────────────────────────────────────
     window.CMComposer = {
