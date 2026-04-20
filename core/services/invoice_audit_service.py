@@ -1070,8 +1070,20 @@ def process_invoice_audit(audit_id: int) -> None:
             f"расхождений={comparison['issues_count']}"
         )
 
-        # 8. Sync to linked NewInvoice (if exists)
-        _sync_audit_to_newinvoice(audit, comparison.get('found_cars', {}), extracted)
+        # 8. Sync to linked NewInvoice (if exists).
+        # В режиме «Без сверки с базой» (skip_ai_comparison=True) пользователь
+        # сам задаёт сумму и позиции в админке — нам НЕЛЬЗЯ их перезаписывать
+        # данными из PDF. AI в этом режиме работает как извлекатор: распарсит
+        # контрагента / номер / VIN-ы для audit-записи, но инвойс оставит
+        # в руках пользователя.
+        if not skip_comparison:
+            _sync_audit_to_newinvoice(audit, comparison.get('found_cars', {}), extracted)
+        else:
+            logger.info(
+                "InvoiceAudit #%s: skip_ai_comparison=True → "
+                "sync to NewInvoice пропущен, сумма/позиции остаются ручными",
+                audit_id,
+            )
 
     except Exception as e:
         logger.exception(f"Ошибка обработки InvoiceAudit #{audit_id}: {e}")
