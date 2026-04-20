@@ -206,6 +206,10 @@ def _ingest_one(
         'matched_by': match.primary_matched_by,
     }
 
+    # Для обратной синхронизации UNREAD (см. ниже).
+    is_incoming = not msg.is_outgoing
+    gmail_is_unread = 'UNREAD' in (msg.labels or [])
+
     try:
         with transaction.atomic():
             obj, created = ContainerEmail.objects.get_or_create(
@@ -217,11 +221,16 @@ def _ingest_one(
                 # Создаём M2M-связи сразу при создании письма. Идемпотентно:
                 # повторный sync этого gmail_id отфильтруется в начале функции.
                 if match.hits:
+                    # Reverse-sync при создании: INCOMING-письмо без UNREAD в
+                    # Gmail считаем прочитанным и в карточках сразу (его уже
+                    # прочитали где-то ещё в Gmail).
+                    link_is_read = is_incoming and not gmail_is_unread
                     links = [
                         ContainerEmailLink(
                             email=obj,
                             container_id=hit.container_id,
                             matched_by=hit.matched_by,
+                            is_read=link_is_read,
                         )
                         for hit in match.hits
                     ]
@@ -238,12 +247,23 @@ def _ingest_one(
                 if msg.history_id and obj.gmail_history_id != msg.history_id:
                     obj.gmail_history_id = msg.history_id
                     changed_fields.append('gmail_history_id')
-                if set(obj.labels_json or []) != set(msg.labels):
+                labels_changed = set(obj.labels_json or []) != set(msg.labels)
+                if labels_changed:
                     obj.labels_json = list(msg.labels)
                     changed_fields.append('labels_json')
                 if changed_fields:
                     obj.save(update_fields=changed_fields)
                     report.updated += 1
+
+                # Reverse-sync при обновлении: если в Gmail сняли UNREAD
+                # (пользователь прочитал письмо в почте) — протаскиваем
+                # is_read=True на все links. Только INCOMING, чтобы не
+                # ломать «unread»-бейджи для cross-linked OUTGOING-писем,
+                # у которых в Gmail всегда нет UNREAD (они в SENT).
+                if labels_changed and is_incoming and not gmail_is_unread:
+                    ContainerEmailLink.objects.filter(
+                        email_id=obj.pk, is_read=False,
+                    ).update(is_read=True)
     except Exception as exc:
         logger.error('[gmail_sync] Failed to save %s: %s', gmail_id, exc, exc_info=True)
         report.errors.append(f'save({gmail_id}): {exc}')

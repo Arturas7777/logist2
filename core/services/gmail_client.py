@@ -4,8 +4,10 @@
 (Google SDK делает это сам при первом вызове). На вход отдаёт парсинг payload
 в унифицированный dict, удобный для записи в ContainerEmail.
 
-Phase 1: read-only. Для отправки нужен scope gmail.send — добавляется в
-settings.GMAIL_SCOPES + перегенерация refresh_token через
+Scopes:
+  * ``gmail.modify``  — чтение писем + снятие лейбла UNREAD (sync «прочитано»).
+  * ``gmail.send``    — отправка писем из админки.
+При смене scope — перегенерировать refresh_token через
 scripts/get_gmail_refresh_token.py.
 """
 
@@ -210,6 +212,45 @@ class GmailApiClient:
         data = resp.get('data', '')
         return _b64url_decode(data)
 
+    def mark_messages_read(self, gmail_ids: Iterable[str]) -> int:
+        """Снимает лейбл ``UNREAD`` с писем (= отмечает как прочитанные в Gmail).
+
+        Использует ``users.messages.batchModify`` — за один вызов можно
+        обработать до 1000 сообщений. Идемпотентно: если у письма уже нет
+        ``UNREAD``, ничего не происходит.
+
+        Возвращает количество сообщений, успешно отправленных в API
+        (best-effort: если один из чанков упал, остальные всё равно
+        обрабатываются).
+        """
+        ids = [gid for gid in (gmail_ids or []) if gid]
+        if not ids:
+            return 0
+
+        from googleapiclient.errors import HttpError
+
+        total = 0
+        for chunk in _chunked(ids, 1000):
+            try:
+                self.service.users().messages().batchModify(
+                    userId=self._user_email,
+                    body={
+                        'ids': list(chunk),
+                        'removeLabelIds': ['UNREAD'],
+                    },
+                ).execute()
+                total += len(chunk)
+            except HttpError as err:
+                logger.warning(
+                    '[gmail_client] batchModify(removeLabelIds=UNREAD) '
+                    'failed for %d ids: %s', len(chunk), err,
+                )
+            except Exception as exc:  # pragma: no cover
+                logger.exception(
+                    '[gmail_client] batchModify unexpected error: %s', exc,
+                )
+        return total
+
 
 # ----------------------------------------------------------------------
 # payload parsing
@@ -390,3 +431,9 @@ def _b64url_decode(data: str) -> bytes:
         return b''
     padding = '=' * (-len(data) % 4)
     return base64.urlsafe_b64decode(data + padding)
+
+
+def _chunked(seq: list, size: int) -> Iterator[list]:
+    """Режет список на чанки указанного размера — для batch-API с лимитами."""
+    for i in range(0, len(seq), size):
+        yield seq[i:i + size]
