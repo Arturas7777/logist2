@@ -62,6 +62,8 @@ from .emails import (  # noqa: F401
     email_attachment,
     email_mark_read,
     email_mark_container_read,
+    email_mark_car_read,
+    email_mark_autotransport_read,
     email_trigger_sync,
     email_reply_draft,
     email_reply_send,
@@ -69,4 +71,6 @@ from .emails import (  # noqa: F401
     email_groups_list,
     contacts_autocomplete,
     email_container_updates,
+    email_car_updates,
+    email_autotransport_updates,
 )

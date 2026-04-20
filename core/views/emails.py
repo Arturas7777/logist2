@@ -16,7 +16,11 @@ from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from core.models_email import ContainerEmail, ContainerEmailLink, EmailGroup
+from core.models_email import (
+    CarEmailLink,
+    ContainerEmail, ContainerEmailLink,
+    EmailGroup,
+)
 from core.models_contact import Contact, ContactEmail
 from core.services.email_reply_parser import (
     format_quoted_reply,
@@ -150,19 +154,46 @@ def _enqueue_gmail_mark_read(gmail_ids: list[str]) -> None:
 def email_mark_read(request, email_id: int):
     """Отметить письмо прочитанным/непрочитанным.
 
-    Если в POST передан ``container_id`` — правим только эту связь
-    (письмо остаётся непрочитанным в других карточках). Иначе обновляем
-    все связи этого письма.
+    Параметры POST:
+      * ``is_read`` (``1``/``0``) — новое значение.
+      * ``scope`` — ``container`` | ``car`` | ``autotransport``; если не задан,
+        а есть ``container_id`` — работаем в режиме контейнера (back-compat).
+      * ``scope_id`` — id сущности, к ссылкам которой применяем изменение.
+      * ``container_id`` — back-compat для старого фронта контейнеров.
 
-    При ``is_read=True`` + INCOMING — ставим задачу снять ``UNREAD`` в Gmail.
+    Для AutoTransport меняем все ``CarEmailLink`` машин этого рейса.
+    При ``is_read=True`` + INCOMING — ставим задачу снять UNREAD в Gmail.
     """
     email = get_object_or_404(ContainerEmail, pk=email_id)
     new_val = request.POST.get('is_read', '1') == '1'
-    container_id = request.POST.get('container_id')
-    qs = ContainerEmailLink.objects.filter(email_id=email.pk)
-    if container_id:
-        qs = qs.filter(container_id=container_id)
-    updated = qs.update(is_read=new_val)
+    scope = (request.POST.get('scope') or '').strip().lower()
+    scope_id = request.POST.get('scope_id')
+    container_id_back_compat = request.POST.get('container_id')
+
+    updated = 0
+
+    if scope == 'car' and scope_id:
+        updated = CarEmailLink.objects.filter(
+            email_id=email.pk, car_id=scope_id,
+        ).update(is_read=new_val)
+    elif scope == 'autotransport' and scope_id:
+        from core.models import AutoTransport  # локально, чтобы избежать circular
+        try:
+            at = AutoTransport.objects.get(pk=scope_id)
+        except AutoTransport.DoesNotExist:
+            return JsonResponse({'ok': False, 'error': 'AutoTransport not found'}, status=404)
+        car_ids = list(at.cars.values_list('id', flat=True))
+        if car_ids:
+            updated = CarEmailLink.objects.filter(
+                email_id=email.pk, car_id__in=car_ids,
+            ).update(is_read=new_val)
+    else:
+        # default/container — back-compat
+        qs = ContainerEmailLink.objects.filter(email_id=email.pk)
+        container_id = container_id_back_compat or (scope_id if scope == 'container' else None)
+        if container_id:
+            qs = qs.filter(container_id=container_id)
+        updated = qs.update(is_read=new_val)
 
     if (
         new_val
@@ -173,6 +204,81 @@ def email_mark_read(request, email_id: int):
         _enqueue_gmail_mark_read([email.gmail_id])
 
     return JsonResponse({'ok': True, 'is_read': new_val, 'updated': updated})
+
+
+@staff_member_required
+@require_POST
+def email_mark_car_read(request, car_id: int):
+    """Помечает всю переписку машины прочитанной — per-карточка.
+
+    Обновляет только ``CarEmailLink`` этой машины; для INCOMING-писем,
+    ставших прочитанными, триггерит снятие ``UNREAD`` в Gmail.
+    """
+    affected = list(
+        CarEmailLink.objects
+        .filter(car_id=car_id, is_read=False)
+        .values_list('email_id', flat=True)
+    )
+    updated = CarEmailLink.objects.filter(
+        car_id=car_id, is_read=False,
+    ).update(is_read=True)
+
+    if affected:
+        gmail_ids = list(
+            ContainerEmail.objects
+            .filter(
+                pk__in=affected,
+                direction=ContainerEmail.DIRECTION_INCOMING,
+            )
+            .exclude(gmail_id='')
+            .values_list('gmail_id', flat=True)
+            .distinct()
+        )
+        if gmail_ids:
+            _enqueue_gmail_mark_read(gmail_ids)
+
+    return JsonResponse({'ok': True, 'updated': updated})
+
+
+@staff_member_required
+@require_POST
+def email_mark_autotransport_read(request, at_id: int):
+    """Помечает всю переписку рейса прочитанной (через машины рейса).
+
+    Обновляем ``CarEmailLink`` всех машин этого рейса. Триггерит Gmail-sync
+    для затронутых INCOMING-писем.
+    """
+    from core.models import AutoTransport
+    at = get_object_or_404(AutoTransport, pk=at_id)
+    car_ids = list(at.cars.values_list('id', flat=True))
+    if not car_ids:
+        return JsonResponse({'ok': True, 'updated': 0})
+
+    affected = list(
+        CarEmailLink.objects
+        .filter(car_id__in=car_ids, is_read=False)
+        .values_list('email_id', flat=True)
+        .distinct()
+    )
+    updated = CarEmailLink.objects.filter(
+        car_id__in=car_ids, is_read=False,
+    ).update(is_read=True)
+
+    if affected:
+        gmail_ids = list(
+            ContainerEmail.objects
+            .filter(
+                pk__in=affected,
+                direction=ContainerEmail.DIRECTION_INCOMING,
+            )
+            .exclude(gmail_id='')
+            .values_list('gmail_id', flat=True)
+            .distinct()
+        )
+        if gmail_ids:
+            _enqueue_gmail_mark_read(gmail_ids)
+
+    return JsonResponse({'ok': True, 'updated': updated})
 
 
 @staff_member_required
@@ -725,6 +831,130 @@ def email_container_updates(request, container_id: int):
         new_emails = qs.filter(pk__gt=since_id).order_by('-received_at', '-pk')
         # Ограничиваем — если since_id=0 (первый вызов из неоткрытой ленты),
         # не отдаём всё сразу: 50 штук уже покрывают 99% случаев.
+        for email in new_emails[:50]:
+            html = render(
+                request,
+                'admin/core/container/_email_bubble.html',
+                {'email': email},
+            ).content.decode('utf-8')
+            bubbles.append({'id': email.pk, 'html': html})
+
+    return JsonResponse({
+        'ok': True,
+        'latest_id': latest,
+        'total': total,
+        'unread': unread,
+        'bubbles': bubbles,
+    })
+
+
+@staff_member_required
+@require_GET
+def email_car_updates(request, car_id: int):
+    """Polling-эндпоинт для панели переписки в карточке машины.
+
+    Отдаёт новые письма (pk > since_id), общий total и unread именно для
+    этой машины (из ``CarEmailLink``). Строго per-VIN; ни thread, ни
+    ``sent_from_container`` тут не влияют.
+    """
+    try:
+        since_id = int(request.GET.get('since_id', 0))
+    except (TypeError, ValueError):
+        since_id = 0
+    since_id = max(0, since_id)
+
+    from django.db.models import OuterRef, Subquery
+    qs = (
+        ContainerEmail.objects
+        .filter(cars__id=car_id)
+        .annotate(
+            is_read_here=Subquery(
+                CarEmailLink.objects
+                .filter(email=OuterRef('pk'), car_id=car_id)
+                .values('is_read')[:1]
+            )
+        )
+        .distinct()
+    )
+    total = qs.count()
+    unread = CarEmailLink.objects.filter(
+        car_id=car_id, is_read=False,
+    ).count()
+    latest = qs.order_by('-pk').values_list('pk', flat=True).first() or 0
+
+    bubbles = []
+    if latest > since_id:
+        new_emails = qs.filter(pk__gt=since_id).order_by('-received_at', '-pk')
+        for email in new_emails[:50]:
+            html = render(
+                request,
+                'admin/core/container/_email_bubble.html',
+                {'email': email},
+            ).content.decode('utf-8')
+            bubbles.append({'id': email.pk, 'html': html})
+
+    return JsonResponse({
+        'ok': True,
+        'latest_id': latest,
+        'total': total,
+        'unread': unread,
+        'bubbles': bubbles,
+    })
+
+
+@staff_member_required
+@require_GET
+def email_autotransport_updates(request, at_id: int):
+    """Polling для панели переписки рейса — агрегирует по машинам.
+
+    ``is_read_here`` = ~Exists(unread link среди машин рейса). ``unread`` —
+    число УНИКАЛЬНЫХ писем, у которых есть хотя бы один непрочитанный
+    link среди машин рейса (а не сумма непрочитанных линков).
+    """
+    from core.models import AutoTransport
+    from django.db.models import Exists, OuterRef
+
+    at = get_object_or_404(AutoTransport, pk=at_id)
+    car_ids = list(at.cars.values_list('id', flat=True))
+
+    try:
+        since_id = int(request.GET.get('since_id', 0))
+    except (TypeError, ValueError):
+        since_id = 0
+    since_id = max(0, since_id)
+
+    if not car_ids:
+        return JsonResponse({
+            'ok': True, 'latest_id': 0, 'total': 0, 'unread': 0, 'bubbles': [],
+        })
+
+    has_unread = Exists(
+        CarEmailLink.objects.filter(
+            email=OuterRef('pk'),
+            car_id__in=car_ids,
+            is_read=False,
+        )
+    )
+    qs = (
+        ContainerEmail.objects
+        .filter(cars__id__in=car_ids)
+        .annotate(is_read_here=~has_unread)
+        .distinct()
+    )
+    total = qs.count()
+    unread = (
+        ContainerEmail.objects
+        .filter(cars__id__in=car_ids)
+        .annotate(_has_unread=has_unread)
+        .filter(_has_unread=True)
+        .distinct()
+        .count()
+    )
+    latest = qs.order_by('-pk').values_list('pk', flat=True).first() or 0
+
+    bubbles = []
+    if latest > since_id:
+        new_emails = qs.filter(pk__gt=since_id).order_by('-received_at', '-pk')
         for email in new_emails[:50]:
             html = render(
                 request,
