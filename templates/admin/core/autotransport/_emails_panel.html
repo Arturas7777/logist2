@@ -5,7 +5,10 @@
 (см. ``AutoTransport.emails_for_panel``). Per-баббл показываем плашки VIN тех
 машин этого же рейса, которые линкованы к письму.
 
-Read-only на этой итерации: composer/reply не делаем.
+Compose/Reply через общий ``window.CMComposer`` из
+``admin/core/email/_composer.html``, scope=autotransport + scopeId=at.pk.
+Новое письмо/ответ автоматически линкуются ко всем машинам рейса
+(``_link_outgoing_to_cars``), поэтому попадут в карточки отдельных машин.
 URLs: /core/emails/autotransport/<id>/mark-all-read|updates/.
 {% endcomment %}
 {% load static %}
@@ -334,8 +337,8 @@ URLs: /core/emails/autotransport/<id>/mark-all-read|updates/.
     margin-bottom: 8px;
 }
 
-/* Read-only панель: скрываем reply-кнопки. */
-#at-emails-section .cm-bubble-actions { display: none; }
+/* Reply-кнопки управляются общим классом `.cm-panel-with-reply`
+ * из composer-партиала (templates/admin/core/email/_composer.html). */
 
 #at-emails-section .cm-msg-send-status {
     font-size: 11px;
@@ -348,7 +351,7 @@ URLs: /core/emails/autotransport/<id>/mark-all-read|updates/.
 #at-emails-section .cm-msg-send-status[data-status="PENDING"] { background:#fef3c7; color:#92400e; }
 </style>
 
-<div id="at-emails-section"
+<div id="at-emails-section" class="cm-panel-with-reply"
      data-at-id="{{ original.pk }}"
      data-emails-count="{{ emails|length }}">
     <details>
@@ -369,6 +372,10 @@ URLs: /core/emails/autotransport/<id>/mark-all-read|updates/.
             <button type="button" id="cm-at-emails-sync-btn"
                     title="Подтянуть новые письма из Gmail">
                 ↻ Синхронизировать
+            </button>
+            <button type="button" id="cm-at-email-compose-btn"
+                    title="Написать новое письмо по рейсу">
+                ✍ Написать
             </button>
             <span class="cm-emails-status" id="cm-at-emails-status"></span>
         </div>
@@ -395,17 +402,20 @@ URLs: /core/emails/autotransport/<id>/mark-all-read|updates/.
     </details>
 </div>
 
+{% include "admin/core/email/_composer.html" %}
+
 <script>
 (function() {
     var section = document.getElementById('at-emails-section');
     if (!section) return;
 
-    var details = section.querySelector(':scope > details');
-    var list    = document.getElementById('cm-at-emails-list');
-    var syncBtn = document.getElementById('cm-at-emails-sync-btn');
-    var status  = document.getElementById('cm-at-emails-status');
-    var badge   = document.getElementById('cm-at-emails-badge');
-    var atId    = section.dataset.atId;
+    var details    = section.querySelector(':scope > details');
+    var list       = document.getElementById('cm-at-emails-list');
+    var syncBtn    = document.getElementById('cm-at-emails-sync-btn');
+    var composeBtn = document.getElementById('cm-at-email-compose-btn');
+    var status     = document.getElementById('cm-at-emails-status');
+    var badge      = document.getElementById('cm-at-emails-badge');
+    var atId       = section.dataset.atId;
 
     function countUnread() {
         if (!list) return 0;
@@ -486,6 +496,56 @@ URLs: /core/emails/autotransport/<id>/mark-all-read|updates/.
                 syncBtn.disabled = false;
                 syncBtn.textContent = '↻ Синхронизировать';
             });
+        });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Composer: новое письмо и ответ
+    // ═══════════════════════════════════════════════════════════════════
+    function insertBubble(html) {
+        if (!list || !html) return;
+        var tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        var node = tmp.firstElementChild;
+        if (node) {
+            list.insertBefore(node, list.firstChild);
+            refreshBadge();
+        }
+    }
+
+    if (composeBtn) {
+        composeBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (!window.CMComposer) return;
+            var atNumber = '{{ original.number|default:""|escapejs }}';
+            var defaultSubj = 'AutoTransport ' + (atNumber || ('#{{ original.pk }}'));
+            window.CMComposer.open({
+                mode: 'compose',
+                scope: 'autotransport',
+                scopeId: atId,
+                to: '',
+                subject: defaultSubj,
+                body: '',
+                maxMb: 25,
+                onSuccess: function(data) { insertBubble(data && data.html); },
+            });
+        });
+    }
+
+    if (list) {
+        list.addEventListener('click', function(e) {
+            var btn = e.target.closest('.cm-reply-btn');
+            if (!btn) return;
+            e.preventDefault(); e.stopPropagation();
+            var emailId = btn.dataset.emailId;
+            if (!emailId || !window.CMComposer) return;
+            btn.disabled = true; btn.textContent = '…загрузка';
+            window.CMComposer.openReplyFor(emailId, 'autotransport', atId, function(data) {
+                insertBubble(data && data.html);
+            });
+            setTimeout(function() {
+                btn.disabled = false; btn.textContent = '↩ Ответить';
+            }, 400);
         });
     }
 
