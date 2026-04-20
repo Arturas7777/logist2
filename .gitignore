@@ -28,6 +28,7 @@ media/
 .env
 .env.local
 .env.production
+.env.bak*
 
 # Credentials (passwords file)
 CREDENTIALS.md
