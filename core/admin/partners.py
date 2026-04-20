@@ -1498,16 +1498,38 @@ class AutoTransportAdmin(admin.ModelAdmin):
         return qs
 
     def mark_delivered(self, request, queryset):
-        """Массовое присвоение статуса 'Доставлен'"""
+        """Массовое присвоение статуса 'Доставлен'.
+
+        Ошибки по отдельным автовозам (например, недопустимый переход
+        статуса из CANCELLED/DRAFT) не должны ронять весь запрос: собираем
+        их в messages, продолжаем обрабатывать остальные.
+        """
+        from django.core.exceptions import ValidationError
+
         updated = 0
+        failed = []
         for at in queryset.exclude(status='DELIVERED'):
-            at.status = 'DELIVERED'
-            if not at.actual_delivery_date:
-                at.actual_delivery_date = timezone.now().date()
-            at._transfer_date_override = at.actual_delivery_date or timezone.now().date()
-            at.save()
-            updated += 1
-        messages.success(request, f'Статус "Доставлен" присвоен {updated} автовозам.')
+            try:
+                at.status = 'DELIVERED'
+                if not at.actual_delivery_date:
+                    at.actual_delivery_date = timezone.now().date()
+                at._transfer_date_override = at.actual_delivery_date or timezone.now().date()
+                at.save()
+                updated += 1
+            except ValidationError as exc:
+                failed.append(f'{at.number}: {"; ".join(exc.messages)}')
+            except Exception as exc:  # noqa: BLE001
+                logger.exception('mark_delivered failed for AutoTransport %s', at.pk)
+                failed.append(f'{at.number}: {exc}')
+
+        if updated:
+            messages.success(request, f'Статус "Доставлен" присвоен {updated} автовозам.')
+        if failed:
+            messages.warning(
+                request,
+                f'Не удалось обновить {len(failed)}: ' + '; '.join(failed[:10])
+                + ('…' if len(failed) > 10 else '')
+            )
     mark_delivered.short_description = '🚛 Присвоить статус "Доставлен"'
 
     def get_urls(self):

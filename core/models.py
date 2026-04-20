@@ -1595,11 +1595,14 @@ class AutoTransport(models.Model):
     def __str__(self):
         return f"Автовоз {self.number} - {self.carrier.name}"
 
+    # LOADED → DELIVERED разрешён намеренно: админы часто отмечают
+    # «доставлен» пакетным действием, минуя промежуточный IN_TRANSIT
+    # (его в реальном процессе не всегда фиксируют в системе).
     ALLOWED_TRANSITIONS = {
         'DRAFT':      {'FORMED', 'CANCELLED'},
         'FORMED':     {'LOADED', 'DRAFT', 'CANCELLED'},
-        'LOADED':     {'IN_TRANSIT', 'FORMED', 'CANCELLED'},
-        'IN_TRANSIT': {'DELIVERED', 'CANCELLED'},
+        'LOADED':     {'IN_TRANSIT', 'DELIVERED', 'FORMED', 'CANCELLED'},
+        'IN_TRANSIT': {'DELIVERED', 'LOADED', 'CANCELLED'},
         'DELIVERED':  set(),
         'CANCELLED':  {'DRAFT'},
     }
