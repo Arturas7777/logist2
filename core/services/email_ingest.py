@@ -21,7 +21,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from core.services.email_matcher import build_booking_index, match_email_to_container
+from core.services.email_matcher import build_booking_index, match_email_to_containers
 from core.services.gmail_client import (
     GmailApiClient,
     GmailHistoryExpired,
@@ -161,7 +161,7 @@ def _ingest_one(
     booking_index: dict[str, int],
     report: SyncReport,
 ) -> None:
-    from core.models_email import ContainerEmail
+    from core.models_email import ContainerEmail, ContainerEmailLink
 
     if ContainerEmail.objects.filter(gmail_id=gmail_id).exists():
         return
@@ -175,7 +175,7 @@ def _ingest_one(
 
     report.processed += 1
 
-    match = match_email_to_container(msg, booking_index=booking_index)
+    match = match_email_to_containers(msg, booking_index=booking_index)
 
     fallback_message_id = msg.message_id or f'gmail:{msg.gmail_id}'
 
@@ -184,7 +184,6 @@ def _ingest_one(
     report.attachments_skipped += skipped
 
     defaults = {
-        'container_id': match.container_id,
         'thread_id': msg.thread_id,
         'in_reply_to': msg.in_reply_to,
         'references': msg.references,
@@ -204,7 +203,7 @@ def _ingest_one(
         'gmail_history_id': msg.history_id,
         'labels_json': list(msg.labels),
         'attachments_json': attachments_meta,
-        'matched_by': match.matched_by,
+        'matched_by': match.primary_matched_by,
     }
 
     try:
@@ -215,9 +214,23 @@ def _ingest_one(
             )
             if created:
                 report.created += 1
+                # Создаём M2M-связи сразу при создании письма. Идемпотентно:
+                # повторный sync этого gmail_id отфильтруется в начале функции.
+                if match.hits:
+                    links = [
+                        ContainerEmailLink(
+                            email=obj,
+                            container_id=hit.container_id,
+                            matched_by=hit.matched_by,
+                        )
+                        for hit in match.hits
+                    ]
+                    ContainerEmailLink.objects.bulk_create(
+                        links, ignore_conflicts=True,
+                    )
             else:
-                # Идемпотентно обновим gmail_id/labels, но не трогаем container,
-                # если пользователь уже вручную перепривязал письмо.
+                # Идемпотентно обновим gmail_id/labels. Связи с контейнерами
+                # не пересчитываем: пользователь мог вручную перепривязать.
                 changed_fields: list[str] = []
                 if not obj.gmail_id and msg.gmail_id:
                     obj.gmail_id = msg.gmail_id

@@ -11,7 +11,7 @@ from core.models import Container, Line
 from core.models_email import ContainerEmail
 from core.services.email_matcher import (
     build_booking_index,
-    match_email_to_container,
+    match_email_to_containers,
 )
 from core.services.gmail_client import ParsedMessage, parse_gmail_message
 
@@ -68,24 +68,43 @@ class EmailMatcherTest(TestCase):
 
     def test_match_by_container_number_in_subject(self):
         msg = _make_parsed(subject='Re: MSKU1234567 документы')
-        res = match_email_to_container(msg)
-        self.assertEqual(res.container_id, self.container_a.id)
-        self.assertEqual(res.matched_by, ContainerEmail.MATCHED_BY_CONTAINER_NUMBER)
+        res = match_email_to_containers(msg)
+        self.assertEqual(res.primary_container_id, self.container_a.id)
+        self.assertEqual(res.primary_matched_by, ContainerEmail.MATCHED_BY_CONTAINER_NUMBER)
+        self.assertEqual(
+            sorted(h.container_id for h in res.hits),
+            [self.container_a.id],
+        )
 
     def test_match_by_container_number_in_body(self):
         msg = _make_parsed(
             subject='ETA update',
             body_text='Dear customer, container CMAU7654321 is delayed by 2 days.',
         )
-        res = match_email_to_container(msg)
-        self.assertEqual(res.container_id, self.container_b.id)
-        self.assertEqual(res.matched_by, ContainerEmail.MATCHED_BY_CONTAINER_NUMBER)
+        res = match_email_to_containers(msg)
+        self.assertEqual(res.primary_container_id, self.container_b.id)
+        self.assertEqual(res.primary_matched_by, ContainerEmail.MATCHED_BY_CONTAINER_NUMBER)
+
+    def test_match_multiple_container_numbers(self):
+        """Если в теме упомянуты оба контейнера — должны вернуться оба."""
+        msg = _make_parsed(
+            subject='Containers MSKU1234567 , CMAU7654321 status update',
+        )
+        res = match_email_to_containers(msg)
+        ids = sorted(h.container_id for h in res.hits)
+        self.assertEqual(ids, sorted([self.container_a.id, self.container_b.id]))
+        for hit in res.hits:
+            self.assertEqual(
+                hit.matched_by,
+                ContainerEmail.MATCHED_BY_CONTAINER_NUMBER,
+            )
 
     def test_no_match_when_container_number_not_in_db(self):
         msg = _make_parsed(subject='TCLU9999999 заметка')
-        res = match_email_to_container(msg)
-        self.assertIsNone(res.container_id)
-        self.assertEqual(res.matched_by, ContainerEmail.MATCHED_BY_UNMATCHED)
+        res = match_email_to_containers(msg)
+        self.assertIsNone(res.primary_container_id)
+        self.assertEqual(res.primary_matched_by, ContainerEmail.MATCHED_BY_UNMATCHED)
+        self.assertFalse(res.is_matched)
 
     # ------------------------------------------------------------------
     # Букинг
@@ -96,28 +115,27 @@ class EmailMatcherTest(TestCase):
             subject='Booking ABC12345 confirmed',
             body_text='Your booking ABC12345 is ready',
         )
-        res = match_email_to_container(msg)
-        self.assertEqual(res.container_id, self.container_a.id)
-        self.assertEqual(res.matched_by, ContainerEmail.MATCHED_BY_BOOKING_NUMBER)
+        res = match_email_to_containers(msg)
+        self.assertEqual(res.primary_container_id, self.container_a.id)
+        self.assertEqual(res.primary_matched_by, ContainerEmail.MATCHED_BY_BOOKING_NUMBER)
 
     def test_booking_does_not_match_substring(self):
         """ABC12345 не должен срабатывать на ABC123456."""
         msg = _make_parsed(subject='About ABC123456 something')
-        res = match_email_to_container(msg)
-        self.assertIsNone(res.container_id)
+        res = match_email_to_containers(msg)
+        self.assertIsNone(res.primary_container_id)
 
     def test_booking_is_case_insensitive(self):
         msg = _make_parsed(body_text='Referenced: abc12345')
-        res = match_email_to_container(msg)
-        self.assertEqual(res.container_id, self.container_a.id)
+        res = match_email_to_containers(msg)
+        self.assertEqual(res.primary_container_id, self.container_a.id)
 
     # ------------------------------------------------------------------
     # Тред / In-Reply-To
     # ------------------------------------------------------------------
 
     def test_match_by_thread_id(self):
-        ContainerEmail.objects.create(
-            container=self.container_a,
+        parent = ContainerEmail.objects.create(
             message_id='<first@example.com>',
             thread_id='thread-123',
             direction=ContainerEmail.DIRECTION_INCOMING,
@@ -126,17 +144,17 @@ class EmailMatcherTest(TestCase):
             received_at=datetime.now(tz=dt_timezone.utc),
             matched_by=ContainerEmail.MATCHED_BY_CONTAINER_NUMBER,
         )
+        parent.containers.add(self.container_a)
         msg = _make_parsed(
             thread_id='thread-123',
             subject='Re: no container number here',
         )
-        res = match_email_to_container(msg)
-        self.assertEqual(res.container_id, self.container_a.id)
-        self.assertEqual(res.matched_by, ContainerEmail.MATCHED_BY_THREAD)
+        res = match_email_to_containers(msg)
+        self.assertEqual(res.primary_container_id, self.container_a.id)
+        self.assertEqual(res.primary_matched_by, ContainerEmail.MATCHED_BY_THREAD)
 
     def test_match_by_in_reply_to(self):
-        ContainerEmail.objects.create(
-            container=self.container_b,
+        parent = ContainerEmail.objects.create(
             message_id='<parent@example.com>',
             thread_id='different-thread',
             direction=ContainerEmail.DIRECTION_INCOMING,
@@ -145,14 +163,15 @@ class EmailMatcherTest(TestCase):
             received_at=datetime.now(tz=dt_timezone.utc),
             matched_by=ContainerEmail.MATCHED_BY_CONTAINER_NUMBER,
         )
+        parent.containers.add(self.container_b)
         msg = _make_parsed(
             thread_id='fresh-thread',
             in_reply_to='<parent@example.com>',
             subject='Re: untracked',
         )
-        res = match_email_to_container(msg)
-        self.assertEqual(res.container_id, self.container_b.id)
-        self.assertEqual(res.matched_by, ContainerEmail.MATCHED_BY_THREAD)
+        res = match_email_to_containers(msg)
+        self.assertEqual(res.primary_container_id, self.container_b.id)
+        self.assertEqual(res.primary_matched_by, ContainerEmail.MATCHED_BY_THREAD)
 
     # ------------------------------------------------------------------
     # Fallback: UNMATCHED
@@ -160,9 +179,9 @@ class EmailMatcherTest(TestCase):
 
     def test_unmatched_when_nothing_found(self):
         msg = _make_parsed(subject='General question', body_text='Hi, how are you?')
-        res = match_email_to_container(msg)
-        self.assertIsNone(res.container_id)
-        self.assertEqual(res.matched_by, ContainerEmail.MATCHED_BY_UNMATCHED)
+        res = match_email_to_containers(msg)
+        self.assertIsNone(res.primary_container_id)
+        self.assertEqual(res.primary_matched_by, ContainerEmail.MATCHED_BY_UNMATCHED)
 
     # ------------------------------------------------------------------
     # Booking index

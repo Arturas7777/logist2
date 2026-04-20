@@ -31,7 +31,7 @@ from django.contrib.auth.models import AbstractBaseUser
 from django.core.files.uploadedfile import UploadedFile
 from django.utils import timezone
 
-from core.models_email import ContainerEmail
+from core.models_email import ContainerEmail, ContainerEmailLink
 from core.models_contact import Contact, ContactEmail
 from core.services.email_reply_parser import (
     compose_reply_html,
@@ -339,8 +339,18 @@ def reply_to_email(
     subject: str = '',
     body_text: str = '',
     attachments: Iterable[UploadedFile] | None = None,
+    origin_container=None,
 ) -> ContainerEmail:
-    """Отвечает на существующее письмо. Кладёт новое в тот же Gmail thread."""
+    """Отвечает на существующее письмо. Кладёт новое в тот же Gmail thread.
+
+    ``origin_container`` — контейнер, из карточки которого пользователь нажал
+    «Ответить». Он пойдёт в ``sent_from_container`` и будет гарантированно
+    привязан к исходящему. Если не передан — берём из parent_email.containers
+    (первый связанный) как fallback.
+    """
+
+    if origin_container is None:
+        origin_container = parent_email.containers.first()
 
     to_list = _parse_addrs(to)
     cc_list = _parse_addrs(cc)
@@ -387,7 +397,7 @@ def reply_to_email(
     return _send_and_persist(
         mime=mime,
         thread_id=parent_email.thread_id or None,
-        container=parent_email.container,
+        container=origin_container,
         parent_email=parent_email,
         user=user,
         local_message_id=local_message_id,
@@ -402,6 +412,7 @@ def reply_to_email(
         in_reply_to=parent_email.message_id or '',
         references=references_hdr,
         raw_recipient_pairs=raw_pairs,
+        source_text_for_matching=f'{subject}\n{body_text_final}',
     )
 
 
@@ -471,6 +482,7 @@ def compose_new_email(
         in_reply_to='',
         references='',
         raw_recipient_pairs=raw_pairs,
+        source_text_for_matching=f'{subject}\n{body_text_final}',
     )
 
 
@@ -498,6 +510,7 @@ def _send_and_persist(
     in_reply_to,
     references,
     raw_recipient_pairs: list[tuple[str, str]] | None = None,
+    source_text_for_matching: str = '',
 ) -> ContainerEmail:
     now = timezone.now()
 
@@ -512,7 +525,7 @@ def _send_and_persist(
         # Сохраняем «неудачную» запись — чтобы показать в UI с кнопкой «Повторить».
         failed_id = local_message_id or f'<failed-{uuid.uuid4().hex}@logist2.local>'
         email = ContainerEmail.objects.create(
-            container=container,
+            sent_from_container=container,
             message_id=failed_id,
             thread_id=getattr(parent_email, 'thread_id', '') if parent_email else '',
             in_reply_to=in_reply_to,
@@ -545,6 +558,13 @@ def _send_and_persist(
             send_status=ContainerEmail.SEND_STATUS_FAILED,
             send_error=str(exc)[:2000],
         )
+        _link_outgoing_to_containers(
+            email=email,
+            origin_container=container,
+            parent_email=parent_email,
+            source_text=source_text_for_matching,
+            origin_matched_by=matched_by,
+        )
         raise
 
     gmail_id = response.get('id', '') or ''
@@ -556,7 +576,7 @@ def _send_and_persist(
     )
 
     email = ContainerEmail.objects.create(
-        container=container,
+        sent_from_container=container,
         message_id=local_message_id,
         thread_id=gmail_thread_id,
         in_reply_to=in_reply_to,
@@ -581,6 +601,14 @@ def _send_and_persist(
         send_error='',
     )
 
+    _link_outgoing_to_containers(
+        email=email,
+        origin_container=container,
+        parent_email=parent_email,
+        source_text=source_text_for_matching,
+        origin_matched_by=matched_by,
+    )
+
     logger.info(
         '[email_compose] outgoing saved: pk=%s gmail_id=%s thread=%s container=%s',
         email.pk, gmail_id, gmail_thread_id,
@@ -593,3 +621,64 @@ def _send_and_persist(
         _autocreate_orphan_contacts(raw_recipient_pairs)
 
     return email
+
+
+def _link_outgoing_to_containers(
+    *,
+    email: ContainerEmail,
+    origin_container,
+    parent_email: ContainerEmail | None,
+    source_text: str,
+    origin_matched_by: str,
+) -> None:
+    """Линкует исходящее письмо к контейнерам через ContainerEmailLink.
+
+    Набор контейнеров = {origin} ∪ {родительского треда} ∪ {найденные в
+    subject/body номера контейнеров / букинги}. Так если юзер написал письмо
+    из карточки MSKU1 с темой "Containers MSKU1, MRSU2" — оба контейнера
+    увидят переписку.
+    """
+    from core.services.email_matcher import (
+        _match_by_bookings,  # noqa: PLC2701 — свой же пакет
+        _match_by_container_numbers,  # noqa: PLC2701
+        build_booking_index,
+    )
+
+    seen: set[int] = set()
+    links: list[ContainerEmailLink] = []
+
+    def _add(cid: int | None, matched_by: str) -> None:
+        if not cid or cid in seen:
+            return
+        seen.add(cid)
+        links.append(ContainerEmailLink(
+            email=email,
+            container_id=cid,
+            matched_by=matched_by,
+        ))
+
+    # 1) Карточка-источник (всегда)
+    if origin_container is not None and getattr(origin_container, 'pk', None):
+        _add(origin_container.pk, origin_matched_by or ContainerEmail.MATCHED_BY_MANUAL)
+
+    # 2) Все контейнеры родительского треда
+    if parent_email is not None and parent_email.pk:
+        parent_cids = list(
+            parent_email.containers.values_list('id', flat=True)
+        )
+        for cid in parent_cids:
+            _add(cid, ContainerEmail.MATCHED_BY_THREAD)
+
+    # 3) Упомянутые в тексте (subject + body) контейнеры и букинги
+    if source_text:
+        try:
+            for cid in _match_by_container_numbers(source_text):
+                _add(cid, ContainerEmail.MATCHED_BY_CONTAINER_NUMBER)
+            booking_index = build_booking_index()
+            for cid in _match_by_bookings(source_text, booking_index):
+                _add(cid, ContainerEmail.MATCHED_BY_BOOKING_NUMBER)
+        except Exception as exc:  # pragma: no cover — защитная обёртка
+            logger.warning('[email_compose] link-by-text failed: %s', exc)
+
+    if links:
+        ContainerEmailLink.objects.bulk_create(links, ignore_conflicts=True)
