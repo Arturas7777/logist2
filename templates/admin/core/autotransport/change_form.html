@@ -270,6 +270,10 @@
 
 </form>
 
+{% if original and original.pk %}
+{% include "admin/core/autotransport/_emails_panel.html" %}
+{% endif %}
+
 <script>
 // КРИТИЧЕСКИ ВАЖНО: Select2 CDN требует window.jQuery
 // Django admin использует django.jQuery - создаем мост

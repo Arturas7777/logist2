@@ -1,0 +1,507 @@
+{% comment %}
+Блок «Переписка» для карточки автовоза — агрегация по машинам рейса.
+
+Письма видны в карточке, если хотя бы одна машина рейса сопоставлена по VIN
+(см. ``AutoTransport.emails_for_panel``). Per-баббл показываем плашки VIN тех
+машин этого же рейса, которые линкованы к письму.
+
+Read-only на этой итерации: composer/reply не делаем.
+URLs: /core/emails/autotransport/<id>/mark-all-read|updates/.
+{% endcomment %}
+{% load static %}
+{% load email_extras %}
+
+{% if original and original.pk %}
+{% with emails=original.emails_for_panel %}
+
+<style>
+/* ═══ Каркас секции ═══ */
+#at-emails-section {
+    clear: both !important;
+    width: 100% !important;
+    max-width: none !important;
+    box-sizing: border-box;
+    margin-top: 16px;
+}
+
+#at-emails-section .cm-email-badge {
+    background: #9ca3af;
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+#at-emails-section .cm-email-badge.has-unread { background: #2563eb; }
+#at-emails-section .cm-emails-body { padding: 0; }
+
+#at-emails-section .cm-emails-actions {
+    padding: 10px 15px;
+    border-bottom: 1px solid #e5e7eb;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: #fafafa;
+    flex-wrap: wrap;
+}
+#at-emails-section .cm-emails-actions button {
+    padding: 4px 10px;
+    font-size: 12px;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+}
+#at-emails-section .cm-emails-actions button:hover {
+    background: #f0f8ff;
+    border-color: #79aec8;
+}
+#at-emails-section .cm-emails-actions button:disabled {
+    opacity: 0.5;
+    cursor: wait;
+}
+#at-emails-section .cm-emails-status { font-size: 12px; color: #666; margin-left: auto; }
+
+#at-emails-section .cm-chat {
+    padding: 14px 12px 20px;
+    background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+    max-height: 720px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#at-emails-section .cm-chat-date {
+    align-self: center;
+    margin: 12px 0 6px;
+    padding: 3px 12px;
+    background: rgba(100, 116, 139, 0.12);
+    color: #475569;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 10px;
+    letter-spacing: 0.02em;
+    text-transform: capitalize;
+}
+
+#at-emails-section .cm-msg {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    max-width: 82%;
+}
+#at-emails-section .cm-msg.cm-in  { align-self: flex-start; }
+#at-emails-section .cm-msg.cm-out { align-self: flex-end; flex-direction: row-reverse; }
+
+#at-emails-section .cm-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    flex-shrink: 0;
+    user-select: none;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    letter-spacing: 0.02em;
+}
+
+#at-emails-section .cm-msg-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+}
+#at-emails-section .cm-msg.cm-out .cm-msg-col { align-items: flex-end; }
+
+#at-emails-section .cm-msg-header {
+    padding: 0 10px 3px;
+    font-size: 13px;
+    color: #64748b;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    max-width: 100%;
+}
+#at-emails-section .cm-msg-header .cm-msg-from {
+    font-weight: 600;
+    color: #334155;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 300px;
+}
+#at-emails-section .cm-msg-header .cm-msg-time { color: #94a3b8; font-size: 12px; }
+#at-emails-section .cm-msg-header .cm-msg-matched {
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: #e2e8f0;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+#at-emails-section .cm-msg-header .cm-msg-matched[data-kind="CONTAINER_NUMBER"] { background:#dcfce7; color:#166534; }
+#at-emails-section .cm-msg-header .cm-msg-matched[data-kind="BOOKING_NUMBER"]   { background:#dbeafe; color:#1e40af; }
+#at-emails-section .cm-msg-header .cm-msg-matched[data-kind="THREAD"]           { background:#cffafe; color:#155e75; }
+#at-emails-section .cm-msg-header .cm-msg-matched[data-kind="VIN"]              { background:#fef3c7; color:#92400e; }
+#at-emails-section .cm-msg-header .cm-msg-matched[data-kind="MANUAL"]           { background:#ede9fe; color:#5b21b6; }
+#at-emails-section .cm-msg-header .cm-msg-matched[data-kind="UNMATCHED"]        { background:#fee2e2; color:#991b1b; }
+
+#at-emails-section .cm-bubble {
+    padding: 10px 14px;
+    border-radius: 14px;
+    font-size: 15px;
+    line-height: 1.5;
+    color: #111827;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.03);
+    overflow-wrap: break-word;
+    word-break: break-word;
+    max-width: 100%;
+    position: relative;
+}
+#at-emails-section .cm-msg.cm-in  .cm-bubble { border-top-left-radius: 4px; }
+#at-emails-section .cm-msg.cm-out .cm-bubble {
+    background: #dbeafe;
+    border-color: #bfdbfe;
+    color: #1e3a8a;
+    border-top-right-radius: 4px;
+}
+#at-emails-section .cm-msg[data-unread="1"] .cm-bubble {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 1px #3b82f6;
+}
+
+#at-emails-section .cm-subj {
+    font-weight: 600;
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px dashed rgba(100,116,139,0.2);
+    color: inherit;
+    font-size: 14px;
+}
+
+/* Плашки VIN — ссылки на карточки машин рейса, линкованных к письму. */
+#at-emails-section .cm-car-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0 0 6px;
+}
+#at-emails-section .cm-car-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    background: rgba(59, 130, 246, 0.10);
+    border: 1px solid rgba(59, 130, 246, 0.35);
+    border-radius: 8px;
+    font-size: 11px;
+    color: #1e40af;
+    text-decoration: none;
+    letter-spacing: 0.02em;
+}
+#at-emails-section .cm-car-tag:hover {
+    background: rgba(59, 130, 246, 0.22);
+    color: #1e3a8a;
+}
+
+#at-emails-section .cm-body { white-space: pre-wrap; word-break: break-word; }
+#at-emails-section .cm-body a { color: inherit; text-decoration: underline; }
+
+#at-emails-section .cm-quote-details { margin-top: 6px; }
+#at-emails-section .cm-quote-details > summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: #64748b;
+    user-select: none;
+    padding: 2px 6px;
+    background: rgba(100,116,139,0.08);
+    border-radius: 4px;
+    display: inline-block;
+    list-style: none;
+}
+#at-emails-section .cm-quote-details > summary::-webkit-details-marker { display: none; }
+#at-emails-section .cm-quote-details > summary::before { content: '▸ '; }
+#at-emails-section .cm-quote-details[open] > summary::before { content: '▾ '; }
+#at-emails-section .cm-quote-body {
+    margin-top: 6px;
+    padding: 8px 10px;
+    background: rgba(148, 163, 184, 0.08);
+    border-left: 3px solid #cbd5e1;
+    border-radius: 4px;
+    color: #64748b;
+    font-size: 13px;
+    white-space: pre-wrap;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+#at-emails-section .cm-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+}
+#at-emails-section .cm-attachment {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: rgba(255,255,255,0.7);
+    border: 1px solid rgba(100,116,139,0.25);
+    border-radius: 10px;
+    font-size: 12px;
+    color: #334155;
+    text-decoration: none;
+    max-width: 260px;
+}
+#at-emails-section .cm-attachment:hover {
+    background: #fff;
+    border-color: #3b82f6;
+    color: #1e40af;
+}
+#at-emails-section .cm-attachment .cm-att-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
+}
+#at-emails-section .cm-attachment .cm-att-size { color: #94a3b8; font-size: 11px; }
+#at-emails-section .cm-attachment.cm-att-missing {
+    opacity: 0.6;
+    cursor: not-allowed;
+    color: #9ca3af;
+}
+
+#at-emails-section .cm-no-emails {
+    padding: 36px 20px;
+    text-align: center;
+    color: #94a3b8;
+    font-size: 13px;
+    background: #f8fafc;
+}
+#at-emails-section .cm-no-emails .cm-no-emails-icon {
+    font-size: 36px;
+    opacity: 0.5;
+    display: block;
+    margin-bottom: 8px;
+}
+
+/* Read-only панель: скрываем reply-кнопки. */
+#at-emails-section .cm-bubble-actions { display: none; }
+
+#at-emails-section .cm-msg-send-status {
+    font-size: 11px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    letter-spacing: 0.02em;
+}
+#at-emails-section .cm-msg-send-status[data-status="SENT"]    { background:#dcfce7; color:#166534; }
+#at-emails-section .cm-msg-send-status[data-status="FAILED"]  { background:#fee2e2; color:#991b1b; }
+#at-emails-section .cm-msg-send-status[data-status="PENDING"] { background:#fef3c7; color:#92400e; }
+</style>
+
+<fieldset id="at-emails-section" class="module aligned collapse"
+          data-at-id="{{ original.pk }}"
+          data-emails-count="{{ emails|length }}">
+    <details>
+        <summary>
+            <h2 class="fieldset-heading">
+                Переписка по рейсу
+                <span class="cm-email-badge" id="cm-at-emails-badge"
+                      title="Всего писем: {{ emails|length }}">
+                    {{ emails|length }}
+                </span>
+            </h2>
+        </summary>
+
+        <div class="cm-emails-body" id="cm-at-emails-body">
+        <div class="cm-emails-actions">
+            <button type="button" id="cm-at-emails-sync-btn"
+                    title="Подтянуть новые письма из Gmail">
+                ↻ Синхронизировать
+            </button>
+            <span class="cm-emails-status" id="cm-at-emails-status"></span>
+        </div>
+
+        {% if not emails %}
+            <div class="cm-no-emails">
+                <span class="cm-no-emails-icon">📭</span>
+                <div>Писем по рейсу пока нет.</div>
+                <div style="font-size:11px;margin-top:4px;">
+                    Письма агрегируются автоматически по VIN машин, включённых в рейс.
+                </div>
+            </div>
+        {% else %}
+            <div class="cm-chat" id="cm-at-emails-list">
+                {% for email in emails %}
+                    {% ifchanged email.received_at|date:"Y-m-d" %}
+                        <div class="cm-chat-date">{{ email.received_at|date:"l, d F Y" }}</div>
+                    {% endifchanged %}
+                    {% include "admin/core/container/_email_bubble.html" with email=email autotransport_car_ids=selected_car_ids %}
+                {% endfor %}
+            </div>
+        {% endif %}
+        </div>
+    </details>
+</fieldset>
+
+<script>
+(function() {
+    var section = document.getElementById('at-emails-section');
+    if (!section) return;
+
+    var details = section.querySelector(':scope > details');
+    var list    = document.getElementById('cm-at-emails-list');
+    var syncBtn = document.getElementById('cm-at-emails-sync-btn');
+    var status  = document.getElementById('cm-at-emails-status');
+    var badge   = document.getElementById('cm-at-emails-badge');
+    var atId    = section.dataset.atId;
+
+    function countUnread() {
+        if (!list) return 0;
+        return list.querySelectorAll('.cm-msg[data-unread="1"]').length;
+    }
+    function totalMsgs() {
+        if (!list) return 0;
+        return list.querySelectorAll('.cm-msg').length;
+    }
+    function refreshBadge() {
+        if (!badge) return;
+        var unread = countUnread();
+        var total  = totalMsgs();
+        if (unread > 0) {
+            badge.classList.add('has-unread');
+            badge.textContent = unread + '/' + total;
+            badge.title = unread + ' непрочитанных из ' + total;
+        } else {
+            badge.classList.remove('has-unread');
+            badge.textContent = total;
+            badge.title = 'Всего писем: ' + total;
+        }
+    }
+    refreshBadge();
+
+    var csrfToken = (document.querySelector('[name=csrfmiddlewaretoken]') || {}).value || '';
+
+    function markAllRead() {
+        var unreadEls = list ? list.querySelectorAll('.cm-msg[data-unread="1"]') : [];
+        if (!unreadEls.length) return;
+        fetch('/core/emails/autotransport/' + atId + '/mark-all-read/', {
+            method: 'POST',
+            headers: {'X-CSRFToken': csrfToken},
+        }).then(function() {
+            unreadEls.forEach(function(el) { el.setAttribute('data-unread', '0'); });
+            refreshBadge();
+        }).catch(function() {});
+    }
+
+    var firstOpen = true;
+    if (details) {
+        details.addEventListener('toggle', function() {
+            if (!details.open) return;
+            if (firstOpen) {
+                firstOpen = false;
+                if (list) list.scrollTop = 0;
+                markAllRead();
+            }
+        });
+    }
+
+    if (syncBtn) {
+        syncBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            syncBtn.disabled = true;
+            syncBtn.textContent = '…синхронизация';
+            status.textContent = '';
+            fetch('/core/emails/sync/', {
+                method: 'POST',
+                headers: {'X-CSRFToken': csrfToken},
+            })
+            .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+            .then(function(res) {
+                if (res.ok && res.data.ok) {
+                    status.style.color = '#16a34a';
+                    status.textContent = '✓ Задача поставлена в очередь. Страница обновится через 3 сек…';
+                    setTimeout(function() { location.reload(); }, 3000);
+                } else {
+                    status.style.color = '#b91c1c';
+                    status.textContent = '✗ ' + (res.data && res.data.error || 'Ошибка');
+                    syncBtn.disabled = false;
+                    syncBtn.textContent = '↻ Синхронизировать';
+                }
+            })
+            .catch(function(err) {
+                status.style.color = '#b91c1c';
+                status.textContent = '✗ ' + err;
+                syncBtn.disabled = false;
+                syncBtn.textContent = '↻ Синхронизировать';
+            });
+        });
+    }
+
+    (function setupEmailPolling() {
+        if (!atId) return;
+        var POLL_INTERVAL_MS = 30000;
+        var inFlight = false;
+
+        function latestIdInDom() {
+            if (!list) return 0;
+            var maxId = 0;
+            list.querySelectorAll('.cm-msg[data-email-id]').forEach(function(el) {
+                var id = parseInt(el.getAttribute('data-email-id'), 10) || 0;
+                if (id > maxId) maxId = id;
+            });
+            return maxId;
+        }
+
+        function shouldPoll() {
+            if (inFlight) return false;
+            if (document.visibilityState !== 'visible') return false;
+            if (!details || !details.open) return false;
+            return true;
+        }
+
+        function pollOnce() {
+            if (!shouldPoll()) return;
+            inFlight = true;
+            var sinceId = latestIdInDom();
+            var url = '/core/emails/autotransport/' + atId + '/updates/?since_id=' + sinceId;
+            fetch(url, { credentials: 'same-origin' })
+                .then(function(r) { return r.ok ? r.json() : null; })
+                .then(function(data) {
+                    if (!data || !data.ok) return;
+                    if (Array.isArray(data.bubbles) && data.bubbles.length && list) {
+                        data.bubbles.slice().reverse().forEach(function(b) {
+                            if (list.querySelector('.cm-msg[data-email-id="' + b.id + '"]')) return;
+                            var tmp = document.createElement('div');
+                            tmp.innerHTML = b.html;
+                            var node = tmp.firstElementChild;
+                            if (node) list.insertBefore(node, list.firstChild);
+                        });
+                        refreshBadge();
+                        if (details && details.open) markAllRead();
+                    }
+                })
+                .catch(function() {})
+                .finally(function() { inFlight = false; });
+        }
+
+        setInterval(pollOnce, POLL_INTERVAL_MS);
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible') pollOnce();
+        });
+    })();
+})();
+</script>
+
+{% endwith %}
+{% endif %}

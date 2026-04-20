@@ -39,6 +39,24 @@
             {% if email.subject %}
                 <div class="cm-subj">{{ email.subject|fix_mojibake }}</div>
             {% endif %}
+
+            {% if autotransport_car_ids %}
+                {% with link_cars=email.cars.all %}
+                    {% if link_cars %}
+                        <div class="cm-car-tags">
+                            {% for c in link_cars %}
+                                {% if c.id in autotransport_car_ids %}
+                                    <a class="cm-car-tag" href="/admin/core/car/{{ c.pk }}/change/"
+                                       target="_blank" rel="noopener"
+                                       title="{{ c.brand }} {{ c.vin }}">
+                                        {% if c.vin %}VIN {{ c.vin }}{% else %}Car #{{ c.pk }}{% endif %}
+                                    </a>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+            {% endif %}
             {% with cleaned=email|messenger_body_auto %}
                 {% if cleaned %}
                     <div class="cm-body">{{ cleaned|linkify_urls }}</div>

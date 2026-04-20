@@ -955,11 +955,12 @@ def email_autotransport_updates(request, at_id: int):
     bubbles = []
     if latest > since_id:
         new_emails = qs.filter(pk__gt=since_id).order_by('-received_at', '-pk')
+        car_ids_set = set(car_ids)
         for email in new_emails[:50]:
             html = render(
                 request,
                 'admin/core/container/_email_bubble.html',
-                {'email': email},
+                {'email': email, 'autotransport_car_ids': car_ids_set},
             ).content.decode('utf-8')
             bubbles.append({'id': email.pk, 'html': html})
 
