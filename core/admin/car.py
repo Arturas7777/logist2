@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.contrib import admin
+from django.contrib.admin import SimpleListFilter
 from django.db import transaction
 from django.templatetags.static import static
 from django.utils import timezone
@@ -88,6 +89,30 @@ def find_car_image(year, brand):
     return None
 
 
+class CarHasUnreadEmailsFilter(SimpleListFilter):
+    """Фильтр по наличию писем и непрочитанных писем в карточке машины."""
+
+    title = 'Переписка'
+    parameter_name = 'emails'
+
+    def lookups(self, request, model_admin):
+        return (
+            ('unread', 'Есть непрочитанные'),
+            ('any', 'Есть переписка'),
+            ('none', 'Нет писем'),
+        )
+
+    def queryset(self, request, queryset):
+        value = self.value()
+        if value == 'unread':
+            return queryset.filter(email_links__is_read=False).distinct()
+        if value == 'any':
+            return queryset.filter(email_links__isnull=False).distinct()
+        if value == 'none':
+            return queryset.filter(email_links__isnull=True)
+        return queryset
+
+
 @admin.register(Car)
 class CarAdmin(CSVExportMixin, admin.ModelAdmin):
     change_form_template = 'admin/core/car/change_form.html'
@@ -98,7 +123,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
     )
     list_display_links = ('vin_display',)
     list_editable = ('has_title',)
-    list_filter = (MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter)
+    list_filter = (MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter, CarHasUnreadEmailsFilter)
     search_fields = ('vin', 'brand')
     list_per_page = 50
     show_full_result_count = False
@@ -127,12 +152,19 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
 
     def get_queryset(self, request):
         """Optimized queryset with select_related, prefetch_related, and annotation."""
-        from django.db.models import Sum
+        from django.db.models import Count, Q, Sum
 
         qs = super().get_queryset(request)
         qs = qs.select_related('client', 'warehouse', 'line', 'carrier', 'container')
         qs = qs.prefetch_related('car_services')
-        qs = qs.annotate(_total_markup=Sum('car_services__markup_amount'))
+        qs = qs.annotate(
+            _total_markup=Sum('car_services__markup_amount'),
+            _emails_unread=Count(
+                'email_links',
+                filter=Q(email_links__is_read=False),
+                distinct=True,
+            ),
+        )
         return qs
     readonly_fields = (
         'default_warehouse_prices_display', 'total_price', 'storage_cost', 'days', 'warehouse_payment_display',
@@ -406,7 +438,20 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
     colored_status.short_description = 'Статус'
 
     def vin_display(self, obj):
+        unread = getattr(obj, '_emails_unread', None)
+        if unread is None:
+            unread = obj.email_links.filter(is_read=False).count() if obj.pk else 0
+
+        if unread > 0:
+            badge_bg, badge_title = '#dc2626', f'{unread} непрочитанных письма'
+        else:
+            badge_bg, badge_title = '#10b981', 'Непрочитанных писем нет'
+
         return format_html(
+            '<span style="display:inline-flex;align-items:center;gap:6px;">'
+            '<span title="{badge_title}" style="background:{badge_bg};color:#fff;padding:1px 7px;'
+            'border-radius:10px;font-size:11px;font-weight:700;min-width:20px;'
+            'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">{unread}</span>'
             '<span class="vin-copy-wrap">'
             '<span class="vin-copy-btn" data-vin="{vin}" title="Копировать VIN">'
             '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" '
@@ -414,8 +459,12 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>'
             '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'
             '</svg>'
-            '</span> {vin}</span>',
+            '</span> {vin}</span>'
+            '</span>',
             vin=obj.vin,
+            unread=unread,
+            badge_bg=badge_bg,
+            badge_title=badge_title,
         )
     vin_display.short_description = 'VIN'
     vin_display.admin_order_field = 'vin'

@@ -1331,6 +1331,30 @@ class CarrierAdmin(admin.ModelAdmin):
 # AutoTransportAdmin
 # ==============================================================================
 
+class AutoTransportHasUnreadEmailsFilter(admin.SimpleListFilter):
+    """Фильтр по наличию писем/непрочитанных писем среди машин автовоза."""
+
+    title = 'Переписка'
+    parameter_name = 'emails'
+
+    def lookups(self, request, model_admin):
+        return (
+            ('unread', 'Есть непрочитанные'),
+            ('any', 'Есть переписка'),
+            ('none', 'Нет писем'),
+        )
+
+    def queryset(self, request, queryset):
+        value = self.value()
+        if value == 'unread':
+            return queryset.filter(cars__email_links__is_read=False).distinct()
+        if value == 'any':
+            return queryset.filter(cars__email_links__isnull=False).distinct()
+        if value == 'none':
+            return queryset.exclude(cars__email_links__isnull=False)
+        return queryset
+
+
 @admin.register(AutoTransport)
 class AutoTransportAdmin(admin.ModelAdmin):
     """
@@ -1347,7 +1371,7 @@ class AutoTransportAdmin(admin.ModelAdmin):
     change_list_template = 'admin/core/autotransport/change_list.html'
 
     list_display = (
-        'number',
+        'number_with_unread',
         'carrier',
         'truck_display',
         'driver_display',
@@ -1356,12 +1380,14 @@ class AutoTransportAdmin(admin.ModelAdmin):
         'loading_date',
         'actions_display'
     )
+    list_display_links = ('number_with_unread',)
 
     list_filter = (
         'status',
         'carrier',
         'loading_date',
         'created_at',
+        AutoTransportHasUnreadEmailsFilter,
     )
 
     actions = ['mark_delivered']
@@ -1438,11 +1464,20 @@ class AutoTransportAdmin(admin.ModelAdmin):
         return super().get_changelist_instance(request)
 
     def get_queryset(self, request):
+        from django.db.models import Count, Q
+
         qs = super().get_queryset(request)
         # Применяем фильтр только для changelist (флаг ставится в get_changelist_instance)
         if getattr(self, '_exclude_delivered', False):
             qs = qs.exclude(status='DELIVERED')
             self._exclude_delivered = False
+        qs = qs.annotate(
+            _emails_unread=Count(
+                'cars__email_links__email',
+                filter=Q(cars__email_links__is_read=False),
+                distinct=True,
+            ),
+        )
         return qs
 
     def mark_delivered(self, request, queryset):
@@ -1538,6 +1573,37 @@ class AutoTransportAdmin(admin.ModelAdmin):
                     request,
                     f'{transferred_count} авто переданы (статус TRANSFERRED)'
                 )
+
+    def number_with_unread(self, obj):
+        """Номер автовоза с бейджем непрочитанных писем среди его машин."""
+        unread = getattr(obj, '_emails_unread', None)
+        if unread is None:
+            from core.models_email import ContainerEmail
+
+            unread = (
+                ContainerEmail.objects
+                .filter(car_links__car__in=obj.cars.all(), car_links__is_read=False)
+                .distinct()
+                .count()
+                if obj.pk else 0
+            )
+
+        if unread > 0:
+            bg, title = '#dc2626', f'{unread} непрочитанных письма'
+        else:
+            bg, title = '#10b981', 'Непрочитанных писем нет'
+
+        return format_html(
+            '<span style="display:inline-flex;align-items:center;gap:6px;">'
+            '<span>{}</span>'
+            '<span title="{}" style="background:{};color:#fff;padding:1px 7px;'
+            'border-radius:10px;font-size:11px;font-weight:700;min-width:20px;'
+            'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">{}</span>'
+            '</span>',
+            obj.number or '—', title, bg, unread,
+        )
+    number_with_unread.short_description = '№'
+    number_with_unread.admin_order_field = 'number'
 
     def truck_display(self, obj):
         """Display truck number"""
