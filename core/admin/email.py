@@ -53,12 +53,16 @@ class MatchedByListFilter(admin.SimpleListFilter):
 
 
 class ContainerEmailLinkInline(admin.TabularInline):
-    """Инлайн-редактирование привязок письма к контейнерам (M2M through)."""
+    """Инлайн-редактирование привязок письма к контейнерам (M2M through).
+
+    ``is_read`` — per-карточка: письмо может быть прочитано в карточке-
+    источнике и не прочитано в карточке, куда попало по упоминанию.
+    """
     model = ContainerEmailLink
     extra = 0
     fk_name = 'email'
     autocomplete_fields = ('container',)
-    fields = ('container', 'matched_by', 'created_at')
+    fields = ('container', 'matched_by', 'is_read', 'created_at')
     readonly_fields = ('created_at',)
 
 
@@ -75,9 +79,9 @@ class AttachToContainerForm(forms.Form):
 class ContainerEmailAdmin(admin.ModelAdmin):
     list_display = (
         'received_at_short', 'direction_badge', 'from_short', 'subject_short',
-        'container_link', 'matched_by_badge', 'is_read',
+        'container_link', 'matched_by_badge', 'read_status',
     )
-    list_filter = (MatchedByListFilter, 'direction', 'is_read', 'matched_by')
+    list_filter = (MatchedByListFilter, 'direction', 'matched_by')
     search_fields = ('subject', 'from_addr', 'to_addrs', 'message_id', 'thread_id')
     autocomplete_fields = ('sent_from_container',)
     inlines = [ContainerEmailLinkInline]
@@ -92,15 +96,18 @@ class ContainerEmailAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
-        return qs.prefetch_related('containers').select_related(
+        return qs.prefetch_related(
+            'containers', 'container_links',
+        ).select_related(
             'sent_from_container',
         )
     actions = ['action_attach_to_container', 'action_mark_read', 'action_mark_unread']
 
     fieldsets = (
         ('Привязка', {
-            'fields': ('sent_from_container', 'matched_by', 'is_read'),
-            'description': 'Привязки к контейнерам редактируются ниже в инлайне '
+            'fields': ('sent_from_container', 'matched_by'),
+            'description': 'Привязки к контейнерам и флаги «прочитано» '
+                           'редактируются ниже в инлайне '
                            '«Связи письма с контейнерами».',
         }),
         ('Заголовки', {
@@ -169,6 +176,27 @@ class ContainerEmailAdmin(admin.ModelAdmin):
                 parts.append(format_html('<a href="{}">{}</a>', url, label))
         return mark_safe(', '.join(parts))
 
+    @admin.display(description='Прочитано')
+    def read_status(self, obj: ContainerEmail) -> str:
+        """Агрегированный статус прочтения по всем связям этого письма.
+
+        Показывает 'X/Y' — сколько связей прочитано из общего числа. Полный
+        per-карточка статус виден в инлайне ниже.
+        """
+        total = 0
+        read = 0
+        for link in obj.container_links.all():
+            total += 1
+            if link.is_read:
+                read += 1
+        if total == 0:
+            return format_html('<span style="color:#94a3b8;">—</span>')
+        color = '#16a34a' if read == total else ('#b91c1c' if read == 0 else '#d97706')
+        return format_html(
+            '<span style="color:{};" title="{} из {} карточек прочитали">{}/{}</span>',
+            color, read, total, read, total,
+        )
+
     @admin.display(ordering='matched_by', description='Как')
     def matched_by_badge(self, obj: ContainerEmail) -> str:
         colors = {
@@ -231,15 +259,27 @@ class ContainerEmailAdmin(admin.ModelAdmin):
             **self.admin_site.each_context(request),
         })
 
-    @admin.action(description='Отметить прочитанными')
+    @admin.action(description='Отметить прочитанными (во всех карточках)')
     def action_mark_read(self, request, queryset):
-        updated = queryset.update(is_read=True)
-        self.message_user(request, f'{updated} писем отмечено прочитанными.')
+        email_ids = list(queryset.values_list('id', flat=True))
+        updated = ContainerEmailLink.objects.filter(
+            email_id__in=email_ids, is_read=False,
+        ).update(is_read=True)
+        self.message_user(
+            request,
+            f'{updated} связей письмо↔контейнер отмечено прочитанными.',
+        )
 
-    @admin.action(description='Отметить непрочитанными')
+    @admin.action(description='Отметить непрочитанными (во всех карточках)')
     def action_mark_unread(self, request, queryset):
-        updated = queryset.update(is_read=False)
-        self.message_user(request, f'{updated} писем отмечено непрочитанными.')
+        email_ids = list(queryset.values_list('id', flat=True))
+        updated = ContainerEmailLink.objects.filter(
+            email_id__in=email_ids, is_read=True,
+        ).update(is_read=False)
+        self.message_user(
+            request,
+            f'{updated} связей письмо↔контейнер отмечено непрочитанными.',
+        )
 
     # ------------------------------------------------------------------
     # custom URLs: ручной триггер sync
@@ -270,8 +310,8 @@ class ContainerEmailAdmin(admin.ModelAdmin):
 
 @admin.register(ContainerEmailLink)
 class ContainerEmailLinkAdmin(admin.ModelAdmin):
-    list_display = ('id', 'email', 'container', 'matched_by', 'created_at')
-    list_filter = ('matched_by',)
+    list_display = ('id', 'email', 'container', 'matched_by', 'is_read', 'created_at')
+    list_filter = ('matched_by', 'is_read')
     search_fields = (
         'email__subject', 'email__message_id', 'container__number',
     )

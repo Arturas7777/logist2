@@ -644,6 +644,29 @@ class Container(models.Model):
             return self.warehouse.get_site_address(self.unload_site)
         return ('', '')
 
+    def emails_for_panel(self):
+        """Queryset писем для «Переписки» карточки, с per-карточка is_read.
+
+        Аннотирует ``is_read_here`` из ``ContainerEmailLink`` для текущего
+        контейнера, чтобы бабблы на фронте показывали корректное состояние
+        именно в этой карточке (а не глобальное по письму).
+        """
+        from django.db.models import OuterRef, Subquery
+        from core.models_email import ContainerEmail, ContainerEmailLink
+        return (
+            ContainerEmail.objects
+            .filter(containers__id=self.pk)
+            .annotate(
+                is_read_here=Subquery(
+                    ContainerEmailLink.objects
+                    .filter(email=OuterRef('pk'), container_id=self.pk)
+                    .values('is_read')[:1]
+                )
+            )
+            .distinct()
+            .order_by('-received_at')
+        )
+
     def __str__(self):
         return self.number
 

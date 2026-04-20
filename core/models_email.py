@@ -122,7 +122,11 @@ class ContainerEmail(models.Model):
         max_length=20, choices=MATCHED_BY_CHOICES, default=MATCHED_BY_UNMATCHED,
         verbose_name='Как сопоставлено',
     )
-    is_read = models.BooleanField(default=False, verbose_name='Прочитано в UI')
+
+    # ── Phase 3: is_read хранится per-ссылка в ContainerEmailLink.is_read,
+    # потому что одно и то же письмо может быть «прочитано» в одной
+    # карточке (откуда его отправили), но «непрочитано» в другой (куда
+    # оно попало через упоминание в subject/body).
 
     # ── Phase 2: отслеживаем отправку исходящих писем из админки ─────────
     SEND_STATUS_SENT = 'SENT'
@@ -217,6 +221,13 @@ class ContainerEmailLink(models.Model):
         verbose_name='Как сопоставлено',
         help_text='Причина связи именно с этим контейнером. Может отличаться '
                   'от ContainerEmail.matched_by (первичная причина).',
+    )
+    is_read = models.BooleanField(
+        default=False,
+        verbose_name='Прочитано в этой карточке',
+        help_text='Хранится per-ссылка: одно и то же письмо может быть '
+                  '«прочитано» в карточке-источнике и «непрочитано» в '
+                  'карточке, где оно появилось по упоминанию в теме/теле.',
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
