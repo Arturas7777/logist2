@@ -123,6 +123,28 @@ def email_attachment(request, email_id: int, idx: int):
 # Отметка прочитано / непрочитано
 # ---------------------------------------------------------------------------
 
+def _enqueue_gmail_mark_read(gmail_ids: list[str]) -> None:
+    """Ставит в Celery задачу снять лейбл ``UNREAD`` с указанных писем.
+
+    Используется после того, как пользователь пометил письмо прочитанным
+    в карточке контейнера — чтобы Gmail в почте показывал тот же статус.
+
+    Стратегия «Option A»: письмо считается прочитанным в Gmail, если
+    хотя бы в одной карточке с ним работали. Поэтому дёргаем API на
+    каждое подтверждение — Gmail сам идемпотентно обработает повтор.
+    Если Gmail не сконфигурирован или очередь недоступна — просто
+    логируем, UI не ломаем.
+    """
+    ids = [gid for gid in (gmail_ids or []) if gid]
+    if not ids:
+        return
+    try:
+        from core.tasks_email import gmail_mark_read_task
+        gmail_mark_read_task.delay(ids)
+    except Exception as exc:
+        logger.warning('[emails] cannot enqueue gmail_mark_read_task: %s', exc)
+
+
 @staff_member_required
 @require_POST
 def email_mark_read(request, email_id: int):
@@ -131,6 +153,8 @@ def email_mark_read(request, email_id: int):
     Если в POST передан ``container_id`` — правим только эту связь
     (письмо остаётся непрочитанным в других карточках). Иначе обновляем
     все связи этого письма.
+
+    При ``is_read=True`` + INCOMING — ставим задачу снять ``UNREAD`` в Gmail.
     """
     email = get_object_or_404(ContainerEmail, pk=email_id)
     new_val = request.POST.get('is_read', '1') == '1'
@@ -139,6 +163,15 @@ def email_mark_read(request, email_id: int):
     if container_id:
         qs = qs.filter(container_id=container_id)
     updated = qs.update(is_read=new_val)
+
+    if (
+        new_val
+        and updated
+        and email.direction == ContainerEmail.DIRECTION_INCOMING
+        and email.gmail_id
+    ):
+        _enqueue_gmail_mark_read([email.gmail_id])
+
     return JsonResponse({'ok': True, 'is_read': new_val, 'updated': updated})
 
 
@@ -150,11 +183,34 @@ def email_mark_container_read(request, container_id: int):
     Вызывается автоматически при разворачивании блока «Переписка».
     Трогаем только ссылки ``ContainerEmailLink`` этой карточки — в других
     карточках письмо остаётся непрочитанным.
+
+    Для INCOMING-писем, ставших прочитанными в этой карточке, ставим задачу
+    снять ``UNREAD`` в Gmail.
     """
+    affected_links = list(
+        ContainerEmailLink.objects
+        .filter(container_id=container_id, is_read=False)
+        .values_list('email_id', flat=True)
+    )
     updated = ContainerEmailLink.objects.filter(
         container_id=container_id,
         is_read=False,
     ).update(is_read=True)
+
+    if affected_links:
+        gmail_ids = list(
+            ContainerEmail.objects
+            .filter(
+                pk__in=affected_links,
+                direction=ContainerEmail.DIRECTION_INCOMING,
+            )
+            .exclude(gmail_id='')
+            .values_list('gmail_id', flat=True)
+            .distinct()
+        )
+        if gmail_ids:
+            _enqueue_gmail_mark_read(gmail_ids)
+
     return JsonResponse({'ok': True, 'updated': updated})
 
 
