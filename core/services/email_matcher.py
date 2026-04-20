@@ -35,6 +35,10 @@ logger = logging.getLogger(__name__)
 # но для матчинга достаточно — коллизий практически не бывает.
 _CONTAINER_NUMBER_RE = re.compile(r'\b([A-Z]{4}\d{7})\b')
 
+# VIN: 17 символов из A-HJ-NPR-Z0-9 (без I, O, Q чтобы не путать с 1/0).
+# Границы \b чтобы не цеплять подстроки длинных строк.
+_VIN_RE = re.compile(r'\b([A-HJ-NPR-Z0-9]{17})\b')
+
 # Чтобы не ловить "U1", "UV3" как букинги — нижний предел длины.
 _MIN_BOOKING_LEN = 4
 
@@ -46,14 +50,25 @@ class MatchHit:
     matched_by: str  # одно из ContainerEmail.MATCHED_BY_*
 
 
+@dataclass(frozen=True)
+class CarMatchHit:
+    """Одна привязка письма к машине по VIN."""
+    car_id: int
+    matched_by: str = 'VIN'
+
+
 @dataclass
 class MatchResult:
     """Результат матчинга: все найденные контейнеры + «первичная» причина.
 
     ``hits`` — уникальный по container_id список, в порядке обнаружения
     (первый — наиболее приоритетный, он же идёт в ``ContainerEmail.matched_by``).
+    ``car_hits`` — машины, упомянутые по VIN в subject/body. Линкуются в
+    ``CarEmailLink``; НЕ попадают в ``hits`` (автолинк Car → Container
+    не делаем — только если номер контейнера тоже упомянут).
     """
     hits: list[MatchHit] = field(default_factory=list)
+    car_hits: list[CarMatchHit] = field(default_factory=list)
 
     @property
     def is_matched(self) -> bool:
@@ -133,7 +148,21 @@ def match_email_to_containers(
     for cid in _match_by_bookings(haystack, booking_index):
         _add(cid, ContainerEmail.MATCHED_BY_BOOKING_NUMBER)
 
-    return MatchResult(hits=hits)
+    # 5) По VIN — отдельный список (CarEmailLink). Не линкуем Car → Container
+    # автоматически: если брокер упомянул VIN без номера контейнера, машина
+    # увидит письмо в своей карточке, а контейнер — нет.
+    car_hits: list[CarMatchHit] = []
+    seen_cars: set[int] = set()
+    for car_id in _match_by_vins(haystack):
+        if car_id in seen_cars:
+            continue
+        seen_cars.add(car_id)
+        car_hits.append(CarMatchHit(
+            car_id=car_id,
+            matched_by=ContainerEmail.MATCHED_BY_VIN,
+        ))
+
+    return MatchResult(hits=hits, car_hits=car_hits)
 
 
 # ── Backward-compat-обёртка (может ещё где-то использоваться) ───────────
@@ -215,6 +244,32 @@ def _match_by_container_numbers(text: str) -> list[int]:
     )
     rows.sort(key=lambda row: order_map.get(row[1], 1_000_000))
     return [cid for cid, _number in rows]
+
+
+def _match_by_vins(text: str) -> list[int]:
+    """Возвращает id машин, VIN которых упомянут в тексте.
+
+    Порядок сохраняется (первый по тексту — первый в списке), чтобы в
+    перспективе primary car hit был «первым в теме».
+    """
+    from core.models import Car
+
+    if not text:
+        return []
+    upper = text.upper()
+    candidates = set(_VIN_RE.findall(upper))
+    if not candidates:
+        return []
+
+    order_map: dict[str, int] = {}
+    for idx, m in enumerate(_VIN_RE.finditer(upper)):
+        order_map.setdefault(m.group(1), idx)
+
+    rows = list(
+        Car.objects.filter(vin__in=candidates).values_list('id', 'vin')
+    )
+    rows.sort(key=lambda row: order_map.get((row[1] or '').upper(), 1_000_000))
+    return [cid for cid, _vin in rows]
 
 
 def _match_by_bookings(text: str, booking_index: dict[str, int]) -> list[int]:

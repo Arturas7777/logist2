@@ -161,7 +161,7 @@ def _ingest_one(
     booking_index: dict[str, int],
     report: SyncReport,
 ) -> None:
-    from core.models_email import ContainerEmail, ContainerEmailLink
+    from core.models_email import CarEmailLink, ContainerEmail, ContainerEmailLink
 
     if ContainerEmail.objects.filter(gmail_id=gmail_id).exists():
         return
@@ -237,6 +237,23 @@ def _ingest_one(
                     ContainerEmailLink.objects.bulk_create(
                         links, ignore_conflicts=True,
                     )
+                # Линки к машинам по VIN. Reverse-sync через тот же флаг:
+                # INCOMING-письмо без UNREAD в Gmail — сразу прочитано и в
+                # карточках машин.
+                if match.car_hits:
+                    link_is_read = is_incoming and not gmail_is_unread
+                    car_links = [
+                        CarEmailLink(
+                            email=obj,
+                            car_id=hit.car_id,
+                            matched_by=hit.matched_by,
+                            is_read=link_is_read,
+                        )
+                        for hit in match.car_hits
+                    ]
+                    CarEmailLink.objects.bulk_create(
+                        car_links, ignore_conflicts=True,
+                    )
             else:
                 # Идемпотентно обновим gmail_id/labels. Связи с контейнерами
                 # не пересчитываем: пользователь мог вручную перепривязать.
@@ -262,6 +279,9 @@ def _ingest_one(
                 # у которых в Gmail всегда нет UNREAD (они в SENT).
                 if labels_changed and is_incoming and not gmail_is_unread:
                     ContainerEmailLink.objects.filter(
+                        email_id=obj.pk, is_read=False,
+                    ).update(is_read=True)
+                    CarEmailLink.objects.filter(
                         email_id=obj.pk, is_read=False,
                     ).update(is_read=True)
     except Exception as exc:
