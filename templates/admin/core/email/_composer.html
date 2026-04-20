@@ -1,0 +1,1197 @@
+{% comment %}
+Универсальный composer для переписки: используется в карточках Car и
+AutoTransport (и потенциально — в других местах). Не зависит от каких-либо
+специфических ID панели: всё управление через `window.CMComposer.open(opts)`.
+
+opts:
+  mode:          'compose' | 'reply'
+  scope:         'container' | 'car' | 'autotransport'
+  scopeId:       id карточки-источника
+  parentEmailId: id родительского письма (только mode='reply')
+  to, cc, bcc, subject, body, maxMb  — начальные значения
+  onSuccess(data): коллбэк с data от сервера (html, email_id, ...).
+{% endcomment %}
+{% load static %}
+
+<style>
+/* ═══ Hover-кнопка «Ответить» на входящих бабблах (общая стилизация) ═══ */
+.cm-panel-with-reply .cm-bubble-actions {
+    margin-top: 6px;
+    display: flex !important;
+    gap: 6px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+.cm-panel-with-reply .cm-msg:hover .cm-bubble-actions,
+.cm-panel-with-reply .cm-msg.is-active .cm-bubble-actions {
+    opacity: 1;
+}
+.cm-panel-with-reply .cm-bubble-actions .cm-reply-btn {
+    padding: 2px 8px;
+    font-size: 12px;
+    background: rgba(255,255,255,0.85);
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #334155;
+}
+.cm-panel-with-reply .cm-bubble-actions .cm-reply-btn:hover {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: #fff;
+}
+
+/* ═══ Composer ═══ */
+#cm-composer {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    width: 560px;
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 64px);
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.25);
+    display: none;
+    flex-direction: column;
+    z-index: 1500;
+    overflow: hidden;
+}
+#cm-composer.is-open { display: flex; }
+#cm-composer.is-minimized { height: 44px; }
+#cm-composer.is-minimized .cm-composer-body,
+#cm-composer.is-minimized .cm-composer-footer { display: none; }
+#cm-composer .cm-composer-header {
+    padding: 8px 12px;
+    background: linear-gradient(180deg, #1f2937 0%, #0f172a 100%);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+}
+#cm-composer .cm-composer-header .cm-composer-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#cm-composer .cm-composer-header button {
+    background: transparent;
+    border: 0;
+    color: #cbd5e1;
+    font-size: 16px;
+    line-height: 1;
+    padding: 2px 6px;
+    cursor: pointer;
+    border-radius: 3px;
+}
+#cm-composer .cm-composer-header button:hover { color: #fff; background: rgba(255,255,255,0.1); }
+
+#cm-composer .cm-composer-body {
+    display: flex;
+    flex-direction: column;
+    padding: 10px 12px;
+    gap: 6px;
+    overflow-y: auto;
+    flex: 1;
+}
+#cm-composer .cm-composer-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 4px 0;
+}
+#cm-composer .cm-composer-field > label {
+    width: 60px;
+    font-size: 12px;
+    color: #64748b;
+    flex-shrink: 0;
+}
+#cm-composer .cm-composer-field > input {
+    flex: 1;
+    border: 0;
+    outline: 0;
+    padding: 4px 0;
+    font-size: 13px;
+    background: transparent;
+}
+#cm-composer .cm-composer-field.cm-stacked-field {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+}
+#cm-composer .cm-composer-field.cm-stacked-field > label {
+    width: auto;
+    padding: 0;
+    margin-bottom: 0;
+}
+#cm-composer .cm-composer-field.cm-stacked-field > input {
+    width: 100%;
+    flex: 0 0 auto;
+    padding: 4px 0;
+    border-bottom: 1px dashed transparent;
+}
+#cm-composer .cm-composer-field.cm-stacked-field > input:focus {
+    border-bottom-color: #cbd5e1;
+}
+
+#cm-composer .cm-chip-field {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    position: relative;
+}
+#cm-composer .cm-ac-dropdown {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    z-index: 20;
+    max-height: 320px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.22);
+    padding: 4px;
+    display: none;
+    font-size: 13px;
+}
+#cm-composer .cm-ac-dropdown.is-open { display: block; }
+#cm-composer .cm-ac-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background 0.08s ease;
+}
+#cm-composer .cm-ac-item:hover,
+#cm-composer .cm-ac-item.is-active { background: #eff6ff; }
+#cm-composer .cm-ac-item .cm-ac-icon {
+    font-size: 14px;
+    width: 20px;
+    text-align: center;
+    flex-shrink: 0;
+    color: #64748b;
+}
+#cm-composer .cm-ac-item.kind-group .cm-ac-icon { color: #2563eb; }
+#cm-composer .cm-ac-item.kind-contact .cm-ac-icon { color: #059669; }
+#cm-composer .cm-ac-item.kind-history .cm-ac-icon { color: #94a3b8; }
+#cm-composer .cm-ac-text { flex: 1; min-width: 0; }
+#cm-composer .cm-ac-label {
+    font-weight: 600;
+    color: #0f172a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#cm-composer .cm-ac-label mark { background: #fef08a; color: inherit; padding: 0; }
+#cm-composer .cm-ac-sub {
+    font-size: 11px;
+    color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#cm-composer .cm-ac-empty,
+#cm-composer .cm-ac-loading {
+    padding: 8px 10px;
+    color: #94a3b8;
+    font-size: 12px;
+    font-style: italic;
+}
+#cm-composer .cm-chip-field > label {
+    width: auto;
+    padding: 0;
+    margin-bottom: 0;
+}
+#cm-composer .cm-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    min-height: 0;
+    padding: 0;
+    cursor: text;
+}
+#cm-composer .cm-chips:empty { display: none; }
+#cm-composer .cm-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 4px 2px 10px;
+    background: #e0f2fe;
+    border: 1px solid #bae6fd;
+    border-radius: 12px;
+    font-size: 12px;
+    color: #075985;
+    max-width: 280px;
+    line-height: 1.4;
+}
+#cm-composer .cm-chip .cm-chip-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#cm-composer .cm-chip.is-invalid {
+    background: #fee2e2;
+    border-color: #fca5a5;
+    color: #991b1b;
+}
+#cm-composer .cm-chip button {
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    color: currentColor;
+    opacity: 0.55;
+    padding: 0 4px;
+    font-size: 14px;
+    line-height: 1;
+}
+#cm-composer .cm-chip button:hover { opacity: 1; }
+#cm-composer .cm-chip-input {
+    width: 100%;
+    border: 0;
+    outline: 0;
+    font-size: 13px;
+    background: transparent;
+    padding: 4px 0;
+    border-bottom: 1px dashed transparent;
+}
+#cm-composer .cm-chip-input:focus { border-bottom-color: #cbd5e1; }
+
+#cm-composer .cm-composer-tools {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 0 4px;
+}
+#cm-composer .cm-composer-groups { position: relative; }
+#cm-composer .cm-composer-groups-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    cursor: pointer;
+    color: #334155;
+}
+#cm-composer .cm-composer-groups-btn:hover { background: #eff6ff; border-color: #3b82f6; color: #1e40af; }
+#cm-composer .cm-composer-groups-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 10;
+    min-width: 320px;
+    max-width: 420px;
+    max-height: 340px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+    padding: 6px;
+}
+#cm-composer .cm-composer-groups-dropdown[hidden] { display: none; }
+#cm-composer .cm-groups-dropdown-header {
+    padding: 6px 8px;
+    font-size: 11px;
+    color: #64748b;
+    border-bottom: 1px solid #e5e7eb;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+#cm-composer .cm-groups-target-switch {
+    display: inline-flex;
+    gap: 2px;
+    margin-left: auto;
+}
+#cm-composer .cm-groups-target-switch button {
+    padding: 2px 8px;
+    font-size: 11px;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #475569;
+}
+#cm-composer .cm-groups-target-switch button.is-active {
+    background: #2563eb;
+    color: #fff;
+    border-color: #2563eb;
+}
+#cm-composer .cm-group-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #1e293b;
+}
+#cm-composer .cm-group-item:hover { background: #eff6ff; }
+#cm-composer .cm-group-item .cm-group-name { font-weight: 600; flex-shrink: 0; }
+#cm-composer .cm-group-item .cm-group-members {
+    font-size: 11px;
+    color: #94a3b8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+#cm-composer .cm-group-item .cm-group-count {
+    font-size: 11px;
+    color: #64748b;
+    background: #f1f5f9;
+    padding: 1px 6px;
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+#cm-composer .cm-groups-empty,
+#cm-composer .cm-groups-loading,
+#cm-composer .cm-groups-error {
+    padding: 10px 12px;
+    font-size: 12px;
+    color: #94a3b8;
+    text-align: center;
+}
+#cm-composer .cm-groups-error { color: #b91c1c; }
+
+#cm-composer details.cm-composer-extra { margin: 0; }
+#cm-composer details.cm-composer-extra > summary {
+    font-size: 12px;
+    color: #64748b;
+    cursor: pointer;
+    padding: 4px 0;
+}
+#cm-composer textarea[name="body_text"] {
+    width: 100%;
+    min-height: 180px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    resize: vertical;
+    box-sizing: border-box;
+}
+#cm-composer .cm-composer-signature-hint {
+    font-size: 11px;
+    color: #94a3b8;
+    padding: 2px 4px;
+}
+#cm-composer .cm-composer-attachments {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+#cm-composer .cm-composer-attachments label.cm-att-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px dashed #94a3b8;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #475569;
+    background: #f8fafc;
+    align-self: flex-start;
+}
+#cm-composer .cm-composer-attachments label.cm-att-btn:hover {
+    background: #e0f2fe; border-color: #3b82f6; color: #1e40af;
+}
+#cm-composer .cm-composer-attachments input[type=file] { display: none; }
+#cm-composer .cm-attached-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+#cm-composer .cm-attached-list .cm-att-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 12px;
+    background: #f1f5f9;
+    font-size: 12px;
+    color: #334155;
+}
+#cm-composer .cm-attached-list .cm-att-chip button {
+    background: transparent;
+    border: 0;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+}
+#cm-composer .cm-attached-list .cm-att-chip button:hover { color: #b91c1c; }
+
+#cm-composer .cm-composer-footer {
+    padding: 10px 12px;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: #f8fafc;
+}
+#cm-composer .cm-composer-status { flex: 1; font-size: 12px; color: #64748b; }
+#cm-composer .cm-composer-send,
+#cm-composer .cm-composer-cancel {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+#cm-composer .cm-composer-send {
+    background: #2563eb;
+    color: #fff;
+    border-color: #2563eb;
+    font-weight: 600;
+}
+#cm-composer .cm-composer-send:hover { background: #1d4ed8; }
+#cm-composer .cm-composer-send:disabled { opacity: 0.55; cursor: wait; }
+#cm-composer .cm-composer-cancel {
+    background: #fff;
+    border-color: #cbd5e1;
+    color: #475569;
+}
+#cm-composer .cm-composer-cancel:hover { background: #f1f5f9; }
+</style>
+
+<div id="cm-composer" data-mode="" data-scope="" data-scope-id="" data-parent-id="">
+    <div class="cm-composer-header" id="cm-composer-header">
+        <span class="cm-composer-title" id="cm-composer-title">Новое письмо</span>
+        <button type="button" id="cm-composer-min" title="Свернуть">−</button>
+        <button type="button" id="cm-composer-close" title="Закрыть">×</button>
+    </div>
+    <div class="cm-composer-body">
+        <div class="cm-composer-tools">
+            <div class="cm-composer-groups">
+                <button type="button" id="cm-composer-groups-btn" title="Добавить адреса из группы">
+                    📇 Группы
+                </button>
+                <div class="cm-composer-groups-dropdown" id="cm-composer-groups-dropdown" hidden>
+                    <div class="cm-groups-dropdown-header">
+                        <span>Добавить в:</span>
+                        <div class="cm-groups-target-switch" id="cm-groups-target-switch">
+                            <button type="button" data-target="to"  class="is-active">Кому</button>
+                            <button type="button" data-target="cc">Копия</button>
+                            <button type="button" data-target="bcc">Скрытая</button>
+                        </div>
+                    </div>
+                    <div id="cm-groups-dropdown-list">
+                        <div class="cm-groups-loading">Загрузка…</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="cm-composer-field cm-chip-field" data-chip-field="to">
+            <label>Кому</label>
+            <div class="cm-chips" id="cm-composer-to-chips"></div>
+            <input type="text" class="cm-chip-input" id="cm-composer-to-input"
+                   placeholder="email@example.com" autocomplete="off">
+        </div>
+        <div class="cm-composer-field cm-stacked-field">
+            <label for="cm-composer-subject">Тема</label>
+            <input type="text" id="cm-composer-subject" name="subject" required>
+        </div>
+        <details class="cm-composer-extra" id="cm-composer-cc-details">
+            <summary>Cc / Bcc</summary>
+            <div class="cm-composer-field cm-chip-field" data-chip-field="cc">
+                <label>Cc</label>
+                <div class="cm-chips" id="cm-composer-cc-chips"></div>
+                <input type="text" class="cm-chip-input" id="cm-composer-cc-input" autocomplete="off">
+            </div>
+            <div class="cm-composer-field cm-chip-field" data-chip-field="bcc">
+                <label>Bcc</label>
+                <div class="cm-chips" id="cm-composer-bcc-chips"></div>
+                <input type="text" class="cm-chip-input" id="cm-composer-bcc-input" autocomplete="off">
+            </div>
+        </details>
+        <textarea id="cm-composer-body" name="body_text" placeholder="Текст сообщения…" required></textarea>
+        <div class="cm-composer-signature-hint">
+            Подпись будет добавлена автоматически из настроек.
+            <span id="cm-composer-hint-extra"></span>
+        </div>
+        <div class="cm-composer-attachments">
+            <label class="cm-att-btn">
+                📎 Прикрепить файл
+                <input type="file" id="cm-composer-files" multiple>
+            </label>
+            <div class="cm-attached-list" id="cm-composer-attached"></div>
+        </div>
+    </div>
+    <div class="cm-composer-footer">
+        <span class="cm-composer-status" id="cm-composer-status"></span>
+        <button type="button" class="cm-composer-cancel" id="cm-composer-cancel">Отмена</button>
+        <button type="button" class="cm-composer-send" id="cm-composer-send">Отправить</button>
+    </div>
+</div>
+
+<script>
+(function() {
+    if (window.CMComposer && window.CMComposer.__init) return;
+
+    var composer       = document.getElementById('cm-composer');
+    if (!composer) return;
+    var composerHeader = document.getElementById('cm-composer-header');
+    var composerTitle  = document.getElementById('cm-composer-title');
+    var composerSubj   = document.getElementById('cm-composer-subject');
+    var composerBody   = document.getElementById('cm-composer-body');
+    var composerFiles  = document.getElementById('cm-composer-files');
+    var composerChips  = document.getElementById('cm-composer-attached');
+    var composerStatus = document.getElementById('cm-composer-status');
+    var composerSend   = document.getElementById('cm-composer-send');
+    var composerCancel = document.getElementById('cm-composer-cancel');
+    var composerClose  = document.getElementById('cm-composer-close');
+    var composerMin    = document.getElementById('cm-composer-min');
+    var composerHint   = document.getElementById('cm-composer-hint-extra');
+    var ccDetails      = document.getElementById('cm-composer-cc-details');
+
+    var attachedFiles = [];
+    var attachedSeq = 0;
+    var currentMaxMb = 25;
+    var currentOpts = null;
+
+    var EMAIL_RE = /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/;
+
+    function splitAddresses(s) {
+        if (!s) return [];
+        var parts = [], buf = '', inAngle = false;
+        for (var i = 0; i < s.length; i++) {
+            var ch = s.charAt(i);
+            if (ch === '<') inAngle = true;
+            else if (ch === '>') inAngle = false;
+            if (!inAngle && (ch === ',' || ch === ';' || ch === '\n' || ch === '\t')) {
+                if (buf.trim()) parts.push(buf.trim());
+                buf = '';
+            } else { buf += ch; }
+        }
+        if (buf.trim()) parts.push(buf.trim());
+        return parts;
+    }
+    function parseAddress(raw) {
+        if (!raw) return null;
+        var s = String(raw).trim();
+        if (!s) return null;
+        var email = '', name = '';
+        var m = s.match(/^(.*?)<\s*([^>]+?)\s*>\s*$/);
+        if (m) {
+            name = m[1].trim().replace(/^["']+|["']+$/g, '').trim();
+            email = m[2].trim();
+        } else { email = s; }
+        return { email: email, name: name, invalid: !EMAIL_RE.test(email) };
+    }
+    function formatAddr(c) { return c.name ? (c.name + ' <' + c.email + '>') : c.email; }
+    function escapeHtml(s) {
+        return String(s || '').replace(/[&<>"']/g, function(ch) {
+            return ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[ch];
+        });
+    }
+    function highlightMatch(text, q) {
+        if (!text || !q) return escapeHtml(text);
+        return escapeHtml(text).replace(
+            new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s/g, '\\s') + ')', 'ig'),
+            '<mark>$1</mark>'
+        );
+    }
+    function humanSize(n) {
+        if (n < 1024) return n + ' B';
+        if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+        return (n/1024/1024).toFixed(2) + ' MB';
+    }
+
+    var acCache = {};
+    var acCacheTTL = 30 * 1000;
+    function acFetch(q, cb) {
+        var key = q.toLowerCase();
+        var cached = acCache[key];
+        var now = Date.now();
+        if (cached && (now - cached.ts) < acCacheTTL) { cb(cached.items); return; }
+        fetch('/core/emails/contacts/search/?q=' + encodeURIComponent(q) + '&limit=12', {
+            credentials: 'same-origin',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(function(r) { return r.ok ? r.json() : { items: [] }; })
+        .then(function(data) {
+            var items = (data && data.items) || [];
+            acCache[key] = { ts: now, items: items };
+            cb(items);
+        })
+        .catch(function() { cb([]); });
+    }
+
+    function createChipField(container, input, kind) {
+        var chips = [];
+        var chipField = container.parentElement;
+        var dropdown = document.createElement('div');
+        dropdown.className = 'cm-ac-dropdown';
+        (chipField || container).appendChild(dropdown);
+        var acItems = [], acActiveIdx = -1, acLastQuery = '', acTimer = null;
+
+        function acHide() { dropdown.classList.remove('is-open'); acItems = []; acActiveIdx = -1; }
+        function acRender(items, query) {
+            dropdown.innerHTML = '';
+            acItems = items; acActiveIdx = items.length ? 0 : -1;
+            if (!items.length) {
+                dropdown.innerHTML = '<div class="cm-ac-empty">Совпадений не найдено</div>';
+                dropdown.classList.add('is-open'); return;
+            }
+            items.forEach(function(it, idx) {
+                var el = document.createElement('div');
+                el.className = 'cm-ac-item kind-' + it.kind + (idx === 0 ? ' is-active' : '');
+                el.dataset.idx = idx;
+                var icon = it.kind === 'group' ? '📇' : (it.kind === 'contact' ? '👤' : '🕘');
+                el.innerHTML =
+                    '<span class="cm-ac-icon">' + icon + '</span>' +
+                    '<div class="cm-ac-text">' +
+                        '<div class="cm-ac-label">' + highlightMatch(it.label || '', query) + '</div>' +
+                        (it.sub ? '<div class="cm-ac-sub">' + escapeHtml(it.sub) + '</div>' : '') +
+                    '</div>';
+                el.addEventListener('mousedown', function(e) { e.preventDefault(); acSelect(idx); });
+                el.addEventListener('mouseenter', function() { acActiveIdx = idx; updateAcActive(); });
+                dropdown.appendChild(el);
+            });
+            dropdown.classList.add('is-open');
+        }
+        function updateAcActive() {
+            Array.prototype.slice.call(dropdown.querySelectorAll('.cm-ac-item')).forEach(function(el, i) {
+                if (i === acActiveIdx) {
+                    el.classList.add('is-active');
+                    var r = el.getBoundingClientRect(), pr = dropdown.getBoundingClientRect();
+                    if (r.bottom > pr.bottom || r.top < pr.top) el.scrollIntoView({ block: 'nearest' });
+                } else { el.classList.remove('is-active'); }
+            });
+        }
+        function acSelect(idx) {
+            if (idx < 0 || idx >= acItems.length) return;
+            var it = acItems[idx];
+            input.value = '';
+            if (it.kind === 'group' && Array.isArray(it.addrs)) {
+                it.addrs.forEach(function(a) { addOne(a); });
+            } else if (it.addr) { addOne(it.addr); }
+            else if (it.email) { addOne(it.email); }
+            render(); scheduleDraftSave(); acHide(); input.focus();
+        }
+        function acQuery() {
+            var q = input.value.trim();
+            if (q.length < 2) { acHide(); return; }
+            acLastQuery = q;
+            acFetch(q, function(items) {
+                if (input.value.trim() !== acLastQuery) return;
+                acRender(items, q);
+            });
+        }
+        function acQueryDebounced() {
+            if (acTimer) clearTimeout(acTimer);
+            acTimer = setTimeout(acQuery, 180);
+        }
+
+        function render() {
+            container.innerHTML = '';
+            chips.forEach(function(c, idx) {
+                var span = document.createElement('span');
+                span.className = 'cm-chip' + (c.invalid ? ' is-invalid' : '');
+                span.title = c.invalid ? ('Некорректный адрес: ' + c.email) : formatAddr(c);
+                var label = document.createElement('span');
+                label.className = 'cm-chip-label';
+                label.textContent = formatAddr(c);
+                span.appendChild(label);
+                var x = document.createElement('button');
+                x.type = 'button'; x.tabIndex = -1; x.textContent = '×'; x.title = 'Убрать';
+                x.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    chips.splice(idx, 1);
+                    render(); scheduleDraftSave(); input.focus();
+                });
+                span.appendChild(x);
+                container.appendChild(span);
+            });
+        }
+        function addOne(raw) {
+            var p = parseAddress(raw);
+            if (!p) return;
+            var lc = p.email.toLowerCase();
+            if (chips.some(function(c) { return c.email.toLowerCase() === lc; })) return;
+            chips.push(p);
+        }
+        function addMany(list) { (list || []).forEach(function(r) { addOne(r); }); render(); scheduleDraftSave(); }
+        function setFromString(s) {
+            chips = [];
+            splitAddresses(s || '').forEach(function(part) {
+                var p = parseAddress(part); if (p) chips.push(p);
+            });
+            render();
+        }
+        function clear() { chips = []; render(); }
+        function asString() { return chips.map(formatAddr).join(', '); }
+        function commitInput() {
+            var raw = input.value; input.value = '';
+            if (!raw || !raw.trim()) return;
+            splitAddresses(raw).forEach(function(p) { addOne(p); });
+            render(); scheduleDraftSave();
+        }
+
+        input.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') return;
+            var acOpen = dropdown.classList.contains('is-open') && acItems.length > 0;
+            if (acOpen && e.key === 'ArrowDown') {
+                e.preventDefault();
+                acActiveIdx = (acActiveIdx + 1) % acItems.length; updateAcActive(); return;
+            }
+            if (acOpen && e.key === 'ArrowUp') {
+                e.preventDefault();
+                acActiveIdx = (acActiveIdx - 1 + acItems.length) % acItems.length; updateAcActive(); return;
+            }
+            if (acOpen && (e.key === 'Enter' || e.key === 'Tab')) {
+                e.preventDefault();
+                acSelect(acActiveIdx >= 0 ? acActiveIdx : 0); return;
+            }
+            if (e.key === 'Escape' && acOpen) { e.preventDefault(); acHide(); return; }
+            if (e.key === 'Enter' || e.key === 'Tab' || e.key === ',' || e.key === ';') {
+                var v = input.value.trim();
+                if (v) {
+                    e.preventDefault(); commitInput(); acHide();
+                    if (e.key === 'Enter') return;
+                }
+            } else if (e.key === 'Backspace' && !input.value && chips.length) {
+                e.preventDefault();
+                var last = chips.pop(); render();
+                input.value = formatAddr(last);
+                try { input.setSelectionRange(input.value.length, input.value.length); } catch (_) {}
+                scheduleDraftSave();
+            }
+        });
+        input.addEventListener('input', function() { acQueryDebounced(); });
+        input.addEventListener('blur', function() {
+            setTimeout(function() { acHide(); commitInput(); }, 120);
+        });
+        input.addEventListener('paste', function(e) {
+            var t = (e.clipboardData || window.clipboardData).getData('text');
+            if (t && /[,\n;]/.test(t)) {
+                e.preventDefault();
+                var combined = (input.value + t); input.value = '';
+                splitAddresses(combined).forEach(function(p) { addOne(p); });
+                render(); scheduleDraftSave();
+            }
+        });
+        container.addEventListener('click', function(e) {
+            if (e.target === container) input.focus();
+        });
+        input.addEventListener('focus', function() { lastFocusedTarget = kind; });
+
+        return {
+            kind: kind, input: input,
+            addMany: addMany, setFromString: setFromString,
+            asString: asString, commitInput: commitInput,
+            clear: clear,
+            hasChips: function() { return chips.length > 0; },
+            pendingText: function() { return input.value.trim(); },
+        };
+    }
+
+    var lastFocusedTarget = 'to';
+    var toField  = createChipField(
+        document.getElementById('cm-composer-to-chips'),
+        document.getElementById('cm-composer-to-input'), 'to');
+    var ccField  = createChipField(
+        document.getElementById('cm-composer-cc-chips'),
+        document.getElementById('cm-composer-cc-input'), 'cc');
+    var bccField = createChipField(
+        document.getElementById('cm-composer-bcc-chips'),
+        document.getElementById('cm-composer-bcc-input'), 'bcc');
+    var fieldByKind = { to: toField, cc: ccField, bcc: bccField };
+
+    function draftKey() {
+        var mode = composer.dataset.mode || 'compose';
+        var scope = composer.dataset.scope || 'container';
+        var sid = composer.dataset.scopeId || '';
+        var pid = composer.dataset.parentId || '';
+        if (mode === 'reply' && pid) return 'cm-draft:reply:' + scope + ':' + pid;
+        return 'cm-draft:compose:' + scope + ':' + sid;
+    }
+    function fieldDraftStr(field) {
+        var s = field.asString();
+        var pending = field.pendingText();
+        if (pending) s = s ? (s + ', ' + pending) : pending;
+        return s;
+    }
+    function saveDraft() {
+        if (!composer.classList.contains('is-open')) return;
+        try {
+            localStorage.setItem(draftKey(), JSON.stringify({
+                to: fieldDraftStr(toField),
+                cc: fieldDraftStr(ccField),
+                bcc: fieldDraftStr(bccField),
+                subject: composerSubj.value, body: composerBody.value,
+                savedAt: Date.now(),
+            }));
+        } catch (e) {}
+    }
+    var _saveTimer = null;
+    function scheduleDraftSave() {
+        if (_saveTimer) clearTimeout(_saveTimer);
+        _saveTimer = setTimeout(saveDraft, 500);
+    }
+    function loadDraft() {
+        try {
+            var raw = localStorage.getItem(draftKey());
+            if (!raw) return null;
+            return JSON.parse(raw);
+        } catch (e) { return null; }
+    }
+    function clearDraft() {
+        try { localStorage.removeItem(draftKey()); } catch (e) {}
+    }
+
+    function renderChips() {
+        composerChips.innerHTML = '';
+        attachedFiles.forEach(function(entry) {
+            var chip = document.createElement('span');
+            chip.className = 'cm-att-chip';
+            chip.innerHTML = '📎 ' + escapeHtml(entry.file.name) +
+                ' <span style="color:#94a3b8;">(' + humanSize(entry.file.size) + ')</span>';
+            var rm = document.createElement('button');
+            rm.type = 'button'; rm.textContent = '×'; rm.title = 'Убрать';
+            rm.addEventListener('click', function() {
+                attachedFiles = attachedFiles.filter(function(x) { return x.id !== entry.id; });
+                renderChips();
+            });
+            chip.appendChild(rm);
+            composerChips.appendChild(chip);
+        });
+    }
+
+    if (composerFiles) {
+        composerFiles.addEventListener('change', function() {
+            Array.prototype.slice.call(composerFiles.files).forEach(function(f) {
+                attachedFiles.push({file: f, id: ++attachedSeq});
+            });
+            composerFiles.value = '';
+            renderChips();
+        });
+    }
+
+    function openComposer(opts) {
+        opts = opts || {};
+        currentOpts = opts;
+        var mode  = opts.mode  || 'compose';
+        var scope = opts.scope || 'container';
+        var sid   = opts.scopeId != null ? String(opts.scopeId) : '';
+        var pid   = opts.parentEmailId != null ? String(opts.parentEmailId) : '';
+
+        composer.dataset.mode     = mode;
+        composer.dataset.scope    = scope;
+        composer.dataset.scopeId  = sid;
+        composer.dataset.parentId = pid;
+        composer.classList.remove('is-minimized');
+        composer.classList.add('is-open');
+
+        attachedFiles = []; renderChips();
+        composerStatus.textContent = ''; composerStatus.style.color = '';
+        composerSend.disabled = false; composerSend.textContent = 'Отправить';
+
+        if (mode === 'reply') {
+            composerTitle.textContent = opts.subject ? ('Ответ: ' + opts.subject) : 'Ответ';
+        } else {
+            var titles = {
+                container: 'Новое письмо по контейнеру',
+                car: 'Новое письмо по машине',
+                autotransport: 'Новое письмо по рейсу',
+            };
+            composerTitle.textContent = titles[scope] || 'Новое письмо';
+        }
+
+        toField.setFromString(opts.to || '');
+        ccField.setFromString(opts.cc || '');
+        bccField.setFromString(opts.bcc || '');
+        if (ccDetails) ccDetails.open = ccField.hasChips() || bccField.hasChips();
+        composerSubj.value = opts.subject || '';
+        composerBody.value = opts.body || '';
+        currentMaxMb      = opts.maxMb || 25;
+        lastFocusedTarget = 'to';
+        updateGroupsTargetUI();
+        if (mode === 'reply') {
+            composerHint.textContent = ' Пишите ответ СВЕРХУ (до строки "On … wrote:"). ' +
+                'Цитата автоматически свернётся у получателя. Лимит вложений ~' + currentMaxMb + ' МБ.';
+        } else {
+            composerHint.textContent = ' Лимит вложений ~' + currentMaxMb + ' МБ.';
+        }
+
+        var draft = loadDraft();
+        if (draft) {
+            var ageMin = (Date.now() - (draft.savedAt || 0)) / 60000;
+            if (ageMin < 60 * 24 * 7) {
+                if ((draft.body || '').length > 5 || (draft.subject && draft.subject !== opts.subject)) {
+                    if (confirm('Восстановить сохранённый черновик?')) {
+                        if (draft.to)      toField.setFromString(draft.to);
+                        if (draft.cc)      ccField.setFromString(draft.cc);
+                        if (draft.bcc)     bccField.setFromString(draft.bcc);
+                        if (ccDetails)     ccDetails.open = ccField.hasChips() || bccField.hasChips();
+                        if (draft.subject) composerSubj.value = draft.subject;
+                        if (draft.body)    composerBody.value = draft.body;
+                    }
+                }
+            }
+        }
+
+        setTimeout(function() {
+            if (mode === 'reply') {
+                composerBody.focus();
+                try { composerBody.setSelectionRange(0, 0); } catch (e) {}
+                composerBody.scrollTop = 0;
+            } else {
+                toField.input.focus();
+            }
+        }, 50);
+    }
+
+    function closeComposer() {
+        var hasText = composerBody.value.trim().length > 0;
+        if (hasText && !confirm('Закрыть окно? Несохранённый текст будет утерян.')) return;
+        composer.classList.remove('is-open');
+        composer.dataset.mode = ''; composer.dataset.parentId = '';
+        attachedFiles = []; clearDraft();
+        currentOpts = null;
+    }
+
+    function getCsrf() {
+        return (document.querySelector('[name=csrfmiddlewaretoken]') || {}).value || '';
+    }
+
+    function send() {
+        var mode  = composer.dataset.mode;
+        var scope = composer.dataset.scope || 'container';
+        var sid   = composer.dataset.scopeId || '';
+        var pid   = composer.dataset.parentId || '';
+        var url;
+
+        toField.commitInput(); ccField.commitInput(); bccField.commitInput();
+        var fd = new FormData();
+        fd.append('to',  toField.asString());
+        fd.append('cc',  ccField.asString());
+        fd.append('bcc', bccField.asString());
+        fd.append('subject', composerSubj.value);
+        fd.append('body_text', composerBody.value);
+        fd.append('scope', scope);
+        if (sid) fd.append('scope_id', sid);
+        // Back-compat: старые вьюхи ожидают container_id.
+        if (scope === 'container' && sid) fd.append('container_id', sid);
+        attachedFiles.forEach(function(entry) {
+            fd.append('attachments', entry.file, entry.file.name);
+        });
+
+        if (mode === 'reply' && pid) {
+            url = '/core/emails/' + pid + '/reply/';
+        } else {
+            url = '/core/emails/compose/';
+        }
+
+        var total = attachedFiles.reduce(function(s, e) { return s + e.file.size; }, 0);
+        if (total > currentMaxMb * 1024 * 1024) {
+            composerStatus.style.color = '#b91c1c';
+            composerStatus.textContent = '✗ Превышен лимит вложений: ' + humanSize(total) + ' > ' + currentMaxMb + ' МБ';
+            return;
+        }
+
+        composerSend.disabled = true; composerSend.textContent = '…отправка';
+        composerStatus.style.color = '#64748b'; composerStatus.textContent = 'Отправка…';
+
+        fetch(url, {
+            method: 'POST',
+            headers: {'X-CSRFToken': getCsrf()},
+            body: fd,
+        })
+        .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+        .then(function(res) {
+            if (res.ok && res.data.ok) {
+                composerStatus.style.color = '#16a34a';
+                composerStatus.textContent = '✓ Отправлено';
+                clearDraft();
+                try {
+                    if (currentOpts && typeof currentOpts.onSuccess === 'function') {
+                        currentOpts.onSuccess(res.data);
+                    }
+                } catch (e) { console && console.error && console.error(e); }
+                setTimeout(function() {
+                    composer.classList.remove('is-open');
+                    composer.dataset.mode = ''; composer.dataset.parentId = '';
+                    attachedFiles = []; currentOpts = null;
+                }, 400);
+            } else {
+                composerStatus.style.color = '#b91c1c';
+                composerStatus.textContent = '✗ ' + ((res.data && res.data.error) || 'Ошибка отправки');
+                composerSend.disabled = false; composerSend.textContent = 'Отправить';
+            }
+        })
+        .catch(function(err) {
+            composerStatus.style.color = '#b91c1c';
+            composerStatus.textContent = '✗ ' + err;
+            composerSend.disabled = false; composerSend.textContent = 'Отправить';
+        });
+    }
+
+    if (composerSend)   composerSend.addEventListener('click', send);
+    if (composerCancel) composerCancel.addEventListener('click', closeComposer);
+    if (composerClose)  composerClose.addEventListener('click', closeComposer);
+    if (composerMin)    composerMin.addEventListener('click', function() {
+        composer.classList.toggle('is-minimized');
+    });
+    if (composerHeader) composerHeader.addEventListener('dblclick', function() {
+        composer.classList.toggle('is-minimized');
+    });
+
+    var shortcutEls = [composerBody, composerSubj, toField.input, ccField.input, bccField.input];
+    shortcutEls.forEach(function(el) {
+        if (!el) return;
+        el.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+            else if (e.key === 'Escape')                       { e.preventDefault(); closeComposer(); }
+        });
+    });
+    [composerBody, composerSubj, toField.input, ccField.input, bccField.input].forEach(function(el) {
+        if (!el) return;
+        el.addEventListener('input', scheduleDraftSave);
+    });
+
+    // ── Dropdown групп адресов ───────────────────────────────────────
+    var groupsBtn      = document.getElementById('cm-composer-groups-btn');
+    var groupsDropdown = document.getElementById('cm-composer-groups-dropdown');
+    var groupsListEl   = document.getElementById('cm-groups-dropdown-list');
+    var groupsTargetSw = document.getElementById('cm-groups-target-switch');
+    var groupsCache    = null;
+    var groupsLoading  = false;
+
+    function updateGroupsTargetUI() {
+        if (!groupsTargetSw) return;
+        Array.prototype.slice.call(groupsTargetSw.querySelectorAll('button')).forEach(function(b) {
+            if (b.dataset.target === lastFocusedTarget) b.classList.add('is-active');
+            else b.classList.remove('is-active');
+        });
+    }
+    function renderGroups(groups) {
+        groupsListEl.innerHTML = '';
+        if (!groups || !groups.length) {
+            var empty = document.createElement('div');
+            empty.className = 'cm-groups-empty';
+            empty.innerHTML = 'Групп ещё нет.<br>' +
+                '<a href="/admin/core/emailgroup/add/" target="_blank" style="color:#2563eb;">Создать группу в админке →</a>';
+            groupsListEl.appendChild(empty); return;
+        }
+        groups.forEach(function(g) {
+            var addrs = g.addrs || [];
+            var item = document.createElement('div');
+            item.className = 'cm-group-item';
+            var name = document.createElement('span');
+            name.className = 'cm-group-name'; name.textContent = g.name;
+            var count = document.createElement('span');
+            count.className = 'cm-group-count'; count.textContent = g.count || addrs.length;
+            var preview = document.createElement('span');
+            preview.className = 'cm-group-members';
+            preview.textContent = addrs.map(function(a) {
+                var p = parseAddress(a); return p ? p.email : a;
+            }).join(', ');
+            preview.title = addrs.join('\n');
+            item.appendChild(name); item.appendChild(preview); item.appendChild(count);
+            item.addEventListener('click', function() {
+                var target = fieldByKind[lastFocusedTarget] || toField;
+                target.addMany(addrs);
+                if ((lastFocusedTarget === 'cc' || lastFocusedTarget === 'bcc') && ccDetails && !ccDetails.open) {
+                    ccDetails.open = true;
+                }
+                hideGroupsDropdown();
+                target.input.focus();
+            });
+            groupsListEl.appendChild(item);
+        });
+    }
+    function loadGroups(forceReload) {
+        if (groupsLoading) return;
+        if (groupsCache && !forceReload) { renderGroups(groupsCache); return; }
+        groupsLoading = true;
+        groupsListEl.innerHTML = '<div class="cm-groups-loading">Загрузка…</div>';
+        fetch('/core/emails/groups/', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                groupsLoading = false;
+                if (d && d.ok) { groupsCache = d.groups || []; renderGroups(groupsCache); }
+                else { groupsListEl.innerHTML = '<div class="cm-groups-error">Не удалось загрузить группы</div>'; }
+            })
+            .catch(function(err) {
+                groupsLoading = false;
+                groupsListEl.innerHTML = '<div class="cm-groups-error">Ошибка: ' + escapeHtml(String(err)) + '</div>';
+            });
+    }
+    function showGroupsDropdown() {
+        groupsDropdown.hidden = false; updateGroupsTargetUI(); loadGroups(false);
+    }
+    function hideGroupsDropdown() { groupsDropdown.hidden = true; }
+
+    if (groupsBtn) groupsBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (groupsDropdown.hidden) showGroupsDropdown(); else hideGroupsDropdown();
+    });
+    if (groupsTargetSw) groupsTargetSw.addEventListener('click', function(e) {
+        var btn = e.target.closest('button[data-target]');
+        if (!btn) return;
+        lastFocusedTarget = btn.dataset.target; updateGroupsTargetUI();
+        if ((lastFocusedTarget === 'cc' || lastFocusedTarget === 'bcc') && ccDetails && !ccDetails.open) {
+            ccDetails.open = true;
+        }
+    });
+    document.addEventListener('click', function(e) {
+        if (groupsDropdown.hidden) return;
+        if (e.target.closest('#cm-composer-groups')) return;
+        hideGroupsDropdown();
+    });
+
+    // ── Public API ───────────────────────────────────────────────────
+    window.CMComposer = {
+        __init: true,
+        open: openComposer,
+        close: closeComposer,
+        openReplyFor: function(parentEmailId, scope, scopeId, onSuccess) {
+            // Удобный wrapper: сам подтягивает черновик через email_reply_draft,
+            // затем открывает composer с подставленными to/subject/quote.
+            if (!parentEmailId) return;
+            fetch('/core/emails/' + parentEmailId + '/reply/draft/')
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    if (!d || !d.ok) {
+                        alert('Не удалось загрузить черновик: ' + (d && d.error || ''));
+                        return;
+                    }
+                    openComposer({
+                        mode: 'reply',
+                        scope: scope || 'container',
+                        scopeId: scopeId,
+                        parentEmailId: parentEmailId,
+                        to: d.to, cc: d.cc, bcc: d.bcc,
+                        subject: d.subject,
+                        body: (d.quote || ''),
+                        maxMb: d.max_mb || 25,
+                        onSuccess: onSuccess,
+                    });
+                })
+                .catch(function(err) { alert('Ошибка: ' + err); });
+        },
+    };
+})();
+</script>

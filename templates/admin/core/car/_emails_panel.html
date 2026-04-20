@@ -1,14 +1,14 @@
 {% comment %}
-Блок «Переписка» для карточки машины — messenger-стиль (lean-версия).
+Блок «Переписка» для карточки машины — messenger-стиль.
 
 Отличия от контейнерной панели:
   * Строгий VIN-матч: панель показывает только письма с явным VIN этой машины.
-  * Нет composer/reply (эта итерация; см. docs/CAR_AUTOTRANSPORT_EMAIL_PLAN.md).
   * URLs: /core/emails/car/<id>/mark-all-read|updates/.
   * mark-read per-баббл: ``scope=car`` + ``scope_id=<car.pk>``.
+  * Compose / Reply: через общий ``window.CMComposer`` из
+    ``admin/core/email/_composer.html`` — scope=car, scopeId=car.pk.
 
-Отдаёт read-only ленту + авто-пометку прочитанным при первом открытии и
-polling новых писем каждые 30 секунд, как и контейнерная панель.
+Авто-пометка прочитанным при первом открытии и polling каждые 30 секунд.
 {% endcomment %}
 {% load static %}
 {% load email_extras %}
@@ -286,8 +286,8 @@ polling новых писем каждые 30 секунд, как и конте
     margin-bottom: 8px;
 }
 
-/* ═══ Reply-кнопка: в этой итерации панель read-only ═══ */
-#car-emails-section .cm-bubble-actions { display: none; }
+/* Reply-кнопки отображаются через классы `.cm-panel-with-reply`
+ * из общего composer-партиала (templates/admin/core/email/_composer.html). */
 
 /* ═══ Статус отправки (SENT / FAILED) у исходящих ═══ */
 #car-emails-section .cm-msg-send-status {
@@ -301,7 +301,7 @@ polling новых писем каждые 30 секунд, как и конте
 #car-emails-section .cm-msg-send-status[data-status="PENDING"] { background:#fef3c7; color:#92400e; }
 </style>
 
-<fieldset id="car-emails-section" class="module aligned collapse"
+<fieldset id="car-emails-section" class="module aligned collapse cm-panel-with-reply"
           data-car-id="{{ original.pk }}"
           data-emails-count="{{ emails|length }}">
     <details>
@@ -320,6 +320,10 @@ polling новых писем каждые 30 секунд, как и конте
             <button type="button" id="cm-car-emails-sync-btn"
                     title="Подтянуть новые письма из Gmail">
                 ↻ Синхронизировать
+            </button>
+            <button type="button" id="cm-car-email-compose-btn"
+                    title="Написать новое письмо по этой машине">
+                ✍ Написать
             </button>
             <span class="cm-emails-status" id="cm-car-emails-status"></span>
         </div>
@@ -347,12 +351,13 @@ polling новых писем каждые 30 секунд, как и конте
     </details>
 </fieldset>
 
+{% include "admin/core/email/_composer.html" %}
+
 <script>
 (function() {
     var section = document.getElementById('car-emails-section');
     if (!section) return;
 
-    // Перемещаем сразу после последнего inline (чтобы висело внизу формы).
     var inlineGroups = document.querySelectorAll('.inline-group');
     var lastInline = inlineGroups[inlineGroups.length - 1];
     var submitRow = document.querySelector('.submit-row');
@@ -362,12 +367,13 @@ polling новых писем каждые 30 секунд, как и конте
         submitRow.parentNode.insertBefore(section, submitRow);
     }
 
-    var details = section.querySelector(':scope > details');
-    var list    = document.getElementById('cm-car-emails-list');
-    var syncBtn = document.getElementById('cm-car-emails-sync-btn');
-    var status  = document.getElementById('cm-car-emails-status');
-    var badge   = document.getElementById('cm-car-emails-badge');
-    var carId   = section.dataset.carId;
+    var details    = section.querySelector(':scope > details');
+    var list       = document.getElementById('cm-car-emails-list');
+    var syncBtn    = document.getElementById('cm-car-emails-sync-btn');
+    var composeBtn = document.getElementById('cm-car-email-compose-btn');
+    var status     = document.getElementById('cm-car-emails-status');
+    var badge      = document.getElementById('cm-car-emails-badge');
+    var carId      = section.dataset.carId;
 
     function countUnread() {
         if (!list) return 0;
@@ -449,6 +455,56 @@ polling новых писем каждые 30 секунд, как и конте
                 syncBtn.disabled = false;
                 syncBtn.textContent = '↻ Синхронизировать';
             });
+        });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Composer: новое письмо и ответ
+    // ═══════════════════════════════════════════════════════════════════
+    function insertBubble(html) {
+        if (!list || !html) return;
+        var tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        var node = tmp.firstElementChild;
+        if (node) {
+            list.insertBefore(node, list.firstChild);
+            refreshBadge();
+        }
+    }
+
+    if (composeBtn) {
+        composeBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (!window.CMComposer) return;
+            var vinHint = '{{ original.vin|default:""|escapejs }}';
+            var defaultSubj = vinHint ? ('VIN ' + vinHint) : 'Car #{{ original.pk }}';
+            window.CMComposer.open({
+                mode: 'compose',
+                scope: 'car',
+                scopeId: carId,
+                to: '',
+                subject: defaultSubj,
+                body: '',
+                maxMb: 25,
+                onSuccess: function(data) { insertBubble(data && data.html); },
+            });
+        });
+    }
+
+    if (list) {
+        list.addEventListener('click', function(e) {
+            var btn = e.target.closest('.cm-reply-btn');
+            if (!btn) return;
+            e.preventDefault(); e.stopPropagation();
+            var emailId = btn.dataset.emailId;
+            if (!emailId || !window.CMComposer) return;
+            btn.disabled = true; btn.textContent = '…загрузка';
+            window.CMComposer.openReplyFor(emailId, 'car', carId, function(data) {
+                insertBubble(data && data.html);
+            });
+            setTimeout(function() {
+                btn.disabled = false; btn.textContent = '↩ Ответить';
+            }, 400);
         });
     }
 
