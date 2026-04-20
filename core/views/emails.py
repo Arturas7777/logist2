@@ -206,6 +206,43 @@ def email_mark_read(request, email_id: int):
     return JsonResponse({'ok': True, 'is_read': new_val, 'updated': updated})
 
 
+# ---------------------------------------------------------------------------
+# «Ответить позже» (follow-up flag)
+# ---------------------------------------------------------------------------
+
+@staff_member_required
+@require_POST
+def email_set_needs_reply(request, email_id: int):
+    """Ставит/снимает глобальный follow-up флаг на письме.
+
+    POST ``value=1|0``. Флаг хранится на самом ``ContainerEmail`` — виден из
+    всех карточек (Container/Car/AutoTransport), где засветилось письмо.
+    Авто-снятие при отправке ответа реализовано в ``reply_to_email``.
+    """
+    email = get_object_or_404(ContainerEmail, pk=email_id)
+    raw = (request.POST.get('value') or '').strip()
+    new_val = raw in ('1', 'true', 'True', 'on', 'yes')
+
+    email.needs_reply = new_val
+    if new_val:
+        email.needs_reply_set_at = timezone.now()
+        email.needs_reply_set_by = (
+            request.user if request.user.is_authenticated else None
+        )
+    else:
+        email.needs_reply_set_at = None
+        email.needs_reply_set_by = None
+    email.save(update_fields=[
+        'needs_reply', 'needs_reply_set_at', 'needs_reply_set_by',
+    ])
+
+    return JsonResponse({
+        'ok': True,
+        'email_id': email.pk,
+        'needs_reply': new_val,
+    })
+
+
 @staff_member_required
 @require_POST
 def email_mark_car_read(request, car_id: int):

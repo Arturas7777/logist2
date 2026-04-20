@@ -631,6 +631,22 @@ def _send_and_persist(
         source_text=source_text_for_matching,
     )
 
+    # Follow-up flag: если отвечаем на помеченное «ответить позже» письмо —
+    # автоматически снимаем флаг, т.к. обязательство закрыто отправкой ответа.
+    if (parent_email is not None
+            and parent_email.needs_reply
+            and email.send_status == ContainerEmail.SEND_STATUS_SENT):
+        parent_email.needs_reply = False
+        parent_email.needs_reply_set_at = None
+        parent_email.needs_reply_set_by = None
+        parent_email.save(update_fields=[
+            'needs_reply', 'needs_reply_set_at', 'needs_reply_set_by',
+        ])
+        logger.info(
+            '[email_compose] auto-cleared needs_reply on parent email pk=%s',
+            parent_email.pk,
+        )
+
     logger.info(
         '[email_compose] outgoing saved: pk=%s gmail_id=%s thread=%s container=%s',
         email.pk, gmail_id, gmail_thread_id,
