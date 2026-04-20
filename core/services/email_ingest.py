@@ -297,9 +297,24 @@ def _persist_attachments(
             skipped += 1
             continue
 
-        storage_path = _save_attachment_bytes(
-            data, msg.gmail_id, idx, att, media_root, now,
-        )
+        try:
+            storage_path = _save_attachment_bytes(
+                data, msg.gmail_id, idx, att, media_root, now,
+            )
+        except OSError as exc:
+            # Permission denied / disk full / ENAMETOOLONG и пр. — не валим весь
+            # sync_mailbox из-за одного вложения: пропускаем его и продолжаем,
+            # чтобы последующие письма всё равно сохранились, а last_history_id
+            # продвинулся вперёд.
+            logger.warning(
+                '[gmail_sync] attachment save failed (%s): %s',
+                att.filename, exc, exc_info=True,
+            )
+            meta['skipped_reason'] = f'io_error: {exc}'
+            result.append(meta)
+            skipped += 1
+            continue
+
         meta['storage_path'] = storage_path
         meta['size'] = len(data)
         result.append(meta)
