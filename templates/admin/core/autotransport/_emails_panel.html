@@ -15,14 +15,50 @@ URLs: /core/emails/autotransport/<id>/mark-all-read|updates/.
 {% with emails=original.emails_for_panel %}
 
 <style>
-/* ═══ Каркас секции ═══ */
+/* ═══ Каркас секции — визуально совпадает с .card страницы автовоза ═══ */
 #at-emails-section {
     clear: both !important;
     width: 100% !important;
     max-width: none !important;
     box-sizing: border-box;
     margin-top: 16px;
+    background: var(--cm-card, #fff);
+    border-radius: var(--cm-radius, 14px);
+    box-shadow: var(--cm-shadow-card, 0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08));
+    overflow: hidden;
+    border: 0;
+    padding: 0;
 }
+
+#at-emails-section .at-card-header {
+    padding: 16px 24px;
+    background: #ededf2;
+    border-bottom: 1px solid rgba(0,0,0,.06);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+}
+#at-emails-section .at-card-header::-webkit-details-marker { display: none; }
+#at-emails-section .at-card-header .icon { font-size: 1.1rem; }
+#at-emails-section .at-card-header h2 {
+    font-size: .95rem;
+    font-weight: 700;
+    color: var(--cm-text, #1a1a2e);
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+#at-emails-section .at-card-caret {
+    margin-left: auto;
+    color: var(--cm-text-secondary, #6b7280);
+    font-size: .85rem;
+    transition: transform .15s ease;
+}
+#at-emails-section > details[open] .at-card-caret { transform: rotate(90deg); }
 
 #at-emails-section .cm-email-badge {
     background: #9ca3af;
@@ -31,32 +67,35 @@ URLs: /core/emails/autotransport/<id>/mark-all-read|updates/.
     border-radius: 10px;
     font-size: 11px;
     font-weight: 600;
-    margin-left: 8px;
     vertical-align: middle;
 }
-#at-emails-section .cm-email-badge.has-unread { background: #2563eb; }
+#at-emails-section .cm-email-badge.has-unread { background: var(--cm-purple, #6c5ce7); }
 #at-emails-section .cm-emails-body { padding: 0; }
 
 #at-emails-section .cm-emails-actions {
-    padding: 10px 15px;
-    border-bottom: 1px solid #e5e7eb;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--cm-border, #ebebf0);
     display: flex;
     gap: 8px;
     align-items: center;
-    background: #fafafa;
+    background: var(--cm-bg, #f5f6fa);
     flex-wrap: wrap;
 }
 #at-emails-section .cm-emails-actions button {
-    padding: 4px 10px;
+    padding: 6px 14px;
     font-size: 12px;
+    font-weight: 600;
     background: #fff;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    border: 1px solid var(--cm-border, #ebebf0);
+    border-radius: var(--cm-radius-xs, 8px);
     cursor: pointer;
+    color: var(--cm-text, #1a1a2e);
+    transition: all .15s ease;
 }
 #at-emails-section .cm-emails-actions button:hover {
-    background: #f0f8ff;
-    border-color: #79aec8;
+    background: var(--cm-purple-bg, #f0edff);
+    border-color: var(--cm-purple-light, #a29bfe);
+    color: var(--cm-purple, #6c5ce7);
 }
 #at-emails-section .cm-emails-actions button:disabled {
     opacity: 0.5;
@@ -309,18 +348,20 @@ URLs: /core/emails/autotransport/<id>/mark-all-read|updates/.
 #at-emails-section .cm-msg-send-status[data-status="PENDING"] { background:#fef3c7; color:#92400e; }
 </style>
 
-<fieldset id="at-emails-section" class="module aligned collapse"
-          data-at-id="{{ original.pk }}"
-          data-emails-count="{{ emails|length }}">
+<div id="at-emails-section"
+     data-at-id="{{ original.pk }}"
+     data-emails-count="{{ emails|length }}">
     <details>
-        <summary>
-            <h2 class="fieldset-heading">
+        <summary class="at-card-header">
+            <span class="icon">✉️</span>
+            <h2>
                 Переписка по рейсу
                 <span class="cm-email-badge" id="cm-at-emails-badge"
                       title="Всего писем: {{ emails|length }}">
                     {{ emails|length }}
                 </span>
             </h2>
+            <span class="at-card-caret">▸</span>
         </summary>
 
         <div class="cm-emails-body" id="cm-at-emails-body">
@@ -352,7 +393,7 @@ URLs: /core/emails/autotransport/<id>/mark-all-read|updates/.
         {% endif %}
         </div>
     </details>
-</fieldset>
+</div>
 
 <script>
 (function() {
