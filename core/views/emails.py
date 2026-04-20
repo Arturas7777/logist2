@@ -375,6 +375,53 @@ def email_reply_draft(request, email_id: int):
     })
 
 
+def _resolve_origin_scope(request):
+    """Определяет «карточку-источник» по POST-параметрам.
+
+    Возвращает ``(scope, origin_container, origin_car, origin_autotransport)``.
+    Поддерживаемые сценарии:
+      * ``scope=container`` + ``scope_id`` (или back-compat ``container_id``);
+      * ``scope=car`` + ``scope_id``;
+      * ``scope=autotransport`` + ``scope_id``.
+    Если scope не задан, пытаемся угадать по back-compat ``container_id``.
+    """
+    scope = (request.POST.get('scope') or '').strip().lower()
+    scope_id = request.POST.get('scope_id')
+    container_id_bc = request.POST.get('container_id')
+
+    origin_container = None
+    origin_car = None
+    origin_autotransport = None
+
+    if scope == 'car' and scope_id:
+        from core.models import Car
+        try:
+            origin_car = Car.objects.only('id', 'vin').get(pk=int(scope_id))
+        except (Car.DoesNotExist, ValueError):
+            origin_car = None
+        return 'car', origin_container, origin_car, origin_autotransport
+
+    if scope == 'autotransport' and scope_id:
+        from core.models import AutoTransport
+        try:
+            origin_autotransport = (
+                AutoTransport.objects.only('id', 'number').get(pk=int(scope_id))
+            )
+        except (AutoTransport.DoesNotExist, ValueError):
+            origin_autotransport = None
+        return 'autotransport', origin_container, origin_car, origin_autotransport
+
+    # container / default / back-compat
+    from core.models import Container
+    cid = scope_id if scope == 'container' else container_id_bc
+    if cid:
+        try:
+            origin_container = Container.objects.only('id').get(pk=int(cid))
+        except (Container.DoesNotExist, ValueError):
+            origin_container = None
+    return 'container', origin_container, origin_car, origin_autotransport
+
+
 @staff_member_required
 @require_POST
 def email_reply_send(request, email_id: int):
@@ -389,17 +436,12 @@ def email_reply_send(request, email_id: int):
         ContainerEmail.objects.prefetch_related('containers'), pk=email_id,
     )
 
-    # «Карточка-источник» — контейнер, из которого жмут Ответить.
-    # Если фронт передал container_id — используем его; иначе берём первый
-    # связанный с parent, чтобы сохранить старое поведение.
-    origin_container = None
-    origin_id = request.POST.get('container_id')
-    if origin_id:
-        from core.models import Container  # локально, чтобы избежать circular
-        try:
-            origin_container = Container.objects.only('id').get(pk=int(origin_id))
-        except (Container.DoesNotExist, ValueError):
-            origin_container = None
+    scope, origin_container, origin_car, origin_autotransport = _resolve_origin_scope(request)
+
+    # Back-compat: если scope=container не задан и container_id тоже, берём
+    # первый контейнер из parent (старое поведение).
+    if scope == 'container' and origin_container is None and origin_car is None and origin_autotransport is None:
+        origin_container = parent.containers.first()
 
     try:
         from core.services.email_compose import ComposeError, reply_to_email
@@ -414,6 +456,8 @@ def email_reply_send(request, email_id: int):
             body_text=request.POST.get('body_text', ''),
             attachments=request.FILES.getlist('attachments'),
             origin_container=origin_container,
+            origin_car=origin_car,
+            origin_autotransport=origin_autotransport,
         )
     except ComposeError as exc:
         return _compose_error_response(exc, status=400)
@@ -423,51 +467,77 @@ def email_reply_send(request, email_id: int):
 
     return _render_bubble_response(
         request, sent,
+        scope=scope,
         container_id=getattr(origin_container, 'pk', None),
+        car_id=getattr(origin_car, 'pk', None),
+        autotransport=origin_autotransport,
     )
 
 
 @staff_member_required
 @require_POST
 def email_compose_send(request):
-    """Новое письмо по контейнеру (без родителя)."""
+    """Новое письмо по контейнеру / машине / автовозу (без родителя)."""
     if not getattr(settings, 'GMAIL_ENABLED', False):
         return JsonResponse({
             'ok': False,
             'error': 'GMAIL_ENABLED=False — отправка отключена.',
         }, status=400)
 
-    container_id = request.POST.get('container_id')
-    if not container_id:
-        return JsonResponse(
-            {'ok': False, 'error': 'container_id обязателен.'},
-            status=400,
-        )
+    scope, origin_container, origin_car, origin_autotransport = _resolve_origin_scope(request)
 
-    from core.models import Container  # локально, чтобы избежать circular
-
-    container = get_object_or_404(Container, pk=container_id)
+    common_kwargs = dict(
+        user=request.user,
+        to=request.POST.get('to', ''),
+        cc=request.POST.get('cc', ''),
+        bcc=request.POST.get('bcc', ''),
+        subject=request.POST.get('subject', ''),
+        body_text=request.POST.get('body_text', ''),
+        attachments=request.FILES.getlist('attachments'),
+    )
 
     try:
-        from core.services.email_compose import ComposeError, compose_new_email
-
-        sent = compose_new_email(
-            container=container,
-            user=request.user,
-            to=request.POST.get('to', ''),
-            cc=request.POST.get('cc', ''),
-            bcc=request.POST.get('bcc', ''),
-            subject=request.POST.get('subject', ''),
-            body_text=request.POST.get('body_text', ''),
-            attachments=request.FILES.getlist('attachments'),
+        from core.services.email_compose import (
+            ComposeError,
+            compose_new_email,
+            compose_new_email_from_autotransport,
+            compose_new_email_from_car,
         )
+
+        if scope == 'car':
+            if origin_car is None:
+                return JsonResponse(
+                    {'ok': False, 'error': 'Машина не найдена.'}, status=400,
+                )
+            sent = compose_new_email_from_car(car=origin_car, **common_kwargs)
+        elif scope == 'autotransport':
+            if origin_autotransport is None:
+                return JsonResponse(
+                    {'ok': False, 'error': 'Автовоз не найден.'}, status=400,
+                )
+            sent = compose_new_email_from_autotransport(
+                autotransport=origin_autotransport, **common_kwargs,
+            )
+        else:
+            if origin_container is None:
+                return JsonResponse(
+                    {'ok': False, 'error': 'container_id обязателен.'},
+                    status=400,
+                )
+            sent = compose_new_email(container=origin_container, **common_kwargs)
     except ComposeError as exc:
         return _compose_error_response(exc, status=400)
     except Exception as exc:
         logger.exception('[email_compose_send] unexpected: %s', exc)
         return _compose_error_response(exc, status=500)
 
-    return _render_bubble_response(request, sent, container_id=container.pk)
+    return _render_bubble_response(
+        request, sent,
+        scope=scope,
+        container_id=getattr(origin_container, 'pk', None),
+        car_id=getattr(origin_car, 'pk', None),
+        autotransport=origin_autotransport,
+    )
 
 
 def _resolve_group_addrs(members) -> list:
@@ -744,15 +814,52 @@ def _render_bubble_response(
     request,
     email: ContainerEmail,
     container_id: int | None = None,
+    scope: str = 'container',
+    car_id: int | None = None,
+    autotransport=None,
 ) -> JsonResponse:
     """Рендерит один баббл и возвращает его в JSON (ok + html).
 
-    Если передан ``container_id`` — добавляем аннотацию ``is_read_here``
-    для этой карточки, чтобы баббл показывал корректный «прочитанный»
-    статус именно в контексте этой карточки.
+    В зависимости от ``scope`` аннотирует ``is_read_here`` по нужной таблице
+    связей, чтобы баббл корректно отразил статус именно в карточке-источнике.
     """
-    if container_id:
-        from django.db.models import OuterRef, Subquery
+    from django.db.models import Exists, OuterRef, Subquery
+
+    context: dict = {}
+
+    if scope == 'car' and car_id:
+        email = (
+            ContainerEmail.objects
+            .filter(pk=email.pk)
+            .annotate(
+                is_read_here=Subquery(
+                    CarEmailLink.objects
+                    .filter(email=OuterRef('pk'), car_id=car_id)
+                    .values('is_read')[:1]
+                )
+            )
+            .prefetch_related('containers', 'cars')
+            .first()
+        ) or email
+    elif scope == 'autotransport' and autotransport is not None:
+        car_ids = list(autotransport.cars.values_list('id', flat=True))
+        if car_ids:
+            has_unread = Exists(
+                CarEmailLink.objects.filter(
+                    email=OuterRef('pk'),
+                    car_id__in=car_ids,
+                    is_read=False,
+                )
+            )
+            email = (
+                ContainerEmail.objects
+                .filter(pk=email.pk)
+                .annotate(is_read_here=~has_unread)
+                .prefetch_related('containers', 'cars')
+                .first()
+            ) or email
+            context['autotransport_car_ids'] = set(car_ids)
+    elif container_id:
         email = (
             ContainerEmail.objects
             .filter(pk=email.pk)
@@ -766,10 +873,12 @@ def _render_bubble_response(
             .prefetch_related('containers')
             .first()
         ) or email
+
+    context['email'] = email
     html = render(
         request,
         'admin/core/container/_email_bubble.html',
-        {'email': email},
+        context,
     ).content.decode('utf-8')
     return JsonResponse({
         'ok': True,

@@ -31,7 +31,7 @@ from django.contrib.auth.models import AbstractBaseUser
 from django.core.files.uploadedfile import UploadedFile
 from django.utils import timezone
 
-from core.models_email import ContainerEmail, ContainerEmailLink
+from core.models_email import CarEmailLink, ContainerEmail, ContainerEmailLink
 from core.models_contact import Contact, ContactEmail
 from core.services.email_reply_parser import (
     compose_reply_html,
@@ -52,6 +52,8 @@ logger = logging.getLogger(__name__)
 __all__ = [
     'reply_to_email',
     'compose_new_email',
+    'compose_new_email_from_car',
+    'compose_new_email_from_autotransport',
     'ComposeError',
 ]
 
@@ -340,16 +342,20 @@ def reply_to_email(
     body_text: str = '',
     attachments: Iterable[UploadedFile] | None = None,
     origin_container=None,
+    origin_car=None,
+    origin_autotransport=None,
 ) -> ContainerEmail:
     """Отвечает на существующее письмо. Кладёт новое в тот же Gmail thread.
 
-    ``origin_container`` — контейнер, из карточки которого пользователь нажал
-    «Ответить». Он пойдёт в ``sent_from_container`` и будет гарантированно
-    привязан к исходящему. Если не передан — берём из parent_email.containers
-    (первый связанный) как fallback.
+    ``origin_container`` / ``origin_car`` / ``origin_autotransport`` —
+    сущность, из карточки которой пользователь нажал «Ответить». Влияет
+    только на линковку (помечаем прочитанным в карточке-источнике) и на
+    ``sent_from_container`` для контейнерного сценария. Если ни одно не
+    передано — берём первый связанный контейнер из parent_email как
+    fallback (старое поведение).
     """
 
-    if origin_container is None:
+    if origin_container is None and origin_car is None and origin_autotransport is None:
         origin_container = parent_email.containers.first()
 
     to_list = _parse_addrs(to)
@@ -413,6 +419,8 @@ def reply_to_email(
         references=references_hdr,
         raw_recipient_pairs=raw_pairs,
         source_text_for_matching=f'{subject}\n{body_text_final}',
+        origin_car=origin_car,
+        origin_autotransport=origin_autotransport,
     )
 
 
@@ -511,6 +519,8 @@ def _send_and_persist(
     references,
     raw_recipient_pairs: list[tuple[str, str]] | None = None,
     source_text_for_matching: str = '',
+    origin_car=None,
+    origin_autotransport=None,
 ) -> ContainerEmail:
     now = timezone.now()
 
@@ -564,6 +574,13 @@ def _send_and_persist(
             source_text=source_text_for_matching,
             origin_matched_by=matched_by,
         )
+        _link_outgoing_to_cars(
+            email=email,
+            origin_car=origin_car,
+            origin_autotransport=origin_autotransport,
+            parent_email=parent_email,
+            source_text=source_text_for_matching,
+        )
         raise
 
     gmail_id = response.get('id', '') or ''
@@ -605,6 +622,13 @@ def _send_and_persist(
         parent_email=parent_email,
         source_text=source_text_for_matching,
         origin_matched_by=matched_by,
+    )
+    _link_outgoing_to_cars(
+        email=email,
+        origin_car=origin_car,
+        origin_autotransport=origin_autotransport,
+        parent_email=parent_email,
+        source_text=source_text_for_matching,
     )
 
     logger.info(
@@ -685,3 +709,209 @@ def _link_outgoing_to_containers(
 
     if links:
         ContainerEmailLink.objects.bulk_create(links, ignore_conflicts=True)
+
+
+def _link_outgoing_to_cars(
+    *,
+    email: ContainerEmail,
+    origin_car,
+    origin_autotransport,
+    parent_email: ContainerEmail | None,
+    source_text: str,
+) -> None:
+    """Линкует исходящее письмо к машинам через ``CarEmailLink``.
+
+    Набор машин = {origin_car} ∪ {машины origin_autotransport} ∪
+    {машины из родительского письма} ∪ {VIN-ы из subject/body}.
+    ``is_read`` = True для карточек-источников (мы сами отправили), False
+    для cross-linked (чтобы получатели в других карточках увидели unread).
+    """
+    from core.services.email_matcher import _match_by_vins  # noqa: PLC2701
+
+    seen: set[int] = set()
+    links: list[CarEmailLink] = []
+
+    def _add(cid: int | None, matched_by: str, is_read: bool) -> None:
+        if not cid or cid in seen:
+            return
+        seen.add(cid)
+        links.append(CarEmailLink(
+            email=email,
+            car_id=cid,
+            matched_by=matched_by,
+            is_read=is_read,
+        ))
+
+    # 1) Машина-источник: сами отправили → «прочитано».
+    if origin_car is not None and getattr(origin_car, 'pk', None):
+        _add(
+            origin_car.pk,
+            ContainerEmail.MATCHED_BY_MANUAL,
+            is_read=True,
+        )
+
+    # 2) Все машины автовоза-источника: тоже «прочитано» в этих карточках.
+    if origin_autotransport is not None and getattr(origin_autotransport, 'pk', None):
+        try:
+            at_car_ids = list(origin_autotransport.cars.values_list('id', flat=True))
+        except Exception:  # pragma: no cover — защитная обёртка
+            at_car_ids = []
+        for cid in at_car_ids:
+            _add(cid, ContainerEmail.MATCHED_BY_MANUAL, is_read=True)
+
+    # 3) Машины из треда (VIN-линки родителя): cross-link → unread.
+    if parent_email is not None and parent_email.pk:
+        try:
+            parent_car_ids = list(
+                parent_email.cars.values_list('id', flat=True)
+            )
+        except Exception:  # pragma: no cover
+            parent_car_ids = []
+        for cid in parent_car_ids:
+            _add(cid, ContainerEmail.MATCHED_BY_THREAD, is_read=False)
+
+    # 4) VIN-ы в тексте письма → cross-link → unread.
+    if source_text:
+        try:
+            for cid in _match_by_vins(source_text):
+                _add(cid, ContainerEmail.MATCHED_BY_VIN, is_read=False)
+        except Exception as exc:  # pragma: no cover — защитная обёртка
+            logger.warning('[email_compose] link-cars-by-vin failed: %s', exc)
+
+    if links:
+        CarEmailLink.objects.bulk_create(links, ignore_conflicts=True)
+
+
+# ---------------------------------------------------------------------------
+# Compose from Car / AutoTransport
+# ---------------------------------------------------------------------------
+
+
+def _compose_new_email_internal(
+    *,
+    origin_container=None,
+    origin_car=None,
+    origin_autotransport=None,
+    default_subject: str,
+    user: AbstractBaseUser | None,
+    to: str | Iterable[str],
+    cc: str | Iterable[str] | None,
+    bcc: str | Iterable[str] | None,
+    subject: str,
+    body_text: str,
+    attachments: Iterable[UploadedFile] | None,
+) -> ContainerEmail:
+    """Общая реализация «новое письмо» для car/autotransport сценариев.
+
+    Для car/autotransport ``sent_from_container`` пустой (поле nullable) —
+    карточка-источник фиксируется только через ``CarEmailLink`` (origin_car
+    или все машины рейса).
+    """
+    to_list = _parse_addrs(to)
+    cc_list = _parse_addrs(cc)
+    bcc_list = _parse_addrs(bcc)
+    if not to_list:
+        raise ComposeError('Не указан хотя бы один получатель.')
+    raw_pairs: list[tuple[str, str]] = []
+    raw_pairs.extend(_parse_addrs_with_names(to))
+    raw_pairs.extend(_parse_addrs_with_names(cc))
+    raw_pairs.extend(_parse_addrs_with_names(bcc))
+
+    att_payload = _validate_and_read_attachments(attachments)
+
+    subject = (subject or '').strip() or default_subject
+    body_text_final, body_html_final = _append_signature(
+        body_text or '', plain_text_to_simple_html(body_text or '')
+    )
+
+    from_addr, from_name = get_from_address()
+
+    mime = build_mime_message(
+        from_addr=from_addr,
+        from_name=from_name,
+        to=to_list,
+        cc=cc_list,
+        bcc=bcc_list,
+        subject=subject,
+        body_text=body_text_final,
+        body_html=body_html_final,
+        attachments=att_payload,
+        is_reply=False,
+    )
+
+    local_message_id = mime.get('Message-ID', '') or make_msgid()
+    subject_final = mime.get('Subject', subject)
+
+    return _send_and_persist(
+        mime=mime,
+        thread_id=None,
+        container=origin_container,
+        parent_email=None,
+        user=user,
+        local_message_id=local_message_id,
+        subject_final=subject_final,
+        from_addr=from_addr,
+        to_list=to_list,
+        cc_list=cc_list,
+        body_text_final=body_text_final,
+        body_html_final=body_html_final,
+        attachments_payload=att_payload,
+        matched_by=ContainerEmail.MATCHED_BY_MANUAL,
+        in_reply_to='',
+        references='',
+        raw_recipient_pairs=raw_pairs,
+        source_text_for_matching=f'{subject}\n{body_text_final}',
+        origin_car=origin_car,
+        origin_autotransport=origin_autotransport,
+    )
+
+
+def compose_new_email_from_car(
+    *,
+    car,
+    user: AbstractBaseUser | None,
+    to: str | Iterable[str],
+    cc: str | Iterable[str] | None = None,
+    bcc: str | Iterable[str] | None = None,
+    subject: str = '',
+    body_text: str = '',
+    attachments: Iterable[UploadedFile] | None = None,
+) -> ContainerEmail:
+    """Новое письмо из карточки машины (без родителя)."""
+    if car is None or not getattr(car, 'pk', None):
+        raise ComposeError('Не указана машина-источник.')
+    default_subject = f'VIN {getattr(car, "vin", "") or car.pk}'
+    return _compose_new_email_internal(
+        origin_car=car,
+        default_subject=default_subject,
+        user=user,
+        to=to, cc=cc, bcc=bcc,
+        subject=subject, body_text=body_text,
+        attachments=attachments,
+    )
+
+
+def compose_new_email_from_autotransport(
+    *,
+    autotransport,
+    user: AbstractBaseUser | None,
+    to: str | Iterable[str],
+    cc: str | Iterable[str] | None = None,
+    bcc: str | Iterable[str] | None = None,
+    subject: str = '',
+    body_text: str = '',
+    attachments: Iterable[UploadedFile] | None = None,
+) -> ContainerEmail:
+    """Новое письмо из карточки автовоза (рейса)."""
+    if autotransport is None or not getattr(autotransport, 'pk', None):
+        raise ComposeError('Не указан автовоз-источник.')
+    at_number = getattr(autotransport, 'number', '') or f'#{autotransport.pk}'
+    default_subject = f'AutoTransport {at_number}'
+    return _compose_new_email_internal(
+        origin_autotransport=autotransport,
+        default_subject=default_subject,
+        user=user,
+        to=to, cc=cc, bcc=bcc,
+        subject=subject, body_text=body_text,
+        attachments=attachments,
+    )
