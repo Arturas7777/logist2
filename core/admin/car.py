@@ -449,9 +449,6 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
 
         return format_html(
             '<span style="display:inline-flex;align-items:center;gap:6px;">'
-            '<span title="{badge_title}" style="background:{badge_bg};color:#fff;padding:1px 7px;'
-            'border-radius:10px;font-size:11px;font-weight:700;min-width:20px;'
-            'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">{unread}</span>'
             '<span class="vin-copy-wrap">'
             '<span class="vin-copy-btn" data-vin="{vin}" title="Копировать VIN">'
             '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" '
@@ -460,6 +457,9 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'
             '</svg>'
             '</span> {vin}</span>'
+            '<span title="{badge_title}" style="background:{badge_bg};color:#fff;padding:1px 7px;'
+            'border-radius:10px;font-size:11px;font-weight:700;min-width:20px;'
+            'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">{unread}</span>'
             '</span>',
             vin=obj.vin,
             unread=unread,
