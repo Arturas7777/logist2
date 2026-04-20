@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 @require_GET
 def email_detail(request, email_id: int):
     email = get_object_or_404(
-        ContainerEmail.objects.select_related('container'),
+        ContainerEmail.objects.prefetch_related('containers'),
         pk=email_id,
     )
 
@@ -142,7 +142,7 @@ def email_mark_container_read(request, container_id: int):
     Вызывается автоматически при разворачивании блока «Переписка».
     """
     updated = ContainerEmail.objects.filter(
-        container_id=container_id,
+        containers__id=container_id,
         is_read=False,
     ).update(is_read=True)
     return JsonResponse({'ok': True, 'updated': updated})
@@ -170,7 +170,7 @@ def email_reply_draft(request, email_id: int):
     для подстановки в form (To/Cc/Subject/цитата).
     """
     email = get_object_or_404(
-        ContainerEmail.objects.select_related('container'), pk=email_id,
+        ContainerEmail.objects.prefetch_related('containers'), pk=email_id,
     )
 
     from_addr = getattr(settings, 'GMAIL_FROM_EMAIL', '') or getattr(settings, 'GMAIL_USER_EMAIL', '')
@@ -214,8 +214,20 @@ def email_reply_send(request, email_id: int):
         }, status=400)
 
     parent = get_object_or_404(
-        ContainerEmail.objects.select_related('container'), pk=email_id,
+        ContainerEmail.objects.prefetch_related('containers'), pk=email_id,
     )
+
+    # «Карточка-источник» — контейнер, из которого жмут Ответить.
+    # Если фронт передал container_id — используем его; иначе берём первый
+    # связанный с parent, чтобы сохранить старое поведение.
+    origin_container = None
+    origin_id = request.POST.get('container_id')
+    if origin_id:
+        from core.models import Container  # локально, чтобы избежать circular
+        try:
+            origin_container = Container.objects.only('id').get(pk=int(origin_id))
+        except (Container.DoesNotExist, ValueError):
+            origin_container = None
 
     try:
         from core.services.email_compose import ComposeError, reply_to_email
@@ -229,6 +241,7 @@ def email_reply_send(request, email_id: int):
             subject=request.POST.get('subject', ''),
             body_text=request.POST.get('body_text', ''),
             attachments=request.FILES.getlist('attachments'),
+            origin_container=origin_container,
         )
     except ComposeError as exc:
         return _compose_error_response(exc, status=400)
@@ -594,7 +607,7 @@ def email_container_updates(request, container_id: int):
         since_id = 0
     since_id = max(0, since_id)
 
-    qs = ContainerEmail.objects.filter(container_id=container_id)
+    qs = ContainerEmail.objects.filter(containers__id=container_id).distinct()
     total = qs.count()
     unread = qs.filter(is_read=False).count()
 

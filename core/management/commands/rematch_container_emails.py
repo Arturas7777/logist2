@@ -7,6 +7,14 @@
 контейнеры (FLOATING / IN_PORT / UNLOADED). Уже привязанные письма не
 трогаются — ручная/прежняя связка сохраняется.
 
+После перехода на M2M команда:
+
+- собирает ВСЕ контейнеры, которые упоминаются в письме (номер / букинг);
+- создаёт недостающие ``ContainerEmailLink`` с причиной (CONTAINER_NUMBER /
+  BOOKING_NUMBER) — уже существующие линки не трогает (ignore_conflicts);
+- обновляет первичный ``ContainerEmail.matched_by`` только если оно было
+  UNMATCHED — явную ручную/тредовую первичную причину не перетираем.
+
 Примеры:
     python manage.py rematch_container_emails
     python manage.py rematch_container_emails --dry-run
@@ -15,16 +23,10 @@
 
 from __future__ import annotations
 
-import re
-
 from django.core.management.base import BaseCommand
 
 from core.models import Container
-from core.models_email import ContainerEmail
-
-
-_CONTAINER_NUMBER_RE = re.compile(r'\b([A-Z]{4}\d{7})\b')
-_MIN_BOOKING_LEN = 4
+from core.models_email import ContainerEmail, ContainerEmailLink
 
 
 class Command(BaseCommand):
@@ -51,100 +53,103 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **opts):
+        from core.services.email_matcher import (
+            build_booking_index, match_email_to_containers,
+        )
+
         statuses: list[str] = opts['statuses']
         include_matched: bool = opts['include_matched']
         dry_run: bool = opts['dry_run']
 
         containers = Container.objects.filter(status__in=statuses)
-        number_index: dict[str, int] = {}
-        booking_index: dict[str, int] = {}
-        for cid, number, booking in containers.values_list(
-            'id', 'number', 'booking_number',
-        ):
-            if number:
-                number_index[number.upper().strip()] = cid
-            if booking:
-                key = booking.strip().lower()
-                if len(key) >= _MIN_BOOKING_LEN:
-                    booking_index.setdefault(key, cid)
+        booking_index = build_booking_index(containers)
 
         self.stdout.write(
-            f'Активных контейнеров: {len(number_index)}  '
+            f'Активных контейнеров: {containers.count()} '
             f'(с booking-номерами: {len(booking_index)}). '
             f'Статусы: {", ".join(statuses)}.'
         )
 
         emails_qs = ContainerEmail.objects.all()
         if not include_matched:
-            emails_qs = emails_qs.filter(container__isnull=True)
+            # UNMATCHED по первичной причине ИЛИ вообще без линков.
+            emails_qs = emails_qs.filter(
+                matched_by=ContainerEmail.MATCHED_BY_UNMATCHED,
+            )
         total = emails_qs.count()
         self.stdout.write(f'Писем-кандидатов к проверке: {total}')
 
-        changed_by_number = 0
-        changed_by_booking = 0
-        moved_between = 0
-        skipped_same = 0
+        new_links_created = 0
+        emails_touched = 0
+        emails_primary_updated = 0
+
+        # Минимальный совместимый с email_matcher объект: достаточно полей
+        # subject / body_text / from_addr / to_addrs / cc_addrs / thread_id.
+        # У нас в БД всё это уже есть на ContainerEmail — собираем лёгкий
+        # shim, чтобы не тянуть ParsedMessage.
+        class _Shim:
+            __slots__ = (
+                'subject', 'body_text', 'body_html',
+                'from_addr', 'to_addrs', 'cc_addrs',
+                'thread_id',
+            )
+
+            def __init__(self, e: ContainerEmail) -> None:
+                self.subject = e.subject or ''
+                self.body_text = e.body_text or ''
+                self.body_html = e.body_html or ''
+                self.from_addr = e.from_addr or ''
+                self.to_addrs = e.to_addrs or ''
+                self.cc_addrs = e.cc_addrs or ''
+                self.thread_id = e.thread_id or ''
 
         for email in emails_qs.iterator(chunk_size=200):
-            text_upper = f'{email.subject or ""}\n{email.body_text or ""}'.upper()
-
-            hit_container_id: int | None = None
-            hit_matched_by: str | None = None
-
-            for num in _CONTAINER_NUMBER_RE.findall(text_upper):
-                if num in number_index:
-                    hit_container_id = number_index[num]
-                    hit_matched_by = ContainerEmail.MATCHED_BY_CONTAINER_NUMBER
-                    break
-
-            if hit_container_id is None and booking_index:
-                text_lower = text_upper.lower()
-                for booking_lower, cid in booking_index.items():
-                    if booking_lower not in text_lower:
-                        continue
-                    if re.search(
-                        rf'(?<![a-z0-9]){re.escape(booking_lower)}(?![a-z0-9])',
-                        text_lower,
-                    ):
-                        hit_container_id = cid
-                        hit_matched_by = ContainerEmail.MATCHED_BY_BOOKING_NUMBER
-                        break
-
-            if hit_container_id is None:
+            shim = _Shim(email)
+            result = match_email_to_containers(
+                shim, booking_index=booking_index,
+            )
+            if not result.is_matched:
                 continue
 
-            if email.container_id == hit_container_id:
-                skipped_same += 1
+            existing_ids = set(
+                email.container_links.values_list('container_id', flat=True)
+            )
+            to_create = [
+                ContainerEmailLink(
+                    email=email,
+                    container_id=hit.container_id,
+                    matched_by=hit.matched_by,
+                )
+                for hit in result.hits
+                if hit.container_id not in existing_ids
+            ]
+
+            if not to_create and email.matched_by != ContainerEmail.MATCHED_BY_UNMATCHED:
                 continue
 
-            if email.container_id is not None:
-                # --include-matched → можно перебросить; без опции не трогаем.
-                if not include_matched:
-                    continue
-                moved_between += 1
+            emails_touched += 1
+            new_links_created += len(to_create)
 
             if not dry_run:
-                email.container_id = hit_container_id
-                email.matched_by = hit_matched_by
-                email.save(update_fields=['container_id', 'matched_by'])
-
-            if hit_matched_by == ContainerEmail.MATCHED_BY_CONTAINER_NUMBER:
-                changed_by_number += 1
-            else:
-                changed_by_booking += 1
+                if to_create:
+                    ContainerEmailLink.objects.bulk_create(
+                        to_create, ignore_conflicts=True,
+                    )
+                if email.matched_by == ContainerEmail.MATCHED_BY_UNMATCHED:
+                    email.matched_by = result.primary_matched_by
+                    email.save(update_fields=['matched_by'])
+                    emails_primary_updated += 1
+            elif email.matched_by == ContainerEmail.MATCHED_BY_UNMATCHED:
+                emails_primary_updated += 1
 
         prefix = '[DRY RUN] ' if dry_run else ''
         self.stdout.write('')
         self.stdout.write(self.style.SUCCESS(
-            f'{prefix}Сматчено по номеру контейнера: {changed_by_number}'
+            f'{prefix}Писем затронуто:              {emails_touched}'
         ))
         self.stdout.write(self.style.SUCCESS(
-            f'{prefix}Сматчено по букингу:          {changed_by_booking}'
+            f'{prefix}Новых ContainerEmailLink:     {new_links_created}'
         ))
-        if include_matched:
-            self.stdout.write(
-                f'{prefix}Перепривязано к другому:      {moved_between}'
-            )
-        self.stdout.write(
-            f'Уже были привязаны правильно: {skipped_same}'
-        )
+        self.stdout.write(self.style.SUCCESS(
+            f'{prefix}У писем обновлено matched_by: {emails_primary_updated}'
+        ))

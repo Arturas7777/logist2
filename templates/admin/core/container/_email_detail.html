@@ -101,11 +101,27 @@
     </div>
   {% endif %}
 
-  <div style="margin-top:10px;display:flex;gap:8px;font-size:0.72rem;color:var(--cm-text-secondary);">
+  <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px;font-size:0.72rem;color:var(--cm-text-secondary);">
     <span>Статус привязки: <strong>{{ email.get_matched_by_display }}</strong></span>
-    {% if email.container and email.container != original %}
-      <span>Контейнер:
-        <a href="{% url 'admin:core_container_change' email.container_id %}">{{ email.container.number }}</a>
+    {% with other_containers=email.containers.all %}
+      {% if other_containers %}
+        {# Отсекаем текущий контейнер (original) — он и так виден в карточке #}
+        {% with extra_list=other_containers|length %}
+          {% if extra_list > 1 or other_containers.0.id != original.id %}
+            <span>Также в карточках:
+              {% for c in other_containers %}
+                {% if c.id != original.id %}
+                  <a href="{% url 'admin:core_container_change' c.id %}">{{ c.number|default:c.id }}</a>{% if not forloop.last %}, {% endif %}
+                {% endif %}
+              {% endfor %}
+            </span>
+          {% endif %}
+        {% endwith %}
+      {% endif %}
+    {% endwith %}
+    {% if email.sent_from_container_id and email.sent_from_container_id != original.id %}
+      <span>Отправлено из:
+        <a href="{% url 'admin:core_container_change' email.sent_from_container_id %}">{{ email.sent_from_container.number|default:email.sent_from_container_id }}</a>
       </span>
     {% endif %}
   </div>

@@ -12,10 +12,12 @@ from django.contrib import admin, messages
 from django.shortcuts import redirect, render
 from django.urls import path, reverse
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
 from core.models import Container
 from core.models_email import (
-    ContainerEmail, EmailGroup, EmailGroupMember, GmailSyncState,
+    ContainerEmail, ContainerEmailLink,
+    EmailGroup, EmailGroupMember, GmailSyncState,
 )
 
 
@@ -36,9 +38,9 @@ class MatchedByListFilter(admin.SimpleListFilter):
     def queryset(self, request, queryset):
         val = self.value()
         if val == 'yes':
-            return queryset.filter(container__isnull=False)
+            return queryset.filter(containers__isnull=False).distinct()
         if val == 'no':
-            return queryset.filter(container__isnull=True)
+            return queryset.filter(containers__isnull=True)
         mapping = {
             'container': ContainerEmail.MATCHED_BY_CONTAINER_NUMBER,
             'booking': ContainerEmail.MATCHED_BY_BOOKING_NUMBER,
@@ -48,6 +50,16 @@ class MatchedByListFilter(admin.SimpleListFilter):
         if val in mapping:
             return queryset.filter(matched_by=mapping[val])
         return queryset
+
+
+class ContainerEmailLinkInline(admin.TabularInline):
+    """Инлайн-редактирование привязок письма к контейнерам (M2M through)."""
+    model = ContainerEmailLink
+    extra = 0
+    fk_name = 'email'
+    autocomplete_fields = ('container',)
+    fields = ('container', 'matched_by', 'created_at')
+    readonly_fields = ('created_at',)
 
 
 class AttachToContainerForm(forms.Form):
@@ -67,7 +79,8 @@ class ContainerEmailAdmin(admin.ModelAdmin):
     )
     list_filter = (MatchedByListFilter, 'direction', 'is_read', 'matched_by')
     search_fields = ('subject', 'from_addr', 'to_addrs', 'message_id', 'thread_id')
-    autocomplete_fields = ('container',)
+    autocomplete_fields = ('sent_from_container',)
+    inlines = [ContainerEmailLinkInline]
     readonly_fields = (
         'message_id', 'thread_id', 'in_reply_to', 'references',
         'gmail_id', 'gmail_history_id', 'labels_json', 'attachments_json',
@@ -76,11 +89,19 @@ class ContainerEmailAdmin(admin.ModelAdmin):
     date_hierarchy = 'received_at'
     list_per_page = 50
     ordering = ('-received_at',)
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.prefetch_related('containers').select_related(
+            'sent_from_container',
+        )
     actions = ['action_attach_to_container', 'action_mark_read', 'action_mark_unread']
 
     fieldsets = (
         ('Привязка', {
-            'fields': ('container', 'matched_by', 'is_read'),
+            'fields': ('sent_from_container', 'matched_by', 'is_read'),
+            'description': 'Привязки к контейнерам редактируются ниже в инлайне '
+                           '«Связи письма с контейнерами».',
         }),
         ('Заголовки', {
             'fields': (
@@ -128,14 +149,25 @@ class ContainerEmailAdmin(admin.ModelAdmin):
     def subject_short(self, obj: ContainerEmail) -> str:
         return (obj.subject or '(без темы)')[:70]
 
-    @admin.display(ordering='container', description='Контейнер')
+    @admin.display(description='Контейнеры')
     def container_link(self, obj: ContainerEmail) -> str:
-        if not obj.container_id:
+        # Показываем все привязанные контейнеры; origin-карточку
+        # (sent_from_container) подсвечиваем жирным.
+        containers = list(obj.containers.all()[:6])
+        if not containers:
             return format_html('<span style="color:#b91c1c;">—</span>')
-        url = reverse('admin:core_container_change', args=[obj.container_id])
-        return format_html(
-            '<a href="{}">{}</a>', url, obj.container.number if obj.container else obj.container_id
-        )
+        origin_id = obj.sent_from_container_id
+        parts: list[str] = []
+        for c in containers:
+            url = reverse('admin:core_container_change', args=[c.id])
+            label = c.number or str(c.id)
+            if origin_id and c.id == origin_id:
+                parts.append(format_html(
+                    '<a href="{}" style="font-weight:700;">{}</a>', url, label,
+                ))
+            else:
+                parts.append(format_html('<a href="{}">{}</a>', url, label))
+        return mark_safe(', '.join(parts))
 
     @admin.display(ordering='matched_by', description='Как')
     def matched_by_badge(self, obj: ContainerEmail) -> str:
@@ -162,13 +194,26 @@ class ContainerEmailAdmin(admin.ModelAdmin):
             form = AttachToContainerForm(request.POST)
             if form.is_valid():
                 container = form.cleaned_data['container']
-                updated = queryset.update(
-                    container=container,
-                    matched_by=ContainerEmail.MATCHED_BY_MANUAL,
+                # Добавляем link к container для каждого выбранного письма
+                # (M2M). Если link уже есть — пропускаем через ignore_conflicts.
+                # matched_by у письма в целом не трогаем: это «первичная»
+                # причина, а здесь мы добавляем дополнительную ручную привязку.
+                email_ids = list(queryset.values_list('id', flat=True))
+                links = [
+                    ContainerEmailLink(
+                        email_id=eid,
+                        container_id=container.id,
+                        matched_by=ContainerEmail.MATCHED_BY_MANUAL,
+                    )
+                    for eid in email_ids
+                ]
+                ContainerEmailLink.objects.bulk_create(
+                    links, ignore_conflicts=True,
                 )
                 self.message_user(
                     request,
-                    f'Привязано {updated} писем к контейнеру {container}',
+                    f'Привязано {len(email_ids)} писем к контейнеру '
+                    f'{container}',
                     level=messages.SUCCESS,
                 )
                 return redirect(request.get_full_path())
@@ -221,6 +266,17 @@ class ContainerEmailAdmin(admin.ModelAdmin):
         except Exception as exc:
             self.message_user(request, f'Не удалось запустить синхронизацию: {exc}', level=messages.ERROR)
         return redirect('admin:core_containeremail_changelist')
+
+
+@admin.register(ContainerEmailLink)
+class ContainerEmailLinkAdmin(admin.ModelAdmin):
+    list_display = ('id', 'email', 'container', 'matched_by', 'created_at')
+    list_filter = ('matched_by',)
+    search_fields = (
+        'email__subject', 'email__message_id', 'container__number',
+    )
+    autocomplete_fields = ('email', 'container')
+    readonly_fields = ('created_at',)
 
 
 @admin.register(GmailSyncState)

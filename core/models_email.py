@@ -40,12 +40,31 @@ class ContainerEmail(models.Model):
         (MATCHED_BY_UNMATCHED, 'Не привязано'),
     ]
 
-    container = models.ForeignKey(
+    # Phase 2: одно письмо может быть привязано к нескольким контейнерам
+    # (например, в теме упомянуты MSKU9754460 и MRSU7341005 — оба контейнера
+    # должны видеть этот тред в карточке «Переписка»). Связь идёт через
+    # through-модель ``ContainerEmailLink``, чтобы хранить ``matched_by``
+    # отдельно для каждой пары (email, container).
+    containers = models.ManyToManyField(
+        'Container',
+        through='ContainerEmailLink',
+        related_name='emails',
+        blank=True,
+        verbose_name='Контейнеры',
+    )
+
+    # Для исходящих писем — из какой карточки контейнера их отправили.
+    # Помогает UI подсветить «исходящее из этой карточки» vs «просто связано»
+    # и позволяет сохранять источник даже если позже пользователь вручную
+    # отвяжет контейнер от M2M.
+    sent_from_container = models.ForeignKey(
         'Container',
         null=True, blank=True,
         on_delete=models.SET_NULL,
-        related_name='emails',
-        verbose_name='Контейнер',
+        related_name='sent_emails_origin',
+        verbose_name='Отправлено из карточки',
+        help_text='Контейнер, из карточки которого было отправлено письмо '
+                  '(только для OUTGOING).',
     )
 
     message_id = models.CharField(
@@ -140,7 +159,7 @@ class ContainerEmail(models.Model):
         verbose_name_plural = 'Письма контейнеров'
         ordering = ['-received_at']
         indexes = [
-            models.Index(fields=['container', '-received_at']),
+            models.Index(fields=['-received_at']),
             models.Index(fields=['thread_id', 'received_at']),
             models.Index(fields=['matched_by', '-received_at']),
         ]
@@ -168,6 +187,54 @@ class ContainerEmail(models.Model):
     @property
     def has_attachments(self) -> bool:
         return bool(self.attachments_json)
+
+
+class ContainerEmailLink(models.Model):
+    """Связь «письмо ↔ контейнер» (through для ``ContainerEmail.containers``).
+
+    В отдельной модели, чтобы хранить ``matched_by`` per-ссылка: одно и то же
+    письмо может быть привязано к контейнеру A «по номеру», а к контейнеру B
+    «по букингу» или «вручную».
+
+    Удаляется каскадом вместе с любым из концов (email или container) —
+    это не данные письма, это просто граф связей.
+    """
+
+    email = models.ForeignKey(
+        ContainerEmail,
+        on_delete=models.CASCADE,
+        related_name='container_links',
+    )
+    container = models.ForeignKey(
+        'Container',
+        on_delete=models.CASCADE,
+        related_name='email_links',
+    )
+    matched_by = models.CharField(
+        max_length=20,
+        choices=ContainerEmail.MATCHED_BY_CHOICES,
+        default=ContainerEmail.MATCHED_BY_UNMATCHED,
+        verbose_name='Как сопоставлено',
+        help_text='Причина связи именно с этим контейнером. Может отличаться '
+                  'от ContainerEmail.matched_by (первичная причина).',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Связь письма с контейнером'
+        verbose_name_plural = 'Связи писем с контейнерами'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['email', 'container'],
+                name='containeremaillink_unique_email_container',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['container', 'email']),
+        ]
+
+    def __str__(self) -> str:
+        return f'link<email={self.email_id}, container={self.container_id}, {self.matched_by}>'
 
 
 class EmailGroup(models.Model):
