@@ -1055,6 +1055,51 @@ body:not(.login) .submit-row {
     box-shadow: none !important;
 }
 
+/* ===== Гарантированная липкость колонки с индикатором непрочитанных =====
+ * Адресуемся по class-именам, чтобы правило работало независимо от позиции
+ * столбца и от того, отрендерена ли ячейка как <th> или <td>. Плюс поднимаем
+ * z-index и ставим правый разделитель, чтобы соседний столбец при горизонтальном
+ * скролле гарантированно уходил ПОД эту колонку, а не налезал поверх. */
+#result_list thead th.column-number_with_unread,
+#result_list thead th.column-vin_display,
+#result_list tbody td.field-number_with_unread,
+#result_list tbody th.field-number_with_unread,
+#result_list tbody td.field-vin_display,
+#result_list tbody th.field-vin_display {
+    position: sticky !important;
+    left: 32px !important;
+    z-index: 5 !important;
+    box-shadow: 1px 0 0 rgba(0, 0, 0, 0.06) !important;
+}
+/* Явные непрозрачные фоны — чтобы прокручиваемый контент не просвечивал */
+#result_list thead th.column-number_with_unread,
+#result_list thead th.column-vin_display {
+    background: #fafafc !important;
+}
+#result_list tbody tr:nth-child(odd) td.field-number_with_unread,
+#result_list tbody tr:nth-child(odd) th.field-number_with_unread,
+#result_list tbody tr:nth-child(odd) td.field-vin_display,
+#result_list tbody tr:nth-child(odd) th.field-vin_display {
+    background: #ffffff !important;
+}
+#result_list tbody tr:nth-child(even) td.field-number_with_unread,
+#result_list tbody tr:nth-child(even) th.field-number_with_unread,
+#result_list tbody tr:nth-child(even) td.field-vin_display,
+#result_list tbody tr:nth-child(even) th.field-vin_display {
+    background: #f8f8f8 !important;
+}
+#result_list tbody tr:hover td.field-number_with_unread,
+#result_list tbody tr:hover th.field-number_with_unread,
+#result_list tbody tr:hover td.field-vin_display,
+#result_list tbody tr:hover th.field-vin_display {
+    background: #fafaff !important;
+}
+/* Чекбокс должен быть над остальными — чтобы индикатор не заезжал под него слева */
+#result_list th.action-checkbox-column,
+#result_list td.action-checkbox {
+    z-index: 6 !important;
+}
+
 /* ===== Changelist column width hints ===== */
 /* Boolean/checkbox columns (has_title "Т") — narrow, centered */
 #result_list th.column-has_title {
