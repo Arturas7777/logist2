@@ -677,8 +677,13 @@ class NewInvoice(models.Model):
 
         LINKED_PAID пропускается: у него нет собственных транзакций,
         пересчёт сбросил бы paid_amount и статус.
+
+        CREDIT_NOTE (KRE) тоже пропускается: кредитная нота — это списание долга,
+        она не оплачивается PAYMENT-транзакциями, paid_amount/status ведутся вручную.
         """
         if self.status == 'LINKED_PAID':
+            return
+        if self.document_type == 'CREDIT_NOTE':
             return
         from django.db.models import Sum
         payments = self.transactions.filter(
@@ -835,6 +840,9 @@ class NewInvoice(models.Model):
         if self.status in ('CANCELLED', 'LINKED_PAID'):
             # LINKED_PAID — косвенная оплата через связанный документ,
             # своих COMPLETED-транзакций нет, не пересчитываем.
+            return
+        if self.document_type == 'CREDIT_NOTE':
+            # Кредитная нота — списание долга, статус ведётся вручную.
             return
         if self.total > 0 and self.paid_amount >= self.total:
             self.status = 'PAID'
