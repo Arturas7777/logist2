@@ -93,3 +93,8 @@ scripts/debug/_*
 # Local data (AI RAG index, generated dumps, etc.)
 /data/
 !/data/.gitkeep
+
+# Ad-hoc script outputs
+renumber_out.txt
+revolut_expenses/
+_backup_*.dump
