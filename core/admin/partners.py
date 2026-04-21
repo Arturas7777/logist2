@@ -10,6 +10,7 @@ from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
+from core.admin._balance_display import render_total_balance
 from core.admin.inlines import (
     CarrierDriverInline,
     CarrierServiceInline,
@@ -94,17 +95,8 @@ class WarehouseAdmin(admin.ModelAdmin):
             return JsonResponse({'addresses': []})
 
     def balance_display(self, obj):
-        """Shows warehouse balance"""
-        try:
-            balance = obj.balance or 0
-            color = '#28a745' if balance >= 0 else '#dc3545'
-            sign = '+' if balance >= 0 else ''
-            return format_html(
-                '<span style="color:{}; font-weight:bold;">{} {:.2f}</span>',
-                color, sign, balance
-            )
-        except:
-            return '-'
+        """Итоговый баланс склада-контрагента (с учётом открытых FACT/PARDP)."""
+        return render_total_balance(obj)
     balance_display.short_description = 'Баланс'
 
     def balance_summary_display(self, obj):
@@ -802,17 +794,8 @@ class CompanyAdmin(admin.ModelAdmin):
     )
 
     def balance_display(self, obj):
-        """Shows company balance"""
-        try:
-            balance = obj.balance or 0
-            color = '#28a745' if balance >= 0 else '#dc3545'
-            sign = '+' if balance >= 0 else ''
-            return format_html(
-                '<span style="color:{}; font-weight:bold;">{} {:.2f}</span>',
-                color, sign, balance
-            )
-        except:
-            return '-'
+        """Итоговый баланс компании-контрагента (с учётом открытых FACT/PARDP)."""
+        return render_total_balance(obj)
     balance_display.short_description = 'Баланс'
 
     def is_main_company(self, obj):
@@ -1069,17 +1052,8 @@ class LineAdmin(admin.ModelAdmin):
     )
 
     def balance_display(self, obj):
-        """Shows line balance"""
-        try:
-            balance = obj.balance or 0
-            color = '#28a745' if balance >= 0 else '#dc3545'
-            sign = '+' if balance >= 0 else ''
-            return format_html(
-                '<span style="color:{}; font-weight:bold;">{} {:.2f}</span>',
-                color, sign, balance
-            )
-        except Exception:
-            return '-'
+        """Итоговый баланс линии-контрагента (с учётом открытых FACT/PARDP)."""
+        return render_total_balance(obj)
     balance_display.short_description = 'Баланс'
 
     def reset_line_balance(self, request, queryset):
@@ -1260,17 +1234,8 @@ class CarrierAdmin(admin.ModelAdmin):
     )
 
     def balance_display(self, obj):
-        """Shows carrier balance"""
-        try:
-            balance = obj.balance or 0
-            color = '#28a745' if balance >= 0 else '#dc3545'
-            sign = '+' if balance >= 0 else ''
-            return format_html(
-                '<span style="color:{}; font-weight:bold;">{} {:.2f}</span>',
-                color, sign, balance
-            )
-        except:
-            return '-'
+        """Итоговый баланс перевозчика-контрагента (с учётом открытых FACT/PARDP)."""
+        return render_total_balance(obj)
     balance_display.short_description = 'Баланс'
 
     def change_view(self, request, object_id, form_url='', extra_context=None):
