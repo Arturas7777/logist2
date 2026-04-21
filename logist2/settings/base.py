@@ -476,7 +476,7 @@ GMAIL_MAX_OUTBOUND_MB = int(os.getenv('GMAIL_MAX_OUTBOUND_MB', '25'))
 # Company info (used in email templates)
 # ---------------------------------------------------------------------------
 
-COMPANY_NAME = 'Caromoto Lithuania'
+COMPANY_NAME = 'Caromoto Lithuania, MB'
 COMPANY_PHONE = '+37068830450'
 COMPANY_EMAIL = os.getenv('COMPANY_EMAIL', 'info@caromoto-lt.com')
 COMPANY_WEBSITE = 'https://caromoto-lt.com'

@@ -815,6 +815,7 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
             'PROFORMA_BLC':   ('#e2e8f0', '#475569', 'AVBLC'),
             'INVOICE_FACT':   ('#fce7f3', '#9d174d', 'FACT'),
             'INVOICE_INCBLC': ('#e8d4b0', '#6b4423', 'INCBLC'),
+            'CREDIT_NOTE':    ('#fee2e2', '#991b1b', 'KRE'),
         }
         bg, fg, label = badge_map.get(obj.document_type, ('#e2e8f0', '#475569', '?'))
         return format_html(

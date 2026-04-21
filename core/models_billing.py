@@ -213,6 +213,7 @@ class NewInvoice(models.Model):
         ('PROFORMA_BLC', 'Неофициальное предложение (AVBLC)'),
         ('INVOICE_FACT', 'Входящий счёт от контрагента (FACT)'),
         ('INVOICE_INCBLC', 'Входящий неофициальный счёт (INCBLC)'),
+        ('CREDIT_NOTE', 'Кредитная нота — возврат продажи (KRE)'),
     ]
 
     DOCTYPE_PREFIX_MAP = {
@@ -222,6 +223,7 @@ class NewInvoice(models.Model):
         'PROFORMA_BLC': 'AVBLC',
         'INVOICE_FACT': 'FACT',
         'INVOICE_INCBLC': 'INCBLC',
+        'CREDIT_NOTE': 'KRE',
     }
 
     # Серии, которые всегда оплачиваются наличными и не пушатся в site.pro
@@ -1408,6 +1410,23 @@ class Transaction(models.Model):
         related_name='transactions',
         verbose_name="Инвойс",
         help_text="Если это оплата инвойса, указываем его здесь"
+    )
+
+    # ========================================================================
+    # СВЯЗАННЫЙ КЛИЕНТ (оптовик/посредник)
+    # ========================================================================
+
+    related_client = models.ForeignKey(
+        'Client',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='related_transactions',
+        verbose_name="Связанный клиент",
+        help_text=(
+            "Оптовик или посредник, от имени которого фактически шёл платеж "
+            "(например, Caromoto Moldova, если физлицо платит от её имени)."
+        ),
     )
 
     # ========================================================================

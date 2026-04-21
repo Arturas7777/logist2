@@ -405,7 +405,12 @@ class SiteProService:
                 # (т.к. series+number занято другим пользователем или ручной записью),
                 # находим её и линкуемся вместо падения. Это спасает инвойсы,
                 # которые накопились во время breaking change API.
-                if create_err.status_code == 400 and 'already exists' in str(create_err).lower():
+                err_text = str(create_err).lower()
+                if create_err.status_code == 400 and (
+                    'already exists' in err_text
+                    or 'already registered' in err_text
+                    or 'sales document already' in err_text
+                ):
                     existing_id = self._find_existing_sale_id(
                         series=sale_data.get('series'),
                         number=sale_data.get('number'),
@@ -683,51 +688,103 @@ class SiteProService:
     # GET INVOICE PDF
     # ========================================================================
 
-    def get_invoice_pdf_url(self, invoice) -> str:
+    def download_invoice_pdf(self, invoice) -> bytes:
         """
-        Получает ссылку на PDF инвойса из site.pro.
+        Скачивает PDF инвойса из site.pro.
+
+        API возвращает бинарные данные PDF напрямую (Content-Type: application/pdf).
 
         Args:
             invoice: экземпляр NewInvoice
 
         Returns:
-            URL на PDF или пустая строка
+            bytes с содержимым PDF. Пустой bytes если не удалось скачать.
         """
         from ..models_accounting import SiteProInvoiceSync
 
         sync = SiteProInvoiceSync.objects.filter(
             connection=self.connection,
             invoice=invoice,
-            sync_status__in=['SENT', 'PDF_READY'],
         ).first()
 
         if not sync or not sync.external_id:
-            logger.warning(f'[SitePro] Инвойс {invoice.number} не найден в site.pro')
-            return ''
+            logger.warning(f'[SitePro] Инвойс {invoice.number} не найден в site.pro (нет SiteProInvoiceSync)')
+            return b''
+
+        url = f'{self.base_url}{self.SALE_INVOICE_GET}'
+        payload = json.dumps({'id': int(sync.external_id)})
 
         try:
-            result = self._api_post(self.SALE_PDF, {'id': int(sync.external_id)})
+            resp = self._session.post(
+                url,
+                headers={
+                    **self._get_headers(),
+                    'Content-Length': str(len(payload)),
+                },
+                data=payload,
+                timeout=30,
+            )
+        except requests.RequestException as e:
+            logger.error(f'[SitePro] Ошибка запроса PDF инвойса {invoice.number}: {e}')
+            return b''
 
-            if not isinstance(result, dict):
-                logger.warning(f'[SitePro] Неожиданный ответ API для PDF инвойса {invoice.number}: {type(result)}')
-                return ''
+        if resp.status_code != 200:
+            logger.error(
+                f'[SitePro] PDF инвойса {invoice.number}: HTTP {resp.status_code} — {resp.text[:200]}'
+            )
+            return b''
 
-            pdf_url = result.get('url', '') or result.get('pdfUrl', '') or ''
+        if not resp.content.startswith(b'%PDF'):
+            ctype = resp.headers.get('Content-Type', '')
+            logger.warning(
+                f'[SitePro] Ответ для PDF инвойса {invoice.number} не является PDF '
+                f'(ct={ctype}, size={len(resp.content)})'
+            )
+            return b''
 
-            if pdf_url:
-                sync.pdf_url = pdf_url
-                sync.sync_status = 'PDF_READY'
-                sync.save(update_fields=['pdf_url', 'sync_status', 'updated_at'])
-                logger.info(f'[SitePro] PDF для инвойса {invoice.number}: {pdf_url}')
+        # Обновим статус синхронизации
+        sync.sync_status = 'PDF_READY'
+        sync.save(update_fields=['sync_status', 'updated_at'])
+        logger.info(f'[SitePro] PDF для инвойса {invoice.number} скачан ({len(resp.content)} байт)')
 
-            return pdf_url
+        return resp.content
 
-        except SiteProAPIError as e:
-            logger.error(f'[SitePro] Ошибка получения PDF для инвойса {invoice.number}: {e}')
+    def save_invoice_pdf_to_attachment(self, invoice, overwrite: bool = False) -> bool:
+        """
+        Скачивает PDF инвойса с site.pro и сохраняет в NewInvoice.attachment.
+
+        Args:
+            invoice: экземпляр NewInvoice
+            overwrite: если True — перезаписывает существующий attachment
+
+        Returns:
+            True если PDF успешно сохранён, False иначе.
+        """
+        from django.core.files.base import ContentFile
+
+        if invoice.attachment and not overwrite:
+            logger.info(f'[SitePro] Инвойс {invoice.number} уже имеет attachment — пропуск')
+            return False
+
+        pdf_bytes = self.download_invoice_pdf(invoice)
+        if not pdf_bytes:
+            return False
+
+        filename = f'{invoice.number}_sitepro.pdf'
+        invoice.attachment.save(filename, ContentFile(pdf_bytes), save=True)
+        return True
+
+    # Back-compat alias (раньше метод назывался get_invoice_pdf_url и был сломан)
+    def get_invoice_pdf_url(self, invoice) -> str:  # noqa: D401
+        """DEPRECATED: site.pro отдаёт PDF напрямую. Используйте `download_invoice_pdf()` или
+        `save_invoice_pdf_to_attachment()`. Метод оставлен для обратной совместимости и
+        возвращает data-URL с base64-закодированным PDF (или пустую строку)."""
+        import base64
+
+        pdf = self.download_invoice_pdf(invoice)
+        if not pdf:
             return ''
-        except (TypeError, ValueError, AttributeError) as e:
-            logger.error(f'[SitePro] Ошибка обработки ответа PDF для инвойса {invoice.number}: {e}')
-            return ''
+        return f'data:application/pdf;base64,{base64.b64encode(pdf).decode()}'
 
     # ========================================================================
     # REFERENCE DATA
