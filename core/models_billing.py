@@ -1669,17 +1669,35 @@ class Transaction(models.Model):
     # ПЕРЕСЧЁТ БАЛАНСА СУЩНОСТИ
     # ========================================================================
 
+    # Модели, у которых balance должен считаться ТОЛЬКО по транзакциям без
+    # привязки к инвойсу (авансы, залоги, возвраты без счёта). Инвойсные
+    # платежи таких контрагентов уже учитываются через свойства
+    # open_fact_debt / open_pardp_receivable в BalanceMethodsMixin, и
+    # дублировать их в balance нельзя — иначе баланс поставщика растёт на
+    # сумму каждого уплаченного нами FACT.
+    _NON_INVOICE_BALANCE_ENTITIES = ('company', 'warehouse', 'line', 'carrier')
+
     @staticmethod
     def recalculate_entity_balance(entity):
-        """Пересчитать баланс entity строго по COMPLETED-транзакциям из БД."""
+        """Пересчитать баланс entity строго по COMPLETED-транзакциям из БД.
+
+        Для Client-а считаются все Tx (парный BALANCE_TOPUP компенсирует
+        PAYMENT, balance сходится к 0 + авансы/долги).  Для Company /
+        Warehouse / Line / Carrier считаются только Tx **без инвойса** —
+        инвойсные потоки в их total_balance учитываются через открытые FACT
+        и PARDP, а не через balance.
+        """
         if entity is None or not hasattr(entity, 'balance'):
             return
         model_name = entity.__class__.__name__.lower()
-        incoming = Transaction.objects.filter(
-            status='COMPLETED', **{f'to_{model_name}': entity}
+        qs = Transaction.objects.filter(status='COMPLETED')
+        if model_name in Transaction._NON_INVOICE_BALANCE_ENTITIES:
+            qs = qs.filter(invoice__isnull=True)
+        incoming = qs.filter(
+            **{f'to_{model_name}': entity}
         ).aggregate(s=models.Sum('amount'))['s'] or Decimal('0.00')
-        outgoing = Transaction.objects.filter(
-            status='COMPLETED', **{f'from_{model_name}': entity}
+        outgoing = qs.filter(
+            **{f'from_{model_name}': entity}
         ).aggregate(s=models.Sum('amount'))['s'] or Decimal('0.00')
         new_balance = incoming - outgoing
         if entity.balance != new_balance:
