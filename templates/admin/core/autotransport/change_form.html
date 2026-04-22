@@ -23,6 +23,11 @@
 
 <div class="autotransport-grid">
     <div class="main-content">
+        {# Переписка — самым верхним блоком, по умолчанию свёрнута #}
+        {% if original and original.pk %}
+        {% include "admin/core/autotransport/_emails_panel.html" %}
+        {% endif %}
+
         <!-- Информация о перевозчике -->
         <div class="card">
             <div class="card-header">
@@ -171,9 +176,6 @@
             </div>
         </div>
 
-        {% if original and original.pk %}
-        {% include "admin/core/autotransport/_emails_panel.html" %}
-        {% endif %}
     </div>
 
     <div class="sidebar">
