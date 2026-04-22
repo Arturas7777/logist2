@@ -26,6 +26,8 @@ import re
 import requests
 from django.core.files.base import ContentFile
 
+from core.services.gdrive_client import get_drive_api_client
+
 logger = logging.getLogger(__name__)
 
 
@@ -159,18 +161,50 @@ class GoogleDriveSync:
     @staticmethod
     def get_folder_files_web(folder_id):
         """
-        Получает список файлов и подпапок через веб-интерфейс Google Drive.
-        Работает для публичных папок без API ключа.
+        Получает список файлов и подпапок в папке Google Drive.
 
-        Использует два метода:
-        1. embeddedfolderview (list mode) - основной
-        2. Обычная страница папки Drive - fallback для больших папок
+        Порядок попыток:
+        0. **Google Drive API v3** (если задан ``GOOGLE_DRIVE_API_KEY``) —
+           единственный способ получить *полный* список в больших папках.
+           HTML-методы Drive обрезают выдачу на ~50–120 элементов, из-за
+           чего крупные папки (100+ фото) синхронизировались частично.
+        1. ``embeddedfolderview`` (list mode) — HTML fallback, если API
+           недоступен или вернул ошибку.
+        2. Обычная страница ``/drive/folders/<id>`` — второй HTML fallback
+           для кейсов, когда embeddedfolderview пуст.
 
         Returns:
-            list: Список словарей {id, name, mimeType, is_folder}
+            list: Список словарей ``{id, name, mimeType, is_folder}``.
         """
         if not folder_id:
             return []
+
+        # --- Drive API (предпочтительный путь, без обрезки) --------------
+        api_client = get_drive_api_client()
+        if api_client is not None:
+            try:
+                api_items = api_client.list_children(folder_id)
+                # list_children уже кладёт is_folder; но download_folder_photos
+                # дальше фильтрует по расширению имени — поэтому оставляем
+                # как есть.
+                if api_items:
+                    images_count = sum(1 for f in api_items if not f.get('is_folder'))
+                    folders_count = sum(1 for f in api_items if f.get('is_folder'))
+                    logger.debug(
+                        '[gdrive] API: folder %s -> %d files (%d images, %d subfolders)',
+                        folder_id, len(api_items), images_count, folders_count,
+                    )
+                    return api_items
+                # Пустая выдача от API — возможно, папка реально пустая.
+                # Чтобы не зацикливаться на HTML (где мы можем распарсить
+                # мусор), возвращаем пусто.
+                logger.debug('[gdrive] API: folder %s is empty', folder_id)
+                return []
+            except Exception as exc:  # pragma: no cover — сеть/креды
+                logger.warning(
+                    '[gdrive] API fallback to HTML for folder %s: %s',
+                    folder_id, exc,
+                )
 
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
@@ -247,11 +281,39 @@ class GoogleDriveSync:
         """
         Скачивает файл с Google Drive с retry-логикой.
 
+        Порядок попыток:
+        0. **Drive API** (``files.get?alt=media``) — надёжно, без HTML-
+           страниц подтверждения; работает, если задан
+           ``GOOGLE_DRIVE_API_KEY``.
+        1. Старый публичный URL ``uc?export=download`` — HTML fallback
+           (оставлен на случай, если API отвалится или не настроен).
+
         Returns:
             bytes or None: Содержимое файла
         """
         if not file_id:
             return None
+
+        # --- Drive API (если настроен) -----------------------------------
+        api_client = get_drive_api_client()
+        if api_client is not None:
+            try:
+                content = api_client.download_file(file_id)
+                if content and GoogleDriveSync._is_image_content(content):
+                    return content
+                if content:
+                    logger.warning(
+                        '[gdrive] API returned non-image payload for %s '
+                        '(size=%d, header=%s) — falling back to HTML',
+                        file_id, len(content),
+                        content[:4].hex() if content else 'empty',
+                    )
+                # если API вернул None — пробуем HTML
+            except Exception as exc:  # pragma: no cover — сеть/креды
+                logger.warning(
+                    '[gdrive] API download failed for %s, falling back to '
+                    'HTML: %s', file_id, exc,
+                )
 
         import time
 
