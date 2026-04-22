@@ -235,12 +235,12 @@
 
 {% block after_related_objects %}
   {{ block.super }}
-  {# Photos сначала — JS позиционирует их после последнего inline. #}
+  {# Photos — JS позиционирует их после последнего inline. #}
   {% if original.pk %}
   {% include "admin/core/container/photos_gallery.html" with photos_json=photos_json %}
   {% endif %}
-  {# Emails вторым — JS вставляет сразу после inline «Автомобили», #}
-  {# поэтому оказывается МЕЖДУ inlines и галереей фотографий. #}
+  {# Emails — JS поднимает секцию «Переписка» в самый верх основной колонки #}
+  {# формы (перед «Основные данные» и всеми inline-группами). #}
   {% if original.pk %}
   {% include "admin/core/container/_emails_panel.html" %}
   {% endif %}

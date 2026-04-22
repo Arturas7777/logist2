@@ -358,16 +358,29 @@
     var section = document.getElementById('car-emails-section');
     if (!section) return;
 
-    var inlineGroups = document.querySelectorAll('.inline-group');
-    var lastInline = inlineGroups[inlineGroups.length - 1];
-    var submitRow = document.querySelector('.submit-row');
-    if (lastInline && lastInline.parentNode) {
-        lastInline.parentNode.insertBefore(section, lastInline.nextSibling);
-    } else if (submitRow && submitRow.parentNode) {
-        submitRow.parentNode.insertBefore(section, submitRow);
-    }
+    // ── Позиционируем в САМЫЙ ВЕРХ основной колонки формы ──
+    // Переписка должна быть первым блоком в карточке — над «Основные данные»
+    // и всеми остальными fieldset / inline-группами.
+    (function placeAtTop() {
+        var formMain = document.querySelector('.cm-form-main');
+        if (!formMain) return;
+        var form = formMain.querySelector('form') || formMain;
+        var firstBlock = null;
+        var kids = form.children;
+        for (var i = 0; i < kids.length; i++) {
+            var ch = kids[i];
+            if (ch === section) continue;
+            if (ch.tagName === 'FIELDSET' || ch.classList.contains('inline-group')) {
+                firstBlock = ch;
+                break;
+            }
+        }
+        if (firstBlock) form.insertBefore(section, firstBlock);
+        else form.insertBefore(section, form.firstChild);
+    })();
 
     var details    = section.querySelector(':scope > details');
+    if (details) details.open = false;
     var list       = document.getElementById('cm-car-emails-list');
     var syncBtn    = document.getElementById('cm-car-emails-sync-btn');
     var composeBtn = document.getElementById('cm-car-email-compose-btn');

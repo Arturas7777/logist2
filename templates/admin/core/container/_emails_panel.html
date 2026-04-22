@@ -964,17 +964,30 @@
     var section = document.getElementById('container-emails-section');
     if (!section) return;
 
-    // ── Позиционируем сразу ПОСЛЕ последнего inline («Автомобили»). ──
-    var inlineGroups = document.querySelectorAll('.inline-group');
-    var lastInline = inlineGroups[inlineGroups.length - 1];
-    var submitRow = document.querySelector('.submit-row');
-    if (lastInline && lastInline.parentNode) {
-        lastInline.parentNode.insertBefore(section, lastInline.nextSibling);
-    } else if (submitRow && submitRow.parentNode) {
-        submitRow.parentNode.insertBefore(section, submitRow);
-    }
+    // ── Позиционируем в САМЫЙ ВЕРХ основной колонки формы ──
+    // Переписка должна быть первым блоком — над «Основные данные»,
+    // inlines и остальным контентом.
+    (function placeAtTop() {
+        var formMain = document.querySelector('.cm-form-main');
+        if (!formMain) return;
+        var form = formMain.querySelector('form') || formMain;
+        var firstBlock = null;
+        var kids = form.children;
+        for (var i = 0; i < kids.length; i++) {
+            var ch = kids[i];
+            if (ch === section) continue;
+            if (ch.tagName === 'FIELDSET' || ch.classList.contains('inline-group')) {
+                firstBlock = ch;
+                break;
+            }
+        }
+        if (firstBlock) form.insertBefore(section, firstBlock);
+        else form.insertBefore(section, form.firstChild);
+    })();
 
     var details = section.querySelector(':scope > details');
+    // Гарантируем, что секция свёрнута при открытии страницы.
+    if (details) details.open = false;
     var body    = document.getElementById('cm-emails-body');
     var list    = document.getElementById('cm-emails-list');
     var syncBtn = document.getElementById('cm-emails-sync-btn');

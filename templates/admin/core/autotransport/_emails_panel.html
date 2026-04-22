@@ -410,6 +410,7 @@ URLs: /core/emails/autotransport/<id>/mark-all-read|updates/.
     if (!section) return;
 
     var details    = section.querySelector(':scope > details');
+    if (details) details.open = false;
     var list       = document.getElementById('cm-at-emails-list');
     var syncBtn    = document.getElementById('cm-at-emails-sync-btn');
     var composeBtn = document.getElementById('cm-at-email-compose-btn');
