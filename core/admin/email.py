@@ -18,7 +18,7 @@ from core.models import Container
 from core.models_email import (
     CarEmailLink,
     ContainerEmail, ContainerEmailLink,
-    EmailGroup, EmailGroupMember, GmailSyncState,
+    EmailGroup, EmailGroupMember, EmailIngestFilter, GmailSyncState,
 )
 
 
@@ -410,3 +410,54 @@ class EmailGroupAdmin(admin.ModelAdmin):
         if not change and not obj.created_by_id:
             obj.created_by = request.user
         super().save_model(request, obj, form, change)
+
+
+# =====================================================================
+# Фильтры входящих писем по ключевым фразам
+# =====================================================================
+
+
+@admin.register(EmailIngestFilter)
+class EmailIngestFilterAdmin(admin.ModelAdmin):
+    """CRUD для фильтров Gmail-ингеста.
+
+    Любое входящее письмо, у которого тема/тело матчит хотя бы один
+    активный фильтр, **не линкуется** к карточкам (контейнерам / машинам /
+    автовозам). Сам ``ContainerEmail`` сохраняется в БД, чтобы Gmail-sync
+    остался идемпотентным.
+
+    После изменения фильтров можно вручную прогнать
+    ``python manage.py apply_email_filters`` — команда разлинкует уже
+    загруженные письма, попадающие под актуальные фильтры.
+    """
+
+    list_display = (
+        'phrase', 'scope', 'match_type', 'is_active',
+        'notes_short', 'updated_at',
+    )
+    list_filter = ('is_active', 'scope', 'match_type')
+    list_editable = ('is_active',)
+    search_fields = ('phrase', 'notes')
+    readonly_fields = ('created_at', 'updated_at')
+    ordering = ('-is_active', 'phrase')
+
+    fieldsets = (
+        (None, {
+            'fields': ('phrase', 'scope', 'match_type', 'is_active', 'notes'),
+            'description': (
+                'Письма, в которых найдено совпадение с фразой, не будут '
+                'попадать в карточки. Сами письма остаются в базе — если '
+                'снять галочку «Активен» или удалить фильтр, можно '
+                'прогнать <code>python manage.py apply_email_filters '
+                '--restore</code>, чтобы вернуть их в карточки.'
+            ),
+        }),
+        ('Служебное', {
+            'classes': ('collapse',),
+            'fields': ('created_at', 'updated_at'),
+        }),
+    )
+
+    @admin.display(description='Комментарий')
+    def notes_short(self, obj: EmailIngestFilter) -> str:
+        return (obj.notes or '')[:80]

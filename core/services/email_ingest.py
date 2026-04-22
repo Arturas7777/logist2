@@ -43,6 +43,7 @@ class SyncReport:
     unmatched: int = 0
     drafts_skipped: int = 0             # сколько Gmail-черновиков отфильтровали
     duplicates_skipped: int = 0         # сколько дубликатов по содержимому скрыли
+    filtered_skipped: int = 0           # сколько писем спрятали пользовательскими фильтрами
     attachments_saved: int = 0
     attachments_skipped: int = 0        # слишком большие
     errors: list[str] = field(default_factory=list)
@@ -60,6 +61,7 @@ class SyncReport:
             'unmatched': self.unmatched,
             'drafts_skipped': self.drafts_skipped,
             'duplicates_skipped': self.duplicates_skipped,
+            'filtered_skipped': self.filtered_skipped,
             'attachments_saved': self.attachments_saved,
             'attachments_skipped': self.attachments_skipped,
             'errors_count': len(self.errors),
@@ -103,19 +105,20 @@ def sync_mailbox(*, force_full: bool = False) -> SyncReport:
     start_history_id = None if force_full else state.last_history_id
 
     booking_index = build_booking_index()
+    ingest_filters = load_active_ingest_filters()
 
     if start_history_id:
         report.mode = 'incremental'
         try:
-            _process_incremental(client, state, booking_index, report)
+            _process_incremental(client, state, booking_index, report, ingest_filters)
         except GmailHistoryExpired as err:
             logger.warning('[gmail_sync] History expired, fallback to full sync: %s', err)
             report.mode = 'full'
             report.errors.append(f'history_expired: {err}')
-            _process_full(client, booking_index, report)
+            _process_full(client, booking_index, report, ingest_filters)
     else:
         report.mode = 'full'
-        _process_full(client, booking_index, report)
+        _process_full(client, booking_index, report, ingest_filters)
 
     # В конце сохраняем max historyId, полученный от API (приоритет — свежий remote).
     new_hid = remote_history_id or state.last_history_id
@@ -139,15 +142,17 @@ def _process_incremental(
     state,
     booking_index: dict[str, int],
     report: SyncReport,
+    ingest_filters: list[tuple],
 ) -> None:
     for gmail_id in client.list_history(state.last_history_id):
-        _ingest_one(client, gmail_id, booking_index, report)
+        _ingest_one(client, gmail_id, booking_index, report, ingest_filters)
 
 
 def _process_full(
     client: GmailApiClient,
     booking_index: dict[str, int],
     report: SyncReport,
+    ingest_filters: list[tuple],
 ) -> None:
     lookback_days = getattr(settings, _FALLBACK_LOOKBACK_DAYS, 30)
     # -in:drafts — не тянем черновики из Gmail (автосохранение web-интерфейса
@@ -155,7 +160,7 @@ def _process_full(
     # замусоривают карточки контейнеров/машин/автовозов).
     query = f'newer_than:{int(lookback_days)}d -in:spam -in:trash -in:drafts'
     for gmail_id in client.list_messages(query):
-        _ingest_one(client, gmail_id, booking_index, report)
+        _ingest_one(client, gmail_id, booking_index, report, ingest_filters)
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +172,7 @@ def _ingest_one(
     gmail_id: str,
     booking_index: dict[str, int],
     report: SyncReport,
+    ingest_filters: list[tuple] | None = None,
 ) -> None:
     from core.models_email import CarEmailLink, ContainerEmail, ContainerEmailLink
 
@@ -199,6 +205,19 @@ def _ingest_one(
     # по gmail_id), но НЕ создаём ни ContainerEmailLink, ни CarEmailLink —
     # дубль не попадёт в emails_for_panel() и не засветится в карточках.
     is_duplicate = _is_content_duplicate(msg)
+
+    # Пользовательские фильтры по ключевым фразам (админка → «Фильтры
+    # Gmail-ингеста»). Если письмо матчится — сохраняем его в БД (чтобы
+    # sync оставался идемпотентным по gmail_id), но не создаём связей ни
+    # с контейнерами, ни с машинами: в карточках не появится.
+    filter_hit = ''
+    if ingest_filters:
+        filter_hit = matches_ingest_filter(
+            subject=msg.subject or '',
+            body_text=msg.body_text or '',
+            body_html=msg.body_html or '',
+            filters=ingest_filters,
+        )
 
     match = match_email_to_containers(msg, booking_index=booking_index)
 
@@ -246,6 +265,13 @@ def _ingest_one(
                 if is_duplicate:
                     # Не создаём линков — дубль «скрыт» из всех карточек.
                     report.duplicates_skipped += 1
+                    return
+                if filter_hit:
+                    report.filtered_skipped += 1
+                    logger.info(
+                        '[gmail_sync] filtered out gmail_id=%s by phrase %r',
+                        gmail_id, filter_hit,
+                    )
                     return
                 # Создаём M2M-связи сразу при создании письма. Идемпотентно:
                 # повторный sync этого gmail_id отфильтруется в начале функции.
@@ -404,6 +430,93 @@ def _content_digest(
         body_norm,
     ))
     return hashlib.sha256(key.encode('utf-8', 'replace')).hexdigest()
+
+
+def load_active_ingest_filters() -> list[tuple]:
+    """Загружает активные фильтры один раз на цикл синхронизации.
+
+    Возвращает список кортежей ``(phrase_lower_or_pattern, scope,
+    match_type, phrase_original)``. Для REGEX храним скомпилированный
+    паттерн; некорректные выражения логируем и пропускаем.
+    """
+    from core.models_email import EmailIngestFilter
+
+    result: list[tuple] = []
+    qs = EmailIngestFilter.objects.filter(is_active=True).only(
+        'phrase', 'scope', 'match_type',
+    )
+    for f in qs:
+        phrase = (f.phrase or '').strip()
+        if not phrase:
+            continue
+        if f.match_type == EmailIngestFilter.MATCH_REGEX:
+            try:
+                compiled = re.compile(phrase, re.IGNORECASE | re.DOTALL)
+            except re.error as exc:
+                logger.warning(
+                    '[gmail_sync] skip invalid regex filter %r: %s',
+                    phrase, exc,
+                )
+                continue
+            result.append((compiled, f.scope, f.match_type, phrase))
+        else:
+            result.append((phrase.lower(), f.scope, f.match_type, phrase))
+    return result
+
+
+def matches_ingest_filter(
+    *,
+    subject: str,
+    body_text: str,
+    body_html: str,
+    filters: list[tuple],
+) -> str:
+    """Проверяет письмо против активных фильтров.
+
+    Возвращает исходную фразу сработавшего фильтра или пустую строку,
+    если ни один не сработал. Для body используем тот же нормализатор,
+    что и в дедупликации (вычищает HTML/script/style) — чтобы фразы
+    срабатывали по «видимому» тексту письма, а не по кускам разметки.
+    """
+    if not filters:
+        return ''
+
+    subj_raw = subject or ''
+    subj_lower = subj_raw.lower()
+
+    body_raw = ''
+    body_norm = ''
+    body_norm_ready = False
+
+    def _ensure_body_norm() -> str:
+        nonlocal body_raw, body_norm, body_norm_ready
+        if not body_norm_ready:
+            src_text = body_text or ''
+            src_html = body_html or ''
+            body_raw = (src_text + '\n' + src_html)
+            if src_html:
+                body_norm = _normalize_body_for_hash(src_html)
+            else:
+                body_norm = _normalize_body_for_hash(src_text)
+            body_norm_ready = True
+        return body_norm
+
+    for needle, scope, match_type, phrase_original in filters:
+        if match_type == 'REGEX':
+            pattern = needle  # compiled re.Pattern
+            if scope in ('SUBJECT', 'ANY') and pattern.search(subj_raw):
+                return phrase_original
+            if scope in ('BODY', 'ANY'):
+                if pattern.search(_ensure_body_norm()):
+                    return phrase_original
+        else:
+            sub = needle  # уже lowercase
+            if scope in ('SUBJECT', 'ANY') and sub in subj_lower:
+                return phrase_original
+            if scope in ('BODY', 'ANY'):
+                if sub in _ensure_body_norm():
+                    return phrase_original
+    return ''
 
 
 def _is_content_duplicate(msg: ParsedMessage) -> bool:

@@ -442,6 +442,84 @@ class EmailGroupMember(models.Model):
         return f'{name} <{self.email}>'
 
 
+class EmailIngestFilter(models.Model):
+    """Пользовательский фильтр для входящих писем Gmail.
+
+    Если письмо матчит хотя бы один активный фильтр (по теме, телу или
+    одновременно в обоих местах), оно **не линкуется** к карточкам
+    контейнеров / машин / автовозов — пользователь просто не видит его в
+    переписке. Сам ``ContainerEmail`` всё равно сохраняется в БД, чтобы
+    sync_mailbox оставался идемпотентным по ``gmail_id``.
+
+    Управление — через стандартную админку Django
+    (``/admin/core/emailingestfilter/``). После добавления/редактирования
+    фильтра можно запустить ``python manage.py apply_email_filters`` —
+    команда разлинкует уже сохранённые письма, попадающие под активные
+    фильтры, из карточек.
+    """
+
+    SCOPE_SUBJECT = 'SUBJECT'
+    SCOPE_BODY = 'BODY'
+    SCOPE_ANY = 'ANY'
+    SCOPE_CHOICES = [
+        (SCOPE_SUBJECT, 'Только тема'),
+        (SCOPE_BODY, 'Только тело'),
+        (SCOPE_ANY, 'Тема или тело'),
+    ]
+
+    MATCH_CONTAINS = 'CONTAINS'
+    MATCH_REGEX = 'REGEX'
+    MATCH_CHOICES = [
+        (MATCH_CONTAINS, 'Подстрока (без учёта регистра)'),
+        (MATCH_REGEX, 'Регулярное выражение (re.IGNORECASE)'),
+    ]
+
+    phrase = models.CharField(
+        'Ключевая фраза',
+        max_length=500,
+        help_text=(
+            'Фраза, наличие которой в теме или теле письма прячет его из '
+            'карточек. Для «подстроки» регистр не важен; для «regex» — '
+            'синтаксис Python re, поиск тоже без учёта регистра.'
+        ),
+    )
+    scope = models.CharField(
+        'Где искать',
+        max_length=10,
+        choices=SCOPE_CHOICES,
+        default=SCOPE_ANY,
+    )
+    match_type = models.CharField(
+        'Тип совпадения',
+        max_length=10,
+        choices=MATCH_CHOICES,
+        default=MATCH_CONTAINS,
+    )
+    is_active = models.BooleanField('Активен', default=True)
+    notes = models.CharField(
+        'Комментарий',
+        max_length=500,
+        blank=True,
+        default='',
+        help_text='Для чего нужен фильтр (служебная пометка).',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Фильтр Gmail-ингеста'
+        verbose_name_plural = 'Фильтры Gmail-ингеста'
+        ordering = ['-is_active', 'phrase']
+        indexes = [
+            models.Index(fields=['is_active']),
+        ]
+
+    def __str__(self) -> str:
+        flag = '✓' if self.is_active else '✗'
+        scope = dict(self.SCOPE_CHOICES).get(self.scope, self.scope)
+        return f'[{flag}] «{self.phrase[:60]}» — {scope}'
+
+
 class GmailSyncState(models.Model):
     """Храним последний обработанный historyId, чтобы тянуть инкрементально.
 
