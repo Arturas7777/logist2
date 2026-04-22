@@ -328,24 +328,98 @@ def _ingest_one(
 # content-based deduplication
 # ---------------------------------------------------------------------------
 
+# Вырезаем блоки <script>/<style>/<head>/<meta>/<link> целиком вместе с
+# содержимым — там часто сидят уникальные токены (Salesforce UserContext,
+# Google Analytics client-id, трекинг-пиксели), из-за которых побайтное
+# сравнение двух «одинаковых» писем не срабатывает.
+_VOLATILE_HTML_BLOCK_RE = re.compile(
+    r'<\s*(script|style|head|meta|link)\b[^>]*>.*?<\s*/\s*\1\s*>',
+    re.IGNORECASE | re.DOTALL,
+)
+# Оставшиеся одиночные теги (<br>, <img>, закрывающие без пары и т.п.).
+_HTML_TAG_RE = re.compile(r'<[^>]+>')
+# Salesforce-рассылки (Maersk и др.) вставляют в тело длинный
+# JSON-инициализатор `window.sfdcPage`/`UserContext.initialize(...)` даже в
+# text/plain-часть. В нём зашиты currentTime/sessionId/csrfToken, поэтому
+# два «визуально одинаковых» письма отличаются внутри этого блока. Рубим
+# всё от триггерного ключа до конца текста — нас интересует только
+# видимая часть письма ДО этого блока.
+_SFDC_BLOCK_RE = re.compile(
+    r'(?:window\.(?:sfdcPage|UserContext)|UserContext\.initialize)[\s\S]*',
+    re.IGNORECASE,
+)
+# Длинные JSON-объекты в одну строку (>200 символов без переносов) — часто
+# это «слепки» userPreferences/sessionState/labels. Снова — вариативный
+# контент, который не должен влиять на дедуп.
+_LONG_JSON_BLOB_RE = re.compile(r'\{[^{}\n\r]{200,}\}')
+_WHITESPACE_RE = re.compile(r'\s+')
+
+
+def _normalize_body_for_hash(text: str) -> str:
+    """Нормализация тела письма для сравнения «по смыслу».
+
+    * убирает <script>/<style>/<head>/<meta>/<link> блоки с содержимым;
+    * срезает Salesforce-JS-инициализатор (где зашит currentTime/sessionId);
+    * убирает остальные HTML-теги;
+    * схлопывает пробельные последовательности и приводит к lower-case.
+    """
+    if not text:
+        return ''
+    s = text
+    s = _VOLATILE_HTML_BLOCK_RE.sub(' ', s)
+    s = _SFDC_BLOCK_RE.sub(' ', s)
+    s = _HTML_TAG_RE.sub(' ', s)
+    s = _LONG_JSON_BLOB_RE.sub(' ', s)
+    s = _WHITESPACE_RE.sub(' ', s).strip().lower()
+    return s
+
+
+def _content_digest(
+    *,
+    from_addr: str,
+    subject: str,
+    body_text: str,
+    body_html: str,
+) -> str:
+    """Стабильный хэш «видимого» содержимого письма (для дедупликации).
+
+    Берёт ``from``+``subject``+нормализованное тело (первые 4000 символов,
+    чтобы трекинг-пиксели и unsubscribe-хэши в хвосте не влияли).
+    Источник тела — ``body_text``, если после нормализации не пуст, иначе
+    ``body_html``. Возвращает sha256-hex.
+    """
+    import hashlib
+
+    norm_text = _normalize_body_for_hash(body_text or '')
+    norm_html = _normalize_body_for_hash(body_html or '')
+    # Для писем, где в text/plain лежит тот же Salesforce-блок, что и в
+    # html — после нормализации оба дают одинаковый «видимый» текст. Если
+    # нет — берём более длинную версию (обычно body_text в ASCII-почте).
+    body_norm = norm_text if len(norm_text) >= len(norm_html) else norm_html
+    body_norm = body_norm[:4000]
+
+    key = '||'.join((
+        (from_addr or '').strip().lower(),
+        (subject or '').strip().lower(),
+        body_norm,
+    ))
+    return hashlib.sha256(key.encode('utf-8', 'replace')).hexdigest()
+
 
 def _is_content_duplicate(msg: ParsedMessage) -> bool:
-    """Проверяет, есть ли в БД письмо с тем же from/subject/body.
+    """Есть ли уже в БД письмо с тем же «видимым» содержимым.
 
     Дубликаты встречаются у автоматических рассылок (Caromoto, Maersk/
-    Salesforce и т.п.), которые шлют одно и то же уведомление несколькими
-    Gmail-сообщениями с разными Message-ID. В карточке они выглядят как
-    «близнецы» с одним и тем же контентом, но разными ярлыками
-    сопоставления. Считаем дублем, если совпадает:
+    Salesforce, Fleet-Viewer и пр.), которые шлют одно и то же уведомление
+    несколькими Gmail-сообщениями с разными Message-ID. В карточке они
+    выглядят как «близнецы» с разными ярлыками сопоставления
+    («по треду» / «по номеру контейнера»).
 
-      * ``from_addr`` (усечён до 500 как в БД);
-      * ``subject``   (усечён до 1000 как в БД);
-      * ``body_text`` и ``body_html`` — оба побайтово.
-
-    Пустые поля сравниваются как пустые строки — это консервативно (ничего
-    не теряем), поскольку у разных писем почти всегда отличается хотя бы
-    один из этих признаков.
+    Сравнение идёт по *нормализованному* дайджесту (FROM + SUBJECT +
+    очищенное тело), т.к. побайтно отличаться могут Salesforce-скрипты,
+    трекинг-пиксели, unsubscribe-токены и прочая вариативная служебка.
     """
+    from datetime import timedelta
     from core.models_email import ContainerEmail
 
     from_addr = (msg.from_addr or '')[:500]
@@ -353,23 +427,41 @@ def _is_content_duplicate(msg: ParsedMessage) -> bool:
     body_text = msg.body_text or ''
     body_html = msg.body_html or ''
 
-    # Защита: если письмо «пустое» (ни subject, ни тела), дубликатами
-    # считать не будем — это почти наверняка технические сообщения,
-    # которые всё равно не показываются в карточках.
+    # Пустые письма не дедупим — не появляются в карточках всё равно.
     if not subject and not body_text and not body_html:
         return False
 
-    return (
+    new_digest = _content_digest(
+        from_addr=from_addr, subject=subject,
+        body_text=body_text, body_html=body_html,
+    )
+
+    # Ищем кандидатов по ключу (from_addr, subject) — это индекс-friendly,
+    # а заодно сильно урезает набор. Окно 30 дней — достаточно, чтобы
+    # поймать повторные уведомления (обычно приходят в пределах часа).
+    since = timezone.now() - timedelta(days=30)
+    candidates = (
         ContainerEmail.objects
         .filter(
             from_addr=from_addr,
             subject=subject,
-            body_text=body_text,
-            body_html=body_html,
+            received_at__gte=since,
         )
         .exclude(gmail_id=msg.gmail_id)
-        .exists()
+        .only('id', 'from_addr', 'subject', 'body_text', 'body_html')
+        # Бейлимся после первой же находки — не тянем тысячи кандидатов.
+        .iterator(chunk_size=50)
     )
+    for cand in candidates:
+        cand_digest = _content_digest(
+            from_addr=cand.from_addr or '',
+            subject=cand.subject or '',
+            body_text=cand.body_text or '',
+            body_html=cand.body_html or '',
+        )
+        if cand_digest == new_digest:
+            return True
+    return False
 
 
 # ---------------------------------------------------------------------------
