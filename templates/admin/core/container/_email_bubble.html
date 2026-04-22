@@ -9,7 +9,7 @@
     email — ContainerEmail
 {% endcomment %}
 {% load email_extras %}
-{% with from_name=email.from_addr|display_name %}
+{% with from_email=email.from_addr|extract_email to_list=email.to_addrs|split_email_list cc_list=email.cc_addrs|split_email_list %}
 <div class="cm-msg {% if email.direction == 'OUTGOING' %}cm-out{% else %}cm-in{% endif %}{% if email.needs_reply %} cm-needs-reply{% endif %}"
      data-email-id="{{ email.pk }}"
      data-thread-id="{{ email.thread_id }}"
@@ -20,20 +20,31 @@
     <div class="cm-avatar"
          style="background-color: {{ email.from_addr|avatar_color }};"
          title="{{ email.from_addr }}">
-        {{ from_name|initials }}
+        {{ email.from_addr|display_name|initials }}
     </div>
     <div class="cm-msg-col">
         <div class="cm-msg-header">
-            <span class="cm-msg-from" title="{{ email.from_addr }}">{{ from_name }}</span>
+            <span class="cm-msg-from" title="{{ email.from_addr }}">{{ from_email|default:email.from_addr }}</span>
             <span class="cm-msg-time">{{ email.received_at|date:"d.m H:i" }}</span>
-            <span class="cm-msg-matched" data-kind="{{ email.matched_by }}">
-                {{ email.get_matched_by_display }}
-            </span>
-            {% if email.direction == 'OUTGOING' and email.send_status %}
-                <span class="cm-msg-send-status" data-status="{{ email.send_status }}"
-                      title="{{ email.send_error|default:'' }}">
-                    {% if email.send_status == 'SENT' %}✓ отправлено{% elif email.send_status == 'FAILED' %}✗ ошибка{% elif email.send_status == 'PENDING' %}…в очереди{% endif %}
-                </span>
+            {% if to_list %}
+                <details class="cm-msg-recipients" data-kind="to">
+                    <summary>Кому ({{ to_list|length }})</summary>
+                    <ul class="cm-msg-addr-list">
+                        {% for a in to_list %}
+                            <li title="{{ a.display }}">{{ a.email }}</li>
+                        {% endfor %}
+                    </ul>
+                </details>
+            {% endif %}
+            {% if cc_list %}
+                <details class="cm-msg-recipients" data-kind="cc">
+                    <summary>Копия ({{ cc_list|length }})</summary>
+                    <ul class="cm-msg-addr-list">
+                        {% for a in cc_list %}
+                            <li title="{{ a.display }}">{{ a.email }}</li>
+                        {% endfor %}
+                    </ul>
+                </details>
             {% endif %}
         </div>
         <div class="cm-bubble">
