@@ -67,6 +67,53 @@ def display_name_filter(from_addr: str) -> str:
     return extract_display_name(from_addr or '')
 
 
+@register.filter(name='extract_email')
+def extract_email_filter(from_addr: str) -> str:
+    """Из ``"A B" <a@b.com>`` возвращает ``a@b.com``.
+
+    Если распарсить не получилось — возвращает исходную строку как есть
+    (чтобы в заголовке бабла всё равно что-то появилось).
+    """
+    from email.utils import parseaddr
+
+    if not from_addr:
+        return ''
+    name, addr = parseaddr(_fix_mojibake(from_addr))
+    return (addr or from_addr or '').strip()
+
+
+@register.filter(name='split_email_list')
+def split_email_list_filter(addrs: str) -> list[dict]:
+    """Разбивает строку вроде ``"A" <a@x>, b@y, "C D" <c@z>`` на список
+    словарей ``[{email, display}]`` — пригоден для рендеринга в <details>.
+
+    Пустые / мусорные токены отбрасываются. ``display`` содержит имя,
+    если его удалось распознать, иначе совпадает с ``email``.
+    """
+    from email.utils import getaddresses
+
+    if not addrs:
+        return []
+    # getaddresses принимает список заголовков — даём один.
+    parsed = getaddresses([_fix_mojibake(addrs)])
+    result: list[dict] = []
+    seen: set[str] = set()
+    for raw_name, raw_addr in parsed:
+        email = (raw_addr or '').strip()
+        if not email or '@' not in email:
+            continue
+        key = email.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        name = (raw_name or '').strip().strip('"').strip()
+        result.append({
+            'email': email,
+            'display': name or email,
+        })
+    return result
+
+
 @register.filter(name='initials')
 def initials_filter(name_or_addr: str) -> str:
     """Две первые буквы имени (или адреса) для аватара. Заглавные."""
