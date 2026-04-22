@@ -41,6 +41,7 @@ class SyncReport:
     updated: int = 0                    # сколько существующих обновили
     matched: int = 0                    # у скольких container != NULL
     unmatched: int = 0
+    drafts_skipped: int = 0             # сколько Gmail-черновиков отфильтровали
     attachments_saved: int = 0
     attachments_skipped: int = 0        # слишком большие
     errors: list[str] = field(default_factory=list)
@@ -56,6 +57,7 @@ class SyncReport:
             'updated': self.updated,
             'matched': self.matched,
             'unmatched': self.unmatched,
+            'drafts_skipped': self.drafts_skipped,
             'attachments_saved': self.attachments_saved,
             'attachments_skipped': self.attachments_skipped,
             'errors_count': len(self.errors),
@@ -146,7 +148,10 @@ def _process_full(
     report: SyncReport,
 ) -> None:
     lookback_days = getattr(settings, _FALLBACK_LOOKBACK_DAYS, 30)
-    query = f'newer_than:{int(lookback_days)}d -in:spam -in:trash'
+    # -in:drafts — не тянем черновики из Gmail (автосохранение web-интерфейса
+    # создаёт десятки промежуточных message_id на один черновик, они
+    # замусоривают карточки контейнеров/машин/автовозов).
+    query = f'newer_than:{int(lookback_days)}d -in:spam -in:trash -in:drafts'
     for gmail_id in client.list_messages(query):
         _ingest_one(client, gmail_id, booking_index, report)
 
@@ -171,6 +176,14 @@ def _ingest_one(
     except Exception as exc:
         logger.error('[gmail_sync] Failed to fetch %s: %s', gmail_id, exc, exc_info=True)
         report.errors.append(f'get_message({gmail_id}): {exc}')
+        return
+
+    # Черновики Gmail пропускаем: при наборе письма в web-интерфейсе Gmail
+    # автосохраняет его каждые несколько секунд и прилетает в history.list
+    # как messageAdded — без фильтра мы плодим «письма» в карточках на
+    # каждое автосохранение. Свои черновики ведём на стороне проекта.
+    if 'DRAFT' in (msg.labels or []):
+        report.drafts_skipped += 1
         return
 
     report.processed += 1
