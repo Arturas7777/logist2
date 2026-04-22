@@ -42,6 +42,7 @@ class SyncReport:
     matched: int = 0                    # у скольких container != NULL
     unmatched: int = 0
     drafts_skipped: int = 0             # сколько Gmail-черновиков отфильтровали
+    duplicates_skipped: int = 0         # сколько дубликатов по содержимому скрыли
     attachments_saved: int = 0
     attachments_skipped: int = 0        # слишком большие
     errors: list[str] = field(default_factory=list)
@@ -58,6 +59,7 @@ class SyncReport:
             'matched': self.matched,
             'unmatched': self.unmatched,
             'drafts_skipped': self.drafts_skipped,
+            'duplicates_skipped': self.duplicates_skipped,
             'attachments_saved': self.attachments_saved,
             'attachments_skipped': self.attachments_skipped,
             'errors_count': len(self.errors),
@@ -188,6 +190,16 @@ def _ingest_one(
 
     report.processed += 1
 
+    # Дедупликация по содержимому. Автоматика Caromoto/Maersk/Salesforce
+    # периодически присылает одно и то же уведомление несколькими Gmail-
+    # сообщениями с разными Message-ID (рассылка продублировалась внутри
+    # их систем). В карточке контейнера мы видим два «близнеца» с одним
+    # subject/body, но разными matched_by («по треду» + «по номеру»).
+    # Такой дубль сохраняем как ContainerEmail (чтобы sync был идемпотентен
+    # по gmail_id), но НЕ создаём ни ContainerEmailLink, ни CarEmailLink —
+    # дубль не попадёт в emails_for_panel() и не засветится в карточках.
+    is_duplicate = _is_content_duplicate(msg)
+
     match = match_email_to_containers(msg, booking_index=booking_index)
 
     fallback_message_id = msg.message_id or f'gmail:{msg.gmail_id}'
@@ -231,6 +243,10 @@ def _ingest_one(
             )
             if created:
                 report.created += 1
+                if is_duplicate:
+                    # Не создаём линков — дубль «скрыт» из всех карточек.
+                    report.duplicates_skipped += 1
+                    return
                 # Создаём M2M-связи сразу при создании письма. Идемпотентно:
                 # повторный sync этого gmail_id отфильтруется в начале функции.
                 if match.hits:
@@ -306,6 +322,54 @@ def _ingest_one(
         report.matched += 1
     else:
         report.unmatched += 1
+
+
+# ---------------------------------------------------------------------------
+# content-based deduplication
+# ---------------------------------------------------------------------------
+
+
+def _is_content_duplicate(msg: ParsedMessage) -> bool:
+    """Проверяет, есть ли в БД письмо с тем же from/subject/body.
+
+    Дубликаты встречаются у автоматических рассылок (Caromoto, Maersk/
+    Salesforce и т.п.), которые шлют одно и то же уведомление несколькими
+    Gmail-сообщениями с разными Message-ID. В карточке они выглядят как
+    «близнецы» с одним и тем же контентом, но разными ярлыками
+    сопоставления. Считаем дублем, если совпадает:
+
+      * ``from_addr`` (усечён до 500 как в БД);
+      * ``subject``   (усечён до 1000 как в БД);
+      * ``body_text`` и ``body_html`` — оба побайтово.
+
+    Пустые поля сравниваются как пустые строки — это консервативно (ничего
+    не теряем), поскольку у разных писем почти всегда отличается хотя бы
+    один из этих признаков.
+    """
+    from core.models_email import ContainerEmail
+
+    from_addr = (msg.from_addr or '')[:500]
+    subject = (msg.subject or '')[:1000]
+    body_text = msg.body_text or ''
+    body_html = msg.body_html or ''
+
+    # Защита: если письмо «пустое» (ни subject, ни тела), дубликатами
+    # считать не будем — это почти наверняка технические сообщения,
+    # которые всё равно не показываются в карточках.
+    if not subject and not body_text and not body_html:
+        return False
+
+    return (
+        ContainerEmail.objects
+        .filter(
+            from_addr=from_addr,
+            subject=subject,
+            body_text=body_text,
+            body_html=body_html,
+        )
+        .exclude(gmail_id=msg.gmail_id)
+        .exists()
+    )
 
 
 # ---------------------------------------------------------------------------
