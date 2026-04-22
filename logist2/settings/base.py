@@ -473,6 +473,26 @@ GMAIL_SIGNATURE_HTML = os.getenv(
 GMAIL_MAX_OUTBOUND_MB = int(os.getenv('GMAIL_MAX_OUTBOUND_MB', '25'))
 
 # ---------------------------------------------------------------------------
+# Google Drive API — синхронизация фотографий контейнеров
+# ---------------------------------------------------------------------------
+# Публичный API key (НЕ OAuth). Используется в core/services/gdrive_client.py
+# для чтения списков файлов и скачивания. Нужен, потому что HTML-парсинг
+# embeddedfolderview/обычной страницы папки режет большие папки до ~50-120
+# элементов (Drive догружает остальное JavaScript-ом). API v3 отдаёт всё с
+# полной пагинацией.
+#
+# Как получить:
+#   1. Google Cloud Console → выбрать проект.
+#   2. APIs & Services → Library → включить "Google Drive API".
+#   3. APIs & Services → Credentials → Create Credentials → API key.
+#   4. Обязательно: Restrict key → API restrictions → Drive API only.
+#
+# Папки Drive должны быть опубликованы как "Anyone with the link" (сейчас
+# именно так — другой вариант потребовал бы OAuth с drive.readonly scope).
+# Если ключ не задан — код откатывается на старый HTML-парсинг с warning-ом.
+GOOGLE_DRIVE_API_KEY = os.getenv('GOOGLE_DRIVE_API_KEY', '').strip()
+
+# ---------------------------------------------------------------------------
 # Company info (used in email templates)
 # ---------------------------------------------------------------------------
 
