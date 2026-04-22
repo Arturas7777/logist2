@@ -28,7 +28,11 @@
             <span class="cm-msg-time">{{ email.received_at|date:"d.m H:i" }}</span>
             {% if to_list %}
                 <details class="cm-msg-recipients" data-kind="to">
-                    <summary>Кому ({{ to_list|length }})</summary>
+                    <summary>
+                        <span class="cm-rcp-chevron" aria-hidden="true"></span>
+                        <span class="cm-rcp-label">Кому</span>
+                        <span class="cm-rcp-count">{{ to_list|length }}</span>
+                    </summary>
                     <ul class="cm-msg-addr-list">
                         {% for a in to_list %}
                             <li title="{{ a.display }}">{{ a.email }}</li>
@@ -38,7 +42,11 @@
             {% endif %}
             {% if cc_list %}
                 <details class="cm-msg-recipients" data-kind="cc">
-                    <summary>Копия ({{ cc_list|length }})</summary>
+                    <summary>
+                        <span class="cm-rcp-chevron" aria-hidden="true"></span>
+                        <span class="cm-rcp-label">Копия</span>
+                        <span class="cm-rcp-count">{{ cc_list|length }}</span>
+                    </summary>
                     <ul class="cm-msg-addr-list">
                         {% for a in cc_list %}
                             <li title="{{ a.display }}">{{ a.email }}</li>
