@@ -1,4 +1,4 @@
-"""Удаление дубликатов писем по содержимому (одинаковые from/subject/body).
+"""Удаление дубликатов писем по «видимому» содержимому.
 
 Автоматические рассылки Caromoto, Maersk (Salesforce), Fleet-Viewer и пр.
 периодически отправляют одно и то же уведомление несколькими Gmail-
@@ -7,9 +7,11 @@
 ``ContainerEmail`` и прилетали в карточку контейнера дважды (или трижды)
 с разными ярлыками сопоставления.
 
-Команда группирует записи по ``(from_addr, subject, body_text, body_html)``
-и в каждой группе оставляет только самое раннее письмо — у остальных
-удаляет все ``ContainerEmailLink`` / ``CarEmailLink`` (карточки очищаются).
+Команда группирует записи по **нормализованному** содержимому (FROM +
+SUBJECT + очищенное тело без <script>/<style>, без Salesforce-инициализа-
+торов, без длинных JSON-блобов) и в каждой группе оставляет только
+самое раннее письмо — у остальных удаляет все ``ContainerEmailLink`` /
+``CarEmailLink`` (карточки очищаются).
 
 Сами ``ContainerEmail`` оставляем — нужны для идемпотентности
 ``sync_mailbox`` (чтобы следующая синхронизация не загружала тот же
@@ -30,19 +32,19 @@ from collections import defaultdict
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from django.db.models import Count, Min
 
 from core.models_email import (
     CarEmailLink,
     ContainerEmail,
     ContainerEmailLink,
 )
+from core.services.email_ingest import _content_digest
 
 
 class Command(BaseCommand):
     help = (
         'Найти и скрыть (удалив линки) или удалить физически дубли '
-        'ContainerEmail по from/subject/body.'
+        'ContainerEmail по видимому содержимому (FROM + SUBJECT + body).'
     )
 
     def add_arguments(self, parser):
@@ -56,68 +58,95 @@ class Command(BaseCommand):
             action='store_true',
             help='Физически удалить дубли (а не только разлинковать).',
         )
+        parser.add_argument(
+            '--limit-preview',
+            type=int,
+            default=10,
+            help='Сколько групп показать в превью (default: 10).',
+        )
 
     def handle(self, *args, **opts):
         dry_run: bool = opts['dry_run']
         hard: bool = opts['hard_delete']
+        preview_limit: int = opts['limit_preview']
 
-        # 1) Находим группы (from_addr, subject, body_text, body_html) с >1 записью.
-        dup_keys = (
+        self.stdout.write('Считаем digest для всех ContainerEmail…')
+
+        # digest → (earliest_id, [(id, received_at, from_addr, subject), ...])
+        groups: dict[str, list[tuple[int, object, str, str]]] = defaultdict(list)
+
+        # iterator + chunk_size чтобы не держать все письма в памяти.
+        qs = (
             ContainerEmail.objects
-            .values('from_addr', 'subject', 'body_text', 'body_html')
-            .annotate(cnt=Count('id'), earliest_id=Min('id'))
-            .filter(cnt__gt=1)
-            .order_by('-cnt')
+            .only(
+                'id', 'from_addr', 'subject', 'body_text', 'body_html',
+                'received_at',
+            )
+            .order_by('id')
+            .iterator(chunk_size=200)
         )
-        dup_keys = list(dup_keys)
 
-        if not dup_keys:
+        total = 0
+        for e in qs:
+            total += 1
+            digest = _content_digest(
+                from_addr=e.from_addr or '',
+                subject=e.subject or '',
+                body_text=e.body_text or '',
+                body_html=e.body_html or '',
+            )
+            groups[digest].append(
+                (e.id, e.received_at, e.from_addr or '', e.subject or '')
+            )
+
+        # Оставляем только группы с ≥2 элементами.
+        dup_groups = {d: rows for d, rows in groups.items() if len(rows) > 1}
+
+        self.stdout.write(
+            f'Писем обработано: {total}. '
+            f'Групп-дубликатов: {len(dup_groups)}.'
+        )
+
+        if not dup_groups:
             self.stdout.write(self.style.SUCCESS(
                 'Дубликатов не найдено — чистить нечего.'
             ))
             return
 
-        total_groups = len(dup_keys)
-        total_dupes = sum(g['cnt'] - 1 for g in dup_keys)
+        total_dupes = sum(len(rows) - 1 for rows in dup_groups.values())
+        self.stdout.write(f'Всего лишних копий: {total_dupes}.')
 
-        self.stdout.write(
-            f'Найдено групп: {total_groups}, лишних копий: {total_dupes}.'
+        # Превью: группы, отсортированные по числу копий убыв.
+        sorted_groups = sorted(
+            dup_groups.items(),
+            key=lambda kv: len(kv[1]),
+            reverse=True,
         )
-        # Превью первых 5 групп: что собираемся чистить.
-        for g in dup_keys[:5]:
+        for digest, rows in sorted_groups[:preview_limit]:
+            earliest = min(rows, key=lambda r: (r[1] or r[0], r[0]))
             self.stdout.write(
-                f'  · {g["cnt"]} писем от "{(g["from_addr"] or "")[:50]}"'
-                f' / «{(g["subject"] or "(без темы)")[:60]}»'
-                f' — оставим #{g["earliest_id"]}'
+                f'  · {len(rows)} писем от "{earliest[2][:50]}" '
+                f'/ «{(earliest[3] or "(без темы)")[:60]}» '
+                f'— оставим #{earliest[0]}'
             )
-        if total_groups > 5:
-            self.stdout.write(f'  … и ещё {total_groups - 5} групп')
+        if len(sorted_groups) > preview_limit:
+            self.stdout.write(
+                f'  … и ещё {len(sorted_groups) - preview_limit} групп'
+            )
 
         if dry_run:
             self.stdout.write(self.style.WARNING('--dry-run: изменений нет.'))
             return
 
-        # 2) Для каждой группы — находим все id, оставляем earliest_id,
-        #    остальным прибираем линки (или удаляем, если --hard-delete).
-        to_strip: list[int] = []         # id дублей, у которых только убираем линки
-        to_delete: list[int] = []        # id дублей, которых удалим физически
+        # Распределяем id на (keep) и (to_strip / to_delete).
+        to_strip: list[int] = []
+        to_delete: list[int] = []
 
-        for g in dup_keys:
-            ids = list(
-                ContainerEmail.objects
-                .filter(
-                    from_addr=g['from_addr'],
-                    subject=g['subject'],
-                    body_text=g['body_text'],
-                    body_html=g['body_html'],
-                )
-                .values_list('id', flat=True)
-                .order_by('id')
-            )
-            if len(ids) < 2:
-                continue
-            keep = ids[0]
-            dupes = [i for i in ids if i != keep]
+        for rows in dup_groups.values():
+            # Самое раннее письмо (по received_at, tie-break id) — оставляем.
+            earliest = min(rows, key=lambda r: (r[1] or r[0], r[0]))
+            keep_id = earliest[0]
+            dupes = [r[0] for r in rows if r[0] != keep_id]
             if hard:
                 to_delete.extend(dupes)
             else:
