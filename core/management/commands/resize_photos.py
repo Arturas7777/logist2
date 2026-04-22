@@ -234,7 +234,8 @@ class Command(BaseCommand):
             return out
 
         try:
-            size_before = src_path.stat().st_size
+            orig_stat = src_path.stat()
+            size_before = orig_stat.st_size
             with Image.open(src_path) as im:
                 im.load()
                 im = ImageOps.exif_transpose(im)
@@ -275,6 +276,19 @@ class Command(BaseCommand):
                             out['bytes_before'] = size_before
                             out['bytes_after'] = size_before
                             return out
+
+                        # Сохраняем исходные права и владельца — tempfile создаётся
+                        # с 0600 и под uid запускающего, а nginx/Django работают
+                        # под другим пользователем и получат 403.
+                        try:
+                            os.chmod(tmp_path, orig_stat.st_mode & 0o7777)
+                        except OSError:
+                            pass
+                        try:
+                            os.chown(tmp_path, orig_stat.st_uid, orig_stat.st_gid)
+                        except (OSError, AttributeError):
+                            # chown может отсутствовать на Windows либо требовать root.
+                            pass
 
                         os.replace(tmp_path, src_path)
                     except Exception:
