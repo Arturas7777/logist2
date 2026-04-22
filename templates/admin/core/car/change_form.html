@@ -181,7 +181,12 @@
   document.addEventListener('DOMContentLoaded', function() {
     var img = document.getElementById('cm-car-photo-el');
     if (!img) return;
-    var fieldset = document.querySelector('.cm-form-main fieldset.module');
+    // Берём первый fieldset «основных данных», исключая секцию «Переписка»
+    // (её JS поднимает наверх .cm-form-main, и без фильтра картинка
+    // прилипала бы к шапке переписки).
+    var fieldset = document.querySelector(
+      '.cm-form-main fieldset.module:not(#car-emails-section)'
+    );
     if (!fieldset) return;
     var heading = fieldset.querySelector('.fieldset-heading');
     if (heading) {
