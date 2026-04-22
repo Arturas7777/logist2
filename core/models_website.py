@@ -68,6 +68,13 @@ class CarPhoto(models.Model):
     def filename(self):
         return os.path.basename(self.photo.name)
 
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get('update_fields')
+        if self.photo and (update_fields is None or 'photo' in update_fields):
+            from .services.photo_optimize import maybe_compress_image_field
+            maybe_compress_image_field(self, 'photo')
+        super().save(*args, **kwargs)
+
     class Meta:
         verbose_name = "Фотография автомобиля"
         verbose_name_plural = "Фотографии автомобилей"
@@ -146,6 +153,11 @@ class ContainerPhoto(models.Model):
             return False
 
     def save(self, *args, **kwargs):
+        update_fields = kwargs.get('update_fields')
+        if self.photo and (update_fields is None or 'photo' in update_fields):
+            from .services.photo_optimize import maybe_compress_image_field
+            maybe_compress_image_field(self, 'photo')
+
         super().save(*args, **kwargs)
 
         if self.photo and not self.thumbnail:
