@@ -2372,6 +2372,28 @@ body.model-newinvoice.change-form #content > h2 {
     border-bottom: none !important;
 }
 
+/* ─────────────────────────────────────────────────────────────────
+ * Единый стиль заголовков секций в форме контейнера (и других
+ * админских формах): ВСЕ ЗАГОЛОВКИ СЕКЦИЙ СТРОГО UPPERCASE, как
+ * раньше выглядел только `.inline-heading` у «Автомобилей».
+ * Покрываем все варианты разметки:
+ *   — обычный <h2> в fieldset.module («Основные данные»),
+ *   — <h2 class="fieldset-heading"> в <summary> («Переписка»,
+ *     «Фотографии контейнера»),
+ *   — <h2 class="inline-heading"> в inline-group («Автомобили»).
+ * ────────────────────────────────────────────────────────────── */
+.cm-form-main fieldset.module > h2,
+.cm-form-main fieldset.module > details > summary > h2,
+.cm-form-main fieldset.module > details > summary .fieldset-heading,
+.cm-form-main fieldset.module > details > summary .inline-heading,
+.cm-form-main .inline-group fieldset.module > details > summary > h2,
+.cm-form-main .inline-group h2.inline-heading,
+#container-emails-section summary .fieldset-heading,
+#container-photos-gallery summary .fieldset-heading {
+    text-transform: uppercase !important;
+    letter-spacing: .5px !important;
+}
+
 /* CarInline (#container_cars-group) — унифицированный flex-wrap layout.
  * Поля каждой строки-авто раскладываются как flex-items с min-width;
  * при сужении экрана они по одному переносятся на следующую строку.
@@ -3419,36 +3441,115 @@ body.popup .cm-form-grid .submit-row {
     flex: 0 0 22px;
 }
 
-/* Строка «+ Добавить ещё один Автомобиль» — пунктирная «кнопка»-карточка. */
+/* Строка «+ Добавить ещё один Автомобиль» — полноразмерная
+ * пунктирная «карточка-призыв». При наведении рамка становится
+ * сплошной фиолетовой, появляется мягкая заливка и лёгкий lift. */
 #container_cars-group .tabular tbody tr.add-row {
     display: block !important;
-    border: 1px dashed var(--cm-border) !important;
-    border-radius: var(--cm-radius-xs) !important;
-    background: transparent !important;
-    padding: 6px !important;
-    margin-top: 4px !important;
+    border: 2px dashed var(--cm-border) !important;
+    border-radius: var(--cm-radius-sm, 10px) !important;
+    background: linear-gradient(180deg, rgba(108,92,231,.02), rgba(108,92,231,.04)) !important;
+    padding: 0 !important;
+    margin: 14px 0 4px 0 !important;
     text-align: center;
     box-shadow: none !important;
+    transition: border-color .15s ease, background .15s ease,
+                transform .15s ease, box-shadow .15s ease !important;
+    cursor: pointer;
+}
+#container_cars-group .tabular tbody tr.add-row:hover {
+    border-color: var(--cm-purple, #6c5ce7) !important;
+    border-style: dashed !important;
+    background: linear-gradient(180deg, rgba(108,92,231,.06), rgba(108,92,231,.10)) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(108,92,231,.12), 0 1px 3px rgba(108,92,231,.08) !important;
 }
 #container_cars-group .tabular tbody tr.add-row td {
     display: block !important;
     padding: 0 !important;
     margin: 0 !important;
+    border: none !important;
+    background: transparent !important;
 }
 #container_cars-group .tabular tbody tr.add-row td::before {
     display: none !important;
     content: none !important;
 }
-#container_cars-group .tabular tbody tr.add-row a {
+/* Сама ссылка — flex-ряд на всю ширину, кружок-плюс слева + текст. */
+#container_cars-group .tabular tbody tr.add-row a,
+#container_cars-group .tabular tbody tr.add-row td.add a {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 12px !important;
+    width: 100% !important;
+    padding: 16px 20px !important;
+    font-size: .92rem !important;
+    font-weight: 600 !important;
+    color: var(--cm-purple, #6c5ce7) !important;
+    text-decoration: none !important;
+    letter-spacing: .2px;
+    line-height: 1 !important;
+    /* Убираем Django'шный background-image иконки «+», мы рисуем свой. */
+    background-image: none !important;
+    background: transparent !important;
+    padding-left: 20px !important;
+    text-indent: 0 !important;
+    transition: color .15s ease !important;
+}
+#container_cars-group .tabular tbody tr.add-row a::before {
+    /* Плюс рисуем SVG'шкой, а не символом «+», — так он гарантированно
+     * окажется строго по геометрическому центру кружка (у текстового
+     * глифа центрирование зависит от метрик шрифта и визуально всегда
+     * чуть смещено).
+     * ВАЖНО: не используем rotate() на hover — при вращении SVG-подложки
+     * браузер пересэмплирует линии, и из-за суб-пиксельного сглаживания
+     * плюс визуально кажется чуть смещённым. Поэтому на hover меняем
+     * только цвет и тень, геометрию не трогаем. */
+    content: '';
     display: inline-block !important;
-    padding: 8px 12px !important;
-    font-weight: 600;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background-color: var(--cm-purple, #6c5ce7);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round'><path d='M12 5v14M5 12h14'/></svg>");
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: 14px 14px;
+    flex-shrink: 0;
+    box-shadow: 0 2px 6px rgba(108,92,231,.25);
+    transition: box-shadow .15s ease, background-color .15s ease !important;
+}
+#container_cars-group .tabular tbody tr.add-row:hover a {
+    color: var(--cm-purple-dark, #5b21b6) !important;
+}
+#container_cars-group .tabular tbody tr.add-row:hover a::before {
+    background-color: var(--cm-purple-dark, #5b21b6);
+    box-shadow: 0 4px 12px rgba(108,92,231,.40);
 }
 
-/* Убираем у внутреннего fieldset inline-группы скролл по горизонтали
- * (он нужен был для fixed-table, теперь flex-wrap сам всё умещает). */
-#container_cars-group fieldset.module {
-    overflow: visible !important;
+/* Убираем горизонтальный скролл на всех уровнях контейнера CarInline —
+ * он нужен был для старой fixed-table верстки. Новая flex-wrap раскладка
+ * сама корректно переносит поля на узких экранах, а глобальные правила
+ * `.inline-group { overflow-x: auto }` (logist2_custom_admin.css) и
+ * `.inline-group .tabular { overflow-x: auto }` (блок выше в этом файле)
+ * иначе показывают полосу «в пустоту» из-за box-shadow/padding карточки.
+ *
+ * ВАЖНО: реальным скроллером в браузере оказывается сам `<table>` внутри
+ * .inline-related.tabular (computed `overflow-x: scroll`), поэтому overflow
+ * принудительно гасим на ВСЕХ уровнях, включая .inline-related, table, tbody
+ * и tr — иначе на широких экранах остаётся полоса прокрутки «в пустоту»
+ * из-за того, что отдельные <input> (например, длинное имя бренда) имеют
+ * scrollWidth больше, чем своя td, что увеличивает scrollWidth всей строки. */
+#container_cars-group,
+#container_cars-group .inline-related,
+#container_cars-group .tabular,
+#container_cars-group fieldset.module,
+#container_cars-group .tabular table,
+#container_cars-group .tabular tbody,
+#container_cars-group .tabular tbody tr {
+    overflow-x: clip !important;
+    overflow-y: visible !important;
 }
 
 /* Специально для очень узких экранов (< 520px): все поля строго по

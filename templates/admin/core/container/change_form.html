@@ -80,37 +80,12 @@
       </div>
     </div>
 
-    {# ── Photos & Google Drive Card ── #}
-    {% if original.pk %}
-    <div class="cm-sidebar-card">
-      <div class="cm-sidebar-card-header">
-        <h3>Фотографии</h3>
-      </div>
-      <div class="cm-sidebar-card-body">
-        {% with photos_count=original.photos.count %}
-        <div style="text-align: center; margin-bottom: 14px;">
-          <span class="cm-photos-badge {% if photos_count > 0 %}has-photos{% else %}no-photos{% endif %}">
-            Фотографий: <strong>{{ photos_count }}</strong>
-          </span>
-        </div>
-        {% endwith %}
-
-        <button type="button" id="sync-gdrive-btn" class="cm-gdrive-btn">
-          Загрузить фото с Google Drive
-        </button>
-        <div id="sync-status" style="margin-top: 8px; text-align: center;"></div>
-
-        {% if original.google_drive_folder_url %}
-        <div style="margin-top: 10px; text-align: center;">
-          <a href="{{ original.google_drive_folder_url }}" target="_blank"
-             style="color: var(--cm-purple); text-decoration: none; font-size: .82rem; font-weight: 600;">
-            Открыть Google Drive →
-          </a>
-        </div>
-        {% endif %}
-      </div>
-    </div>
-    {% endif %}
+    {% comment %}
+    Photos & Google Drive — единый UX через секцию «Фотографии контейнера»
+    (см. photos_gallery.html). Дублирующая сайдбар-карточка убрана:
+    счётчик и поле URL уже показаны в шапке секции, а кнопка sync
+    перенесена туда же.
+    {% endcomment %}
 
     {# ── Info Card ── #}
     <div class="cm-sidebar-card">
@@ -221,8 +196,11 @@
   }
 
   {% if original and original.pk %}
-  /* ── Google Drive sync ── */
-  document.getElementById('sync-gdrive-btn').addEventListener('click', function() {
+  /* ── Google Drive sync ── Кнопка живёт внутри секции «Фотографии
+     контейнера» (photos_gallery.html). Добавляем обработчик только если
+     она присутствует на странице. */
+  var gdriveSyncBtn = document.getElementById('sync-gdrive-btn');
+  if (gdriveSyncBtn) gdriveSyncBtn.addEventListener('click', function() {
     var btn = this;
     var status = document.getElementById('sync-status');
 
