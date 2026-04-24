@@ -37,6 +37,30 @@
         gdriveRow.style.display = 'none';
       }
     }
+
+    // Ссылка «Изменить» внутри CarInline → превращаем в иконку ↗
+    // и открываем в новой вкладке. Текст подменяем напрямую (CSS
+    // ::before у `<a>` иногда не рендерится из-за font-size:0 на
+    // родителе, поэтому надёжнее поставить символ в .textContent).
+    var carGroup = document.getElementById('container_cars-group');
+    if (carGroup) {
+      var makeLinkIcon = function (root) {
+        root.querySelectorAll('a.inlinechangelink').forEach(function (a) {
+          a.setAttribute('target', '_blank');
+          a.setAttribute('rel', 'noopener');
+          a.setAttribute('title', 'Открыть карточку авто в новой вкладке');
+          a.classList.add('cm-car-open-icon');
+          if (a.textContent.trim() !== '↗') {
+            a.textContent = '↗';
+          }
+        });
+      };
+      makeLinkIcon(carGroup);
+      // Django динамически добавляет новые строки при «Добавить ещё» —
+      // следим за изменениями и переоткрываем свежие ссылки.
+      var mo = new MutationObserver(function () { makeLinkIcon(carGroup); });
+      mo.observe(carGroup, { childList: true, subtree: true });
+    }
   });
   </script>
 
