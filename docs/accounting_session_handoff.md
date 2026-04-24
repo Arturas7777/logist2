@@ -1,15 +1,33 @@
 # Accounting Cleanup — Handoff для нового диалога
 
-> Дата: 2026-04-21. Версия: сессия 3 (завершён блок 12.12).
+> Дата: 2026-04-21. Версия: сессия 4 (завершён блок 14).
 >
 > **Назначение:** этот файл — самодостаточный контекст для продолжения работы по чистке бухгалтерии в новом диалоге. Читать от начала до конца.
+
+---
+
+## 🔔 НАПОМИНАНИЕ на следующий день (2026-04-22)
+
+**Пользователь просил спросить:** «Почему наш баланс по бухгалтерии и баланс на банковском счету не одинаковы?»
+
+Контекст вопроса: после сессии 4 у нас:
+- `Caromoto Lithuania, MB.balance` = **6675.46€** (касса Django: внесения владельцем + возвраты контрагентов − расходы CASH − залог Logispace 2050€)
+- Банковский баланс (Revolut EUR Main) на 2026-04 был **4020.80€** (см. §2 BankAccounts)
+- Paysera 5441 + 5445 + Revolut USD/GBP/PLAIS тоже есть
+- Разница между бухгалтерией и суммой по банкам — ожидаемая (cash + депозиты + платёж-в-пути), но надо её явно посчитать и объяснить. Возможно нужен новый скрипт `_bookkeep_vs_bank.py`.
+
+**Что проверить:**
+1. `Caromoto.balance` (сумма всех non-invoice Tx где entity = Caromoto)
+2. Sum(BankAccount.balance) по всем активным счетам
+3. Kassa наличных = CASH-Tx без entity (личные расходы директора: Tx#46–100)
+4. Залоги у контрагентов (сейчас 2050€ у Logispace, потенциально другие)
 
 ---
 
 ## ⚡ QUICK START для новой сессии
 
 ### Что читать в первую очередь
-1. **Этот файл** (секции 0, 1, 12.12, 13) — контекст + последнее состояние + TODO
+1. **Этот файл** (секции 0, 1, 14, 13) — контекст + последнее состояние + TODO
 2. **`.cursor/rules/accounting-context.mdc`** — постоянные правила проекта, модели, админка, site.pro API
 3. **`.cursor/rules/project-overview.mdc`** — общий обзор проекта
 
@@ -1066,4 +1084,115 @@ if create_err.status_code == 400 and (
 4. **При работе с site.pro** — сначала `search_sales(number=...)` чтобы убедиться что запись там есть, потом манипуляции.
 5. **Для direction в ORM** — итерировать в Python (`direction` — property, не поле).
 6. **Backup перед большими изменениями** — `python manage.py dumpdata core.NewInvoice core.Transaction > backup_YYYYMMDD.json`.
+
+---
+
+## 14. Сессия 4 (2026-04-21 вечер) — total_balance контрагентов и Logispace-депозит
+
+### 14.1 Проблема
+
+После сессии 3 балансы Company/Warehouse были **искусственно завышены** — они просто суммировали все `PAYMENT`-Tx без учёта инвойсов. Пример: `Warehouse NETO.balance = +3902€`, хотя мы НЕТО ничего не должны (все FACT оплачены). При каждой оплате FACT баланс поставщика рос, создавая ложное впечатление, что он «нам должен».
+
+У `Client` этого эффекта не было — там работает схема с парным `BALANCE_TOPUP` (см. §8), поэтому `Client.balance` после оплаты PARDP возвращается в 0.
+
+### 14.2 Решение — новая модель баланса для контрагентов
+
+Принята конвенция: **`balance`** (поле БД) = только non-invoice Tx (залоги/авансы/возвраты без счёта); открытые инвойсы учитываются в новых property через `total_balance`.
+
+**Новые property в `BalanceMethodsMixin`** (`core/mixins.py`) — доступны на Company, Warehouse, Line, Carrier:
+
+| Property | Формула | Смысл |
+|---|---|---|
+| `open_fact_debt` | Σ(open FACT, issuer=self) · (total − paid) | Сколько **мы должны** по открытым FACT от контрагента |
+| `open_pardp_receivable` | Σ(open PARDP, recipient=self) · (total − paid) | Сколько контрагент **должен нам** по открытым PARDP |
+| `total_balance` | `balance + open_pardp_receivable − open_fact_debt` | Итог с учётом всех открытых счетов |
+| `total_balance_status` | «НАМ ДОЛЖНЫ» / «МЫ ДОЛЖНЫ» / «БАЛАНС» | Статус по знаку |
+| `total_balance_color` | `#28a745` / `#dc3545` / `#6c757d` | Цвет |
+
+**Знаковая конвенция для Company/Warehouse/Line/Carrier:** `+` = контрагент «в плюсе» с нашей точки зрения (у нас его залог / он нам должен); `−` = мы должны контрагенту. **Обратите внимание:** у `Client.total_balance` противоположная конвенция (`−` = клиент нам должен, `+` = аванс). Не объединяли — `Client.total_balance` переопределяет mixin своей формулой `balance − open_invoices_debt`.
+
+**Изменён `Transaction.recalculate_entity_balance`** — для Company/Warehouse/Line/Carrier теперь фильтр `invoice__isnull=True`. Для Client — как было (все Tx, парный TOPUP компенсирует PAYMENT).
+
+Константа `Transaction._NON_INVOICE_BALANCE_ENTITIES = ('company', 'warehouse', 'line', 'carrier')`.
+
+**Admin:** `WarehouseAdmin`/`CompanyAdmin`/`LineAdmin`/`CarrierAdmin.balance_display` теперь вызывает хелпер `render_total_balance(obj)` из `core/admin/_balance_display.py` — показывает `total_balance` с tooltip (breakdown по balance/pardp_receivable/fact_debt).
+
+### 14.3 Data-миграция
+
+На локали и проде применены 4 операции:
+
+1. **Нормализация 6 FACT issuer** (`_normalize_fact_issuers.py`): у 4 FACT было `issuer_warehouse`, у 2 — `issuer_line`. Переведены на `issuer_company` (matching по name) — чтобы `open_fact_debt` работала единообразно:
+   - FACT-000237 (LOGISPACE → Logispace, UAB)
+   - FACT-000236 (NETO → NETO Terminalas, UAB)
+   - FACT-000238 (LOGISPACE → Logispace, UAB)
+   - FACT-000229 (ATLANTIC → Atlantic Express, UAB)
+   - FACT-000241 (MAERSK → Maersk Line Lithuania, UAB)
+   - FACT-000233 (MAERSK → Maersk Line Lithuania, UAB)
+
+2. **Orphan REFUND-Tx** (`_fix_orphan_refunds.py`): у 4 Tx REFUND был `from_company=контрагент`, но парной исходной операции не было (потому что ранее оплата шла через FACT-PAYMENT, который мы теперь игнорируем в balance). Убрали `from_company`:
+   - Tx#508 OTRAS 467€ (Возврат переплаты 24OTR-0950)
+   - Tx#280 AVN 3000€ (Возврат гарантийного депозита, BT#234)
+   - Tx#509 Revolut 0.32€ (Company Basic plan partial usage refund)
+   - Tx#510 Westimport 250€ (Отмена перевода, BT#35)
+
+3. **Recalc balance** всех non-client entities (`_recalc_non_client_balances.py`): 33 Company/Warehouse/Line обнулены. В итоге только `Caromoto Lithuania, MB` имеет ненулевой balance (+8725.46€ — наша касса, в основном CASH + возвраты).
+
+4. **Logispace deposit** (`_fix_logispace_deposit.py`): FACT-000107 на 2050€ был «Užstatas reeksporto procedūrai. Auto CHEVROLET 2GNAXKEV5K6238038» — это залог, не расход. Применено:
+   - `FACT-000107.status = CANCELLED`, `paid_amount = 0`, notes обновлены
+   - `Tx#417`: отвязан от invoice, `type=ADJUSTMENT`, `method=TRANSFER`, description: «Залог за реэкспорт Chevrolet… [ранее ошибочно привязан к FACT-000107]»
+   - `BT#201`: `matched_invoice=None`, `reconciliation_note` обновлена
+   - После этого: `Logispace.balance = +2050€` (НАМ ДОЛЖНЫ), `Caromoto.balance = 6675.46€` (8725.46 − 2050)
+
+### 14.4 Финальное состояние после сессии 4
+
+**Аудит** (`_full_reconciliation_audit.py`, v2 — добавлен фильтр `invoice__isnull=True` для non-client entities):
+- BT coverage: 100% (430 total, 87 skipped, 335 matched-invoice, 8 matched-Tx, 0 orphan)
+- Invoice integrity: 343 checked, 0 mismatched
+- Balance integrity (new rules): Client 0, Company 0, Warehouse 0, Line 0, Carrier 0 ✅
+- PARDP total owed: 6528€ (8 клиентов — те же, что в §13.1)
+- FACT total owed: 0€ ✅
+
+**Контрагенты с ненулевым `total_balance`:**
+- `Logispace, UAB` — **+2050.00€** (наш залог за Chevrolet реэкспорт)
+- `Caromoto Lithuania, MB` — **+6675.46€** (наша касса; в карточке показывается как «НАМ ДОЛЖНЫ», но это наши собственные средства, не долг)
+
+### 14.5 Правила учёта залогов (принятые в сессии 4)
+
+**Залог, выданный контрагенту (наш депозит у них):**
+1. `Transaction(type=ADJUSTMENT, method=TRANSFER, from_company=Caromoto, to_company=контрагент, amount=X, description="Залог за …", invoice=None)` — после этого `контрагент.balance = +X` (мы отражаем как «они нам должны вернуть»)
+2. **Без FACT-инвойса** — это не услуга, а банковский депозит
+3. BT от Revolut/Paysera привязывать к этому Tx (`matched_transaction=Tx`, `matched_invoice=None`)
+
+**Возврат залога:**
+1. `Transaction(type=REFUND, method=TRANSFER, to_company=Caromoto, amount=X, invoice=None)` — **БЕЗ** `from_company` (если нет исходного TRANSFER — например, залог был внесён давно и не зафиксирован). Если исходный TRANSFER есть, можно `from_company=контрагент` — тогда балансы автоматически схлопнутся.
+2. BT-refund привязывается к этому Tx
+
+**Пример:** AVN Paslaugos вернул залог 3000€ (Tx#280) — сейчас это REFUND без `from_company`, т.к. исходного TRANSFER в нашей базе не было. Baланс AVN = 0.
+
+### 14.6 Изменения в коде
+
+**Файлы:**
+- `core/mixins.py` — `BalanceMethodsMixin` получил 5 новых property (`open_fact_debt`, `open_pardp_receivable`, `total_balance`, `total_balance_status`, `total_balance_color`); `get_balance_info()` возвращает их тоже
+- `core/models_billing.py` — `Transaction.recalculate_entity_balance` теперь фильтрует по `invoice__isnull=True` для non-client entities; добавлена константа `_NON_INVOICE_BALANCE_ENTITIES`
+- `core/admin/partners.py` — все 4 `balance_display` используют общий хелпер `render_total_balance(obj)`
+- `core/admin/_balance_display.py` — **новый файл** с хелпером (gitignore исключает `_*.py`, поэтому добавлен с `-f`)
+
+**Скрипты:**
+- `scripts/debug/_normalize_fact_issuers.py` — нормализация FACT issuer (apply-скрипт)
+- `scripts/debug/_fix_orphan_refunds.py` — убрать from_company у 4 refund
+- `scripts/debug/_recalc_non_client_balances.py` — пересчёт balance
+- `scripts/debug/_fix_logispace_deposit.py` — Logispace депозит
+- `scripts/debug/_non_zero_companies_probe.py` — диагностика ненулевых balance
+- `scripts/debug/_new_balance_audit.py` — список контрагентов с ненулевым total_balance
+- `scripts/debug/_logispace_probe.py`, `_logispace_bt_probe.py`, `_logispace_bt_details.py` — поиск залога в Logispace
+
+**Commit:** `38fefb6` "feat(accounting): total_balance с учётом открытых FACT/PARDP для компаний и складов". Задеплоен `scripts/deploy.ps1` + prod data-миграция через временный bash-скрипт `/tmp/_prod_balance_migrate.sh` + `/tmp/_prod_logispace_fix.sh`.
+
+### 14.7 Что делать в сессии 5
+
+Приоритет:
+1. **🔔 Вопрос пользователя:** «Почему наш баланс по бухгалтерии и баланс на банковском счету не одинаковы?» (см. напоминание в начале файла). Нужен скрипт `_bookkeep_vs_bank.py` который явно посчитает и объяснит разницу.
+2. **Остальные скрытые залоги?** Проверить другие FACT с описаниями типа «Užstatas», «deposit», «guarantee», «garantija» в `NewInvoice.items.description` и `BankTransaction.description`. Сейчас в Logispace разобран только Chevrolet 2050€, могут быть другие.
+3. **Клиентские долги 6528€** (`§13.1`) — ждёт ответа менеджера по 8 должникам: "DOVAGRUP"/DOVAGRUP (2040), AFANASENCO (1150), AFANASII (1070), OSTAPENCO (1020), MARIN (1020), PAVALOI (163), PRUTEAN (60), CAZACU (5).
+4. **`accounting-context.mdc`** уже обновлён в сессии 4 с описанием новой balance-модели (см. git diff).
 
