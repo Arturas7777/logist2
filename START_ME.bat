@@ -12,6 +12,11 @@ call .venv\Scripts\activate.bat
 echo Applying migrations...
 python manage.py migrate --noinput
 echo.
+
+echo Collecting static files...
+python manage.py collectstatic --noinput >nul
+echo.
+
 echo Starting Django server on http://localhost:8000
 echo.
 python manage.py runserver 0.0.0.0:8000
