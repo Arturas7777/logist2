@@ -448,6 +448,16 @@ class GoogleDriveSync:
                         logger.warning(f"   Failed to download {filename}")
                         continue
 
+                    # Сжимаем ДО записи на диск, чтобы оригинал вообще не
+                    # попадал в storage. Иначе мы бы сначала писали 2 МБ
+                    # оригинала, потом ContainerPhoto.save() через
+                    # maybe_compress_image_field создавал бы рядом сжатую
+                    # копию с суффиксом — а оригинал оставался orphan.
+                    from .services.photo_optimize import compress_image_bytes
+                    compressed = compress_image_bytes(file_content)
+                    if compressed is not None:
+                        file_content = compressed
+
                     # Создаем запись фотографии с правильным типом
                     photo = ContainerPhoto(
                         container=container,

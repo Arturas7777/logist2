@@ -99,7 +99,22 @@ def maybe_compress_image_field(
     if not new_bytes:
         return False
 
-    base_name = os.path.basename(field.name)
+    # ВАЖНО: до записи сжатого варианта удаляем оригинал из storage,
+    # иначе FieldFile.save() через get_available_name() добавит к имени
+    # случайный суффикс (IMG_xxx_RANDOM.jpg) — и оригинал останется на
+    # диске сиротой, удваивая занятое место. Этот баг копил orphan-файлы
+    # для каждого фото, прошедшего через photo.save() (особенно для
+    # google_drive_sync, где файл сначала пишется на диск целиком).
+    old_name = field.name
+    base_name = os.path.basename(old_name)
+    storage = field.storage
+    try:
+        if storage.exists(old_name):
+            storage.delete(old_name)
+    except (OSError, ValueError) as e:
+        logger.warning('photo_optimize: не удалось удалить оригинал %s: %s',
+                       old_name, e)
+
     field.save(base_name, ContentFile(new_bytes), save=False)
 
     logger.info(
