@@ -202,14 +202,35 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
     list_select_related = ('client', 'warehouse', 'line', 'carrier', 'container')
 
     def get_queryset(self, request):
-        """Optimized queryset with select_related, prefetch_related, and annotation."""
-        from django.db.models import Count, Q, Sum
+        """Optimized queryset with select_related, prefetch_related, and annotation.
+
+        ВАЖНО: `_total_markup` считается через Subquery, а не через
+        Sum('car_services__markup_amount') в общем annotate(). Иначе при
+        одновременных JOIN'ах с email_links строки услуг дублируются на
+        количество писем у авто, и SUM раздувается ровно во столько же раз.
+        Симптом: в столбце «Цена» у машин с привязанными письмами цена
+        умножена на число писем. См. карточку авто (services_summary_display)
+        — там расчёт через отдельный aggregate, всегда корректен.
+        """
+        from django.db.models import Count, DecimalField, OuterRef, Q, Subquery, Sum
+        from django.db.models.functions import Coalesce
+
+        markup_subquery = (
+            CarService.objects.filter(car_id=OuterRef('pk'))
+            .values('car_id')
+            .annotate(total=Sum('markup_amount'))
+            .values('total')
+        )
 
         qs = super().get_queryset(request)
         qs = qs.select_related('client', 'warehouse', 'line', 'carrier', 'container')
         qs = qs.prefetch_related('car_services')
         qs = qs.annotate(
-            _total_markup=Sum('car_services__markup_amount'),
+            _total_markup=Coalesce(
+                Subquery(markup_subquery, output_field=DecimalField(max_digits=12, decimal_places=2)),
+                Decimal('0.00'),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            ),
             _emails_unread=Count(
                 'email_links',
                 filter=Q(email_links__is_read=False),
