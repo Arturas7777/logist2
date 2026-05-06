@@ -37,28 +37,39 @@ class BalanceMethodsMixin:
             return False
 
     def get_balance_breakdown(self):
-        from django.db.models import Q, Sum
+        from django.db.models import Case, DecimalField, Q, Sum, Value, When
+        from django.db.models.functions import Coalesce
 
         model_name = self.__class__.__name__.lower()
         from core.models_billing import Transaction
 
         incoming_filter = Q(**{f'to_{model_name}': self})
         outgoing_filter = Q(**{f'from_{model_name}': self})
+        zero = Value(Decimal('0.00'), output_field=DecimalField(max_digits=15, decimal_places=2))
 
-        transactions = Transaction.objects.filter(
-            (incoming_filter | outgoing_filter),
-            status='COMPLETED',
+        rows = (
+            Transaction.objects
+            .filter((incoming_filter | outgoing_filter), status='COMPLETED')
+            .values('method')
+            .annotate(
+                incoming=Coalesce(
+                    Sum(Case(When(incoming_filter, then='amount'))),
+                    zero,
+                    output_field=DecimalField(max_digits=15, decimal_places=2),
+                ),
+                outgoing=Coalesce(
+                    Sum(Case(When(outgoing_filter, then='amount'))),
+                    zero,
+                    output_field=DecimalField(max_digits=15, decimal_places=2),
+                ),
+            )
         )
 
-        breakdown = {}
-        for method in ('CASH', 'CARD', 'TRANSFER'):
-            incoming = transactions.filter(
-                incoming_filter, method=method,
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-            outgoing = transactions.filter(
-                outgoing_filter, method=method,
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-            breakdown[method.lower()] = incoming - outgoing
+        breakdown = {m.lower(): Decimal('0.00') for m in ('CASH', 'CARD', 'TRANSFER')}
+        for row in rows:
+            key = row['method'].lower()
+            if key in breakdown:
+                breakdown[key] = row['incoming'] - row['outgoing']
 
         breakdown['total'] = self.balance
         return breakdown

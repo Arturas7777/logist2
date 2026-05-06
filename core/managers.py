@@ -91,17 +91,27 @@ class OptimizedContainerManager(models.Manager):
         )
 
     def update_related(self, instance):
-        """Обновить связанные объекты контейнера"""
+        """Обновить связанные объекты контейнера (bulk, без сигналов)."""
         if not instance.pk:
             return
 
-        cars = instance.container_cars.all()
+        cars = list(instance.container_cars.select_related('warehouse').all())
         if not cars:
             return
-        ths_per_car = (instance.ths or 0) / cars.count()
+        ths_per_car = (instance.ths or 0) / len(cars)
         for car in cars:
             car.sync_with_container(instance, ths_per_car)
-            car.save()
+
+        from core.models import Car
+        Car.objects.bulk_update(
+            cars,
+            ['status', 'warehouse', 'unload_date', 'transfer_date', 'ths',
+             'declaration_fee', 'markup', 'free_days', 'unload_fee',
+             'delivery_fee', 'loading_fee', 'docs_fee', 'transfer_fee',
+             'transit_declaration', 'export_declaration', 'extra_costs',
+             'complex_fee', 'days', 'storage_cost', 'total_price', 'rate'],
+            batch_size=50,
+        )
 
 
 class OptimizedClientManager(models.Manager):
