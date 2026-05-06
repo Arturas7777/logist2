@@ -98,3 +98,7 @@ scripts/debug/_*
 renumber_out.txt
 revolut_expenses/
 _backup_*.dump
+
+# Ad-hoc config/files
+denis.conf
+denis_qr.png
