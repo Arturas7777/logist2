@@ -462,6 +462,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
                 price = Decimal(str(service.final_price))
                 company_services_list.append((company_service.company.name, company_service.name, price))
             except Exception:
+                logger.exception("Skipping company service in display rendering")
                 continue
 
         for company_name, name, price in company_services_list:
@@ -1254,6 +1255,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
                         </div>
                         '''
                     except Exception:
+                        logger.exception("Skipping warehouse service in display rendering")
                         continue
 
             html += '</div>'
@@ -1327,7 +1329,8 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
                         <input type="hidden" name="remove_line_service_{service.id}" id="remove_line_service_{service.id}" value="">
                     </div>
                     '''
-                except:
+                except Exception:
+                    logger.exception("Skipping line service in display rendering")
                     continue
 
             html += '</div>'
@@ -1392,7 +1395,8 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
                         <input type="hidden" name="remove_carrier_service_{service.id}" id="remove_carrier_service_{service.id}" value="">
                     </div>
                     '''
-                except:
+                except Exception:
+                    logger.exception("Skipping carrier service in display rendering")
                     continue
 
             html += '</div>'
@@ -1460,6 +1464,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
                         </div>
                         '''
                     except Exception:
+                        logger.exception("Skipping company service in display rendering")
                         continue
 
             html += '</div>'

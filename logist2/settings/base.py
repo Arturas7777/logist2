@@ -378,11 +378,12 @@ SECURE_HSTS_PRELOAD = not DEBUG
 SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 
 
-def _build_csrf_trusted(env_origins, hosts):
+def _build_csrf_trusted(env_origins, hosts, *, allow_http=DEBUG):
     result = list(env_origins)
+    schemes = ('https', 'http') if allow_http else ('https',)
     for host in hosts:
         if host and host not in ('localhost', '127.0.0.1'):
-            for scheme in ('https', 'http'):
+            for scheme in schemes:
                 origin = f"{scheme}://{host}"
                 if origin not in result:
                     result.append(origin)

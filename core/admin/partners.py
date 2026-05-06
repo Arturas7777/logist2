@@ -11,6 +11,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 
 from core.admin._balance_display import annotate_partner_balance, render_total_balance
+from core.admin._service_handling import process_service_fields
 from core.admin.inlines import (
     CarrierDriverInline,
     CarrierServiceInline,
@@ -193,35 +194,9 @@ class WarehouseAdmin(admin.ModelAdmin):
             obj = self.get_object(request, object_id)
 
             if request.method == 'POST':
-                # Process existing services
-                for key, value in request.POST.items():
-                    if key.startswith('service_name_'):
-                        service_id = key.replace('service_name_', '')
-                        if service_id.isdigit():
-                            try:
-                                service = WarehouseService.objects.get(id=service_id, warehouse=obj)
-                                service.name = value
-                                service.save()
-                            except WarehouseService.DoesNotExist:
-                                pass
-                    elif key.startswith('service_price_'):
-                        service_id = key.replace('service_price_', '')
-                        if service_id.isdigit():
-                            try:
-                                service = WarehouseService.objects.get(id=service_id, warehouse=obj)
-                                service.default_price = float(value) if value else 0
-                                service.save()
-                            except (WarehouseService.DoesNotExist, ValueError):
-                                pass
-                    elif key.startswith('delete_service_'):
-                        service_id = key.replace('delete_service_', '')
-                        try:
-                            service = WarehouseService.objects.get(id=service_id, warehouse=obj)
-                            service.delete()
-                        except WarehouseService.DoesNotExist:
-                                pass
+                process_service_fields(request, obj, WarehouseService, 'warehouse')
 
-                # Process old service fields
+                # Process legacy fields on Warehouse itself (not migrated to WarehouseService yet).
                 old_fields_mapping = {
                     'service_price_complex': 'complex_fee',
                     'service_price_unloading': 'default_unloading_fee',
@@ -235,14 +210,12 @@ class WarehouseAdmin(admin.ModelAdmin):
                     'service_price_rate': 'rate',
                 }
 
-                # First check which fields need to be zeroed
                 for key, value in request.POST.items():
                     if key.startswith('clear_field_'):
                         field_name = key.replace('clear_field_', '')
                         setattr(obj, field_name, 0)
                         obj.save()
 
-                # Then update field values
                 for field_name, model_field in old_fields_mapping.items():
                     if field_name in request.POST:
                         try:
@@ -250,24 +223,10 @@ class WarehouseAdmin(admin.ModelAdmin):
                             setattr(obj, model_field, value)
                             obj.save()
                         except ValueError:
-                            pass
-
-                # Process new services
-                for key, value in request.POST.items():
-                    if key.startswith('new_service_name_'):
-                        index = key.replace('new_service_name_', '')
-                        name = value
-                        price = request.POST.get(f'new_service_price_{index}', 0)
-
-                        if name:
-                            try:
-                                WarehouseService.objects.create(
-                                    warehouse=obj,
-                                    name=name,
-                                    default_price=float(price) if price else 0
-                                )
-                            except ValueError:
-                                pass
+                            logger.warning(
+                                "Invalid legacy field value '%s' for %s on warehouse %s",
+                                request.POST[field_name], model_field, obj.pk,
+                            )
 
         return super().change_view(request, object_id, form_url, extra_context)
 
@@ -1183,48 +1142,7 @@ class LineAdmin(admin.ModelAdmin):
             obj = self.get_object(request, object_id)
 
             if request.method == 'POST':
-                # Process existing services
-                for key, value in request.POST.items():
-                    if key.startswith('service_name_'):
-                        service_id = key.replace('service_name_', '')
-                        try:
-                            service = LineService.objects.get(id=service_id, line=obj)
-                            service.name = value
-                            service.save()
-                        except LineService.DoesNotExist:
-                            pass
-                    elif key.startswith('service_price_'):
-                        service_id = key.replace('service_price_', '')
-                        try:
-                            service = LineService.objects.get(id=service_id, line=obj)
-                            service.default_price = float(value) if value else 0
-                            service.save()
-                        except (LineService.DoesNotExist, ValueError):
-                            pass
-                    elif key.startswith('delete_service_'):
-                        service_id = key.replace('delete_service_', '')
-                        try:
-                            service = LineService.objects.get(id=service_id, line=obj)
-                            service.delete()
-                        except LineService.DoesNotExist:
-                            pass
-
-                # Process new services
-                for key, value in request.POST.items():
-                    if key.startswith('new_service_name_'):
-                        index = key.replace('new_service_name_', '')
-                        name = value
-                        price = request.POST.get(f'new_service_price_{index}', 0)
-
-                        if name:
-                            try:
-                                LineService.objects.create(
-                                    line=obj,
-                                    name=name,
-                                    default_price=float(price) if price else 0
-                                )
-                            except ValueError:
-                                pass
+                process_service_fields(request, obj, LineService, 'line')
 
         return super().change_view(request, object_id, form_url, extra_context)
 
@@ -1273,48 +1191,7 @@ class CarrierAdmin(admin.ModelAdmin):
             obj = self.get_object(request, object_id)
 
             if request.method == 'POST':
-                # Process existing services
-                for key, value in request.POST.items():
-                    if key.startswith('service_name_'):
-                        service_id = key.replace('service_name_', '')
-                        try:
-                            service = CarrierService.objects.get(id=service_id, carrier=obj)
-                            service.name = value
-                            service.save()
-                        except CarrierService.DoesNotExist:
-                            pass
-                    elif key.startswith('service_price_'):
-                        service_id = key.replace('service_price_', '')
-                        try:
-                            service = CarrierService.objects.get(id=service_id, carrier=obj)
-                            service.default_price = float(value) if value else 0
-                            service.save()
-                        except (CarrierService.DoesNotExist, ValueError):
-                            pass
-                    elif key.startswith('delete_service_'):
-                        service_id = key.replace('delete_service_', '')
-                        try:
-                            service = CarrierService.objects.get(id=service_id, carrier=obj)
-                            service.delete()
-                        except CarrierService.DoesNotExist:
-                            pass
-
-                # Process new services
-                for key, value in request.POST.items():
-                    if key.startswith('new_service_name_'):
-                        index = key.replace('new_service_name_', '')
-                        name = value
-                        price = request.POST.get(f'new_service_price_{index}', 0)
-
-                        if name:
-                            try:
-                                CarrierService.objects.create(
-                                    carrier=obj,
-                                    name=name,
-                                    default_price=float(price) if price else 0
-                                )
-                            except ValueError:
-                                pass
+                process_service_fields(request, obj, CarrierService, 'carrier')
 
         return super().change_view(request, object_id, form_url, extra_context)
 
@@ -1587,15 +1464,8 @@ class AutoTransportAdmin(admin.ModelAdmin):
 
         super().save_model(request, obj, form, change)
 
-        if obj.status == 'FORMED':
-            try:
-                invoices = obj.generate_invoices()
-                messages.success(
-                    request,
-                    f'Автовоз сформирован. Создано/обновлено инвойсов: {len(invoices)}'
-                )
-            except Exception as e:
-                messages.error(request, f'Ошибка при создании инвойсов: {e}')
+        # Invoice generation is handled by autotransport_post_save signal
+        # via Celery task to avoid duplicate creation race condition.
 
         if obj.status in ('LOADED', 'IN_TRANSIT', 'DELIVERED'):
             transferred_count = obj.cars.filter(status='TRANSFERRED').count()
@@ -1795,7 +1665,8 @@ class AutoTransportAdmin(admin.ModelAdmin):
             try:
                 autotransport = self.get_object(None, object_id)
                 extra_context['selected_car_ids'] = list(autotransport.cars.values_list('pk', flat=True))
-            except:
+            except Exception:
+                logger.exception("Failed to load selected car ids for autotransport %s", object_id)
                 extra_context['selected_car_ids'] = []
         else:
             extra_context['selected_car_ids'] = []

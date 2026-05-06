@@ -560,6 +560,11 @@ class NewInvoice(models.Model):
                 ),
                 name='invoice_exactly_one_recipient',
             ),
+            models.UniqueConstraint(
+                fields=['auto_transport', 'recipient_client'],
+                condition=~models.Q(status='CANCELLED'),
+                name='unique_autotransport_invoice_per_client',
+            ),
         ]
 
     def __str__(self):
@@ -1531,6 +1536,78 @@ class Transaction(models.Model):
             models.Index(fields=['from_company', 'date']),
             models.Index(fields=['to_company', 'date']),
             models.Index(fields=['status', 'date']),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(
+                        from_client__isnull=True, from_warehouse__isnull=True,
+                        from_line__isnull=True, from_carrier__isnull=True,
+                        from_company__isnull=True,
+                    ) |
+                    models.Q(
+                        from_client__isnull=False, from_warehouse__isnull=True,
+                        from_line__isnull=True, from_carrier__isnull=True,
+                        from_company__isnull=True,
+                    ) |
+                    models.Q(
+                        from_client__isnull=True, from_warehouse__isnull=False,
+                        from_line__isnull=True, from_carrier__isnull=True,
+                        from_company__isnull=True,
+                    ) |
+                    models.Q(
+                        from_client__isnull=True, from_warehouse__isnull=True,
+                        from_line__isnull=False, from_carrier__isnull=True,
+                        from_company__isnull=True,
+                    ) |
+                    models.Q(
+                        from_client__isnull=True, from_warehouse__isnull=True,
+                        from_line__isnull=True, from_carrier__isnull=False,
+                        from_company__isnull=True,
+                    ) |
+                    models.Q(
+                        from_client__isnull=True, from_warehouse__isnull=True,
+                        from_line__isnull=True, from_carrier__isnull=True,
+                        from_company__isnull=False,
+                    )
+                ),
+                name='transaction_at_most_one_sender',
+            ),
+            models.CheckConstraint(
+                check=(
+                    models.Q(
+                        to_client__isnull=True, to_warehouse__isnull=True,
+                        to_line__isnull=True, to_carrier__isnull=True,
+                        to_company__isnull=True,
+                    ) |
+                    models.Q(
+                        to_client__isnull=False, to_warehouse__isnull=True,
+                        to_line__isnull=True, to_carrier__isnull=True,
+                        to_company__isnull=True,
+                    ) |
+                    models.Q(
+                        to_client__isnull=True, to_warehouse__isnull=False,
+                        to_line__isnull=True, to_carrier__isnull=True,
+                        to_company__isnull=True,
+                    ) |
+                    models.Q(
+                        to_client__isnull=True, to_warehouse__isnull=True,
+                        to_line__isnull=False, to_carrier__isnull=True,
+                        to_company__isnull=True,
+                    ) |
+                    models.Q(
+                        to_client__isnull=True, to_warehouse__isnull=True,
+                        to_line__isnull=True, to_carrier__isnull=False,
+                        to_company__isnull=True,
+                    ) |
+                    models.Q(
+                        to_client__isnull=True, to_warehouse__isnull=True,
+                        to_line__isnull=True, to_carrier__isnull=True,
+                        to_company__isnull=False,
+                    )
+                ),
+                name='transaction_at_most_one_recipient',
+            ),
         ]
 
     def __str__(self):

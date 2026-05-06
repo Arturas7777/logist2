@@ -447,6 +447,16 @@ def upload_expense_receipt(request, tx_id):
             messages.error(request, 'Файл не выбран')
             return redirect('company_dashboard')
 
+        ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg', 'png', 'webp'}
+        MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+        ext = receipt_file.name.rsplit('.', 1)[-1].lower() if '.' in receipt_file.name else ''
+        if ext not in ALLOWED_EXTENSIONS:
+            messages.error(request, f'Недопустимый тип файла .{ext}. Разрешены: {", ".join(sorted(ALLOWED_EXTENSIONS))}')
+            return redirect('company_dashboard')
+        if receipt_file.size > MAX_UPLOAD_SIZE:
+            messages.error(request, f'Файл слишком большой ({receipt_file.size // 1024 // 1024} МБ). Максимум 10 МБ.')
+            return redirect('company_dashboard')
+
         tx.attachment = receipt_file
         tx.receipt_data = None
         tx.save(update_fields=['attachment', 'receipt_data'])
@@ -455,7 +465,7 @@ def upload_expense_receipt(request, tx_id):
             from core.tasks import parse_receipt_task
             parse_receipt_task.delay(tx.id)
         except Exception:
-            pass
+            logger.exception("Failed to enqueue parse_receipt_task for tx=%s", tx.id)
 
         messages.success(
             request,

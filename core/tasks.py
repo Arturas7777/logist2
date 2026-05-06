@@ -32,6 +32,10 @@ def sync_container_photos_gdrive_task(self, container_id, folder_url=None):
     from core.models import Container
     try:
         container = Container.objects.get(id=container_id)
+    except Container.DoesNotExist:
+        logger.warning("Container %s not found, skipping GDrive sync", container_id)
+        return
+    try:
         if folder_url:
             GoogleDriveSync.download_folder_photos(folder_url, container)
         else:
@@ -48,6 +52,10 @@ def send_planned_notifications_task(self, container_id):
     from core.services.email_service import ContainerNotificationService
     try:
         container = Container.objects.get(id=container_id)
+    except Container.DoesNotExist:
+        logger.warning("Container %s not found, skipping planned notifications", container_id)
+        return
+    try:
         if not ContainerNotificationService.was_planned_notification_sent(container):
             sent, failed = ContainerNotificationService.send_planned_to_all_clients(container)
             logger.info(f"Planned notifications for {container.number}: {sent} sent, {failed} failed")
@@ -62,6 +70,10 @@ def send_unload_notifications_task(self, container_id):
     from core.services.email_service import ContainerNotificationService
     try:
         container = Container.objects.get(id=container_id)
+    except Container.DoesNotExist:
+        logger.warning("Container %s not found, skipping unload notifications", container_id)
+        return
+    try:
         if not ContainerNotificationService.was_unload_notification_sent(container):
             sent, failed = ContainerNotificationService.send_unload_to_all_clients(container)
             logger.info(f"Unload notifications for {container.number}: {sent} sent, {failed} failed")
@@ -87,15 +99,11 @@ def create_container_photo_thumbnail_task(self, photo_pk):
         raise self.retry(exc=exc)
 
 
-@shared_task(bind=True, max_retries=0, time_limit=300)
-def check_balance_consistency(self):
-    """
-    Periodic task: validates that stored balances match transaction history.
-    Logs warnings for any mismatches found. Run weekly via celery beat.
+def _collect_balance_mismatches():
+    """Shared logic: computes expected vs stored balances and invoice paid_amounts.
 
-    Оптимизировано: вместо O(N entities * 2 aggregates + N invoices * 2 aggregates)
-    — несколько SQL-агрегатов с группировкой и одно сканирование инвойсов
-    с подзапросами.
+    Returns (balance_mismatches, invoice_mismatches) where each is a list of
+    dicts with entity/invoice info and expected values.
     """
     from decimal import Decimal
 
@@ -105,7 +113,7 @@ def check_balance_consistency(self):
     from core.models import Carrier, Client, Company, Line, Warehouse
     from core.models_billing import NewInvoice, Transaction
 
-    mismatches = []
+    balance_mismatches = []
     ZERO = Decimal('0.00')
 
     ENTITY_MODELS = [
@@ -116,7 +124,6 @@ def check_balance_consistency(self):
         ('carrier',   Carrier),
     ]
 
-    # 1) Балансы: один SQL на каждую модель (incoming + outgoing группировкой).
     for key, model in ENTITY_MODELS:
         to_field = f'to_{key}'
         from_field = f'from_{key}'
@@ -135,9 +142,6 @@ def check_balance_consistency(self):
         )
 
         all_ids = set(incoming_by_id) | set(outgoing_by_id)
-        # Прибавляем только сущности с ненулевым стартовым балансом, чтобы
-        # случайно не сбрасывать в 0 активных клиентов без транзакций
-        # (у них balance = 0 и так).
         stored = model.objects.filter(
             Q(pk__in=all_ids) | ~Q(balance=0)
         ).only('pk', 'balance')
@@ -147,17 +151,15 @@ def check_balance_consistency(self):
             outgoing = outgoing_by_id.get(entity.pk) or ZERO
             expected = incoming - outgoing
             if entity.balance != expected:
-                mismatches.append(
-                    f'{model.__name__} id={entity.pk}: '
-                    f'stored={entity.balance}, expected={expected}'
-                )
-                entity.balance = expected
-                entity.save(update_fields=['balance', 'balance_updated_at'])
+                balance_mismatches.append({
+                    'model': model,
+                    'pk': entity.pk,
+                    'stored': entity.balance,
+                    'expected': expected,
+                    'label': f'{model.__name__} id={entity.pk}: stored={entity.balance}, expected={expected}',
+                })
 
-    # 2) Инвойсы: одно сканирование с подзапросом-агрегатом.
-    # LINKED_PAID не трогаем — это косвенная оплата через связанный инвойс,
-    # своих транзакций у неё нет, пересчёт сбросил бы статус обратно.
-    invoice_issues = 0
+    invoice_mismatches = []
     qs = (
         NewInvoice.objects
         .exclude(status__in=['CANCELLED', 'LINKED_PAID'])
@@ -191,25 +193,78 @@ def check_balance_consistency(self):
     for inv in qs.iterator():
         expected_paid = max(ZERO, (inv._paid or ZERO) - (inv._refund or ZERO))
         if inv.paid_amount != expected_paid:
-            invoice_issues += 1
-            inv.paid_amount = expected_paid
-            inv.update_status()
-            inv.save(update_fields=['paid_amount', 'status', 'updated_at'])
+            invoice_mismatches.append({
+                'pk': inv.pk,
+                'number': inv.number,
+                'stored': inv.paid_amount,
+                'expected': expected_paid,
+            })
 
-    if mismatches:
+    return balance_mismatches, invoice_mismatches
+
+
+@shared_task(bind=True, max_retries=0, time_limit=300)
+def check_balance_consistency(self):
+    """Read-only check: reports mismatches without modifying data.
+
+    Run weekly via celery beat. Use repair_balance_consistency to fix.
+    """
+    balance_mismatches, invoice_mismatches = _collect_balance_mismatches()
+
+    if balance_mismatches:
+        labels = [m['label'] for m in balance_mismatches]
         logger.warning(
-            '[check_balance_consistency] Fixed %d balance mismatches:\n%s',
-            len(mismatches), '\n'.join(mismatches[:50]),
+            '[check_balance_consistency] Found %d balance mismatches:\n%s',
+            len(balance_mismatches), '\n'.join(labels[:50]),
         )
-    if invoice_issues:
+    if invoice_mismatches:
         logger.warning(
-            '[check_balance_consistency] Fixed %d invoice paid_amount mismatches',
-            invoice_issues,
+            '[check_balance_consistency] Found %d invoice paid_amount mismatches',
+            len(invoice_mismatches),
         )
-    total = len(mismatches) + invoice_issues
+    total = len(balance_mismatches) + len(invoice_mismatches)
     if total == 0:
         logger.info('[check_balance_consistency] All balances and paid_amounts are consistent')
-    return {'balance_fixes': len(mismatches), 'invoice_fixes': invoice_issues}
+    return {'balance_mismatches': len(balance_mismatches), 'invoice_mismatches': len(invoice_mismatches)}
+
+
+@shared_task(bind=True, max_retries=0, time_limit=600)
+def repair_balance_consistency(self):
+    """Repair task: fixes mismatches using select_for_update. Run manually only."""
+    from django.db import transaction as db_transaction
+
+    from core.models_billing import NewInvoice
+
+    balance_mismatches, invoice_mismatches = _collect_balance_mismatches()
+    balance_fixes = 0
+    invoice_fixes = 0
+
+    for m in balance_mismatches:
+        with db_transaction.atomic():
+            entity = m['model'].objects.select_for_update().get(pk=m['pk'])
+            entity.balance = m['expected']
+            entity.save(update_fields=['balance', 'balance_updated_at'])
+            balance_fixes += 1
+
+    for m in invoice_mismatches:
+        with db_transaction.atomic():
+            inv = NewInvoice.objects.select_for_update().get(pk=m['pk'])
+            inv.paid_amount = m['expected']
+            inv.update_status()
+            inv.save(update_fields=['paid_amount', 'status', 'updated_at'])
+            invoice_fixes += 1
+
+    if balance_fixes:
+        logger.warning(
+            '[repair_balance_consistency] Fixed %d balance mismatches', balance_fixes,
+        )
+    if invoice_fixes:
+        logger.warning(
+            '[repair_balance_consistency] Fixed %d invoice paid_amount mismatches', invoice_fixes,
+        )
+    if balance_fixes == 0 and invoice_fixes == 0:
+        logger.info('[repair_balance_consistency] Nothing to repair')
+    return {'balance_fixes': balance_fixes, 'invoice_fixes': invoice_fixes}
 
 
 @shared_task(bind=True, max_retries=1, default_retry_delay=300, time_limit=300)
