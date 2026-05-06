@@ -10,7 +10,7 @@ from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
 
-from core.admin._balance_display import render_total_balance
+from core.admin._balance_display import annotate_partner_balance, render_total_balance
 from core.admin.inlines import (
     CarrierDriverInline,
     CarrierServiceInline,
@@ -75,6 +75,10 @@ class WarehouseAdmin(admin.ModelAdmin):
             'description': 'Баланс склада'
         }),
     )
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return annotate_partner_balance(qs, 'warehouse')
 
     def get_urls(self):
         custom_urls = [
@@ -427,9 +431,17 @@ class ClientAdmin(admin.ModelAdmin):
     balance_status_display.short_description = 'Статус'
 
     def new_balance_display(self, obj):
-        """Полный баланс клиента = сальдо транзакций − долг по открытым инвойсам."""
-        balance = obj.total_balance
-        debt = obj.open_invoices_debt
+        """Полный баланс клиента = сальдо транзакций - долг по открытым инвойсам."""
+        ann_balance = getattr(obj, '_total_balance', None)
+        ann_debt = getattr(obj, '_open_debt', None)
+
+        if ann_balance is not None:
+            balance = ann_balance
+            debt = ann_debt or Decimal('0')
+        else:
+            balance = obj.total_balance
+            debt = obj.open_invoices_debt
+
         cash = obj.balance
 
         if balance > 0:
@@ -452,7 +464,10 @@ class ClientAdmin(admin.ModelAdmin):
 
     def balance_status_new(self, obj):
         """Статус по полному балансу (с учётом открытых инвойсов)."""
-        balance = obj.total_balance
+        balance = getattr(obj, '_total_balance', None)
+        if balance is None:
+            balance = obj.total_balance
+
         if balance > 0:
             return format_html('<span style="background:#28a745; color:white; padding:3px 8px; border-radius:3px;">ПЕРЕПЛАТА</span>')
         elif balance < 0:
@@ -793,6 +808,10 @@ class CompanyAdmin(admin.ModelAdmin):
         }),
     )
 
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return annotate_partner_balance(qs, 'company')
+
     def balance_display(self, obj):
         """Итоговый баланс компании-контрагента (с учётом открытых FACT/PARDP)."""
         return render_total_balance(obj)
@@ -1051,6 +1070,10 @@ class LineAdmin(admin.ModelAdmin):
         }),
     )
 
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return annotate_partner_balance(qs, 'line')
+
     def balance_display(self, obj):
         """Итоговый баланс линии-контрагента (с учётом открытых FACT/PARDP)."""
         return render_total_balance(obj)
@@ -1232,6 +1255,10 @@ class CarrierAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return annotate_partner_balance(qs, 'carrier')
 
     def balance_display(self, obj):
         """Итоговый баланс перевозчика-контрагента (с учётом открытых FACT/PARDP)."""
