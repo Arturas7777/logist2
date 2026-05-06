@@ -110,4 +110,4 @@ jobs:
           pip install -r requirements.txt pytest pytest-django pytest-cov
 
       - name: Run pytest
-        run: pytest --tb=short --maxfail=5
+        run: pytest --tb=short --maxfail=5 --cov=core --cov-fail-under=30

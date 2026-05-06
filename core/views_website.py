@@ -15,7 +15,6 @@ from django.db.models import F, Prefetch
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.cache import cache_page
-from django.views.decorators.csrf import csrf_exempt
 from rest_framework import permissions, status, viewsets
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import api_view, authentication_classes, permission_classes, throttle_classes
@@ -44,10 +43,6 @@ from .serializers_website import (
 from .services.admin_ai_agent import generate_admin_ai_response
 from .services.ai_chat_service import AIServiceError, generate_ai_response
 
-
-class CsrfExemptSessionAuthentication(SessionAuthentication):
-    def enforce_csrf(self, request):
-        return
 
 
 # ============================================================================
@@ -549,9 +544,8 @@ def get_ai_response_openai(message, user=None, client=None):
 """
 
 
-@csrf_exempt
 @api_view(['POST'])
-@authentication_classes([CsrfExemptSessionAuthentication])
+@authentication_classes([SessionAuthentication])
 @permission_classes([AllowAny])
 @throttle_classes([AIChatThrottle])
 def ai_chat(request):

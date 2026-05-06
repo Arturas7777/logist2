@@ -171,6 +171,8 @@ def reconcile_incoming_payments(dry_run=False):
             continue
 
         with db_transaction.atomic():
+            invoice = NewInvoice.objects.select_for_update().get(pk=invoice.pk)
+
             bt.matched_invoice = invoice
             bt.reconciliation_note = f'Авто-сопоставление (правило {rule})'
             bt.save(update_fields=['matched_invoice', 'reconciliation_note', 'fetched_at'])
