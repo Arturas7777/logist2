@@ -1,9 +1,10 @@
 {% extends "admin/change_form.html" %}
-{% load static %}
+{% load static admin_extras %}
 
 {% block field_sets %}
   {% if original and original.extracted_data.vin_mismatch_review %}
     {% with mismatch=original.extracted_data.vin_mismatch_review %}
+      {% with first_candidate=mismatch.candidates.0 %}
       <div style="background:#fff3cd;border:1px solid #ffc107;
                   padding:16px;border-radius:6px;margin-bottom:18px;">
         <div style="font-weight:bold;color:#664d03;font-size:15px;
@@ -11,16 +12,18 @@
           ⚠ Подозрение на ошибку OCR в VIN
         </div>
         <div style="margin-bottom:14px;line-height:1.5;">
-          AI извлёк VIN из тайтла:
-          <code style="background:#fff;padding:2px 6px;border-radius:3px;
-                       font-size:13px;">{{ mismatch.extracted_vin }}</code><br>
+          AI извлёк VIN из <b>тайтла</b>:
+          <code style="background:#fff;padding:4px 8px;border-radius:3px;
+                       font-size:14px;letter-spacing:1px;">{% vin_diff mismatch.extracted_vin first_candidate.vin %}</code>
+          <br>
           В базе есть очень похожие VIN. Возможно, в одном из документов
           (тайтле или dock receipt) AI неправильно прочитал символ
           (типичные ошибки: <b>0</b> ↔ <b>O</b>, <b>1</b> ↔ <b>I</b>,
           <b>8</b> ↔ <b>B</b>, <b>5</b> ↔ <b>S</b>, <b>H</b> ↔ <b>R</b>,
           <b>2</b> ↔ <b>Z</b>, <b>6</b> ↔ <b>G</b>).
           <br><br>
-          <b>Какой VIN правильный — сравните визуально:</b>
+          <b>Жёлтым подсвечены символы, которые отличаются —
+          сравните с реальными сканами:</b>
         </div>
 
         <table style="width:100%;border-collapse:collapse;
@@ -38,9 +41,10 @@
           <tbody>
             {% for c in mismatch.candidates %}
               <tr style="border-top:1px solid #e9ecef;">
-                <td style="padding:8px 12px;font-family:monospace;">
+                <td style="padding:8px 12px;letter-spacing:1px;">
                   <a href="{% url 'admin:core_car_change' c.car_id %}"
-                     target="_blank">{{ c.vin }}</a>
+                     target="_blank"
+                     style="text-decoration:none;color:inherit;">{% vin_diff c.vin mismatch.extracted_vin %}</a>
                 </td>
                 <td style="padding:8px 12px;color:#6c757d;">
                   {{ c.hamming_distance }} симв.
@@ -103,6 +107,7 @@
           </button>
         </form>
       </div>
+      {% endwith %}
     {% endwith %}
   {% endif %}
 
