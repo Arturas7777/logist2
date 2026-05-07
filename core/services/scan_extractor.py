@@ -6,21 +6,102 @@ AI-извлечение данных из отсканированных PDF.
   * DOCK_RECEIPT  — Dock Receipt (US shipping document от Atlantic Express и пр.).
 
 Использует Claude Sonnet 4 Vision (та же модель, что invoice_audit_service).
-Конвертация PDF → PNG → base64 — переиспользует ``extract_images_from_pdf``.
+
+Важно про рендер: Claude API режет картинки больше 5 MB (base64). Поэтому
+здесь используется свой рендер ``_render_pdf_pages_for_vision`` — JPEG с
+auto-downgrade качества/DPI, чтобы каждая страница точно проходила лимит,
+без потери читаемости текста.
 """
 from __future__ import annotations
 
+import base64
+import io
 import json
 import logging
 import os
-from typing import Any
+from typing import Any, Iterable
 
 from core.services.invoice_audit_service import (
     _parse_llm_json as _parse_invoice_json,  # noqa: F401  (на будущее)
-    extract_images_from_pdf,
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ── Рендер PDF под Claude Vision ──────────────────────────────────────────
+
+# Anthropic limit: 5 MB на одно изображение (поле base64). Сама base64-строка
+# в ~1.34 раза больше исходных байт, поэтому raw держим заметно ниже.
+_MAX_RAW_IMAGE_BYTES = int(3.6 * 1024 * 1024)  # ≈ 4.8 MB после base64
+
+# Пресеты от лучшего к худшему: dpi, jpeg_quality, max_side (resize если задан).
+# 200 dpi/85q обычно укладывается; для очень тяжёлых сканов (плотный текст,
+# сложные графики) downgrade до 150 dpi/70q + resize до 2200 px.
+_RENDER_PRESETS: list[tuple[int, int, int | None]] = [
+    (200, 85, None),
+    (180, 82, None),
+    (160, 78, None),
+    (150, 72, 2400),
+    (130, 65, 2000),
+]
+
+
+def _render_pdf_pages_for_vision(pdf_path: str) -> list[tuple[str, str]]:
+    """Возвращает список ``(media_type, base64)`` страниц PDF.
+
+    Использует PyMuPDF + Pillow. Каждая страница ужимается до тех пор, пока
+    raw-размер JPEG не станет ≤ ``_MAX_RAW_IMAGE_BYTES`` (см. пресеты).
+    Гарантирует, что Anthropic API не отвергнет изображение по размеру.
+    """
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        logger.error("PyMuPDF не установлен. Запустите: pip install pymupdf")
+        raise
+    try:
+        from PIL import Image
+    except ImportError:
+        logger.error("Pillow не установлен. Запустите: pip install Pillow")
+        raise
+
+    out: list[tuple[str, str]] = []
+    doc = fitz.open(pdf_path)
+    try:
+        for page_idx, page in enumerate(doc):
+            payload = _render_single_page(page, Image)
+            out.append(payload)
+            logger.info(
+                "scan_extractor: rendered page %d of %s (%d bytes raw)",
+                page_idx, os.path.basename(pdf_path), len(payload[1]) * 3 // 4,
+            )
+    finally:
+        doc.close()
+    return out
+
+
+def _render_single_page(page, Image) -> tuple[str, str]:
+    """Рендерит страницу с подбором пресета — пока размер не уложится в лимит."""
+    last_buf: io.BytesIO | None = None
+    last_quality = 0
+    for dpi, quality, max_side in _RENDER_PRESETS:
+        pix = page.get_pixmap(dpi=dpi, alpha=False)
+        img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+        if max_side and max(img.size) > max_side:
+            img.thumbnail((max_side, max_side), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=quality, optimize=True)
+        last_buf, last_quality = buf, quality
+        if buf.tell() <= _MAX_RAW_IMAGE_BYTES:
+            data = base64.b64encode(buf.getvalue()).decode('utf-8')
+            return ("image/jpeg", data)
+    # Все пресеты не уложились — отдаём последний (минимальный); если и он
+    # больше лимита, лучше пусть API вернёт ошибку, чем мы потеряем картинку.
+    logger.warning(
+        "scan_extractor: page didn't fit any preset (last=%d bytes @ q=%d)",
+        last_buf.tell() if last_buf else -1, last_quality,
+    )
+    assert last_buf is not None
+    return ("image/jpeg", base64.b64encode(last_buf.getvalue()).decode('utf-8'))
 
 
 # ── Промпты ────────────────────────────────────────────────────────────────
@@ -132,9 +213,14 @@ DOCK_RECEIPT_PROMPT = f"""Ты — система обработки Dock Receip
 # ── Вызов Claude Vision ────────────────────────────────────────────────────
 
 
-def _call_claude_vision(images_b64: list[str], system_prompt: str, user_text: str) -> dict[str, Any]:
+def _call_claude_vision(
+    images: Iterable[tuple[str, str]],
+    system_prompt: str,
+    user_text: str,
+) -> dict[str, Any]:
     """Отправляет страницы PDF в Claude Sonnet 4 Vision и парсит JSON-ответ.
 
+    ``images`` — итерируемое ``(media_type, base64)`` пар (по странице).
     Возвращает dict (даже при ошибке парсинга — пустой). Бросает только
     при отсутствии API-ключа или сетевых ошибках.
     """
@@ -151,12 +237,12 @@ def _call_claude_vision(images_b64: list[str], system_prompt: str, user_text: st
     client = anthropic.Anthropic(api_key=api_key)
 
     content_blocks: list[dict[str, Any]] = []
-    for b64 in images_b64:
+    for media_type, b64 in images:
         content_blocks.append({
             "type": "image",
             "source": {
                 "type": "base64",
-                "media_type": "image/png",
+                "media_type": media_type,
                 "data": b64,
             },
         })
@@ -194,7 +280,7 @@ def extract_title(pdf_path: str) -> dict[str, Any]:
     Никогда не бросает исключений из-за плохого качества скана — только
     при недоступности API/PyMuPDF.
     """
-    images = extract_images_from_pdf(pdf_path)
+    images = _render_pdf_pages_for_vision(pdf_path)
     if not images:
         logger.warning("Title PDF %s не дал изображений", pdf_path)
         return {}
@@ -212,7 +298,7 @@ def extract_dock_receipt(pdf_path: str) -> dict[str, Any]:
     несколько машин, все они будут в ``vehicles``. ``weight_kg``
     автоматически НЕ конвертируется здесь — это работа scan_applier.
     """
-    images = extract_images_from_pdf(pdf_path)
+    images = _render_pdf_pages_for_vision(pdf_path)
     if not images:
         logger.warning("Dock Receipt PDF %s не дал изображений", pdf_path)
         return {}
