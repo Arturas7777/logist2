@@ -99,6 +99,40 @@ class Command(BaseCommand):
                         changed = True
                     if res.get('warnings'):
                         n_warnings += 1
+
+            # Дополнительно: если есть vin_mismatch_review с кандидатами без
+            # validation — обогащаем их NHTSA-инфой, чтобы UI показал ✓/❌.
+            mismatch = data.get('vin_mismatch_review') or {}
+            cands = mismatch.get('candidates') or []
+            if cands and any(not c.get('validation') for c in cands):
+                from core.models import Car
+                for c in cands:
+                    if c.get('validation') or not c.get('vin'):
+                        continue
+                    try:
+                        cand_car = Car.objects.filter(pk=c.get('car_id')).only('brand', 'year').first()
+                        ai_make = (cand_car.brand or '').split()[0] if cand_car and cand_car.brand else None
+                        ai_year = cand_car.year if cand_car else None
+                        val = cross_check_with_ai_data(
+                            c['vin'],
+                            ai_make=ai_make,
+                            ai_year=ai_year,
+                            use_nhtsa=use_nhtsa,
+                        )
+                        nhtsa = val.get('nhtsa') or {}
+                        c['validation'] = {
+                            'checksum_ok': val.get('checksum_ok'),
+                            'warnings_count': len(val.get('warnings') or []),
+                            'nhtsa_make': nhtsa.get('make'),
+                            'nhtsa_model': nhtsa.get('model'),
+                            'nhtsa_year': nhtsa.get('year'),
+                            'nhtsa_ok': nhtsa.get('ok'),
+                        }
+                        changed = True
+                    except Exception as e:  # noqa: BLE001
+                        self.stdout.write(self.style.WARNING(
+                            f"  candidate {c.get('vin')} validation failed: {e}"
+                        ))
             if changed:
                 job.extracted_data = data
                 job.save(update_fields=['extracted_data'])

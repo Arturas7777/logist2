@@ -88,6 +88,33 @@
           AI извлёк VIN из <b>тайтла</b>:
           <code style="background:#fff;padding:4px 8px;border-radius:3px;
                        font-size:14px;letter-spacing:1px;">{% vin_diff mismatch.extracted_vin first_candidate.vin %}</code>
+          {# Маркер валидации для VIN из тайтла — берём из vin_validations[0] #}
+          {% with title_val=original.extracted_data.vin_validations.0 %}
+            {% if title_val %}
+              {% if title_val.warnings %}
+                <span style="background:#dc3545;color:#fff;padding:3px 8px;
+                             border-radius:4px;font-size:12px;font-weight:bold;
+                             margin-left:6px;"
+                      title="VIN не прошёл валидацию (см. красный блок выше)">
+                  ❌ невалиден
+                </span>
+              {% else %}
+                <span style="background:#198754;color:#fff;padding:3px 8px;
+                             border-radius:4px;font-size:12px;font-weight:bold;
+                             margin-left:6px;"
+                      title="VIN прошёл все проверки (NHTSA + check digit)">
+                  ✓ валиден
+                </span>
+              {% endif %}
+              {% if title_val.nhtsa.make or title_val.nhtsa.year %}
+                <span style="color:#6c757d;font-size:12px;margin-left:4px;">
+                  → NHTSA: {{ title_val.nhtsa.make|default:"?" }}
+                  {{ title_val.nhtsa.model|default:"" }}
+                  {% if title_val.nhtsa.year %}({{ title_val.nhtsa.year }}){% endif %}
+                </span>
+              {% endif %}
+            {% endif %}
+          {% endwith %}
           <br>
           В базе есть очень похожие VIN. Возможно, в одном из документов
           (тайтле или dock receipt) AI неправильно прочитал символ
@@ -95,8 +122,8 @@
           <b>8</b> ↔ <b>B</b>, <b>5</b> ↔ <b>S</b>, <b>H</b> ↔ <b>R</b>,
           <b>2</b> ↔ <b>Z</b>, <b>6</b> ↔ <b>G</b>).
           <br><br>
-          <b>Жёлтым подсвечены символы, которые отличаются —
-          сравните с реальными сканами:</b>
+          <b>Жёлтым подсвечены символы, которые отличаются.
+          Зелёная галочка ✓ — независимая проверка через NHTSA подтверждает VIN:</b>
         </div>
 
         <table style="width:100%;border-collapse:collapse;
@@ -118,6 +145,28 @@
                   <a href="{% url 'admin:core_car_change' c.car_id %}"
                      target="_blank"
                      style="text-decoration:none;color:inherit;">{% vin_diff c.vin mismatch.extracted_vin %}</a>
+                  {% if c.validation %}
+                    {% if c.validation.warnings_count %}
+                      <span style="background:#dc3545;color:#fff;padding:2px 6px;
+                                   border-radius:4px;font-size:10px;font-weight:bold;
+                                   margin-left:6px;"
+                            title="Валидация подняла {{ c.validation.warnings_count }} предупреждение(я)">❌</span>
+                    {% else %}
+                      <span style="background:#198754;color:#fff;padding:2px 6px;
+                                   border-radius:4px;font-size:10px;font-weight:bold;
+                                   margin-left:6px;"
+                            title="VIN прошёл все проверки">✓</span>
+                    {% endif %}
+                    {% if c.validation.nhtsa_make or c.validation.nhtsa_year %}
+                      <div style="color:#6c757d;font-size:11px;margin-top:2px;
+                                  letter-spacing:normal;">
+                        NHTSA: {{ c.validation.nhtsa_make|default:"?" }}
+                        {{ c.validation.nhtsa_model|default:"" }}
+                        {% if c.validation.nhtsa_year %}
+                          ({{ c.validation.nhtsa_year }}){% endif %}
+                      </div>
+                    {% endif %}
+                  {% endif %}
                 </td>
                 <td style="padding:8px 12px;color:#6c757d;">
                   {{ c.hamming_distance }} симв.

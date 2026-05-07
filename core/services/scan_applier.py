@@ -184,12 +184,38 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
         if not data.get('skip_vin_check'):
             similar = find_similar_vins(primary_vin)
             if similar:
+                # Валидируем каждого кандидата через NHTSA, чтобы оператор
+                # сразу видел, какой из двух VIN правильный (тот, у кого
+                # ✓ NHTSA + сходится год с make).
+                from core.services.vin_validator import cross_check_with_ai_data
+                candidates_payload = []
+                for v, cid, d in similar[:5]:
+                    candidate = {'vin': v, 'car_id': cid, 'hamming_distance': d}
+                    try:
+                        cand_car = Car.objects.filter(pk=cid).only('brand', 'year').first()
+                        if cand_car:
+                            val = cross_check_with_ai_data(
+                                v,
+                                ai_make=(cand_car.brand or '').split()[0] if cand_car.brand else None,
+                                ai_year=cand_car.year,
+                            )
+                            nhtsa = val.get('nhtsa') or {}
+                            candidate['validation'] = {
+                                'checksum_ok': val.get('checksum_ok'),
+                                'warnings_count': len(val.get('warnings') or []),
+                                'nhtsa_make': nhtsa.get('make'),
+                                'nhtsa_model': nhtsa.get('model'),
+                                'nhtsa_year': nhtsa.get('year'),
+                                'nhtsa_ok': nhtsa.get('ok'),
+                            }
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning(
+                            "Candidate VIN validation failed for %s: %s", v, e,
+                        )
+                    candidates_payload.append(candidate)
                 data['vin_mismatch_review'] = {
                     'extracted_vin': primary_vin,
-                    'candidates': [
-                        {'vin': v, 'car_id': cid, 'hamming_distance': d}
-                        for v, cid, d in similar[:5]
-                    ],
+                    'candidates': candidates_payload,
                 }
                 job.extracted_data = data
                 job.status = ScanProcessingJob.STATUS_NEEDS_REVIEW
