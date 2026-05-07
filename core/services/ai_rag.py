@@ -1,14 +1,31 @@
+import hashlib
 import json
 import logging
 import os
 import re
+import threading
 import time
 from typing import Dict, List, Optional
 
 import requests
 from django.conf import settings
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
+
+# In-process кэш RAG-индекса. Раньше query_rag_context() читал и парсил
+# JSON с диска НА КАЖДЫЙ запрос (типичный размер 2-5 МБ). Теперь индекс
+# держится в памяти процесса и переоткрывается только если изменился
+# mtime файла. Внутри потока чтение защищено Lock'ом — несколько
+# параллельных gthread-воркеров не выгребут IO одновременно.
+_INDEX_CACHE: Dict[str, object] = {"path": None, "mtime": None, "data": None}
+_INDEX_LOCK = threading.Lock()
+
+# TTL кэша эмбеддингов в Redis. Один и тот же запрос («где машина X?»,
+# «как выставить инвойс») в течение 30 минут попадает в кэш без
+# повторного похода в OpenAI Embeddings API.
+_EMBEDDING_CACHE_TTL = 1800
+_EMBEDDING_CACHE_PREFIX = "ai:embed:"
 
 
 def _get_index_path() -> str:
@@ -17,6 +34,51 @@ def _get_index_path() -> str:
         "AI_RAG_INDEX_PATH",
         os.path.join(settings.BASE_DIR, "data", "ai_rag_index.json"),
     )
+
+
+def _load_index_cached(index_path: str) -> Optional[Dict]:
+    """Читает индекс с диска и кэширует в памяти процесса.
+
+    Возвращает None если файл отсутствует. Перечитывает только при
+    изменении mtime файла (например, после `rebuild_ai_index`).
+    """
+    if not os.path.exists(index_path):
+        return None
+    try:
+        mtime = os.path.getmtime(index_path)
+    except OSError:
+        return None
+
+    cached_path = _INDEX_CACHE.get("path")
+    cached_mtime = _INDEX_CACHE.get("mtime")
+    cached_data = _INDEX_CACHE.get("data")
+    if cached_path == index_path and cached_mtime == mtime and cached_data is not None:
+        return cached_data  # type: ignore[return-value]
+
+    with _INDEX_LOCK:
+        # Double-checked: пока ждали лок, другой поток мог уже обновить.
+        if (
+            _INDEX_CACHE.get("path") == index_path
+            and _INDEX_CACHE.get("mtime") == mtime
+            and _INDEX_CACHE.get("data") is not None
+        ):
+            return _INDEX_CACHE["data"]  # type: ignore[return-value]
+        try:
+            with open(index_path, "r", encoding="utf-8") as file_obj:
+                data = json.load(file_obj)
+        except (OSError, ValueError):
+            logger.exception("Failed to read RAG index %s", index_path)
+            return None
+        _INDEX_CACHE["path"] = index_path
+        _INDEX_CACHE["mtime"] = mtime
+        _INDEX_CACHE["data"] = data
+        return data
+
+
+def _embedding_cache_key(model: str, text: str) -> str:
+    """Стабильный ключ для одного embedding-запроса."""
+    digest = hashlib.sha1(f"{model}::{text}".encode("utf-8")).hexdigest()
+    return f"{_EMBEDDING_CACHE_PREFIX}{digest}"
 
 
 def _normalize_text(text: str) -> str:
@@ -39,7 +101,14 @@ def _split_into_chunks(text: str, chunk_size: int = 1200, overlap: int = 200) ->
     return chunks
 
 
-def _call_embeddings_api(text: str) -> Optional[List[float]]:
+def _call_embeddings_api(text: str, *, use_cache: bool = True) -> Optional[List[float]]:
+    """Получить embedding для текста (с Redis-кэшем повторных запросов).
+
+    use_cache=True — для query-режима (один и тот же вопрос в чате
+    кэшируется на 30 минут). При построении индекса кэш можно отключить,
+    но даже тогда Redis сильно сэкономит время на дубликатах чанков
+    после повторного rebuild.
+    """
     api_key = settings.AI_API_KEY
     if not api_key:
         return None
@@ -47,9 +116,16 @@ def _call_embeddings_api(text: str) -> Optional[List[float]]:
     if not model:
         return None
 
+    text_clipped = (text or "")[:4000]
+    cache_key = _embedding_cache_key(model, text_clipped) if use_cache else None
+    if cache_key:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return list(cached) if isinstance(cached, (list, tuple)) else cached
+
     base_url = settings.AI_API_BASE_URL.rstrip("/")
     url = f"{base_url}/embeddings"
-    payload = {"model": model, "input": text[:4000]}
+    payload = {"model": model, "input": text_clipped}
     try:
         session = requests.Session()
         session.trust_env = False
@@ -72,10 +148,18 @@ def _call_embeddings_api(text: str) -> Optional[List[float]]:
 
     data = response.json()
     try:
-        return data["data"][0]["embedding"]
+        embedding = data["data"][0]["embedding"]
     except (KeyError, IndexError, TypeError):
         logger.warning("Embeddings response parse failed: %s", data)
         return None
+
+    if cache_key and embedding:
+        try:
+            cache.set(cache_key, embedding, _EMBEDDING_CACHE_TTL)
+        except Exception:  # noqa: BLE001
+            pass
+
+    return embedding
 
 
 def build_rag_index(
@@ -99,7 +183,9 @@ def build_rag_index(
 
         normalized = _normalize_text(raw)
         for chunk in _split_into_chunks(normalized):
-            embedding = _call_embeddings_api(chunk) if use_embeddings else None
+            # use_cache=True: при повторном rebuild чанки, не изменившиеся
+            # с прошлого раза, не дёргают OpenAI заново.
+            embedding = _call_embeddings_api(chunk, use_cache=True) if use_embeddings else None
             chunks.append(
                 {
                     "source_path": path,
@@ -143,13 +229,8 @@ def _keyword_score(query: str, text: str) -> float:
 
 def query_rag_context(query: str, top_k: int = 4) -> List[Dict]:
     index_path = _get_index_path()
-    if not os.path.exists(index_path):
-        return []
-    try:
-        with open(index_path, "r", encoding="utf-8") as file_obj:
-            index = json.load(file_obj)
-    except OSError:
-        logger.exception("Failed to read RAG index")
+    index = _load_index_cached(index_path)
+    if not index:
         return []
 
     chunks = index.get("chunks", [])

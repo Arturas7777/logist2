@@ -261,34 +261,57 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         return super().change_view(request, object_id, form_url, extra_context)
 
     def _get_extra_context(self, object_id, extra_context=None):
-        """Получаем контекст для шаблона"""
+        """Получаем контекст для шаблона.
+
+        Раньше на каждое открытие формы загружалось ``Company.objects.all()``,
+        ``Client.objects.all()`` (>100 объектов) и ``Car.objects.all()[:500]``
+        со ``select_related``. Шаблон при этом использует только ``cars``
+        для рендеринга ``<option>``-ов; ``companies`` / ``clients`` — мёртвые
+        переменные, оставшиеся от старой версии формы (issuer/recipient
+        выбираются через AJAX-эндпоинты `/core/api/search-*`). Поэтому:
+
+        1. Убираем `companies` / `clients` из контекста полностью.
+        2. ``cars`` ограничиваем актуальными (не TRANSFERRED) + 200 шт.
+           Уже привязанные к инвойсу машины (любого статуса) добавляются
+           поверх, чтобы они оставались видны при редактировании.
+        """
         import os
 
         from django.conf import settings
 
-        from core.models import Car, Client, Company
+        from core.models import Car, Company
 
         extra_context = extra_context or {}
 
-        # Получаем queryset для всех полей
-        extra_context['companies'] = Company.objects.all().order_by('name')
-        extra_context['clients'] = Client.objects.all().order_by('name')
-        extra_context['cars'] = Car.objects.all().select_related('client').order_by('-id')[:500]
-        extra_context['expense_categories'] = ExpenseCategory.objects.filter(is_active=True).order_by('order', 'name')
-
-        # Определяем Caromoto Lithuania по умолчанию
-        try:
-            caromoto = Company.objects.get(name="Caromoto Lithuania")
-            extra_context['default_company_id'] = caromoto.pk
-        except Company.DoesNotExist:
-            extra_context['default_company_id'] = None
-
-        # Получаем ID выбранных машин для редактирования
+        # Сначала вычисляем selected_car_ids — нужны до построения cars.
         selected_car_ids = []
+        invoice = None
         if object_id:
-            try:
-                invoice = NewInvoice.objects.get(pk=object_id)
+            invoice = NewInvoice.objects.filter(pk=object_id).first()
+            if invoice:
                 selected_car_ids = list(invoice.cars.values_list('pk', flat=True))
+
+        # Активные машины + всё, что уже выбрано для редактируемого инвойса.
+        cars_qs = Car.objects.exclude(status='TRANSFERRED')
+        if selected_car_ids:
+            from django.db.models import Q
+            cars_qs = Car.objects.filter(
+                Q(pk__in=selected_car_ids) | ~Q(status='TRANSFERRED')
+            )
+        extra_context['cars'] = (
+            cars_qs.select_related('client')
+                   .only('id', 'vin', 'brand', 'year', 'status', 'client__name')
+                   .order_by('-id')[:200]
+        )
+        extra_context['expense_categories'] = ExpenseCategory.objects.filter(
+            is_active=True
+        ).only('id', 'name').order_by('order', 'name')
+
+        # Caromoto по умолчанию — кэшируется в Company.get_default_id.
+        extra_context['default_company_id'] = Company.get_default_id()
+
+        if invoice:
+            try:
                 extra_context['pivot_table'] = invoice.get_items_pivot_table()
                 extra_context['is_incoming'] = invoice.direction == 'INCOMING'
                 if invoice.attachment:

@@ -1,3 +1,36 @@
+"""Core models — основной набор бизнес-сущностей.
+
+ОГЛАВЛЕНИЕ (модели в порядке появления):
+
+  - Line                           справочник морских линий
+  - Carrier                        перевозчик
+  - Client                         клиент
+  - Warehouse                      склад
+  - Container                      контейнер
+  - Car                            автомобиль (САМАЯ БОЛЬШАЯ модель)
+  - Company                        наша компания (Caromoto Lithuania)
+  - BaseService (abstract)         база для прайсов услуг
+    - CompanyService
+    - LineService
+    - CarrierService
+    - WarehouseService
+  - DeletedCarService              память «удалённых» услуг авто
+  - CarService                     m2m: авто <-> услуга с ценой
+  - AutoTransport                  автовоз/рейс
+  - LineTHSCoefficient             коэффициент THS
+  - ClientTariffRate               тариф клиента
+
+ВНИМАНИЕ: физический сплит (`core/models_*.py`) НЕ ДЕЛАТЬ без обновления
+исторических миграций. ``__module__`` модели влияет на ContentType
+и на ``apps.get_model('core', 'X')`` НЕ влияет, но влияет на pickle
+сигналов и на маршрут генерации миграций. Безопасный путь —
+добавлять новые модели в отдельные файлы (``models_billing.py``,
+``models_news.py``, ``models_banking.py`` уже сделаны), а старые
+оставлять в этом файле.
+
+Для навигации в IDE используются комментарии-разделители
+``# === <раздел> ===`` ниже.
+"""
 import logging
 from decimal import Decimal
 
@@ -41,8 +74,13 @@ VEHICLE_TYPE_CHOICES = [
 class Line(BalanceMethodsMixin, models.Model):
     name = models.CharField(max_length=100, verbose_name="Название линии", db_index=True)
 
-    balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс",
-                                  help_text="Положительный = нам должны, отрицательный = мы должны")
+    balance = models.DecimalField(max_digits=15, decimal_places=2, default=0.00, verbose_name="Баланс (наличный)",
+                                  help_text=(
+                                      "НАЛИЧНЫЙ баланс контрагента. Положительный = нам должны, "
+                                      "отрицательный = мы должны. Это техническое поле — для UI "
+                                      "и расчётов используйте свойство ``total_balance``, которое "
+                                      "учитывает безналичные транзакции и связанные инвойсы."
+                                  ))
     balance_updated_at = models.DateTimeField(auto_now=True, verbose_name="Баланс обновлен")
 
     # Услуги и цены
@@ -497,6 +535,16 @@ class Container(models.Model):
     # Google Drive integration
     google_drive_folder_url = models.URLField(max_length=500, blank=True, verbose_name="Google Drive папка",
                                                help_text="Прямая ссылка на папку с фотографиями контейнера в Google Drive")
+    # Скан Dock Receipt (US shipping document) — обычно от Atlantic Express и
+    # подобных. Привязывается автоматически при AI-обработке через
+    # core.services.scan_extractor / scan_applier.
+    dock_receipt_scan = models.FileField(
+        upload_to='dock_receipts/%Y/%m/',
+        null=True, blank=True,
+        verbose_name="Скан Dock Receipt (PDF)",
+        help_text="Сканированная копия Dock Receipt. AI извлекает container_number, "
+                  "booking_number, VIN-ы машин и их массу.",
+    )
 
     labels_printed_at = models.DateTimeField(
         null=True, blank=True,
@@ -534,7 +582,14 @@ class Container(models.Model):
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
-        self.clean()
+        # Не вызываем clean() при partial-update через ``update_fields``:
+        # такие сохранения делают bulk-операции (пересчёт хранения, набор
+        # цены), и им нужен только UPDATE одного поля. Полная валидация
+        # (с проверкой склада/даты разгрузки) уместна только при
+        # классическом ``container.save()`` со всеми полями.
+        update_fields = kwargs.get('update_fields')
+        if update_fields is None:
+            self.clean()
         super().save(*args, **kwargs)
 
     def sync_cars_after_warehouse_change(self):
@@ -689,6 +744,34 @@ class Container(models.Model):
         ]
 
 class Car(models.Model):
+    """Автомобиль — крупнейшая бизнес-сущность.
+
+    DEPRECATED FIELDS (оставлены для совместимости с историческими данными
+    и старыми отчётами; в новой логике расчёт идёт через ``CarService``):
+
+      * ``ths``                — было «оплата линиям», заменено CarService(LINE).
+      * ``unload_fee``         — заменено CarService(WAREHOUSE, code=unloading).
+      * ``delivery_fee``       — заменено CarService(WAREHOUSE, code=delivery).
+      * ``loading_fee``        — заменено CarService(WAREHOUSE, code=loading).
+      * ``docs_fee``           — заменено CarService(WAREHOUSE, code=documents).
+      * ``transfer_fee``       — заменено CarService(WAREHOUSE, code=transfer).
+      * ``transit_declaration``— заменено CarService(WAREHOUSE, code=transit_declaration).
+      * ``export_declaration`` — заменено CarService(WAREHOUSE, code=export_declaration).
+      * ``extra_costs``        — заменено CarService(WAREHOUSE, code=extra_costs).
+      * ``complex_fee``        — заменено CarService(WAREHOUSE, code=complex).
+      * ``declaration_fee``    — устарело, не используется.
+      * ``markup``             — устарело, наценка хранится в CarService.markup_amount.
+      * ``free_days``/``rate`` — переехали в WarehouseService(code=free_days/daily_rate).
+      * ``price``,``auction_fee``,``transport_usa``,``ocean_freight``,
+        ``transport_kz``,``broker_fee``,``additional_expenses`` — расходы
+        на покупку авто (аукцион), используются только в отчётах и
+        client-dashboard; перенос на отдельную модель PurchaseCost
+        в TODO (см. план).
+
+    Удаление этих колонок из БД отложено: исторические инвойсы и отчёты
+    могут на них ссылаться. Удалять только после полного аудита данных
+    + миграции переноса значений в соответствующие CarService.
+    """
     # Ссылка на единый список типов ТС (определён на уровне модуля)
     VEHICLE_TYPE_CHOICES = VEHICLE_TYPE_CHOICES
 
@@ -706,6 +789,26 @@ class Car(models.Model):
     transfer_date = models.DateField(null=True, blank=True, verbose_name="Дата передачи")
     has_title = models.BooleanField(default=False, verbose_name="Т")
     title_notes = models.CharField(max_length=200, blank=True, verbose_name="Примечания к тайтлу")
+    # Скан физического титула (US car title), загруженный с принтера/сканера и
+    # обработанный AI (см. core.services.scan_extractor / scan_applier).
+    # При прикреплении автоматически выставляется has_title=True.
+    title_scan = models.FileField(
+        upload_to='title_scans/%Y/%m/',
+        null=True, blank=True,
+        verbose_name="Скан тайтла (PDF)",
+        help_text="Сканированная копия физического титула. Привязывается автоматически "
+                  "при обработке скана через AI или вручную.",
+    )
+    # Масса авто (в кг), извлечённая из Dock Receipt. Обычно в lbs на оригинале —
+    # храним сразу в kg (1 lb = 0.4535924 kg), чтобы не плодить путаницу.
+    weight_kg = models.DecimalField(
+        max_digits=8, decimal_places=2,
+        null=True, blank=True,
+        verbose_name="Масса (кг)",
+        validators=[MinValueValidator(0)],
+        help_text="Масса автомобиля в килограммах. При импорте из Dock Receipt (US) "
+                  "значение в lbs конвертируется автоматически (1 lb = 0.4535924 kg).",
+    )
     total_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Цена")
     # УДАЛЕНО: current_price - теперь используется только total_price
     storage_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Складирование")
@@ -1798,4 +1901,9 @@ from core.models_email import (  # noqa: E402,F401
 from core.models_contact import (  # noqa: E402,F401
     Contact, ContactEmail, ContactPhone,
 )
+
+# ==============================================================================
+# 📄 AI-ОБРАБОТКА СКАНОВ (Title / Dock Receipt)
+# ==============================================================================
+from core.models_scans import ScanProcessingJob  # noqa: E402,F401
 

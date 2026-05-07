@@ -27,6 +27,43 @@ logger = logging.getLogger(__name__)
 
 CAR_MODELS_DIR = os.path.join(settings.BASE_DIR, 'core', 'static', 'icons', 'car_models')
 
+# Кэш списка файлов car_models. Раньше `find_car_image` делал os.listdir на
+# каждый просмотр карточки — при 200+ иконок и 10 операторах это десятки
+# системных вызовов в секунду. Кэшируем при первом обращении и
+# инвалидируем по mtime директории (если кто-то добавил иконку без
+# рестарта процесса — новый файл подхватится в течение 60 сек).
+_CAR_IMAGES_CACHE: dict = {"mtime": None, "files_lower": {}}
+_CAR_IMAGES_TTL = 60.0  # сек
+_CAR_IMAGES_LAST_CHECK = [0.0]
+
+
+def _get_car_images_index():
+    """Возвращает {filename_lower: filename} из CAR_MODELS_DIR, кэшируя его.
+
+    Ключ возврата — lower-case имя; значение — настоящее имя файла, чтобы
+    собирать корректный URL без обращения к ФС повторно.
+    """
+    import time as _t
+    now = _t.time()
+    # Часто-вызываемая функция: не дёргаем os.stat чаще 1 раза в _CAR_IMAGES_TTL.
+    if (now - _CAR_IMAGES_LAST_CHECK[0]) < _CAR_IMAGES_TTL and _CAR_IMAGES_CACHE["mtime"] is not None:
+        return _CAR_IMAGES_CACHE["files_lower"]
+    _CAR_IMAGES_LAST_CHECK[0] = now
+    try:
+        mtime = os.path.getmtime(CAR_MODELS_DIR)
+    except OSError:
+        _CAR_IMAGES_CACHE["files_lower"] = {}
+        return _CAR_IMAGES_CACHE["files_lower"]
+    if _CAR_IMAGES_CACHE["mtime"] == mtime and _CAR_IMAGES_CACHE["files_lower"]:
+        return _CAR_IMAGES_CACHE["files_lower"]
+    try:
+        files = os.listdir(CAR_MODELS_DIR)
+    except FileNotFoundError:
+        files = []
+    _CAR_IMAGES_CACHE["mtime"] = mtime
+    _CAR_IMAGES_CACHE["files_lower"] = {f.lower(): f for f in files if f.endswith('.png')}
+    return _CAR_IMAGES_CACHE["files_lower"]
+
 
 def _load_supplier_costs_map(car_service_pks):
     """Батч-загрузка SupplierCost для списка CarService → {cs_pk: (total, sources)}.
@@ -103,17 +140,14 @@ def find_car_image(year, brand):
     """Find best matching image for a car by year+brand.
 
     Priority: exact match "2018 BMW 430I.png" > brand-only match > fallback.
-    Matching is case-insensitive.
+    Matching is case-insensitive. Использует кэшированный индекс файлов.
     """
     if not brand:
         return None
 
-    try:
-        files = os.listdir(CAR_MODELS_DIR)
-    except FileNotFoundError:
+    files_lower = _get_car_images_index()
+    if not files_lower:
         return None
-
-    files_lower = {f.lower(): f for f in files if f.endswith('.png')}
 
     exact = f"{year} {brand}.png".lower()
     if exact in files_lower:
@@ -363,23 +397,61 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
 
 
     def services_summary_display(self, obj):
-        """Displays summary of all services with Caromoto Lithuania markup"""
-        from django.db.models import Sum
+        """Displays summary of all services with Caromoto Lithuania markup.
 
+        ВАЖНО (производительность): раньше блок четырежды итерировал
+        ``obj.car_services.all()`` (даже с prefetch это 4 прохода + 4
+        отдельных filter() для warehouse/company с догрузкой). Также
+        для company-сервисов делался отдельный SELECT на каждую услугу
+        (CompanyService.objects.get).
+
+        Сейчас:
+          1. Один проход по prefetched car_services с распределением по
+             категориям через словарь по service_type.
+          2. Один батч-SELECT на CompanyService для всех company-услуг.
+          3. distributed_markup считается прямо здесь без ещё одного aggregate.
+        """
         from core.service_codes import is_ths_service
+
+        line_services_list: list[tuple[str, Decimal]] = []
+        warehouse_services_list: list[tuple[str, Decimal]] = []
+        company_service_ids: list[int] = []
+        company_services_raw: list[tuple[int, str, Decimal]] = []  # (svc_id, svc_name, price)
 
         line_total = Decimal('0.00')
         warehouse_total = Decimal('0.00')
-        carrier_total = obj.get_services_total_by_provider('CARRIER')
-        company_total = obj.get_services_total_by_provider('COMPANY')
+        carrier_total = Decimal('0.00')
+        company_total = Decimal('0.00')
+        distributed_markup = Decimal('0.00')
 
-        for service in obj.car_services.all():
-            price = Decimal(str(service.final_price))
+        for cs in obj.car_services.all():
+            price = Decimal(str(cs.final_price))
+            distributed_markup += cs.markup_amount or Decimal('0')
 
-            if service.service_type == 'LINE' or is_ths_service(service):
+            if cs.service_type == 'LINE' or is_ths_service(cs):
                 line_total += price
-            elif service.service_type == 'WAREHOUSE':
+                line_services_list.append((cs.get_service_name(), price))
+            elif cs.service_type == 'WAREHOUSE':
                 warehouse_total += price
+                if not is_ths_service(cs):
+                    warehouse_services_list.append((cs.get_service_name(), price))
+            elif cs.service_type == 'CARRIER':
+                carrier_total += price
+            elif cs.service_type == 'COMPANY':
+                company_total += price
+                company_service_ids.append(cs.service_id)
+                company_services_raw.append((cs.service_id, cs.get_service_name(), price))
+
+        # Один батч-SELECT на CompanyService вместо N штук.
+        company_names_by_id: dict[int, str] = {}
+        if company_service_ids:
+            company_qs = (
+                CompanyService.objects
+                .select_related('company')
+                .filter(id__in=set(company_service_ids))
+                .only('id', 'company__name')
+            )
+            company_names_by_id = {c.id: c.company.name for c in company_qs}
 
         # Paid days for display — динамический расчёт (как в days_display)
         if obj.warehouse and obj.unload_date:
@@ -390,16 +462,10 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         else:
             paid_days = obj.days or 0
 
-        # Sum of distributed markups (from services)
-        distributed_markup = obj.car_services.aggregate(total=Sum('markup_amount'))['total'] or Decimal('0')
-
-        # Legacy markup field (no longer used for distribution)
-        obj.markup or Decimal('0.00')
-
-        # Total markup = only distributed
+        # Total markup = только распределённая
         total_markup = distributed_markup
 
-        # Base totals (without markup)
+        # Base totals (без наценки)
         base_total = line_total + warehouse_total + carrier_total + company_total
 
         html = ['<div style="margin-top:15px; background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #dee2e6;">']
@@ -407,41 +473,22 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
 
         html.append('<div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:15px; margin-bottom:20px;">')
 
-        # Line services (THS, Shipping to Georgia etc.) - with details
+        # Line services (THS, Shipping to Georgia etc.)
         html.append('<div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">')
         html.append('<strong>Услуги линий:</strong><br>')
-
-        # Show each line service (including THS from warehouse)
-        line_services_list = []
-        for service in obj.car_services.all():
-            if service.service_type == 'LINE' or is_ths_service(service):
-                price = Decimal(str(service.final_price))
-                line_services_list.append((service.get_service_name(), price))
-
         for name, price in line_services_list:
             html.append(f'<span style="font-size:13px; color:#6c757d;">{name}: {price:.2f}</span><br>')
-
         html.append(f'<span style="font-size:18px; color:#007bff; font-weight:bold;">Итого: {line_total:.2f}</span>')
         html.append('</div>')
 
-        # Warehouse (without THS) - with service details
+        # Warehouse (без THS)
         html.append('<div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">')
         html.append('<strong>Услуги склада:</strong><br>')
-
-        # Show each warehouse service (except THS)
-        warehouse_services_list = []
-        for service in obj.car_services.filter(service_type='WAREHOUSE'):
-            if not is_ths_service(service):
-                price = Decimal(str(service.final_price))
-                warehouse_services_list.append((service.get_service_name(), price))
-
         for name, price in warehouse_services_list:
             html.append(f'<span style="font-size:13px; color:#6c757d;">{name}: {price:.2f}</span><br>')
-
         if obj.warehouse:
             free_days = obj.warehouse.free_days or 0
             html.append(f'<span style="font-size:12px; color:#adb5bd;">Беспл. дней: {free_days}, Плат. дней: {paid_days}</span><br>')
-
         html.append(f'<span style="font-size:18px; color:#28a745; font-weight:bold;">Итого: {warehouse_total:.2f}</span>')
         html.append('</div>')
 
@@ -454,20 +501,9 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         # Companies
         html.append('<div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">')
         html.append('<strong>Услуги компаний:</strong><br>')
-
-        company_services_list = []
-        for service in obj.car_services.filter(service_type='COMPANY'):
-            try:
-                company_service = CompanyService.objects.select_related('company').get(id=service.service_id)
-                price = Decimal(str(service.final_price))
-                company_services_list.append((company_service.company.name, company_service.name, price))
-            except Exception:
-                logger.exception("Skipping company service in display rendering")
-                continue
-
-        for company_name, name, price in company_services_list:
-            html.append(f'<span style="font-size:13px; color:#6c757d;">{company_name}: {name}: {price:.2f}</span><br>')
-
+        for svc_id, svc_name, price in company_services_raw:
+            company_name = company_names_by_id.get(svc_id, '?')
+            html.append(f'<span style="font-size:13px; color:#6c757d;">{company_name}: {svc_name}: {price:.2f}</span><br>')
         html.append(f'<span style="font-size:18px; color:#6f42c1; font-weight:bold;">Итого: {company_total:.2f}</span>')
         html.append('</div>')
 
@@ -793,357 +829,199 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         with transaction.atomic():
             self._save_model_inner(request, obj, form, change)
 
+    # ----- helpers вынесены ниже метода _save_model_inner --------
+
+    def _process_removed_services(self, request, obj):
+        """Сканирует POST на пометки `remove_<prefix>_service_<id>=1`,
+        удаляет соответствующие CarService и регистрирует в blacklist
+        DeletedCarService. Возвращает множество ключей вида
+        ``"<prefix>_<id>"`` для дальнейших проверок.
+        """
+        removed = set()
+        prefix_to_type = {
+            'warehouse': 'WAREHOUSE',
+            'line': 'LINE',
+            'carrier': 'CARRIER',
+            'company': 'COMPANY',
+        }
+        for key, value in request.POST.items():
+            if value != '1':
+                continue
+            for prefix, svc_type in prefix_to_type.items():
+                marker = f'remove_{prefix}_service_'
+                if not key.startswith(marker):
+                    continue
+                service_id = key[len(marker):]
+                removed.add(f'{prefix}_{service_id}')
+                try:
+                    CarService.objects.filter(
+                        car=obj, service_type=svc_type, service_id=service_id
+                    ).delete()
+                    DeletedCarService.objects.get_or_create(
+                        car=obj, service_type=svc_type, service_id=service_id,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("Error deleting %s service %s", prefix, service_id)
+                break
+        return removed
+
+    def _update_existing_carservices(self, request, obj, *, prefix, service_type, removed_services):
+        """Обновляет custom_price/markup_amount у существующих CarService
+        по полям ``<prefix>_service_<id>`` / ``markup_<prefix>_service_<id>``
+        из POST-запроса. Возвращает QuerySet существующих CarService этого
+        типа (для дальнейшего использования в auto-add блоке).
+        """
+        existing_qs = CarService.objects.filter(car=obj, service_type=service_type)
+        for car_service in existing_qs:
+            if f'{prefix}_{car_service.service_id}' in removed_services:
+                continue
+            field_name = f'{prefix}_service_{car_service.service_id}'
+            if field_name not in request.POST:
+                continue
+            value = request.POST.get(field_name)
+            if value:
+                try:
+                    car_service.custom_price = float(value)
+                except (ValueError, TypeError):
+                    pass
+            markup_field = f'markup_{prefix}_service_{car_service.service_id}'
+            markup_value = request.POST.get(markup_field)
+            if markup_value is not None:
+                try:
+                    car_service.markup_amount = float(markup_value) if markup_value else 0
+                except (ValueError, TypeError):
+                    car_service.markup_amount = 0
+            car_service.save()
+        return existing_qs
+
+    def _auto_add_default_services(
+        self, request, obj, *, prefix, service_type, catalog_model,
+        related_field, related_value, removed_services, existing_qs,
+    ):
+        """Автодобавление дефолтных услуг провайдера при создании авто
+        или смене провайдера (warehouse/line/carrier).
+
+        :param catalog_model: модель каталога (WarehouseService/LineService/...).
+        :param related_field: имя FK на провайдере в каталоге
+            (``warehouse``/``line``/``carrier``).
+        :param related_value: текущий провайдер (``obj.warehouse`` и т.п.);
+            если None — выходим без действий.
+        """
+        if related_value is None:
+            return
+        new_service_ids = set(
+            catalog_model.objects.filter(**{related_field: related_value})
+            .values_list('id', flat=True)
+        )
+        DeletedCarService.objects.filter(
+            car=obj, service_type=service_type
+        ).exclude(service_id__in=new_service_ids).delete()
+        services = catalog_model.objects.filter(
+            **{related_field: related_value},
+            is_active=True,
+            add_by_default=True,
+        ).only('id', 'default_price', 'default_markup')
+        existing_ids = set(existing_qs.values_list('service_id', flat=True))
+        blacklisted = set(
+            DeletedCarService.objects.filter(
+                car=obj, service_type=service_type
+            ).values_list('service_id', flat=True)
+        )
+        for service in services:
+            if f'{prefix}_{service.id}' in removed_services:
+                continue
+            if service.id in blacklisted:
+                continue
+            if service.id in existing_ids:
+                continue
+            field_name = f'{prefix}_service_{service.id}'
+            value = request.POST.get(field_name) or service.default_price
+            default_markup = getattr(service, 'default_markup', 0) or 0
+            CarService.objects.create(
+                car=obj,
+                service_type=service_type,
+                service_id=service.id,
+                custom_price=float(value),
+                markup_amount=float(default_markup),
+            )
+
     def _save_model_inner(self, request, obj, form, change):
         """Внутренний метод save_model, выполняемый внутри transaction.atomic().
 
-        Включаем `_bulk_updating` — это глушит пересчёт цены автомобиля
-        внутри post_save/post_delete CarService (чтобы не делать N пересчётов
-        за одно сохранение карточки). Один итоговый пересчёт делает секция
-        тарифа клиента в конце метода.
+        Включаем ``_bulk_updating`` — это глушит пересчёт цены автомобиля
+        внутри post_save/post_delete CarService (чтобы не делать N
+        пересчётов за одно сохранение карточки). Один итоговый пересчёт
+        делается в конце метода (плюс тарифная секция, если применимо).
+
+        Логика обработки услуг (warehouse/line/carrier/company)
+        вынесена в три helper'а:
+          1. ``_process_removed_services`` — обработать `remove_*` поля.
+          2. ``_update_existing_carservices`` — синхронизировать
+             custom_price/markup существующих CarService.
+          3. ``_auto_add_default_services`` — добавить дефолтные услуги
+             поставщика при создании авто или смене провайдера.
+
+        Раньше эти три шага были инлайнены 4 раза подряд (~250 строк
+        копипасты), что и было ядром пункта #10 из плана улучшений.
         """
         super().save_model(request, obj, form, change)
         obj._bulk_updating = True
 
-        # First handle service deletions
-        removed_services = set()
-        for key, value in request.POST.items():
-            if key.startswith('remove_warehouse_service_') and value == '1':
-                service_id = key.replace('remove_warehouse_service_', '')
-                removed_services.add(f'warehouse_{service_id}')
-                try:
-                    deleted_count = CarService.objects.filter(
-                        car=obj,
-                        service_type='WAREHOUSE',
-                        service_id=service_id
-                    ).delete()
-                    # Add to blacklist
-                    DeletedCarService.objects.get_or_create(
-                        car=obj,
-                        service_type='WAREHOUSE',
-                        service_id=service_id
-                    )
-                    logger.debug(f"Deleted warehouse service {service_id}: {deleted_count}")
-                except Exception as e:
-                    logger.error(f"Error deleting warehouse service {service_id}: {e}")
-            elif key.startswith('remove_line_service_') and value == '1':
-                service_id = key.replace('remove_line_service_', '')
-                removed_services.add(f'line_{service_id}')
-                try:
-                    deleted_count = CarService.objects.filter(
-                        car=obj,
-                        service_type='LINE',
-                        service_id=service_id
-                    ).delete()
-                    DeletedCarService.objects.get_or_create(
-                        car=obj,
-                        service_type='LINE',
-                        service_id=service_id
-                    )
-                    logger.debug(f"Deleted line service {service_id}: {deleted_count}")
-                except Exception as e:
-                    logger.error(f"Error deleting line service {service_id}: {e}")
-            elif key.startswith('remove_carrier_service_') and value == '1':
-                service_id = key.replace('remove_carrier_service_', '')
-                removed_services.add(f'carrier_{service_id}')
-                try:
-                    deleted_count = CarService.objects.filter(
-                        car=obj,
-                        service_type='CARRIER',
-                        service_id=service_id
-                    ).delete()
-                    DeletedCarService.objects.get_or_create(
-                        car=obj,
-                        service_type='CARRIER',
-                        service_id=service_id
-                    )
-                    logger.debug(f"Deleted carrier service {service_id}: {deleted_count}")
-                except Exception as e:
-                    logger.error(f"Error deleting carrier service {service_id}: {e}")
-            elif key.startswith('remove_company_service_') and value == '1':
-                service_id = key.replace('remove_company_service_', '')
-                removed_services.add(f'company_{service_id}')
-                try:
-                    deleted_count = CarService.objects.filter(
-                        car=obj,
-                        service_type='COMPANY',
-                        service_id=service_id
-                    ).delete()
-                    DeletedCarService.objects.get_or_create(
-                        car=obj,
-                        service_type='COMPANY',
-                        service_id=service_id
-                    )
-                    logger.debug(f"Deleted company service {service_id}: {deleted_count}")
-                except Exception as e:
-                    logger.error(f"Error deleting company service {service_id}: {e}")
+        removed_services = self._process_removed_services(request, obj)
+        logger.debug("Removed services: %s", removed_services)
 
-        logger.debug(f"Removed services: {removed_services}")
-
-        # Process warehouse service fields
-        # First update ALL existing warehouse services
-        existing_warehouse_car_services = CarService.objects.filter(
-            car=obj,
-            service_type='WAREHOUSE'
-        )
-
-        for car_service in existing_warehouse_car_services:
-            # Check if service was deleted
-            if f'warehouse_{car_service.service_id}' in removed_services:
-                continue
-
-            field_name = f'warehouse_service_{car_service.service_id}'
-
-            # Only update if the field was actually present in the form
-            if field_name not in request.POST:
-                continue
-
-            value = request.POST.get(field_name)
-
-            if value:
-                try:
-                    car_service.custom_price = float(value)
-                except (ValueError, TypeError):
-                    pass
-
-            # Save hidden markup
-            markup_field = f'markup_warehouse_service_{car_service.service_id}'
-            markup_value = request.POST.get(markup_field)
-            if markup_value is not None:
-                try:
-                    car_service.markup_amount = float(markup_value) if markup_value else 0
-                except (ValueError, TypeError):
-                    car_service.markup_amount = 0
-            car_service.save()
-
-        # Auto-add default warehouse services only for new cars or when warehouse changed
         changed_data = getattr(form, 'changed_data', []) if form else []
-        warehouse_changed = not change or 'warehouse' in changed_data
-        if warehouse_changed and obj.warehouse:
-            # When warehouse changes, clear DeletedCarService for services not belonging
-            # to the new warehouse -- old deletions are irrelevant for a new provider
-            new_wh_service_ids = set(
-                WarehouseService.objects.filter(warehouse=obj.warehouse).values_list('id', flat=True)
-            )
-            DeletedCarService.objects.filter(
-                car=obj, service_type='WAREHOUSE'
-            ).exclude(service_id__in=new_wh_service_ids).delete()
 
-            warehouse_services = WarehouseService.objects.filter(
-                warehouse=obj.warehouse,
-                is_active=True,
-                add_by_default=True
-            ).only('id', 'default_price', 'default_markup')
-
-            existing_car_service_ids = set(existing_warehouse_car_services.values_list('service_id', flat=True))
-
-            deleted_services = DeletedCarService.objects.filter(
-                car=obj,
-                service_type='WAREHOUSE'
-            ).values_list('service_id', flat=True)
-
-            for service in warehouse_services:
-                if f'warehouse_{service.id}' in removed_services:
-                    continue
-
-                if service.id in deleted_services:
-                    continue
-
-                if service.id not in existing_car_service_ids:
-                    field_name = f'warehouse_service_{service.id}'
-                    value = request.POST.get(field_name) or service.default_price
-                    default_markup = getattr(service, 'default_markup', 0) or 0
-                    CarService.objects.create(
-                        car=obj,
-                        service_type='WAREHOUSE',
-                        service_id=service.id,
-                        custom_price=float(value),
-                        markup_amount=float(default_markup)
-                    )
-
-        # Process line service fields
-        # First update ALL existing line services (including THS)
-        existing_line_car_services = CarService.objects.filter(
-            car=obj,
-            service_type='LINE'
+        # WAREHOUSE
+        existing_warehouse_qs = self._update_existing_carservices(
+            request, obj, prefix='warehouse', service_type='WAREHOUSE',
+            removed_services=removed_services,
         )
-
-        for car_service in existing_line_car_services:
-            if f'line_{car_service.service_id}' in removed_services:
-                continue
-
-            field_name = f'line_service_{car_service.service_id}'
-
-            # Only update if the field was actually present in the form
-            if field_name not in request.POST:
-                continue
-
-            value = request.POST.get(field_name)
-
-            if value:
-                try:
-                    car_service.custom_price = float(value)
-                except (ValueError, TypeError):
-                    pass
-
-            # Save hidden markup
-            markup_field = f'markup_line_service_{car_service.service_id}'
-            markup_value = request.POST.get(markup_field)
-            if markup_value is not None:
-                try:
-                    car_service.markup_amount = float(markup_value) if markup_value else 0
-                except (ValueError, TypeError):
-                    car_service.markup_amount = 0
-            car_service.save()
-
-        # Auto-add default line services only for new cars or when line changed
-        line_changed = not change or 'line' in changed_data
-        if line_changed and obj.line:
-            new_line_service_ids = set(
-                LineService.objects.filter(line=obj.line).values_list('id', flat=True)
+        if (not change) or 'warehouse' in changed_data:
+            self._auto_add_default_services(
+                request, obj,
+                prefix='warehouse', service_type='WAREHOUSE',
+                catalog_model=WarehouseService,
+                related_field='warehouse', related_value=obj.warehouse,
+                removed_services=removed_services,
+                existing_qs=existing_warehouse_qs,
             )
-            DeletedCarService.objects.filter(
-                car=obj, service_type='LINE'
-            ).exclude(service_id__in=new_line_service_ids).delete()
 
-            line_services = LineService.objects.filter(
-                line=obj.line,
-                is_active=True,
-                add_by_default=True
-            ).only('id', 'default_price', 'default_markup')
-
-            existing_car_service_ids = set(existing_line_car_services.values_list('service_id', flat=True))
-
-            deleted_services = DeletedCarService.objects.filter(
-                car=obj,
-                service_type='LINE'
-            ).values_list('service_id', flat=True)
-
-            for service in line_services:
-                if f'line_{service.id}' in removed_services:
-                    continue
-
-                if service.id in deleted_services:
-                    continue
-
-                if service.id not in existing_car_service_ids:
-                    field_name = f'line_service_{service.id}'
-                    value = request.POST.get(field_name) or service.default_price
-                    default_markup = getattr(service, 'default_markup', 0) or 0
-                    CarService.objects.create(
-                        car=obj,
-                        service_type='LINE',
-                        service_id=service.id,
-                        custom_price=float(value),
-                        markup_amount=float(default_markup)
-                    )
-
-        # Process carrier service fields
-        existing_carrier_car_services = CarService.objects.filter(
-            car=obj,
-            service_type='CARRIER'
+        # LINE (включая THS)
+        existing_line_qs = self._update_existing_carservices(
+            request, obj, prefix='line', service_type='LINE',
+            removed_services=removed_services,
         )
-
-        for car_service in existing_carrier_car_services:
-            if f'carrier_{car_service.service_id}' in removed_services:
-                continue
-
-            field_name = f'carrier_service_{car_service.service_id}'
-
-            # Only update if the field was actually present in the form
-            if field_name not in request.POST:
-                continue
-
-            value = request.POST.get(field_name)
-
-            if value:
-                try:
-                    car_service.custom_price = float(value)
-                except (ValueError, TypeError):
-                    pass
-
-            markup_field = f'markup_carrier_service_{car_service.service_id}'
-            markup_value = request.POST.get(markup_field)
-            if markup_value is not None:
-                try:
-                    car_service.markup_amount = float(markup_value) if markup_value else 0
-                except (ValueError, TypeError):
-                    car_service.markup_amount = 0
-            car_service.save()
-
-        # Auto-add default carrier services only for new cars or when carrier changed
-        carrier_changed = not change or 'carrier' in changed_data
-        if carrier_changed and obj.carrier:
-            new_carrier_service_ids = set(
-                CarrierService.objects.filter(carrier=obj.carrier).values_list('id', flat=True)
+        if (not change) or 'line' in changed_data:
+            self._auto_add_default_services(
+                request, obj,
+                prefix='line', service_type='LINE',
+                catalog_model=LineService,
+                related_field='line', related_value=obj.line,
+                removed_services=removed_services,
+                existing_qs=existing_line_qs,
             )
-            DeletedCarService.objects.filter(
-                car=obj, service_type='CARRIER'
-            ).exclude(service_id__in=new_carrier_service_ids).delete()
 
-            carrier_services = CarrierService.objects.filter(
-                carrier=obj.carrier,
-                is_active=True,
-                add_by_default=True
-            ).only('id', 'default_price', 'default_markup')
-
-            existing_car_service_ids = set(existing_carrier_car_services.values_list('service_id', flat=True))
-
-            deleted_services = DeletedCarService.objects.filter(
-                car=obj,
-                service_type='CARRIER'
-            ).values_list('service_id', flat=True)
-
-            for service in carrier_services:
-                if f'carrier_{service.id}' in removed_services:
-                    continue
-
-                if service.id in deleted_services:
-                    continue
-
-                if service.id not in existing_car_service_ids:
-                    field_name = f'carrier_service_{service.id}'
-                    value = request.POST.get(field_name) or service.default_price
-                    default_markup = getattr(service, 'default_markup', 0) or 0
-                    CarService.objects.create(
-                        car=obj,
-                        service_type='CARRIER',
-                        service_id=service.id,
-                        custom_price=float(value),
-                        markup_amount=float(default_markup)
-                    )
-
-        # Process company services
-        existing_company_car_services = CarService.objects.filter(
-            car=obj,
-            service_type='COMPANY'
+        # CARRIER
+        existing_carrier_qs = self._update_existing_carservices(
+            request, obj, prefix='carrier', service_type='CARRIER',
+            removed_services=removed_services,
         )
+        if (not change) or 'carrier' in changed_data:
+            self._auto_add_default_services(
+                request, obj,
+                prefix='carrier', service_type='CARRIER',
+                catalog_model=CarrierService,
+                related_field='carrier', related_value=obj.carrier,
+                removed_services=removed_services,
+                existing_qs=existing_carrier_qs,
+            )
 
-        for car_service in existing_company_car_services:
-            if f'company_{car_service.service_id}' in removed_services:
-                continue
-
-            field_name = f'company_service_{car_service.service_id}'
-            value = request.POST.get(field_name)
-
-            # Only update if the field was actually present in the form
-            # (prevents resetting values for services added via AJAX without page reload)
-            if field_name not in request.POST:
-                continue
-
-            if value:
-                try:
-                    car_service.custom_price = float(value)
-                except (ValueError, TypeError):
-                    pass
-
-            markup_field = f'markup_company_service_{car_service.service_id}'
-            markup_value = request.POST.get(markup_field)
-            if markup_value is not None:
-                try:
-                    car_service.markup_amount = float(markup_value) if markup_value else 0
-                except (ValueError, TypeError):
-                    car_service.markup_amount = 0
-            car_service.save()
+        # COMPANY: блок auto-add отсутствует (компания не привязана к Car).
+        self._update_existing_carservices(
+            request, obj, prefix='company', service_type='COMPANY',
+            removed_services=removed_services,
+        )
 
         # Recalculate storage cost and days when warehouse changes
         if change and form and 'warehouse' in getattr(form, 'changed_data', []):

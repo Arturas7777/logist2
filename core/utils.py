@@ -4,6 +4,7 @@
 
 
 import logging
+import threading
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
@@ -25,50 +26,74 @@ logger = logging.getLogger(__name__)
 
 
 class WebSocketBatcher:
+    """Per-thread батчинг WebSocket уведомлений.
+
+    ВАЖНО: раньше класс держал общий `_batch = []` на всех воркерах. Под
+    `gthread`-gunicorn (workers=4, threads=4) это давало гонку — один поток
+    мог отправить flush с чужими событиями или потерять часть. Теперь
+    буфер хранится в `threading.local()` и не разделяется между потоками.
     """
-    Батчинг WebSocket уведомлений для уменьшения трафика
-    Вместо отправки 100 отдельных сообщений - отправляет 1 пакет
-    """
-    _batch = []
+
+    _local = threading.local()
     _max_batch_size = 50
 
     @classmethod
+    def _get_batch(cls):
+        bucket = getattr(cls._local, 'batch', None)
+        if bucket is None:
+            bucket = []
+            cls._local.batch = bucket
+        return bucket
+
+    @classmethod
     def add(cls, model_name, obj_id, data):
-        """Добавить обновление в пакет"""
-        cls._batch.append({
+        """Добавить обновление в пакет (буфер привязан к текущему потоку)."""
+        batch = cls._get_batch()
+        batch.append({
             'model': model_name,
             'id': obj_id,
             **data
         })
 
-        # Автоматически отправляем при достижении лимита
-        if len(cls._batch) >= cls._max_batch_size:
+        if len(batch) >= cls._max_batch_size:
             cls.flush()
 
     @classmethod
     def flush(cls):
-        """Отправить накопленные обновления"""
-        if not cls._batch:
+        """Отправить накопленные обновления текущего потока."""
+        batch = cls._get_batch()
+        if not batch:
             return
+
+        # Снимаем копию и сразу очищаем локальный буфер, чтобы повторные
+        # вызовы flush() (например, из разных on_commit-хуков) не дублировали
+        # отправку.
+        payload = batch[:]
+        batch.clear()
 
         try:
             channel_layer = get_channel_layer()
+            if channel_layer is None:
+                logger.debug("No channel layer configured, dropping %d WS updates", len(payload))
+                return
             async_to_sync(channel_layer.group_send)(
                 "updates",
                 {
                     "type": "data_update_batch",
-                    "data": cls._batch.copy()
+                    "data": payload,
                 }
             )
-            logger.info(f"Sent batch of {len(cls._batch)} WebSocket updates")
-            cls._batch.clear()
+            logger.debug("Sent batch of %d WebSocket updates", len(payload))
         except Exception as e:
-            logger.error(f"Failed to send WebSocket batch: {e}")
-            cls._batch.clear()
+            logger.error("Failed to send WebSocket batch: %s", e)
 
     @classmethod
     def send_on_commit(cls, model_name, obj_id, data):
-        """Добавить в пакет и отправить при коммите транзакции"""
+        """Добавить в пакет и отправить при коммите транзакции.
+
+        on_commit вызовется в том же потоке, что и текущий запрос, поэтому
+        thread-local буфер останется консистентным.
+        """
         cls.add(model_name, obj_id, data)
         transaction.on_commit(cls.flush)
 

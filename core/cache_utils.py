@@ -329,18 +329,46 @@ def invalidate_cache(pattern):
         logger.debug(f"Error invalidating cache for pattern {pattern}: {e}")
 
 def invalidate_related_cache(model_name, instance_id):
-    """Инвалидирует связанный кэш при изменении объекта"""
-    patterns = [
-        "company_stats:*",
-        "client_stats:*",
-        "warehouse_stats:*",
-        "comparison_data:*",
-    ]
+    """Точечно инвалидирует связанный кэш при изменении объекта.
 
-    for pattern in patterns:
-        invalidate_cache(pattern)
+    Раньше любой post_save на 9 ключевых моделей выжигал ВСЕ паттерны
+    (`company_stats:*`, `client_stats:*`, `warehouse_stats:*`,
+    `comparison_data:*`). При активной работе кэш фактически никогда
+    не доживал до TTL, плюс каждый раз дёргался Redis SCAN. Теперь
+    инвалидация привязана к модели и к конкретному ID, где это возможно.
+    """
+    model_lower = (model_name or '').lower()
 
-    model_lower = model_name.lower()
+    # 1. company_stats — единственная компания (Caromoto), её статистика
+    #    меняется только когда движутся транзакции/инвойсы/машины/контейнеры.
+    if model_lower in ('newinvoice', 'transaction', 'car', 'container', 'company'):
+        cache.delete(get_cache_key('company_stats'))
+
+    # 2. client_stats:<id> — если знаем id, чистим только его. Если изменилась
+    #    транзакция/инвойс — нужно вычислить, какого клиента она касается;
+    #    делаем точечную чистку, иначе fallback на pattern.
+    if model_lower == 'client' and instance_id:
+        cache.delete(get_cache_key('client_stats', instance_id))
+    elif model_lower in ('newinvoice', 'transaction', 'car') and instance_id:
+        # Tx/Invoice/Car могут касаться нескольких клиентов; чтобы не
+        # тащить лишний SQL, инвалидируем по pattern только в этих случаях.
+        invalidate_cache("client_stats:*")
+
+    # 3. warehouse_stats:<id> — точечно при изменении warehouse, либо по pattern
+    #    если транзакция/инвойс могли касаться неизвестного склада.
+    if model_lower == 'warehouse' and instance_id:
+        cache.delete(get_cache_key('warehouse_stats', instance_id))
+    elif model_lower in ('newinvoice', 'transaction', 'car', 'container'):
+        # Любой Car/Container/Tx/Invoice потенциально влияет на склад.
+        invalidate_cache("warehouse_stats:*")
+
+    # 4. comparison_data — зависит от CarService/InvoiceItem/SupplierCost и от
+    #    Client/Warehouse при наличии. Меняется реже — pattern допустим, но
+    #    только при «настоящих» сущностях расчёта.
+    if model_lower in ('newinvoice', 'transaction', 'car', 'client', 'warehouse'):
+        invalidate_cache("comparison_data:*")
+
+    # 5. Маленькие справочные ключи.
     if model_lower in ('client', 'warehouse', 'line', 'carrier', 'company'):
         cache.delete(f'payment_objects:{model_lower}')
     if model_lower == 'warehouse':
@@ -348,7 +376,7 @@ def invalidate_related_cache(model_name, instance_id):
     if model_lower == 'company':
         cache.delete('ref:companies_list')
 
-    logger.info(f"Related cache invalidated for {model_name} #{instance_id}")
+    logger.debug("Related cache invalidated for %s #%s", model_name, instance_id)
 
 
 def cache_method_result(timeout='medium'):

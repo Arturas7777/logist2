@@ -3,6 +3,12 @@ from .base import *  # noqa: F401,F403
 DEBUG = False
 
 LOGGING['loggers']['django']['level'] = 'INFO'
+# Явно поднимаем core до INFO, чтобы в проде не попадал DEBUG-шум
+# (logger.debug в core/* периодически зовётся при пересчёте цен и пр.).
+if 'core' in LOGGING['loggers']:
+    LOGGING['loggers']['core']['level'] = 'INFO'
+else:
+    LOGGING['loggers']['core'] = {'handlers': ['console'], 'level': 'INFO', 'propagate': False}
 
 # HTTPS
 SECURE_SSL_REDIRECT = True
@@ -39,3 +45,14 @@ CSRF_FAILURE_VIEW = 'django.views.csrf.csrf_failure'
 EMAIL_BACKEND = os.getenv(  # noqa: F405
     'EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend'
 )
+
+# Жёсткий guard: ConsoleEmailBackend в проде = тихая потеря писем.
+# Если кто-то по ошибке выставит EMAIL_BACKEND=console.EmailBackend в
+# прод-окружении — упадём при импорте settings, а не при первой
+# попытке отправки уведомления, которая теряется в логах.
+if 'console' in (EMAIL_BACKEND or '').lower():
+    raise RuntimeError(
+        f"Refusing to start with EMAIL_BACKEND={EMAIL_BACKEND!r} in prod settings. "
+        "Console email backend would silently swallow real notifications. "
+        "Set EMAIL_BACKEND env var to a real SMTP backend."
+    )

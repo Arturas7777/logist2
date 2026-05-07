@@ -1,0 +1,134 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Загрузка сканов — {{ scan_type_label }}{% endblock %}
+
+{% block breadcrumbs %}
+  <div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+    &rsaquo; <a href="{% url 'admin:core_scanprocessingjob_changelist' %}">AI-обработка сканов</a>
+    &rsaquo; Загрузка ({{ scan_type_label }})
+  </div>
+{% endblock %}
+
+{% block content %}
+<div style="max-width: 720px; margin: 0 auto;">
+
+  <h1 style="margin-bottom: 24px;">📥 Загрузка сканов: {{ scan_type_label }}</h1>
+
+  <div style="display:flex; gap:8px; margin-bottom:20px;">
+    {% for code, label in scan_type_choices %}
+      <a href="?type={{ code }}"
+         style="padding:8px 14px;border-radius:6px;text-decoration:none;
+                {% if code == scan_type %}background:#0d6efd;color:#fff;font-weight:600;{% else %}background:#e9ecef;color:#495057;{% endif %}">
+        {{ label }}
+      </a>
+    {% endfor %}
+  </div>
+
+  <div style="background:#f8f9fa;border:1px solid #dee2e6;padding:20px;border-radius:8px;margin-bottom:20px;">
+    {% if scan_type == 'TITLE' %}
+      <strong>📋 Что AI извлечёт из титула:</strong>
+      <ul style="margin:8px 0 0; padding-left:24px;">
+        <li>VIN автомобиля (17 символов)</li>
+        <li>Year / Make / Model</li>
+        <li>Title number, штат выдачи, дата</li>
+      </ul>
+      <p style="margin: 8px 0 0; color: #6c757d; font-size: 13px;">
+        Если карточка с этим VIN существует — к ней привяжется PDF и проставится <code>has_title=True</code>.
+        Если нет — будет создана новая карточка Car (статус FLOATING) после вашего подтверждения.
+      </p>
+    {% else %}
+      <strong>📋 Что AI извлечёт из Dock Receipt:</strong>
+      <ul style="margin:8px 0 0; padding-left:24px;">
+        <li>Container number, Booking number</li>
+        <li>VIN-ы машин в контейнере</li>
+        <li>Масса каждой машины (lbs → автоматически в kg)</li>
+        <li>Vessel, voyage, ports, shipper, consignee</li>
+      </ul>
+      <p style="margin: 8px 0 0; color: #6c757d; font-size: 13px;">
+        Если контейнер с этим номером существует — к нему привяжется PDF и проставится booking_number.
+        Если нет — будет создан новый Container с машинами после вашего подтверждения.
+      </p>
+    {% endif %}
+  </div>
+
+  <form method="post" enctype="multipart/form-data" id="scan-upload-form">
+    {% csrf_token %}
+    <input type="hidden" name="scan_type" value="{{ scan_type }}">
+
+    <label for="files-input"
+           style="display:block;border:2px dashed #adb5bd;border-radius:8px;padding:60px 20px;
+                  text-align:center;cursor:pointer;background:#fff;
+                  transition: background 0.2s, border-color 0.2s;"
+           id="dropzone">
+      <div style="font-size:48px;margin-bottom:12px;">📄</div>
+      <div style="font-size:16px;font-weight:600;color:#495057;">Перетащите PDF-сканы сюда</div>
+      <div style="font-size:13px;color:#6c757d;margin-top:8px;">или нажмите, чтобы выбрать (можно сразу несколько)</div>
+      <input type="file" id="files-input" name="files" multiple accept="application/pdf"
+             style="position:absolute;left:-9999px;">
+    </label>
+
+    <div id="files-preview" style="margin-top:16px;"></div>
+
+    <div style="margin-top:20px; display:flex; gap:12px;">
+      <button type="submit"
+              style="background:#0d6efd;color:#fff;border:none;padding:10px 24px;border-radius:6px;
+                     font-weight:600;font-size:14px;cursor:pointer;">
+        🚀 Загрузить и обработать AI
+      </button>
+      <a href="{% url 'admin:core_scanprocessingjob_changelist' %}"
+         style="background:#e9ecef;color:#495057;padding:10px 24px;border-radius:6px;
+                text-decoration:none;font-weight:600;font-size:14px;">
+        Отмена
+      </a>
+    </div>
+  </form>
+
+</div>
+
+<script>
+(function() {
+  const dropzone = document.getElementById('dropzone');
+  const input = document.getElementById('files-input');
+  const preview = document.getElementById('files-preview');
+
+  function renderPreview(files) {
+    preview.innerHTML = '';
+    if (!files || !files.length) return;
+    const list = document.createElement('div');
+    list.style.cssText = 'background:#fff;border:1px solid #dee2e6;border-radius:6px;padding:12px;';
+    list.innerHTML = '<strong style="display:block;margin-bottom:8px;">Выбрано файлов: ' + files.length + '</strong>';
+    Array.from(files).forEach(function(f) {
+      const row = document.createElement('div');
+      row.style.cssText = 'padding:4px 0;border-top:1px solid #f1f3f5;font-size:13px;';
+      row.textContent = '📄 ' + f.name + ' (' + Math.round(f.size / 1024) + ' KB)';
+      list.appendChild(row);
+    });
+    preview.appendChild(list);
+  }
+
+  input.addEventListener('change', function() { renderPreview(input.files); });
+
+  ['dragenter', 'dragover'].forEach(function(ev) {
+    dropzone.addEventListener(ev, function(e) {
+      e.preventDefault(); e.stopPropagation();
+      dropzone.style.background = '#e7f1ff';
+      dropzone.style.borderColor = '#0d6efd';
+    });
+  });
+  ['dragleave', 'drop'].forEach(function(ev) {
+    dropzone.addEventListener(ev, function(e) {
+      e.preventDefault(); e.stopPropagation();
+      dropzone.style.background = '#fff';
+      dropzone.style.borderColor = '#adb5bd';
+    });
+  });
+  dropzone.addEventListener('drop', function(e) {
+    if (!e.dataTransfer.files.length) return;
+    input.files = e.dataTransfer.files;
+    renderPreview(input.files);
+  });
+})();
+</script>
+{% endblock %}
