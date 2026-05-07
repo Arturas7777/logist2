@@ -98,7 +98,16 @@ class OptimizedContainerManager(models.Manager):
         cars = list(instance.container_cars.select_related('warehouse').all())
         if not cars:
             return
-        ths_per_car = (instance.ths or 0) / len(cars)
+        # Decimal-арифметика обязательна: instance.ths — DecimalField. Если
+        # хоть раз попадёт ``int(0) / len(cars)`` или float-деление, получим
+        # потерю точности при последующем сохранении в DecimalField (Django
+        # сделает ``Decimal(repr(float))`` и финансовые отчёты сместит на
+        # копейки).
+        from decimal import Decimal
+        ths_total = instance.ths if instance.ths is not None else Decimal('0')
+        if not isinstance(ths_total, Decimal):
+            ths_total = Decimal(str(ths_total))
+        ths_per_car = ths_total / Decimal(len(cars))
         for car in cars:
             car.sync_with_container(instance, ths_per_car)
 

@@ -560,3 +560,76 @@ def push_invoice_to_sitepro_task(self, invoice_id):
     except Exception as exc:
         logger.error("site.pro push failed for invoice %s: %s", invoice_id, exc, exc_info=True)
         raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=60, time_limit=180)
+def process_scan_job(self, job_id):
+    """AI-обработка одного отсканированного PDF (Title или Dock Receipt).
+
+    Этапы:
+      1. status PROCESSING.
+      2. Конвертируем PDF → PNG, отправляем в Claude Vision.
+      3. Сохраняем extracted_data, статус NEEDS_REVIEW.
+      4. При ошибке: status=ERROR, error_message заполнено.
+
+    Применение к карточкам Car/Container — НЕ здесь, а руками через
+    админку (см. ScanProcessingJobAdmin.action 'apply_jobs') — это
+    осознанный workflow review-then-apply.
+    """
+    from core.models_scans import ScanProcessingJob
+    from core.services.scan_extractor import (
+        extract_dock_receipt,
+        extract_title,
+    )
+
+    try:
+        job = ScanProcessingJob.objects.get(pk=job_id)
+    except ScanProcessingJob.DoesNotExist:
+        logger.warning("process_scan_job: ScanProcessingJob #%s не найден", job_id)
+        return {'ok': False, 'reason': 'not_found'}
+
+    if job.status not in (ScanProcessingJob.STATUS_PENDING, ScanProcessingJob.STATUS_ERROR):
+        logger.info("process_scan_job: skipping job #%s in status=%s", job_id, job.status)
+        return {'ok': False, 'reason': f'status_{job.status}'}
+
+    if not job.original_file:
+        job.status = ScanProcessingJob.STATUS_ERROR
+        job.error_message = "Нет исходного PDF"
+        job.save(update_fields=['status', 'error_message'])
+        return {'ok': False, 'reason': 'no_file'}
+
+    job.status = ScanProcessingJob.STATUS_PROCESSING
+    job.error_message = ''
+    job.save(update_fields=['status', 'error_message'])
+
+    try:
+        # FileField даёт нам путь, только если используется FileSystemStorage.
+        # Если хранилище удалённое (S3) — лучше скачать локально. У нас сейчас
+        # FileSystemStorage, поэтому идём напрямую через .path.
+        pdf_path = job.original_file.path
+        if job.scan_type == ScanProcessingJob.SCAN_TYPE_TITLE:
+            extracted = extract_title(pdf_path)
+        elif job.scan_type == ScanProcessingJob.SCAN_TYPE_DOCK_RECEIPT:
+            extracted = extract_dock_receipt(pdf_path)
+        else:
+            raise ValueError(f"Unknown scan_type: {job.scan_type}")
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("process_scan_job #%s failed", job_id)
+        job.status = ScanProcessingJob.STATUS_ERROR
+        job.error_message = f"{type(exc).__name__}: {exc}"[:500]
+        job.save(update_fields=['status', 'error_message'])
+        # retry только для сетевых/транзиентных, чтобы не зацикливаться на
+        # повреждённых PDF.
+        if 'rate limit' in str(exc).lower() or 'timeout' in str(exc).lower():
+            raise self.retry(exc=exc)
+        return {'ok': False, 'error': str(exc)[:200]}
+
+    job.extracted_data = extracted
+    job.processed_at = timezone.now()
+    if not extracted:
+        job.status = ScanProcessingJob.STATUS_ERROR
+        job.error_message = "AI вернул пустой ответ — попробуйте улучшить качество скана"
+    else:
+        job.status = ScanProcessingJob.STATUS_NEEDS_REVIEW
+    job.save(update_fields=['extracted_data', 'processed_at', 'status', 'error_message'])
+    return {'ok': True, 'job_id': job.id, 'status': job.status}

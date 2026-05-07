@@ -33,6 +33,10 @@ app.conf.beat_schedule = {
     },
     'sync-emails-from-gmail': {
         'task': 'core.tasks_email.sync_emails_from_gmail',
-        'schedule': crontab(minute='*/1'),
+        # Раньше было */1 — это создавало нагрузку на Gmail API и Celery
+        # worker (60 запусков/час даже когда новой почты нет). */2 даёт
+        # тот же UX (письма видны в течение пары минут), но в 2 раза
+        # меньше запусков и риск 429 от Gmail.
+        'schedule': crontab(minute='*/2'),
     },
 }

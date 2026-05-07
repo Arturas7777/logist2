@@ -3,6 +3,32 @@ Signal handlers for core models.
 
 Each handler is a thin wrapper that delegates to the appropriate service.
 Business logic lives in core.services.*, NOT here.
+
+ОГЛАВЛЕНИЕ (для быстрой навигации в IDE — все названия region совпадают):
+
+  1. SERVICE CACHE INVALIDATION         (~ строки 41-58)
+  2. CONTAINER PRE_SAVE / POST_SAVE     (~ строки 60-156)
+  3. CAR PRE_SAVE / POST_SAVE           (~ строки 158-390)
+  4. CARSERVICE PRICE RECALCULATION     (~ строки 392-465)
+  5. CARSERVICE -> INVOICE REGEN        (~ строки 467-533)
+  6. SERVICE CATALOG -> CARSERVICE      (~ строки 535-660)
+  7. CASCADE DELETE CARSERVICE          (~ строки 662-700)
+  8. INVOICE AUTO-CATEGORIZATION        (~ строки 702-820)
+  9. TRANSACTION -> BALANCE             (~ строки 822-850)
+ 10. BANK TRANSACTION MATCHING          (~ строки 852-998)
+ 11. EMAIL NOTIFICATIONS                (~ строки 1000-1050)
+ 12. GDRIVE SYNC NOTE                   (~ строки 1052-1066)
+ 13. AUTOTRANSPORT                      (~ строки 1068-1165)
+ 14. CACHE INVALIDATION (stats)         (~ строки 1167-end)
+
+TODO (отложенный сплит): когда нагрузка на этот файл вырастет до уровня,
+где его IDE становится медленным, разбить пакетом ``core/signals/``
+(подмодули container.py, car.py, car_service.py, service_catalog.py,
+invoice.py, transaction.py, bank.py, email.py, autotransport.py,
+cache_invalidation.py) и реэкспортировать всё из ``__init__.py``.
+ВАЖНО: при таком сплите внешние импорты (``core.admin.container``)
+продолжат работать благодаря реэкспорту; ``core.apps.CoreConfig.ready``
+не нужно править — ``from . import signals`` подтянет пакет.
 """
 import logging
 import threading
@@ -393,6 +419,53 @@ def _create_car_services_if_needed(instance, *, created, kwargs):
 # CARSERVICE PRICE RECALCULATION
 # ============================================================================
 
+# Thread-local set car_id, для которых пересчёт total_price уже запланирован
+# в текущей транзакции. При сохранении карточки авто из админки на 1 машину
+# приходит 5-15 post_save от CarService подряд (по одной услуге на каждый
+# `service.save()`). Раньше каждый такой сигнал делал собственный
+# `calculate_total_price` + UPDATE Car — даже при включённом `_bulk_updating`
+# это не помогало в случае массового импорта, где флаг не выставлен. Теперь
+# пересчёт происходит ровно один раз на коммит транзакции.
+
+_pricing_local = threading.local()
+
+
+def _get_pending_pricing_cars():
+    bucket = getattr(_pricing_local, 'cars', None)
+    if bucket is None:
+        bucket = set()
+        _pricing_local.cars = bucket
+    return bucket
+
+
+def _schedule_car_price_recalc(car_id):
+    if not car_id:
+        return
+    pending = _get_pending_pricing_cars()
+    if car_id in pending:
+        return
+    pending.add(car_id)
+
+    def _do():
+        try:
+            try:
+                car = Car.objects.get(id=car_id)
+            except Car.DoesNotExist:
+                return
+            car.calculate_total_price()
+            Car.objects.filter(id=car_id).update(
+                total_price=car.total_price,
+                days=car.days,
+                storage_cost=car.storage_cost,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.error("Error recalculating price for car %s: %s", car_id, e)
+        finally:
+            _get_pending_pricing_cars().discard(car_id)
+
+    transaction.on_commit(_do)
+
+
 @receiver(post_save, sender=CarService)
 def recalculate_car_price_on_service_save(sender, instance, **kwargs):
     if getattr(instance.car, '_creating_services', False):
@@ -402,32 +475,20 @@ def recalculate_car_price_on_service_save(sender, instance, **kwargs):
     # Car не было; в конце _save_model_inner делает один пересчёт сам.
     if getattr(instance.car, '_bulk_updating', False):
         return
-    try:
-        instance.car.calculate_total_price()
-        Car.objects.filter(id=instance.car.id).update(
-            total_price=instance.car.total_price,
-            days=instance.car.days,
-            storage_cost=instance.car.storage_cost,
-        )
-    except Exception as e:
-        logger.error("Error recalculating price on service save: %s", e)
+    _schedule_car_price_recalc(instance.car_id)
 
 
 @receiver(post_delete, sender=CarService)
 def recalculate_car_price_on_service_delete(sender, instance, **kwargs):
-    if getattr(instance.car, '_creating_services', False):
-        return
-    if getattr(instance.car, '_bulk_updating', False):
-        return
-    try:
-        instance.car.calculate_total_price()
-        Car.objects.filter(id=instance.car.id).update(
-            total_price=instance.car.total_price,
-            days=instance.car.days,
-            storage_cost=instance.car.storage_cost,
-        )
-    except Exception as e:
-        logger.error("Error recalculating price on service delete: %s", e)
+    # При удалении car может быть уже отвязан от instance, но car_id в FK
+    # всё ещё валиден.
+    car = getattr(instance, 'car', None)
+    if car is not None:
+        if getattr(car, '_creating_services', False):
+            return
+        if getattr(car, '_bulk_updating', False):
+            return
+    _schedule_car_price_recalc(instance.car_id)
 
 
 # ============================================================================
@@ -538,8 +599,34 @@ def update_cars_on_warehouse_service_change(sender, instance, **kwargs):
 
 @receiver(post_save, sender=LineService)
 def update_cars_on_line_service_change(sender, instance, **kwargs):
-    if not instance.is_active:
-        try:
+    """Симметрично с Warehouse/Carrier/CompanyService:
+    при изменении default_price/markup активной услуги линии — обновить
+    цены всех CarService этого типа на машинах нужной линии и пересчитать
+    Car.total_price. Если услуга стала неактивной — удалить связанные
+    CarService.
+
+    Раньше LineService обновлял только при is_active=False, и при ручной
+    правке прайса в каталоге цены машин «зависали» на старой default_price
+    до явного перерасчёта в админке Car — это и фиксирует пункт #14
+    плана.
+    """
+    try:
+        if instance.is_active and instance.default_price > 0:
+            default_markup = getattr(instance, 'default_markup', None) or Decimal('0')
+            affected_car_ids = list(CarService.objects.filter(
+                service_type='LINE', service_id=instance.id, car__line=instance.line
+            ).values_list('car_id', flat=True))
+            CarService.objects.filter(
+                service_type='LINE', service_id=instance.id, car__line=instance.line
+            ).update(custom_price=instance.default_price, markup_amount=default_markup)
+            if affected_car_ids:
+                cars_to_update = []
+                for car in Car.objects.filter(id__in=affected_car_ids):
+                    car.calculate_total_price()
+                    cars_to_update.append(car)
+                if cars_to_update:
+                    Car.objects.bulk_update(cars_to_update, ['total_price'], batch_size=100)
+        else:
             affected_car_ids = list(CarService.objects.filter(
                 service_type='LINE', service_id=instance.id
             ).values_list('car_id', flat=True))
@@ -551,8 +638,8 @@ def update_cars_on_line_service_change(sender, instance, **kwargs):
                     cars_to_update.append(car)
                 if cars_to_update:
                     Car.objects.bulk_update(cars_to_update, ['total_price'], batch_size=100)
-        except Exception as e:
-            logger.error("Error deleting inactive line service: %s", e)
+    except Exception as e:
+        logger.error("Error updating cars on line service change: %s", e)
 
 
 @receiver(post_save, sender=CarrierService)

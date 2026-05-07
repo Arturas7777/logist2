@@ -102,3 +102,21 @@ _backup_*.dump
 # Ad-hoc config/files
 denis.conf
 denis_qr.png
+
+# Ad-hoc analysis outputs (отчёты, генерируемые в локальной разработке).
+# Сами скрипты (analysis/*.py) — версионируем; их выходы (json/txt/pdf) — нет.
+analysis/*.json
+analysis/*.txt
+analysis/*.pdf
+analysis/IV_*.pdf
+
+# Архивы бэкапов БД (любые форматы)
+*_backup*.dump
+*_backup*.sql
+
+# IDE / editor temp
+*.bak
+*.orig
+
+# Temp PowerShell scripts
+ps-script-*.ps1

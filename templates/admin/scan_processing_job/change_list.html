@@ -1,0 +1,33 @@
+{% extends "admin/change_list.html" %}
+{% load i18n %}
+
+{% block content_title %}
+  <h1>{{ cl.opts.verbose_name_plural|capfirst }}</h1>
+
+  <div style="display:flex; gap:12px; margin:8px 0 16px; flex-wrap:wrap; align-items:center;">
+    <a href="{{ upload_title_url }}"
+       style="background:#0d6efd;color:#fff;padding:8px 16px;border-radius:6px;text-decoration:none;font-weight:600;">
+      📥 Загрузить сканы Title
+    </a>
+    <a href="{{ upload_dock_url }}"
+       style="background:#198754;color:#fff;padding:8px 16px;border-radius:6px;text-decoration:none;font-weight:600;">
+      📥 Загрузить сканы Dock Receipt
+    </a>
+
+    {% if scan_counts.review %}
+      <span style="background:#fff3cd;color:#856404;padding:6px 12px;border-radius:6px;font-size:13px;">
+        ⏳ Ожидает проверки: <strong>{{ scan_counts.review }}</strong>
+      </span>
+    {% endif %}
+    {% if scan_counts.processing %}
+      <span style="background:#d1ecf1;color:#0c5460;padding:6px 12px;border-radius:6px;font-size:13px;">
+        🤖 В обработке: <strong>{{ scan_counts.processing }}</strong>
+      </span>
+    {% endif %}
+    {% if scan_counts.errors %}
+      <span style="background:#f8d7da;color:#721c24;padding:6px 12px;border-radius:6px;font-size:13px;">
+        ❌ Ошибки: <strong>{{ scan_counts.errors }}</strong>
+      </span>
+    {% endif %}
+  </div>
+{% endblock %}

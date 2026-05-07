@@ -7,33 +7,21 @@ import logging
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
 from django.http import JsonResponse
 from django.template.loader import render_to_string
-from django.utils.functional import cached_property
 
 logger = logging.getLogger(__name__)
 
+
 class OptimizedPaginator(Paginator):
-    """Оптимизированный пагинатор с улучшенной производительностью"""
+    """Оптимизированный пагинатор.
 
-    def __init__(self, object_list, per_page, orphans=0, allow_empty_first_page=True):
-        super().__init__(object_list, per_page, orphans, allow_empty_first_page)
-        self._count = None
-
-    @cached_property
-    def count(self):
-        """Кэшированный подсчет объектов"""
-        if self._count is None:
-            try:
-                # Используем count() для оптимизации
-                if hasattr(self.object_list, 'count'):
-                    self._count = self.object_list.count()
-                else:
-                    self._count = len(self.object_list)
-            except (TypeError, ValueError):
-                self._count = len(self.object_list)
-        return self._count
+    Раньше класс переопределял ``count`` через ``cached_property``,
+    дублируя поведение Django (``Paginator.count`` уже cached_property
+    с правильным fallback на ``len()``). Это был мертвый код. Сейчас
+    оставлен только override ``page()``, который при некорректном
+    page-number мягко возвращает первую страницу (вместо 404).
+    """
 
     def page(self, number):
-        """Возвращает страницу с оптимизацией"""
         try:
             return super().page(number)
         except (PageNotAnInteger, EmptyPage):

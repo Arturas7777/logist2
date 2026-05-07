@@ -36,5 +36,13 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"Could not load accounting admin: {e}")
 
+# Scan processing (titles / dock receipts) — AI-обработка
+try:
+    from core.admin_scans import ScanProcessingJobAdmin  # noqa: F401
+except ImportError as e:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Could not load scan processing admin: {e}")
+
 # Invoice audit — managed via custom views at /admin/invoice-audit/
 # No admin registration needed.

@@ -5,6 +5,16 @@ All views were split into submodules:
   - api.py          : JSON API endpoints
   - admin_views.py  : Staff dashboards, payments, photos
   - comparison.py   : Cost comparison dashboard & APIs
+  - emails.py       : Email/Gmail UI views
+  - health.py       : healthcheck endpoints
+  - labels.py       : printable labels
+
+TODO (структурная унификация P2 #15): постепенно перенести оставшиеся
+файлы ``core/views_invoice_audit.py``, ``core/views_website.py``,
+``core/views_autotransport.py`` в подмодули этого пакета. Сейчас
+они импортируются напрямую из их прежних путей (logist2/urls.py),
+поэтому ``__init__.py`` их не реэкспортирует. После переноса
+обновить ``logist2/urls.py``.
 """
 from .api import (  # noqa: F401
     car_list_api,
