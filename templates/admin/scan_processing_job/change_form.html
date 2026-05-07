@@ -11,13 +11,16 @@
           ⚠ Подозрение на ошибку OCR в VIN
         </div>
         <div style="margin-bottom:14px;line-height:1.5;">
-          AI извлёк VIN
+          AI извлёк VIN из тайтла:
           <code style="background:#fff;padding:2px 6px;border-radius:3px;
-                       font-size:13px;">{{ mismatch.extracted_vin }}</code>,
-          но в базе уже есть очень похожие VIN. Возможно, AI неправильно
-          прочитал символ (например, <b>0</b> ↔ <b>O</b>, <b>1</b> ↔ <b>I</b>,
-          <b>8</b> ↔ <b>B</b>, <b>5</b> ↔ <b>S</b>).<br>
-          <b>Выберите действие:</b>
+                       font-size:13px;">{{ mismatch.extracted_vin }}</code><br>
+          В базе есть очень похожие VIN. Возможно, в одном из документов
+          (тайтле или dock receipt) AI неправильно прочитал символ
+          (типичные ошибки: <b>0</b> ↔ <b>O</b>, <b>1</b> ↔ <b>I</b>,
+          <b>8</b> ↔ <b>B</b>, <b>5</b> ↔ <b>S</b>, <b>H</b> ↔ <b>R</b>,
+          <b>2</b> ↔ <b>Z</b>, <b>6</b> ↔ <b>G</b>).
+          <br><br>
+          <b>Какой VIN правильный — сравните визуально:</b>
         </div>
 
         <table style="width:100%;border-collapse:collapse;
@@ -25,9 +28,11 @@
                       margin-bottom:12px;">
           <thead>
             <tr style="background:#f8f9fa;">
-              <th style="padding:8px 12px;text-align:left;">Похожий VIN в БД</th>
-              <th style="padding:8px 12px;text-align:left;">Расстояние</th>
-              <th style="padding:8px 12px;"></th>
+              <th style="padding:8px 12px;text-align:left;">VIN в БД (из dock receipt)</th>
+              <th style="padding:8px 12px;text-align:left;">Δ</th>
+              <th style="padding:8px 12px;text-align:left;" colspan="2">
+                Действие в зависимости от того, где ошибка:
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -38,20 +43,44 @@
                      target="_blank">{{ c.vin }}</a>
                 </td>
                 <td style="padding:8px 12px;color:#6c757d;">
-                  отличие: {{ c.hamming_distance }} симв.
+                  {{ c.hamming_distance }} симв.
                 </td>
-                <td style="padding:8px 12px;text-align:right;">
+                <td style="padding:8px 6px;text-align:right;">
                   <form method="post"
                         action="{% url 'admin:core_scanprocessingjob_resolve_vin' original.pk %}"
-                        style="display:inline;">
+                        style="display:inline;"
+                        title="VIN в БД (из dock receipt) правильный, AI ошибся при чтении тайтла. Тайтл прикрепится к этому Car без изменений.">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="attach">
                     <input type="hidden" name="chosen_vin" value="{{ c.vin }}">
                     <button type="submit"
                             style="background:#198754;color:#fff;border:none;
-                                   padding:6px 14px;border-radius:4px;
+                                   padding:6px 12px;border-radius:4px;
                                    cursor:pointer;font-size:12px;font-weight:bold;">
-                      ✓ Прикрепить к этому VIN
+                      ← VIN из БД верен<br>
+                      <span style="font-size:10px;font-weight:normal;opacity:0.85;">
+                        (прикрепить тайтл)
+                      </span>
+                    </button>
+                  </form>
+                </td>
+                <td style="padding:8px 6px;text-align:right;">
+                  <form method="post"
+                        action="{% url 'admin:core_scanprocessingjob_resolve_vin' original.pk %}"
+                        style="display:inline;"
+                        title="VIN на тайтле правильный, AI ошибся при чтении dock receipt. VIN в карточке Car будет ИСПРАВЛЕН на VIN из тайтла, и тайтл прикрепится.">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="fix_existing_car_vin">
+                    <input type="hidden" name="car_id" value="{{ c.car_id }}">
+                    <button type="submit"
+                            onclick="return confirm('Точно исправить VIN в Car #{{ c.car_id }} с {{ c.vin }} на {{ mismatch.extracted_vin }}?');"
+                            style="background:#fd7e14;color:#fff;border:none;
+                                   padding:6px 12px;border-radius:4px;
+                                   cursor:pointer;font-size:12px;font-weight:bold;">
+                      VIN из тайтла верен →<br>
+                      <span style="font-size:10px;font-weight:normal;opacity:0.85;">
+                        (исправить VIN в Car)
+                      </span>
                     </button>
                   </form>
                 </td>
