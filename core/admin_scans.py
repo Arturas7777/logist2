@@ -337,11 +337,12 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
         candidate_vins = {c.get('vin') for c in (mismatch.get('candidates') or [])}
 
         if action == 'attach':
+            # ВАРИАНТ 1: AI ошибся в тайтле, dock receipt прав.
+            # Подменяем VIN из тайтла на VIN из БД (кандидата).
             chosen_vin = (request.POST.get('chosen_vin') or '').strip().upper()
             if chosen_vin not in candidate_vins:
                 messages.error(request, "Выбранный VIN не из списка кандидатов.")
                 return redirect('admin:core_scanprocessingjob_change', job_id)
-            # Подменяем primary VIN на выбранный, чтобы apply сматчил.
             vins = data.get('vins') or []
             if vins:
                 vins[0] = chosen_vin
@@ -359,6 +360,54 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
                 )
             except Exception:
                 logger.exception("Failed to apply after attach: job #%s", job.pk)
+                messages.error(request, "Ошибка при применении (см. логи).")
+            return redirect('admin:core_scanprocessingjob_change', job_id)
+
+        if action == 'fix_existing_car_vin':
+            # ВАРИАНТ 2: AI ошибся в dock receipt, тайтл прав.
+            # Обновляем VIN существующей карточки Car на VIN из тайтла,
+            # затем applier найдёт её и прикрепит тайтл.
+            from core.models import Car
+            try:
+                car_id = int(request.POST.get('car_id') or 0)
+            except (TypeError, ValueError):
+                car_id = 0
+            if not any(c.get('car_id') == car_id for c in (mismatch.get('candidates') or [])):
+                messages.error(request, "Car не из списка кандидатов.")
+                return redirect('admin:core_scanprocessingjob_change', job_id)
+            extracted_vin = (mismatch.get('extracted_vin') or '').strip().upper()
+            if not extracted_vin:
+                messages.error(request, "В job отсутствует исходный VIN.")
+                return redirect('admin:core_scanprocessingjob_change', job_id)
+            # Защита от дубликата: вдруг в БД уже есть Car с extracted_vin.
+            collision = Car.objects.filter(vin=extracted_vin).exclude(pk=car_id).first()
+            if collision:
+                messages.error(
+                    request,
+                    f"VIN {extracted_vin} уже занят другой карточкой "
+                    f"(Car #{collision.id}). Конфликт нужно решить вручную.",
+                )
+                return redirect('admin:core_scanprocessingjob_change', job_id)
+            try:
+                car = Car.objects.get(pk=car_id)
+            except Car.DoesNotExist:
+                messages.error(request, "Car не найден.")
+                return redirect('admin:core_scanprocessingjob_change', job_id)
+            old_vin = car.vin
+            car.vin = extracted_vin
+            car.save(update_fields=['vin'])
+            data.pop('vin_mismatch_review', None)
+            job.extracted_data = data
+            job.save(update_fields=['extracted_data'])
+            try:
+                apply_job(job, applied_by=request.user)
+                messages.success(
+                    request,
+                    f"VIN в карточке Car #{car.id} исправлен: "
+                    f"{old_vin} → {extracted_vin}. Тайтл прикреплён.",
+                )
+            except Exception:
+                logger.exception("Failed to apply after VIN-fix: job #%s", job.pk)
                 messages.error(request, "Ошибка при применении (см. логи).")
             return redirect('admin:core_scanprocessingjob_change', job_id)
 
