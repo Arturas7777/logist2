@@ -167,6 +167,26 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
                 'title="AI извлёк VIN, но в БД есть очень похожий — '
                 'возможно ошибка OCR">⚠ VIN ?</span>'
             ))
+        # VIN-валидатор поднял предупреждения (checksum / NHTSA / mismatch
+        # с make/year). Показываем красный бейдж — это серьёзный сигнал.
+        data = obj.extracted_data or {}
+        has_validation_warning = False
+        for v in (data.get('vin_validations') or []):
+            if v.get('warnings'):
+                has_validation_warning = True
+                break
+        if not has_validation_warning:
+            for veh in (data.get('vehicles') or []):
+                if (veh.get('vin_validation') or {}).get('warnings'):
+                    has_validation_warning = True
+                    break
+        if has_validation_warning:
+            flags.append(format_html(
+                '<span style="background:#dc3545;color:#fff;padding:2px 6px;'
+                'border-radius:4px;font-size:11px;font-weight:bold;" '
+                'title="NHTSA / check digit поднял предупреждение по VIN">'
+                '⚠ VIN!</span>'
+            ))
         if not flags:
             return '—'
         return format_html(' '.join(['{}'] * len(flags)), *flags)
