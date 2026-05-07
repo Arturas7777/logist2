@@ -181,10 +181,10 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
         # пытается прикрепить тайтл к УЖЕ существующей машине.
         # В этом случае откладываем job в review — пусть юзер сам решит:
         # привязать к существующему VIN или всё-таки создать новый Car.
-        if not data.get('_skip_vin_check'):
+        if not data.get('skip_vin_check'):
             similar = find_similar_vins(primary_vin)
             if similar:
-                data['_vin_mismatch'] = {
+                data['vin_mismatch_review'] = {
                     'extracted_vin': primary_vin,
                     'candidates': [
                         {'vin': v, 'car_id': cid, 'hamming_distance': d}
@@ -232,7 +232,7 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
 
     # Если был флаг "подозрение VIN" — после успешного apply убираем,
     # чтобы не путал в админке.
-    if data.pop('_vin_mismatch', None) or data.pop('_skip_vin_check', None):
+    if data.pop('vin_mismatch_review', None) or data.pop('skip_vin_check', None):
         job.extracted_data = data
 
     job.linked_car = car

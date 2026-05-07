@@ -160,7 +160,7 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
                 'border-radius:4px;font-size:11px;">🆕 Container</span>'
             ))
         # Подозрение на VIN-mismatch (OCR-ошибка): показываем заметный бейдж.
-        if (obj.extracted_data or {}).get('_vin_mismatch'):
+        if (obj.extracted_data or {}).get('vin_mismatch_review'):
             flags.append(format_html(
                 '<span style="background:#ffc107;color:#212529;padding:2px 6px;'
                 'border-radius:4px;font-size:11px;font-weight:bold;" '
@@ -243,7 +243,7 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
             if not job.can_apply:
                 continue
             data = job.extracted_data or {}
-            data['_skip_vin_check'] = True
+            data['skip_vin_check'] = True
             job.extracted_data = data
             job.save(update_fields=['extracted_data'])
             try:
@@ -316,7 +316,7 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
         POST-параметры:
           * action='attach', chosen_vin=<VIN> — подменить VIN на выбранный
             из кандидатов, чтобы apply сматчил на существующий Car.
-          * action='force_new' — выставить флаг ``_skip_vin_check`` и
+          * action='force_new' — выставить флаг ``skip_vin_check`` и
             принудительно создать новый Car, игнорируя похожие.
         После любого решения немедленно применяет job.
         """
@@ -333,7 +333,7 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
 
         action = request.POST.get('action', '')
         data = job.extracted_data or {}
-        mismatch = data.get('_vin_mismatch') or {}
+        mismatch = data.get('vin_mismatch_review') or {}
         candidate_vins = {c.get('vin') for c in (mismatch.get('candidates') or [])}
 
         if action == 'attach':
@@ -348,7 +348,7 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
             else:
                 vins = [chosen_vin]
             data['vins'] = vins
-            data.pop('_vin_mismatch', None)
+            data.pop('vin_mismatch_review', None)
             job.extracted_data = data
             job.save(update_fields=['extracted_data'])
             try:
@@ -363,8 +363,8 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
             return redirect('admin:core_scanprocessingjob_change', job_id)
 
         if action == 'force_new':
-            data['_skip_vin_check'] = True
-            data.pop('_vin_mismatch', None)
+            data['skip_vin_check'] = True
+            data.pop('vin_mismatch_review', None)
             job.extracted_data = data
             job.save(update_fields=['extracted_data'])
             try:
