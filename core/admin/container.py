@@ -126,6 +126,7 @@ class ContainerAdmin(admin.ModelAdmin):
                 ('number', 'booking_number', 'line', 'ths', 'ths_payer', 'warehouse', 'unload_site', 'status'),
                 ('eta', 'planned_unload_date', 'unload_date'),
                 'google_drive_folder_url',
+                'dock_receipt_scan',
             )
         }),
     )
