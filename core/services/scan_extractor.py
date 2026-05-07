@@ -276,37 +276,101 @@ def _call_claude_vision(
 def extract_title(pdf_path: str) -> dict[str, Any]:
     """Извлечь данные из скана US car title.
 
-    Возвращает dict вида ``TITLE_SCHEMA`` (см. модуль) либо ``{}`` при ошибке.
-    Никогда не бросает исключений из-за плохого качества скана — только
-    при недоступности API/PyMuPDF.
+    Возвращает dict вида ``TITLE_SCHEMA`` + ключ ``vin_validations``
+    (список dict-ов с результатами cross-check на каждый VIN).
     """
     images = _render_pdf_pages_for_vision(pdf_path)
     if not images:
         logger.warning("Title PDF %s не дал изображений", pdf_path)
         return {}
-    return _call_claude_vision(
+    data = _call_claude_vision(
         images,
         system_prompt=TITLE_PROMPT,
         user_text="Это отсканированный US car title. Извлеки данные по схеме.",
     )
+    _attach_vin_validations_for_title(data)
+    return data
 
 
 def extract_dock_receipt(pdf_path: str) -> dict[str, Any]:
     """Извлечь данные из скана Dock Receipt.
 
-    Возвращает dict вида ``DOCK_RECEIPT_SCHEMA``. Если в документе
-    несколько машин, все они будут в ``vehicles``. ``weight_kg``
-    автоматически НЕ конвертируется здесь — это работа scan_applier.
+    Возвращает dict вида ``DOCK_RECEIPT_SCHEMA``. Каждое vehicle
+    дополняется ``vin_validation`` (см. vin_validator.cross_check_with_ai_data).
     """
     images = _render_pdf_pages_for_vision(pdf_path)
     if not images:
         logger.warning("Dock Receipt PDF %s не дал изображений", pdf_path)
         return {}
-    return _call_claude_vision(
+    data = _call_claude_vision(
         images,
         system_prompt=DOCK_RECEIPT_PROMPT,
         user_text="Это отсканированный US Dock Receipt. Извлеки данные по схеме.",
     )
+    _attach_vin_validations_for_dock_receipt(data)
+    return data
+
+
+# ── Пост-обработка: validate каждый VIN ────────────────────────────────────
+
+
+def _attach_vin_validations_for_title(data: dict[str, Any]) -> None:
+    """Прогоняет каждый VIN тайтла через VIN-валидатор и cross-check.
+
+    Записывает результат в ``data['vin_validations']`` (list).
+    Не бросает исключения — на любую ошибку просто логирует.
+    """
+    try:
+        from core.services.vin_validator import cross_check_with_ai_data
+    except ImportError:
+        return
+    vins = data.get('vins') or []
+    if not isinstance(vins, list):
+        return
+    ai_make = data.get('make') or ''
+    ai_model = data.get('model') or ''
+    ai_year = data.get('year')
+    out = []
+    for vin in vins:
+        if not vin or not isinstance(vin, str):
+            continue
+        try:
+            res = cross_check_with_ai_data(
+                vin,
+                ai_make=ai_make,
+                ai_model=ai_model,
+                ai_year=ai_year,
+            )
+            out.append(res)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("VIN validation failed for %s: %s", vin, e)
+    data['vin_validations'] = out
+
+
+def _attach_vin_validations_for_dock_receipt(data: dict[str, Any]) -> None:
+    """Прогоняет каждое vehicle из dock receipt через валидатор."""
+    try:
+        from core.services.vin_validator import cross_check_with_ai_data
+    except ImportError:
+        return
+    vehicles = data.get('vehicles') or []
+    if not isinstance(vehicles, list):
+        return
+    for veh in vehicles:
+        if not isinstance(veh, dict):
+            continue
+        vin = veh.get('vin')
+        if not vin:
+            continue
+        try:
+            veh['vin_validation'] = cross_check_with_ai_data(
+                vin,
+                ai_make=veh.get('make') or '',
+                ai_model=veh.get('model') or '',
+                ai_year=veh.get('year'),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("VIN validation failed for %s: %s", vin, e)
 
 
 # Хелпер конвертации lbs → kg, чтобы scan_applier и admin использовали

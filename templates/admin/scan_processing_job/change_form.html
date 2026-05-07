@@ -2,6 +2,79 @@
 {% load static admin_extras %}
 
 {% block field_sets %}
+  {# Блок 1: предупреждения от VIN-валидатора (check digit + NHTSA) #}
+  {% with validations=original.extracted_data.vin_validations %}
+    {% for v in validations %}
+      {% if v.warnings %}
+        <div style="background:#f8d7da;border:1px solid #dc3545;
+                    padding:14px;border-radius:6px;margin-bottom:12px;">
+          <div style="font-weight:bold;color:#842029;margin-bottom:8px;">
+            ⚠ VIN-валидация:
+            <code style="background:#fff;padding:2px 6px;border-radius:3px;
+                         letter-spacing:1px;">{{ v.vin }}</code>
+          </div>
+          <ul style="margin:0;padding-left:20px;color:#842029;line-height:1.5;">
+            {% for w in v.warnings %}
+              <li>{{ w }}</li>
+            {% endfor %}
+          </ul>
+          {% if v.nhtsa.make or v.nhtsa.model or v.nhtsa.year %}
+            <div style="margin-top:8px;color:#495057;font-size:12px;">
+              NHTSA говорит: <b>{{ v.nhtsa.make|default:"?" }}</b>
+              {{ v.nhtsa.model|default:"" }}
+              {% if v.nhtsa.year %} (год {{ v.nhtsa.year }}){% endif %}
+            </div>
+          {% endif %}
+          {% if v.suggested_vin %}
+            <div style="margin-top:8px;background:#fff;padding:8px 12px;
+                        border-radius:4px;font-size:13px;">
+              💡 NHTSA подсказывает правильный VIN:
+              <code style="font-weight:bold;letter-spacing:1px;">{% vin_diff v.suggested_vin v.vin %}</code>
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
+    {% endfor %}
+
+    {# Для dock receipt валидации хранятся внутри vehicles #}
+    {% for veh in original.extracted_data.vehicles %}
+      {% if veh.vin_validation.warnings %}
+        <div style="background:#f8d7da;border:1px solid #dc3545;
+                    padding:14px;border-radius:6px;margin-bottom:12px;">
+          <div style="font-weight:bold;color:#842029;margin-bottom:8px;">
+            ⚠ VIN-валидация:
+            <code style="background:#fff;padding:2px 6px;border-radius:3px;
+                         letter-spacing:1px;">{{ veh.vin }}</code>
+            {% if veh.make or veh.model %}
+              <span style="color:#6c757d;font-weight:normal;font-size:12px;">
+                ({{ veh.make }} {{ veh.model }} {{ veh.year }})
+              </span>
+            {% endif %}
+          </div>
+          <ul style="margin:0;padding-left:20px;color:#842029;line-height:1.5;">
+            {% for w in veh.vin_validation.warnings %}
+              <li>{{ w }}</li>
+            {% endfor %}
+          </ul>
+          {% if veh.vin_validation.nhtsa.make or veh.vin_validation.nhtsa.model %}
+            <div style="margin-top:8px;color:#495057;font-size:12px;">
+              NHTSA говорит: <b>{{ veh.vin_validation.nhtsa.make|default:"?" }}</b>
+              {{ veh.vin_validation.nhtsa.model|default:"" }}
+              {% if veh.vin_validation.nhtsa.year %} (год {{ veh.vin_validation.nhtsa.year }}){% endif %}
+            </div>
+          {% endif %}
+          {% if veh.vin_validation.suggested_vin %}
+            <div style="margin-top:8px;background:#fff;padding:8px 12px;
+                        border-radius:4px;font-size:13px;">
+              💡 NHTSA подсказывает правильный VIN:
+              <code style="font-weight:bold;letter-spacing:1px;">{% vin_diff veh.vin_validation.suggested_vin veh.vin %}</code>
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
+    {% endfor %}
+  {% endwith %}
+
   {% if original and original.extracted_data.vin_mismatch_review %}
     {% with mismatch=original.extracted_data.vin_mismatch_review %}
       {% with first_candidate=mismatch.candidates.0 %}
