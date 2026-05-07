@@ -205,7 +205,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
     list_display = (
         'vin_display', 'brand', 'vehicle_type', 'year_display', 'client', 'colored_status', 'container_display', 'warehouse', 'line',
         'unload_date_display', 'days_display', 'storage_cost_display', 'total_price_display', 'markup_display',
-        'has_title', 'title_attached_display', 'weight_display'
+        'has_title', 'title_attached_display'
     )
     list_display_links = ('vin_display',)
     list_editable = ('has_title',)
@@ -283,16 +283,16 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         return qs
     readonly_fields = (
         'default_warehouse_prices_display', 'total_price', 'storage_cost', 'days', 'warehouse_payment_display',
-        'free_days_display', 'rate_display', 'services_summary_display', 'warehouse_services_display', 'line_services_display', 'carrier_services_display', 'company_services_display'
+        'free_days_display', 'rate_display', 'services_summary_display', 'warehouse_services_display', 'line_services_display', 'carrier_services_display', 'company_services_display',
+        'title_link_display'
     )
     # inlines = []  # Services managed through sections below
     fieldsets = (
         ('Основные данные', {
             'fields': (
-                ('year', 'brand', 'vin', 'vehicle_type'),
+                ('year', 'brand', 'vin', 'vehicle_type', 'weight_kg'),
                 ('client', 'warehouse', 'unload_site', 'status'),
-                ('has_title', 'title_notes'),
-                ('title_scan', 'weight_kg'),
+                ('has_title', 'title_link_display', 'title_notes'),
                 ('unload_date', 'transfer_date'),
             )
         }),
@@ -337,8 +337,6 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             form.base_fields['has_title'].label = 'Тайтл получен'
         if 'title_notes' in form.base_fields:
             form.base_fields['title_notes'].widget.attrs['placeholder'] = 'Примечания к тайтлу...'
-        if 'title_scan' in form.base_fields:
-            form.base_fields['title_scan'].label = 'Скан тайтла (PDF)'
         if 'weight_kg' in form.base_fields:
             form.base_fields['weight_kg'].label = 'Масса, кг'
         return form
@@ -699,22 +697,8 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
     markup_display.short_description = 'Н'  # Н = Наценка
     markup_display.admin_order_field = '_total_markup'  # Sort by annotation
 
-    def weight_display(self, obj):
-        """Масса авто в кг (компактно, без хвоста .00)."""
-        if obj.weight_kg is None:
-            return '—'
-        try:
-            value = Decimal(obj.weight_kg)
-        except Exception:
-            return str(obj.weight_kg)
-        if value == value.to_integral_value():
-            return f"{int(value)}"
-        return f"{value.normalize()}"
-    weight_display.short_description = 'Масса'
-    weight_display.admin_order_field = 'weight_kg'
-
     def title_attached_display(self, obj):
-        """Иконка скрепки, если к авто прикреплён скан тайтла."""
+        """Иконка-ссылка на скан тайтла рядом с чекбоксом has_title (узкая колонка)."""
         try:
             has_file = bool(obj.title_scan and obj.title_scan.name)
         except Exception:
@@ -723,10 +707,25 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             return ''
         return format_html(
             '<a href="{}" target="_blank" title="Открыть скан тайтла" '
-            'style="text-decoration:none;">📎</a>',
+            'style="text-decoration:none;font-size:14px;">📎</a>',
             obj.title_scan.url,
         )
-    title_attached_display.short_description = 'Тайтл-скан'
+    title_attached_display.short_description = ''
+
+    def title_link_display(self, obj):
+        """Иконка-ссылка на скан тайтла в карточке авто, справа от чекбокса."""
+        try:
+            has_file = bool(obj and obj.pk and obj.title_scan and obj.title_scan.name)
+        except Exception:
+            has_file = False
+        if not has_file:
+            return ''
+        return format_html(
+            '<a href="{}" target="_blank" title="Открыть скан тайтла" '
+            'style="text-decoration:none;font-size:18px;">📎</a>',
+            obj.title_scan.url,
+        )
+    title_link_display.short_description = ''
 
     def changelist_view(self, request, extra_context=None):
         """Override changelist_view to add total markup sum.
