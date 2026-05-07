@@ -1,0 +1,81 @@
+{% extends "admin/change_form.html" %}
+{% load static %}
+
+{% block field_sets %}
+  {% if original and original.extracted_data._vin_mismatch %}
+    {% with mismatch=original.extracted_data._vin_mismatch %}
+      <div style="background:#fff3cd;border:1px solid #ffc107;
+                  padding:16px;border-radius:6px;margin-bottom:18px;">
+        <div style="font-weight:bold;color:#664d03;font-size:15px;
+                    margin-bottom:10px;">
+          ⚠ Подозрение на ошибку OCR в VIN
+        </div>
+        <div style="margin-bottom:14px;line-height:1.5;">
+          AI извлёк VIN
+          <code style="background:#fff;padding:2px 6px;border-radius:3px;
+                       font-size:13px;">{{ mismatch.extracted_vin }}</code>,
+          но в базе уже есть очень похожие VIN. Возможно, AI неправильно
+          прочитал символ (например, <b>0</b> ↔ <b>O</b>, <b>1</b> ↔ <b>I</b>,
+          <b>8</b> ↔ <b>B</b>, <b>5</b> ↔ <b>S</b>).<br>
+          <b>Выберите действие:</b>
+        </div>
+
+        <table style="width:100%;border-collapse:collapse;
+                      background:#fff;border-radius:4px;overflow:hidden;
+                      margin-bottom:12px;">
+          <thead>
+            <tr style="background:#f8f9fa;">
+              <th style="padding:8px 12px;text-align:left;">Похожий VIN в БД</th>
+              <th style="padding:8px 12px;text-align:left;">Расстояние</th>
+              <th style="padding:8px 12px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in mismatch.candidates %}
+              <tr style="border-top:1px solid #e9ecef;">
+                <td style="padding:8px 12px;font-family:monospace;">
+                  <a href="{% url 'admin:core_car_change' c.car_id %}"
+                     target="_blank">{{ c.vin }}</a>
+                </td>
+                <td style="padding:8px 12px;color:#6c757d;">
+                  отличие: {{ c.hamming_distance }} симв.
+                </td>
+                <td style="padding:8px 12px;text-align:right;">
+                  <form method="post"
+                        action="{% url 'admin:core_scanprocessingjob_resolve_vin' original.pk %}"
+                        style="display:inline;">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="attach">
+                    <input type="hidden" name="chosen_vin" value="{{ c.vin }}">
+                    <button type="submit"
+                            style="background:#198754;color:#fff;border:none;
+                                   padding:6px 14px;border-radius:4px;
+                                   cursor:pointer;font-size:12px;font-weight:bold;">
+                      ✓ Прикрепить к этому VIN
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        <form method="post"
+              action="{% url 'admin:core_scanprocessingjob_resolve_vin' original.pk %}"
+              style="text-align:right;">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="force_new">
+          <button type="submit"
+                  onclick="return confirm('Точно создать НОВУЮ карточку Car? Это уместно, только если AI прочитал VIN правильно, а похожие в БД — другие машины.');"
+                  style="background:#dc3545;color:#fff;border:none;
+                         padding:7px 16px;border-radius:4px;cursor:pointer;
+                         font-size:12px;">
+            Всё-таки создать НОВЫЙ Car
+          </button>
+        </form>
+      </div>
+    {% endwith %}
+  {% endif %}
+
+  {{ block.super }}
+{% endblock %}

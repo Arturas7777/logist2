@@ -70,6 +70,39 @@ def detect_line_from_carrier(exporting_carrier: str | None):
     return None
 
 
+# ── Защита от mismatch'а VIN при OCR-ошибках ───────────────────────────────
+
+# Максимальное расстояние Хэмминга (число несовпадающих символов в VIN
+# одинаковой длины), при котором считаем кандидата подозрительно похожим.
+# Типичные OCR-ошибки на тайтлах: 0/O, 1/I, 8/B, 5/S, 2/Z, 6/G — обычно
+# дают 1-2 символа разницы. Поэтому 2 — разумный порог.
+_VIN_FUZZY_MAX_DISTANCE = 2
+
+
+def find_similar_vins(vin: str, *, max_distance: int = _VIN_FUZZY_MAX_DISTANCE) -> list[tuple[str, int, int]]:
+    """Возвращает список ``(db_vin, car_id, hamming_distance)`` похожих VIN.
+
+    Используется ТОЛЬКО для VIN длиной 17 (стандарт). Для нестандартных
+    длин возвращает пустой список — там всё равно ничего хорошего не
+    сравнить. Кандидат с distance=0 (точное совпадение) НЕ возвращается —
+    его надо ловить через ``Car.objects.filter(vin=...)``.
+
+    Сортируем по возрастанию distance: ближайшие — первыми.
+    """
+    if not vin or len(vin) != 17:
+        return []
+    candidates: list[tuple[str, int, int]] = []
+    qs = Car.objects.exclude(vin='').values_list('vin', 'id')
+    for db_vin, car_id in qs.iterator():
+        if not db_vin or len(db_vin) != 17:
+            continue
+        dist = sum(1 for a, b in zip(vin, db_vin) if a != b)
+        if 0 < dist <= max_distance:
+            candidates.append((db_vin, car_id, dist))
+    candidates.sort(key=lambda x: x[2])
+    return candidates
+
+
 # ── Утилиты ────────────────────────────────────────────────────────────────
 
 
@@ -141,6 +174,36 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
     car = Car.objects.filter(vin=primary_vin).first()
     created_new = False
     if car is None:
+        # ── Защита от OCR-ошибок при чтении VIN ──
+        # Прежде чем создать новую карточку, проверим, нет ли в БД
+        # похожего VIN (≤ 2 символа разницы). Если есть — велика
+        # вероятность, что AI неправильно прочитал символ, и юзер
+        # пытается прикрепить тайтл к УЖЕ существующей машине.
+        # В этом случае откладываем job в review — пусть юзер сам решит:
+        # привязать к существующему VIN или всё-таки создать новый Car.
+        if not data.get('_skip_vin_check'):
+            similar = find_similar_vins(primary_vin)
+            if similar:
+                data['_vin_mismatch'] = {
+                    'extracted_vin': primary_vin,
+                    'candidates': [
+                        {'vin': v, 'car_id': cid, 'hamming_distance': d}
+                        for v, cid, d in similar[:5]
+                    ],
+                }
+                job.extracted_data = data
+                job.status = ScanProcessingJob.STATUS_NEEDS_REVIEW
+                job.error_message = (
+                    f"VIN {primary_vin} похож на существующий "
+                    f"{similar[0][0]} (отличие {similar[0][2]} симв.). "
+                    "Откройте job, чтобы выбрать действие."
+                )
+                job.save(update_fields=['extracted_data', 'status', 'error_message'])
+                logger.warning(
+                    "TITLE job #%s deferred: VIN %s ~ %s (dist=%d)",
+                    job.pk, primary_vin, similar[0][0], similar[0][2],
+                )
+                return job
         # Создаём новую карточку Car с минимальным набором полей.
         # Статус FLOATING — чтобы потом юзер привязал контейнер вручную.
         year = _safe_int(data.get('year'))
@@ -167,11 +230,17 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
         car.title_notes = car.title_notes[:200]
     car.save(update_fields=['title_scan', 'has_title', 'title_notes'])
 
+    # Если был флаг "подозрение VIN" — после успешного apply убираем,
+    # чтобы не путал в админке.
+    if data.pop('_vin_mismatch', None) or data.pop('_skip_vin_check', None):
+        job.extracted_data = data
+
     job.linked_car = car
     job.created_new_car = created_new
     job.status = ScanProcessingJob.STATUS_APPLIED
     job.applied_at = timezone.now()
     job.applied_by = applied_by
+    job.error_message = ''
     job.applied_changes = {
         'car_id': car.id,
         'car_vin': car.vin,
@@ -183,6 +252,7 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
     job.save(update_fields=[
         'linked_car', 'created_new_car', 'status',
         'applied_at', 'applied_by', 'applied_changes',
+        'extracted_data', 'error_message',
     ])
     logger.info("Applied TITLE job #%s to Car #%s (VIN=%s, new=%s)",
                 job.pk, car.id, car.vin, created_new)
