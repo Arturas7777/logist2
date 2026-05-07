@@ -2,8 +2,8 @@
 {% load static %}
 
 {% block field_sets %}
-  {% if original and original.extracted_data._vin_mismatch %}
-    {% with mismatch=original.extracted_data._vin_mismatch %}
+  {% if original and original.extracted_data.vin_mismatch_review %}
+    {% with mismatch=original.extracted_data.vin_mismatch_review %}
       <div style="background:#fff3cd;border:1px solid #ffc107;
                   padding:16px;border-radius:6px;margin-bottom:18px;">
         <div style="font-weight:bold;color:#664d03;font-size:15px;
