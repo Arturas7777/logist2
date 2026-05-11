@@ -39,4 +39,11 @@ app.conf.beat_schedule = {
         # меньше запусков и риск 429 от Gmail.
         'schedule': crontab(minute='*/2'),
     },
+    'check-business-rules-daily': {
+        # Аудит 3 бизнес-правил (FACT/AV/PARDP). При превышении baseline
+        # логируется warning → Sentry создаёт issue. См. core/tasks.py
+        # → check_business_rules и docs/accounting_session_handoff.md.
+        'task': 'core.tasks.check_business_rules',
+        'schedule': crontab(hour=8, minute=15),
+    },
 }

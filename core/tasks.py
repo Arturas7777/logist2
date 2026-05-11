@@ -303,6 +303,8 @@ def sync_sitepro_invoices(self):
                 result['errors'].append(f'push {inv.number}: {str(e)[:100]}')
 
     try:
+        from django.db import transaction as db_transaction
+
         sp_sales = svc.list_all_sales()
         sp_real_by_id = {str(s['id']): s for s in sp_sales if s.get('isSale')}
 
@@ -318,12 +320,17 @@ def sync_sitepro_invoices(self):
             sp_balance = Decimal(str(sp_sale.get('currencyBalance', 0) or 0))
             sp_paid = max(sp_amount - sp_balance, Decimal('0'))
 
-            inv = sync_obj.invoice
-            if abs(inv.paid_amount - sp_paid) > Decimal('0.01'):
-                inv.paid_amount = sp_paid
-                inv.update_status()
-                inv.save(update_fields=['paid_amount', 'status', 'updated_at'])
-                result['updated_payments'] += 1
+            # Перечитываем инвойс с row-level lock внутри короткой транзакции:
+            # между чтением paid_amount и сохранением могут проскочить сигналы
+            # post_save Transaction → recalculate_paid_amount (если в этот
+            # момент кто-то регистрирует платёж параллельно).
+            with db_transaction.atomic():
+                inv = NewInvoice.objects.select_for_update().get(pk=sync_obj.invoice_id)
+                if abs(inv.paid_amount - sp_paid) > Decimal('0.01'):
+                    inv.paid_amount = sp_paid
+                    inv.update_status()
+                    inv.save(update_fields=['paid_amount', 'status', 'updated_at'])
+                    result['updated_payments'] += 1
 
     except Exception as e:
         result['errors'].append(f'pull: {str(e)[:200]}')
@@ -633,3 +640,118 @@ def process_scan_job(self, job_id):
         job.status = ScanProcessingJob.STATUS_NEEDS_REVIEW
     job.save(update_fields=['extracted_data', 'processed_at', 'status', 'error_message'])
     return {'ok': True, 'job_id': job.id, 'status': job.status}
+
+
+@shared_task(bind=True, max_retries=1, default_retry_delay=600, time_limit=180)
+def check_business_rules(self):
+    """
+    Проверяет соблюдение трёх бизнес-правил учёта (см.
+    `scripts/debug/_business_rules_audit.py` и
+    `docs/accounting_session_handoff.md`):
+
+    1. FACT (INVOICE_FACT, INCOMING) — должен иметь Transaction(PAYMENT,
+       COMPLETED) + attachment.
+    2. AV (PROFORMA, OUTGOING) — НЕ должно быть транзакций.
+    3. PARDP (INVOICE, OUTGOING) — должен иметь Transaction(PAYMENT,
+       COMPLETED) на сумму ≥ total + attachment.
+
+    Запускается ежедневно через celery beat. Возвращает счётчики
+    нарушений и id первых 30 объектов в каждой категории. Лог-уровень:
+    INFO если нарушений «как обычно», WARNING если их стало больше
+    baseline'а (Sentry поднимет issue).
+
+    `direction` — property, поэтому итерируем в Python (как и в исходном
+    audit-скрипте).
+    """
+    from decimal import Decimal
+
+    from core.models_billing import NewInvoice
+
+    BASELINE = {
+        # baseline = «известные нарушения, оставленные сознательно» на
+        # 2026-04-21. Сверх этого — повод алертить.
+        'fact_no_tx': 1,
+        'fact_no_file': 41,
+        'av_with_tx': 1,
+        'pardp_no_tx': 6,
+        'pardp_tx_mismatch': 2,
+        'pardp_no_file': 0,
+    }
+
+    def _has_file(inv):
+        if not inv.attachment:
+            return False
+        try:
+            from pathlib import Path
+            p = Path(inv.attachment.path)
+            return p.exists() and p.stat().st_size > 0
+        except (ValueError, NotImplementedError):
+            return True  # remote storage — считаем что файл есть
+
+    violations: dict[str, list[int]] = {k: [] for k in BASELINE}
+
+    fact_qs = (
+        NewInvoice.objects.filter(document_type='INVOICE_FACT')
+        .prefetch_related('transactions')
+    )
+    for inv in fact_qs:
+        if inv.direction != 'INCOMING':
+            continue
+        txs = [t for t in inv.transactions.all() if t.type == 'PAYMENT' and t.status == 'COMPLETED']
+        if not txs:
+            violations['fact_no_tx'].append(inv.id)
+        if not _has_file(inv):
+            violations['fact_no_file'].append(inv.id)
+
+    av_qs = (
+        NewInvoice.objects.filter(document_type='PROFORMA')
+        .prefetch_related('transactions')
+    )
+    for inv in av_qs:
+        if inv.direction != 'OUTGOING':
+            continue
+        if inv.transactions.exists():
+            violations['av_with_tx'].append(inv.id)
+
+    pardp_qs = (
+        NewInvoice.objects.filter(document_type='INVOICE')
+        .prefetch_related('transactions')
+    )
+    for inv in pardp_qs:
+        if inv.direction != 'OUTGOING':
+            continue
+        txs_completed = [
+            t for t in inv.transactions.all()
+            if t.type == 'PAYMENT' and t.status == 'COMPLETED'
+        ]
+        if not txs_completed:
+            violations['pardp_no_tx'].append(inv.id)
+        else:
+            paid = sum((t.amount for t in txs_completed), Decimal('0'))
+            if abs(paid - inv.total) > Decimal('0.01') and inv.status != 'PAID':
+                violations['pardp_tx_mismatch'].append(inv.id)
+        if not _has_file(inv):
+            violations['pardp_no_file'].append(inv.id)
+
+    counts = {k: len(v) for k, v in violations.items()}
+    overflow = {k: counts[k] for k in BASELINE if counts[k] > BASELINE[k]}
+
+    msg = (
+        '[check_business_rules] fact_no_tx=%(fact_no_tx)d '
+        'fact_no_file=%(fact_no_file)d av_with_tx=%(av_with_tx)d '
+        'pardp_no_tx=%(pardp_no_tx)d pardp_tx_mismatch=%(pardp_tx_mismatch)d '
+        'pardp_no_file=%(pardp_no_file)d' % counts
+    )
+    if overflow:
+        logger.warning('%s — над baseline: %s', msg, overflow)
+    else:
+        logger.info('%s — без новых нарушений', msg)
+
+    return {
+        'counts': counts,
+        'baseline': BASELINE,
+        'overflow': overflow,
+        # сохраняем первые 30 id, чтобы dashboards / Sentry могли
+        # показывать конкретные инвойсы.
+        'sample_ids': {k: v[:30] for k, v in violations.items()},
+    }
