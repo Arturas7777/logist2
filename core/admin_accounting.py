@@ -32,6 +32,7 @@ class SiteProConnectionAdmin(admin.ModelAdmin):
     )
 
     list_filter = ('is_active',)
+    list_select_related = ('company',)
 
     fieldsets = (
         ('Основные настройки', {
@@ -256,6 +257,7 @@ class SiteProInvoiceSyncAdmin(admin.ModelAdmin):
     )
 
     list_filter = ('sync_status',)
+    list_select_related = ('invoice', 'connection')
     search_fields = ('invoice__number', 'external_id', 'external_number')
     readonly_fields = (
         'connection', 'invoice', 'external_id', 'external_number',

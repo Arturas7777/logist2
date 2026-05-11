@@ -735,6 +735,12 @@ class Container(models.Model):
             models.Index(fields=['line']),
             models.Index(fields=['eta']),
             models.Index(fields=['unload_date']),
+            # Celery send_planned_notifications_task фильтрует контейнеры
+            # по planned_unload_date с горизонтом 3 дня, без индекса даёт
+            # full scan по всей таблице.
+            models.Index(fields=['planned_unload_date']),
+            # photo sync wait-window: unloaded_status_at >= now - N days.
+            models.Index(fields=['unloaded_status_at']),
         ]
         constraints = [
             models.CheckConstraint(

@@ -39,6 +39,7 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
         'created_by', 'created_at',
     )
     list_filter = ('scan_type', 'status', 'created_at')
+    list_select_related = ('linked_car', 'linked_container', 'created_by')
     search_fields = (
         'extracted_data__container_number',
         'extracted_data__booking_number',

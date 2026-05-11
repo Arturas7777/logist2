@@ -1560,6 +1560,15 @@ class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
     list_per_page = 50
     show_full_result_count = False
 
+    # sender_display / recipient_display читают obj.sender / obj.recipient,
+    # которые перебирают from_*/to_* FK по 5 моделям; invoice_link и
+    # trx_category_display тоже тянут FK. Без list_select_related — N+1.
+    list_select_related = (
+        'from_client', 'from_warehouse', 'from_line', 'from_carrier', 'from_company',
+        'to_client', 'to_warehouse', 'to_line', 'to_carrier', 'to_company',
+        'invoice', 'category',
+    )
+
     actions = ['export_selected_as_csv']
     csv_export_filename_prefix = 'transactions'
     csv_export_fields = [
@@ -1832,6 +1841,7 @@ class PersonalCardAdmin(admin.ModelAdmin):
 class PersonalTransferAdmin(admin.ModelAdmin):
     list_display = ('date', 'transfer_type', 'from_card', 'to_card', 'amount', 'description_short', 'category')
     list_filter = ('transfer_type', 'from_card', 'to_card')
+    list_select_related = ('from_card', 'to_card', 'category')
     search_fields = ('description',)
     ordering = ('-date',)
     raw_id_fields = ('linked_transaction',)

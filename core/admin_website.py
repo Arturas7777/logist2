@@ -78,6 +78,7 @@ class NewsPostAdmin(admin.ModelAdmin):
     """Управление новостями"""
     list_display = ['title', 'author', 'published', 'published_at', 'views']
     list_filter = ['published', 'published_at', 'author']
+    list_select_related = ('author',)
     search_fields = ['title', 'content', 'excerpt']
     readonly_fields = ['views', 'created_at', 'updated_at']
     prepopulated_fields = {'slug': ('title',)}
