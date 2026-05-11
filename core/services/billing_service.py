@@ -270,17 +270,28 @@ class BillingService:
         Returns:
             NewInvoice: Обновленный инвойс
         """
-        if invoice.paid_amount > 0:
+        from core.models_billing import NewInvoice
+
+        # Берём row-level lock, чтобы между чтением paid_amount и сохранением
+        # status='CANCELLED' никто не успел зарегистрировать платёж
+        # (например, через auto_reconcile или ручной save из админки).
+        locked_invoice = NewInvoice.objects.select_for_update().get(pk=invoice.pk)
+
+        if locked_invoice.paid_amount > 0:
             raise ValueError("Нельзя отменить инвойс, по которому уже были платежи")
 
-        invoice.status = 'CANCELLED'
+        locked_invoice.status = 'CANCELLED'
         if reason:
-            invoice.notes = f"{invoice.notes}\n\nОТМЕНЕН: {reason}" if invoice.notes else f"ОТМЕНЕН: {reason}"
-        invoice.save()
+            locked_invoice.notes = (
+                f"{locked_invoice.notes}\n\nОТМЕНЕН: {reason}"
+                if locked_invoice.notes else f"ОТМЕНЕН: {reason}"
+            )
+        locked_invoice.save()
 
-        logger.info(f"Invoice {invoice.number} cancelled: {reason}")
+        logger.info(f"Invoice {locked_invoice.number} cancelled: {reason}")
 
-        return invoice
+        # Возвращаем тот же объект — модель пользователя теперь устарела.
+        return locked_invoice
 
     # ========================================================================
     # РАБОТА С ПЛАТЕЖАМИ
@@ -420,21 +431,27 @@ class BillingService:
         """
         from core.models_billing import Transaction
 
-        if original_transaction.type == 'REFUND':
+        # Захватываем row-level lock на исходную транзакцию, чтобы между
+        # подсчётом already_refunded и созданием новой REFUND-транзакции
+        # никто не успел оформить параллельный возврат на ту же сумму
+        # (классический double-refund race condition).
+        locked_original = Transaction.objects.select_for_update().get(pk=original_transaction.pk)
+
+        if locked_original.type == 'REFUND':
             raise ValueError("Нельзя сделать возврат возврата")
 
-        refund_amount = cls.quantize(amount) if amount else original_transaction.amount
+        refund_amount = cls.quantize(amount) if amount else locked_original.amount
 
-        if refund_amount <= 0 or refund_amount > original_transaction.amount:
+        if refund_amount <= 0 or refund_amount > locked_original.amount:
             raise ValueError("Некорректная сумма возврата")
 
         already_refunded = Transaction.objects.filter(
             type='REFUND',
             status='COMPLETED',
-            description__contains=original_transaction.number,
+            description__contains=locked_original.number,
         ).aggregate(total=models.Sum('amount'))['total'] or Decimal('0.00')
 
-        max_refundable = original_transaction.amount - already_refunded
+        max_refundable = locked_original.amount - already_refunded
         if refund_amount > max_refundable:
             raise ValueError(
                 f"Сумма возврата ({refund_amount}) превышает доступный остаток "
@@ -444,17 +461,16 @@ class BillingService:
         # Создаем транзакцию возврата (меняем отправителя и получателя местами)
         refund_trx = Transaction(
             type='REFUND',
-            method=original_transaction.method,
-            invoice=original_transaction.invoice,
+            method=locked_original.method,
+            invoice=locked_original.invoice,
             amount=refund_amount,
-            description=f"Возврат по транзакции {original_transaction.number}. {reason}",
+            description=f"Возврат по транзакции {locked_original.number}. {reason}",
             created_by=created_by,
             status='COMPLETED'
         )
 
-        # Меняем направление
-        sender = original_transaction.sender
-        recipient = original_transaction.recipient
+        sender = locked_original.sender
+        recipient = locked_original.recipient
 
         sender_type = sender.__class__.__name__ if sender else None
         recipient_type = recipient.__class__.__name__ if recipient else None
@@ -467,7 +483,7 @@ class BillingService:
 
         refund_trx.save()
 
-        logger.info(f"Created refund transaction {refund_trx.number}: {refund_amount} for transaction {original_transaction.number}")
+        logger.info(f"Created refund transaction {refund_trx.number}: {refund_amount} for transaction {locked_original.number}")
 
         # Балансы и paid_amount пересчитываются автоматически сигналом post_save Transaction
 

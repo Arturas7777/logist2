@@ -255,12 +255,12 @@
         <!-- Действия -->
         <div class="actions-section">
             <h3>Действия</h3>
-            <a href="{% url 'admin:core_invoice_change' original.pk %}" class="btn btn-primary">Редактировать</a>
-            <a href="{% url 'admin:core_invoice_changelist' %}" class="btn btn-success">Вернуться к списку</a>
+            <a href="{% url 'admin:core_newinvoice_change' original.pk %}" class="btn btn-primary">Редактировать</a>
+            <a href="{% url 'admin:core_newinvoice_changelist' %}" class="btn btn-success">Вернуться к списку</a>
             {% if not original.paid %}
                 <a href="#" class="btn btn-warning" onclick="alert('Функция оплаты будет добавлена позже')">Отметить как оплаченный</a>
             {% endif %}
-            <a href="#" class="btn btn-danger" onclick="if(confirm('Вы уверены, что хотите удалить этот инвойс?')) { window.location.href='{% url 'admin:core_invoice_delete' original.pk %}'; }">Удалить</a>
+            <a href="#" class="btn btn-danger" onclick="if(confirm('Вы уверены, что хотите удалить этот инвойс?')) { window.location.href='{% url 'admin:core_newinvoice_delete' original.pk %}'; }">Удалить</a>
         </div>
     </div>
 {% endblock %}

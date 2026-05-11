@@ -10,7 +10,7 @@ import logging
 import os
 from collections import defaultdict
 from datetime import timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.core.cache import cache
 from django.db.models import Count, Sum
@@ -127,10 +127,19 @@ class ExpenseAnalyticsService:
                 if not name:
                     continue
                 key = name.lower()
+                # qty в receipt_data приходит из JSON как int/float (например 2.5 кг);
+                # price хранится как Decimal — без приведения qty к Decimal Python
+                # ругается TypeError на price * qty.
+                try:
+                    qty = Decimal(str(item.get('qty', 1)))
+                except (InvalidOperation, ValueError, TypeError):
+                    qty = Decimal('1')
+                try:
+                    price = Decimal(str(item.get('price', 0)))
+                except (InvalidOperation, ValueError, TypeError):
+                    price = Decimal('0')
                 items_agg[key]['name'] = name
-                items_agg[key]['qty'] += item.get('qty', 1)
-                price = Decimal(str(item.get('price', 0)))
-                qty = item.get('qty', 1)
+                items_agg[key]['qty'] += qty
                 items_agg[key]['total'] += price * qty
                 items_agg[key]['count'] += 1
 
@@ -138,7 +147,7 @@ class ExpenseAnalyticsService:
         return [
             {
                 'name': it['name'],
-                'qty': it['qty'],
+                'qty': float(it['qty']),
                 'total': float(it['total']),
                 'count': it['count'],
             }
