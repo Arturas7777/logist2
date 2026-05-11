@@ -1344,12 +1344,27 @@ class AutoTransportAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         from django.db.models import Count, Q
 
+        from django.db.models import Prefetch
+        from core.models_billing import NewInvoice
+
         qs = super().get_queryset(request)
-        # Применяем фильтр только для changelist (флаг ставится в get_changelist_instance)
         if getattr(self, '_exclude_delivered', False):
             qs = qs.exclude(status='DELIVERED')
             self._exclude_delivered = False
-        qs = qs.annotate(
+        # FK в list_display (carrier, truck, driver) + cars_count_display
+        # вытягивает self.cars.count(); actions_display перебирает
+        # NewInvoice.objects.filter(auto_transport=...) на каждой строке.
+        # Делаем JOIN'ы и prefetch заранее, чтобы убрать N+1.
+        qs = qs.select_related('carrier', 'truck', 'driver').prefetch_related(
+            Prefetch(
+                'invoices',
+                queryset=NewInvoice.objects.exclude(status='CANCELLED').only(
+                    'id', 'status', 'auto_transport_id',
+                ),
+                to_attr='_active_invoices',
+            ),
+        ).annotate(
+            _cars_count=Count('cars', distinct=True),
             _emails_unread=Count(
                 'cars__email_links__email',
                 filter=Q(cars__email_links__is_read=False),
@@ -1530,7 +1545,11 @@ class AutoTransportAdmin(admin.ModelAdmin):
 
     def cars_count_display(self, obj):
         """Car count"""
-        count = obj.cars_count
+        # Используем аннотацию из get_queryset (избегаем COUNT-запроса
+        # на каждую строку списка); fallback к property для change-form.
+        count = getattr(obj, '_cars_count', None)
+        if count is None:
+            count = obj.cars_count
         return format_html(
             '<span style="font-weight:bold;">{} авто</span>',
             count
@@ -1583,9 +1602,19 @@ class AutoTransportAdmin(admin.ModelAdmin):
         # Кнопка "Инвойсы" с цветовой индикацией
         if obj.id:
             invoice_url = reverse('admin:core_newinvoice_changelist') + f'?auto_transport__id__exact={obj.id}'
-            invoices = NewInvoice.objects.filter(auto_transport=obj).exclude(status='CANCELLED')
+            # Используем prefetched список из get_queryset (to_attr='_active_invoices');
+            # fallback на запрос — только если страница вызвана вне changelist.
+            prefetched = getattr(obj, '_active_invoices', None)
+            if prefetched is None:
+                statuses = list(
+                    NewInvoice.objects.filter(auto_transport=obj)
+                    .exclude(status='CANCELLED')
+                    .values_list('status', flat=True)
+                )
+            else:
+                statuses = [inv.status for inv in prefetched]
 
-            if not invoices.exists():
+            if not statuses:
                 # Нет инвойсов — серая
                 html.append(format_html(
                     '<a class="button" href="{}" '
@@ -1594,8 +1623,6 @@ class AutoTransportAdmin(admin.ModelAdmin):
                     invoice_url
                 ))
             else:
-                # Собираем статусы для мульти-цвета
-                statuses = list(invoices.values_list('status', flat=True))
                 segments = self._get_invoice_color_segments(statuses)
 
                 if len(segments) == 1:

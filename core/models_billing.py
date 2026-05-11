@@ -1536,6 +1536,10 @@ class Transaction(models.Model):
             models.Index(fields=['from_company', 'date']),
             models.Index(fields=['to_company', 'date']),
             models.Index(fields=['status', 'date']),
+            # method активно используется в фильтрах админки и в аналитике
+            # (Cash flow, expense_analytics) — без индекса даёт seq scan.
+            models.Index(fields=['method', 'date']),
+            models.Index(fields=['type', 'method', 'status']),
         ]
         constraints = [
             models.CheckConstraint(

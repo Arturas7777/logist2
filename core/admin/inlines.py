@@ -261,6 +261,11 @@ class CarInline(admin.TabularInline):
     readonly_fields = ('total_price',)
     autocomplete_fields = ['client']
 
+    def get_queryset(self, request):
+        # На странице контейнера может быть 20+ машин; без select_related
+        # Django делает по 2 запроса на каждую строку (client, warehouse).
+        return super().get_queryset(request).select_related('client', 'warehouse')
+
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)
         for field in formset.form.base_fields.values():

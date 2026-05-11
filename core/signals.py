@@ -94,10 +94,6 @@ def save_old_container_values(sender, instance, **kwargs):
         logger.info("[PRE_SAVE] Auto-set status to UNLOADED for container %s", instance.number)
 
     update_fields = kwargs.get('update_fields')
-    if update_fields is not None:
-        instance._pre_save_values = None
-        instance._pre_save_notification = None
-        return
 
     if instance.pk:
         try:
@@ -105,6 +101,12 @@ def save_old_container_values(sender, instance, **kwargs):
                 'status', 'unload_date', 'planned_unload_date'
             ).first()
             if old:
+                # При update_fields подгружаем старые значения тоже, иначе
+                # post_save воспринимает повторное сохранение как «первичную
+                # установку даты» и ставит в очередь рассылку уведомлений
+                # ещё раз. Сохранение container.save(update_fields=['status'])
+                # из _update_container_status_if_all_transferred — типичный
+                # путь, где это ломалось.
                 instance._pre_save_values = old
                 instance._pre_save_notification = {
                     'planned_unload_date': old.get('planned_unload_date'),
@@ -112,7 +114,8 @@ def save_old_container_values(sender, instance, **kwargs):
                 }
                 old_status = old.get('status')
                 if (
-                    instance.status == 'UNLOADED'
+                    update_fields is None
+                    and instance.status == 'UNLOADED'
                     and old_status != 'UNLOADED'
                     and not instance.unloaded_status_at
                 ):
@@ -242,10 +245,12 @@ def car_post_save(sender, instance, **kwargs):
     created = kwargs.get('created', False)
 
     # --- 1. Invoice regeneration ---
-    if not getattr(instance, '_updating_invoices', False):
-        invoice_ids = list(NewInvoice.objects.filter(cars=instance).values_list('id', flat=True))
-        if invoice_ids:
-            _deferred_invoice_regeneration_for_car(instance.pk, invoice_ids)
+    # Дедупликация уже сделана внутри `_deferred_invoice_regeneration_for_car`
+    # через thread-local множество; ранее здесь была проверка флага
+    # `_updating_invoices`, который нигде не устанавливался — мёртвый код.
+    invoice_ids = list(NewInvoice.objects.filter(cars=instance).values_list('id', flat=True))
+    if invoice_ids:
+        _deferred_invoice_regeneration_for_car(instance.pk, invoice_ids)
 
     # --- 2. CarService creation (delegates to helper) ---
     _create_car_services_if_needed(instance, created=created, kwargs=kwargs)
@@ -588,7 +593,9 @@ def update_cars_on_warehouse_service_change(sender, instance, **kwargs):
             CarService.objects.filter(service_type='WAREHOUSE', service_id=instance.id).delete()
             if affected_car_ids:
                 cars_to_update = []
-                for car in Car.objects.filter(pk__in=affected_car_ids):
+                # calculate_total_price() читает car.car_services — без prefetch
+                # это N+1 запрос (один SELECT на каждую машину).
+                for car in Car.objects.filter(pk__in=affected_car_ids).prefetch_related('car_services'):
                     car.calculate_total_price()
                     cars_to_update.append(car)
                 if cars_to_update:
@@ -621,7 +628,7 @@ def update_cars_on_line_service_change(sender, instance, **kwargs):
             ).update(custom_price=instance.default_price, markup_amount=default_markup)
             if affected_car_ids:
                 cars_to_update = []
-                for car in Car.objects.filter(id__in=affected_car_ids):
+                for car in Car.objects.filter(id__in=affected_car_ids).prefetch_related('car_services'):
                     car.calculate_total_price()
                     cars_to_update.append(car)
                 if cars_to_update:
@@ -633,7 +640,7 @@ def update_cars_on_line_service_change(sender, instance, **kwargs):
             deleted = CarService.objects.filter(service_type='LINE', service_id=instance.id).delete()
             if deleted[0] > 0:
                 cars_to_update = []
-                for car in Car.objects.filter(id__in=affected_car_ids):
+                for car in Car.objects.filter(id__in=affected_car_ids).prefetch_related('car_services'):
                     car.calculate_total_price()
                     cars_to_update.append(car)
                 if cars_to_update:
@@ -657,7 +664,7 @@ def update_cars_on_carrier_service_change(sender, instance, **kwargs):
             CarService.objects.filter(service_type='CARRIER', service_id=instance.id).delete()
             if affected_car_ids:
                 cars_to_update = []
-                for car in Car.objects.filter(pk__in=affected_car_ids):
+                for car in Car.objects.filter(pk__in=affected_car_ids).prefetch_related('car_services'):
                     car.calculate_total_price()
                     cars_to_update.append(car)
                 if cars_to_update:
@@ -678,7 +685,7 @@ def update_cars_on_company_service_change(sender, instance, **kwargs):
             car_services.delete()
         if affected_car_ids:
             cars_to_update = []
-            for car in Car.objects.filter(id__in=affected_car_ids):
+            for car in Car.objects.filter(id__in=affected_car_ids).prefetch_related('car_services'):
                 car.calculate_total_price()
                 cars_to_update.append(car)
             if cars_to_update:

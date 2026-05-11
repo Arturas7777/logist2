@@ -133,6 +133,7 @@ class BankConnectionAdmin(admin.ModelAdmin):
 class BankAccountAdmin(admin.ModelAdmin):
     list_display = ('name', 'connection', 'currency', 'display_balance', 'state', 'last_updated_at')
     list_filter = ('currency', 'state', 'connection')
+    list_select_related = ('connection',)
     search_fields = ('name', 'external_id')
     readonly_fields = ('connection', 'external_id', 'name', 'currency', 'balance', 'state', 'last_updated_at')
 
