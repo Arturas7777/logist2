@@ -209,7 +209,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
     )
     list_display_links = ('vin_display',)
     list_editable = ('has_title',)
-    list_filter = (MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter, CarHasUnreadEmailsFilter)
+    list_filter = ('is_important', MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter, CarHasUnreadEmailsFilter)
     search_fields = ('vin', 'brand')
     list_per_page = 50
     show_full_result_count = False
@@ -290,9 +290,10 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
     fieldsets = (
         ('Основные данные', {
             'fields': (
-                ('year', 'brand', 'vin', 'vehicle_type', 'weight_kg'),
-                ('client', 'warehouse', 'unload_site', 'status'),
+                ('year', 'brand', 'vin', 'vehicle_type', 'weight_kg', 'status'),
+                ('client', 'warehouse', 'unload_site'),
                 ('has_title', 'title_link_display', 'title_notes'),
+                ('is_important', 'notes'),
                 ('unload_date', 'transfer_date'),
             )
         }),
@@ -334,11 +335,46 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         if 'year' in form.base_fields:
             form.base_fields['year'].label = 'Год'
         if 'has_title' in form.base_fields:
-            form.base_fields['has_title'].label = 'Тайтл получен'
+            form.base_fields['has_title'].label = 'Тайтл'
         if 'title_notes' in form.base_fields:
             form.base_fields['title_notes'].widget.attrs['placeholder'] = 'Примечания к тайтлу...'
         if 'weight_kg' in form.base_fields:
             form.base_fields['weight_kg'].label = 'Масса, кг'
+        if 'notes' in form.base_fields:
+            from django import forms
+            form.base_fields['notes'].widget = forms.Textarea(attrs={
+                'rows': 2,
+                'placeholder': 'Свободные примечания (видны во всплывающей подсказке у красного значка)...',
+                'style': 'width:100%;',
+            })
+            # Лейбл «Примечания:» прячем — поле визуально стоит справа
+            # от чекбокса «Важно», как «Примечания к тайтлу» рядом с «Тайтл»;
+            # отдельная подпись делает столбец визуально шумным.
+            form.base_fields['notes'].label = ''
+        if 'is_important' in form.base_fields:
+            form.base_fields['is_important'].label = 'Важно'
+        # Inline-style на самом input: пусть растягивается на 100% своей
+        # обёртки. Ширины обёрток выставлены в:
+        #   * dashboard_admin.css (rule blocks `.field-year .form-multiline`,
+        #     версия ?v=38 в base_site.html);
+        #   * inline `<style>` блоке шаблона change_form.html через
+        #     селекторы `:has(.field-X)` (на современных браузерах);
+        #   * core/static/js/car_form_layout.js — JS-фолбэк через
+        #     `style.setProperty('flex', ..., 'important')` для совсем
+        #     старых браузеров без `:has()`.
+        widget_styles = {
+            'year':         'width:100% !important;min-width:0 !important;max-width:100% !important;',
+            'brand':        'width:100% !important;min-width:0 !important;max-width:100% !important;',
+            'vin':          'width:100% !important;min-width:0 !important;max-width:100% !important;',
+            'vehicle_type': 'width:100% !important;min-width:0 !important;max-width:100% !important;',
+            'weight_kg':    'width:100% !important;min-width:0 !important;max-width:100% !important;',
+            'status':       'width:100% !important;min-width:0 !important;max-width:100% !important;',
+        }
+        for fname, css in widget_styles.items():
+            if fname in form.base_fields:
+                w = form.base_fields[fname].widget
+                existing = w.attrs.get('style', '')
+                w.attrs['style'] = (existing + ';' + css) if existing else css
         return form
 
     def change_view(self, request, object_id, form_url='', extra_context=None):
@@ -565,6 +601,29 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
                 need_reply,
             )
 
+        # Красный треугольник для авто, помеченных как «Важное».
+        # При наведении показываем полный текст примечаний (data-важно для
+        # длинных текстов: используем кастомный tooltip через JS, см.
+        # change_list.html → блок extrastyle).
+        important_html = ''
+        if obj.is_important:
+            tooltip_text = (obj.notes or '').strip() or 'Авто помечено как важное (примечаний нет)'
+            important_html = format_html(
+                '<span class="cm-important-flag" data-tip="{tip}" '
+                'style="display:inline-flex;align-items:center;justify-content:center;'
+                'width:22px;height:22px;cursor:help;" '
+                'title="{tip_short}">'
+                '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" '
+                'fill="#dc2626" stroke="#7f1d1d" stroke-width="1.5" stroke-linejoin="round">'
+                '<path d="M12 2 L22 20 L2 20 Z"/>'
+                '<line x1="12" y1="9" x2="12" y2="14" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>'
+                '<circle cx="12" cy="17" r="1.2" fill="#fff" stroke="none"/>'
+                '</svg>'
+                '</span>',
+                tip=tooltip_text,
+                tip_short=tooltip_text[:200],
+            )
+
         return format_html(
             '<span style="display:inline-flex;align-items:center;gap:6px;">'
             '<span class="vin-copy-wrap">'
@@ -579,12 +638,14 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             'border-radius:10px;font-size:11px;font-weight:700;min-width:20px;'
             'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">{unread}</span>'
             '{need_reply_html}'
+            '{important_html}'
             '</span>',
             vin=obj.vin,
             unread=unread,
             badge_bg=badge_bg,
             badge_title=badge_title,
             need_reply_html=need_reply_html,
+            important_html=important_html,
         )
     vin_display.short_description = 'VIN'
     vin_display.admin_order_field = 'vin'
@@ -855,8 +916,18 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
     resend_car_unload_notification.short_description = "Повторить уведомление о разгрузке ТС"
 
     class Media:
-        css = {'all': ('css/dashboard_admin.css',)}
-        js = ('js/htmx.min.js', 'js/logist2_htmx.js', 'js/warehouse_address.js')
+        # NB: dashboard_admin.css уже подключается в templates/admin/base_site.html.
+        # Раньше он дублировался здесь и грузился ПОСЛЕ inline <style> в
+        # change_form.html — из-за чего любые наши правки в шаблоне молча
+        # перетирались дефолтным `.form-multiline > div { flex:1 1 0 }`.
+        # Поэтому в Media только JS — CSS приходит из base_site.
+        js = (
+            'js/htmx.min.js', 'js/logist2_htmx.js', 'js/warehouse_address.js',
+            # Раскладка первой строки + рядов «Тайтл / Важно»: inline-style
+            # на обёртках flex-элементов. CSS-каскад в форме ненадёжен
+            # (responsive.css media-queries сжимают поля). См. файл.
+            'js/car_form_layout.js?v=9',
+        )
 
     def save_model(self, request, obj, form, change):
         """Saves model with service field processing (wrapped in transaction)"""

@@ -4,6 +4,190 @@
 {% block extrastyle %}
   {{ block.super }}
   <style>
+    /* ===== Каркас: фото авто обтекается полями формы =====
+       `.cm-car-photo` идёт `float:left; width:380px` — поля справа
+       выстраиваются столбиком вдоль фото. На месте, где фото
+       заканчивается, ряды занимают всю ширину `.cm-form-main`. */
+
+    /* form-multiline разрешаем переносы — если 5 полей не влезают по
+       минимальным ширинам (особенно на узких экранах), пусть лучше
+       уйдут на следующую строку, чем сжимаются ниже читаемого. */
+    .cm-form-main .form-row .form-multiline {
+      flex-wrap: wrap !important;
+    }
+
+    /* ===== Раскладка первого ряда: Год / Марка / VIN / Тип ТС / Масса =====
+       Целимся в КОНКРЕТНЫЕ <input>/<select>: каждый имеет name="X",
+       так специфичность не зависит от того, как Django оборачивает
+       поле в <div>'ах. Дефолт `.fieldBox input { width:100% }` тоже
+       получает min/max от своего родителя, поэтому фиксируем оба. */
+
+    /* ===== Раскладка первого ряда через :has() =====
+       Django оборачивает каждое поле в `<div>` без class. Адресуем
+       обёртку по тому, что у неё ВНУТРИ через `:has(.fieldBox.field-X)`.
+       Используется ТОЛЬКО в Chrome/Firefox/Edge ≥2023; для старых
+       браузеров есть JS-фолбэк в core/static/js/car_form_layout.js. */
+    body.model-car .cm-form-main .form-row.field-year .form-multiline > div:has(.field-year) {
+      flex: 0 0 110px !important; min-width: 110px !important; max-width: 110px !important;
+    }
+    body.model-car .cm-form-main .form-row.field-year .form-multiline > div:has(.field-brand) {
+      flex: 2 1 280px !important; min-width: 280px !important; max-width: 320px !important;
+    }
+    body.model-car .cm-form-main .form-row.field-year .form-multiline > div:has(.field-vin) {
+      flex: 0 0 200px !important; min-width: 200px !important; max-width: 200px !important;
+    }
+    body.model-car .cm-form-main .form-row.field-year .form-multiline > div:has(.field-vehicle_type) {
+      flex: 0 0 140px !important; min-width: 140px !important; max-width: 140px !important;
+    }
+    body.model-car .cm-form-main .form-row.field-year .form-multiline > div:has(.field-weight_kg) {
+      flex: 0 0 130px !important; min-width: 130px !important; max-width: 130px !important;
+    }
+    body.model-car .cm-form-main .form-row.field-year .form-multiline > div:has(.field-status) {
+      flex: 0 0 140px !important; min-width: 140px !important; max-width: 140px !important;
+    }
+    /* Контейнер form-multiline не должен задавать жёсткий внутр.gap.
+       НЕ ставим `width:100%` — flex-контейнер сам должен оставаться
+       BFC и не заезжать на фото-флоат. Иначе фотография авто
+       перестаёт обтекаться полями справа. */
+    body.model-car .cm-form-main .form-row.field-year .form-multiline {
+      display: flex !important; flex-wrap: wrap !important; gap: 12px !important;
+      align-items: flex-end !important;
+    }
+
+    /* ===== Раскладка второго ряда: Клиент / Склад / Адрес / Статус ===== */
+    /* Клиент — как марка: ≤35 знаков, 280…320px. */
+    body.model-car .cm-form-main .form-row.field-client .form-multiline > div:has(.field-client) {
+      flex: 2 1 280px !important; min-width: 280px !important; max-width: 320px !important;
+    }
+    /* Inputs/selects внутри обёрток растягиваются на 100% обёртки */
+    body.model-car .cm-form-main .form-row.field-year input,
+    body.model-car .cm-form-main .form-row.field-year select {
+      width: 100% !important; min-width: 0 !important; max-width: 100% !important;
+      box-sizing: border-box !important;
+    }
+
+    /* ===== Чекбоксы «Тайтл» и «Важно» — единый плашечный стиль =====
+       ВАЖНО про селекторы: Django генерирует
+       `<div class="flex-container fieldBox field-has_title checkbox-row">`
+       (compound на одном элементе) для has_title в multiline-ряду
+       и `<div class="flex-container checkbox-row">` (без field-X)
+       для is_important в single-field ряду. Поэтому стилизуем обоих
+       через `.checkbox-row` внутри своего form-row. */
+    .cm-form-main .form-row.field-has_title .checkbox-row,
+    .cm-form-main .form-row.field-is_important .checkbox-row {
+      background: #f3f4f6 !important;
+      border: 1.5px solid #d1d5db !important;
+      border-radius: 10px !important;
+      padding: 9px 12px !important;
+      gap: 10px !important;
+      cursor: pointer !important;
+      transition: background .15s, border-color .15s !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+      flex-direction: row !important;
+      align-items: center !important;
+    }
+    .cm-form-main .form-row.field-has_title .checkbox-row:hover,
+    .cm-form-main .form-row.field-is_important .checkbox-row:hover {
+      background: #e5e7eb !important;
+    }
+    .cm-form-main .form-row.field-has_title .checkbox-row label,
+    .cm-form-main .form-row.field-is_important .checkbox-row label {
+      font-weight: 600 !important;
+      margin: 0 !important;
+      cursor: pointer !important;
+      user-select: none !important;
+      width: auto !important;
+      min-width: 0 !important;
+      flex: 1 1 auto !important;
+    }
+    .cm-form-main .form-row.field-has_title .checkbox-row input[type="checkbox"],
+    .cm-form-main .form-row.field-is_important .checkbox-row input[type="checkbox"] {
+      width: 18px !important;
+      height: 18px !important;
+      cursor: pointer !important;
+      flex: 0 0 auto !important;
+      margin: 0 !important;
+    }
+    .cm-form-main .form-row.field-has_title .checkbox-row input[type="checkbox"] {
+      accent-color: #16a34a;
+    }
+    .cm-form-main .form-row.field-is_important .checkbox-row input[type="checkbox"] {
+      accent-color: #dc2626;
+    }
+    /* «Тайтл» при отметке — зелёная плашка. */
+    .cm-form-main .form-row.field-has_title .checkbox-row:has(input:checked) {
+      background: #dcfce7 !important;
+      border-color: #16a34a !important;
+    }
+    /* «Важно» при отметке — красная плашка с восклицательным знаком. */
+    .cm-form-main .form-row.field-is_important .checkbox-row:has(input:checked) {
+      background: #fee2e2 !important;
+      border-color: #dc2626 !important;
+    }
+    .cm-form-main .form-row.field-is_important .checkbox-row:has(input:checked) label {
+      color: #991b1b !important;
+    }
+    .cm-form-main .form-row.field-is_important .checkbox-row:has(input:checked)::before {
+      content: '⚠';
+      font-size: 1.05rem;
+      color: #dc2626;
+    }
+
+    /* ===== Ряд «Тайтл | (📎) | Примечания к тайтлу» ===== */
+    body.model-car .cm-form-main .form-row.field-has_title .form-multiline {
+      display: flex !important; flex-wrap: wrap !important; gap: 12px !important;
+      align-items: center !important;
+    }
+    body.model-car .cm-form-main .form-row.field-has_title
+      .form-multiline > div:has(.field-has_title) {
+      flex: 0 0 200px !important; min-width: 200px !important; max-width: 200px !important;
+    }
+    body.model-car .cm-form-main .form-row.field-has_title
+      .form-multiline > div:has(.field-title_link_display) {
+      flex: 0 0 auto !important; min-width: 0 !important;
+    }
+    /* Пустую ячейку title_link_display (нет ссылки на скан) скрываем. */
+    body.model-car .cm-form-main .form-row.field-has_title
+      .form-multiline > div:has(.field-title_link_display):not(:has(a)) {
+      display: none !important;
+    }
+    body.model-car .cm-form-main .form-row.field-has_title
+      .form-multiline > div:has(.field-title_notes) {
+      flex: 1 1 220px !important; min-width: 220px !important;
+    }
+    /* Метку «:» в title_link_display прячем. */
+    body.model-car .cm-form-main .field-title_link_display label.inline {
+      display: none !important;
+    }
+
+    /* ===== Ряд «Важно | Примечания» ===== */
+    body.model-car .cm-form-main .form-row.field-is_important.field-notes .form-multiline {
+      display: flex !important; flex-wrap: wrap !important; gap: 12px !important;
+      align-items: center !important;
+    }
+    body.model-car .cm-form-main .form-row.field-is_important.field-notes
+      .form-multiline > div:has(.field-is_important) {
+      flex: 0 0 200px !important; min-width: 200px !important; max-width: 200px !important;
+    }
+    body.model-car .cm-form-main .form-row.field-is_important.field-notes
+      .form-multiline > div:has(.field-notes) {
+      flex: 1 1 220px !important; min-width: 220px !important;
+    }
+    /* Help-текст под чекбоксом is_important прячем — он визуально шумный. */
+    .cm-form-main .form-row.field-is_important .help {
+      display: none !important;
+    }
+    /* Textarea «Примечания» — компактная (≈ как input «Примечания к тайтлу»). */
+    .cm-form-main .form-row.field-is_important.field-notes textarea {
+      width: 100% !important;
+      min-height: 42px !important;
+      box-sizing: border-box !important;
+      font-family: inherit !important;
+      resize: vertical !important;
+      padding: 9px 12px !important;
+    }
+
     /* ===== Modals — Caromoto Design System ===== */
     .cm-modal-overlay {
       display: none;
@@ -196,6 +380,11 @@
     }
   });
   </script>
+
+  {% comment %}
+     Раскладка обёрток flex-элементов формы — в core/static/js/car_form_layout.js
+     (подключается через CarAdmin.Media).
+  {% endcomment %}
 
   <div class="cm-form-sidebar-col">
     {% if original %}

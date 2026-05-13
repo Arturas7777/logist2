@@ -2961,24 +2961,66 @@ body.popup .cm-form-grid .submit-row {
     }
 }
 
-/* ===== Car form: row 1 (year, brand, vin, vehicle_type) ===== */
+/* ===== Car form: row 1 (year, brand, vin, vehicle_type, weight_kg, status) =====
+   Требования по ширинам (с учётом padding инпута и нативных
+   кнопок-спиннеров у `<input type="number">`):
+     - год: 110px (4 знака + spinner);
+     - марка: 280…320px (≤35 знаков);
+     - VIN: 200px фикс (≤20 знаков, помещает 17-знач. VIN);
+     - тип ТС: 140px;
+     - масса: 130px (≈8 знаков + spinner);
+     - статус: 140px (selecte с короткими опциями). */
 .cm-form-main .form-row.field-year .form-multiline > div:nth-child(1) {
-    flex: 0 0 100px !important;
-    min-width: 0 !important;
+    flex: 0 0 110px !important;
+    min-width: 110px !important;
+    max-width: 110px !important;
+}
+.cm-form-main .form-row.field-year .form-multiline > div:nth-child(2) {
+    flex: 2 1 280px !important;
+    min-width: 280px !important;
+    max-width: 320px !important;
+}
+.cm-form-main .form-row.field-year .form-multiline > div:nth-child(3) {
+    flex: 0 0 200px !important;
+    min-width: 200px !important;
+    max-width: 200px !important;
 }
 .cm-form-main .form-row.field-year .form-multiline > div:nth-child(4) {
-    flex: 0 0 auto !important;
+    flex: 0 0 140px !important;
+    min-width: 140px !important;
+    max-width: 140px !important;
+}
+.cm-form-main .form-row.field-year .form-multiline > div:nth-child(5) {
+    flex: 0 0 130px !important;
+    min-width: 130px !important;
+    max-width: 130px !important;
+}
+.cm-form-main .form-row.field-year .form-multiline > div:nth-child(6) {
+    flex: 0 0 140px !important;
+    min-width: 140px !important;
+    max-width: 140px !important;
+}
+
+.cm-form-main .fieldBox.field-year input,
+.cm-form-main .fieldBox.field-brand input,
+.cm-form-main .fieldBox.field-vin input,
+.cm-form-main .fieldBox.field-weight_kg input {
+    width: 100% !important;
+    max-width: 100% !important;
     min-width: 0 !important;
 }
-
-.cm-form-main .fieldBox.field-year input {
-    width: 100px !important;
-}
-.cm-form-main .fieldBox.field-vehicle_type select {
-    width: auto !important;
+.cm-form-main .fieldBox.field-vehicle_type select,
+.cm-form-main .fieldBox.field-status select {
+    width: 100% !important;
 }
 
-/* ===== Car form: row 2 (client, warehouse, unload_site, status) ===== */
+/* ===== Car form: row 2 (client, warehouse, unload_site) =====
+   Клиент — аналогично марке: ≤35 знаков. */
+.cm-form-main .form-row.field-client .form-multiline > div:nth-child(1) {
+    flex: 2 1 280px !important;
+    min-width: 280px !important;
+    max-width: 320px !important;
+}
 .cm-form-main .form-row.field-client .form-multiline > div:nth-child(2) {
     flex: 0 0 auto !important;
     min-width: 0 !important;
@@ -2987,12 +3029,7 @@ body.popup .cm-form-grid .submit-row {
     flex: 0 0 auto !important;
     min-width: 0 !important;
 }
-.cm-form-main .form-row.field-client .form-multiline > div:nth-child(4) {
-    flex: 0 0 auto !important;
-    min-width: 0 !important;
-}
 
-.cm-form-main .fieldBox.field-status select,
 .cm-form-main .fieldBox.field-warehouse select,
 .cm-form-main .fieldBox.field-unload_site select {
     width: auto !important;

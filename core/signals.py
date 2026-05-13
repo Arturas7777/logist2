@@ -192,17 +192,18 @@ def update_related_on_container_save(sender, instance, created, **kwargs):
 def save_old_car_values(sender, instance, **kwargs):
     update_fields = kwargs.get('update_fields')
     if update_fields is not None:
-        tracked = {'warehouse_id', 'line_id', 'carrier_id', 'unload_date', 'container_id', 'status'}
+        tracked = {'warehouse_id', 'line_id', 'carrier_id', 'unload_date', 'container_id', 'status', 'is_important'}
         if not tracked.intersection(update_fields):
             instance._pre_save_contractors = None
             instance._pre_save_car_notification = None
             instance._pre_save_status = None
+            instance._pre_save_is_important = None
             return
 
     if instance.pk:
         try:
             old = Car.objects.filter(pk=instance.pk).values(
-                'warehouse_id', 'line_id', 'carrier_id', 'unload_date', 'container_id', 'status'
+                'warehouse_id', 'line_id', 'carrier_id', 'unload_date', 'container_id', 'status', 'is_important'
             ).first()
             if old:
                 instance._pre_save_contractors = {
@@ -215,18 +216,22 @@ def save_old_car_values(sender, instance, **kwargs):
                     'container_id': old['container_id'],
                 }
                 instance._pre_save_status = old['status']
+                instance._pre_save_is_important = old['is_important']
             else:
                 instance._pre_save_contractors = None
                 instance._pre_save_car_notification = None
                 instance._pre_save_status = None
+                instance._pre_save_is_important = None
         except Exception:
             instance._pre_save_contractors = None
             instance._pre_save_car_notification = None
             instance._pre_save_status = None
+            instance._pre_save_is_important = None
     else:
         instance._pre_save_contractors = None
         instance._pre_save_car_notification = None
         instance._pre_save_status = None
+        instance._pre_save_is_important = None
 
 
 @receiver(post_save, sender=Car)
@@ -263,6 +268,64 @@ def car_post_save(sender, instance, **kwargs):
     instance._pre_save_status = None
     if instance.status == 'TRANSFERRED' and old_status != 'TRANSFERRED' and instance.container_id:
         _update_container_status_if_all_transferred(instance.container_id)
+
+    # --- 5. Авто-создание/закрытие "Дела" по флагу is_important ---
+    _handle_car_important_transition(instance, created=created)
+
+
+def _handle_car_important_transition(car, *, created: bool):
+    """Синхронизирует Task с состоянием Car.is_important.
+
+    * False → True: создаём авто-дело (если ещё не открыто).
+    * True → False: закрываем все открытые авто-дела этой машины.
+
+    Старое значение берём из `_pre_save_is_important`, выставленного в
+    pre_save; для новых записей считаем "старое" = False.
+    """
+    from .models import Task
+
+    old_is_important = getattr(car, '_pre_save_is_important', None)
+    car._pre_save_is_important = None
+    if created:
+        old_is_important = False
+
+    new_is_important = bool(car.is_important)
+
+    # Нет перехода — ничего не делаем.
+    if old_is_important == new_is_important:
+        return
+
+    if new_is_important:
+        # False → True: открываем дело, если ещё нет открытого авто-дела.
+        existing = Task.objects.filter(
+            car=car, auto_created=True, is_completed=False
+        ).first()
+        if existing:
+            return
+        title = f"Важное: {car.brand} ({car.vin})"
+        description = car.notes or ''
+        Task.objects.create(
+            car=car,
+            title=title[:200],
+            description=description,
+            auto_created=True,
+            priority='HIGH',
+        )
+        logger.info("Task auto-created for car %s (is_important set)", car.vin)
+    else:
+        # True → False: пользователь снял галочку = "действие выполнено".
+        open_tasks = Task.objects.filter(
+            car=car, auto_created=True, is_completed=False
+        )
+        now = timezone.now()
+        updated = open_tasks.update(
+            is_completed=True,
+            completed_at=now,
+            updated_at=now,
+        )
+        if updated:
+            logger.info("Auto-completed %d task(s) for car %s (is_important unset)",
+                        updated, car.vin)
 
 
 def _deferred_invoice_regeneration_for_car(car_id, invoice_ids):
@@ -1183,7 +1246,68 @@ def _update_container_status_if_all_transferred(container_id):
 
 
 def autotransport_cars_changed_handler(sender, instance, action, **kwargs):
-    if action in ('post_add', 'post_remove', 'post_clear'):
+    # Блокируем добавление авто, помеченных как «Важное»: пока галочка
+    # стоит, машину нельзя включать в автовоз. Снятие галочки = ручное
+    # завершение связанного «Дела» (см. _handle_car_important_transition).
+    #
+    # ВАЖНО про admin save flow: Django ModelForm при сохранении m2m делает
+    # `instance.cars = [<id>, ...]` (Manager.set), а это последовательность
+    # pre_clear → post_clear → pre_add → post_add со всеми текущими ID.
+    # Если просто блокировать pre_add по is_important, существующие
+    # автовозы с авто, которые УЖЕ были добавлены до выставления галочки,
+    # перестанут сохраняться. Поэтому в pre_clear запоминаем старый
+    # набор cars на инстансе, а в pre_add сравниваем и блокируем
+    # ТОЛЬКО реально новые добавления.
+    if action == 'pre_clear':
+        try:
+            instance._existing_cars_before_clear = set(
+                instance.cars.values_list('pk', flat=True)
+            )
+        except Exception:
+            instance._existing_cars_before_clear = set()
+        return
+
+    if action == 'pre_add':
+        pk_set = kwargs.get('pk_set') or set()
+        if not pk_set:
+            return
+        existing = getattr(instance, '_existing_cars_before_clear', None)
+        # Если pre_clear не было (точечный add()) — все pk_set считаются новыми.
+        if existing is None:
+            # При точечном add() старого набора в нашем атрибуте нет,
+            # но БД уже не отражает добавляемые pk (post_add ещё впереди),
+            # поэтому "уже привязанные" = текущий cars.
+            try:
+                existing = set(instance.cars.values_list('pk', flat=True))
+            except Exception:
+                existing = set()
+        new_ids = pk_set - existing
+        if not new_ids:
+            return
+        blocked = list(
+            Car.objects.filter(pk__in=new_ids, is_important=True)
+            .values_list('vin', flat=True)
+        )
+        if blocked:
+            from django.core.exceptions import ValidationError
+            raise ValidationError(
+                "Нельзя добавить в автовоз авто с пометкой «Важное»: "
+                + ", ".join(blocked)
+                + ". Сначала снимите галочку «Важное» в карточке авто."
+            )
+        return
+
+    if action == 'post_clear':
+        # Сохраняем атрибут до pre_add — не очищаем здесь.
+        return
+
+    if action in ('post_add', 'post_remove'):
+        # Чистим временный атрибут после успешного цикла set().
+        if hasattr(instance, '_existing_cars_before_clear'):
+            try:
+                del instance._existing_cars_before_clear
+            except AttributeError:
+                pass
         if instance.status == 'FORMED':
             _queue_or_run_generate_invoices(instance)
 
@@ -1248,10 +1372,23 @@ def connect_cache_invalidation_signals():
 
 from django.apps import apps
 
-if apps.ready:
-    connect_autotransport_signals()
-    connect_cache_invalidation_signals()
-else:
+# Подключаем m2m-сигналы и cache-invalidation немедленно при импорте
+# signals.py. Раньше блок был обёрнут в `if apps.ready` с фолбэком на
+# post_migrate, и до миграций сигналы не подключались — в т.ч. в обычном
+# рантайме веб-приложения, где post_migrate не срабатывает (Django
+# вызывает signals из CoreConfig.ready(), apps.ready тогда ещё False,
+# а post_migrate стрельнёт только при `manage.py migrate`). В итоге
+# m2m_changed на `AutoTransport.cars.through` фактически отключался.
+# Models уже подгружены к этому моменту (signals импортируется ИЗ ready()
+# после populate apps), поэтому import .models внутри connect_*_signals
+# отрабатывает корректно.
+connect_autotransport_signals()
+connect_cache_invalidation_signals()
+
+# Также оставляем post_migrate-хук на случай, если signals.py будет
+# импортирован до полной загрузки моделей (например, при кастомных
+# скриптах bootstrap).
+if not apps.ready:
     from django.db.models.signals import post_migrate
 
     def setup_autotransport_signals(sender, **kwargs):

@@ -1683,8 +1683,13 @@ class AutoTransportAdmin(admin.ModelAdmin):
         extra_context = extra_context or {}
 
         from core.models import Car
+        # Авто с пометкой «Важное» исключаем из списка доступных для
+        # добавления в автовоз (см. m2m_changed pre_add в core/signals.py
+        # — там аналогичный запрет на уровне БД на случай, если кто-то
+        # обойдёт UI).
         extra_context['cars'] = Car.objects.filter(
-            status__in=['UNLOADED', 'IN_PORT', 'FLOATING']
+            status__in=['UNLOADED', 'IN_PORT', 'FLOATING'],
+            is_important=False,
         ).select_related('client').order_by('-id')[:200]
 
         # If editing existing auto-transport - pass selected IDs
