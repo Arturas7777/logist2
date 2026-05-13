@@ -11,6 +11,52 @@
     }
     .vin-copy-btn:hover { color: var(--cm-purple, #6c5ce7); transform: scale(1.15); }
     .vin-copy-btn.copied { color: var(--cm-green, #10b981); }
+
+    /* Красный «важное» треугольник + tooltip с полным текстом примечаний.
+       Показываем data-tip как абсолютно позиционированный тултип, чтобы
+       работал многострочный перенос (стандартный title= для этого плох). */
+    .cm-important-flag {
+      position: relative;
+      transition: transform .12s;
+    }
+    .cm-important-flag:hover { transform: scale(1.15); }
+    .cm-important-flag::after {
+      content: attr(data-tip);
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1a1a2e;
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      width: max-content;
+      max-width: 360px;
+      z-index: 1000;
+      box-shadow: 0 4px 16px rgba(0,0,0,.18);
+      pointer-events: none;
+    }
+    .cm-important-flag::before {
+      content: '';
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 2px);
+      left: 50%;
+      transform: translateX(-50%);
+      border: 6px solid transparent;
+      border-top-color: #1a1a2e;
+      z-index: 1000;
+    }
+    .cm-important-flag:hover::after,
+    .cm-important-flag:hover::before { display: block; }
+    /* На последних строках таблицы тултип может выходить за границу —
+       подкручиваем при необходимости через position-adjusting JS, либо
+       включаем смещение вниз через класс .below (опционально). */
   </style>
 {% endblock %}
 

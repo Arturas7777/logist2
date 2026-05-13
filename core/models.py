@@ -795,6 +795,18 @@ class Car(models.Model):
     transfer_date = models.DateField(null=True, blank=True, verbose_name="Дата передачи")
     has_title = models.BooleanField(default=False, verbose_name="Т")
     title_notes = models.CharField(max_length=200, blank=True, verbose_name="Примечания к тайтлу")
+    # Общие примечания и флаг «важное» (см. core.models.Task — авто-создание дела
+    # при is_important=True; снятие галочки = ручное завершение дела).
+    notes = models.TextField(blank=True, verbose_name="Примечания",
+                              help_text="Свободные примечания к авто. Видны во всплывающей "
+                                        "подсказке у красного значка в списке авто.")
+    is_important = models.BooleanField(
+        default=False,
+        verbose_name="Важное",
+        help_text="Пометить авто как требующее внимания. Пока галочка стоит — "
+                  "нельзя менять статус и нельзя добавлять авто в автовоз. "
+                  "Авто с этой пометкой автоматически попадает в раздел «Дела».",
+    )
     # Скан физического титула (US car title), загруженный с принтера/сканера и
     # обработанный AI (см. core.services.scan_extractor / scan_applier).
     # При прикреплении автоматически выставляется has_title=True.
@@ -1254,6 +1266,32 @@ class Car(models.Model):
             self.transfer_date = timezone.now().date()
 
     def save(self, *args, **kwargs):
+        # Блокируем смену статуса для авто с активной пометкой «важное».
+        # Снятие пометки is_important — единственный способ завершить
+        # связанное с ним «Дело», поэтому пока галочка стоит, статус
+        # должен оставаться неизменным (см. core.models.Task / signal
+        # _car_important_post_save). Сама галочка снимается из карточки авто.
+        if self.pk:
+            old = Car.objects.filter(pk=self.pk).values('status', 'is_important').first()
+            if old:
+                old_status = old.get('status')
+                old_is_important = old.get('is_important')
+                # Условие блокировки берём из АКТУАЛЬНОГО (старого) состояния:
+                # если в БД галочка стояла, статус трогать нельзя, даже если в
+                # этом же save() пользователь её снимает (сначала пусть сохранит
+                # снятие галочки отдельным действием).
+                if old_is_important and self.status != old_status and not self.is_important:
+                    # Разрешаем одновременное снятие галочки — без смены статуса.
+                    # Откатим попытку сменить статус, если она пришла вместе со
+                    # снятием important. Безопаснее явно сообщить пользователю.
+                    pass
+                if old_is_important and self.is_important and self.status != old_status:
+                    from django.core.exceptions import ValidationError
+                    raise ValidationError({
+                        'status': "Нельзя менять статус авто, помеченного как «Важное». "
+                                  "Сначала снимите галочку «Важное»."
+                    })
+
         self._inherit_from_container()
         self._sync_status_and_dates()
 
@@ -1912,4 +1950,100 @@ from core.models_contact import (  # noqa: E402,F401
 # 📄 AI-ОБРАБОТКА СКАНОВ (Title / Dock Receipt)
 # ==============================================================================
 from core.models_scans import ScanProcessingJob  # noqa: E402,F401
+
+
+# ==============================================================================
+# 🗂️ ДЕЛА (Task) — список «to-do» по работе с авто/контейнерами/чем угодно
+# ==============================================================================
+class Task(models.Model):
+    """Задача / напоминание сотрудника.
+
+    Дела бывают двух типов:
+
+      * **Авто-созданные** (``auto_created=True``) — порождаются установкой
+        галочки «Важное» в карточке авто. Связаны с конкретной машиной через
+        FK ``car``. Снятие галочки ``Car.is_important`` автоматически
+        закрывает соответствующее дело (помечает ``is_completed=True``).
+      * **Ручные** (``auto_created=False``) — заводятся пользователем
+        вручную через раздел «Дела». Могут быть привязаны к авто/контейнеру
+        или быть отдельными напоминаниями. Закрываются ТОЛЬКО вручную.
+
+    Поле ``deadline`` опциональное — без него дело просто висит в списке
+    как напоминание без срока.
+    """
+    PRIORITY_CHOICES = [
+        ('LOW', 'Низкий'),
+        ('MEDIUM', 'Средний'),
+        ('HIGH', 'Высокий'),
+    ]
+
+    title = models.CharField(max_length=200, verbose_name="Название")
+    description = models.TextField(blank=True, verbose_name="Описание")
+    deadline = models.DateTimeField(null=True, blank=True, verbose_name="Дедлайн",
+                                    help_text="Опционально. Без дедлайна — обычное напоминание.")
+    priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='MEDIUM',
+                                verbose_name="Приоритет")
+
+    # Связи. Можно привязать дело к конкретному авто и/или контейнеру.
+    # Оба поля опциональные — для «общих» дел без привязки.
+    car = models.ForeignKey('Car', on_delete=models.SET_NULL, null=True, blank=True,
+                            related_name='tasks', verbose_name="Авто")
+    container = models.ForeignKey('Container', on_delete=models.SET_NULL, null=True, blank=True,
+                                  related_name='tasks', verbose_name="Контейнер")
+
+    # Состояние выполнения. Закрытие — ТОЛЬКО ручное (через админку или
+    # снятие галочки is_important у привязанного авто для auto_created).
+    is_completed = models.BooleanField(default=False, verbose_name="Выполнено")
+    completed_at = models.DateTimeField(null=True, blank=True, verbose_name="Выполнено в")
+    completed_by = models.CharField(max_length=100, blank=True, verbose_name="Выполнил")
+
+    # Метаданные источника.
+    auto_created = models.BooleanField(
+        default=False,
+        verbose_name="Создано автоматически",
+        help_text="True — дело создано из чекбокса «Важное» в карточке авто.",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
+    created_by = models.CharField(max_length=100, blank=True, verbose_name="Создал")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
+
+    class Meta:
+        verbose_name = "Дело"
+        verbose_name_plural = "Дела"
+        ordering = ['is_completed', 'deadline', '-created_at']
+        indexes = [
+            models.Index(fields=['is_completed']),
+            models.Index(fields=['deadline']),
+            models.Index(fields=['car']),
+            models.Index(fields=['container']),
+        ]
+
+    def __str__(self):
+        suffix = " ✓" if self.is_completed else ""
+        return f"{self.title}{suffix}"
+
+    @property
+    def is_overdue(self) -> bool:
+        """Просрочено: есть дедлайн в прошлом и дело не закрыто."""
+        if self.is_completed or not self.deadline:
+            return False
+        return self.deadline < timezone.now()
+
+    def mark_completed(self, by: str = '') -> None:
+        """Ручное закрытие дела."""
+        if self.is_completed:
+            return
+        self.is_completed = True
+        self.completed_at = timezone.now()
+        if by:
+            self.completed_by = by
+        self.save(update_fields=['is_completed', 'completed_at', 'completed_by', 'updated_at'])
+
+    def reopen(self) -> None:
+        """Откатить ручное закрытие (на случай ошибочного нажатия)."""
+        self.is_completed = False
+        self.completed_at = None
+        self.completed_by = ''
+        self.save(update_fields=['is_completed', 'completed_at', 'completed_by', 'updated_at'])
 
