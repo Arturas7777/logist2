@@ -39,6 +39,12 @@ client_secret*.json
 token.json
 secrets/
 
+# Revolut Business API — приватный ключ + публичный сертификат для JWT.
+# Лежат только на сервере в /var/www/.../logist2/certs/. См. docs/CREDENTIALS.md.
+certs/
+*.pem
+*.cer
+
 # Backup files
 *.zip
 *.sql
