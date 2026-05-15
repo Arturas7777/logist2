@@ -12,6 +12,16 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'changeme-in-env')
 
 ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY', '')
 
+# Путь к приватному ключу Revolut Business для подписи JWT-assertion.
+# Используется в management-команде `regenerate_revolut_jwt` и в admin action
+# «Перегенерировать JWT» в BankConnectionAdmin. Дефолт: BASE_DIR/certs/privatecert.pem
+# (на сервере это /var/www/.../logist2/certs/privatecert.pem).
+# См. docs/CREDENTIALS.md → раздел Revolut Business API.
+REVOLUT_PRIVATE_KEY_PATH = os.getenv(
+    'REVOLUT_PRIVATE_KEY_PATH',
+    str(Path(__file__).resolve().parent.parent.parent / 'certs' / 'privatecert.pem'),
+)
+
 DEBUG = str(os.getenv('DEBUG', 'False')).lower() == 'true'
 
 
