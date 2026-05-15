@@ -47,7 +47,7 @@ class BankConnectionAdmin(admin.ModelAdmin):
         'display_jwt_expiry_detail',
     )
     inlines = [BankAccountInline]
-    actions = ['sync_now']
+    actions = ['sync_now', 'regenerate_jwt_action']
 
     fieldsets = (
         ('Основное', {
@@ -199,6 +199,84 @@ class BankConnectionAdmin(admin.ModelAdmin):
 
         if not errors:
             messages.info(request, f'Синхронизация завершена: {total} счетов обновлено')
+
+    @admin.action(description='Перегенерировать JWT (Revolut, +90 дней)')
+    def regenerate_jwt_action(self, request, queryset):
+        """Пересоздаёт JWT-assertion для выбранных Revolut-подключений.
+
+        Использует приватный ключ из `settings.REVOLUT_PRIVATE_KEY_PATH`
+        (по умолчанию `BASE_DIR/certs/privatecert.pem`). После успеха
+        сразу делает тестовый sync_all чтобы убедиться что Revolut
+        принимает новую подпись.
+
+        Эквивалент management-команды `regenerate_revolut_jwt`, но через UI.
+        """
+        from io import StringIO
+        from pathlib import Path
+
+        from django.conf import settings
+        from django.core.management import call_command
+
+        key_path = getattr(settings, 'REVOLUT_PRIVATE_KEY_PATH', None)
+        if not key_path or not Path(key_path).exists():
+            messages.error(
+                request,
+                f'Приватный ключ Revolut не найден: {key_path or "(не задан)"}. '
+                f'Проверьте файл privatecert.pem или переменную REVOLUT_PRIVATE_KEY_PATH в .env.',
+            )
+            return
+
+        revolut_qs = queryset.filter(bank_type='REVOLUT')
+        if not revolut_qs.exists():
+            messages.warning(request, 'Не выбрано ни одного Revolut-подключения.')
+            return
+
+        for conn in revolut_qs:
+            buf = StringIO()
+            try:
+                # --no-sync чтобы action не зависал на сетевом запросе:
+                # отдельно прогоняем sync_all ниже с обработкой ошибок UI-friendly.
+                call_command(
+                    'regenerate_revolut_jwt',
+                    '--private-key', str(key_path),
+                    '--connection-id', str(conn.pk),
+                    '--no-sync',
+                    stdout=buf,
+                )
+                conn.refresh_from_db()
+                days = conn.jwt_days_until_expiry
+                messages.success(
+                    request,
+                    f'{conn}: JWT обновлён, истекает через {days} дн. '
+                    f'({conn.jwt_expires_at.strftime("%Y-%m-%d %H:%M UTC") if conn.jwt_expires_at else "?"}). '
+                    f'Запускаю тестовую синхронизацию…',
+                )
+            except Exception as e:
+                messages.error(
+                    request,
+                    f'{conn}: ошибка регенерации JWT: {e}. '
+                    f'Подробности в логах сервера.',
+                )
+                continue
+
+            # Тестовый sync_all с новым JWT — проверяет что Revolut принимает подпись
+            from .services.revolut_service import RevolutService
+            try:
+                result = RevolutService(conn).sync_all()
+                if result['error']:
+                    messages.error(
+                        request,
+                        f'{conn}: JWT обновлён, но sync вернул ошибку: {result["error"]}. '
+                        f'Проверьте, что приватный ключ соответствует сертификату в Revolut Business.',
+                    )
+                else:
+                    messages.success(
+                        request,
+                        f'{conn}: синхронизация OK ({len(result["accounts"])} счетов, '
+                        f'{len(result["transactions"])} транзакций).',
+                    )
+            except Exception as e:
+                messages.error(request, f'{conn}: ошибка тестового sync: {e}')
 
 
 # ============================================================================
