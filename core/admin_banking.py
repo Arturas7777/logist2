@@ -37,11 +37,15 @@ class BankAccountInline(admin.TabularInline):
 class BankConnectionAdmin(admin.ModelAdmin):
     list_display = (
         'name', 'bank_type', 'company', 'is_active',
-        'display_accounts_count', 'display_last_synced', 'display_status',
+        'display_accounts_count', 'display_last_synced',
+        'display_jwt_expiry', 'display_status',
     )
     list_filter = ('bank_type', 'is_active', 'use_sandbox')
     search_fields = ('name',)
-    readonly_fields = ('created_at', 'updated_at', 'last_synced_at', 'last_error')
+    readonly_fields = (
+        'created_at', 'updated_at', 'last_synced_at', 'last_error',
+        'display_jwt_expiry_detail',
+    )
     inlines = [BankAccountInline]
     actions = ['sync_now']
 
@@ -53,10 +57,13 @@ class BankConnectionAdmin(admin.ModelAdmin):
             'classes': ('collapse',),
             'description': (
                 'Токены хранятся в зашифрованном виде. '
-                'Используйте команду <code>python manage.py setup_revolut</code> для настройки.'
+                'Первоначальная настройка: <code>python manage.py setup_revolut</code>. '
+                'Перегенерация JWT (каждые ~80 дней): '
+                '<code>python manage.py regenerate_revolut_jwt --private-key certs/privatecert.pem</code>.'
             ),
             'fields': ('_client_id', '_refresh_token', '_access_token',
-                       'access_token_expires_at', '_jwt_assertion'),
+                       'access_token_expires_at', '_jwt_assertion',
+                       'display_jwt_expiry_detail'),
         }),
         ('Статус', {
             'fields': ('last_synced_at', 'last_error', 'created_at', 'updated_at'),
@@ -97,6 +104,75 @@ class BankConnectionAdmin(admin.ModelAdmin):
             '<span style="color:#9898b0">Не синхронизировано</span>'
         )
     display_status.short_description = 'Статус'
+
+    def display_jwt_expiry(self, obj):
+        """Колонка списка: цветной бейдж с количеством дней до истечения JWT.
+
+        Только для REVOLUT-подключений (PAYSERA импортируется через site.pro,
+        JWT не использует).
+        """
+        if obj.bank_type != 'REVOLUT':
+            return format_html('<span style="color:#9898b0;">—</span>')
+        days = obj.jwt_days_until_expiry
+        if days is None:
+            return format_html(
+                '<span style="color:#9898b0;" title="JWT не задан или некорректен">нет</span>'
+            )
+        if days < 0:
+            return format_html(
+                '<span style="background:#fee2e2;color:#b91c1c;padding:2px 8px;'
+                'border-radius:10px;font-weight:700;font-size:12px;" '
+                'title="JWT истёк — синхронизация не работает">'
+                'истёк {} дн. назад</span>',
+                -days,
+            )
+        if days <= 14:
+            return format_html(
+                '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;'
+                'border-radius:10px;font-weight:700;font-size:12px;" '
+                'title="Скоро истекает — пересоздайте JWT">'
+                '{} дн.</span>',
+                days,
+            )
+        return format_html(
+            '<span style="background:#dcfce7;color:#166534;padding:2px 8px;'
+            'border-radius:10px;font-size:12px;">{} дн.</span>',
+            days,
+        )
+    display_jwt_expiry.short_description = 'Срок JWT'
+
+    def display_jwt_expiry_detail(self, obj):
+        """Подробный блок на странице редактирования (под полем _jwt_assertion)."""
+        if obj.bank_type != 'REVOLUT':
+            return '—'
+        exp = obj.jwt_expires_at
+        days = obj.jwt_days_until_expiry
+        if exp is None:
+            return format_html(
+                '<span style="color:#6b7280;">JWT не задан или payload не парсится.</span>'
+            )
+        regen_hint = (
+            'Команда для пересоздания (приватный ключ должен лежать на сервере):<br>'
+            '<code>python manage.py regenerate_revolut_jwt '
+            '--private-key certs/privatecert.pem</code>'
+        )
+        if days < 0:
+            color, label = '#b91c1c', f'ИСТЁК {-days} дн. назад'
+        elif days <= 14:
+            color, label = '#92400e', f'истекает через {days} дн.'
+        else:
+            color, label = '#166534', f'осталось {days} дн.'
+        return format_html(
+            '<div style="padding:8px 12px;background:#f9fafb;border-left:3px solid {};'
+            'border-radius:4px;">'
+            '<div style="font-weight:700;color:{};">{}</div>'
+            '<div style="color:#6b7280;font-size:12px;margin-top:4px;">'
+            'Истекает: {}</div>'
+            '<div style="color:#6b7280;font-size:12px;margin-top:8px;">{}</div>'
+            '</div>',
+            color, color, label, exp.strftime('%Y-%m-%d %H:%M UTC'), regen_hint,
+        )
+    display_jwt_expiry_detail.short_description = 'JWT-assertion: срок жизни'
 
     @admin.action(description='Синхронизировать сейчас')
     def sync_now(self, request, queryset):

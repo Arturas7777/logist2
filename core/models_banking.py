@@ -155,6 +155,51 @@ class BankConnection(models.Model):
             return 'https://sandbox-b2b.revolut.com'
         return 'https://b2b.revolut.com'
 
+    @property
+    def jwt_expires_at(self):
+        """Декодирует payload JWT-assertion и возвращает дату истечения (UTC).
+
+        Revolut JWT (client_assertion) подписывается приватным ключом и имеет
+        срок жизни, заданный при генерации (по умолчанию 90 дней — см.
+        `setup_revolut.py::_generate_jwt`). После истечения refresh_token-flow
+        возвращает 401 Unauthorized — синхронизация падает.
+
+        Возвращает `None`, если JWT отсутствует, не парсится или не содержит `exp`.
+        """
+        if self.bank_type != 'REVOLUT':
+            return None
+        jwt = self.jwt_assertion
+        if not jwt or jwt.count('.') != 2:
+            return None
+        try:
+            import base64
+            import json
+            from datetime import datetime
+            from datetime import timezone as dt_tz
+
+            payload_b64 = jwt.split('.')[1]
+            padded = payload_b64 + '=' * (-len(payload_b64) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(padded))
+            exp = payload.get('exp')
+            if exp is None:
+                return None
+            return datetime.fromtimestamp(int(exp), tz=dt_tz.utc)
+        except Exception:
+            logger.warning('Не удалось декодировать payload JWT-assertion для %s', self)
+            return None
+
+    @property
+    def jwt_days_until_expiry(self):
+        """Сколько дней осталось до истечения JWT-assertion. None если JWT нет.
+
+        Отрицательное значение = JWT уже просрочен (синхронизация не работает).
+        """
+        exp = self.jwt_expires_at
+        if not exp:
+            return None
+        delta = exp - timezone.now()
+        return delta.days
+
 
 # ============================================================================
 # BANK ACCOUNT (кэшированные данные из API)
