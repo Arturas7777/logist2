@@ -34,8 +34,26 @@ if ($ahead) {
 # ── Step 1: Check server state ──
 Write-Host "[1/4] Checking server..." -ForegroundColor Yellow
 
+# SAFE_PATHS — untracked файлы/папки, которые НИКОГДА не должны удаляться при -Force,
+# даже если их нет в .gitignore. Критично для секретов и пользовательских данных.
+# Прецедент 15.05.2026: git clean -fd удалил certs/privatecert.pem (Revolut JWT key),
+# что сломало синхронизацию и потребовало полного re-setup с Revolut Business.
+$SAFE_PATHS = "-e certs/ -e .env -e .env.* -e privatecert.pem -e publiccert.cer -e media/ -e staticfiles/ -e *.sqlite3"
+
+# Игнорируем только untracked файлы из SAFE_PATHS — но если сервер модифицировал их,
+# об этом нужно знать (порчей deploy не лечится). Поэтому фильтруем серверный
+# git status по leading "??" (untracked) и убираем безопасные пути.
+$serverDirtyRaw = ssh $SERVER "cd $PROJECT_DIR && git status --porcelain 2>/dev/null" 2>$null
+$serverDirty = $serverDirtyRaw | Where-Object {
+    $line = $_
+    $isSafeUntracked = $false
+    if ($line -match '^\?\?\s+(certs/|\.env|privatecert\.pem|publiccert\.cer|media/|staticfiles/)') {
+        $isSafeUntracked = $true
+    }
+    -not $isSafeUntracked
+}
+
 if (-not $Force) {
-    $serverDirty = ssh $SERVER "cd $PROJECT_DIR && git status --porcelain 2>/dev/null" 2>$null
     if ($serverDirty) {
         Write-Host ""
         Write-Host "  *** SERVER HAS UNCOMMITTED CHANGES ***" -ForegroundColor Red
@@ -44,16 +62,18 @@ if (-not $Force) {
         Write-Host "    1. .\scripts\sync_from_vps.ps1  (pull server changes first)" -ForegroundColor White
         Write-Host "    2. .\scripts\deploy.ps1 -Force   (discard server changes)" -ForegroundColor White
         Write-Host ""
-        Write-Host "  Changed files:" -ForegroundColor Gray
-        Write-Host $serverDirty -ForegroundColor Gray
+        Write-Host "  Changed files (excluding safe untracked paths like certs/, .env):" -ForegroundColor Gray
+        Write-Host ($serverDirty -join "`n") -ForegroundColor Gray
         Write-Host ""
         exit 1
     }
-    Write-Host "      Server is clean" -ForegroundColor Green
+    Write-Host "      Server is clean (или только безопасные untracked: certs/, .env)" -ForegroundColor Green
 } else {
-    Write-Host "      -Force: discarding server changes" -ForegroundColor Yellow
-    ssh $SERVER "cd $PROJECT_DIR && git checkout -- . && git clean -fd" 2>$null
-    Write-Host "      Server reset to last commit" -ForegroundColor Green
+    Write-Host "      -Force: discarding server changes (sparing certs/, .env, media/, etc.)" -ForegroundColor Yellow
+    # checkout сбрасывает изменения tracked файлов
+    # clean -fd с явными -e исключениями — НИКОГДА не трогает SAFE_PATHS
+    ssh $SERVER "cd $PROJECT_DIR && git checkout -- . && git clean -fd $SAFE_PATHS" 2>$null
+    Write-Host "      Server reset to last commit (safe paths preserved)" -ForegroundColor Green
 }
 
 # ── Step 2: git pull ──
