@@ -46,4 +46,12 @@ app.conf.beat_schedule = {
         'task': 'core.tasks.check_business_rules',
         'schedule': crontab(hour=8, minute=15),
     },
+    'check-revolut-jwt-expiry-daily': {
+        # JWT-assertion для Revolut живёт ~90 дней (см. setup_revolut.py).
+        # Когда он истекает, refresh access_token возвращает 401 и вся
+        # синхронизация падает. Эта задача алертит за 14 дней до истечения,
+        # чтобы успеть запустить regenerate_revolut_jwt.
+        'task': 'core.tasks.check_revolut_jwt_expiry',
+        'schedule': crontab(hour=9, minute=0),
+    },
 }

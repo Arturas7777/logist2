@@ -346,6 +346,66 @@ def sync_sitepro_invoices(self):
     return result
 
 
+@shared_task(bind=True, max_retries=0, time_limit=60)
+def check_revolut_jwt_expiry(self):
+    """Мониторинг срока жизни JWT-assertion для всех Revolut-подключений.
+
+    JWT в Revolut Business API подписывается приватным ключом и имеет срок
+    жизни (по умолчанию 90 дней — см. `setup_revolut.py::_generate_jwt`).
+    После истечения каждое обращение к `/api/1.0/auth/token` возвращает 401,
+    и `sync_bank_and_reconcile` начинает молча падать.
+
+    Эта задача декодирует payload JWT и:
+      • если осталось ≤ 14 дней — пишет WARNING в лог и в `last_error`
+        (Sentry поднимет issue, в админке появится красный бейдж);
+      • если JWT уже истёк — пишет ERROR с инструкцией по восстановлению.
+
+    Запуск ежедневно через celery beat (см. `logist2/celery.py`).
+    """
+    from core.models_banking import BankConnection
+
+    THRESHOLD_DAYS = 14
+    summary = {'expired': [], 'warning': [], 'ok': []}
+
+    for conn in BankConnection.objects.filter(bank_type='REVOLUT', is_active=True):
+        days = conn.jwt_days_until_expiry
+        if days is None:
+            continue
+
+        item = {'id': conn.pk, 'name': str(conn), 'days': days}
+
+        if days < 0:
+            summary['expired'].append(item)
+            msg = (
+                f'JWT-assertion истёк {-days} дн. назад. Синхронизация Revolut '
+                f'не работает. Перегенерируйте: python manage.py '
+                f'regenerate_revolut_jwt --private-key certs/privatecert.pem'
+            )
+            logger.error('[check_revolut_jwt_expiry] %s: %s', conn, msg)
+            # Перетираем last_error только если там нет уже более свежей ошибки
+            # о просроченном JWT (чтобы не плодить save'ы).
+            if 'JWT' not in (conn.last_error or ''):
+                conn.last_error = msg[:500]
+                conn.save(update_fields=['last_error', 'updated_at'])
+        elif days <= THRESHOLD_DAYS:
+            summary['warning'].append(item)
+            logger.warning(
+                '[check_revolut_jwt_expiry] %s: JWT истекает через %d дн. — '
+                'пересоздайте заранее командой regenerate_revolut_jwt',
+                conn, days,
+            )
+        else:
+            summary['ok'].append(item)
+
+    if not summary['expired'] and not summary['warning']:
+        logger.info(
+            '[check_revolut_jwt_expiry] OK — у всех %d подключений JWT валиден',
+            len(summary['ok']),
+        )
+
+    return summary
+
+
 @shared_task(bind=True, max_retries=1, default_retry_delay=300, time_limit=600)
 def sync_bank_and_reconcile(self):
     """
