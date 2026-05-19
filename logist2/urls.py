@@ -3,7 +3,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
-from core.views import car_list_api, get_invoice_total, get_container_data, register_payment, get_client_balance, company_dashboard, get_payment_objects, search_partners_api, get_warehouse_cars_api, get_invoice_cars_api, comparison_dashboard, compare_car_costs_api, compare_client_costs_api, compare_warehouse_costs_api, get_discrepancies_api, get_available_services, add_services, get_warehouses, get_companies, add_cash_expense, add_cash_income, cash_wallet_reset, expense_analytics, upload_expense_receipt, personal_cards_page, personal_card_add, personal_transfer, personal_card_expense, personal_card_income, personal_card_deactivate, personal_card_delete, personal_card_balance_reset, health, ready
+from core.views import car_list_api, get_invoice_total, get_container_data, register_payment, get_client_balance, company_dashboard, get_payment_objects, search_partners_api, get_warehouse_cars_api, get_invoice_cars_api, comparison_dashboard, compare_car_costs_api, compare_client_costs_api, compare_warehouse_costs_api, get_discrepancies_api, get_available_services, add_services, get_warehouses, get_companies, add_cash_expense, add_cash_income, cash_wallet_reset, expense_analytics, upload_expense_receipt, personal_cards_page, personal_card_add, personal_transfer, personal_card_expense, personal_card_income, personal_card_deactivate, personal_card_delete, personal_card_balance_reset, health, ready, system_monitor_page, system_monitor_snapshot, system_monitor_history
 from core.routing import websocket_urlpatterns
 from core.api import CarViewSet, InvoiceViewSet
 from core.views_invoice_audit import (
@@ -105,6 +105,11 @@ urlpatterns = [
     # ── Печать наклеек (Forpus self-adhesive labels) ─────────────────────────
     path('admin/labels/print/', print_labels_settings, name='labels_print_settings'),
     path('admin/labels/sheet/', print_labels_sheet, name='labels_print_sheet'),
+
+    # ── Мониторинг системы (CPU/RAM/Disk/Services/Postgres/Redis) ────────────
+    path('admin/system-monitor/', system_monitor_page, name='system_monitor'),
+    path('admin/system-monitor/snapshot/', system_monitor_snapshot, name='system_monitor_snapshot'),
+    path('admin/system-monitor/history/', system_monitor_history, name='system_monitor_history'),
 
     path('ws/', include(websocket_urlpatterns)),
 ]

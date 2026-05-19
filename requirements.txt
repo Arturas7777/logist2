@@ -66,3 +66,6 @@ ftfy>=6.3.0
 
 # ── Monitoring ───────────────────────────────────────────────────────────────
 sentry-sdk[django,celery]>=2.58.0,<3.0.0
+# psutil — для страницы /admin/system-monitor/ (CPU/RAM/disk/процессы/сервисы).
+# Используется в core/services/system_monitor.py.
+psutil>=5.9.0
