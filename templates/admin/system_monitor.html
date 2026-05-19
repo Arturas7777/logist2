@@ -279,16 +279,26 @@
 
 <script src="{% static 'js/chart.umd.min.js' %}"></script>
 <script src="{% static 'js/chartjs-adapter-date-fns.bundle.min.js' %}"></script>
+{{ snapshot|json_script:"sm-initial-snapshot" }}
+{{ alerts|json_script:"sm-initial-alerts" }}
 <script>
 (function() {
     'use strict';
 
     let currentRange = '24h';
     let charts = {};
-    let snapshot = {{ snapshot|default:"{}"|safe }};
+    let snapshot = {};
+    let initialAlerts = [];
+    try {
+        snapshot = JSON.parse(document.getElementById('sm-initial-snapshot').textContent || '{}');
+    } catch (e) { console.error('snapshot parse failed', e); }
+    try {
+        initialAlerts = JSON.parse(document.getElementById('sm-initial-alerts').textContent || '[]');
+    } catch (e) { console.error('alerts parse failed', e); }
 
     // ── INITIAL RENDER ─────────────────────────────────────────────────────
     renderSnapshot(snapshot);
+    renderAlerts(initialAlerts);
     loadHistory('24h');
 
     // Auto-refresh каждые 30 секунд
