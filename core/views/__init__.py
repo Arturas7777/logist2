@@ -67,6 +67,12 @@ from .health import (  # noqa: F401
     ready,
 )
 
+from .system_monitor import (  # noqa: F401
+    system_monitor_page,
+    system_monitor_snapshot,
+    system_monitor_history,
+)
+
 from .emails import (  # noqa: F401
     email_detail,
     email_attachment,

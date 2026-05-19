@@ -13,6 +13,7 @@ app.config_from_object('django.conf:settings', namespace='CELERY')
 # Явно перечисляем нестандартные модули задач.
 app.autodiscover_tasks(related_name='tasks')
 app.autodiscover_tasks(related_name='tasks_email')
+app.autodiscover_tasks(related_name='tasks_monitoring')
 
 app.conf.beat_schedule = {
     'check-overdue-invoices-daily': {
@@ -53,5 +54,22 @@ app.conf.beat_schedule = {
         # чтобы успеть запустить regenerate_revolut_jwt.
         'task': 'core.tasks.check_revolut_jwt_expiry',
         'schedule': crontab(hour=9, minute=0),
+    },
+    # ── System monitoring (/admin/system-monitor/) ─────────────────────────
+    # Снимок CPU/RAM/disk/процессов/Postgres/Redis в БД. 288 строк/день,
+    # ~8 600 за месяц при retention=30 дней — копейки по размеру.
+    'collect-system-metrics': {
+        'task': 'core.tasks_monitoring.collect_system_metrics',
+        'schedule': crontab(minute='*/5'),
+    },
+    # Пинг /health/ для расчёта SLA-аптайма.
+    'ping-uptime': {
+        'task': 'core.tasks_monitoring.ping_uptime',
+        'schedule': crontab(minute='*'),
+    },
+    # Удаление метрик старше MONITORING_RETENTION_DAYS (по дефолту 30 дней).
+    'cleanup-old-metrics-daily': {
+        'task': 'core.tasks_monitoring.cleanup_old_metrics',
+        'schedule': crontab(hour=4, minute=0),
     },
 }

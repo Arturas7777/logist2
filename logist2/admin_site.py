@@ -122,6 +122,7 @@ class LogistAdminSite(BaseAdminSite):
         tools_active = (
             current_path.startswith('/admin/invoice-audit/')
             or current_path.startswith('/admin/reconciliation/')
+            or current_path.startswith('/admin/system-monitor/')
         )
         return [
             {
@@ -141,6 +142,14 @@ class LogistAdminSite(BaseAdminSite):
                         'url':       '/admin/reconciliation/',
                         'icon':      'bi-graph-up-arrow',
                         'active':    current_path.startswith('/admin/reconciliation/'),
+                        'add_url':   '',
+                        'view_only': True,
+                    },
+                    {
+                        'name':      'Мониторинг системы',
+                        'url':       '/admin/system-monitor/',
+                        'icon':      'bi-activity',
+                        'active':    current_path.startswith('/admin/system-monitor/'),
                         'add_url':   '',
                         'view_only': True,
                     },

@@ -1,0 +1,623 @@
+{% extends "admin/base_site.html" %}
+{% load static i18n %}
+
+{% block title %}Мониторинг системы — Caromoto Lithuania{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    main#content-start, main.content { padding: 0 !important; }
+    #content {
+        background: #f4f2ff;
+        min-height: 100vh;
+        max-width: 100% !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    #content-main { padding: 0; }
+
+    .sm { padding: 28px 32px; max-width: 1600px; margin: 0 auto; }
+
+    .sm-header {
+        display: flex; justify-content: space-between; align-items: flex-start;
+        margin-bottom: 24px;
+    }
+    .sm-header h1 {
+        font-size: 1.6em; font-weight: 800; color: #1a1a2e; margin: 0;
+        letter-spacing: -0.03em;
+    }
+    .sm-header .sm-sub {
+        color: #7c7c9a; font-size: .92em; margin-top: 4px; font-weight: 400;
+    }
+    .sm-header-right { display: flex; gap: 10px; align-items: center; }
+    .sm-badge {
+        background: #fff; padding: 9px 16px; border-radius: 10px;
+        font-size: .85em; font-weight: 600; color: #4a4a68;
+        box-shadow: 0 1px 4px rgba(108,92,231,.08);
+        border: 1px solid rgba(108,92,231,.08);
+    }
+    .sm-refresh-btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 9px 16px; background: #6c5ce7; color: #fff;
+        border: none; border-radius: 10px; cursor: pointer;
+        font-weight: 600; font-size: .85em;
+        transition: background .15s;
+    }
+    .sm-refresh-btn:hover { background: #5a4ad1; }
+    .sm-refresh-btn:disabled { background: #b0a8e0; cursor: not-allowed; }
+
+    /* ── Алерты ── */
+    .sm-alerts { margin-bottom: 20px; display: flex; flex-direction: column; gap: 8px; }
+    .sm-alert {
+        padding: 12px 16px; border-radius: 10px; font-weight: 500; font-size: .9em;
+        display: flex; align-items: center; gap: 10px;
+    }
+    .sm-alert i { font-size: 1.2em; }
+    .sm-alert.critical { background: #ffe4e1; color: #b91c1c; border-left: 4px solid #dc2626; }
+    .sm-alert.warning { background: #fef3c7; color: #92400e; border-left: 4px solid #f59e0b; }
+    .sm-alert.ok { background: #d1fae5; color: #065f46; border-left: 4px solid #10b981; }
+
+    /* ── Карточки ── */
+    .sm-grid {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 14px; margin-bottom: 24px;
+    }
+    .sm-card {
+        background: #fff; border-radius: 14px; padding: 18px 20px;
+        box-shadow: 0 1px 4px rgba(108,92,231,.06);
+        border: 1px solid rgba(108,92,231,.06);
+    }
+    .sm-card .label {
+        font-size: .72em; font-weight: 700; text-transform: uppercase;
+        color: #7c7c9a; letter-spacing: .03em; margin-bottom: 6px;
+        display: flex; align-items: center; gap: 6px;
+    }
+    .sm-card .value {
+        font-size: 1.6em; font-weight: 800; color: #1a1a2e;
+        letter-spacing: -.02em; line-height: 1;
+    }
+    .sm-card .value small {
+        font-size: .55em; font-weight: 600; color: #7c7c9a; margin-left: 4px;
+    }
+    .sm-card .extra { font-size: .8em; color: #7c7c9a; margin-top: 8px; }
+    .sm-card.green .value { color: #10b981; }
+    .sm-card.yellow .value { color: #f59e0b; }
+    .sm-card.red .value { color: #dc2626; }
+
+    .sm-progress {
+        margin-top: 10px; height: 6px; background: #f0f0f5;
+        border-radius: 3px; overflow: hidden;
+    }
+    .sm-progress > div { height: 100%; border-radius: 3px; transition: width .3s; }
+    .sm-progress > div.green { background: #10b981; }
+    .sm-progress > div.yellow { background: #f59e0b; }
+    .sm-progress > div.red { background: #dc2626; }
+
+    /* ── Сервисы (chip) ── */
+    .sm-services-row {
+        display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px;
+    }
+    .sm-service-chip {
+        background: #fff; padding: 8px 14px; border-radius: 10px;
+        display: inline-flex; align-items: center; gap: 8px;
+        font-size: .85em; font-weight: 600; color: #4a4a68;
+        box-shadow: 0 1px 3px rgba(108,92,231,.06);
+        border: 1px solid rgba(108,92,231,.06);
+    }
+    .sm-service-chip .dot {
+        width: 8px; height: 8px; border-radius: 50%;
+    }
+    .sm-service-chip .dot.green { background: #10b981; box-shadow: 0 0 6px #10b981; }
+    .sm-service-chip .dot.yellow { background: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
+    .sm-service-chip .dot.red { background: #dc2626; box-shadow: 0 0 6px #dc2626; }
+    .sm-service-chip .dot.gray { background: #9ca3af; }
+    .sm-service-chip .mem { color: #7c7c9a; font-weight: 400; }
+
+    /* ── Секции и графики ── */
+    .sm-section {
+        background: #fff; border-radius: 14px; padding: 22px 24px;
+        margin-bottom: 18px;
+        box-shadow: 0 1px 4px rgba(108,92,231,.06);
+        border: 1px solid rgba(108,92,231,.06);
+    }
+    .sm-section-header {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 18px;
+    }
+    .sm-section-header h2 {
+        font-size: 1.05em; font-weight: 700; color: #1a1a2e; margin: 0;
+        display: flex; align-items: center; gap: 8px;
+    }
+
+    .sm-tabs {
+        display: inline-flex; background: #f4f2ff; padding: 3px;
+        border-radius: 10px; gap: 2px;
+    }
+    .sm-tab {
+        padding: 6px 14px; font-size: .82em; font-weight: 600;
+        color: #7c7c9a; border-radius: 8px; cursor: pointer;
+        border: none; background: transparent;
+        transition: all .15s;
+    }
+    .sm-tab.active { background: #fff; color: #6c5ce7; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+
+    .sm-charts {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+    }
+    @media (max-width: 1100px) { .sm-charts { grid-template-columns: 1fr; } }
+    .sm-chart-wrap {
+        position: relative; height: 260px;
+    }
+
+    /* ── Таблицы ── */
+    .sm-table { width: 100%; border-collapse: collapse; font-size: .87em; }
+    .sm-table th {
+        text-align: left; padding: 10px 12px; color: #7c7c9a;
+        font-weight: 600; font-size: .78em; text-transform: uppercase;
+        letter-spacing: .03em; border-bottom: 1px solid #f0f0f5;
+    }
+    .sm-table td {
+        padding: 10px 12px; color: #1a1a2e; border-bottom: 1px solid #f8f8fb;
+    }
+    .sm-table tr:last-child td { border-bottom: none; }
+    .sm-table tr:hover td { background: #faf9ff; }
+    .sm-table code {
+        font-family: 'JetBrains Mono', 'Menlo', monospace; font-size: .85em;
+        background: #f4f2ff; padding: 2px 6px; border-radius: 4px;
+        color: #4a4a68;
+    }
+
+    .sm-loader {
+        text-align: center; padding: 40px; color: #7c7c9a; font-size: .9em;
+    }
+    .sm-empty {
+        text-align: center; padding: 30px; color: #9ca3af; font-size: .85em;
+    }
+
+    .sm-uptime-big {
+        display: flex; align-items: baseline; gap: 4px;
+    }
+    .sm-uptime-big .pct {
+        font-size: 2em; font-weight: 800; color: #10b981;
+    }
+    .sm-uptime-big .pct.bad { color: #dc2626; }
+    .sm-uptime-big .pct.warn { color: #f59e0b; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sm">
+
+    <!-- ── HEADER ── -->
+    <div class="sm-header">
+        <div>
+            <h1><i class="bi bi-activity"></i> Мониторинг системы</h1>
+            <div class="sm-sub" id="sm-last-update">Загружено: только что</div>
+        </div>
+        <div class="sm-header-right">
+            <span class="sm-badge" id="sm-host-badge"></span>
+            <button class="sm-refresh-btn" id="sm-refresh-btn" onclick="refreshSnapshot()">
+                <i class="bi bi-arrow-clockwise"></i> Обновить
+            </button>
+        </div>
+    </div>
+
+    <!-- ── АЛЕРТЫ ── -->
+    <div class="sm-alerts" id="sm-alerts">
+        {% if alerts %}
+            {% for alert in alerts %}
+                <div class="sm-alert {{ alert.level }}">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    {{ alert.message }}
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="sm-alert ok">
+                <i class="bi bi-check-circle-fill"></i>
+                Все системы работают штатно
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- ── РЕАЛ-ТАЙМ КАРТОЧКИ ── -->
+    <div class="sm-grid" id="sm-grid"></div>
+
+    <!-- ── СЕРВИСЫ ── -->
+    <div class="sm-section">
+        <div class="sm-section-header">
+            <h2><i class="bi bi-hdd-stack"></i> Сервисы systemd</h2>
+        </div>
+        <div class="sm-services-row" id="sm-services"></div>
+    </div>
+
+    <!-- ── ГРАФИКИ ── -->
+    <div class="sm-section">
+        <div class="sm-section-header">
+            <h2><i class="bi bi-graph-up"></i> История метрик</h2>
+            <div class="sm-tabs" role="tablist">
+                <button class="sm-tab active" data-range="24h" onclick="setRange('24h')">24 часа</button>
+                <button class="sm-tab" data-range="7d" onclick="setRange('7d')">7 дней</button>
+                <button class="sm-tab" data-range="30d" onclick="setRange('30d')">30 дней</button>
+            </div>
+        </div>
+        <div class="sm-charts">
+            <div class="sm-chart-wrap"><canvas id="chart-mem"></canvas></div>
+            <div class="sm-chart-wrap"><canvas id="chart-cpu"></canvas></div>
+            <div class="sm-chart-wrap"><canvas id="chart-procs"></canvas></div>
+            <div class="sm-chart-wrap"><canvas id="chart-pg"></canvas></div>
+        </div>
+    </div>
+
+    <!-- ── UPTIME ── -->
+    <div class="sm-section">
+        <div class="sm-section-header">
+            <h2><i class="bi bi-shield-check"></i> Аптайм сайта</h2>
+        </div>
+        <div class="sm-grid" id="sm-uptime-grid"></div>
+        <div id="sm-failures-wrap" style="margin-top: 16px;"></div>
+    </div>
+
+    <!-- ── ТОП-10 ПРОЦЕССОВ ── -->
+    <div class="sm-section">
+        <div class="sm-section-header">
+            <h2><i class="bi bi-list-ol"></i> Топ-10 процессов по памяти</h2>
+        </div>
+        <table class="sm-table" id="sm-top-processes">
+            <thead><tr><th>PID</th><th>Имя</th><th>Пользователь</th><th style="text-align:right">RSS, MB</th></tr></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <!-- ── SLOW QUERIES ── -->
+    <div class="sm-section">
+        <div class="sm-section-header">
+            <h2><i class="bi bi-database-exclamation"></i> Топ медленных SQL-запросов (pg_stat_statements)</h2>
+        </div>
+        <div id="sm-slow-queries"></div>
+    </div>
+
+</div>
+
+<script src="{% static 'js/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/chartjs-adapter-date-fns.bundle.min.js' %}"></script>
+<script>
+(function() {
+    'use strict';
+
+    let currentRange = '24h';
+    let charts = {};
+    let snapshot = {{ snapshot|default:"{}"|safe }};
+
+    // ── INITIAL RENDER ─────────────────────────────────────────────────────
+    renderSnapshot(snapshot);
+    loadHistory('24h');
+
+    // Auto-refresh каждые 30 секунд
+    setInterval(refreshSnapshot, 30000);
+
+    // ── SNAPSHOT ────────────────────────────────────────────────────────────
+    function refreshSnapshot() {
+        const btn = document.getElementById('sm-refresh-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Обновляю…';
+        fetch('{% url "system_monitor_snapshot" %}', {credentials: 'same-origin'})
+            .then(r => r.json())
+            .then(data => {
+                renderSnapshot(data.snapshot);
+                renderAlerts(data.alerts);
+                document.getElementById('sm-last-update').textContent =
+                    'Обновлено: ' + new Date().toLocaleTimeString('ru-RU');
+            })
+            .catch(err => console.error('snapshot failed', err))
+            .finally(() => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Обновить';
+            });
+    }
+
+    function renderAlerts(alerts) {
+        const wrap = document.getElementById('sm-alerts');
+        if (!alerts || alerts.length === 0) {
+            wrap.innerHTML = '<div class="sm-alert ok"><i class="bi bi-check-circle-fill"></i> Все системы работают штатно</div>';
+            return;
+        }
+        wrap.innerHTML = alerts.map(a =>
+            `<div class="sm-alert ${a.level}"><i class="bi bi-exclamation-triangle-fill"></i> ${escapeHtml(a.message)}</div>`
+        ).join('');
+    }
+
+    function renderSnapshot(snap) {
+        const cpu = snap.cpu || {};
+        const mem = snap.memory || {};
+        const disk = snap.disk || {};
+        const host = snap.host || {};
+
+        document.getElementById('sm-host-badge').textContent =
+            (host.hostname || '—') + ' · uptime ' + (host.uptime_days || 0) + 'd';
+
+        const grid = document.getElementById('sm-grid');
+        grid.innerHTML = [
+            card('CPU', 'cpu', cpu.percent, '%',
+                `${cpu.count || '?'} ядер · LA ${fmtLoad(cpu.load_avg_1)} / ${fmtLoad(cpu.load_avg_5)} / ${fmtLoad(cpu.load_avg_15)}`,
+                cpu.percent, [60, 85]),
+            card('RAM', 'memory', mem.percent, '%',
+                `${mem.used_mb || 0} / ${mem.total_mb || 0} MB · доступно ${mem.available_mb || 0} MB`,
+                mem.percent, [75, 90]),
+            card('Swap', 'swap-fill', mem.swap_used_mb, 'MB',
+                `из ${mem.swap_total_mb || 0} MB (${(mem.swap_percent || 0).toFixed(1)}%)`,
+                mem.swap_percent || 0, [25, 60]),
+            card('Диск /', 'disk-fill', disk.percent, '%',
+                `${disk.used_gb || 0} / ${disk.total_gb || 0} GB · свободно ${disk.free_gb || 0} GB`,
+                disk.percent, [80, 92]),
+        ].join('');
+
+        renderServices(snap.services || []);
+        renderTopProcesses(((snap.processes || {}).top) || []);
+    }
+
+    function card(label, icon, val, unit, extra, fillPct, thresholds) {
+        const cls = colorClass(fillPct, thresholds);
+        const pct = Math.min(100, Math.max(0, fillPct || 0));
+        return `
+        <div class="sm-card ${cls}">
+            <div class="label"><i class="bi bi-${iconFor(icon)}"></i> ${label}</div>
+            <div class="value">${fmtNum(val)}<small>${unit}</small></div>
+            <div class="sm-progress"><div class="${cls}" style="width:${pct}%"></div></div>
+            <div class="extra">${extra}</div>
+        </div>`;
+    }
+
+    function iconFor(name) {
+        const map = {
+            'cpu': 'cpu',
+            'memory': 'memory',
+            'swap-fill': 'arrow-down-up',
+            'disk-fill': 'device-hdd-fill',
+        };
+        return map[name] || 'circle';
+    }
+
+    function colorClass(val, [warn, crit]) {
+        if (val == null) return '';
+        if (val >= crit) return 'red';
+        if (val >= warn) return 'yellow';
+        return 'green';
+    }
+
+    function renderServices(services) {
+        const wrap = document.getElementById('sm-services');
+        if (!services || services.length === 0) {
+            wrap.innerHTML = '<div class="sm-empty">Нет данных о сервисах (Windows-режим или systemd недоступен)</div>';
+            return;
+        }
+        wrap.innerHTML = services.map(s => {
+            let dotClass = 'gray';
+            if (s.available) {
+                if (s.failed) dotClass = 'red';
+                else if (s.active) dotClass = 'green';
+                else dotClass = 'yellow';
+            }
+            const mem = s.memory_mb > 0 ? `<span class="mem">${s.memory_mb} MB</span>` : '';
+            return `
+                <div class="sm-service-chip">
+                    <span class="dot ${dotClass}"></span>
+                    ${escapeHtml(s.name)}
+                    ${mem}
+                </div>`;
+        }).join('');
+    }
+
+    function renderTopProcesses(top) {
+        const tbody = document.querySelector('#sm-top-processes tbody');
+        if (!top || top.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="sm-empty">Нет данных</td></tr>';
+            return;
+        }
+        tbody.innerHTML = top.map(p => `
+            <tr>
+                <td><code>${p.pid}</code></td>
+                <td>${escapeHtml(p.name || '—')}</td>
+                <td>${escapeHtml(p.user || '—')}</td>
+                <td style="text-align:right; font-weight:600">${p.rss_mb}</td>
+            </tr>
+        `).join('');
+    }
+
+    // ── HISTORY (графики) ──────────────────────────────────────────────────
+    function setRange(range) {
+        currentRange = range;
+        document.querySelectorAll('.sm-tab').forEach(t => {
+            t.classList.toggle('active', t.dataset.range === range);
+        });
+        loadHistory(range);
+    }
+    window.setRange = setRange;
+    window.refreshSnapshot = refreshSnapshot;
+
+    function loadHistory(range) {
+        fetch(`{% url "system_monitor_history" %}?range=${range}`, {credentials: 'same-origin'})
+            .then(r => r.json())
+            .then(data => {
+                renderCharts(data.points || []);
+                renderUptime(data.uptime || {});
+                renderSlowQueries(snapshot.postgres || {});
+            })
+            .catch(err => console.error('history failed', err));
+    }
+
+    function renderCharts(points) {
+        const labels = points.map(p => new Date(p.ts));
+        const colors = {
+            cpu: '#6c5ce7',
+            mem: '#10b981',
+            memAvail: '#3b82f6',
+            swap: '#f59e0b',
+            gunicorn: '#6c5ce7',
+            celery: '#10b981',
+            mysql: '#f59e0b',
+            postgres: '#3b82f6',
+            redis: '#dc2626',
+        };
+
+        // RAM
+        upsertChart('chart-mem', labels, [
+            {label: 'Используется, MB', data: points.map(p => p.mem_used_mb), borderColor: colors.mem, backgroundColor: colors.mem + '20', fill: true},
+            {label: 'Доступно, MB', data: points.map(p => p.mem_available_mb), borderColor: colors.memAvail, backgroundColor: 'transparent', borderDash: [4, 4]},
+            {label: 'Swap, MB', data: points.map(p => p.swap_used_mb), borderColor: colors.swap, backgroundColor: 'transparent'},
+        ], 'Память (MB)');
+
+        // CPU
+        upsertChart('chart-cpu', labels, [
+            {label: 'CPU, %', data: points.map(p => p.cpu_percent), borderColor: colors.cpu, backgroundColor: colors.cpu + '20', fill: true},
+        ], 'CPU (%)', {max: 100});
+
+        // Процессы (RSS по группам)
+        upsertChart('chart-procs', labels, [
+            {label: 'gunicorn', data: points.map(p => p.gunicorn_rss_mb), borderColor: colors.gunicorn, backgroundColor: colors.gunicorn + '40', fill: true},
+            {label: 'celery', data: points.map(p => p.celery_rss_mb), borderColor: colors.celery, backgroundColor: colors.celery + '40', fill: true},
+            {label: 'mysql', data: points.map(p => p.mysql_rss_mb), borderColor: colors.mysql, backgroundColor: colors.mysql + '40', fill: true},
+            {label: 'postgres', data: points.map(p => p.postgres_rss_mb), borderColor: colors.postgres, backgroundColor: colors.postgres + '40', fill: true},
+        ], 'RSS процессов (MB)', {stacked: true});
+
+        // Postgres
+        upsertChart('chart-pg', labels, [
+            {label: 'Коннекты', data: points.map(p => p.postgres_connections), borderColor: colors.postgres, backgroundColor: colors.postgres + '20', fill: true, yAxisID: 'y'},
+            {label: 'Redis память, MB', data: points.map(p => p.redis_memory_mb), borderColor: colors.redis, backgroundColor: 'transparent', yAxisID: 'y1'},
+        ], 'Postgres / Redis', {dualAxis: true});
+    }
+
+    function upsertChart(canvasId, labels, datasets, title, opts) {
+        opts = opts || {};
+        const ctx = document.getElementById(canvasId);
+        if (charts[canvasId]) charts[canvasId].destroy();
+
+        const config = {
+            type: 'line',
+            data: {labels, datasets: datasets.map(d => ({tension: 0.3, pointRadius: 0, borderWidth: 2, ...d}))},
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: {mode: 'index', intersect: false},
+                plugins: {
+                    title: {display: true, text: title, font: {size: 13, weight: 600}, color: '#1a1a2e'},
+                    legend: {position: 'bottom', labels: {usePointStyle: true, font: {size: 11}}},
+                    tooltip: {callbacks: {title: items => new Date(items[0].label).toLocaleString('ru-RU')}},
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {tooltipFormat: 'dd.MM HH:mm', displayFormats: {minute: 'HH:mm', hour: 'dd.MM HH:mm', day: 'dd.MM'}},
+                        ticks: {maxRotation: 0, font: {size: 10}, color: '#7c7c9a'},
+                        grid: {display: false},
+                    },
+                    y: {
+                        beginAtZero: true,
+                        max: opts.max,
+                        stacked: !!opts.stacked,
+                        ticks: {font: {size: 10}, color: '#7c7c9a'},
+                        grid: {color: '#f0f0f5'},
+                    },
+                },
+            },
+        };
+        if (opts.dualAxis) {
+            config.options.scales.y1 = {
+                position: 'right', beginAtZero: true,
+                ticks: {font: {size: 10}, color: '#7c7c9a'},
+                grid: {display: false},
+            };
+        }
+        charts[canvasId] = new Chart(ctx, config);
+    }
+
+    function renderUptime(uptime) {
+        const grid = document.getElementById('sm-uptime-grid');
+        const pct = uptime.pct;
+        const pctClass = pct == null ? '' : (pct < 95 ? 'bad' : (pct < 99 ? 'warn' : ''));
+        grid.innerHTML = `
+            <div class="sm-card">
+                <div class="label"><i class="bi bi-check-circle"></i> Доступность</div>
+                <div class="sm-uptime-big">
+                    <span class="pct ${pctClass}">${pct != null ? pct.toFixed(2) : '—'}</span>
+                    <span style="font-size:.95em; color:#7c7c9a;">%</span>
+                </div>
+                <div class="extra">${uptime.ok_checks || 0} из ${uptime.total_checks || 0} пингов успешно</div>
+            </div>
+            <div class="sm-card">
+                <div class="label"><i class="bi bi-speedometer"></i> Среднее время ответа</div>
+                <div class="value">${uptime.avg_response_ms != null ? uptime.avg_response_ms : '—'}<small>ms</small></div>
+                <div class="extra">по успешным пингам /health/</div>
+            </div>
+            <div class="sm-card">
+                <div class="label"><i class="bi bi-x-circle"></i> Фейлы</div>
+                <div class="value">${(uptime.total_checks || 0) - (uptime.ok_checks || 0)}</div>
+                <div class="extra">пингов вернули ошибку или таймаут</div>
+            </div>
+        `;
+
+        const failuresWrap = document.getElementById('sm-failures-wrap');
+        if (!uptime.recent_failures || uptime.recent_failures.length === 0) {
+            failuresWrap.innerHTML = '';
+            return;
+        }
+        failuresWrap.innerHTML = `
+            <h3 style="font-size:.95em; font-weight:700; color:#1a1a2e; margin:18px 0 10px;">
+                Последние ${uptime.recent_failures.length} фейлов
+            </h3>
+            <table class="sm-table">
+                <thead><tr><th>Время</th><th>HTTP</th><th>Ответ</th><th>Ошибка</th></tr></thead>
+                <tbody>
+                    ${uptime.recent_failures.map(f => `
+                        <tr>
+                            <td>${new Date(f.ts).toLocaleString('ru-RU')}</td>
+                            <td><code>${f.status_code || '—'}</code></td>
+                            <td>${f.response_ms != null ? f.response_ms.toFixed(0) + ' ms' : '—'}</td>
+                            <td style="color:#dc2626; font-size:.85em;">${escapeHtml(f.error || '—')}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    }
+
+    function renderSlowQueries(pg) {
+        const wrap = document.getElementById('sm-slow-queries');
+        if (pg.slow_queries_error) {
+            wrap.innerHTML = `<div class="sm-empty">${escapeHtml(pg.slow_queries_error)}</div>`;
+            return;
+        }
+        const sq = pg.slow_queries || [];
+        if (sq.length === 0) {
+            wrap.innerHTML = '<div class="sm-empty">Нет данных</div>';
+            return;
+        }
+        wrap.innerHTML = `
+            <table class="sm-table">
+                <thead><tr><th>Запрос</th><th style="text-align:right">Вызовов</th><th style="text-align:right">Среднее, ms</th><th style="text-align:right">Всего, ms</th></tr></thead>
+                <tbody>
+                    ${sq.map(q => `
+                        <tr>
+                            <td><code style="font-size:.75em; max-width:600px; display:inline-block; white-space:normal; word-break:break-word;">${escapeHtml(q.query)}</code></td>
+                            <td style="text-align:right; color:#7c7c9a;">${q.calls}</td>
+                            <td style="text-align:right; font-weight:600">${q.avg_ms}</td>
+                            <td style="text-align:right; color:#7c7c9a;">${q.total_ms}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    }
+
+    // ── HELPERS ────────────────────────────────────────────────────────────
+    function fmtNum(v) {
+        if (v == null) return '—';
+        if (Number.isInteger(v)) return v;
+        return Number(v).toFixed(1);
+    }
+    function fmtLoad(v) { return v == null ? '—' : Number(v).toFixed(2); }
+    function escapeHtml(s) {
+        if (s == null) return '';
+        return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+})();
+</script>
+
+{% endblock %}

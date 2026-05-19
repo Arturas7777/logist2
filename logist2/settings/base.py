@@ -522,6 +522,16 @@ COMPANY_EMAIL = os.getenv('COMPANY_EMAIL', 'info@caromoto-lt.com')
 COMPANY_WEBSITE = 'https://caromoto-lt.com'
 
 # ---------------------------------------------------------------------------
+# System monitoring (/admin/system-monitor/) — psutil + celery beat
+# ---------------------------------------------------------------------------
+# Сколько дней хранить SystemMetric/UptimeCheck. По дефолту 30 дней
+# (~8 600 + 43 200 строк = ≈10 MB на postgres).
+MONITORING_RETENTION_DAYS = int(os.getenv('MONITORING_RETENTION_DAYS', '30'))
+# URL для ping_uptime task. Локально — gunicorn/runserver, на сервере —
+# nginx upstream. По дефолту локальный health endpoint.
+MONITORING_HEALTH_URL = os.getenv('MONITORING_HEALTH_URL', 'http://127.0.0.1:8000/health/')
+
+# ---------------------------------------------------------------------------
 # Sentry (error monitoring) — optional, enabled only when SENTRY_DSN is set
 # ---------------------------------------------------------------------------
 
