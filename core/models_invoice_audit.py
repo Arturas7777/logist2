@@ -60,6 +60,13 @@ class InvoiceAudit(models.Model):
         verbose_name        = 'Проверка счёта'
         verbose_name_plural = 'Проверки счетов'
         ordering            = ['-created_at']
+        indexes = [
+            # Dashboard «Проверка счетов» фильтрует по статусу + сортирует
+            # по дате создания. До индекса — full scan по всей таблице.
+            models.Index(fields=['status', '-created_at'], name='inv_audit_status_idx'),
+            # Поиск ранее загруженных счетов того же контрагента.
+            models.Index(fields=['counterparty_detected'], name='inv_audit_cparty_idx'),
+        ]
 
     def __str__(self):
         name = self.counterparty_detected or self.original_filename or f'Счёт #{self.pk}'

@@ -12,13 +12,12 @@ from collections import OrderedDict
 from django.contrib import admin
 from django.contrib.contenttypes.admin import GenericTabularInline
 from django.contrib.contenttypes.models import ContentType
-from django.db.models import Count, Prefetch
+from django.db.models import Prefetch
 from django.shortcuts import render
 from django.utils.html import format_html
 
 from core.models import Carrier, Client, Company, Line, Warehouse
 from core.models_contact import Contact, ContactEmail, ContactPhone
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Inlines на странице самого контакта: emails / phones

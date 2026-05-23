@@ -17,8 +17,12 @@ from django.utils.safestring import mark_safe
 from core.models import Container
 from core.models_email import (
     CarEmailLink,
-    ContainerEmail, ContainerEmailLink,
-    EmailGroup, EmailGroupMember, EmailIngestFilter, GmailSyncState,
+    ContainerEmail,
+    ContainerEmailLink,
+    EmailGroup,
+    EmailGroupMember,
+    EmailIngestFilter,
+    GmailSyncState,
 )
 
 

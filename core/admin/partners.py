@@ -294,9 +294,10 @@ class ClientAdmin(admin.ModelAdmin):
             from django.db.models import Count, DecimalField, F, OuterRef, Subquery, Sum, Value
             from django.db.models.functions import Coalesce
 
+            from core.mixins import OPEN_INVOICE_STATUSES
             open_debt_sq = NewInvoice.objects.filter(
                 recipient_client=OuterRef('pk'),
-                status__in=['ISSUED', 'OVERDUE', 'PARTIALLY_PAID'],
+                status__in=OPEN_INVOICE_STATUSES,
             ).values('recipient_client').annotate(
                 s=Sum(F('total') - F('paid_amount'))
             ).values('s')[:1]
@@ -1342,9 +1343,8 @@ class AutoTransportAdmin(admin.ModelAdmin):
         return super().get_changelist_instance(request)
 
     def get_queryset(self, request):
-        from django.db.models import Count, Q
+        from django.db.models import Count, Prefetch, Q
 
-        from django.db.models import Prefetch
         from core.models_billing import NewInvoice
 
         qs = super().get_queryset(request)

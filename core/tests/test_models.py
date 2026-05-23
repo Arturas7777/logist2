@@ -4,6 +4,7 @@
 Используется стандартный Django TestCase с тестовой БД (SQLite).
 Запуск: python manage.py test core.tests.test_models
 """
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
@@ -22,13 +23,15 @@ class CompanyModelTest(TestCase):
     """Тесты модели Company"""
 
     def setUp(self):
-        self.company = Company.objects.create(name="Caromoto Lithuania")
+        # Используем имя из settings.COMPANY_NAME, чтобы get_default() нашёл компанию
+        # независимо от точного написания («Caromoto Lithuania» vs «Caromoto Lithuania, MB»).
+        self.company = Company.objects.create(name=settings.COMPANY_NAME)
 
     def test_get_default_returns_company(self):
         """get_default() возвращает компанию из settings.COMPANY_NAME"""
         result = Company.get_default()
         self.assertIsNotNone(result)
-        self.assertEqual(result.name, "Caromoto Lithuania")
+        self.assertEqual(result.name, settings.COMPANY_NAME)
 
     def test_get_default_returns_none_when_missing(self):
         """get_default() возвращает None если компания не существует"""
@@ -37,7 +40,7 @@ class CompanyModelTest(TestCase):
         self.assertIsNone(result)
 
     def test_str_representation(self):
-        self.assertEqual(str(self.company), "Caromoto Lithuania")
+        self.assertEqual(str(self.company), settings.COMPANY_NAME)
 
 
 class ContainerModelTest(TestCase):
@@ -58,8 +61,14 @@ class ContainerModelTest(TestCase):
         self.assertEqual(str(container), "TEST-001")
 
     def test_unloaded_requires_warehouse_and_date(self):
-        """Статус UNLOADED требует склад и дату разгрузки"""
-        with self.assertRaises(ValueError):
+        """Статус UNLOADED требует склад и дату разгрузки.
+
+        Раньше тест ожидал ``ValueError``, но валидация делается через
+        ``Container.clean()`` и поднимает ``ValidationError``. Поскольку
+        ``Container.save()`` теперь сам зовёт ``self.clean()``
+        (см. core/models.py), ошибка приходит при `objects.create`.
+        """
+        with self.assertRaises(ValidationError):
             Container.objects.create(
                 number="TEST-002",
                 status="UNLOADED",

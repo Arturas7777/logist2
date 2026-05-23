@@ -8,6 +8,8 @@ from django.db import models
 from django.db.models import Avg, Count, Q, Sum
 from django.utils import timezone
 
+from core.mixins import OPEN_INVOICE_STATUSES
+
 
 class OptimizedCarManager(models.Manager):
     """Оптимизированный менеджер для модели Car"""
@@ -136,7 +138,7 @@ class OptimizedClientManager(models.Manager):
             ),
             unpaid_invoices_count=Count(
                 'received_invoices_new',
-                filter=Q(received_invoices_new__status__in=['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'])
+                filter=Q(received_invoices_new__status__in=OPEN_INVOICE_STATUSES)
             )
         )
 

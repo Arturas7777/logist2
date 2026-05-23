@@ -20,8 +20,8 @@ from core.models import Car
 from core.models_scans import ScanProcessingJob
 from core.services.vin_validator import (
     cross_check_with_ai_data,
-    is_vin_checksum_valid,
     is_north_american_vin,
+    is_vin_checksum_valid,
 )
 
 

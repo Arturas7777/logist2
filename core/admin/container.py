@@ -307,7 +307,8 @@ class ContainerAdmin(admin.ModelAdmin):
                         car.update_days_and_storage()
                         car.calculate_total_price()
                         cars_to_update.append(car)
-                        for invoice in NewInvoice.objects.filter(cars=car, status__in=['DRAFT', 'ISSUED', 'PARTIALLY_PAID', 'OVERDUE']):
+                        from core.mixins import REGENERATABLE_INVOICE_STATUSES
+                        for invoice in NewInvoice.objects.filter(cars=car, status__in=REGENERATABLE_INVOICE_STATUSES):
                             affected_invoices.add(invoice)
 
                     if cars_to_update:

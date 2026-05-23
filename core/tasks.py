@@ -12,11 +12,12 @@ def check_overdue_invoices(self):
     Периодическая задача: переводит просроченные инвойсы в статус OVERDUE.
     Рекомендуется запускать через celery beat раз в день.
     """
+    from core.mixins import OVERDUE_CANDIDATE_STATUSES
     from core.models_billing import NewInvoice
 
     today = timezone.now().date()
     overdue_qs = NewInvoice.objects.filter(
-        status__in=['ISSUED', 'PARTIALLY_PAID'],
+        status__in=OVERDUE_CANDIDATE_STATUSES,
         due_date__lt=today,
     )
     updated = overdue_qs.update(status='OVERDUE')
@@ -815,3 +816,100 @@ def check_business_rules(self):
         # показывать конкретные инвойсы.
         'sample_ids': {k: v[:30] for k, v in violations.items()},
     }
+
+
+# ============================================================================
+# DEFERRED RECALCULATIONS (CarService → Invoice, Catalog → Cars)
+# ============================================================================
+
+@shared_task(
+    bind=True, max_retries=2, default_retry_delay=30, time_limit=120,
+    autoretry_for=(Exception,), retry_backoff=True,
+)
+def regenerate_invoices_for_car_task(self, car_id):
+    """Пересоздать позиции всех открытых инвойсов, связанных с указанной машиной.
+
+    Ранее эта работа делалась в `transaction.on_commit` синхронно — каждое
+    сохранение CarService приводило к N SQL-запросов в HTTP-потоке.
+    Вынесено в Celery: HTTP отвечает быстрее, ретраи на ошибках,
+    дедупликация на стороне сигнала.
+    """
+    from django.db import transaction as db_transaction
+    from django.db.utils import OperationalError
+
+    from core.mixins import REGENERATABLE_INVOICE_STATUSES
+    from core.models_billing import NewInvoice
+    invoice_ids = list(
+        NewInvoice.objects.filter(
+            cars__id=car_id, status__in=REGENERATABLE_INVOICE_STATUSES,
+        ).values_list('id', flat=True).distinct()
+    )
+    skipped = 0
+    regenerated = 0
+    for invoice_id in invoice_ids:
+        try:
+            with db_transaction.atomic():
+                invoice = (
+                    NewInvoice.objects
+                    .select_for_update(nowait=True)
+                    .get(id=invoice_id)
+                )
+                invoice.regenerate_items_from_cars()
+                regenerated += 1
+        except OperationalError:
+            logger.warning(
+                "[regenerate_invoices_for_car] invoice %s locked, skipping",
+                invoice_id,
+            )
+            skipped += 1
+        except NewInvoice.DoesNotExist:
+            pass
+    if regenerated or skipped:
+        logger.info(
+            "[regenerate_invoices_for_car] car=%s regenerated=%s skipped=%s",
+            car_id, regenerated, skipped,
+        )
+    return {'car_id': car_id, 'regenerated': regenerated, 'skipped': skipped}
+
+
+@shared_task(
+    bind=True, max_retries=2, default_retry_delay=30, time_limit=180,
+    autoretry_for=(Exception,), retry_backoff=True,
+)
+def recalculate_cars_total_price_task(self, car_ids):
+    """Пересчитать Car.total_price / days / storage_cost для пачки машин.
+
+    Используется после массовых правок прайса каталога (WarehouseService /
+    LineService / CarrierService / CompanyService) и после `Car.save()`
+    через сигнал. Синхронно делать `for car in qs: car.calculate_total_price()`
+    в post_save / сигнале — это N+1 в HTTP-потоке. Celery-таска делает то же
+    самое, но в фоне.
+
+    `calculate_total_price()` обновляет days/storage_cost через
+    `update_days_and_storage()`, поэтому bulk_update тянет все три поля.
+    """
+    from core.models import Car
+
+    if not car_ids:
+        return {'updated': 0}
+    cars_to_update = []
+    for car in Car.objects.filter(pk__in=car_ids).prefetch_related('car_services', 'warehouse'):
+        try:
+            car.calculate_total_price()
+            cars_to_update.append(car)
+        except Exception as exc:
+            logger.error(
+                "[recalculate_cars_total_price] car=%s failed: %s", car.pk, exc,
+                exc_info=True,
+            )
+    if cars_to_update:
+        Car.objects.bulk_update(
+            cars_to_update,
+            ['total_price', 'days', 'storage_cost'],
+            batch_size=200,
+        )
+    logger.info(
+        "[recalculate_cars_total_price] requested=%s updated=%s",
+        len(car_ids), len(cars_to_update),
+    )
+    return {'requested': len(car_ids), 'updated': len(cars_to_update)}

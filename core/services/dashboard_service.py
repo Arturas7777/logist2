@@ -107,9 +107,10 @@ class DashboardService:
         if cached is not None:
             return cached
 
+        from ..mixins import OVERDUE_CANDIDATE_STATUSES
         from ..models_billing import NewInvoice
         result = NewInvoice.objects.filter(
-            status__in=['ISSUED', 'PARTIALLY_PAID']
+            status__in=OVERDUE_CANDIDATE_STATUSES
         ).aggregate(
             total=Sum(F('total') - F('paid_amount')),
             count=Count('id')
@@ -168,11 +169,12 @@ class DashboardService:
         if cached is not None:
             return cached
 
+        from ..mixins import OVERDUE_CANDIDATE_STATUSES
         from ..models_billing import NewInvoice
         today = timezone.now().date()
         count = NewInvoice.objects.filter(
             Q(status='OVERDUE') |
-            Q(status__in=['ISSUED', 'PARTIALLY_PAID'], due_date__lt=today)
+            Q(status__in=OVERDUE_CANDIDATE_STATUSES, due_date__lt=today)
         ).count()
 
         cache.set(cache_key, count, CACHE_TIMEOUTS['short'])
@@ -469,14 +471,14 @@ class DashboardService:
 
         from django.db.models import F
 
+        from ..mixins import OPEN_INVOICE_STATUSES
         from ..models import Company
         from ..models_billing import NewInvoice
-
         default_company_id = Company.get_default_id()
         today = timezone.now().date()
         unpaid = NewInvoice.objects.filter(
             issuer_company_id=default_company_id,
-            status__in=['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'],
+            status__in=OPEN_INVOICE_STATUSES,
         ).exclude(total__lte=F('paid_amount'))
 
         buckets = {
@@ -531,14 +533,14 @@ class DashboardService:
 
         from django.db.models import F
 
+        from ..mixins import OPEN_INVOICE_STATUSES
         from ..models import Company
         from ..models_billing import NewInvoice
-
         default_company_id = Company.get_default_id()
         today = timezone.now().date()
         unpaid = NewInvoice.objects.filter(
             recipient_company_id=default_company_id,
-            status__in=['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'],
+            status__in=OPEN_INVOICE_STATUSES,
         ).exclude(total__lte=F('paid_amount'))
 
         buckets = {

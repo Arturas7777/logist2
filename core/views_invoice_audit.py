@@ -4,7 +4,6 @@
 
 import logging
 import os
-import threading
 from decimal import Decimal
 
 from django.contrib import messages
@@ -17,6 +16,25 @@ from core.models import CarService
 from core.models_invoice_audit import InvoiceAudit, SupplierCost
 
 logger = logging.getLogger(__name__)
+
+
+def _enqueue_invoice_audit(audit_id: int) -> None:
+    """Поставить AI-разбор счёта в очередь Celery.
+
+    Если Celery недоступен (broker лежит) — fallback на синхронный вызов,
+    чтобы не терять задачу. Worker thread больше НЕ используется: при
+    рестарте gunicorn такой поток умирает молча, audit остаётся в PENDING.
+    """
+    from core.tasks import process_invoice_audit_task
+    try:
+        process_invoice_audit_task.delay(audit_id)
+    except Exception:  # broker down / serializer error
+        logger.exception(
+            "Celery enqueue failed for audit %s — running inline as fallback",
+            audit_id,
+        )
+        from core.services.invoice_audit_service import process_invoice_audit
+        process_invoice_audit(audit_id)
 
 
 @staff_member_required
@@ -58,13 +76,7 @@ def invoice_audit_upload(request):
         created_by=request.user,
     )
 
-    # Запускаем обработку в отдельном потоке (не блокируем запрос)
-    def _process():
-        from core.services.invoice_audit_service import process_invoice_audit
-        process_invoice_audit(audit.pk)
-
-    thread = threading.Thread(target=_process, daemon=True)
-    thread.start()
+    _enqueue_invoice_audit(audit.pk)
 
     messages.success(
         request,
@@ -175,12 +187,7 @@ def invoice_audit_reprocess(request, pk):
     audit.raw_extracted = {}
     audit.save()
 
-    def _process():
-        from core.services.invoice_audit_service import process_invoice_audit
-        process_invoice_audit(audit.pk)
-
-    thread = threading.Thread(target=_process, daemon=True)
-    thread.start()
+    _enqueue_invoice_audit(audit.pk)
 
     messages.info(request, 'Счёт отправлен на повторную обработку.')
     return redirect('invoice_audit_detail', pk=audit.pk)
@@ -224,12 +231,7 @@ def reanalyze_newinvoice(request, pk):
 
     invoice.items.all().delete()
 
-    def _process():
-        from core.services.invoice_audit_service import process_invoice_audit
-        process_invoice_audit(audit.pk)
-
-    thread = threading.Thread(target=_process, daemon=True)
-    thread.start()
+    _enqueue_invoice_audit(audit.pk)
 
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'ok': True, 'audit_id': audit.pk})

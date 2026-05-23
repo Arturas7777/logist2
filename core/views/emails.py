@@ -16,12 +16,13 @@ from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
+from core.models_contact import Contact, ContactEmail
 from core.models_email import (
     CarEmailLink,
-    ContainerEmail, ContainerEmailLink,
+    ContainerEmail,
+    ContainerEmailLink,
     EmailGroup,
 )
-from core.models_contact import Contact, ContactEmail
 from core.services.email_reply_parser import (
     format_quoted_reply,
     split_reply_and_quote,
@@ -673,8 +674,8 @@ def contacts_autocomplete(request):
     совпадение имени → должности). Исторические последними, упорядочены по
     частоте (``seen``).
     """
-    from collections import Counter
     import re
+    from collections import Counter
 
     q_raw = (request.GET.get('q') or '').strip()
     try:
@@ -1057,8 +1058,9 @@ def email_autotransport_updates(request, at_id: int):
     число УНИКАЛЬНЫХ писем, у которых есть хотя бы один непрочитанный
     link среди машин рейса (а не сумма непрочитанных линков).
     """
-    from core.models import AutoTransport
     from django.db.models import Exists, OuterRef
+
+    from core.models import AutoTransport
 
     at = get_object_or_404(AutoTransport, pk=at_id)
     car_ids = list(at.cars.values_list('id', flat=True))

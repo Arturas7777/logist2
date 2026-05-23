@@ -158,7 +158,8 @@ class Command(BaseCommand):
         под активные фильтры. Позволяет «вернуть» письма в карточки после
         удаления/отключения фильтра."""
         from core.services.email_matcher import (
-            build_booking_index, match_email_to_containers,
+            build_booking_index,
+            match_email_to_containers,
         )
 
         booking_index = build_booking_index()

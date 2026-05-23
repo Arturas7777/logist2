@@ -278,11 +278,11 @@ class Client(BalanceMethodsMixin, models.Model):
 
         from django.db.models import F, Sum
 
+        from core.mixins import OPEN_INVOICE_STATUSES
         from core.models_billing import NewInvoice
-
         total = NewInvoice.objects.filter(
             recipient_client=self,
-            status__in=['ISSUED', 'OVERDUE', 'PARTIALLY_PAID'],
+            status__in=OPEN_INVOICE_STATUSES,
         ).aggregate(s=Sum(F('total') - F('paid_amount')))['s'] or Decimal('0.00')
         return total
 
@@ -679,19 +679,37 @@ class Container(models.Model):
                 )
 
     def check_and_update_status_from_cars(self):
-        """Проверяет статус всех автомобилей в контейнере и обновляет статус контейнера"""
+        """Если ВСЕ авто в контейнере уже TRANSFERRED — обновить статус контейнера.
+
+        Единственный источник правды для логики «контейнер передан».
+        Раньше дублировалось в трёх местах:
+        ``Container.check_and_update_status_from_cars`` (2 exists()-запроса),
+        ``signals._update_container_status_if_all_transferred`` (1 aggregate)
+        и ``car_lifecycle_service.check_container_status`` (обёртка).
+        Теперь все обёртки делегируют сюда.
+
+        Один SQL-запрос (aggregate) вместо двух (exists + exists).
+        """
         if not self.pk:
             return
-
-        if not self.container_cars.exists():
+        if self.status == 'TRANSFERRED':
             return
 
-        has_non_transferred = self.container_cars.exclude(status='TRANSFERRED').exists()
+        from django.db.models import Count, Q
+        stats = self.container_cars.aggregate(
+            total=Count('id'),
+            transferred=Count('id', filter=Q(status='TRANSFERRED')),
+        )
+        total = stats['total'] or 0
+        if total == 0 or stats['transferred'] != total:
+            return
 
-        if not has_non_transferred and self.status != 'TRANSFERRED':
-            self.status = 'TRANSFERRED'
-            self.save(update_fields=['status'])
-            logger.info("Container %s status automatically changed to TRANSFERRED", self.number)
+        self.status = 'TRANSFERRED'
+        self.save(update_fields=['status'])
+        logger.info(
+            "Container %s -> TRANSFERRED (all %d cars transferred)",
+            self.number, total,
+        )
 
     def get_unload_address(self):
         """Возвращает (name, address) выбранной площадки разгрузки"""
@@ -707,7 +725,6 @@ class Container(models.Model):
         именно в этой карточке (а не глобальное по письму).
         """
         from django.db.models import OuterRef, Subquery
-        from core.models_email import ContainerEmail, ContainerEmailLink
         return (
             ContainerEmail.objects
             .filter(containers__id=self.pk)
@@ -881,9 +898,28 @@ class Car(models.Model):
         Копирует дефолты со склада в авто из кастомных услуг.
         force=True — перезаписывает ВСЕ соответствующие поля значениями склада.
         force=False — перезаписывает только если поле пустое или равно дефолту модели.
+
+        .. deprecated::
+            Метод пишет в legacy-поля Car (``unload_fee``, ``delivery_fee``,
+            ``loading_fee``, ``docs_fee``, ``transfer_fee``,
+            ``transit_declaration``, ``export_declaration``, ``extra_costs``,
+            ``complex_fee``, ``free_days``, ``rate``). Эти поля больше не
+            используются в ``calculate_total_price()`` — расчёт идёт через
+            ``CarService``. Метод оставлен для совместимости со старой
+            админкой и историческими отчётами; новый код **не должен**
+            на него полагаться. Будет удалён после переноса всех читателей
+            legacy полей на CarService (см. план в docstring класса Car).
         """
         if not self.warehouse:
             return
+
+        import warnings
+        warnings.warn(
+            "Car.apply_warehouse_defaults() writes to deprecated legacy fields. "
+            "Use CarService records via car_service_manager instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
         from decimal import Decimal
 
@@ -950,6 +986,15 @@ class Car(models.Model):
     def set_initial_warehouse_values(self):
         """Подтягивает дефолты со склада при создании авто.
         Если текущее значение = модельному дефолту (например, rate=5) или 0 — берём значение со склада.
+
+        .. deprecated::
+            Пишет в legacy-поля Car (free_days, unload_fee, delivery_fee и т.д.).
+            При создании нового авто эти поля больше не нужны — расчёт идёт
+            через CarService, который автоматически создаётся signal'ом
+            ``car_post_save`` → ``_create_car_services_if_needed`` →
+            ``apply_warehouse_services_to_car`` из ``car_service_manager``.
+            Метод оставлен для совместимости со старыми отчётами, читающими
+            ``car.unload_fee`` и др. напрямую.
         """
         if not self.warehouse:
             return
@@ -1302,10 +1347,17 @@ class Car(models.Model):
             except Exception as e:
                 logger.error("Failed to set initial warehouse values for car %s: %s", self.vin, e)
 
+        # NOTE: ранее тут вызывался `after_car_save(self, is_new=is_new)` из
+        # `core.services.car_lifecycle_service`. Это создавало двойной путь
+        # обработки (вместе с `signals.car_post_save`) и дублировало работу
+        # (recalculate_car_price + check_container_status). Вся логика
+        # пост-сохранения теперь живёт в сигнале `car_post_save`, который
+        # делегирует тяжёлый пересчёт в Celery
+        # (`recalculate_cars_total_price_task`).
+        # Лайфсайкл-сервис остался для прямого использования из management
+        # commands (recalculate_*), где обычно нужен синхронный пересчёт.
+        self._is_new_on_save = is_new  # сигнал может посмотреть, если нужно
         super().save(*args, **kwargs)
-
-        from .services.car_lifecycle_service import after_car_save
-        after_car_save(self, is_new=is_new)
 
     def get_profit_report(self):
         """
@@ -1322,20 +1374,20 @@ class Car(models.Model):
         """
         from django.db.models import Q
 
+        from core.mixins import ACTIVE_INVOICE_STATUSES
         from core.models_billing import InvoiceItem
-
         default_company_id = Company.get_default_id()
 
         income_total = InvoiceItem.objects.filter(
             car=self,
             invoice__issuer_company_id=default_company_id,
-            invoice__status__in=['ISSUED', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'],
+            invoice__status__in=ACTIVE_INVOICE_STATUSES,
         ).aggregate(s=Sum('total_price'))['s'] or Decimal('0.00')
 
         incoming_items = InvoiceItem.objects.filter(
             car=self,
             invoice__recipient_company_id=default_company_id,
-            invoice__status__in=['ISSUED', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'],
+            invoice__status__in=ACTIVE_INVOICE_STATUSES,
         )
         cost_total = incoming_items.aggregate(s=Sum('total_price'))['s'] or Decimal('0.00')
 
@@ -1346,7 +1398,7 @@ class Car(models.Model):
                 car=self,
                 service_type='STORAGE',
                 audit__invoice__recipient_company_id=default_company_id,
-                audit__invoice__status__in=['ISSUED', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'],
+                audit__invoice__status__in=ACTIVE_INVOICE_STATUSES,
             ).exists()
         except Exception:
             storage_in_items = False
@@ -1386,7 +1438,8 @@ class Car(models.Model):
         баблы на фронте показывают корректный per-карточка статус.
         """
         from django.db.models import OuterRef, Subquery
-        from core.models_email import ContainerEmail, CarEmailLink
+
+        from core.models_email import CarEmailLink
         return (
             ContainerEmail.objects
             .filter(cars__id=self.pk)
@@ -1514,6 +1567,14 @@ class LineService(BaseService):
     class Meta:
         verbose_name = "Услуга линии"
         verbose_name_plural = "Услуги линий"
+        indexes = [
+            # Используется в signals и car_service_manager: фильтр
+            # `LineService.objects.filter(line=..., is_active=True, add_by_default=True)`.
+            models.Index(
+                fields=['line', 'is_active', 'add_by_default'],
+                name='line_svc_active_default_idx',
+            ),
+        ]
 
 
 class CarrierService(BaseService):
@@ -1526,6 +1587,12 @@ class CarrierService(BaseService):
     class Meta:
         verbose_name = "Услуга перевозчика"
         verbose_name_plural = "Услуги перевозчиков"
+        indexes = [
+            models.Index(
+                fields=['carrier', 'is_active', 'add_by_default'],
+                name='carrier_svc_active_default_idx',
+            ),
+        ]
 
 
 class WarehouseService(BaseService):
@@ -1538,6 +1605,14 @@ class WarehouseService(BaseService):
     class Meta:
         verbose_name = "Услуга склада"
         verbose_name_plural = "Услуги складов"
+        indexes = [
+            # Главный композитный — для signals.update_cars_on_warehouse_service_change
+            # и car_service_manager.find_warehouse_services_for_car.
+            models.Index(
+                fields=['warehouse', 'is_active', 'add_by_default'],
+                name='wh_svc_active_default_idx',
+            ),
+        ]
 
 
 class DeletedCarService(models.Model):
@@ -1738,6 +1813,12 @@ class AutoTransport(models.Model):
         verbose_name = "Автовоз на загрузку"
         verbose_name_plural = "Автовозы на загрузку"
         ordering = ['-created_at']
+        indexes = [
+            # Фильтрация по статусу — частая операция в сигналах и
+            # автогенерации инвойсов (см. _queue_or_run_generate_invoices).
+            models.Index(fields=['status'], name='autotransport_status_idx'),
+            models.Index(fields=['carrier', 'status'], name='autotransport_carr_st_idx'),
+        ]
 
     def __str__(self):
         return f"Автовоз {self.number} - {self.carrier.name}"
@@ -1838,7 +1919,8 @@ class AutoTransport(models.Model):
         до тех пор, пока хотя бы одна машина имеет непрочитанный link.
         """
         from django.db.models import Exists, OuterRef
-        from core.models_email import ContainerEmail, CarEmailLink
+
+        from core.models_email import CarEmailLink
         car_ids = list(self.cars.values_list('id', flat=True))
         if not car_ids:
             return ContainerEmail.objects.none()
@@ -1920,41 +2002,44 @@ class AutoTransport(models.Model):
 # ==============================================================================
 # Импортируем новые модели, чтобы Django их видел
 
-from .models_invoice_audit import InvoiceAudit, SupplierCost  # noqa: F401
+from core.models_contact import (  # noqa: E402,F401
+    Contact,
+    ContactEmail,
+    ContactPhone,
+)
 
 # ==============================================================================
 # 🌐 МОДЕЛИ ДЛЯ КЛИЕНТСКОГО САЙТА
 # ==============================================================================
 # Импортируем модели для клиентского портала
-
-
 # ==============================================================================
 # 🏦 МОДЕЛИ ДЛЯ БАНКОВСКИХ ИНТЕГРАЦИЙ
 # ==============================================================================
-
 # ==============================================================================
 # 📧 МОДЕЛИ ДЛЯ ПЕРЕПИСКИ ПО КОНТЕЙНЕРАМ (Gmail OAuth)
 # ==============================================================================
 # Импортируем, чтобы Django зарегистрировал модель в core-приложении
 # (makemigrations увидит её, админка/ORM имеют доступ через core.models).
 from core.models_email import (  # noqa: E402,F401
-    ContainerEmail, ContainerEmailLink, GmailSyncState,
-    EmailGroup, EmailGroupMember,
+    ContainerEmail,
+    ContainerEmailLink,
+    EmailGroup,
+    EmailGroupMember,
     EmailIngestFilter,
+    GmailSyncState,
 )
-from core.models_contact import (  # noqa: E402,F401
-    Contact, ContactEmail, ContactPhone,
-)
+
+# ==============================================================================
+# 📊 МОНИТОРИНГ СИСТЕМЫ (/admin/system-monitor/)
+# ==============================================================================
+from core.models_monitoring import SystemMetric, UptimeCheck  # noqa: E402,F401
 
 # ==============================================================================
 # 📄 AI-ОБРАБОТКА СКАНОВ (Title / Dock Receipt)
 # ==============================================================================
 from core.models_scans import ScanProcessingJob  # noqa: E402,F401
 
-# ==============================================================================
-# 📊 МОНИТОРИНГ СИСТЕМЫ (/admin/system-monitor/)
-# ==============================================================================
-from core.models_monitoring import SystemMetric, UptimeCheck  # noqa: E402,F401
+from .models_invoice_audit import InvoiceAudit, SupplierCost  # noqa: F401
 
 
 # ==============================================================================

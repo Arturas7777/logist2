@@ -16,7 +16,6 @@ import logging
 import os
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
 
 from django.core.files.base import ContentFile
 from django.db import transaction

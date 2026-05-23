@@ -21,7 +21,7 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from core.throttles import AIChatThrottle, TrackShipmentThrottle
+from core.throttles import AIChatThrottle, PhotoDownloadThrottle, TrackShipmentThrottle
 
 from .models import Car, Container
 from .models_website import (
@@ -42,8 +42,6 @@ from .serializers_website import (
 )
 from .services.admin_ai_agent import generate_admin_ai_response
 from .services.ai_chat_service import AIServiceError, generate_ai_response
-
-
 
 # ============================================================================
 # Главная страница и информационные страницы
@@ -273,47 +271,39 @@ def track_shipment(request):
         normalized_number = tracking_number.upper().replace(' ', '').replace('-', '')
         logger.info(f"[TRACK] Нормализованный номер: '{normalized_number}'")
 
-        # Ищем по VIN (с загрузкой контейнера, склада и фотографий)
-        # Пробуем сначала точное совпадение, потом по нормализованному
-        car = Car.objects.filter(vin__iexact=tracking_number).select_related(
+        # Безопасность: VIN — 17 символов, номер контейнера ~11. Слишком короткий
+        # ввод однозначно не валидный, но при этом провоцирует широкий поиск.
+        # Минимум 8 — компромисс между опечатками и защитой от перебора/утечки.
+        if len(normalized_number) < 8:
+            return Response(
+                {'error': 'Номер слишком короткий. Введите полный VIN (17 символов) или номер контейнера.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        car_qs = Car.objects.select_related(
             'container', 'container__warehouse', 'warehouse'
         ).prefetch_related(
             Prefetch('container__photos', queryset=ContainerPhoto.objects.filter(is_public=True))
-        ).first()
+        )
 
-        # Если не нашли - пробуем по нормализованному VIN
+        # Только точное совпадение VIN. Раньше тут был vin__icontains в качестве
+        # fallback — это давало возможность по частичному совпадению получать
+        # данные чужих автомобилей (security leak).
+        car = car_qs.filter(vin__iexact=tracking_number).first()
         if not car and normalized_number != tracking_number.upper():
-            car = Car.objects.filter(vin__iexact=normalized_number).select_related(
-                'container', 'container__warehouse', 'warehouse'
-            ).prefetch_related(
-                Prefetch('container__photos', queryset=ContainerPhoto.objects.filter(is_public=True))
-            ).first()
-
-        # Если не нашли - ищем по частичному совпадению VIN (содержит)
-        if not car:
-            car = Car.objects.filter(vin__icontains=normalized_number).select_related(
-                'container', 'container__warehouse', 'warehouse'
-            ).prefetch_related(
-                Prefetch('container__photos', queryset=ContainerPhoto.objects.filter(is_public=True))
-            ).first()
+            car = car_qs.filter(vin__iexact=normalized_number).first()
 
         container = None
 
         if not car:
-            # Ищем по номеру контейнера (с загрузкой склада)
-            container = Container.objects.filter(number__iexact=tracking_number).select_related(
+            container_qs = Container.objects.select_related(
                 'warehouse'
             ).prefetch_related(
                 Prefetch('photos', queryset=ContainerPhoto.objects.filter(is_public=True))
-            ).first()
-
-            # Если не нашли - пробуем по нормализованному
+            )
+            container = container_qs.filter(number__iexact=tracking_number).first()
             if not container and normalized_number != tracking_number.upper():
-                container = Container.objects.filter(number__iexact=normalized_number).select_related(
-                    'warehouse'
-                ).prefetch_related(
-                    Prefetch('photos', queryset=ContainerPhoto.objects.filter(is_public=True))
-                ).first()
+                container = container_qs.filter(number__iexact=normalized_number).first()
 
         # Сохраняем запрос
         try:
@@ -349,8 +339,10 @@ def track_shipment(request):
             )
     except Exception as e:
         logger.error(f"[TRACK] Ошибка при поиске груза: {e}", exc_info=True)
+        # Не возвращаем str(e) клиенту: stacktrace в JSON-ответе — утечка
+        # деталей реализации. Сообщение в логах + Sentry достаточно.
         return Response(
-            {'error': f'Ошибка сервера: {str(e)}'},
+            {'error': 'Внутренняя ошибка сервера. Попробуйте позже.'},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
@@ -865,8 +857,13 @@ def ai_chat_history(request):
 @api_view(['GET'])
 @authentication_classes([])
 @permission_classes([AllowAny])
+@throttle_classes([PhotoDownloadThrottle])
 def get_container_photos(request, container_number):
-    """Получить фотографии контейнера с разделением по типам (кэш 15 мин)"""
+    """Получить фотографии контейнера с разделением по типам (кэш 15 мин).
+
+    Throttle: 30 req/min на IP — защита от скриптового скачивания всех
+    публичных фото подряд.
+    """
     cache_key = f'container_photos:{container_number}'
     cached = django_cache.get(cache_key)
     if cached is not None:
@@ -925,17 +922,27 @@ def get_container_photos(request, container_number):
             'error': 'Контейнер не найден'
         }, status=404)
     except Exception as e:
+        import logging as _logging
+        _logging.getLogger(__name__).exception(
+            "get_container_photos failed for %s: %s", container_number, e,
+        )
         return Response({
             'success': False,
-            'error': str(e)
+            'error': 'Внутренняя ошибка сервера.',
         }, status=500)
 
 
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
+@throttle_classes([PhotoDownloadThrottle])
 def download_photos_archive(request):
-    """Скачать архив выбранных фотографий"""
+    """Скачать архив выбранных фотографий.
+
+    Throttle: 30 req/min на IP — каждая операция строит ZIP в памяти, поэтому
+    лимит особенно важен. Раньше скоуп photo_download был объявлен в
+    settings, но не привязан ни к одному endpoint.
+    """
     try:
         photo_ids = request.data.get('photo_ids', [])
         if not photo_ids:

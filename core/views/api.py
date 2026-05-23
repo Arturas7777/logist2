@@ -15,7 +15,6 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET
 
 from core.cache_utils import CACHE_TIMEOUTS
-from core.view_utils import ratelimit_staff
 from core.models import (
     Car,
     Carrier,
@@ -30,6 +29,7 @@ from core.models import (
     Warehouse,
     WarehouseService,
 )
+from core.view_utils import ratelimit_staff
 
 logger = logging.getLogger(__name__)
 

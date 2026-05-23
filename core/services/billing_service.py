@@ -711,9 +711,10 @@ class BillingService:
             logger.debug('[AutoReconcile] Нет несопоставленных банковских транзакций')
             return result
 
+        from core.mixins import OPEN_INVOICE_STATUSES
         default_company_id = Company.get_default_id()
         unpaid_invoices = NewInvoice.objects.filter(
-            status__in=['ISSUED', 'PARTIALLY_PAID', 'OVERDUE'],
+            status__in=OPEN_INVOICE_STATUSES,
             recipient_company_id=default_company_id,
         ).exclude(
             external_number=''

@@ -54,7 +54,8 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         from core.services.email_matcher import (
-            build_booking_index, match_email_to_containers,
+            build_booking_index,
+            match_email_to_containers,
         )
 
         statuses: list[str] = opts['statuses']

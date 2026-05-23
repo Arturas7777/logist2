@@ -17,6 +17,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
@@ -533,6 +534,7 @@ def _is_content_duplicate(msg: ParsedMessage) -> bool:
     трекинг-пиксели, unsubscribe-токены и прочая вариативная служебка.
     """
     from datetime import timedelta
+
     from core.models_email import ContainerEmail
 
     from_addr = (msg.from_addr or '')[:500]

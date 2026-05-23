@@ -31,11 +31,10 @@ from django.contrib.auth.models import AbstractBaseUser
 from django.core.files.uploadedfile import UploadedFile
 from django.utils import timezone
 
-from core.models_email import CarEmailLink, ContainerEmail, ContainerEmailLink
 from core.models_contact import Contact, ContactEmail
+from core.models_email import CarEmailLink, ContainerEmail, ContainerEmailLink
 from core.services.email_reply_parser import (
     compose_reply_html,
-    format_quoted_reply,
     plain_text_to_simple_html,
 )
 from core.services.gmail_client import GmailApiClient

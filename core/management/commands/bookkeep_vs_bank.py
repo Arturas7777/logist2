@@ -16,7 +16,7 @@ from decimal import Decimal
 from typing import Any
 
 from django.core.management.base import BaseCommand
-from django.db.models import Q, Sum
+from django.db.models import Sum
 
 
 def _q(value: Any) -> Decimal:
@@ -89,11 +89,11 @@ class Command(BaseCommand):
 
         # 4. Открытые FACT (мы должны контрагентам) — деньги уйдут с банка,
         #    но в bookkeep уже учтены косвенно.
-        from core.models_billing import NewInvoice
+        from core.mixins import OPEN_INVOICE_STATUSES
         # direction вычисляется в Python — фильтруем по issuer-полям.
         fact_qs = NewInvoice.objects.filter(
             document_type='INVOICE_FACT',
-            status__in=['ISSUED', 'OVERDUE', 'PARTIALLY_PAID'],
+            status__in=OPEN_INVOICE_STATUSES,
         )
         open_fact_total = Decimal('0.00')
         for inv in fact_qs.only('id', 'total', 'paid_amount'):
@@ -103,7 +103,7 @@ class Command(BaseCommand):
         #    в bookkeep тоже нет (PARDP даёт +balance Caromoto только при оплате).
         pardp_qs = NewInvoice.objects.filter(
             document_type='INVOICE',
-            status__in=['ISSUED', 'OVERDUE', 'PARTIALLY_PAID'],
+            status__in=OPEN_INVOICE_STATUSES,
         )
         open_pardp_total = Decimal('0.00')
         for inv in pardp_qs.only('id', 'total', 'paid_amount'):

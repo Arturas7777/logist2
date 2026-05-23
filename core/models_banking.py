@@ -106,6 +106,12 @@ class BankConnection(models.Model):
     class Meta:
         verbose_name = 'Банковское подключение'
         verbose_name_plural = 'Банковские подключения'
+        indexes = [
+            # `BankConnection.objects.filter(bank_type='REVOLUT', is_active=True)`
+            # — типичный запрос Celery-задач (sync_bank_and_reconcile,
+            # check_revolut_jwt_expiry, sync_bank_accounts).
+            models.Index(fields=['bank_type', 'is_active'], name='bank_conn_type_active_idx'),
+        ]
 
     def __str__(self):
         return f'{self.get_bank_type_display()} — {self.name}'

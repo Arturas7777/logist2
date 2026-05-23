@@ -233,14 +233,15 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         """Оптимизация N+1 для списка инвойсов.
 
         list_display обращается к issuer_* / recipient_* / category / linked_invoice /
-        audit / created_by — без select_related на каждую строку было до 8 доп. запросов.
+        linked_from (reverse OneToOne) / audit / created_by — без select_related
+        на каждую строку было до 8 доп. запросов.
         """
         qs = super().get_queryset(request)
         return qs.select_related(
             'issuer_company', 'issuer_warehouse', 'issuer_line', 'issuer_carrier',
             'recipient_client', 'recipient_warehouse', 'recipient_line',
             'recipient_carrier', 'recipient_company',
-            'category', 'linked_invoice', 'created_by',
+            'category', 'linked_invoice', 'linked_from', 'created_by',
         )
 
     def add_view(self, request, form_url='', extra_context=None):
@@ -865,14 +866,19 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
     direction_badge.short_description = 'Напр.'
 
     def linked_badge(self, obj):
-        """Badge showing linked invoice pair"""
+        """Badge showing linked invoice pair.
+
+        Запрос предварительно делает select_related('linked_invoice',
+        'linked_from'), поэтому здесь без дополнительных SQL-запросов.
+        """
+        from django.core.exceptions import ObjectDoesNotExist
         linked = None
         if obj.linked_invoice_id:
             linked = obj.linked_invoice
         else:
             try:
                 linked = obj.linked_from
-            except NewInvoice.DoesNotExist:
+            except ObjectDoesNotExist:
                 pass
         if not linked:
             return format_html('<span style="color:#ccc;">—</span>')
@@ -1214,8 +1220,9 @@ class NewInvoiceAdmin(CSVExportMixin, admin.ModelAdmin):
         from .services.sitepro_service import SiteProService
         service = SiteProService(connection)
 
+        from core.mixins import ACTIVE_INVOICE_STATUSES
         eligible = queryset.filter(
-            status__in=['ISSUED', 'PARTIALLY_PAID', 'PAID', 'OVERDUE'],
+            status__in=ACTIVE_INVOICE_STATUSES,
             document_type='INVOICE',
         )
         if not eligible.exists():

@@ -111,39 +111,49 @@ class SimpleBalanceMixin(models.Model):
         abstract = True
 
     def get_balance_breakdown(self):
-        """
-        Получить разбивку баланса по способам оплаты из истории транзакций
+        """Разбивка баланса по способам оплаты из истории транзакций.
 
         Returns:
             dict: {'cash': Decimal, 'card': Decimal, 'transfer': Decimal, 'total': Decimal}
+
+        Раньше делалось 6 SELECT-ов (3 method × incoming/outgoing). Теперь
+        один SELECT с CASE WHEN — аналогично BalanceMethodsMixin. Учитываем
+        только COMPLETED-транзакции, как в `recalculate_entity_balance`,
+        иначе breakdown не совпадал с фактическим `self.balance`.
         """
-        from django.db.models import Q, Sum
+        from django.db.models import Case, DecimalField, Q, Sum, Value, When
+        from django.db.models.functions import Coalesce
 
-        # Определяем тип сущности для фильтрации транзакций
         model_name = self.__class__.__name__.lower()
+        from .models_billing import Transaction
 
-        # Фильтры для входящих и исходящих транзакций
         incoming_filter = Q(**{f'to_{model_name}': self})
         outgoing_filter = Q(**{f'from_{model_name}': self})
+        zero = Value(Decimal('0.00'), output_field=DecimalField(max_digits=15, decimal_places=2))
 
-        # Получаем транзакции
-        from .models_billing import Transaction
-        transactions = Transaction.objects.filter(incoming_filter | outgoing_filter)
+        rows = (
+            Transaction.objects
+            .filter((incoming_filter | outgoing_filter), status='COMPLETED')
+            .values('method')
+            .annotate(
+                incoming=Coalesce(
+                    Sum(Case(When(incoming_filter, then='amount'))),
+                    zero,
+                    output_field=DecimalField(max_digits=15, decimal_places=2),
+                ),
+                outgoing=Coalesce(
+                    Sum(Case(When(outgoing_filter, then='amount'))),
+                    zero,
+                    output_field=DecimalField(max_digits=15, decimal_places=2),
+                ),
+            )
+        )
 
-        # Разбивка по способам оплаты
-        breakdown = {}
-        for method in ['CASH', 'CARD', 'TRANSFER']:
-            incoming = transactions.filter(
-                incoming_filter,
-                method=method
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-
-            outgoing = transactions.filter(
-                outgoing_filter,
-                method=method
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-
-            breakdown[method.lower()] = incoming - outgoing
+        breakdown = {m.lower(): Decimal('0.00') for m in ('CASH', 'CARD', 'TRANSFER')}
+        for row in rows:
+            key = (row['method'] or '').lower()
+            if key in breakdown:
+                breakdown[key] = row['incoming'] - row['outgoing']
 
         breakdown['total'] = self.balance
         return breakdown
@@ -685,28 +695,54 @@ class NewInvoice(models.Model):
 
         CREDIT_NOTE (KRE) тоже пропускается: кредитная нота — это списание долга,
         она не оплачивается PAYMENT-транзакциями, paid_amount/status ведутся вручную.
+
+        Конкурентность: read-modify-write на paid_amount + status, поэтому
+        блокируем строку инвойса через SELECT FOR UPDATE (PostgreSQL) и
+        работаем внутри atomic-блока. Без блокировки два одновременных
+        Transaction.post_save могут прочитать одно и то же paid_amount и
+        затереть друг друга (lost update).
         """
         if self.status == 'LINKED_PAID':
             return
         if self.document_type == 'CREDIT_NOTE':
             return
+        from django.db import connection
+        from django.db import transaction as db_transaction
         from django.db.models import Sum
-        payments = self.transactions.filter(
-            type='PAYMENT', status='COMPLETED'
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        refunds = self.transactions.filter(
-            type='REFUND', status='COMPLETED'
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        calculated = payments - refunds
-        if calculated < Decimal('0.00'):
-            logger.warning(
-                "Invoice %s: paid_amount would be negative (%s). "
-                "Payments=%s, Refunds=%s. Clamping to 0.",
-                self.number, calculated, payments, refunds,
-            )
-        self.paid_amount = max(Decimal('0.00'), calculated)
-        self.update_status()
-        self.save(update_fields=['paid_amount', 'status', 'updated_at'])
+
+        with db_transaction.atomic():
+            if connection.features.has_select_for_update:
+                locked = (
+                    NewInvoice.objects
+                    .select_for_update()
+                    .filter(pk=self.pk)
+                    .first()
+                )
+            else:
+                locked = NewInvoice.objects.filter(pk=self.pk).first()
+            if locked is None:
+                return
+            if locked.status == 'LINKED_PAID' or locked.document_type == 'CREDIT_NOTE':
+                return
+            payments = locked.transactions.filter(
+                type='PAYMENT', status='COMPLETED'
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            refunds = locked.transactions.filter(
+                type='REFUND', status='COMPLETED'
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            calculated = payments - refunds
+            if calculated < Decimal('0.00'):
+                logger.warning(
+                    "Invoice %s: paid_amount would be negative (%s). "
+                    "Payments=%s, Refunds=%s. Clamping to 0.",
+                    locked.number, calculated, payments, refunds,
+                )
+            locked.paid_amount = max(Decimal('0.00'), calculated)
+            locked.update_status()
+            locked.save(update_fields=['paid_amount', 'status', 'updated_at'])
+            self.paid_amount = locked.paid_amount
+            self.status = locked.status
+            self.updated_at = locked.updated_at
 
     def get_items_pivot_table(self):
         """
@@ -1767,23 +1803,53 @@ class Transaction(models.Model):
         Warehouse / Line / Carrier считаются только Tx **без инвойса** —
         инвойсные потоки в их total_balance учитываются через открытые FACT
         и PARDP, а не через balance.
+
+        Конкурентность: операция read-modify-write на entity.balance,
+        поэтому всё выполняется в atomic-блоке с SELECT FOR UPDATE на
+        строку entity (PostgreSQL). Без блокировки два параллельных
+        Transaction.post_save могут прочитать одинаковый baseline и
+        затереть друг друга (lost update).
         """
         if entity is None or not hasattr(entity, 'balance'):
             return
+        from django.db import connection
+        from django.db import transaction as db_transaction
+
         model_name = entity.__class__.__name__.lower()
-        qs = Transaction.objects.filter(status='COMPLETED')
-        if model_name in Transaction._NON_INVOICE_BALANCE_ENTITIES:
-            qs = qs.filter(invoice__isnull=True)
-        incoming = qs.filter(
-            **{f'to_{model_name}': entity}
-        ).aggregate(s=models.Sum('amount'))['s'] or Decimal('0.00')
-        outgoing = qs.filter(
-            **{f'from_{model_name}': entity}
-        ).aggregate(s=models.Sum('amount'))['s'] or Decimal('0.00')
-        new_balance = incoming - outgoing
-        if entity.balance != new_balance:
-            entity.balance = new_balance
-            entity.save(update_fields=['balance', 'balance_updated_at'])
+        entity_model = entity.__class__
+
+        with db_transaction.atomic():
+            if connection.features.has_select_for_update:
+                locked = (
+                    entity_model.objects
+                    .select_for_update()
+                    .filter(pk=entity.pk)
+                    .first()
+                )
+                if locked is None:
+                    return
+            else:
+                locked = entity_model.objects.filter(pk=entity.pk).first()
+                if locked is None:
+                    return
+
+            qs = Transaction.objects.filter(status='COMPLETED')
+            if model_name in Transaction._NON_INVOICE_BALANCE_ENTITIES:
+                qs = qs.filter(invoice__isnull=True)
+            incoming = qs.filter(
+                **{f'to_{model_name}': locked}
+            ).aggregate(s=models.Sum('amount'))['s'] or Decimal('0.00')
+            outgoing = qs.filter(
+                **{f'from_{model_name}': locked}
+            ).aggregate(s=models.Sum('amount'))['s'] or Decimal('0.00')
+            new_balance = incoming - outgoing
+            if locked.balance != new_balance:
+                locked.balance = new_balance
+                locked.save(update_fields=['balance', 'balance_updated_at'])
+                if entity is not locked:
+                    entity.balance = new_balance
+                    if hasattr(entity, 'balance_updated_at'):
+                        entity.balance_updated_at = locked.balance_updated_at
 
     def generate_number(self):
         """Сгенерировать уникальный номер транзакции.

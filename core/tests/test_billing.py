@@ -102,11 +102,17 @@ class CompanyGetDefaultTest(TestCase):
     """Тесты Company.get_default()"""
 
     def test_returns_company_by_settings_name(self):
-        """get_default() находит компанию по settings.COMPANY_NAME"""
-        Company.objects.create(name="Caromoto Lithuania")
+        """get_default() находит компанию по settings.COMPANY_NAME.
+
+        Используем реальное значение settings.COMPANY_NAME, чтобы тест не
+        зависел от точного написания (есть варианты «Caromoto Lithuania» и
+        «Caromoto Lithuania, MB» в разных окружениях).
+        """
+        from django.conf import settings
+        Company.objects.create(name=settings.COMPANY_NAME)
         result = Company.get_default()
         self.assertIsNotNone(result)
-        self.assertEqual(result.name, "Caromoto Lithuania")
+        self.assertEqual(result.name, settings.COMPANY_NAME)
 
     def test_returns_none_when_no_company(self):
         """get_default() возвращает None если компании нет"""

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import base64
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime
+from datetime import timezone as dt_timezone
 
 from django.test import TestCase
 

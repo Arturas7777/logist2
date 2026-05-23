@@ -243,6 +243,13 @@ def car_post_save(sender, instance, **kwargs):
     2. Deferred invoice regeneration.
     3. Email notifications (standalone cars).
     4. Container status auto-update on transfer.
+    5. Task auto-create on is_important transition.
+    6. Recalculate car total_price/days/storage_cost (deferred to Celery).
+    7. WebSocket update notification.
+
+    Ранее пункты 6 и 7 жили в `car_lifecycle_service.after_car_save`,
+    который вызывался из `Car.save()`. Это создавало два параллельных
+    пост-сейв пути и удваивало работу. Теперь всё в одном месте.
     """
     if not instance.pk:
         return
@@ -271,6 +278,44 @@ def car_post_save(sender, instance, **kwargs):
 
     # --- 5. Авто-создание/закрытие "Дела" по флагу is_important ---
     _handle_car_important_transition(instance, created=created)
+
+    # --- 6. Recalculate total_price / days / storage_cost (deferred to Celery) ---
+    # Раньше делалось синхронно в `Car.save()` через `after_car_save()`.
+    # Теперь — в фоне через ту же таску что и для catalog-changes, с
+    # graceful inline-fallback если broker лежит.
+    if not getattr(instance, '_bulk_updating', False) and not getattr(instance, '_creating_services', False):
+        _enqueue_recalc_cars_total_price([instance.pk])
+
+    # --- 7. WebSocket data_update notification ---
+    _enqueue_car_ws_notification(instance)
+
+
+def _enqueue_car_ws_notification(car):
+    """Поставить WebSocket-нотификацию data_update на on_commit."""
+    car_id = car.pk
+    payload = {
+        'type': 'data_update',
+        'data': {
+            'model': 'Car',
+            'id': car_id,
+            'status': car.status,
+            'storage_cost': str(car.storage_cost),
+            'days': car.days,
+            'price': str(car.total_price),
+        },
+    }
+
+    def _notify():
+        try:
+            from asgiref.sync import async_to_sync
+            from channels.layers import get_channel_layer
+            channel_layer = get_channel_layer()
+            if channel_layer is not None:
+                async_to_sync(channel_layer.group_send)('updates', payload)
+        except Exception as e:
+            logger.error('WS notification failed for car %s: %s', car_id, e)
+
+    transaction.on_commit(_notify)
 
 
 def _handle_car_important_transition(car, *, created: bool):
@@ -580,38 +625,65 @@ def _get_pending_regen_cars():
 def _deferred_invoice_regeneration(car_id):
     """Планирует пересчёт инвойсов для car_id после коммита.
 
+    Пересчёт делается в Celery (`regenerate_invoices_for_car_task`),
+    HTTP-запрос не блокируется. В dev-окружении
+    (`CELERY_TASK_ALWAYS_EAGER=True`) Celery выполняет задачу синхронно —
+    поведение совпадает со старым `on_commit(_do_regenerate)`.
+
     Дедуплицирует: если для этого car уже запланирован пересчёт в рамках
     текущей транзакции (например, пришло 10 post_save от CarService подряд
     при сохранении карточки авто), планируется только один общий вызов.
+
+    Если broker лежит — fallback на синхронный пересчёт в on_commit
+    (старое поведение), чтобы не терять регенерацию.
     """
     pending = _get_pending_regen_cars()
     if car_id in pending:
         return
     pending.add(car_id)
 
-    def _do_regenerate():
+    def _dispatch():
         try:
-            invoice_ids = list(
-                NewInvoice.objects.filter(
-                    cars__id=car_id,
-                    status__in=['DRAFT', 'ISSUED', 'PARTIALLY_PAID', 'OVERDUE'],
-                ).values_list('id', flat=True)
-            )
-            for invoice_id in invoice_ids:
-                try:
-                    with transaction.atomic():
-                        invoice = NewInvoice.objects.select_for_update(nowait=True).get(id=invoice_id)
-                        invoice.regenerate_items_from_cars()
-                except OperationalError:
-                    logger.warning("Skipping invoice %s - locked", invoice_id)
-                except NewInvoice.DoesNotExist:
-                    pass
-        except Exception as e:
-            logger.error("Error in deferred invoice regeneration for car %s: %s", car_id, e)
+            from core.tasks import regenerate_invoices_for_car_task
+            try:
+                regenerate_invoices_for_car_task.delay(car_id)
+            except Exception:
+                logger.exception(
+                    "Celery enqueue failed for regenerate_invoices_for_car(%s) — running inline",
+                    car_id,
+                )
+                _regenerate_invoices_for_car_inline(car_id)
         finally:
             _get_pending_regen_cars().discard(car_id)
 
-    transaction.on_commit(_do_regenerate)
+    transaction.on_commit(_dispatch)
+
+
+def _regenerate_invoices_for_car_inline(car_id):
+    """Синхронный fallback: дублирует логику regenerate_invoices_for_car_task.
+
+    Используется только если Celery broker недоступен; в обычной работе
+    путь идёт через Celery.
+    """
+    try:
+        from core.mixins import REGENERATABLE_INVOICE_STATUSES
+        invoice_ids = list(
+            NewInvoice.objects.filter(
+                cars__id=car_id,
+                status__in=REGENERATABLE_INVOICE_STATUSES,
+            ).values_list('id', flat=True)
+        )
+        for invoice_id in invoice_ids:
+            try:
+                with transaction.atomic():
+                    invoice = NewInvoice.objects.select_for_update(nowait=True).get(id=invoice_id)
+                    invoice.regenerate_items_from_cars()
+            except OperationalError:
+                logger.warning("Skipping invoice %s - locked", invoice_id)
+            except NewInvoice.DoesNotExist:
+                pass
+    except Exception as e:
+        logger.error("Error in inline invoice regeneration for car %s: %s", car_id, e)
 
 
 @receiver(post_save, sender=CarService)
@@ -629,6 +701,41 @@ def recalculate_invoices_on_car_service_delete(sender, instance, **kwargs):
 # ============================================================================
 # SERVICE CATALOG CHANGES -> UPDATE EXISTING CARSERVICE RECORDS
 # ============================================================================
+
+def _enqueue_recalc_cars_total_price(car_ids):
+    """Поставить пересчёт Car.total_price в Celery; fallback inline."""
+    if not car_ids:
+        return
+    car_ids = list({int(cid) for cid in car_ids if cid})
+
+    def _dispatch():
+        try:
+            from core.tasks import recalculate_cars_total_price_task
+            try:
+                recalculate_cars_total_price_task.delay(car_ids)
+            except Exception:
+                logger.exception(
+                    "Celery enqueue failed for recalculate_cars_total_price(%s ids) — running inline",
+                    len(car_ids),
+                )
+                _recalc_cars_total_price_inline(car_ids)
+        except Exception:
+            logger.exception(
+                "Failed to dispatch cars total_price recalc for %s ids", len(car_ids),
+            )
+
+    transaction.on_commit(_dispatch)
+
+
+def _recalc_cars_total_price_inline(car_ids):
+    """Синхронный fallback для recalculate_cars_total_price_task."""
+    cars_to_update = []
+    for car in Car.objects.filter(pk__in=car_ids).prefetch_related('car_services'):
+        car.calculate_total_price()
+        cars_to_update.append(car)
+    if cars_to_update:
+        Car.objects.bulk_update(cars_to_update, ['total_price'], batch_size=200)
+
 
 @receiver(post_save, sender=WarehouseService)
 def update_cars_on_warehouse_service_change(sender, instance, **kwargs):
@@ -649,20 +756,15 @@ def update_cars_on_warehouse_service_change(sender, instance, **kwargs):
                     cs.custom_price = instance.default_price
                     cs.markup_amount = default_markup_val
             CarService.objects.bulk_update(car_services, ['custom_price', 'markup_amount'], batch_size=100)
+            # Пересчёт total_price выносим в Celery — раньше делался синхронно
+            # в HTTP-потоке (N+1 SELECT + N UPDATE).
+            _enqueue_recalc_cars_total_price([cs.car_id for cs in car_services])
         else:
             affected_car_ids = list(CarService.objects.filter(
                 service_type='WAREHOUSE', service_id=instance.id
             ).values_list('car_id', flat=True))
             CarService.objects.filter(service_type='WAREHOUSE', service_id=instance.id).delete()
-            if affected_car_ids:
-                cars_to_update = []
-                # calculate_total_price() читает car.car_services — без prefetch
-                # это N+1 запрос (один SELECT на каждую машину).
-                for car in Car.objects.filter(pk__in=affected_car_ids).prefetch_related('car_services'):
-                    car.calculate_total_price()
-                    cars_to_update.append(car)
-                if cars_to_update:
-                    Car.objects.bulk_update(cars_to_update, ['total_price'], batch_size=100)
+            _enqueue_recalc_cars_total_price(affected_car_ids)
     except Exception as e:
         logger.error("Error updating cars on warehouse service change: %s", e)
 
@@ -689,25 +791,14 @@ def update_cars_on_line_service_change(sender, instance, **kwargs):
             CarService.objects.filter(
                 service_type='LINE', service_id=instance.id, car__line=instance.line
             ).update(custom_price=instance.default_price, markup_amount=default_markup)
-            if affected_car_ids:
-                cars_to_update = []
-                for car in Car.objects.filter(id__in=affected_car_ids).prefetch_related('car_services'):
-                    car.calculate_total_price()
-                    cars_to_update.append(car)
-                if cars_to_update:
-                    Car.objects.bulk_update(cars_to_update, ['total_price'], batch_size=100)
+            _enqueue_recalc_cars_total_price(affected_car_ids)
         else:
             affected_car_ids = list(CarService.objects.filter(
                 service_type='LINE', service_id=instance.id
             ).values_list('car_id', flat=True))
             deleted = CarService.objects.filter(service_type='LINE', service_id=instance.id).delete()
             if deleted[0] > 0:
-                cars_to_update = []
-                for car in Car.objects.filter(id__in=affected_car_ids).prefetch_related('car_services'):
-                    car.calculate_total_price()
-                    cars_to_update.append(car)
-                if cars_to_update:
-                    Car.objects.bulk_update(cars_to_update, ['total_price'], batch_size=100)
+                _enqueue_recalc_cars_total_price(affected_car_ids)
     except Exception as e:
         logger.error("Error updating cars on line service change: %s", e)
 
@@ -717,21 +808,19 @@ def update_cars_on_carrier_service_change(sender, instance, **kwargs):
     try:
         if instance.is_active and instance.default_price > 0:
             default_markup = getattr(instance, 'default_markup', None) or Decimal('0')
+            affected_car_ids = list(CarService.objects.filter(
+                service_type='CARRIER', service_id=instance.id, car__carrier=instance.carrier
+            ).values_list('car_id', flat=True))
             CarService.objects.filter(
                 service_type='CARRIER', service_id=instance.id, car__carrier=instance.carrier
             ).update(custom_price=instance.default_price, markup_amount=default_markup)
+            _enqueue_recalc_cars_total_price(affected_car_ids)
         else:
             affected_car_ids = list(CarService.objects.filter(
                 service_type='CARRIER', service_id=instance.id
             ).values_list('car_id', flat=True))
             CarService.objects.filter(service_type='CARRIER', service_id=instance.id).delete()
-            if affected_car_ids:
-                cars_to_update = []
-                for car in Car.objects.filter(pk__in=affected_car_ids).prefetch_related('car_services'):
-                    car.calculate_total_price()
-                    cars_to_update.append(car)
-                if cars_to_update:
-                    Car.objects.bulk_update(cars_to_update, ['total_price'], batch_size=100)
+            _enqueue_recalc_cars_total_price(affected_car_ids)
     except Exception as e:
         logger.error("Error updating cars on carrier service change: %s", e)
 
@@ -746,13 +835,7 @@ def update_cars_on_company_service_change(sender, instance, **kwargs):
             car_services.update(custom_price=instance.default_price, markup_amount=default_markup)
         else:
             car_services.delete()
-        if affected_car_ids:
-            cars_to_update = []
-            for car in Car.objects.filter(id__in=affected_car_ids).prefetch_related('car_services'):
-                car.calculate_total_price()
-                cars_to_update.append(car)
-            if cars_to_update:
-                Car.objects.bulk_update(cars_to_update, ['total_price'], batch_size=100)
+        _enqueue_recalc_cars_total_price(affected_car_ids)
     except Exception as e:
         logger.error("Error updating cars on company service change: %s", e)
 
@@ -1219,30 +1302,17 @@ def _mark_cars_as_transferred(autotransport, transfer_date=None):
 
 
 def _update_container_status_if_all_transferred(container_id):
-    """Set container to TRANSFERRED if all its cars are TRANSFERRED.
+    """Тонкая обёртка над ``Container.check_and_update_status_from_cars()``.
 
-    Один агрегат вместо 3-4 отдельных запросов.
+    Логика «контейнер передан, если все его авто TRANSFERRED» единым
+    методом живёт на модели Container — здесь только подгрузка по id.
+    Раньше эту же логику дублировал отдельный код на 12 строк.
     """
-    from django.db.models import Count, Q
     try:
         container = Container.objects.only('id', 'status', 'number').get(pk=container_id)
     except Container.DoesNotExist:
         return
-    if container.status == 'TRANSFERRED':
-        return
-    stats = container.container_cars.aggregate(
-        total=Count('id'),
-        transferred=Count('id', filter=Q(status='TRANSFERRED')),
-    )
-    total = stats['total'] or 0
-    if total == 0 or stats['transferred'] != total:
-        return
-    container.status = 'TRANSFERRED'
-    container.save(update_fields=['status'])
-    logger.info(
-        "Container %s -> TRANSFERRED (all %d cars transferred)",
-        container.number, total,
-    )
+    container.check_and_update_status_from_cars()
 
 
 def autotransport_cars_changed_handler(sender, instance, action, **kwargs):

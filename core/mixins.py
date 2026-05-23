@@ -10,8 +10,37 @@ from decimal import Decimal
 logger = logging.getLogger(__name__)
 
 
-# Открытые статусы инвойса (счёт выставлен, но ещё не оплачен полностью).
-_OPEN_INVOICE_STATUSES = ('ISSUED', 'OVERDUE', 'PARTIALLY_PAID')
+# ============================================================================
+# СТАТУСЫ ИНВОЙСОВ — единый источник правды
+# ============================================================================
+# Раньше эти кортежи дублировались в виде хардкодных списков ['ISSUED',
+# 'PARTIALLY_PAID', ...] в десятках мест (admin, services, tasks, managers,
+# management commands). Это приводило к тому, что добавление нового статуса
+# или переименование требовало точечной правки по проекту, и где-то его всё
+# равно забывали обновить (например, `LINKED_PAID` отсутствует во всех
+# фильтрах ниже намеренно — он считается «оплачен», но через связку).
+
+# Открытые: счёт выставлен, но ещё не оплачен полностью. Используется в
+# балансовых property `open_fact_debt` / `open_pardp_receivable`, в
+# dashboard'е, в auto-reconciliation.
+OPEN_INVOICE_STATUSES = ('ISSUED', 'OVERDUE', 'PARTIALLY_PAID')
+
+# Активные: открытые + PAID. Используется в SupplierCost-аналитике
+# (`core/models.py` ~1385) и в admin-фильтрах, где нужно отделить «реальные»
+# инвойсы от черновиков и отменённых.
+ACTIVE_INVOICE_STATUSES = (*OPEN_INVOICE_STATUSES, 'PAID')
+
+# Кандидаты на перевод в OVERDUE: статусы, где due_date вообще имеет смысл.
+# Используется в `check_overdue_invoices` Celery-задаче и в dashboard'е.
+OVERDUE_CANDIDATE_STATUSES = ('ISSUED', 'PARTIALLY_PAID')
+
+# Статусы, при которых имеет смысл регенерировать позиции из CarService
+# (после изменения цены/услуги машины). PAID — нет (уже оплачен,
+# регенерация нарушит баланс), CANCELLED/LINKED_PAID — тоже нет.
+REGENERATABLE_INVOICE_STATUSES = ('DRAFT',) + OPEN_INVOICE_STATUSES
+
+# Обратная совместимость для уже импортированного приватного имени.
+_OPEN_INVOICE_STATUSES = OPEN_INVOICE_STATUSES
 
 
 class BalanceMethodsMixin:
@@ -78,6 +107,7 @@ class BalanceMethodsMixin:
     def open_fact_debt(self):
         """Сумма открытых FACT, выписанных этим контрагентом на нас. Мы им должны."""
         from django.db.models import F, Sum
+
         from core.models_billing import NewInvoice
 
         model_name = self.__class__.__name__.lower()
@@ -95,6 +125,7 @@ class BalanceMethodsMixin:
     def open_pardp_receivable(self):
         """Сумма открытых PARDP, выставленных нами этому контрагенту. Они нам должны."""
         from django.db.models import F, Sum
+
         from core.models_billing import NewInvoice
 
         model_name = self.__class__.__name__.lower()

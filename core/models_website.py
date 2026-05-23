@@ -336,6 +336,12 @@ class NewsPost(models.Model):
         verbose_name = "Новость"
         verbose_name_plural = "Новости"
         ordering = ['-published_at', '-created_at']
+        indexes = [
+            # Публичный список новостей фильтрует published=True
+            # и сортирует по published_at — composite индекс покрывает оба.
+            models.Index(fields=['-published_at'], name='news_published_at_idx',
+                         condition=models.Q(published=True)),
+        ]
 
     def __str__(self):
         return self.title
@@ -386,6 +392,11 @@ class TrackingRequest(models.Model):
         verbose_name = "Запрос отслеживания"
         verbose_name_plural = "Запросы отслеживания"
         ordering = ['-created_at']
+        indexes = [
+            # Списки в админке + аналитика «откуда трек»: по дате создания
+            # и IP (rate-limit-style выборки). Без индекса полный seqscan.
+            models.Index(fields=['-created_at'], name='tracking_req_created_idx'),
+        ]
 
     def __str__(self):
         return f"{self.tracking_number} - {self.created_at.strftime('%Y-%m-%d')}"

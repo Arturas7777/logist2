@@ -17,7 +17,8 @@ import base64
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime
+from datetime import timezone as dt_timezone
 from email.header import decode_header, make_header
 from email.utils import parsedate_to_datetime
 from typing import Any, Iterable, Iterator
