@@ -21,4 +21,5 @@ repos:
     rev: "1.23.0"
     hooks:
       - id: django-upgrade
-        args: [--target-version, "5.1"]
+        # Django версия из requirements.txt (Django==5.2.14).
+        args: [--target-version, "5.2"]

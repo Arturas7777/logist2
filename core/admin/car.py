@@ -116,7 +116,7 @@ def _cost_badge_html(car_service_pk, current_price=None, costs_map=None):
     costs = SupplierCost.objects.filter(car_service_id=car_service_pk)
     if costs.exists():
         total = sum(float(c.amount) for c in costs)
-        sources = set(c.source for c in costs)
+        sources = {c.source for c in costs}
         icon = '📎' if 'INVOICE' in sources else '✍️'
         return (
             f'<div style="font-size:10px; margin-top:4px; padding:2px 6px; border-radius:6px; '

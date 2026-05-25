@@ -11,7 +11,7 @@
 и позволяет обойти легаси-миграции, заточенные под Postgres.
 """
 
-from .base import *  # noqa: F403
+from .base import *
 
 
 class DisableMigrations:

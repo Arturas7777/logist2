@@ -37,7 +37,7 @@ OVERDUE_CANDIDATE_STATUSES = ('ISSUED', 'PARTIALLY_PAID')
 # Статусы, при которых имеет смысл регенерировать позиции из CarService
 # (после изменения цены/услуги машины). PAID — нет (уже оплачен,
 # регенерация нарушит баланс), CANCELLED/LINKED_PAID — тоже нет.
-REGENERATABLE_INVOICE_STATUSES = ('DRAFT',) + OPEN_INVOICE_STATUSES
+REGENERATABLE_INVOICE_STATUSES = ('DRAFT', *OPEN_INVOICE_STATUSES)
 
 # Обратная совместимость для уже импортированного приватного имени.
 _OPEN_INVOICE_STATUSES = OPEN_INVOICE_STATUSES

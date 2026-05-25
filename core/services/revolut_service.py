@@ -129,7 +129,7 @@ class RevolutService:
         token = self._get_valid_token()
         return {'Authorization': f'Bearer {token}'}
 
-    def _api_get(self, endpoint: str, params: dict = None) -> dict | list:
+    def _api_get(self, endpoint: str, params: dict | None = None) -> dict | list:
         """Выполняет GET-запрос к Revolut API с авторизацией."""
         url = f'{self.base_url}{endpoint}'
         try:

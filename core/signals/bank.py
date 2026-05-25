@@ -99,16 +99,16 @@ def auto_create_payment_on_bt_match(sender, instance, **kwargs):
 
                 company = Company.get_default()
                 direction = invoice.direction
-                tx_kwargs = dict(
-                    type="PAYMENT",
-                    method="TRANSFER",
-                    status="COMPLETED",
-                    amount=payment_amount,
-                    currency=invoice.currency or "EUR",
-                    invoice=invoice,
-                    description=(f"Авто-привязка банковского платежа {bt.counterparty_name} -> {invoice.number}"),
-                    date=bt.created_at,
-                )
+                tx_kwargs = {
+                    "type": "PAYMENT",
+                    "method": "TRANSFER",
+                    "status": "COMPLETED",
+                    "amount": payment_amount,
+                    "currency": invoice.currency or "EUR",
+                    "invoice": invoice,
+                    "description": (f"Авто-привязка банковского платежа {bt.counterparty_name} -> {invoice.number}"),
+                    "date": bt.created_at,
+                }
 
                 if bt.amount > 0 and direction == "OUTGOING":
                     recipient = invoice.recipient

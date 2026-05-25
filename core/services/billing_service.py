@@ -60,8 +60,8 @@ class BillingService:
         cls,
         issuer,
         recipient,
-        cars: list = None,
-        items: list[dict] = None,
+        cars: list | None = None,
+        items: list[dict] | None = None,
         due_days: int = 14,
         notes: str = "",
         created_by=None

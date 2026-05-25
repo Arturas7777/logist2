@@ -216,7 +216,7 @@ def cross_check_with_ai_data(
 
     n_year = nhtsa.get('year')
     n_make = (nhtsa.get('make') or '').strip().upper()
-    n_model = (nhtsa.get('model') or '').strip().upper()
+    (nhtsa.get('model') or '').strip().upper()
 
     if ai_year and n_year and int(ai_year) != int(n_year):
         result['warnings'].append(

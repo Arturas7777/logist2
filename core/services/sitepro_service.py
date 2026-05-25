@@ -116,7 +116,7 @@ class SiteProService:
     # HTTP METHODS
     # ========================================================================
 
-    def _api_post(self, endpoint: str, json_data: dict = None) -> dict:
+    def _api_post(self, endpoint: str, json_data: dict | None = None) -> dict:
         """
         Выполняет POST-запрос к site.pro Accounting API.
 
@@ -215,7 +215,7 @@ class SiteProService:
     # CLIENT OPERATIONS
     # ========================================================================
 
-    def search_clients(self, name: str = None, code: str = None) -> list:
+    def search_clients(self, name: str | None = None, code: str | None = None) -> list:
         """
         Поиск клиентов в site.pro.
 
@@ -632,7 +632,7 @@ class SiteProService:
     # SEARCH SALES
     # ========================================================================
 
-    def search_sales(self, number: str = None, date_from: str = None, date_to: str = None) -> list:
+    def search_sales(self, number: str | None = None, date_from: str | None = None, date_to: str | None = None) -> list:
         """
         Поиск продаж в site.pro.
 
@@ -837,7 +837,7 @@ class SiteProService:
     # Только эти значения допустимы для list-эндпоинтов.
     _VALID_ROWS = (10, 20, 25, 50, 100)
 
-    def _paginate_list(self, endpoint: str, filters: dict = None, max_pages: int = 100,
+    def _paginate_list(self, endpoint: str, filters: dict | None = None, max_pages: int = 100,
                        rows: int = 50) -> list:
         """Paginate through a list endpoint collecting all records.
 
@@ -872,7 +872,7 @@ class SiteProService:
         """Fetch all clients from site.pro."""
         return self._paginate_list(self.CLIENTS_LIST)
 
-    def list_all_sales(self, date_from: str = None, date_to: str = None) -> list:
+    def list_all_sales(self, date_from: str | None = None, date_to: str | None = None) -> list:
         """Fetch all sales/invoices from site.pro, optionally filtered by date range."""
         rules = []
         if date_from:

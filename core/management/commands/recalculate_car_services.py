@@ -121,7 +121,7 @@ class Command(BaseCommand):
 
             if warehouse_services:
                 old_services = set(car.car_services.filter(service_type='WAREHOUSE').values_list('service_id', flat=True))
-                new_services = set(s.id for s in warehouse_services)
+                new_services = {s.id for s in warehouse_services}
 
                 if old_services != new_services:
                     if not dry_run:

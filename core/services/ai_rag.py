@@ -120,7 +120,7 @@ def _call_embeddings_api(text: str, *, use_cache: bool = True) -> list[float] | 
     if cache_key:
         cached = cache.get(cache_key)
         if cached is not None:
-            return list(cached) if isinstance(cached, (list, tuple)) else cached
+            return list(cached) if isinstance(cached, list | tuple) else cached
 
     base_url = settings.AI_API_BASE_URL.rstrip("/")
     url = f"{base_url}/embeddings"

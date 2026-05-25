@@ -206,7 +206,7 @@ try:
         # =============================================================
         bt = BankTransaction()
         test("is_reconciled = False by default",
-             bt.is_reconciled == False)
+             bt.is_reconciled is False)
 
         test("has matched_transaction FK",
              hasattr(BankTransaction, 'matched_transaction'))

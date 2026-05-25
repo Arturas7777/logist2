@@ -192,8 +192,7 @@ class GoogleDriveApiClient:
                     query, err,
                 )
                 return
-            for item in resp.get('files', []) or []:
-                yield item
+            yield from resp.get('files', []) or []
             page_token = resp.get('nextPageToken')
             if not page_token:
                 return

@@ -361,7 +361,7 @@ def _attach_contact_inline():
         existing = list(getattr(admin_instance, 'inlines', []) or [])
         if ContactInline in existing:
             continue
-        admin_instance.__class__.inlines = existing + [ContactInline]
+        admin_instance.__class__.inlines = [*existing, ContactInline]
 
 
 _attach_contact_inline()

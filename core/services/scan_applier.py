@@ -390,7 +390,7 @@ def apply_dock_receipt_job(job: ScanProcessingJob, *, applied_by=None) -> ScanPr
     if created_new_container:
         container.save(update_fields=['dock_receipt_scan'])
     else:
-        container.save(update_fields=list(set(update_fields + ['dock_receipt_scan'])))
+        container.save(update_fields=list({*update_fields, 'dock_receipt_scan'}))
 
     vehicles = data.get('vehicles') or []
     affected = []

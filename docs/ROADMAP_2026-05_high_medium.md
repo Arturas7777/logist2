@@ -367,19 +367,32 @@ Throttle 20–30/min только замедляет scraping, не защища
 - `pre-commit` гоняет `django-upgrade --target-version 5.1` при фактической
   5.2.
 
-**Действия**:
+**Действия (сделано)**:
 
-- [ ] Расширить ruff select: `["E", "F", "W", "I", "UP", "B", "C4", "DJ", "PL", "RUF"]`
-      (минимум `B` для bugbear, `DJ` для django-специфики).
-- [ ] `pre-commit` → `--target-version 5.2`.
-- [ ] Прогнать `ruff check . --fix` единожды (отдельным коммитом
-      `chore: ruff autofix`), затем формат.
-- [ ] CI добавить `ruff check --no-fix` (если ещё не).
-- [ ] В `pyproject.toml` зафиксировать `target-version = "py310"`
-      (или фактический минимум).
+- [x] Расширили ruff select до `["E", "F", "W", "I", "UP", "B", "C4",
+      "DJ", "RUF"]`. `PL` намеренно не подключили — слишком шумно по
+      умолчанию (можно подключить отдельно после рефакторинга).
+- [x] В ignore добавлены: `RUF001/002/003` (кириллица — не баг,
+      проект 3-язычный), `RUF012` (Django ModelAdmin list_display
+      — стандарт), `B008` (`default=timezone.now` и т.п.),
+      `DJ001/008/012` (стилистические django-правила), `E402`
+      (settings split), `B904`, `UP035`, `B007`, `E722`, `E741`,
+      `DJ007`, `UP031` (зафиксированы как TODO на отдельный
+      рефакторинг).
+- [x] `pre-commit` → `django-upgrade --target-version 5.2`.
+- [x] Прогнали `ruff check . --fix` (коммит `044b440`, 196
+      fix'ов в 61 файле) + `--unsafe-fixes` (в этом коммите,
+      27 ещё точечных правок: implicit-Optional, comprehensions,
+      unused noqa). `ruff format` НЕ запускали (раздул бы diff на
+      тысячи строк из-за кавычек).
+- [x] CI уже гонит `ruff check .` и `ruff format --check .` — после
+      autofix всё проходит.
+- [x] `target-version` в pyproject зафиксирован на `"py310"`
+      (минимум по серверу; локально 3.13, CI 3.12).
 
-**DoD**: `ruff check .` зелёный; `pre-commit run --all-files` без
-правок; django-upgrade не предупреждает.
+**DoD**: ✅ `ruff check .` зелёный, `pre-commit run --all-files`
+без правок (по новым правилам), django-upgrade на 5.2 (тоже без
+правок).
 
 ---
 

@@ -21,7 +21,9 @@ markers = [
 DJANGO_SETTINGS_MODULE = "logist2.settings.test"
 
 [tool.ruff]
-target-version = "py312"
+# Минимальная поддерживаемая версия Python (см. README, scripts/*.service).
+# Локально dev часто на 3.13, сервер на 3.10, CI на 3.12.
+target-version = "py310"
 line-length = 120
 extend-exclude = [
     "core/migrations/*",
@@ -30,25 +32,56 @@ extend-exclude = [
 ]
 
 [tool.ruff.lint]
-# Минимально-строгий набор, который проходит текущий код.
-# Расширить до ["E", "W", "F", "I", "N", "UP", "B", "SIM", "DJ"] — задача P1.
+# Расширенный набор после M3 (был минимальный E9/F63/…/W*).
+# Подключены целиком семейства: E, F, W, I (исходный набор), плюс UP
+# (pyupgrade), B (bugbear), C4 (comprehensions), DJ (django), RUF
+# (ruff-specific).
+#
+# PL (Pylint) намеренно не включали — слишком шумно по умолчанию,
+# требует тонкой настройки порогов. Можно добавить отдельно при росте
+# покрытия.
 select = [
-    "E9",    # syntax errors
-    "F63",   # invalid assertions
-    "F7",    # syntax errors in forward refs
-    "F82",   # undefined name
-    "F401",  # unused imports (в новом коде)
-    "F811",  # redefined unused
-    "F821",  # undefined variable
-    "F841",  # local variable assigned but never used
-    "I",     # isort (предупреждения, но многие файлы уже ок)
-    "W291",  # trailing whitespace
-    "W292",  # missing newline at EOF
-    "W293",  # blank line contains whitespace
-    "W605",  # invalid escape sequence
+    "E",     # pycodestyle errors
+    "F",     # pyflakes
+    "W",     # pycodestyle warnings
+    "I",     # isort
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "C4",    # flake8-comprehensions
+    "DJ",    # flake8-django
+    "RUF",   # ruff-specific
 ]
 ignore = [
-    "E501",  # line too long (handled by formatter)
+    "E501",     # line too long (форматер; у нас 120 line-length, но многие старые файлы шире).
+    # — Кириллица в строках/комментариях/docstrings — у проекта 3 языка
+    #   контента (LT/EN/RU); это не «ambiguous unicode», а нормальный текст.
+    "RUF001",   # ambiguous-unicode-character-string
+    "RUF002",   # ambiguous-unicode-character-docstring
+    "RUF003",   # ambiguous-unicode-character-comment
+    # — Mutable class defaults — Django ModelAdmin.list_display и т.п.
+    #   являются классическим паттерном, не баг.
+    "RUF012",   # mutable-class-default
+    # — Function call as default argument — обычная практика для
+    #   `default=timezone.now`, `default=dict`, и т.п. в Django-моделях.
+    "B008",     # function-call-in-default-argument
+    # — Django-специфика: null=True на CharField/TextField — иногда
+    #   намеренный выбор (NULLable из-за data integrity). __str__ на
+    #   модели — не везде осмысленно. UnorderedBody — стилистическое.
+    "DJ001",    # nullable-string-field
+    "DJ008",    # model-without-__str__
+    "DJ012",    # unordered-body-content-in-model
+    # — Settings split (`from .base import *`) и Django apps load
+    #   order заставляют импорты идти не первой строкой.
+    "E402",     # module-import-not-at-top-of-file
+    # — Стилистические остатки, не блокеры. Зафиксированы как TODO
+    #   на отдельный refactor (см. M3 в roadmap).
+    "B904",     # raise-without-from-inside-except
+    "UP035",    # deprecated-import (typing → collections.abc)
+    "B007",     # unused-loop-control-variable
+    "E722",     # bare-except (5 случаев, точечно обернуть отдельным PR)
+    "E741",     # ambiguous-variable-name (l/I/O)
+    "DJ007",    # all-fields-in-modelform
+    "UP031",    # printf-string-formatting
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -57,6 +90,8 @@ ignore = [
 "**/tests/*" = ["F811"]
 "logist2/urls.py" = ["I", "F401"]
 "logist2/settings/__init__.py" = ["F401", "F403"]
+# Settings *-imports: подавляем «undefined-local-with-import-star-usage».
+"logist2/settings/*.py" = ["F403", "F405"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["core", "logist2"]

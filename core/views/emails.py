@@ -524,15 +524,15 @@ def email_compose_send(request):
 
     scope, origin_container, origin_car, origin_autotransport = _resolve_origin_scope(request)
 
-    common_kwargs = dict(
-        user=request.user,
-        to=request.POST.get('to', ''),
-        cc=request.POST.get('cc', ''),
-        bcc=request.POST.get('bcc', ''),
-        subject=request.POST.get('subject', ''),
-        body_text=request.POST.get('body_text', ''),
-        attachments=request.FILES.getlist('attachments'),
-    )
+    common_kwargs = {
+        'user': request.user,
+        'to': request.POST.get('to', ''),
+        'cc': request.POST.get('cc', ''),
+        'bcc': request.POST.get('bcc', ''),
+        'subject': request.POST.get('subject', ''),
+        'body_text': request.POST.get('body_text', ''),
+        'attachments': request.FILES.getlist('attachments'),
+    }
 
     try:
         from core.services.email_compose import (
