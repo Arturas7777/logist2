@@ -1,0 +1,16 @@
+# /etc/cron.d/logist2-backup
+#
+# Ежедневный бэкап PostgreSQL для Logist2.
+# Запускается под root (нужен доступ к /var/backups/logist2/ и .env проекта).
+#
+# Время: 03:30 — после большинства ночных Celery-задач (sync_photos 03:00,
+# но они независимы — бэкап читает только Postgres). До repair_container_photos
+# (04:30) и нашего healthcheck (04:15, см. logist2/celery.py).
+#
+# Установка: scripts/install_logist2_backup.sh.
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+MAILTO=""
+
+30 3 * * * root /var/www/www-root/data/www/logist2/scripts/server_pg_backup.sh >> /var/log/logist2/backup.log 2>&1

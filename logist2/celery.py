@@ -72,4 +72,12 @@ app.conf.beat_schedule = {
         'task': 'core.tasks_monitoring.cleanup_old_metrics',
         'schedule': crontab(hour=4, minute=0),
     },
+    # Проверка свежести ночного PostgreSQL-бэкапа. Ночной cron делает
+    # /var/backups/logist2/${DB_NAME}_YYYY-MM-DD.dump в 03:30, эта задача
+    # в 04:15 убеждается, что свежий .dump существует и не старше 36 часов.
+    # См. scripts/server_pg_backup.sh и docs/BACKUPS.md.
+    'check-backup-freshness-daily': {
+        'task': 'core.tasks_monitoring.check_backup_freshness',
+        'schedule': crontab(hour=4, minute=15),
+    },
 }

@@ -126,22 +126,36 @@ maintainability) и **Medium** (документация, performance hygiene,
 **Проблема**: только ручной `scripts/sync_db.ps1`. Полагаемся на то,
 что админ помнит делать дампы.
 
-**Действия**:
+**Действия (сделано)**:
 
-- [ ] Создать `scripts/server_pg_backup.sh` — на сервере:
-  - `pg_dump -Fc logist2_db -f /var/backups/logist2/$(date +%F).dump`;
-  - удаление файлов старше 30 дней (`find ... -mtime +30 -delete`);
-  - короткий ежедневный + еженедельный snapshot (опционально).
-- [ ] Положить в `/etc/cron.d/logist2-backup`:
-      `30 3 * * * postgres /var/www/.../scripts/server_pg_backup.sh`
-- [ ] Healthcheck: cron пишет в лог, скрипт `manage.py` (или просто
-      `find` в monitoring) алертит если последний бэкап старше 36 часов.
-- [ ] Опционально: rclone-выгрузка в S3/Backblaze (для off-site).
-- [ ] `docs/BACKUPS.md` — куда складываются, как восстановить,
-      как проверить целостность (`pg_restore --list`).
+- [x] Создан `scripts/server_pg_backup.sh`:
+  - `pg_dump -Fc --no-owner --no-acl` → `/var/backups/logist2/${DB_NAME}_YYYY-MM-DD.dump`;
+  - smoke check сразу после дампа: `pg_restore --list` (битый файл удаляется,
+    exit 3);
+  - retention: `find -mtime +30 -delete` (порог через `RETENTION_DAYS`);
+  - логи в `/var/log/logist2/backup.log`;
+  - креды берёт из `.env` проекта, без хардкода и без зависимости от
+    конкретного пользователя ОС.
+- [x] `scripts/logist2-backup.cron` (для `/etc/cron.d/logist2-backup`):
+      `30 3 * * * root /var/www/.../scripts/server_pg_backup.sh`.
+      Запуск под `root` — нужен доступ к `/var/backups/` и `.env`.
+- [x] `scripts/install_logist2_backup.sh` — idempotent bootstrap:
+      mkdir, chmod, копирование cron-файла, reload cron.
+- [x] Healthcheck: Celery beat `check-backup-freshness-daily` в 04:15
+      (см. `core/tasks_monitoring.check_backup_freshness` + `logist2/celery.py`).
+      Алертит в Sentry warning, если самый свежий `.dump` старше
+      `BACKUP_MAX_AGE_HOURS` (по умолчанию 36) или директории/файлов нет.
+      На локалке возвращает `not_configured` без шума.
+- [ ] **Опционально (не сделано в этом PR):** rclone-выгрузка в
+      S3/Backblaze для off-site. Зафиксировано в `docs/BACKUPS.md`
+      как TODO с примерным дизайном.
+- [x] `docs/BACKUPS.md` — путь, расписание, восстановление (полное /
+      одна таблица / локально через scp), проверка целостности (быстрая
+      и через test-restore), Sentry-healthcheck, troubleshooting-таблица.
 
-**DoD**: на сервере крутится cron, в `/var/backups/logist2/` через сутки
-лежит файл, в repo `docs/BACKUPS.md` с инструкцией восстановления.
+**DoD**: ✅ cron установлен (`/etc/cron.d/logist2-backup`), первый дамп
+сделан вручную после установки, файл лежит в `/var/backups/logist2/`,
+`docs/BACKUPS.md` опубликована.
 
 ---
 

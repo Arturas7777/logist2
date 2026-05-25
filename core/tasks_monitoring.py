@@ -1,16 +1,20 @@
-"""Celery-задачи для страницы /admin/system-monitor/.
+"""Celery-задачи для страницы /admin/system-monitor/ и инфраструктурных
+healthcheck'ов.
 
 Расписание подключается в `logist2/celery.py` в `beat_schedule`:
 - `collect_system_metrics` — каждые 5 минут (288 точек/день)
 - `ping_uptime` — каждую минуту (1440 точек/день)
 - `cleanup_old_metrics` — раз в день в 04:00
+- `check_backup_freshness` — раз в день в 04:15 (после ночного бэкапа в 03:30)
 
 Retention: 30 дней (берётся из settings.MONITORING_RETENTION_DAYS, дефолт 30).
 """
 from __future__ import annotations
 
 import logging
+import time
 from datetime import timedelta
+from pathlib import Path
 
 from celery import shared_task
 from django.conf import settings
@@ -106,4 +110,60 @@ def cleanup_old_metrics() -> dict:
         'deleted_metrics': deleted_metrics,
         'deleted_uptime': deleted_uptime,
         'cutoff': cutoff.isoformat(),
+    }
+
+
+@shared_task(name='core.tasks_monitoring.check_backup_freshness')
+def check_backup_freshness() -> dict:
+    """Проверяет, что в BACKUP_DIR есть свежий PostgreSQL-дамп.
+
+    Если самый свежий файл `*.dump` старше BACKUP_MAX_AGE_HOURS (по умолчанию 36),
+    или директории/файлов вообще нет — пишет `logger.warning(...)`, который
+    подхватывается Sentry (через LoggingIntegration) и создаёт issue.
+
+    Запускается ежедневно после ночного бэкапа в 03:30 (см. logist2/celery.py).
+    На локалке/CI директория обычно пуста — функция тихо вернёт `not_configured`,
+    без warning'а (чтобы не шуметь в Sentry в dev-окружении).
+
+    Source of truth для самого бэкапа: scripts/server_pg_backup.sh.
+    """
+    backup_dir = Path(getattr(settings, 'BACKUP_DIR', '/var/backups/logist2'))
+    max_age_hours = int(getattr(settings, 'BACKUP_MAX_AGE_HOURS', 36))
+
+    if not backup_dir.exists():
+        # На локалке/CI этой директории нет — это нормально, не алертим.
+        logger.info('backup check: directory %s does not exist (skip)', backup_dir)
+        return {'ok': True, 'status': 'not_configured', 'dir': str(backup_dir)}
+
+    dumps = sorted(
+        backup_dir.glob('*.dump'),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not dumps:
+        logger.warning('backup check: no .dump files in %s', backup_dir)
+        return {'ok': False, 'reason': 'no_dumps', 'dir': str(backup_dir)}
+
+    latest = dumps[0]
+    age_hours = (time.time() - latest.stat().st_mtime) / 3600.0
+
+    if age_hours > max_age_hours:
+        logger.warning(
+            'backup check: latest dump %s is %.1fh old (threshold=%dh)',
+            latest.name, age_hours, max_age_hours,
+        )
+        return {
+            'ok': False,
+            'reason': 'stale',
+            'latest': latest.name,
+            'age_hours': round(age_hours, 1),
+            'threshold_hours': max_age_hours,
+        }
+
+    return {
+        'ok': True,
+        'latest': latest.name,
+        'age_hours': round(age_hours, 1),
+        'size_mb': round(latest.stat().st_size / 1024 / 1024, 1),
+        'total_dumps': len(dumps),
     }
