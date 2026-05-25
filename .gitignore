@@ -95,10 +95,11 @@ _*.py
 _*.sh
 scripts/debug/_*
 !scripts/debug/README.md
-# Не игнорировать служебные Python-модули внутри пакета core/models/
+# Не игнорировать служебные Python-модули внутри пакетов core/.
 # (__init__.py и _vehicle_types.py попадают под маску _*.py).
 !core/models/_*.py
 !core/models/__init__.py
+!core/admin/billing/__init__.py
 
 # Local data (AI RAG index, generated dumps, etc.)
 /data/

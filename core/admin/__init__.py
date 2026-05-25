@@ -12,14 +12,20 @@ from core.admin_website import (
     ClientUserAdmin, AIChatAdmin, NewsPostAdmin, ContactMessageAdmin, TrackingRequestAdmin
 )
 
-# Import billing admin (new system)
+# Import billing admin (new system) — пакет core.admin.billing (H6b)
 try:
-    from core.admin_billing import NewInvoiceAdmin, TransactionAdmin, ExpenseCategoryAdmin
+    from core.admin.billing import (  # noqa: F401
+        ExpenseCategoryAdmin,
+        NewInvoiceAdmin,
+        PersonalCardAdmin,
+        PersonalTransferAdmin,
+        TransactionAdmin,
+    )
 except ImportError as e:
     import logging
     logger = logging.getLogger(__name__)
     logger.warning(f"Could not load new billing admin: {e}")
-    logger.warning("Make sure admin_billing.py and models_billing.py exist")
+    logger.warning("Make sure core/admin/billing/ and models_billing.py exist")
 
 # Import banking admin (Revolut и др.)
 try:

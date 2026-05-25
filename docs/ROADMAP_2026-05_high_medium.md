@@ -215,7 +215,22 @@ Throttle 20–30/min только замедляет scraping, не защища
   - Самый большой файл — `cars.py` (621 строка), остальные ≤ 280 строк.
   - Реэкспорт `models_contact/email/invoice_audit/monitoring/scans`
     сохранён в `__init__.py` (как был в хвосте старого `models.py`).
-- [ ] `H6b` — `core/admin_billing.py` → `core/admin/billing/` пакет.
+- [x] `H6b` — `core/admin_billing.py` → пакет `core/admin/billing/`:
+  - `__init__.py` импортирует все админ-классы — `@admin.register(...)`
+    срабатывает при загрузке `core/admin/__init__.py`;
+  - подмодули: `filters.py`, `inlines.py`, `expense_category.py`,
+    `personal.py`, `transaction.py`, `invoice.py` (сборка),
+    `invoice_display.py`, `invoice_forms.py`, `invoice_actions.py`,
+    `invoice_urls.py` (миксины для `NewInvoiceAdmin`).
+  - `NewInvoiceAdmin` (~1460 строк) разнесён через **миксины**, чтобы
+    самый большой файл влез в DoD: `invoice_forms.py` — 493 строки.
+    Остальные ≤ 340 строк.
+  - Поведенческих изменений нет: миграций не добавляется
+    (`makemigrations --check --dry-run` → No changes detected),
+    тесты прошли **без изменений** (166 passed),
+    `manage.py check` без warnings.
+  - Импорт в `core/admin/__init__.py` переведён на
+    `from core.admin.billing import ...`.
 - [ ] `H6c` — `core/views_website.py` → `core/views_website/` пакет.
 - [ ] `H6d` — `core/signals.py` → разнести по доменам:
       `signals/lifecycle.py`, `signals/billing.py`, `signals/notifications.py`,
