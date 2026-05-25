@@ -77,6 +77,18 @@ copy env.example .env
 Остальное (Revolut, site.pro, Gmail, AI) для базовой разработки не
 нужно — оставьте пусто.
 
+> **Профиль настроек.** Локально `manage.py`, `wsgi.py`, `asgi.py` и
+> `celery.py` по умолчанию загружают `logist2.settings.dev` (DEBUG=True,
+> debug-toolbar при `USE_DEBUG_TOOLBAR=1`, CELERY_TASK_ALWAYS_EAGER).
+> На сервере systemd-юниты (`scripts/*.service`) явно выставляют
+> `DJANGO_SETTINGS_MODULE=logist2.settings.prod`, `scripts/deploy.ps1` —
+> то же для миграций. Тесты идут через `logist2.settings.test` (SQLite,
+> `DisableMigrations`). Переопределить вручную можно так:
+>
+> ```powershell
+> $env:DJANGO_SETTINGS_MODULE = "logist2.settings.prod"   # проверить prod-конфиг локально
+> ```
+
 ### 4. База данных
 
 Вариант A. Синхронизироваться с продом (быстро, актуальные данные):

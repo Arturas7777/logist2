@@ -62,20 +62,31 @@ maintainability) и **Medium** (документация, performance hygiene,
 не работают dev-удобства (DEBUG, INTERNAL_IPS, debug-toolbar etc).
 `START_ME.bat` это не задаёт.
 
-**Действия**:
+**Решение**: выбран **вариант B (альтернатива)** — переключён дефолт
+в `manage.py` / `wsgi.py` / `asgi.py` / `celery.py` на
+`logist2.settings.dev`. На сервере systemd-юниты уже явно выставляют
+`prod` через `Environment=`, плюс `scripts/deploy.ps1` теперь тоже
+явно экспортирует `prod` перед `migrate`/`collectstatic`.
 
-- [ ] В `START_ME.bat` добавить `set DJANGO_SETTINGS_MODULE=logist2.settings.dev`
-      **перед** `python manage.py runserver`.
-- [ ] В README раздел «Локальный запуск» — упомянуть переменную явно
-      и что `.venv\Scripts\activate` тоже её не выставляет.
-- [ ] Проверить аналогично `scripts/sync_db.ps1` — там читает `.env`,
-      но не выставляет dev-профиль (если нужно).
-- [ ] Альтернатива: переключить `manage.py` дефолт на `logist2.settings.dev`
-      и явно выставлять `prod` на сервере (он уже выставляется через
-      systemd `Environment=DJANGO_SETTINGS_MODULE=logist2.settings.prod`).
+**Действия (сделано)**:
 
-**DoD**: после `START_ME.bat` сервер поднимается с `DEBUG=True` без
-вмешательства; README отражает решение.
+- [x] ~~В `START_ME.bat` добавить `set DJANGO_SETTINGS_MODULE=...`~~ —
+      не понадобилось: дефолт `manage.py` теперь dev, `runserver`
+      автоматически загружает dev-профиль.
+- [x] В README раздел «Setup for development» добавлен блок про
+      `DJANGO_SETTINGS_MODULE` (см. H1 + дополнение H2).
+- [x] `scripts/sync_db.ps1` — не трогаем: использует `pg_dump`/`pg_restore`,
+      Django не загружается, переменная не нужна.
+- [x] **Выбрано:** переключить `manage.py` дефолт на `logist2.settings.dev`.
+      Также обновлены `logist2/wsgi.py`, `logist2/asgi.py`,
+      `logist2/celery.py`, `scripts/deploy.ps1` (явный `prod` в migrate),
+      `scripts/sync_photos_cron.sh` (`prod`), `scripts/run_all_tests.py`
+      (`test`), `scripts/create_test_client.py` (`dev`), `env.example`
+      (актуальный комментарий).
+
+**DoD**: ✅ `python manage.py shell -c "print(settings.SETTINGS_MODULE)"`
+выдаёт `logist2.settings.dev` с `DEBUG=True` сразу после активации venv,
+без правки переменных окружения. `pytest` — 148 passed.
 
 ---
 

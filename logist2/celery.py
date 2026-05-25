@@ -3,10 +3,10 @@ import os
 from celery import Celery
 from celery.schedules import crontab
 
-# Fallback only: on the server systemd units MUST export
-# DJANGO_SETTINGS_MODULE=logist2.settings.prod (see scripts/celery.service).
-# Locally dev can override via `set DJANGO_SETTINGS_MODULE=logist2.settings.dev`.
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'logist2.settings')
+# Local default = dev. На сервере scripts/celery.service и celerybeat.service
+# явно выставляют DJANGO_SETTINGS_MODULE=logist2.settings.prod через
+# Environment= — до того, как этот модуль импортируется celery worker'ом.
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'logist2.settings.dev')
 app = Celery('logist2')
 app.config_from_object('django.conf:settings', namespace='CELERY')
 # autodiscover_tasks ищет только 'tasks.py' в каждом INSTALLED_APP.

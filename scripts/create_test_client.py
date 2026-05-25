@@ -5,7 +5,7 @@ import os
 
 import django
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'logist2.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'logist2.settings.dev')
 django.setup()
 
 from django.contrib.auth.models import User

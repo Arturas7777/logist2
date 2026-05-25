@@ -28,7 +28,7 @@ PYTHON="$PROJECT_DIR/.venv/bin/python"
 cd "$PROJECT_DIR"
 
 # Установка переменных окружения Django
-export DJANGO_SETTINGS_MODULE=logist2.settings
+export DJANGO_SETTINGS_MODULE=logist2.settings.prod
 
 echo "========================================"
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Запуск синхронизации фотографий"

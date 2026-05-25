@@ -88,8 +88,12 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "      Code updated" -ForegroundColor Green
 
 # ── Step 3: migrate + collectstatic ──
+# DJANGO_SETTINGS_MODULE=logist2.settings.prod выставляем явно: с H2 дефолт
+# manage.py локально — `logist2.settings.dev`, и без переменной миграции
+# на сервере побежали бы с DEBUG=True. systemd-юниты (gunicorn/daphne/celery)
+# имеют свой Environment=… и не зависят от этой команды.
 Write-Host "[3/4] Migrate & collectstatic..." -ForegroundColor Yellow
-ssh $SERVER "cd $PROJECT_DIR && source .venv/bin/activate && pip install -r requirements.txt --quiet 2>/dev/null; python manage.py migrate --noinput && python manage.py collectstatic --noinput --verbosity 0" 2>$null
+ssh $SERVER "cd $PROJECT_DIR && source .venv/bin/activate && export DJANGO_SETTINGS_MODULE=logist2.settings.prod && pip install -r requirements.txt --quiet 2>/dev/null; python manage.py migrate --noinput && python manage.py collectstatic --noinput --verbosity 0" 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "      Migrate/collectstatic had issues (check server logs)" -ForegroundColor Yellow
 } else {

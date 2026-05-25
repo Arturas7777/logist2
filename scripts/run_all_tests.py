@@ -8,7 +8,7 @@ import sys
 import uuid
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-os.environ['DJANGO_SETTINGS_MODULE'] = 'logist2.settings'
+os.environ['DJANGO_SETTINGS_MODULE'] = 'logist2.settings.test'
 
 import logging
 

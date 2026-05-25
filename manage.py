@@ -6,7 +6,12 @@ import sys
 
 def main():
     """Run administrative tasks."""
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'logist2.settings')
+    # Локальный дефолт — dev-профиль (DEBUG=True, debug-toolbar и т.п.).
+    # На сервере systemd unit'ы (gunicorn/daphne/celery) явно выставляют
+    # DJANGO_SETTINGS_MODULE=logist2.settings.prod через Environment=,
+    # а scripts/deploy.ps1 — для ручных migrate/collectstatic. CI задаёт
+    # logist2.settings.test через .github/workflows/ci.yml.
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'logist2.settings.dev')
     try:
         from django.core.management import execute_from_command_line
     except ImportError as exc:
