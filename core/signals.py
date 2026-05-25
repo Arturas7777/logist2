@@ -4,22 +4,34 @@ Signal handlers for core models.
 Each handler is a thin wrapper that delegates to the appropriate service.
 Business logic lives in core.services.*, NOT here.
 
-ОГЛАВЛЕНИЕ (для быстрой навигации в IDE — все названия region совпадают):
+ОГЛАВЛЕНИЕ И ASYNC-СТАТУС (legend: [SYNC] / [ASYNC = Celery+on_commit]):
 
-  1. SERVICE CACHE INVALIDATION         (~ строки 41-58)
-  2. CONTAINER PRE_SAVE / POST_SAVE     (~ строки 60-156)
-  3. CAR PRE_SAVE / POST_SAVE           (~ строки 158-390)
-  4. CARSERVICE PRICE RECALCULATION     (~ строки 392-465)
-  5. CARSERVICE -> INVOICE REGEN        (~ строки 467-533)
-  6. SERVICE CATALOG -> CARSERVICE      (~ строки 535-660)
-  7. CASCADE DELETE CARSERVICE          (~ строки 662-700)
-  8. INVOICE AUTO-CATEGORIZATION        (~ строки 702-820)
-  9. TRANSACTION -> BALANCE             (~ строки 822-850)
- 10. BANK TRANSACTION MATCHING          (~ строки 852-998)
- 11. EMAIL NOTIFICATIONS                (~ строки 1000-1050)
- 12. GDRIVE SYNC NOTE                   (~ строки 1052-1066)
- 13. AUTOTRANSPORT                      (~ строки 1068-1165)
- 14. CACHE INVALIDATION (stats)         (~ строки 1167-end)
+  1. SERVICE CACHE INVALIDATION         [SYNC]  быстрая инвалидация cache
+  2. CONTAINER PRE_SAVE / POST_SAVE     [ASYNC] bulk-recalc cars → Celery
+                                                (быстрый bulk-UPDATE даты — sync)
+  3. CAR PRE_SAVE / POST_SAVE           [SYNC + ASYNC]
+                                          - CarService creation: sync (легко)
+                                          - email, regen invoices, recalc total_price,
+                                            WS notify: on_commit / Celery
+  4. CARSERVICE PRICE RECALCULATION     [ASYNC] recalculate_cars_total_price_task
+  5. CARSERVICE -> INVOICE REGEN        [ASYNC] regenerate_invoices_for_car_task
+  6. SERVICE CATALOG -> CARSERVICE      [ASYNC] recalculate_cars_total_price_task
+  7. CASCADE DELETE CARSERVICE          [SYNC]  DeletedCarService bookkeeping
+  8. INVOICE AUTO-CATEGORIZATION +      [SYNC категоризация / ASYNC sitepro push]
+     SITEPRO PUSH                       push_invoice_to_sitepro_task + fallback inline
+  9. TRANSACTION -> BALANCE             [SYNC]  ОБЯЗАТЕЛЬНО синхронно: пользователь
+                                                должен увидеть актуальный paid_amount
+                                                сразу после ответа на запрос.
+ 10. BANK TRANSACTION MATCHING          [SYNC]  создаёт Transaction → балансы пересчёт
+ 11. EMAIL NOTIFICATIONS                [ASYNC] *_notifications_task через Celery
+ 12. GDRIVE SYNC NOTE                   [SYNC]  только лог-вывод, реальный sync — cron
+ 13. AUTOTRANSPORT                      [ASYNC] generate_autotransport_invoices_task
+ 14. CACHE INVALIDATION (stats)         [SYNC]  cache.delete — миллисекунды
+
+Архитектурное правило:
+- IO-heavy side-effects (HTTP-вызовы, email, отрисовка PDF, bulk recalc 100+ строк)
+  → Celery + transaction.on_commit + inline fallback.
+- Транзакционно-критичные пересчёты (paid_amount, balance) → синхронно.
 
 TODO (отложенный сплит): когда нагрузка на этот файл вырастет до уровня,
 где его IDE становится медленным, разбить пакетом ``core/signals/``
@@ -30,6 +42,7 @@ cache_invalidation.py) и реэкспортировать всё из ``__init_
 продолжат работать благодаря реэкспорту; ``core.apps.CoreConfig.ready``
 не нужно править — ``from . import signals`` подтянет пакет.
 """
+
 import logging
 import threading
 from decimal import Decimal
@@ -67,11 +80,15 @@ logger = logging.getLogger(__name__)
 # SERVICE CACHE INVALIDATION
 # ============================================================================
 
+
 def invalidate_service_cache(sender, instance, **kwargs):
     from django.core.cache import cache
+
     type_map = {
-        LineService: 'LINE', WarehouseService: 'WAREHOUSE',
-        CarrierService: 'CARRIER', CompanyService: 'COMPANY',
+        LineService: "LINE",
+        WarehouseService: "WAREHOUSE",
+        CarrierService: "CARRIER",
+        CompanyService: "COMPANY",
     }
     svc_type = type_map.get(sender)
     if svc_type:
@@ -87,19 +104,20 @@ for _model in (LineService, WarehouseService, CarrierService, CompanyService):
 # CONTAINER PRE_SAVE / POST_SAVE
 # ============================================================================
 
+
 @receiver(pre_save, sender=Container)
 def save_old_container_values(sender, instance, **kwargs):
-    if instance.unload_date and instance.status in ('FLOATING', 'IN_PORT'):
-        instance.status = 'UNLOADED'
+    if instance.unload_date and instance.status in ("FLOATING", "IN_PORT"):
+        instance.status = "UNLOADED"
         logger.info("[PRE_SAVE] Auto-set status to UNLOADED for container %s", instance.number)
 
-    update_fields = kwargs.get('update_fields')
+    update_fields = kwargs.get("update_fields")
 
     if instance.pk:
         try:
-            old = Container.objects.filter(pk=instance.pk).values(
-                'status', 'unload_date', 'planned_unload_date'
-            ).first()
+            old = (
+                Container.objects.filter(pk=instance.pk).values("status", "unload_date", "planned_unload_date").first()
+            )
             if old:
                 # При update_fields подгружаем старые значения тоже, иначе
                 # post_save воспринимает повторное сохранение как «первичную
@@ -109,14 +127,14 @@ def save_old_container_values(sender, instance, **kwargs):
                 # путь, где это ломалось.
                 instance._pre_save_values = old
                 instance._pre_save_notification = {
-                    'planned_unload_date': old.get('planned_unload_date'),
-                    'unload_date': old.get('unload_date'),
+                    "planned_unload_date": old.get("planned_unload_date"),
+                    "unload_date": old.get("unload_date"),
                 }
-                old_status = old.get('status')
+                old_status = old.get("status")
                 if (
                     update_fields is None
-                    and instance.status == 'UNLOADED'
-                    and old_status != 'UNLOADED'
+                    and instance.status == "UNLOADED"
+                    and old_status != "UNLOADED"
                     and not instance.unloaded_status_at
                 ):
                     instance.unloaded_status_at = timezone.now()
@@ -130,57 +148,63 @@ def save_old_container_values(sender, instance, **kwargs):
     else:
         instance._pre_save_values = None
         instance._pre_save_notification = None
-        if instance.status == 'UNLOADED' and not instance.unloaded_status_at:
+        if instance.status == "UNLOADED" and not instance.unloaded_status_at:
             instance.unloaded_status_at = timezone.now()
 
 
 @receiver(post_save, sender=Container)
 def update_related_on_container_save(sender, instance, created, **kwargs):
-    old_values = getattr(instance, '_pre_save_values', None)
+    """При изменении ``unload_date`` контейнера — синхронно обновляет
+    ``Car.unload_date`` (быстрый bulk UPDATE одним SQL), а пересчёт
+    ``total_price`` / ``days`` / ``storage_cost`` каждой машины уносит
+    в Celery (``_enqueue_recalc_cars_total_price`` → on_commit + task).
+
+    Раньше пересчёт делался прямо в HTTP-потоке: для контейнера со
+    100 авто это блокировало запрос на N итераций ``calculate_total_price()``
+    плюс ``bulk_update``. Теперь HTTP отдаёт ответ сразу, тяжёлая работа
+    идёт в фоне с graceful inline-fallback при недоступности брокера.
+    """
+    old_values = getattr(instance, "_pre_save_values", None)
     instance._pre_save_values = None
 
     if not instance.pk:
         return
 
     if old_values:
-        old_unload_date = old_values.get('unload_date')
+        old_unload_date = old_values.get("unload_date")
         new_unload_date = instance.unload_date
 
         if old_unload_date != new_unload_date and new_unload_date is not None:
             logger.info(
                 "[SIGNAL] unload_date changed for container %s: %s -> %s",
-                instance.number, old_unload_date, new_unload_date,
+                instance.number,
+                old_unload_date,
+                new_unload_date,
             )
             try:
-                out_of_sync = instance.container_cars.exclude(
-                    unload_date=new_unload_date
-                ).count()
+                out_of_sync = instance.container_cars.exclude(unload_date=new_unload_date).count()
                 if out_of_sync == 0:
                     return
 
+                # 1) Быстрый bulk UPDATE даты — один SQL, без N+1.
                 updated_count = instance.container_cars.update(unload_date=new_unload_date)
                 logger.info(
                     "[SIGNAL] Updated unload_date to %s for %d cars in container %s",
-                    new_unload_date, updated_count, instance.number,
+                    new_unload_date,
+                    updated_count,
+                    instance.number,
                 )
 
                 if updated_count > 0:
-                    cars_to_update = []
-                    for car in instance.container_cars.select_related('warehouse').prefetch_related('car_services').all():
-                        car.update_days_and_storage()
-                        car.calculate_total_price()
-                        cars_to_update.append(car)
-
-                    if cars_to_update:
-                        Car.objects.bulk_update(
-                            cars_to_update,
-                            ['days', 'storage_cost', 'total_price'],
-                            batch_size=50,
-                        )
+                    # 2) Пересчёт total_price/days/storage_cost — в Celery.
+                    car_ids = list(instance.container_cars.values_list("pk", flat=True))
+                    _enqueue_recalc_cars_total_price(car_ids)
             except Exception as e:
                 logger.error(
                     "[SIGNAL] Failed to update cars for container %s: %s",
-                    instance.number, e, exc_info=True,
+                    instance.number,
+                    e,
+                    exc_info=True,
                 )
 
 
@@ -188,11 +212,12 @@ def update_related_on_container_save(sender, instance, created, **kwargs):
 # CAR PRE_SAVE / POST_SAVE
 # ============================================================================
 
+
 @receiver(pre_save, sender=Car)
 def save_old_car_values(sender, instance, **kwargs):
-    update_fields = kwargs.get('update_fields')
+    update_fields = kwargs.get("update_fields")
     if update_fields is not None:
-        tracked = {'warehouse_id', 'line_id', 'carrier_id', 'unload_date', 'container_id', 'status', 'is_important'}
+        tracked = {"warehouse_id", "line_id", "carrier_id", "unload_date", "container_id", "status", "is_important"}
         if not tracked.intersection(update_fields):
             instance._pre_save_contractors = None
             instance._pre_save_car_notification = None
@@ -202,21 +227,25 @@ def save_old_car_values(sender, instance, **kwargs):
 
     if instance.pk:
         try:
-            old = Car.objects.filter(pk=instance.pk).values(
-                'warehouse_id', 'line_id', 'carrier_id', 'unload_date', 'container_id', 'status', 'is_important'
-            ).first()
+            old = (
+                Car.objects.filter(pk=instance.pk)
+                .values(
+                    "warehouse_id", "line_id", "carrier_id", "unload_date", "container_id", "status", "is_important"
+                )
+                .first()
+            )
             if old:
                 instance._pre_save_contractors = {
-                    'warehouse_id': old['warehouse_id'],
-                    'line_id': old['line_id'],
-                    'carrier_id': old['carrier_id'],
+                    "warehouse_id": old["warehouse_id"],
+                    "line_id": old["line_id"],
+                    "carrier_id": old["carrier_id"],
                 }
                 instance._pre_save_car_notification = {
-                    'unload_date': old['unload_date'],
-                    'container_id': old['container_id'],
+                    "unload_date": old["unload_date"],
+                    "container_id": old["container_id"],
                 }
-                instance._pre_save_status = old['status']
-                instance._pre_save_is_important = old['is_important']
+                instance._pre_save_status = old["status"]
+                instance._pre_save_is_important = old["is_important"]
             else:
                 instance._pre_save_contractors = None
                 instance._pre_save_car_notification = None
@@ -254,13 +283,13 @@ def car_post_save(sender, instance, **kwargs):
     if not instance.pk:
         return
 
-    created = kwargs.get('created', False)
+    created = kwargs.get("created", False)
 
     # --- 1. Invoice regeneration ---
     # Дедупликация уже сделана внутри `_deferred_invoice_regeneration_for_car`
     # через thread-local множество; ранее здесь была проверка флага
     # `_updating_invoices`, который нигде не устанавливался — мёртвый код.
-    invoice_ids = list(NewInvoice.objects.filter(cars=instance).values_list('id', flat=True))
+    invoice_ids = list(NewInvoice.objects.filter(cars=instance).values_list("id", flat=True))
     if invoice_ids:
         _deferred_invoice_regeneration_for_car(instance.pk, invoice_ids)
 
@@ -271,9 +300,9 @@ def car_post_save(sender, instance, **kwargs):
     _maybe_send_car_unload_notification(instance, created=created)
 
     # --- 4. Container status auto-update ---
-    old_status = getattr(instance, '_pre_save_status', None)
+    old_status = getattr(instance, "_pre_save_status", None)
     instance._pre_save_status = None
-    if instance.status == 'TRANSFERRED' and old_status != 'TRANSFERRED' and instance.container_id:
+    if instance.status == "TRANSFERRED" and old_status != "TRANSFERRED" and instance.container_id:
         _update_container_status_if_all_transferred(instance.container_id)
 
     # --- 5. Авто-создание/закрытие "Дела" по флагу is_important ---
@@ -283,7 +312,7 @@ def car_post_save(sender, instance, **kwargs):
     # Раньше делалось синхронно в `Car.save()` через `after_car_save()`.
     # Теперь — в фоне через ту же таску что и для catalog-changes, с
     # graceful inline-fallback если broker лежит.
-    if not getattr(instance, '_bulk_updating', False) and not getattr(instance, '_creating_services', False):
+    if not getattr(instance, "_bulk_updating", False) and not getattr(instance, "_creating_services", False):
         _enqueue_recalc_cars_total_price([instance.pk])
 
     # --- 7. WebSocket data_update notification ---
@@ -294,14 +323,14 @@ def _enqueue_car_ws_notification(car):
     """Поставить WebSocket-нотификацию data_update на on_commit."""
     car_id = car.pk
     payload = {
-        'type': 'data_update',
-        'data': {
-            'model': 'Car',
-            'id': car_id,
-            'status': car.status,
-            'storage_cost': str(car.storage_cost),
-            'days': car.days,
-            'price': str(car.total_price),
+        "type": "data_update",
+        "data": {
+            "model": "Car",
+            "id": car_id,
+            "status": car.status,
+            "storage_cost": str(car.storage_cost),
+            "days": car.days,
+            "price": str(car.total_price),
         },
     }
 
@@ -309,11 +338,12 @@ def _enqueue_car_ws_notification(car):
         try:
             from asgiref.sync import async_to_sync
             from channels.layers import get_channel_layer
+
             channel_layer = get_channel_layer()
             if channel_layer is not None:
-                async_to_sync(channel_layer.group_send)('updates', payload)
+                async_to_sync(channel_layer.group_send)("updates", payload)
         except Exception as e:
-            logger.error('WS notification failed for car %s: %s', car_id, e)
+            logger.error("WS notification failed for car %s: %s", car_id, e)
 
     transaction.on_commit(_notify)
 
@@ -329,7 +359,7 @@ def _handle_car_important_transition(car, *, created: bool):
     """
     from .models import Task
 
-    old_is_important = getattr(car, '_pre_save_is_important', None)
+    old_is_important = getattr(car, "_pre_save_is_important", None)
     car._pre_save_is_important = None
     if created:
         old_is_important = False
@@ -342,26 +372,22 @@ def _handle_car_important_transition(car, *, created: bool):
 
     if new_is_important:
         # False → True: открываем дело, если ещё нет открытого авто-дела.
-        existing = Task.objects.filter(
-            car=car, auto_created=True, is_completed=False
-        ).first()
+        existing = Task.objects.filter(car=car, auto_created=True, is_completed=False).first()
         if existing:
             return
         title = f"Важное: {car.brand} ({car.vin})"
-        description = car.notes or ''
+        description = car.notes or ""
         Task.objects.create(
             car=car,
             title=title[:200],
             description=description,
             auto_created=True,
-            priority='HIGH',
+            priority="HIGH",
         )
         logger.info("Task auto-created for car %s (is_important set)", car.vin)
     else:
         # True → False: пользователь снял галочку = "действие выполнено".
-        open_tasks = Task.objects.filter(
-            car=car, auto_created=True, is_completed=False
-        )
+        open_tasks = Task.objects.filter(car=car, auto_created=True, is_completed=False)
         now = timezone.now()
         updated = open_tasks.update(
             is_completed=True,
@@ -369,12 +395,12 @@ def _handle_car_important_transition(car, *, created: bool):
             updated_at=now,
         )
         if updated:
-            logger.info("Auto-completed %d task(s) for car %s (is_important unset)",
-                        updated, car.vin)
+            logger.info("Auto-completed %d task(s) for car %s (is_important unset)", updated, car.vin)
 
 
 def _deferred_invoice_regeneration_for_car(car_id, invoice_ids):
     """Schedule invoice regeneration after commit."""
+
     def _do():
         for inv_id in invoice_ids:
             try:
@@ -387,6 +413,7 @@ def _deferred_invoice_regeneration_for_car(car_id, invoice_ids):
                 pass
             except Exception as e:
                 logger.error("Failed to regenerate invoice %s: %s", inv_id, e)
+
     transaction.on_commit(_do)
 
 
@@ -394,20 +421,24 @@ def _maybe_send_car_unload_notification(instance, *, created):
     """Send unload notification for standalone (non-container) cars."""
     if instance.container_id:
         return
-    old_values = getattr(instance, '_pre_save_car_notification', None) or {}
+    old_values = getattr(instance, "_pre_save_car_notification", None) or {}
     instance._pre_save_car_notification = None
-    if old_values.get('container_id'):
+    if old_values.get("container_id"):
         return
-    old_unload_date = old_values.get('unload_date')
+    old_unload_date = old_values.get("unload_date")
     if instance.unload_date and (created or old_unload_date is None):
+
         def _enqueue():
             try:
                 from core.tasks import send_car_unload_notification_task
+
                 send_car_unload_notification_task.delay(instance.pk)
             except Exception:
                 from core.services.email_service import CarNotificationService
+
                 if not CarNotificationService.was_car_unload_notification_sent(instance):
                     CarNotificationService.send_car_unload_notification(instance)
+
         transaction.on_commit(_enqueue)
 
 
@@ -427,7 +458,7 @@ def _create_car_services_if_needed(instance, *, created, kwargs):
 
     if not instance.pk:
         return
-    if getattr(instance, '_creating_services', False):
+    if getattr(instance, "_creating_services", False):
         return
 
     warehouse_changed = False
@@ -435,12 +466,12 @@ def _create_car_services_if_needed(instance, *, created, kwargs):
     carrier_changed = False
 
     if not created:
-        old_contractors = getattr(instance, '_pre_save_contractors', None)
+        old_contractors = getattr(instance, "_pre_save_contractors", None)
         instance._pre_save_contractors = None
         if old_contractors:
-            warehouse_changed = old_contractors.get('warehouse_id') != instance.warehouse_id
-            line_changed = old_contractors.get('line_id') != instance.line_id
-            carrier_changed = old_contractors.get('carrier_id') != instance.carrier_id
+            warehouse_changed = old_contractors.get("warehouse_id") != instance.warehouse_id
+            line_changed = old_contractors.get("line_id") != instance.line_id
+            carrier_changed = old_contractors.get("carrier_id") != instance.carrier_id
             if not (warehouse_changed or line_changed or carrier_changed):
                 return
         else:
@@ -453,61 +484,64 @@ def _create_car_services_if_needed(instance, *, created, kwargs):
     instance._creating_services = True
     try:
         deleted_by_type = {}
-        for stype in ('WAREHOUSE', 'LINE', 'CARRIER', 'COMPANY'):
+        for stype in ("WAREHOUSE", "LINE", "CARRIER", "COMPANY"):
             deleted_by_type[stype] = set(
-                DeletedCarService.objects.filter(car=instance, service_type=stype)
-                .values_list('service_id', flat=True)
+                DeletedCarService.objects.filter(car=instance, service_type=stype).values_list("service_id", flat=True)
             )
 
         # WAREHOUSE — only when warehouse actually changed
         if warehouse_changed:
-            instance.car_services.filter(service_type='WAREHOUSE').delete()
+            instance.car_services.filter(service_type="WAREHOUSE").delete()
             if instance.warehouse:
                 for service in find_warehouse_services_for_car(instance.warehouse):
-                    if service.id in deleted_by_type['WAREHOUSE']:
+                    if service.id in deleted_by_type["WAREHOUSE"]:
                         continue
                     if is_storage_service(service):
                         days = Decimal(str(instance.days or 0))
                         custom_price = days * Decimal(str(service.default_price or 0))
-                        default_markup = days * Decimal(str(getattr(service, 'default_markup', 0) or 0))
+                        default_markup = days * Decimal(str(getattr(service, "default_markup", 0) or 0))
                     else:
                         custom_price = service.default_price
-                        default_markup = getattr(service, 'default_markup', None) or Decimal('0')
+                        default_markup = getattr(service, "default_markup", None) or Decimal("0")
                     CarService.objects.get_or_create(
-                        car=instance, service_type='WAREHOUSE', service_id=service.id,
-                        defaults={'custom_price': custom_price, 'markup_amount': default_markup},
+                        car=instance,
+                        service_type="WAREHOUSE",
+                        service_id=service.id,
+                        defaults={"custom_price": custom_price, "markup_amount": default_markup},
                     )
 
         # LINE (non-THS only; THS managed by create_ths_services_for_container)
         # Only when line actually changed
         if line_changed:
-            ths_line_ids = LineService.objects.filter(
-                Q(code=ServiceCode.THS) | Q(name__icontains='THS')
-            ).values_list('id', flat=True)
-            instance.car_services.filter(service_type='LINE').exclude(
-                service_id__in=ths_line_ids
-            ).delete()
+            ths_line_ids = LineService.objects.filter(Q(code=ServiceCode.THS) | Q(name__icontains="THS")).values_list(
+                "id", flat=True
+            )
+            instance.car_services.filter(service_type="LINE").exclude(service_id__in=ths_line_ids).delete()
             if instance.line:
                 for service in find_line_services_for_car(instance.line):
-                    if service.id in deleted_by_type['LINE']:
+                    if service.id in deleted_by_type["LINE"]:
                         continue
-                    default_markup = getattr(service, 'default_markup', None) or Decimal('0')
+                    default_markup = getattr(service, "default_markup", None) or Decimal("0")
                     CarService.objects.get_or_create(
-                        car=instance, service_type='LINE', service_id=service.id,
-                        defaults={'custom_price': service.default_price, 'markup_amount': default_markup},
+                        car=instance,
+                        service_type="LINE",
+                        service_id=service.id,
+                        defaults={"custom_price": service.default_price, "markup_amount": default_markup},
                     )
 
         # CARRIER — only when carrier actually changed
         if carrier_changed:
-            instance.car_services.filter(service_type='CARRIER').delete()
+            instance.car_services.filter(service_type="CARRIER").delete()
             if instance.carrier:
                 for service in find_carrier_services_for_car(instance.carrier):
-                    if service.id in deleted_by_type['CARRIER']:
+                    if service.id in deleted_by_type["CARRIER"]:
                         continue
-                    default_markup = getattr(service, 'default_markup', None) or Decimal('0')
+                    default_markup = getattr(service, "default_markup", None) or Decimal("0")
                     CarService.objects.get_or_create(
-                        car=instance, service_type='CARRIER', service_id=service.id,
-                        defaults={'custom_price': service.default_price, 'markup_amount': default_markup},
+                        car=instance,
+                        service_type="CARRIER",
+                        service_id=service.id,
+                        defaults={"custom_price": service.default_price, "markup_amount": default_markup},
                     )
 
         # COMPANY (only for newly created cars)
@@ -515,12 +549,14 @@ def _create_car_services_if_needed(instance, *, created, kwargs):
             main_company = get_main_company()
             if main_company:
                 for service in find_company_services_for_car(main_company):
-                    if service.id in deleted_by_type['COMPANY']:
+                    if service.id in deleted_by_type["COMPANY"]:
                         continue
-                    default_markup = getattr(service, 'default_markup', None) or Decimal('0')
+                    default_markup = getattr(service, "default_markup", None) or Decimal("0")
                     CarService.objects.get_or_create(
-                        car=instance, service_type='COMPANY', service_id=service.id,
-                        defaults={'custom_price': service.default_price, 'markup_amount': default_markup},
+                        car=instance,
+                        service_type="COMPANY",
+                        service_id=service.id,
+                        defaults={"custom_price": service.default_price, "markup_amount": default_markup},
                     )
     except Exception as e:
         logger.error("Error creating car services: %s", e)
@@ -544,7 +580,7 @@ _pricing_local = threading.local()
 
 
 def _get_pending_pricing_cars():
-    bucket = getattr(_pricing_local, 'cars', None)
+    bucket = getattr(_pricing_local, "cars", None)
     if bucket is None:
         bucket = set()
         _pricing_local.cars = bucket
@@ -581,12 +617,12 @@ def _schedule_car_price_recalc(car_id):
 
 @receiver(post_save, sender=CarService)
 def recalculate_car_price_on_service_save(sender, instance, **kwargs):
-    if getattr(instance.car, '_creating_services', False):
+    if getattr(instance.car, "_creating_services", False):
         return
     # Админ car.py во время _save_model_inner делает много CarService.save()
     # подряд — включает флаг _bulk_updating, чтобы дублирующих пересчётов
     # Car не было; в конце _save_model_inner делает один пересчёт сам.
-    if getattr(instance.car, '_bulk_updating', False):
+    if getattr(instance.car, "_bulk_updating", False):
         return
     _schedule_car_price_recalc(instance.car_id)
 
@@ -595,11 +631,11 @@ def recalculate_car_price_on_service_save(sender, instance, **kwargs):
 def recalculate_car_price_on_service_delete(sender, instance, **kwargs):
     # При удалении car может быть уже отвязан от instance, но car_id в FK
     # всё ещё валиден.
-    car = getattr(instance, 'car', None)
+    car = getattr(instance, "car", None)
     if car is not None:
-        if getattr(car, '_creating_services', False):
+        if getattr(car, "_creating_services", False):
             return
-        if getattr(car, '_bulk_updating', False):
+        if getattr(car, "_bulk_updating", False):
             return
     _schedule_car_price_recalc(instance.car_id)
 
@@ -615,7 +651,7 @@ def _get_pending_regen_cars():
     """Thread-local множество car_id, для которых пересчёт уже запланирован
     в рамках текущей транзакции. Очищается в on_commit.
     """
-    bucket = getattr(_regen_local, 'cars', None)
+    bucket = getattr(_regen_local, "cars", None)
     if bucket is None:
         bucket = set()
         _regen_local.cars = bucket
@@ -645,6 +681,7 @@ def _deferred_invoice_regeneration(car_id):
     def _dispatch():
         try:
             from core.tasks import regenerate_invoices_for_car_task
+
             try:
                 regenerate_invoices_for_car_task.delay(car_id)
             except Exception:
@@ -667,11 +704,12 @@ def _regenerate_invoices_for_car_inline(car_id):
     """
     try:
         from core.mixins import REGENERATABLE_INVOICE_STATUSES
+
         invoice_ids = list(
             NewInvoice.objects.filter(
                 cars__id=car_id,
                 status__in=REGENERATABLE_INVOICE_STATUSES,
-            ).values_list('id', flat=True)
+            ).values_list("id", flat=True)
         )
         for invoice_id in invoice_ids:
             try:
@@ -702,6 +740,7 @@ def recalculate_invoices_on_car_service_delete(sender, instance, **kwargs):
 # SERVICE CATALOG CHANGES -> UPDATE EXISTING CARSERVICE RECORDS
 # ============================================================================
 
+
 def _enqueue_recalc_cars_total_price(car_ids):
     """Поставить пересчёт Car.total_price в Celery; fallback inline."""
     if not car_ids:
@@ -711,6 +750,7 @@ def _enqueue_recalc_cars_total_price(car_ids):
     def _dispatch():
         try:
             from core.tasks import recalculate_cars_total_price_task
+
             try:
                 recalculate_cars_total_price_task.delay(car_ids)
             except Exception:
@@ -721,7 +761,8 @@ def _enqueue_recalc_cars_total_price(car_ids):
                 _recalc_cars_total_price_inline(car_ids)
         except Exception:
             logger.exception(
-                "Failed to dispatch cars total_price recalc for %s ids", len(car_ids),
+                "Failed to dispatch cars total_price recalc for %s ids",
+                len(car_ids),
             )
 
     transaction.on_commit(_dispatch)
@@ -730,23 +771,25 @@ def _enqueue_recalc_cars_total_price(car_ids):
 def _recalc_cars_total_price_inline(car_ids):
     """Синхронный fallback для recalculate_cars_total_price_task."""
     cars_to_update = []
-    for car in Car.objects.filter(pk__in=car_ids).prefetch_related('car_services'):
+    for car in Car.objects.filter(pk__in=car_ids).prefetch_related("car_services"):
         car.calculate_total_price()
         cars_to_update.append(car)
     if cars_to_update:
-        Car.objects.bulk_update(cars_to_update, ['total_price'], batch_size=200)
+        Car.objects.bulk_update(cars_to_update, ["total_price"], batch_size=200)
 
 
 @receiver(post_save, sender=WarehouseService)
 def update_cars_on_warehouse_service_change(sender, instance, **kwargs):
     try:
         if instance.is_active and instance.default_price > 0:
-            car_services = list(CarService.objects.filter(
-                service_type='WAREHOUSE', service_id=instance.id, car__warehouse=instance.warehouse
-            ).select_related('car'))
+            car_services = list(
+                CarService.objects.filter(
+                    service_type="WAREHOUSE", service_id=instance.id, car__warehouse=instance.warehouse
+                ).select_related("car")
+            )
             if not car_services:
                 return
-            default_markup_val = getattr(instance, 'default_markup', None) or Decimal('0')
+            default_markup_val = getattr(instance, "default_markup", None) or Decimal("0")
             for cs in car_services:
                 if is_storage_service(instance):
                     days = Decimal(str(cs.car.days or 0))
@@ -755,15 +798,17 @@ def update_cars_on_warehouse_service_change(sender, instance, **kwargs):
                 else:
                     cs.custom_price = instance.default_price
                     cs.markup_amount = default_markup_val
-            CarService.objects.bulk_update(car_services, ['custom_price', 'markup_amount'], batch_size=100)
+            CarService.objects.bulk_update(car_services, ["custom_price", "markup_amount"], batch_size=100)
             # Пересчёт total_price выносим в Celery — раньше делался синхронно
             # в HTTP-потоке (N+1 SELECT + N UPDATE).
             _enqueue_recalc_cars_total_price([cs.car_id for cs in car_services])
         else:
-            affected_car_ids = list(CarService.objects.filter(
-                service_type='WAREHOUSE', service_id=instance.id
-            ).values_list('car_id', flat=True))
-            CarService.objects.filter(service_type='WAREHOUSE', service_id=instance.id).delete()
+            affected_car_ids = list(
+                CarService.objects.filter(service_type="WAREHOUSE", service_id=instance.id).values_list(
+                    "car_id", flat=True
+                )
+            )
+            CarService.objects.filter(service_type="WAREHOUSE", service_id=instance.id).delete()
             _enqueue_recalc_cars_total_price(affected_car_ids)
     except Exception as e:
         logger.error("Error updating cars on warehouse service change: %s", e)
@@ -784,19 +829,21 @@ def update_cars_on_line_service_change(sender, instance, **kwargs):
     """
     try:
         if instance.is_active and instance.default_price > 0:
-            default_markup = getattr(instance, 'default_markup', None) or Decimal('0')
-            affected_car_ids = list(CarService.objects.filter(
-                service_type='LINE', service_id=instance.id, car__line=instance.line
-            ).values_list('car_id', flat=True))
-            CarService.objects.filter(
-                service_type='LINE', service_id=instance.id, car__line=instance.line
-            ).update(custom_price=instance.default_price, markup_amount=default_markup)
+            default_markup = getattr(instance, "default_markup", None) or Decimal("0")
+            affected_car_ids = list(
+                CarService.objects.filter(
+                    service_type="LINE", service_id=instance.id, car__line=instance.line
+                ).values_list("car_id", flat=True)
+            )
+            CarService.objects.filter(service_type="LINE", service_id=instance.id, car__line=instance.line).update(
+                custom_price=instance.default_price, markup_amount=default_markup
+            )
             _enqueue_recalc_cars_total_price(affected_car_ids)
         else:
-            affected_car_ids = list(CarService.objects.filter(
-                service_type='LINE', service_id=instance.id
-            ).values_list('car_id', flat=True))
-            deleted = CarService.objects.filter(service_type='LINE', service_id=instance.id).delete()
+            affected_car_ids = list(
+                CarService.objects.filter(service_type="LINE", service_id=instance.id).values_list("car_id", flat=True)
+            )
+            deleted = CarService.objects.filter(service_type="LINE", service_id=instance.id).delete()
             if deleted[0] > 0:
                 _enqueue_recalc_cars_total_price(affected_car_ids)
     except Exception as e:
@@ -807,19 +854,23 @@ def update_cars_on_line_service_change(sender, instance, **kwargs):
 def update_cars_on_carrier_service_change(sender, instance, **kwargs):
     try:
         if instance.is_active and instance.default_price > 0:
-            default_markup = getattr(instance, 'default_markup', None) or Decimal('0')
-            affected_car_ids = list(CarService.objects.filter(
-                service_type='CARRIER', service_id=instance.id, car__carrier=instance.carrier
-            ).values_list('car_id', flat=True))
+            default_markup = getattr(instance, "default_markup", None) or Decimal("0")
+            affected_car_ids = list(
+                CarService.objects.filter(
+                    service_type="CARRIER", service_id=instance.id, car__carrier=instance.carrier
+                ).values_list("car_id", flat=True)
+            )
             CarService.objects.filter(
-                service_type='CARRIER', service_id=instance.id, car__carrier=instance.carrier
+                service_type="CARRIER", service_id=instance.id, car__carrier=instance.carrier
             ).update(custom_price=instance.default_price, markup_amount=default_markup)
             _enqueue_recalc_cars_total_price(affected_car_ids)
         else:
-            affected_car_ids = list(CarService.objects.filter(
-                service_type='CARRIER', service_id=instance.id
-            ).values_list('car_id', flat=True))
-            CarService.objects.filter(service_type='CARRIER', service_id=instance.id).delete()
+            affected_car_ids = list(
+                CarService.objects.filter(service_type="CARRIER", service_id=instance.id).values_list(
+                    "car_id", flat=True
+                )
+            )
+            CarService.objects.filter(service_type="CARRIER", service_id=instance.id).delete()
             _enqueue_recalc_cars_total_price(affected_car_ids)
     except Exception as e:
         logger.error("Error updating cars on carrier service change: %s", e)
@@ -828,10 +879,10 @@ def update_cars_on_carrier_service_change(sender, instance, **kwargs):
 @receiver(post_save, sender=CompanyService)
 def update_cars_on_company_service_change(sender, instance, **kwargs):
     try:
-        car_services = CarService.objects.filter(service_type='COMPANY', service_id=instance.id)
-        affected_car_ids = list(car_services.values_list('car_id', flat=True).distinct())
+        car_services = CarService.objects.filter(service_type="COMPANY", service_id=instance.id)
+        affected_car_ids = list(car_services.values_list("car_id", flat=True).distinct())
         if instance.is_active and instance.default_price > 0:
-            default_markup = getattr(instance, 'default_markup', None) or Decimal('0')
+            default_markup = getattr(instance, "default_markup", None) or Decimal("0")
             car_services.update(custom_price=instance.default_price, markup_amount=default_markup)
         else:
             car_services.delete()
@@ -844,10 +895,11 @@ def update_cars_on_company_service_change(sender, instance, **kwargs):
 # CASCADE DELETE CARSERVICE ON CATALOG SERVICE DELETION
 # ============================================================================
 
+
 @receiver(pre_delete, sender=LineService)
 def delete_car_services_on_line_service_delete(sender, instance, **kwargs):
     try:
-        CarService.objects.filter(service_type='LINE', service_id=instance.id).delete()
+        CarService.objects.filter(service_type="LINE", service_id=instance.id).delete()
     except Exception as e:
         logger.error("Error deleting CarService on LineService delete: %s", e)
 
@@ -855,7 +907,7 @@ def delete_car_services_on_line_service_delete(sender, instance, **kwargs):
 @receiver(pre_delete, sender=WarehouseService)
 def delete_car_services_on_warehouse_service_delete(sender, instance, **kwargs):
     try:
-        CarService.objects.filter(service_type='WAREHOUSE', service_id=instance.id).delete()
+        CarService.objects.filter(service_type="WAREHOUSE", service_id=instance.id).delete()
     except Exception as e:
         logger.error("Error deleting CarService on WarehouseService delete: %s", e)
 
@@ -863,7 +915,7 @@ def delete_car_services_on_warehouse_service_delete(sender, instance, **kwargs):
 @receiver(pre_delete, sender=CarrierService)
 def delete_car_services_on_carrier_service_delete(sender, instance, **kwargs):
     try:
-        CarService.objects.filter(service_type='CARRIER', service_id=instance.id).delete()
+        CarService.objects.filter(service_type="CARRIER", service_id=instance.id).delete()
     except Exception as e:
         logger.error("Error deleting CarService on CarrierService delete: %s", e)
 
@@ -871,7 +923,7 @@ def delete_car_services_on_carrier_service_delete(sender, instance, **kwargs):
 @receiver(pre_delete, sender=CompanyService)
 def delete_car_services_on_company_service_delete(sender, instance, **kwargs):
     try:
-        CarService.objects.filter(service_type='COMPANY', service_id=instance.id).delete()
+        CarService.objects.filter(service_type="COMPANY", service_id=instance.id).delete()
     except Exception as e:
         logger.error("Error deleting CarService on CompanyService delete: %s", e)
 
@@ -880,6 +932,7 @@ def delete_car_services_on_company_service_delete(sender, instance, **kwargs):
 # INVOICE AUTO-CATEGORIZATION + SITEPRO PUSH
 # ============================================================================
 
+
 @receiver(pre_save, sender=NewInvoice)
 def auto_categorize_invoice(sender, instance, **kwargs):
     if instance.category_id:
@@ -887,7 +940,8 @@ def auto_categorize_invoice(sender, instance, **kwargs):
     if instance.issuer_warehouse_id or instance.issuer_line_id or instance.issuer_carrier_id:
         try:
             from .models_billing import ExpenseCategory
-            logistics_cat = ExpenseCategory.objects.filter(category_type='OPERATIONAL').first()
+
+            logistics_cat = ExpenseCategory.objects.filter(category_type="OPERATIONAL").first()
             if logistics_cat:
                 instance.category = logistics_cat
         except Exception as e:
@@ -896,14 +950,14 @@ def auto_categorize_invoice(sender, instance, **kwargs):
 
 @receiver(pre_save, sender=NewInvoice)
 def save_old_invoice_status(sender, instance, **kwargs):
-    update_fields = kwargs.get('update_fields')
-    if update_fields is not None and 'status' not in update_fields:
+    update_fields = kwargs.get("update_fields")
+    if update_fields is not None and "status" not in update_fields:
         instance._pre_save_status = None
         return
     if instance.pk:
         try:
-            old = NewInvoice.objects.filter(pk=instance.pk).values('status').first()
-            instance._pre_save_status = old['status'] if old else None
+            old = NewInvoice.objects.filter(pk=instance.pk).values("status").first()
+            instance._pre_save_status = old["status"] if old else None
         except Exception:
             instance._pre_save_status = None
     else:
@@ -919,13 +973,13 @@ def auto_push_invoice_to_sitepro(sender, instance, created, **kwargs):
     if not instance.pk:
         return
 
-    old_status = getattr(instance, '_pre_save_status', None)
+    old_status = getattr(instance, "_pre_save_status", None)
     instance._pre_save_status = None
-    if instance.status != 'ISSUED' or old_status == 'ISSUED':
+    if instance.status != "ISSUED" or old_status == "ISSUED":
         return
-    if getattr(instance, 'document_type', 'PROFORMA') != 'INVOICE':
+    if getattr(instance, "document_type", "PROFORMA") != "INVOICE":
         return
-    if getattr(instance, '_pushing_to_sitepro', False):
+    if getattr(instance, "_pushing_to_sitepro", False):
         return
 
     invoice_id = instance.pk
@@ -934,28 +988,30 @@ def auto_push_invoice_to_sitepro(sender, instance, created, **kwargs):
     def _queue():
         try:
             from core.tasks import push_invoice_to_sitepro_task
+
             push_invoice_to_sitepro_task.delay(invoice_id)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "[SitePro] Celery unavailable for invoice %s, pushing inline: %s",
-                invoice_number, exc,
+                invoice_number,
+                exc,
             )
             try:
                 from core.models_accounting import SiteProConnection
-                connection = SiteProConnection.objects.filter(
-                    is_active=True, auto_push_on_issue=True
-                ).first()
+
+                connection = SiteProConnection.objects.filter(is_active=True, auto_push_on_issue=True).first()
                 if not connection:
                     return
                 instance._pushing_to_sitepro = True
                 try:
                     from core.services.sitepro_service import SiteProService
+
                     SiteProService(connection).push_invoice(instance)
-                    logger.info('[SitePro] Auto-pushed invoice %s on ISSUED (sync)', invoice_number)
+                    logger.info("[SitePro] Auto-pushed invoice %s on ISSUED (sync)", invoice_number)
                 finally:
                     instance._pushing_to_sitepro = False
             except Exception as e:  # noqa: BLE001
-                logger.error('[SitePro] Error auto-pushing invoice %s: %s', invoice_number, e)
+                logger.error("[SitePro] Error auto-pushing invoice %s: %s", invoice_number, e)
 
     transaction.on_commit(_queue)
 
@@ -970,30 +1026,31 @@ def sync_linked_invoice_status(sender, instance, **kwargs):
     оплата уже прошла по парному инвойсу, дублирующий Transaction
     создавать нельзя, иначе поедет баланс склада/линии/перевозчика.
     """
-    if instance.status not in ('PAID', 'LINKED_PAID'):
+    if instance.status not in ("PAID", "LINKED_PAID"):
         return
-    if getattr(instance, '_syncing_linked', False):
+    if getattr(instance, "_syncing_linked", False):
         return
 
     linked = None
     if instance.linked_invoice_id:
         linked = instance.linked_invoice
     else:
-        linked = getattr(instance, 'linked_from', None)
+        linked = getattr(instance, "linked_from", None)
         if linked is not None:
             try:
                 linked = NewInvoice.objects.get(pk=linked.pk)
             except NewInvoice.DoesNotExist:
                 linked = None
 
-    if linked and linked.status not in ('PAID', 'LINKED_PAID', 'CANCELLED'):
+    if linked and linked.status not in ("PAID", "LINKED_PAID", "CANCELLED"):
         linked._syncing_linked = True
         linked.paid_amount = linked.total
-        linked.status = 'LINKED_PAID'
-        linked.save(update_fields=['paid_amount', 'status', 'updated_at'])
+        linked.status = "LINKED_PAID"
+        linked.save(update_fields=["paid_amount", "status", "updated_at"])
         logger.info(
-            'Linked invoice %s marked LINKED_PAID (paired with %s)',
-            linked.number, instance.number,
+            "Linked invoice %s marked LINKED_PAID (paired with %s)",
+            linked.number,
+            instance.number,
         )
 
 
@@ -1001,8 +1058,9 @@ def sync_linked_invoice_status(sender, instance, **kwargs):
 # TRANSACTION -> BALANCE RECALCULATION
 # ============================================================================
 
+
 def _recalc_transaction_effects(instance):
-    if instance.status != 'COMPLETED':
+    if instance.status != "COMPLETED":
         return
     for entity in (instance.sender, instance.recipient):
         try:
@@ -1018,7 +1076,7 @@ def _recalc_transaction_effects(instance):
 
 @receiver(post_save, sender=Transaction)
 def recalculate_on_transaction_save(sender, instance, **kwargs):
-    if getattr(instance, '_skip_balance_recalc', False):
+    if getattr(instance, "_skip_balance_recalc", False):
         return
     _recalc_transaction_effects(instance)
 
@@ -1042,13 +1100,17 @@ def _track_bt_matched_invoice_change(sender, instance, **kwargs):
     if not instance.pk:
         instance._old_matched_invoice_id = None
         return
-    update_fields = kwargs.get('update_fields')
-    if update_fields is not None and 'matched_invoice' not in update_fields and 'matched_invoice_id' not in update_fields:
-        instance._old_matched_invoice_id = getattr(instance, '_old_matched_invoice_id', None)
+    update_fields = kwargs.get("update_fields")
+    if (
+        update_fields is not None
+        and "matched_invoice" not in update_fields
+        and "matched_invoice_id" not in update_fields
+    ):
+        instance._old_matched_invoice_id = getattr(instance, "_old_matched_invoice_id", None)
         return
     try:
-        old = BankTransaction.objects.filter(pk=instance.pk).values('matched_invoice_id').first()
-        instance._old_matched_invoice_id = old['matched_invoice_id'] if old else None
+        old = BankTransaction.objects.filter(pk=instance.pk).values("matched_invoice_id").first()
+        instance._old_matched_invoice_id = old["matched_invoice_id"] if old else None
     except Exception:
         instance._old_matched_invoice_id = None
 
@@ -1070,10 +1132,10 @@ def auto_create_payment_on_bt_match(sender, instance, **kwargs):
     - invoice not CANCELLED, remaining amount > 0
     - bank amount direction matches invoice direction
     """
-    if getattr(instance, '_creating_payment', False):
+    if getattr(instance, "_creating_payment", False):
         return
 
-    old_invoice_id = getattr(instance, '_old_matched_invoice_id', None)
+    old_invoice_id = getattr(instance, "_old_matched_invoice_id", None)
     instance._old_matched_invoice_id = None
 
     if not instance.matched_invoice_id:
@@ -1099,7 +1161,7 @@ def auto_create_payment_on_bt_match(sender, instance, **kwargs):
                     invoice = NewInvoice.objects.select_for_update().get(pk=bt.matched_invoice_id)
                 except NewInvoice.DoesNotExist:
                     return
-                if invoice.status == 'CANCELLED':
+                if invoice.status == "CANCELLED":
                     return
 
                 remaining = invoice.total - invoice.paid_amount
@@ -1110,47 +1172,48 @@ def auto_create_payment_on_bt_match(sender, instance, **kwargs):
                 company = Company.get_default()
                 direction = invoice.direction
                 tx_kwargs = dict(
-                    type='PAYMENT',
-                    method='TRANSFER',
-                    status='COMPLETED',
+                    type="PAYMENT",
+                    method="TRANSFER",
+                    status="COMPLETED",
                     amount=payment_amount,
-                    currency=invoice.currency or 'EUR',
+                    currency=invoice.currency or "EUR",
                     invoice=invoice,
-                    description=(
-                        f'Авто-привязка банковского платежа '
-                        f'{bt.counterparty_name} -> {invoice.number}'
-                    ),
+                    description=(f"Авто-привязка банковского платежа {bt.counterparty_name} -> {invoice.number}"),
                     date=bt.created_at,
                 )
 
-                if bt.amount > 0 and direction == 'OUTGOING':
+                if bt.amount > 0 and direction == "OUTGOING":
                     recipient = invoice.recipient
                     if not recipient:
                         logger.info(
-                            '[BT auto-pay] Skipping BT %s: invoice %s has no recipient',
-                            bt.pk, invoice.number,
+                            "[BT auto-pay] Skipping BT %s: invoice %s has no recipient",
+                            bt.pk,
+                            invoice.number,
                         )
                         return
-                    tx_kwargs['to_company'] = company
-                    from_field = f'from_{recipient.__class__.__name__.lower()}'
+                    tx_kwargs["to_company"] = company
+                    from_field = f"from_{recipient.__class__.__name__.lower()}"
                     tx_kwargs[from_field] = recipient
 
-                elif bt.amount < 0 and direction == 'INCOMING':
+                elif bt.amount < 0 and direction == "INCOMING":
                     issuer = invoice.issuer
                     if not issuer:
                         logger.info(
-                            '[BT auto-pay] Skipping BT %s: invoice %s has no issuer',
-                            bt.pk, invoice.number,
+                            "[BT auto-pay] Skipping BT %s: invoice %s has no issuer",
+                            bt.pk,
+                            invoice.number,
                         )
                         return
-                    tx_kwargs['from_company'] = company
-                    to_field = f'to_{issuer.__class__.__name__.lower()}'
+                    tx_kwargs["from_company"] = company
+                    to_field = f"to_{issuer.__class__.__name__.lower()}"
                     tx_kwargs[to_field] = issuer
 
                 else:
                     logger.info(
-                        '[BT auto-pay] Skipping BT %s: direction mismatch (amount=%s, invoice direction=%s)',
-                        bt.pk, bt.amount, direction,
+                        "[BT auto-pay] Skipping BT %s: direction mismatch (amount=%s, invoice direction=%s)",
+                        bt.pk,
+                        bt.amount,
+                        direction,
                     )
                     return
 
@@ -1161,17 +1224,21 @@ def auto_create_payment_on_bt_match(sender, instance, **kwargs):
                 try:
                     bt.matched_transaction = tx
                     if not bt.reconciliation_note:
-                        bt.reconciliation_note = f'Привязано вручную к {invoice.number}'
-                    bt.save(update_fields=['matched_transaction', 'reconciliation_note', 'fetched_at'])
+                        bt.reconciliation_note = f"Привязано вручную к {invoice.number}"
+                    bt.save(update_fields=["matched_transaction", "reconciliation_note", "fetched_at"])
                 finally:
                     bt._creating_payment = False
 
                 logger.info(
-                    '[BT auto-pay] Created Transaction %s for invoice %s (%.2f %s) from BT %s',
-                    tx.number, invoice.number, float(payment_amount), tx.currency, bt.pk,
+                    "[BT auto-pay] Created Transaction %s for invoice %s (%.2f %s) from BT %s",
+                    tx.number,
+                    invoice.number,
+                    float(payment_amount),
+                    tx.currency,
+                    bt.pk,
                 )
         except Exception as e:
-            logger.error('[BT auto-pay] Error for BT %s: %s', bt_pk, e, exc_info=True)
+            logger.error("[BT auto-pay] Error for BT %s: %s", bt_pk, e, exc_info=True)
 
     transaction.on_commit(_do)
 
@@ -1180,15 +1247,16 @@ def auto_create_payment_on_bt_match(sender, instance, **kwargs):
 # EMAIL NOTIFICATIONS
 # ============================================================================
 
+
 @receiver(post_save, sender=Container)
 def send_container_notifications_on_save(sender, instance, created, **kwargs):
     if not instance.pk:
         return
 
-    old_values = getattr(instance, '_pre_save_notification', None) or {}
+    old_values = getattr(instance, "_pre_save_notification", None) or {}
     instance._pre_save_notification = None
-    old_planned = old_values.get('planned_unload_date')
-    old_unload = old_values.get('unload_date')
+    old_planned = old_values.get("planned_unload_date")
+    old_unload = old_values.get("unload_date")
 
     should_notify_planned = False
     if instance.planned_unload_date:
@@ -1201,27 +1269,34 @@ def send_container_notifications_on_save(sender, instance, created, **kwargs):
             should_notify_unload = True
 
     if should_notify_planned:
+
         def _enqueue_planned():
             try:
                 from core.tasks import send_planned_notifications_task
+
                 send_planned_notifications_task.delay(instance.pk)
             except Exception:
                 from core.services.email_service import ContainerNotificationService
+
                 if not ContainerNotificationService.was_planned_notification_sent(instance):
                     ContainerNotificationService.send_planned_to_all_clients(instance)
+
         transaction.on_commit(_enqueue_planned)
 
     if should_notify_unload:
+
         def _enqueue_unload():
             try:
                 from core.tasks import send_unload_notifications_task
+
                 send_unload_notifications_task.delay(instance.pk)
             except Exception:
                 from core.services.email_service import ContainerNotificationService
+
                 if not ContainerNotificationService.was_unload_notification_sent(instance):
                     ContainerNotificationService.send_unload_to_all_clients(instance)
-        transaction.on_commit(_enqueue_unload)
 
+        transaction.on_commit(_enqueue_unload)
 
 
 # (Car notification and container status handlers consolidated into car_post_save above)
@@ -1231,11 +1306,12 @@ def send_container_notifications_on_save(sender, instance, created, **kwargs):
 # GDRIVE SYNC NOTE
 # ============================================================================
 
+
 @receiver(post_save, sender=Container)
 def auto_sync_photos_on_container_change(sender, instance, created, **kwargs):
     if not instance.pk:
         return
-    if instance.status == 'UNLOADED':
+    if instance.status == "UNLOADED":
         logger.info(
             "Container %s: status UNLOADED. Photo sync will run via cron.",
             instance.number,
@@ -1246,56 +1322,57 @@ def auto_sync_photos_on_container_change(sender, instance, created, **kwargs):
 # AUTOTRANSPORT
 # ============================================================================
 
+
 def _queue_or_run_generate_invoices(autotransport):
     """Ставит задачу в Celery; при недоступности брокера — выполняет синхронно."""
     from core.tasks import generate_autotransport_invoices_task
+
     try:
-        transaction.on_commit(
-            lambda: generate_autotransport_invoices_task.delay(autotransport.pk)
-        )
+        transaction.on_commit(lambda: generate_autotransport_invoices_task.delay(autotransport.pk))
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "AutoTransport %s: Celery unavailable, generating invoices inline: %s",
-            autotransport.number, exc,
+            autotransport.number,
+            exc,
         )
         try:
             invoices = autotransport.generate_invoices()
             if invoices:
                 logger.info(
                     "AutoTransport %s: created/updated %d invoices (sync fallback)",
-                    autotransport.number, len(invoices),
+                    autotransport.number,
+                    len(invoices),
                 )
         except Exception as e:  # noqa: BLE001
             logger.error("AutoTransport %s invoice error: %s", autotransport.number, e)
 
 
-@receiver(post_save, sender='core.AutoTransport')
+@receiver(post_save, sender="core.AutoTransport")
 def autotransport_post_save(sender, instance, created, **kwargs):
-    if instance.status == 'FORMED':
+    if instance.status == "FORMED":
         _queue_or_run_generate_invoices(instance)
 
-    if instance.status in ('LOADED', 'IN_TRANSIT', 'DELIVERED'):
-        transfer_date = getattr(instance, '_transfer_date_override', None)
+    if instance.status in ("LOADED", "IN_TRANSIT", "DELIVERED"):
+        transfer_date = getattr(instance, "_transfer_date_override", None)
         _mark_cars_as_transferred(instance, transfer_date)
 
 
 def _mark_cars_as_transferred(autotransport, transfer_date=None):
     from django.utils import timezone as tz
+
     if transfer_date is None:
         transfer_date = tz.now().date()
-    affected_cars = list(
-        autotransport.cars.exclude(status='TRANSFERRED').values_list('id', 'container_id')
-    )
+    affected_cars = list(autotransport.cars.exclude(status="TRANSFERRED").values_list("id", "container_id"))
     if not affected_cars:
         return
     car_ids = [c[0] for c in affected_cars]
     container_ids = {c[1] for c in affected_cars if c[1]}
-    Car.objects.filter(id__in=car_ids).update(
-        status='TRANSFERRED', transfer_date=transfer_date
-    )
+    Car.objects.filter(id__in=car_ids).update(status="TRANSFERRED", transfer_date=transfer_date)
     logger.info(
         "AutoTransport %s: %d cars -> TRANSFERRED (date: %s)",
-        autotransport.number, len(car_ids), transfer_date,
+        autotransport.number,
+        len(car_ids),
+        transfer_date,
     )
     for cid in container_ids:
         _update_container_status_if_all_transferred(cid)
@@ -1309,7 +1386,7 @@ def _update_container_status_if_all_transferred(container_id):
     Раньше эту же логику дублировал отдельный код на 12 строк.
     """
     try:
-        container = Container.objects.only('id', 'status', 'number').get(pk=container_id)
+        container = Container.objects.only("id", "status", "number").get(pk=container_id)
     except Container.DoesNotExist:
         return
     container.check_and_update_status_from_cars()
@@ -1328,38 +1405,34 @@ def autotransport_cars_changed_handler(sender, instance, action, **kwargs):
     # перестанут сохраняться. Поэтому в pre_clear запоминаем старый
     # набор cars на инстансе, а в pre_add сравниваем и блокируем
     # ТОЛЬКО реально новые добавления.
-    if action == 'pre_clear':
+    if action == "pre_clear":
         try:
-            instance._existing_cars_before_clear = set(
-                instance.cars.values_list('pk', flat=True)
-            )
+            instance._existing_cars_before_clear = set(instance.cars.values_list("pk", flat=True))
         except Exception:
             instance._existing_cars_before_clear = set()
         return
 
-    if action == 'pre_add':
-        pk_set = kwargs.get('pk_set') or set()
+    if action == "pre_add":
+        pk_set = kwargs.get("pk_set") or set()
         if not pk_set:
             return
-        existing = getattr(instance, '_existing_cars_before_clear', None)
+        existing = getattr(instance, "_existing_cars_before_clear", None)
         # Если pre_clear не было (точечный add()) — все pk_set считаются новыми.
         if existing is None:
             # При точечном add() старого набора в нашем атрибуте нет,
             # но БД уже не отражает добавляемые pk (post_add ещё впереди),
             # поэтому "уже привязанные" = текущий cars.
             try:
-                existing = set(instance.cars.values_list('pk', flat=True))
+                existing = set(instance.cars.values_list("pk", flat=True))
             except Exception:
                 existing = set()
         new_ids = pk_set - existing
         if not new_ids:
             return
-        blocked = list(
-            Car.objects.filter(pk__in=new_ids, is_important=True)
-            .values_list('vin', flat=True)
-        )
+        blocked = list(Car.objects.filter(pk__in=new_ids, is_important=True).values_list("vin", flat=True))
         if blocked:
             from django.core.exceptions import ValidationError
+
             raise ValidationError(
                 "Нельзя добавить в автовоз авто с пометкой «Важное»: "
                 + ", ".join(blocked)
@@ -1367,24 +1440,25 @@ def autotransport_cars_changed_handler(sender, instance, action, **kwargs):
             )
         return
 
-    if action == 'post_clear':
+    if action == "post_clear":
         # Сохраняем атрибут до pre_add — не очищаем здесь.
         return
 
-    if action in ('post_add', 'post_remove'):
+    if action in ("post_add", "post_remove"):
         # Чистим временный атрибут после успешного цикла set().
-        if hasattr(instance, '_existing_cars_before_clear'):
+        if hasattr(instance, "_existing_cars_before_clear"):
             try:
                 del instance._existing_cars_before_clear
             except AttributeError:
                 pass
-        if instance.status == 'FORMED':
+        if instance.status == "FORMED":
             _queue_or_run_generate_invoices(instance)
 
 
 def connect_autotransport_signals():
     try:
         from .models import AutoTransport
+
         m2m_changed.connect(autotransport_cars_changed_handler, sender=AutoTransport.cars.through)
     except Exception as e:
         logger.warning("Failed to connect AutoTransport signals: %s", e)
@@ -1395,8 +1469,15 @@ def connect_autotransport_signals():
 # ============================================================================
 
 _CACHE_INVALIDATION_MODELS = {
-    'Client', 'Warehouse', 'Company', 'Line', 'Carrier',
-    'NewInvoice', 'Transaction', 'Car', 'Container',
+    "Client",
+    "Warehouse",
+    "Company",
+    "Line",
+    "Carrier",
+    "NewInvoice",
+    "Transaction",
+    "Car",
+    "Container",
 }
 
 
@@ -1412,8 +1493,9 @@ def _invalidate_stats_cache(sender, instance, **kwargs):
         return
     try:
         from .cache_utils import invalidate_related_cache
+
         # Откладываем до commit, чтобы инвалидация происходила после записи в БД.
-        instance_id = getattr(instance, 'pk', None)
+        instance_id = getattr(instance, "pk", None)
         transaction.on_commit(lambda: invalidate_related_cache(model_name, instance_id))
     except Exception as exc:  # noqa: BLE001
         logger.debug("Cache invalidation skipped for %s: %s", model_name, exc)
@@ -1421,21 +1503,22 @@ def _invalidate_stats_cache(sender, instance, **kwargs):
 
 def connect_cache_invalidation_signals():
     from django.apps import apps as _apps
+
     for model_name in _CACHE_INVALIDATION_MODELS:
         try:
-            model = _apps.get_model('core', model_name)
+            model = _apps.get_model("core", model_name)
         except LookupError:
             continue
         post_save.connect(
             _invalidate_stats_cache,
             sender=model,
-            dispatch_uid=f'cache_invalidate_save_{model_name}',
+            dispatch_uid=f"cache_invalidate_save_{model_name}",
             weak=False,
         )
         post_delete.connect(
             _invalidate_stats_cache,
             sender=model,
-            dispatch_uid=f'cache_invalidate_delete_{model_name}',
+            dispatch_uid=f"cache_invalidate_delete_{model_name}",
             weak=False,
         )
 
@@ -1462,7 +1545,7 @@ if not apps.ready:
     from django.db.models.signals import post_migrate
 
     def setup_autotransport_signals(sender, **kwargs):
-        if sender.name == 'core':
+        if sender.name == "core":
             connect_autotransport_signals()
             connect_cache_invalidation_signals()
 

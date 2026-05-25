@@ -107,7 +107,26 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest pytest-django pytest-cov
+          pip install -r requirements-dev.txt
 
-      - name: Run pytest
+      - name: Run pytest (full suite)
         run: pytest --tb=short --maxfail=5 --cov=core --cov-fail-under=30
+
+      - name: Critical modules coverage (billing/encryption/reconciliation)
+        # Money-critical модули должны иметь высокое покрытие, даже если общий
+        # порог по core/ ниже. Поднимать постепенно по мере роста покрытия.
+        run: |
+          pytest \
+            --tb=short \
+            --cov=core.encryption \
+            --cov=core.services.billing_service \
+            --cov=core.services.car_lifecycle_service \
+            --cov=core.management.commands.auto_reconcile \
+            --cov=core.management.commands.rotate_encryption_key \
+            --cov-report=term \
+            --cov-fail-under=55 \
+            core/tests/test_encryption.py \
+            core/tests/test_billing_service.py \
+            core/tests/test_reconciliation.py \
+            core/tests/test_lifecycle.py \
+            core/tests/test_billing.py

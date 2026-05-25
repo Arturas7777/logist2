@@ -26,17 +26,17 @@ from core.models_billing import NewInvoice, Transaction
 logger = logging.getLogger(__name__)
 
 INVOICE_PATTERNS = [
-    re.compile(r'PARDP[\s\-]*(\d{3,7})', re.IGNORECASE),
-    re.compile(r'INV[\s\-]*(20\d{4}[\s\-]*\d{4})', re.IGNORECASE),
-    re.compile(r'INVOICE[\s\-]*(\d{3,7})', re.IGNORECASE),
-    re.compile(r'FACTURA[\s\-]*(?:SERIA\s+)?PARDP[\s\-]*(?:NO\.?\s*)?(\d{3,7})', re.IGNORECASE),
+    re.compile(r"PARDP[\s\-]*(\d{3,7})", re.IGNORECASE),
+    re.compile(r"INV[\s\-]*(20\d{4}[\s\-]*\d{4})", re.IGNORECASE),
+    re.compile(r"INVOICE[\s\-]*(\d{3,7})", re.IGNORECASE),
+    re.compile(r"FACTURA[\s\-]*(?:SERIA\s+)?PARDP[\s\-]*(?:NO\.?\s*)?(\d{3,7})", re.IGNORECASE),
 ]
 
-SOLTYS_ALIASES = ['daniel soltys', 'soltys daniel']
+SOLTYS_ALIASES = ["daniel soltys", "soltys daniel"]
 
 
 def normalize(name: str) -> str:
-    return re.sub(r'[^a-z0-9]', '', name.lower())
+    return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
 def extract_invoice_number(text: str) -> str | None:
@@ -46,10 +46,13 @@ def extract_invoice_number(text: str) -> str | None:
     for pattern in INVOICE_PATTERNS:
         m = pattern.search(text)
         if m:
-            num = re.sub(r'\s', '', m.group(1))
-            if 'INV' in pattern.pattern.upper() and num.startswith('20'):
-                return f'INV-{num[:6]}-{num[6:]}'
-            return f'PARDP-{num.zfill(6)}'
+            # Нормализуем: убираем И пробелы, И дефисы — иначе для legacy-формата
+            # INV-202602-0001 получали двойной дефис ("INV-202602--0001"),
+            # который не совпадал с реальным номером инвойса в БД.
+            num = re.sub(r"[\s\-]", "", m.group(1))
+            if "INV" in pattern.pattern.upper() and num.startswith("20"):
+                return f"INV-{num[:6]}-{num[6:]}"
+            return f"PARDP-{num.zfill(6)}"
     return None
 
 
@@ -61,8 +64,8 @@ def fuzzy_match_name(bank_name: str, client_name: str) -> bool:
         return False
     if bn == cn:
         return True
-    bn_parts = set(re.sub(r'[^a-z0-9\s]', '', bank_name.lower()).split())
-    cn_parts = set(re.sub(r'[^a-z0-9\s]', '', client_name.lower()).split())
+    bn_parts = set(re.sub(r"[^a-z0-9\s]", "", bank_name.lower()).split())
+    cn_parts = set(re.sub(r"[^a-z0-9\s]", "", client_name.lower()).split())
     if len(bn_parts) >= 2 and len(cn_parts) >= 2:
         if bn_parts == cn_parts:
             return True
@@ -82,24 +85,24 @@ def reconcile_incoming_payments(dry_run=False):
         matched_invoice__isnull=True,
         matched_transaction__isnull=True,
         reconciliation_skipped=False,
-    ).select_related('connection')
+    ).select_related("connection")
 
     all_invoices = {
         inv.number: inv
-        for inv in NewInvoice.objects.exclude(status='CANCELLED').select_related(
-            'recipient_client',
+        for inv in NewInvoice.objects.exclude(status="CANCELLED").select_related(
+            "recipient_client",
         )
     }
 
     company = Company.get_default()
-    caromoto_bel = Client.objects.filter(name__icontains='Caromoto-Bel').first()
+    caromoto_bel = Client.objects.filter(name__icontains="Caromoto-Bel").first()
 
     client_invoice_map = {}
     for inv in all_invoices.values():
         if inv.recipient_client_id:
             client_invoice_map.setdefault(inv.recipient_client_id, []).append(inv)
 
-    stats = {'rule1': 0, 'rule2': 0, 'rule3': 0, 'already_paid': 0, 'no_match': 0}
+    stats = {"rule1": 0, "rule2": 0, "rule3": 0, "already_paid": 0, "no_match": 0}
     matched_invoice_ids = set()
     matches = []
 
@@ -111,36 +114,36 @@ def reconcile_incoming_payments(dry_run=False):
         if inv_num and inv_num in all_invoices:
             candidate = all_invoices[inv_num]
             if candidate.id not in matched_invoice_ids:
-                if abs(bt.amount - candidate.total) <= Decimal('1'):
+                if abs(bt.amount - candidate.total) <= Decimal("1"):
                     invoice = candidate
                     rule = 1
-                elif abs(bt.amount - (candidate.total - candidate.paid_amount)) <= Decimal('1'):
+                elif abs(bt.amount - (candidate.total - candidate.paid_amount)) <= Decimal("1"):
                     invoice = candidate
                     rule = 1
 
         if not invoice and caromoto_bel:
-            cp_lower = (bt.counterparty_name or '').lower().strip()
+            cp_lower = (bt.counterparty_name or "").lower().strip()
             if any(alias in cp_lower for alias in SOLTYS_ALIASES):
                 bel_invoices = client_invoice_map.get(caromoto_bel.pk, [])
                 for inv in bel_invoices:
                     if inv.id in matched_invoice_ids:
                         continue
-                    if abs(bt.amount - inv.total) <= Decimal('1'):
+                    if abs(bt.amount - inv.total) <= Decimal("1"):
                         invoice = inv
                         rule = 2
                         break
 
         if not invoice:
-            cp_name = bt.counterparty_name or ''
+            cp_name = bt.counterparty_name or ""
             if cp_name:
                 for client_id, invoices in client_invoice_map.items():
                     for inv in invoices:
                         if inv.id in matched_invoice_ids:
                             continue
-                        client_name = inv.recipient_client.name if inv.recipient_client else ''
+                        client_name = inv.recipient_client.name if inv.recipient_client else ""
                         if not fuzzy_match_name(cp_name, client_name):
                             continue
-                        if abs(bt.amount - inv.total) <= Decimal('1'):
+                        if abs(bt.amount - inv.total) <= Decimal("1"):
                             invoice = inv
                             rule = 3
                             break
@@ -148,23 +151,27 @@ def reconcile_incoming_payments(dry_run=False):
                         break
 
         if not invoice:
-            stats['no_match'] += 1
+            stats["no_match"] += 1
             continue
 
-        is_already_paid = (invoice.status == 'PAID' and invoice.paid_amount >= invoice.total)
+        is_already_paid = invoice.status == "PAID" and invoice.paid_amount >= invoice.total
         if is_already_paid:
-            stats['already_paid'] += 1
+            stats["already_paid"] += 1
 
         matched_invoice_ids.add(invoice.id)
-        stats[f'rule{rule}'] += 1
+        stats[f"rule{rule}"] += 1
         matches.append((bt, invoice, rule))
 
         recipient = invoice.recipient_client or invoice.recipient
         logger.info(
-            '[reconcile_incoming] R%d: %s +%s EUR %s -> %s (%s)%s',
-            rule, bt.created_at.strftime('%Y-%m-%d'), bt.amount,
-            (bt.counterparty_name or '')[:25], invoice.number, recipient,
-            ' [already paid]' if is_already_paid else '',
+            "[reconcile_incoming] R%d: %s +%s EUR %s -> %s (%s)%s",
+            rule,
+            bt.created_at.strftime("%Y-%m-%d"),
+            bt.amount,
+            (bt.counterparty_name or "")[:25],
+            invoice.number,
+            recipient,
+            " [already paid]" if is_already_paid else "",
         )
 
         if dry_run:
@@ -174,8 +181,8 @@ def reconcile_incoming_payments(dry_run=False):
             invoice = NewInvoice.objects.select_for_update().get(pk=invoice.pk)
 
             bt.matched_invoice = invoice
-            bt.reconciliation_note = f'Авто-сопоставление (правило {rule})'
-            bt.save(update_fields=['matched_invoice', 'reconciliation_note', 'fetched_at'])
+            bt.reconciliation_note = f"Авто-сопоставление (правило {rule})"
+            bt.save(update_fields=["matched_invoice", "reconciliation_note", "fetched_at"])
 
             payment_amount = min(bt.amount, invoice.total - invoice.paid_amount)
             if payment_amount > 0:
@@ -189,68 +196,62 @@ def reconcile_incoming_payments(dry_run=False):
                 #
                 if client:
                     topup = Transaction(
-                        type='BALANCE_TOPUP',
-                        method='TRANSFER',
-                        status='COMPLETED',
+                        type="BALANCE_TOPUP",
+                        method="TRANSFER",
+                        status="COMPLETED",
                         amount=payment_amount,
-                        currency=invoice.currency or 'EUR',
+                        currency=invoice.currency or "EUR",
                         to_client=client,
-                        description=(
-                            f'Авто-пополнение с банковского платежа '
-                            f'{bt.counterparty_name or ""}'.strip()
-                        ),
+                        description=(f"Авто-пополнение с банковского платежа {bt.counterparty_name or ''}".strip()),
                         date=bt.created_at,
                     )
                     topup.save()
 
                 tx = Transaction(
-                    type='PAYMENT',
-                    method='BALANCE' if client else 'TRANSFER',
-                    status='COMPLETED',
+                    type="PAYMENT",
+                    method="BALANCE" if client else "TRANSFER",
+                    status="COMPLETED",
                     amount=payment_amount,
-                    currency=invoice.currency or 'EUR',
+                    currency=invoice.currency or "EUR",
                     invoice=invoice,
                     from_client=client,
                     to_company=company,
-                    description=(
-                        f'Авто-сопоставление банковского платежа '
-                        f'{bt.counterparty_name} -> {invoice.number}'
-                    ),
+                    description=(f"Авто-сопоставление банковского платежа {bt.counterparty_name} -> {invoice.number}"),
                     date=bt.created_at,
                 )
                 tx.save()
 
                 bt.matched_transaction = tx
-                bt.save(update_fields=['matched_transaction', 'fetched_at'])
+                bt.save(update_fields=["matched_transaction", "fetched_at"])
 
-    stats['total'] = stats['rule1'] + stats['rule2'] + stats['rule3']
+    stats["total"] = stats["rule1"] + stats["rule2"] + stats["rule3"]
     return stats
 
 
 class Command(BaseCommand):
-    help = 'Автоматическое сопоставление банковских транзакций с инвойсами'
+    help = "Автоматическое сопоставление банковских транзакций с инвойсами"
 
     def add_arguments(self, parser):
-        parser.add_argument('--dry-run', action='store_true')
+        parser.add_argument("--dry-run", action="store_true")
 
     def handle(self, *args, **options):
-        sys.stdout.reconfigure(encoding='utf-8')
-        dry_run = options['dry_run']
+        sys.stdout.reconfigure(encoding="utf-8")
+        dry_run = options["dry_run"]
 
         if dry_run:
-            self.stdout.write(self.style.WARNING('  === DRY RUN ===\n'))
+            self.stdout.write(self.style.WARNING("  === DRY RUN ===\n"))
 
         stats = reconcile_incoming_payments(dry_run=dry_run)
 
-        self.stdout.write(self.style.MIGRATE_HEADING('\n  Итог'))
-        self.stdout.write(f'  Правило 1 (номер в описании): {stats["rule1"]}')
-        self.stdout.write(f'  Правило 2 (Daniel Soltys -> Caromoto-Bel): {stats["rule2"]}')
-        self.stdout.write(f'  Правило 3 (имя + сумма): {stats["rule3"]}')
-        self.stdout.write(f'  Итого сопоставлено: {stats["total"]}')
-        self.stdout.write(f'  Уже оплачены (пропущено): {stats["already_paid"]}')
-        self.stdout.write(f'  Без совпадения: {stats["no_match"]}')
+        self.stdout.write(self.style.MIGRATE_HEADING("\n  Итог"))
+        self.stdout.write(f"  Правило 1 (номер в описании): {stats['rule1']}")
+        self.stdout.write(f"  Правило 2 (Daniel Soltys -> Caromoto-Bel): {stats['rule2']}")
+        self.stdout.write(f"  Правило 3 (имя + сумма): {stats['rule3']}")
+        self.stdout.write(f"  Итого сопоставлено: {stats['total']}")
+        self.stdout.write(f"  Уже оплачены (пропущено): {stats['already_paid']}")
+        self.stdout.write(f"  Без совпадения: {stats['no_match']}")
 
         if dry_run:
-            self.stdout.write(self.style.WARNING('\n  DRY RUN. Запустите без --dry-run.\n'))
+            self.stdout.write(self.style.WARNING("\n  DRY RUN. Запустите без --dry-run.\n"))
         else:
-            self.stdout.write(self.style.SUCCESS('\n  Сопоставление завершено.\n'))
+            self.stdout.write(self.style.SUCCESS("\n  Сопоставление завершено.\n"))
