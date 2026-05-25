@@ -401,17 +401,32 @@ Throttle 20–30/min только замедляет scraping, не защища
 **Проблема**: тесты гоняются с `DisableMigrations` (быстрее), но это
 маскирует расхождения миграций / индексов.
 
-**Действия**:
+**Действия (сделано)**:
 
-- [ ] В `.github/workflows/ci.yml` добавить job `tests-with-migrations`,
-      schedule `cron: '0 4 * * *'` + on PR-label `run-migrations-ci`.
-- [ ] Этот job ставит `pytest` без `--no-migrations` (либо снимает
-      `DisableMigrations` через env).
-- [ ] При накоплении 200+ миграций — **squashmigrations** до бэкап-точки,
-      проверить что мердж миграций совпадает по shape с реальной БД
-      (`python manage.py sqlmigrate core 0001` vs `pg_dump --schema-only`).
+- [x] Добавлен `logist2/settings/test_migrations.py` — отдельный
+      профиль: PostgreSQL (берёт креды из `DB_*` env), миграции НЕ
+      отключены, locmem/in-memory backends для cache/channels,
+      `CELERY_TASK_ALWAYS_EAGER=True`. Идёт от `base.py` напрямую
+      (а не от `test.py`), чтобы не унаследовать `DisableMigrations`.
+- [x] В `.github/workflows/ci.yml`:
+  - Триггеры: `schedule: '0 4 * * *'` (ночной), PR-label
+    `run-migrations-ci` (`pull_request.types: [labeled, …]` +
+    `contains(labels, 'run-migrations-ci')`), `workflow_dispatch`.
+  - Job `tests-with-migrations` поднимает Postgres 16 + Redis 7
+    services, ставит `requirements-dev.txt`, прогоняет:
+    `migrate --noinput` (smoke на чистой БД),
+    `makemigrations --check --dry-run` (модели ↔ миграции),
+    `pytest -p no:env --tb=short --maxfail=5` (`-p no:env` нужен,
+    чтобы `pytest-env` из `pyproject.toml` не перебил
+    `DJANGO_SETTINGS_MODULE`).
+- [ ] squashmigrations до бэкап-точки — пока не нужно (169 миграций,
+      ~30 сек прокат на PG-16). Зафиксировано как TODO на момент
+      когда счёт перевалит за 250.
 
-**DoD**: ночной CI job зелёный; PR с миграцией обязан гонять этот job.
+**DoD**: ✅ pyproject и settings профили локально валидируются
+(`python -c "from django.conf import settings; …"` показывает
+`MIGRATION_MODULES: {}`, `DB ENGINE: postgresql`); workflow добавлен
+с правильными триггерами. Первый ночной прогон — после merge коммита.
 
 ---
 

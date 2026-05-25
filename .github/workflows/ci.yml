@@ -5,6 +5,13 @@ on:
     branches: [master, main]
   pull_request:
     branches: [master, main]
+    # tests-with-migrations job триггерится отдельно при добавлении label
+    # `run-migrations-ci` (см. ниже).
+    types: [opened, synchronize, reopened, labeled]
+  schedule:
+    # tests-with-migrations: каждую ночь в 04:00 UTC (M4).
+    - cron: '0 4 * * *'
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -130,3 +137,86 @@ jobs:
             core/tests/test_reconciliation.py \
             core/tests/test_lifecycle.py \
             core/tests/test_billing.py
+
+  tests-with-migrations:
+    # M4: ночной job + опциональный triggers через PR-label
+    # `run-migrations-ci`. Прокатывает ВСЮ цепочку миграций
+    # `core/migrations/0001..*` на чистой PostgreSQL — ловит расхождения
+    # между моделями и миграциями, которые маскирует `DisableMigrations`
+    # в `logist2.settings.test`. Использует отдельный профиль
+    # `logist2.settings.test_migrations`.
+    name: Tests with migrations (nightly + run-migrations-ci label)
+    runs-on: ubuntu-latest
+    needs: lint
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'run-migrations-ci'))
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: test_logist2
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U test_user"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=5
+
+    env:
+      SECRET_KEY: ci-test-secret-key-not-for-production
+      DEBUG: "False"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      DB_NAME: test_logist2
+      DB_USER: test_user
+      DB_PASSWORD: test_pass
+      DB_HOST: localhost
+      DB_PORT: 5432
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      CACHE_BACKEND: redis
+      CHANNELS_BACKEND: memory
+      DJANGO_SETTINGS_MODULE: logist2.settings.test_migrations
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Apply ALL migrations (sanity check)
+        # Это smoke-check: миграции не должны падать на чистой БД.
+        # pytest-django сделает migrate сам, но отдельный шаг даёт более
+        # понятный лог при проблемах в конкретной миграции.
+        run: python manage.py migrate --noinput
+
+      - name: Check makemigrations consistency
+        # После migrate проверяем, что модели и миграции синхронизированы.
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Run pytest with real migrations
+        # `-p no:env` отключает pytest-env, который иначе перебил бы
+        # DJANGO_SETTINGS_MODULE на logist2.settings.test (с
+        # DisableMigrations). См. pyproject.toml [tool.pytest_env].
+        run: pytest -p no:env --tb=short --maxfail=5
