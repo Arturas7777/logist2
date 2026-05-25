@@ -1,0 +1,243 @@
+# Changelog
+
+Все значимые изменения в Logist2 будут документироваться в этом файле.
+
+Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
+проект следует своей внутренней схеме версий (см. git-теги).
+
+## [Unreleased]
+
+### Added
+
+- Заполнить по мере появления новых изменений после последнего релиза.
+
+---
+
+## [2026-05] — High-задачи roadmap'а после Critical-блока
+
+Все 7 пунктов раздела HIGH в
+[`docs/ROADMAP_2026-05_high_medium.md`](docs/ROADMAP_2026-05_high_medium.md)
+закрыты. Содержание ниже сгруппировано по разделам Keep a Changelog.
+
+### Added
+
+- **H1 — onboarding для тестов.** `requirements-dev.txt`
+  (`pytest`, `pytest-django`, `pytest-cov`, `ruff`, `freezegun`),
+  README-раздел «Setup for development», блок про
+  `DJANGO_SETTINGS_MODULE`.
+- **H4 — автоматизированные бэкапы PostgreSQL.**
+  `scripts/server_pg_backup.sh` (cron `30 3 * * *`, retention 30 дней,
+  smoke `pg_restore --list`), `scripts/install_logist2_backup.sh`
+  (idempotent bootstrap), Celery beat `check-backup-freshness-daily`
+  (Sentry warning при freshness > 36 ч), `docs/BACKUPS.md`.
+- **H5a — signed URLs для фото контейнеров.**
+  `core/services/signed_urls.py` (HMAC через `TimestampSigner`,
+  TTL 1 ч), новый view `serve_signed_photo`, обновлены
+  `get_container_photos` и `download_photos_archive`
+  (`container_token` обязателен для ZIP). Логирование загрузок.
+  Тесты `core/tests/test_signed_photos.py` (18/18).
+- **H7.3 — `pytest-env` в `requirements-dev.txt`.** Override
+  `DJANGO_SETTINGS_MODULE` до того, как `pytest-django` его прочитает.
+  Защищает от ситуации, когда в шелле остаётся env-var от
+  `runserver`/`manage.py check` и тесты падают на `FieldDoesNotExist`.
+
+### Changed
+
+- **H2 — переключение дефолта на `logist2.settings.dev`.**
+  `manage.py`, `wsgi.py`, `asgi.py`, `celery.py` теперь по умолчанию
+  загружают dev-профиль. На сервере systemd-юниты (gunicorn, daphne,
+  celery, celerybeat) и `scripts/deploy.ps1` явно выставляют `prod`.
+  `scripts/sync_photos_cron.sh` — `prod`, `scripts/run_all_tests.py` —
+  `test`, `scripts/create_test_client.py` — `dev`.
+- **H6a — `core/models.py` → пакет `core/models/`.** 11 подмодулей по
+  доменам (`cars.py`, `containers.py`, `clients.py`, `warehouses.py`,
+  `carriers.py`, `lines.py`, `company.py`, `services.py`,
+  `auto_transport.py`, `tasks.py`, `_vehicle_types.py`).
+  `__init__.py` реэкспортирует все классы. Самый большой файл —
+  `cars.py` (621 строка), остальные ≤ 280. Миграций не добавлено,
+  166 тестов прошли без изменений.
+- **H6b — `core/admin_billing.py` → пакет `core/admin/billing/`.**
+  10 подмодулей, `NewInvoiceAdmin` (~1460 строк) разнесён через
+  миксины. Самый большой файл — `invoice_forms.py` (493 строки).
+  Миграций не добавлено, 166 тестов прошли без изменений.
+- **H6c — `core/views_website.py` → пакет `core/views_website/`.**
+  7 подмодулей (`public.py`, `client_portal.py`, `api.py`,
+  `tracking.py`, `photos_authed.py`, `ai_chat.py`, `signed_photos.py`).
+  Реэкспорт 25 view-функций/классов. Smoke: все 19 URL `website:*`
+  резолвятся, локальный сайт отвечает 200.
+- **H6d — `core/signals.py` → пакет `core/signals/`.** 10 submodules
+  по доменам, `__init__.py` импортирует их (триггерит
+  `@receiver`-декораторы) и явно вызывает
+  `connect_autotransport_signals()` + `connect_cache_invalidation_signals()`.
+  Backward-compat реэкспорт для `core.admin.container` сохранён.
+  Регистрация 28 receiver'ов проверена, 166 тестов прошли без
+  изменений.
+- **H7.2 — `.gitignore`: общее `!**/__init__.py`.** Заменили 4
+  точечных negation одним wildcard'ом — будущие пакеты работают
+  «из коробки».
+
+### Removed
+
+- **H3 — удалены 4 неиспользуемых пакета** из `requirements.txt`:
+  `django-admin-interface`, `django-modeltranslation`,
+  `django-colorfield`, `django-cleanup`. Ни один не был в
+  `INSTALLED_APPS` и нигде в импортах. Тесты зелёные, прод поднялся.
+
+### Fixed
+
+- **H7.1 — `/api/track/`: 500 → 400 на битом JSON.** В
+  `track_shipment` ловился `except Exception`, который проглатывал
+  DRF `ParseError` → клиент видел generic 500, Sentry заваливался
+  ложными ошибками. Достали `request.data` наружу `try`, добавили
+  `except APIException: raise`. Покрыто 6 новыми тестами в
+  `core/tests/test_track_shipment.py`.
+
+### Deferred (TODO в roadmap'е, перенесены в Medium/будущие сессии)
+
+- **H5b — CAPTCHA (hCaptcha) на `track_shipment` и
+  `ContactMessageViewSet`.** План в `docs/PUBLIC_ENDPOINTS.md` §4.2.
+- **H5c — CSP / Referrer-Policy / CORP-заголовки + закрыть
+  `/media/photos/` через `X-Accel-Redirect`.** План в
+  `docs/PUBLIC_ENDPOINTS.md` §4.1 и §4.3.
+- Опциональный off-site бэкап (rclone в S3/Backblaze). TODO в
+  `docs/BACKUPS.md`.
+
+---
+
+## [2026-05] — Critical 1+2+3
+
+Коммит `6329968` — критические фиксы перед roadmap.
+
+### Added
+
+- **ENCRYPTION_KEY** — отдельный Fernet-ключ для шифрования
+  Revolut/site.pro credentials в `core/encryption.py`. Поддержка
+  `ENCRYPTION_KEY_FALLBACKS` для ротации, management command
+  `rotate_encryption_key`, `ENCRYPTION_KEY_REQUIRED=True` для
+  fail-fast в проде. `docs/ENCRYPTION_KEY.md`.
+- **Money-critical tests** — отдельный `--cov-fail-under=55` в CI
+  для critical-модулей (billing, banking, reconciliation).
+- **Async signals** — тяжёлые пересчёты `Container.total_price` и
+  каскадные обновления `CarService` вынесены в Celery
+  (`recalculate_cars_total_price_task`). Защита от signal-storm
+  при массовом импорте.
+
+---
+
+## [2026-05] — Мониторинг и инфраструктура
+
+### Added
+
+- **Dashboard системного мониторинга в админке**
+  (`/admin/system-monitor/`): CPU, RAM, диск, процессы, статус
+  systemd-сервисов. Используется `psutil`. Setup-скрипт для
+  установки сервиса-сборщика метрик на сервере (`scripts/`).
+- **Sentry для error monitoring** — `sentry-sdk[django,celery]`,
+  переменные `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`,
+  `SENTRY_TRACES_SAMPLE_RATE`, `SENTRY_PROFILES_SAMPLE_RATE`,
+  `SENTRY_SEND_PII`.
+- **Healthcheck endpoint** (P0 infrastructure hardening).
+- **Admin action для регенерации Revolut JWT** + мониторинг
+  состояния JWT-assertion.
+- **Защита `certs/`, `.env`, `media/`** от удаления при
+  `deploy.ps1 -Force`. `.gitignore` для `certs/`, `*.pem`, `*.cer`.
+
+### Fixed
+
+- **Gunicorn OOM recovery** + закалка VPS (overcommit, swap,
+  systemd OOMScoreAdjust).
+
+---
+
+## [2026-04 → 2026-05] — Бизнес-фичи
+
+### Added
+
+- **AI-обработка сканов титулов и Dock Receipt**
+  (`core/services/scan_extractor.py`, Claude Vision). VIN-валидация:
+  check digit, NHTSA, cross-check с make/year. Обработка обратного
+  кейса — VIN-опечатка в dock receipt. Подсветка различий, review с
+  кандидатами. Auto-downgrade JPEG-рендера под лимит Claude Vision
+  (5 MB).
+- **Печать наклеек для контейнеров** (форматы Forpus), отметка
+  «наклейки напечатаны» на контейнерах.
+- **Gmail API интеграция — переписка по контейнерам**:
+  - Phase 1 — чтение писем, привязка к контейнерам по теме/VIN,
+    панель «Переписка» в карточке контейнера, дедупликация по
+    содержимому.
+  - Phase 2 — отправка/ответы из карточек Container, Car,
+    AutoTransport. Composer с chip-полями (Кому/Cc/Bcc),
+    группы адресатов, автокомплит контактов, подписи (text/HTML).
+  - VIN-матчинг писем, M2M связь Email ↔ Container/Car.
+  - Двусторонний sync «прочитано» Gmail ↔ карточки.
+  - Beat-задача `rematch_container_emails` и polling 30s на фронте.
+  - Фильтры Gmail-ингеста по ключевым фразам
+    (`EmailIngestFilter`).
+- **Поле «Номер букинга»** на контейнере.
+- **Пометка «Важно»** на машине с автогенерацией задач и
+  блокировкой статуса/автовоза.
+- **AVBLC/PARBLC invoice series** + смена серии, поддержка BLC для
+  входящих инвойсов (кассовые платежи поставщикам).
+- **site.pro/Revolut/Paysera integration** — autoreconciliation,
+  auto bank sync каждые 30 мин (Celery Beat),
+  Revolut receipt downloads с throttle.
+- **Personal cash wallet** — учёт наличных, expense tracking,
+  скрипт топ-апа кошелька (`/admin/cash-income/`), управление
+  банковскими картами с переводами и корректировкой баланса.
+- **Linked invoices** (real BLC + official) с auto PAID sync.
+- **Receipt uploads, expense analytics**, unified design system.
+- **Bulk delete invoices** с транзакциями, recalculate all balances
+  action.
+- **Auto-compress uploaded photos** до 2560 px / JPEG q=85
+  (`resize_photos` command, in-place downscaling).
+- **Google Drive API v3** для folder listing и file download
+  (вместо HTML-парсинга с обрезкой).
+- **Тариф клиента работает как минимум**, а не как жёсткая
+  фиксация. Распределяется только по услугам склада.
+- **Фильтр клиентов** по состоянию баланса (долг/нулевой/переплата),
+  показ долга по открытым инвойсам в карточке.
+- **Audit-driven improvements**: производительность, UX,
+  financial integrity (cleanup session — renumber FACT, KRE type,
+  related_client; auto-payment signal, INCBLC series).
+- **Команда `bookkeep_vs_bank`** + Celery аудит бизнес-правил.
+
+### Changed
+
+- **deploy.ps1** переведён на `git pull` (вместо `tar + scp`).
+  Encoding fix для em dash. `chown` только key dirs, не весь репо.
+- **AutoTransport** → автоматический переход
+  `LOADED → DELIVERED → TRANSFERRED` (массовый, при transferred
+  всех машин).
+- **Container.status → TRANSFERRED** автоматически, когда все
+  машины transferred.
+- **Performance — устранение N+1** в admin/signals,
+  новые индексы (perf indexes), annotate `total_balance` в admin
+  querysets.
+
+### Fixed
+
+- Критичные баги в админке и сервисах
+  (`with_balance_info`-фильтр клиентов по долгу).
+- BLC invoice numbering padding (6 digits для AV/PARDP unification).
+- `bulk delete invoices`: CREDIT_NOTE skip in
+  `recalculate_paid_amount` / `update_status`.
+- Mobile responsiveness (topbar grid, burger menu, login logo
+  overflow, padding, scrollbars).
+- Invoice audit: `skip_ai_comparison` не должен синкать PDF-позиции;
+  `'NoneType' object is not subscriptable`.
+- BALANCE_TOPUP: запрет `from_*` + скрипт починки испорченных
+  TOPUP, парный TOPUP при auto_reconcile.
+
+---
+
+## Соглашения
+
+- **fix:** исправление бага.
+- **feat:** новая функциональность.
+- **refactor:** рефакторинг без изменения поведения.
+- **docs:** документация.
+- **chore:** инфраструктура, конфиги, зависимости.
+- **perf:** оптимизация производительности без изменения поведения.
+- **style:** UI/CSS, без логики.
+
+Подробности процесса — `.cursor/rules/git-workflow.mdc`.

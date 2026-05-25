@@ -111,13 +111,16 @@ python manage.py createsuperuser
 ### 5. Тесты и линтер
 
 ```powershell
-pytest                                  # 148+ тестов, ~3 сек на SQLite
+pytest                                  # 172+ тестов, ~3 сек на SQLite
 ruff check .
 ruff format .
 ```
 
 Тесты используют `logist2.settings.test` (SQLite, миграции отключены).
-Конфиг — в `pyproject.toml`.
+Конфиг — в `pyproject.toml`. `pytest-env` безусловно override-ит
+`DJANGO_SETTINGS_MODULE` на `logist2.settings.test`, даже если в шелле
+осталась переменная от предыдущего `runserver` (`logist2.settings.dev`).
+`freezegun` используется для billing-тестов с заморозкой времени.
 
 ### 6. Запуск dev-сервера
 
@@ -151,15 +154,29 @@ python manage.py runserver 127.0.0.1:8000
 ```
 logist2/
 ├── core/                      # Единственное Django-приложение (вся бизнес-логика)
-│   ├── models.py              # Car, Container, AutoTransport, Client, …
+│   ├── models/                # Пакет (бывший models.py, разнесён в H6a)
+│   │   ├── __init__.py        #   реэкспорт всех моделей (from core.models import X)
+│   │   ├── cars.py, containers.py, clients.py, warehouses.py,
+│   │   ├── carriers.py, lines.py, company.py, services.py,
+│   │   └── auto_transport.py, tasks.py, _vehicle_types.py
 │   ├── models_billing.py      # NewInvoice, Transaction, ExpenseCategory
 │   ├── models_banking.py      # BankConnection, BankAccount, BankTransaction
 │   ├── models_accounting.py   # site.pro интеграция
-│   ├── models_website.py      # ClientUser, AIChat, CarPhoto, …
+│   ├── models_website.py      # ClientUser, AIChat, CarPhoto, NewsPost
+│   ├── models_email.py        # ContainerEmail, ContactMessage, EmailGroup
+│   ├── models_contact.py      # Contact, ContactPhone, ContactEmail
+│   ├── models_invoice_audit.py, models_scans.py, models_monitoring.py
 │   ├── admin/                 # ModelAdmin'ы (пакет)
-│   ├── services/              # billing, revolut, sitepro, reconciliation, AI
-│   ├── tests/                 # pytest-тесты
-│   ├── signals.py             # post_save / post_delete
+│   │   ├── billing/           # Пакет (бывший admin_billing.py, разнесён в H6b)
+│   │   └── …                  # container, car, autotransport и т.д.
+│   ├── signals/               # Пакет (бывший signals.py, разнесён в H6d)
+│   │   ├── __init__.py        #   импорт submodules → регистрация @receiver
+│   │   └── container.py, car.py, invoice.py, transaction.py, …
+│   ├── views_website/         # Пакет (бывший views_website.py, разнесён в H6c)
+│   │   ├── public.py, client_portal.py, api.py, tracking.py,
+│   │   └── photos_authed.py, ai_chat.py, signed_photos.py
+│   ├── services/              # billing, revolut, sitepro, reconciliation, AI, signed_urls
+│   ├── tests/                 # pytest-тесты (172+)
 │   ├── tasks.py               # Celery-задачи
 │   └── …
 ├── logist2/                   # Django project package
@@ -175,11 +192,14 @@ logist2/
 ├── templates/                 # HTML-шаблоны (admin + website + email)
 ├── static/, staticfiles/      # Статика
 ├── locale/                    # Переводы (lt, en, ru)
-├── scripts/                   # deploy.ps1, sync_db.ps1, systemd units, nginx confs
-├── docs/                      # Внутренняя документация и roadmap'ы
+├── scripts/                   # deploy.ps1, sync_db.ps1, systemd units, nginx confs,
+│                              #   server_pg_backup.sh, install_logist2_backup.sh
+├── docs/                      # Внутренняя документация, roadmap'ы, BACKUPS.md,
+│                              #   PUBLIC_ENDPOINTS.md, ENCRYPTION_KEY.md
+├── CHANGELOG.md               # История релизов (Keep a Changelog)
 ├── pyproject.toml             # pytest + ruff конфиги
 ├── requirements.txt           # Prod-зависимости
-├── requirements-dev.txt       # + тесты и линтер
+├── requirements-dev.txt       # + тесты и линтер (pytest, pytest-env, freezegun, ruff)
 ├── env.example                # Шаблон .env
 └── START_ME.bat               # Локальный запуск (Windows)
 ```
@@ -212,10 +232,18 @@ logist2/
 
 ## Документация
 
+- [`CHANGELOG.md`](CHANGELOG.md) — история значимых изменений
+  (формат [Keep a Changelog](https://keepachangelog.com/)).
 - `.cursor/rules/git-workflow.mdc` — git workflow, deploy, sync_db.
 - `.cursor/rules/project-overview.mdc` — подробный обзор проекта.
-- `docs/` — внутренние roadmap'ы, аудиты, инструкции по ключевым
-  подсистемам (encryption, banking, AI и т.п.).
+- `docs/BACKUPS.md` — автоматизированные бэкапы PostgreSQL (cron,
+  retention 30 дней, Sentry healthcheck).
+- `docs/PUBLIC_ENDPOINTS.md` — аудит публичных endpoints, signed URLs
+  для фото (H5a).
+- `docs/ENCRYPTION_KEY.md` — ротация ключа шифрования банковских токенов.
+- `docs/ROADMAP_2026-05_high_medium.md` — текущий roadmap по High/Medium-задачам.
+- `docs/` — остальные roadmap'ы, аудиты, инструкции по ключевым
+  подсистемам (banking, AI и т.п.).
 
 ## Поддержка
 
