@@ -33,6 +33,7 @@ class SiteProConnectionAdmin(admin.ModelAdmin):
 
     list_filter = ('is_active',)
     list_select_related = ('company',)
+    autocomplete_fields = ('company',)  # M5
 
     fieldsets = (
         ('Основные настройки', {

@@ -119,6 +119,8 @@ class ContainerAdmin(admin.ModelAdmin):
     list_per_page = 50
     show_full_result_count = False
     inlines = [CarInline]
+    # M5: убираем тяжёлые FK-дропдауны.
+    autocomplete_fields = ('line', 'warehouse')
     fieldsets = (
         ('Основные данные', {
             'classes': ('collapse',),

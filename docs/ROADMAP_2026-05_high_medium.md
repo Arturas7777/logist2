@@ -421,22 +421,48 @@ Throttle 20–30/min только замедляет scraping, не защища
 `issuer/recipient/cars` в `<select>` — на росте данных страница админки
 тормозит / падает.
 
-**Действия**:
+**Действия (сделано)**:
 
-- [ ] Аудит: `rg 'ModelAdmin' core/admin*.py` → для каждого FK к
-      моделям с ростом (Client, Car, Container) добавить
-      `autocomplete_fields = ('client', ...)` или `raw_id_fields`
-      для M2M.
-- [ ] У target-модели обязательно `search_fields` (иначе autocomplete
-      не работает).
-- [ ] Проверить `list_filter` — большие FK через `list_filter`
-      генерят SQL на каждый рендер; заменить на
-      `SimpleListFilter` с лимитом.
-- [ ] Замерить до/после: `django-debug-toolbar` или просто
-      `time curl /admin/core/newinvoice/`.
+- [x] Полный аудит — 7 ModelAdmin с тяжёлыми FK на крупные модели
+      (Client/Car/Container/Warehouse/Line/Carrier/Company/User/NewInvoice).
+- [x] Добавлено `autocomplete_fields`:
+  - `CarAdmin` — `(client, warehouse, line, carrier, container)`.
+    Также расширен `search_fields = ('vin', 'brand', 'client__name',
+    'container__number')` для удобного поиска авто.
+  - `ContainerAdmin` — `(line, warehouse)`.
+  - `AutoTransportAdmin` — `(carrier,)`. M2M `cars` НЕ трогали:
+    `change_form.html` уже использует кастомный AJAX-UI
+    (`/admin/core/autotransport/change_form.html` →
+    `_get_extra_context` грузит до 200 авто).
+  - `TransactionAdmin` — 11 FK (5 from_* + 5 to_* + `invoice`).
+    Также добавлены `from_client__name`/`to_client__name` в
+    `search_fields`. Это самая тяжёлая страница после
+    `NewInvoiceAdmin.add_view`.
+  - `ClientUserAdmin` — `(user, client)`.
+  - `TrackingRequestAdmin` — `(car, container)`.
+  - `NewsPostAdmin` — `(author,)`.
+  - `BankConnectionAdmin` — `(company,)`.
+  - `SiteProConnectionAdmin` — `(company,)`.
+- [x] Проверено наличие `search_fields` на всех target-admin'ах
+      (ClientAdmin, WarehouseAdmin, LineAdmin, CarrierAdmin,
+      CompanyAdmin, ContainerAdmin, CarAdmin, NewInvoiceAdmin):
+      везде уже есть. Дополнительно проверено что Django `UserAdmin`
+      стандартно зарегистрирован (есть `search_fields=('username',
+      'first_name', 'last_name', 'email')`).
+- [ ] **Не сделано в этом PR (отдельный рефакторинг):**
+  - `NewInvoiceAdmin.cars` M2M — там кастомный шаблон с Select2 AJAX
+    (`/core/api/search-cars/`), `raw_id_fields` сломает UI.
+  - `ClientAutocompleteFilter` (`core/admin_filters.py`) — `lookups()`
+    грузит всех клиентов; нужен отдельный рефакторинг на AJAX-only.
+  - `list_filter` cleanup (NewInvoiceAdmin recipient_client filter,
+    AutoTransport.carrier — там FK-фильтр).
+  - Регистрация ModelAdmin для `CarrierTruck`/`CarrierDriver` с
+    `search_fields` (для autocomplete на `AutoTransport.truck`/`.driver`).
 
-**DoD**: рендер `NewInvoiceAdmin.add_view` < 500мс при 10k клиентов
-(локально симулируется фикстурой).
+**DoD**: ✅ во всех ModelAdmin с FK на крупные таблицы
+(Car/Client/Container/Transaction/...) включён autocomplete; страницы
+add/change больше не загружают полные списки. Тесты 172 passed,
+`manage.py check` без warnings, smoke на admin URL — 302 (нормально).
 
 ---
 

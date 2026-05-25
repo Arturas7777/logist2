@@ -42,6 +42,7 @@ class BankConnectionAdmin(admin.ModelAdmin):
     )
     list_filter = ('bank_type', 'is_active', 'use_sandbox')
     search_fields = ('name',)
+    autocomplete_fields = ('company',)  # M5
     readonly_fields = (
         'created_at', 'updated_at', 'last_synced_at', 'last_error',
         'display_jwt_expiry_detail',

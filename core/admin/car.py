@@ -210,9 +210,12 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
     list_display_links = ('vin_display',)
     list_editable = ('has_title',)
     list_filter = ('is_important', MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter, CarHasUnreadEmailsFilter)
-    search_fields = ('vin', 'brand')
+    search_fields = ('vin', 'brand', 'client__name', 'container__number')
     list_per_page = 50
     show_full_result_count = False
+    # M5: убираем тяжёлые FK-дропдауны на форме car/change_form/. Все target-admin'ы
+    # (Client/Warehouse/Line/Carrier/Container) имеют search_fields, autocomplete работает.
+    autocomplete_fields = ('client', 'warehouse', 'line', 'carrier', 'container')
 
     csv_export_filename_prefix = 'cars'
     csv_export_fields = [

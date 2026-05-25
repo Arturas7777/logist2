@@ -19,6 +19,7 @@ class ClientUserAdmin(admin.ModelAdmin):
     list_filter = ['is_verified', 'language', 'created_at']
     list_select_related = ('user', 'client')
     search_fields = ['user__username', 'user__email', 'client__name', 'phone']
+    autocomplete_fields = ['user', 'client']  # M5
     readonly_fields = ['created_at', 'last_login']
 
     fieldsets = (
@@ -80,6 +81,7 @@ class NewsPostAdmin(admin.ModelAdmin):
     list_filter = ['published', 'published_at', 'author']
     list_select_related = ('author',)
     search_fields = ['title', 'content', 'excerpt']
+    autocomplete_fields = ['author']  # M5
     readonly_fields = ['views', 'created_at', 'updated_at']
     prepopulated_fields = {'slug': ('title',)}
     list_editable = ['published']
@@ -144,6 +146,7 @@ class TrackingRequestAdmin(admin.ModelAdmin):
     list_filter = ['created_at']
     list_select_related = ('car', 'container')
     search_fields = ['tracking_number', 'email']
+    autocomplete_fields = ['car', 'container']  # M5
     readonly_fields = ['created_at', 'ip_address']
     date_hierarchy = 'created_at'
 

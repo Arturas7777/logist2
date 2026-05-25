@@ -82,6 +82,25 @@ class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
         "number",
         "description",
         "invoice__number",
+        "from_client__name",
+        "to_client__name",
+    )
+
+    # M5: транзакция имеет 11 FK на крупные таблицы (5 from_* + 5 to_* + invoice) —
+    # без autocomplete каждая страница change/add загружала весь Client/Warehouse/Line/...
+    # NewInvoiceAdmin имеет search_fields, остальные target-admins тоже (см. partners.py).
+    autocomplete_fields = (
+        "from_client",
+        "from_warehouse",
+        "from_line",
+        "from_carrier",
+        "from_company",
+        "to_client",
+        "to_warehouse",
+        "to_line",
+        "to_carrier",
+        "to_company",
+        "invoice",
     )
 
     readonly_fields = (

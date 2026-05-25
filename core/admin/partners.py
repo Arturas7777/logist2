@@ -1284,6 +1284,10 @@ class AutoTransportAdmin(admin.ModelAdmin):
         'cars_count',
     )
 
+    # M5: carrier — длинный FK-список, переводим на autocomplete.
+    # `cars` M2M НЕ трогаем: change_form.html уже использует кастомный AJAX-UI
+    # (см. _get_extra_context + admin/core/autotransport/change_form.html).
+    autocomplete_fields = ('carrier',)
     filter_horizontal = ('cars',)
 
     fieldsets = (
