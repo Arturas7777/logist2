@@ -1069,6 +1069,7 @@ def download_photos_archive(request):
 @api_view(['GET'])
 @authentication_classes([])
 @permission_classes([AllowAny])
+@throttle_classes([])  # отключаем глобальный AnonRateThrottle (30/min)
 def serve_signed_photo(request, token):
     """Отдаёт media-файл фотографии по подписанному токену.
 
@@ -1077,8 +1078,12 @@ def serve_signed_photo(request, token):
     Без валидного токена скачать файл невозможно — даже если кто-то знает
     `photo_id`.
 
-    Throttle намеренно НЕ навешан: в галерее одного контейнера живут
-    сотни превью, lazy-load быстро съедает 30/min лимит и ломает UX.
+    Throttle на этом view намеренно отключён (`@throttle_classes([])`):
+    `DEFAULT_THROTTLE_CLASSES` в `settings/base.py` глобально применяет
+    `AnonRateThrottle` (30/min) ко всем DRF views, а в галерее одного
+    контейнера живут сотни превью — lazy-load быстро выедает лимит и
+    ломает UX (раньше `/media/...` отдавал nginx без лимитов).
+
     Парсинг ограничен на этапе **выдачи подписей** —
     `get_container_photos` под `PhotoDownloadThrottle` (30/min), а сами
     подписи живут только 1 час.
