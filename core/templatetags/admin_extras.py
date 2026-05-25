@@ -22,7 +22,7 @@ def vin_diff(vin: str, reference: str):
             '<span style="font-family:monospace;">{}</span>', vin
         )
     parts = []
-    for ch_vin, ch_ref in zip(vin, reference):
+    for ch_vin, ch_ref in zip(vin, reference, strict=False):
         if ch_vin == ch_ref:
             parts.append(format_html(
                 '<span style="font-family:monospace;">{}</span>', ch_vin

@@ -116,5 +116,5 @@ class Command(BaseCommand):
         if dry_run:
             self.stdout.write(self.style.WARNING("\nЭто был тестовый запуск (--dry-run). Никаких изменений не внесено."))
         else:
-            self.stdout.write(self.style.SUCCESS(f"\nОбновление завершено успешно!"))
+            self.stdout.write(self.style.SUCCESS("\nОбновление завершено успешно!"))
 

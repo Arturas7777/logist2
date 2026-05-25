@@ -21,7 +21,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
-from typing import Iterable
 
 DOWNLOADS = Path(r"c:\Users\art-f\OneDrive\Загрузки")
 
@@ -399,7 +398,7 @@ def main() -> None:
                   f"{t.counterparty[:25]:25}  {desc}")
 
     print_section("ДОХОД (для декларации Individuali veikla)")
-    print(f"  Сумма всех зачислений от внешних плательщиков по 4 счетам:")
+    print("  Сумма всех зачислений от внешних плательщиков по 4 счетам:")
     print(f"     >>>  {fmt(grand_total)} EUR  <<<")
 
     # JSON-экспорт для canvas/визуализации

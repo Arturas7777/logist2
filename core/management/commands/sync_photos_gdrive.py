@@ -103,7 +103,7 @@ class Command(BaseCommand):
             if added > 0:
                 self.stdout.write(self.style.SUCCESS(f'[OK] Added {added} photos'))
             else:
-                self.stdout.write(self.style.WARNING(f'[WARN] No new photos found'))
+                self.stdout.write(self.style.WARNING('[WARN] No new photos found'))
 
         elif options['unloaded_delay']:
             delay_hours = options['delay_hours']

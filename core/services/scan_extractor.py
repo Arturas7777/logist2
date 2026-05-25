@@ -342,7 +342,7 @@ def _attach_vin_validations_for_title(data: dict[str, Any]) -> None:
                 ai_year=ai_year,
             )
             out.append(res)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("VIN validation failed for %s: %s", vin, e)
     data['vin_validations'] = out
 
@@ -369,7 +369,7 @@ def _attach_vin_validations_for_dock_receipt(data: dict[str, Any]) -> None:
                 ai_model=veh.get('model') or '',
                 ai_year=veh.get('year'),
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("VIN validation failed for %s: %s", vin, e)
 
 

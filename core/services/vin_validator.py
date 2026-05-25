@@ -107,7 +107,7 @@ def decode_vin_nhtsa(vin: str, *, timeout: int = _NHTSA_TIMEOUT) -> dict[str, An
         resp = requests.get(_NHTSA_URL.format(vin=vin), timeout=timeout)
         resp.raise_for_status()
         data = resp.json()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning("NHTSA decode failed for VIN=%s: %s", vin, e)
         result['raw_failed'] = True
         return result

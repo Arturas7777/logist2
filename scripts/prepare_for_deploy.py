@@ -103,7 +103,7 @@ def create_deployment_archive():
     archive_size = archive_path.stat().st_size / (1024 * 1024)  # MB
 
     print("=" * 60)
-    print(f"[OK] Arhiv sozdan uspeshno!")
+    print("[OK] Arhiv sozdan uspeshno!")
     print(f"[FILE] {archive_path}")
     print(f"[SIZE] {archive_size:.2f} MB")
     print(f"[FILES] Fajlov dobavleno: {files_added}")

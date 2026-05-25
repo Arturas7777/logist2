@@ -79,7 +79,7 @@ class Command(BaseCommand):
 
         self.stdout.write(f"\n{'='*60}")
         if dry_run:
-            self.stdout.write(self.style.WARNING(f"  DRY RUN complete. Run without --dry-run to apply."))
+            self.stdout.write(self.style.WARNING("  DRY RUN complete. Run without --dry-run to apply."))
         else:
             self.stdout.write(self.style.SUCCESS(f"  Done! Success: {success}, errors: {errors}"))
         self.stdout.write(f"{'='*60}\n")

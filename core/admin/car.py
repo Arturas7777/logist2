@@ -552,9 +552,9 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         html.append('<strong style="color:#ff8f00;">Скрытая наценка:</strong><br>')
         html.append(f'<span style="font-size:18px; font-weight:bold; color:#ff8f00;">{distributed_markup:.2f}</span>')
         if distributed_markup > 0:
-            html.append(f'<br><span style="font-size:11px; color:#666;">(распределена по услугам)</span>')
+            html.append('<br><span style="font-size:11px; color:#666;">(распределена по услугам)</span>')
         else:
-            html.append(f'<br><span style="font-size:11px; color:#666;">(введите в жёлтых полях)</span>')
+            html.append('<br><span style="font-size:11px; color:#666;">(введите в жёлтых полях)</span>')
         html.append('</div>')
 
         html.append('</div>')
@@ -965,7 +965,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
                     DeletedCarService.objects.get_or_create(
                         car=obj, service_type=svc_type, service_id=service_id,
                     )
-                except Exception:  # noqa: BLE001
+                except Exception:
                     logger.exception("Error deleting %s service %s", prefix, service_id)
                 break
         return removed
@@ -1244,7 +1244,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             html += '</div>'
 
             # Button to add services - always available
-            html += f'''
+            html += '''
             <div style="margin-top: 10px;">
                 <button type="button" class="add-service-btn" onclick="openModal('warehouseServicesModal', 'warehouse')" title="Добавить услуги любого склада">
                     +
@@ -1320,7 +1320,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
 
             # Button to add new services
             if obj.line:
-                html += f'''
+                html += '''
                 <div style="margin-top: 10px;">
                     <button type="button" class="add-service-btn" onclick="openModal('lineServicesModal', 'line')" title="Добавить услуги линии">
                         +
@@ -1386,7 +1386,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
 
             # Button to add new services
             if obj.carrier:
-                html += f'''
+                html += '''
                 <div style="margin-top: 10px;">
                     <button type="button" class="add-service-btn" onclick="openModal('carrierServicesModal', 'carrier')" title="Добавить услуги перевозчика">
                         +
@@ -1452,7 +1452,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
 
             html += '</div>'
 
-            html += f'''
+            html += '''
             <div style="margin-top: 10px;">
                 <button type="button" class="add-service-btn" onclick="openModal('companyServicesModal', 'company')" title="Добавить услуги компании">
                     +

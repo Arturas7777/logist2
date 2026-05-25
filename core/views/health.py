@@ -39,7 +39,7 @@ def _check_database() -> tuple[bool, float, str | None]:
             cur.execute('SELECT 1')
             cur.fetchone()
         return True, (time.monotonic() - started) * 1000, None
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return False, (time.monotonic() - started) * 1000, str(exc)[:200]
 
 
@@ -51,7 +51,7 @@ def _check_cache() -> tuple[bool, float, str | None]:
         value = cache.get(key)
         ok = value == '1'
         return ok, (time.monotonic() - started) * 1000, None if ok else 'cache roundtrip mismatch'
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return False, (time.monotonic() - started) * 1000, str(exc)[:200]
 
 

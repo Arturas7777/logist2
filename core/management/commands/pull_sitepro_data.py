@@ -114,7 +114,7 @@ class Command(BaseCommand):
             self.stdout.write(f'  По типам операций: {dict(op_type_counter)}')
             self.stdout.write(f'  По сериям:       {dict(series_counter)}')
 
-            self.stdout.write(f'\n  Топ-10 клиентов по сумме реальных продаж:')
+            self.stdout.write('\n  Топ-10 клиентов по сумме реальных продаж:')
             for name, total in client_totals.most_common(10):
                 self.stdout.write(f'    {name}: {total} EUR')
 
@@ -123,7 +123,7 @@ class Command(BaseCommand):
             unpaid_total = sum(Decimal(str(s.get('currencyBalance', 0) or 0)) for s in unpaid)
             self.stdout.write(f'\n  Неоплаченных реальных продаж: {len(unpaid)}, баланс: {unpaid_total} EUR')
 
-            self.stdout.write(f'\n  Последние 20 продаж:')
+            self.stdout.write('\n  Последние 20 продаж:')
             for s in sales[:20]:
                 sid = s.get('id', '?')
                 series = s.get('series', '')
@@ -190,7 +190,7 @@ class Command(BaseCommand):
             self.stdout.write(f'  По банкам:  {dict(bank_names)}')
             self.stdout.write(f'  По годам:   {dict(sorted(year_txn.items()))}')
 
-            self.stdout.write(f'\n  Последние 15 транзакций:')
+            self.stdout.write('\n  Последние 15 транзакций:')
             for t in bank_txns[:15]:
                 d = t.get('date', '?')
                 client = t.get('clientName', '?')

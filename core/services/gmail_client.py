@@ -17,8 +17,7 @@ import base64
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
-from datetime import timezone as dt_timezone
+from datetime import UTC, datetime
 from email.header import decode_header, make_header
 from email.utils import parsedate_to_datetime
 from typing import Any, Iterable, Iterator
@@ -257,7 +256,7 @@ class GmailApiClient:
 # payload parsing
 # ----------------------------------------------------------------------
 
-_EPOCH = datetime(1970, 1, 1, tzinfo=dt_timezone.utc)
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 def parse_gmail_message(raw: dict[str, Any]) -> ParsedMessage:
@@ -415,8 +414,8 @@ def _parse_date_header(raw_date: str) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=dt_timezone.utc)
-    return dt.astimezone(dt_timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def _internal_date_ms_to_dt(value: Any) -> datetime:
@@ -424,7 +423,7 @@ def _internal_date_ms_to_dt(value: Any) -> datetime:
         ms = int(value)
     except (TypeError, ValueError):
         return _EPOCH
-    return datetime.fromtimestamp(ms / 1000, tz=dt_timezone.utc)
+    return datetime.fromtimestamp(ms / 1000, tz=UTC)
 
 
 def _b64url_decode(data: str) -> bytes:

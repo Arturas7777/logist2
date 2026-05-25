@@ -236,7 +236,7 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
             try:
                 apply_job(job, applied_by=request.user)
                 applied += 1
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.exception("Failed to apply scan job #%s", job.pk)
                 errors += 1
         if applied:
@@ -270,7 +270,7 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
             try:
                 apply_job(job, applied_by=request.user)
                 applied += 1
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.exception("Failed to force-apply scan job #%s", job.pk)
                 errors += 1
         if applied:

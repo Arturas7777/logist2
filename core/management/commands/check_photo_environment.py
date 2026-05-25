@@ -85,7 +85,7 @@ class Command(BaseCommand):
             self.stdout.write(f"   {name}: {path}")
 
             if os.path.exists(path):
-                self.stdout.write(self.style.SUCCESS(f"      [OK] Существует"))
+                self.stdout.write(self.style.SUCCESS("      [OK] Существует"))
 
                 # Проверка прав
                 if os.access(path, os.W_OK):
@@ -101,12 +101,12 @@ class Command(BaseCommand):
                 except Exception as e:
                     self.stdout.write(self.style.WARNING(f"      [WARNING] Ошибка подсчета файлов: {e}"))
             else:
-                self.stdout.write(self.style.WARNING(f"      [WARNING] Не существует (будет создана при загрузке)"))
+                self.stdout.write(self.style.WARNING("      [WARNING] Не существует (будет создана при загрузке)"))
 
                 # Пытаемся создать
                 try:
                     os.makedirs(path, exist_ok=True)
-                    self.stdout.write(self.style.SUCCESS(f"      [OK] Директория создана"))
+                    self.stdout.write(self.style.SUCCESS("      [OK] Директория создана"))
                 except Exception as e:
                     self.stdout.write(self.style.ERROR(f"      [ERROR] Не удалось создать: {e}"))
                     all_checks_passed = False

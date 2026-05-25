@@ -540,7 +540,7 @@ class ClientAdmin(admin.ModelAdmin):
                 extra_context['balance_summary'] = summary
             except Exception as e:
                 logger.error(f"Failed to get balance summary for client {client.name}: {e}")
-                extra_context['balance_summary_error'] = f"Ошибка загрузки сводки баланса: {str(e)}"
+                extra_context['balance_summary_error'] = f"Ошибка загрузки сводки баланса: {e!s}"
         return super().change_view(request, object_id, form_url, extra_context)
 
     def reset_balances(self, request, queryset):
@@ -554,7 +554,7 @@ class ClientAdmin(admin.ModelAdmin):
                     call_command('reset_client_balances', client_id=client.id)
                 except Exception as e:
                     logger.error(f"Failed to reset balance for client {client.name}: {e}")
-                    failed_clients.append(f"{client.name}: {str(e)}")
+                    failed_clients.append(f"{client.name}: {e!s}")
             if failed_clients:
                 self.message_user(request, f"Не удалось сбросить балансы для некоторых клиентов: {'; '.join(failed_clients)}", level='error')
             else:
@@ -939,7 +939,7 @@ class CompanyAdmin(admin.ModelAdmin):
                 </div>
 
                 <!-- Button to dashboard (only for Caromoto Lithuania) -->
-                {f'<div style="margin-top:20px; text-align:center;"><a href="/company-dashboard/" style="display:inline-block; padding:12px 24px; background:#667eea; color:white; text-decoration:none; border-radius:8px; font-weight:600; font-size:16px;">Открыть дашборд компании</a></div>' if obj.name == "Caromoto Lithuania" else ""}
+                {'<div style="margin-top:20px; text-align:center;"><a href="/company-dashboard/" style="display:inline-block; padding:12px 24px; background:#667eea; color:white; text-decoration:none; border-radius:8px; font-weight:600; font-size:16px;">Открыть дашборд компании</a></div>' if obj.name == "Caromoto Lithuania" else ""}
             </div>
             """
 
@@ -1402,7 +1402,7 @@ class AutoTransportAdmin(admin.ModelAdmin):
                 updated += 1
             except ValidationError as exc:
                 failed.append(f'{at.number}: {"; ".join(exc.messages)}')
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.exception('mark_delivered failed for AutoTransport %s', at.pk)
                 failed.append(f'{at.number}: {exc}')
 

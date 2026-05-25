@@ -4,7 +4,6 @@ import logging
 import re
 from datetime import timedelta
 from decimal import Decimal
-from typing import Optional
 
 from django.contrib.admin.views.decorators import staff_member_required
 from django.core.cache import cache
@@ -111,7 +110,7 @@ def get_container_data(request, container_id: int):
 @staff_member_required
 @require_GET
 def get_client_balance(request):
-    client_id: Optional[str] = request.GET.get('client_id')
+    client_id: str | None = request.GET.get('client_id')
     if client_id and client_id.isdigit():
         try:
             client = Client.objects.get(id=client_id)

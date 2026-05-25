@@ -1,4 +1,4 @@
-from .base import *  # noqa: F401,F403
+from .base import *  # noqa: F403
 
 DEBUG = False
 
@@ -42,7 +42,7 @@ CSRF_COOKIE_SAMESITE = "Strict"
 CSRF_FAILURE_VIEW = "django.views.csrf.csrf_failure"
 
 # Email: use real SMTP in production
-EMAIL_BACKEND = os.getenv(  # noqa: F405
+EMAIL_BACKEND = os.getenv(
     "EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend"
 )
 

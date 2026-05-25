@@ -173,7 +173,7 @@ class NewInvoiceUrlsMixin:
                 return redirect("admin:core_newinvoice_change", invoice_id)
 
             except Exception as e:
-                messages.error(request, f"Ошибка при проведении платежа: {str(e)}")
+                messages.error(request, f"Ошибка при проведении платежа: {e!s}")
 
         client_balance = None
         if invoice.recipient_client:

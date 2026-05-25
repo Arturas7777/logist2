@@ -114,7 +114,7 @@ class Command(BaseCommand):
             f'scope=READ'
         )
 
-        self.stdout.write(f'\n  Откройте эту ссылку в браузере и нажмите "Authorise":\n')
+        self.stdout.write('\n  Откройте эту ссылку в браузере и нажмите "Authorise":\n')
         self.stdout.write(self.style.WARNING(f'  {consent_url}\n'))
         self.stdout.write(
             f'  После авторизации вас перенаправит на {redirect_uri}?code=XXXXX\n'
@@ -167,7 +167,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR('Компания Caromoto не найдена!'))
             return
 
-        conn_name = input(f'  Название подключения (по умолчанию "Revolut Business"): ').strip()
+        conn_name = input('  Название подключения (по умолчанию "Revolut Business"): ').strip()
         if not conn_name:
             conn_name = 'Revolut Business'
 

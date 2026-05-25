@@ -1,7 +1,6 @@
 import logging
 import re
 from decimal import Decimal
-from typing import Dict, Optional
 
 from django.conf import settings
 
@@ -14,7 +13,7 @@ from core.services.ai_rag import build_rag_snippets
 logger = logging.getLogger(__name__)
 
 
-def _extract_identifiers(message: str) -> Dict[str, list]:
+def _extract_identifiers(message: str) -> dict[str, list]:
     vin_pattern = re.compile(r"\b[A-HJ-NPR-Z0-9]{17}\b", re.IGNORECASE)
     container_pattern = re.compile(r"\b[A-Z]{4}\d{7}\b", re.IGNORECASE)
     invoice_pattern = re.compile(r"\bINV-\d{6}-\d{4}\b", re.IGNORECASE)
@@ -79,7 +78,7 @@ def _summarize_photos_for_car(car: Car) -> str:
         f"фото контейнера: {container_count} шт."
     )
 
-def _format_money(value: Optional[Decimal]) -> str:
+def _format_money(value: Decimal | None) -> str:
     try:
         return f"{Decimal(value or 0):.2f}"
     except Exception:
@@ -105,7 +104,7 @@ def _build_price_context(car: Car) -> str:
     )
 
 
-def _summarize_current_object(page_context: Dict) -> str:
+def _summarize_current_object(page_context: dict) -> str:
     if not page_context:
         return ""
     model_name = (page_context.get("model_name") or "").lower()
@@ -141,7 +140,7 @@ def _summarize_current_object(page_context: Dict) -> str:
     return ""
 
 
-def _build_db_context(message: str, page_context: Dict) -> str:
+def _build_db_context(message: str, page_context: dict) -> str:
     parts = []
     current_summary = _summarize_current_object(page_context)
     if current_summary:
@@ -176,7 +175,7 @@ def _build_db_context(message: str, page_context: Dict) -> str:
     return " ".join(parts)
 
 
-def _build_ui_guidance(message: str, page_context: Dict) -> str:
+def _build_ui_guidance(message: str, page_context: dict) -> str:
     message_lower = (message or "").lower()
     model_name = (page_context.get("model_name") or "").lower() if page_context else ""
 
@@ -284,7 +283,7 @@ def _diagnose_invoice(invoice: NewInvoice) -> list:
     return issues
 
 
-def _run_diagnostics(page_context: Dict) -> str:
+def _run_diagnostics(page_context: dict) -> str:
     if not page_context:
         return ""
     model_name = (page_context.get("model_name") or "").lower()
@@ -317,10 +316,10 @@ def _run_diagnostics(page_context: Dict) -> str:
 def generate_admin_ai_response(
     message: str,
     user,
-    page_context: Optional[Dict] = None,
-    session_id: Optional[str] = None,
+    page_context: dict | None = None,
+    session_id: str | None = None,
     language_code: str = "ru",
-) -> Dict[str, Optional[str]]:
+) -> dict[str, str | None]:
     page_context = page_context or {}
     db_context = _build_db_context(message, page_context)
     rag_context = build_rag_snippets(message, top_k=getattr(settings, "AI_RAG_TOP_K", 4))

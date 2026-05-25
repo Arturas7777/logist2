@@ -97,10 +97,10 @@ def parse_container_token(token: str, max_age: int | None = None) -> str:
 
 
 __all__ = [
-    "BadSignature",
     "DEFAULT_TTL_SECONDS",
     "PHOTO_KINDS",
     "PHOTO_VARIANTS",
+    "BadSignature",
     "SignatureExpired",
     "make_container_token",
     "make_photo_token",

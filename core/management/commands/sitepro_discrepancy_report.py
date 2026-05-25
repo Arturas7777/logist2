@@ -146,10 +146,10 @@ class Command(BaseCommand):
         sp_d_sum = sum(Decimal(str(t.get('amount', 0) or 0)) for t in sp_debit)
         sp_k_sum = sum(Decimal(str(t.get('amount', 0) or 0)) for t in sp_credit)
 
-        self.stdout.write(f'\n  Revolut (Django):')
+        self.stdout.write('\n  Revolut (Django):')
         self.stdout.write(f'    Входящих: {revolut_incoming.count()}, сумма: {revolut_in_sum:.2f} EUR')
         self.stdout.write(f'    Исходящих: {revolut_outgoing.count()}, сумма: {revolut_out_sum:.2f} EUR')
-        self.stdout.write(f'\n  site.pro:')
+        self.stdout.write('\n  site.pro:')
         self.stdout.write(f'    Дебет (D): {len(sp_debit)}, сумма: {sp_d_sum} EUR')
         self.stdout.write(f'    Кредит (K): {len(sp_credit)}, сумма: {sp_k_sum} EUR')
 

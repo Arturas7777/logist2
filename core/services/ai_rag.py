@@ -5,7 +5,6 @@ import os
 import re
 import threading
 import time
-from typing import Dict, List, Optional
 
 import requests
 from django.conf import settings
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)
 # держится в памяти процесса и переоткрывается только если изменился
 # mtime файла. Внутри потока чтение защищено Lock'ом — несколько
 # параллельных gthread-воркеров не выгребут IO одновременно.
-_INDEX_CACHE: Dict[str, object] = {"path": None, "mtime": None, "data": None}
+_INDEX_CACHE: dict[str, object] = {"path": None, "mtime": None, "data": None}
 _INDEX_LOCK = threading.Lock()
 
 # TTL кэша эмбеддингов в Redis. Один и тот же запрос («где машина X?»,
@@ -36,7 +35,7 @@ def _get_index_path() -> str:
     )
 
 
-def _load_index_cached(index_path: str) -> Optional[Dict]:
+def _load_index_cached(index_path: str) -> dict | None:
     """Читает индекс с диска и кэширует в памяти процесса.
 
     Возвращает None если файл отсутствует. Перечитывает только при
@@ -64,7 +63,7 @@ def _load_index_cached(index_path: str) -> Optional[Dict]:
         ):
             return _INDEX_CACHE["data"]  # type: ignore[return-value]
         try:
-            with open(index_path, "r", encoding="utf-8") as file_obj:
+            with open(index_path, encoding="utf-8") as file_obj:
                 data = json.load(file_obj)
         except (OSError, ValueError):
             logger.exception("Failed to read RAG index %s", index_path)
@@ -77,7 +76,7 @@ def _load_index_cached(index_path: str) -> Optional[Dict]:
 
 def _embedding_cache_key(model: str, text: str) -> str:
     """Стабильный ключ для одного embedding-запроса."""
-    digest = hashlib.sha1(f"{model}::{text}".encode("utf-8")).hexdigest()
+    digest = hashlib.sha1(f"{model}::{text}".encode()).hexdigest()
     return f"{_EMBEDDING_CACHE_PREFIX}{digest}"
 
 
@@ -85,7 +84,7 @@ def _normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
 
 
-def _split_into_chunks(text: str, chunk_size: int = 1200, overlap: int = 200) -> List[str]:
+def _split_into_chunks(text: str, chunk_size: int = 1200, overlap: int = 200) -> list[str]:
     text = text or ""
     if len(text) <= chunk_size:
         return [text]
@@ -101,7 +100,7 @@ def _split_into_chunks(text: str, chunk_size: int = 1200, overlap: int = 200) ->
     return chunks
 
 
-def _call_embeddings_api(text: str, *, use_cache: bool = True) -> Optional[List[float]]:
+def _call_embeddings_api(text: str, *, use_cache: bool = True) -> list[float] | None:
     """Получить embedding для текста (с Redis-кэшем повторных запросов).
 
     use_cache=True — для query-режима (один и тот же вопрос в чате
@@ -156,15 +155,15 @@ def _call_embeddings_api(text: str, *, use_cache: bool = True) -> Optional[List[
     if cache_key and embedding:
         try:
             cache.set(cache_key, embedding, _EMBEDDING_CACHE_TTL)
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
 
     return embedding
 
 
 def build_rag_index(
-    source_paths: List[str],
-    output_path: Optional[str] = None,
+    source_paths: list[str],
+    output_path: str | None = None,
     use_embeddings: bool = True,
 ) -> str:
     output_path = output_path or _get_index_path()
@@ -175,7 +174,7 @@ def build_rag_index(
         if not os.path.exists(path) or not os.path.isfile(path):
             continue
         try:
-            with open(path, "r", encoding="utf-8", errors="ignore") as file_obj:
+            with open(path, encoding="utf-8", errors="ignore") as file_obj:
                 raw = file_obj.read()
         except OSError:
             logger.exception("Failed to read %s", path)
@@ -208,10 +207,10 @@ def build_rag_index(
     return output_path
 
 
-def _cosine_similarity(a: List[float], b: List[float]) -> float:
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
     if not a or not b or len(a) != len(b):
         return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     norm_a = sum(x * x for x in a) ** 0.5
     norm_b = sum(y * y for y in b) ** 0.5
     if norm_a == 0 or norm_b == 0:
@@ -227,7 +226,7 @@ def _keyword_score(query: str, text: str) -> float:
     return sum(1 for term in terms if term in text_lower) / len(terms)
 
 
-def query_rag_context(query: str, top_k: int = 4) -> List[Dict]:
+def query_rag_context(query: str, top_k: int = 4) -> list[dict]:
     index_path = _get_index_path()
     index = _load_index_cached(index_path)
     if not index:
@@ -265,7 +264,7 @@ def build_rag_snippets(query: str, top_k: int = 4) -> str:
     return "\n\n".join(parts)
 
 
-def get_default_rag_sources() -> List[str]:
+def get_default_rag_sources() -> list[str]:
     base_dir = settings.BASE_DIR
     return [
         os.path.join(base_dir, "LOGIST2_PROGRESS_REPORT.md"),
@@ -280,14 +279,14 @@ def get_default_rag_sources() -> List[str]:
     ]
 
 
-def _get_mtime(path: str) -> Optional[float]:
+def _get_mtime(path: str) -> float | None:
     try:
         return os.path.getmtime(path)
     except OSError:
         return None
 
 
-def is_rag_index_stale(source_paths: List[str], max_age_seconds: Optional[int] = None) -> Dict[str, str]:
+def is_rag_index_stale(source_paths: list[str], max_age_seconds: int | None = None) -> dict[str, str]:
     index_path = _get_index_path()
     index_mtime = _get_mtime(index_path)
     if not index_mtime:

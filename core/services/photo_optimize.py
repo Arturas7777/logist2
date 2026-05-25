@@ -17,7 +17,6 @@ from __future__ import annotations
 import io
 import logging
 import os
-from typing import Optional
 
 from django.core.files.base import ContentFile
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -34,7 +33,7 @@ def compress_image_bytes(
     *,
     max_long_side: int = MAX_LONG_SIDE,
     quality: int = JPEG_QUALITY,
-) -> Optional[bytes]:
+) -> bytes | None:
     """Пережимает байты изображения. Возвращает новые байты либо None, если
     трогать не нужно (уже маленькое / не JPEG / ошибка)."""
     try:

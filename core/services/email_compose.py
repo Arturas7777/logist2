@@ -49,11 +49,11 @@ logger = logging.getLogger(__name__)
 
 
 __all__ = [
-    'reply_to_email',
-    'compose_new_email',
-    'compose_new_email_from_car',
-    'compose_new_email_from_autotransport',
     'ComposeError',
+    'compose_new_email',
+    'compose_new_email_from_autotransport',
+    'compose_new_email_from_car',
+    'reply_to_email',
 ]
 
 
@@ -676,8 +676,8 @@ def _link_outgoing_to_containers(
     увидят переписку.
     """
     from core.services.email_matcher import (
-        _match_by_bookings,  # noqa: PLC2701 — свой же пакет
-        _match_by_container_numbers,  # noqa: PLC2701
+        _match_by_bookings,
+        _match_by_container_numbers,
         build_booking_index,
     )
 
@@ -741,7 +741,7 @@ def _link_outgoing_to_cars(
     ``is_read`` = True для карточек-источников (мы сами отправили), False
     для cross-linked (чтобы получатели в других карточках увидели unread).
     """
-    from core.services.email_matcher import _match_by_vins  # noqa: PLC2701
+    from core.services.email_matcher import _match_by_vins
 
     seen: set[int] = set()
     links: list[CarEmailLink] = []

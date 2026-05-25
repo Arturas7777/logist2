@@ -95,7 +95,7 @@ def find_similar_vins(vin: str, *, max_distance: int = _VIN_FUZZY_MAX_DISTANCE) 
     for db_vin, car_id in qs.iterator():
         if not db_vin or len(db_vin) != 17:
             continue
-        dist = sum(1 for a, b in zip(vin, db_vin) if a != b)
+        dist = sum(1 for a, b in zip(vin, db_vin, strict=False) if a != b)
         if 0 < dist <= max_distance:
             candidates.append((db_vin, car_id, dist))
     candidates.sort(key=lambda x: x[2])
@@ -207,7 +207,7 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
                                 'nhtsa_year': nhtsa.get('year'),
                                 'nhtsa_ok': nhtsa.get('ok'),
                             }
-                    except Exception as e:  # noqa: BLE001
+                    except Exception as e:
                         logger.warning(
                             "Candidate VIN validation failed for %s: %s", v, e,
                         )

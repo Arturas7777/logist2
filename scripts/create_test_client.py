@@ -56,10 +56,10 @@ else:
 print("\n" + "="*60)
 print("ТЕСТОВЫЙ КЛИЕНТ УСПЕШНО СОЗДАН!")
 print("="*60)
-print(f"\nДанные для входа:")
-print(f"   URL: http://localhost:8000/dashboard/")
+print("\nДанные для входа:")
+print("   URL: http://localhost:8000/dashboard/")
 print(f"   Username: {username}")
 print(f"   Password: {password}")
-print(f"\nДля входа в админку: http://localhost:8000/admin/")
+print("\nДля входа в админку: http://localhost:8000/admin/")
 print("="*60)
 

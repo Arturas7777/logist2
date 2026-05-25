@@ -186,7 +186,7 @@ class ContainerAdmin(admin.ModelAdmin):
             # For existing objects save as usual
             super().save_model(request, obj, form, change)
 
-        logger.info(f"[TIMING] Container saved to DB")
+        logger.info("[TIMING] Container saved to DB")
 
         # If warehouse changed - sync warehouse to all cars
         if change and form and 'warehouse' in getattr(form, 'changed_data', []):
@@ -326,7 +326,7 @@ class ContainerAdmin(admin.ModelAdmin):
                                 invoice.regenerate_items_from_cars()
                             except Exception as e:
                                 logger.error(f"Error updating invoice {invoice.number}: {e}")
-                        logger.info(f"[TIMING] Invoices updated")
+                        logger.info("[TIMING] Invoices updated")
 
                     logger.info(f"[TIMING] THS-related change completed in {time.time() - line_start:.2f}s")
 

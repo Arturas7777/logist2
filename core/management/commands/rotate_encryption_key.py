@@ -79,7 +79,7 @@ class Command(BaseCommand):
                         continue
                     try:
                         new_value = encryption.rotate_value(current)
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         errors.append(f"{model_label}#{obj.pk}.{attr}: {exc}")
                         continue
                     if new_value != current:

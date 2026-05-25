@@ -50,7 +50,7 @@ def _safe(fn, default=None):
     """Wrap a callable — log+return default on any exception."""
     try:
         return fn()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug('system_monitor: %s failed: %s', getattr(fn, '__name__', fn), exc)
         return default
 
@@ -245,7 +245,7 @@ def _collect_postgres() -> dict[str, Any]:
                 result['slow_queries'] = [
                     dict(zip(cols, row, strict=False)) for row in cur.fetchall()
                 ]
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.debug('pg_stat_statements not available: %s', exc)
                 result['slow_queries'] = []
                 result['slow_queries_error'] = (
@@ -254,7 +254,7 @@ def _collect_postgres() -> dict[str, Any]:
 
         _ = db_name
         result['available'] = True
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning('postgres metrics failed: %s', exc)
         result['error'] = str(exc)[:200]
     return result
@@ -293,7 +293,7 @@ def _collect_redis() -> dict[str, Any]:
         result['keys'] = keys
 
         result['available'] = True
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning('redis metrics failed: %s', exc)
         result['error'] = str(exc)[:200]
     return result
@@ -310,7 +310,7 @@ def _collect_celery_queue() -> dict[str, Any]:
         client = redis_lib.Redis(host=host, port=port, socket_timeout=2, db=2)
         celery_len = client.llen('celery')
         return {'queue_len': celery_len, 'available': True}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug('celery queue length failed: %s', exc)
         return {'queue_len': 0, 'available': False, 'error': str(exc)[:200]}
 
@@ -367,7 +367,7 @@ def ping_health() -> dict[str, Any]:
             'status_code': resp.status_code,
             'error': '' if ok else f'HTTP {resp.status_code}',
         }
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         elapsed_ms = (time.monotonic() - started) * 1000
         return {
             'ok': False,

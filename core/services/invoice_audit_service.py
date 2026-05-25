@@ -719,7 +719,7 @@ def _load_service_mapping():
     import os
     mapping_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'invoice_service_mapping.json')
     try:
-        with open(mapping_path, 'r', encoding='utf-8') as f:
+        with open(mapping_path, encoding='utf-8') as f:
             data = json.load(f)
         data.pop('_comment', None)
         # Runtime-валидация дублей service_id у одного контрагента
@@ -950,7 +950,7 @@ def create_supplier_costs(audit, extracted: dict, found_cars: dict) -> dict:
                     service_type=stype_key if stype_key in valid_stypes else 'OTHER',
                     amount=Decimal('0'),
                     vin=vin,
-                    description=f'Не указано в счёте (0€ — в рамках бесплатного периода)',
+                    description='Не указано в счёте (0€ — в рамках бесплатного периода)',
                 ))
                 stats['linked'] += 1
 

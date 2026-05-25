@@ -42,7 +42,7 @@ class Command(BaseCommand):
         if not os.path.exists(path):
             raise CommandError(f"Файл не найден: {path}")
 
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             try:
                 data = json.load(f)
             except json.JSONDecodeError as e:

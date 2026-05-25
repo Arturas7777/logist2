@@ -418,7 +418,7 @@ class GoogleDriveSync:
             images = [f for f in files if not f.get('is_folder', False)]
 
             if not images:
-                logger.info(f"   No images found")
+                logger.info("   No images found")
                 return 0
 
             logger.info(f"   Found {len(images)} images")

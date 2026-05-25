@@ -33,7 +33,7 @@ def _queue_or_run_generate_invoices(autotransport):
 
     try:
         transaction.on_commit(lambda: generate_autotransport_invoices_task.delay(autotransport.pk))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(
             "AutoTransport %s: Celery unavailable, generating invoices inline: %s",
             autotransport.number,
@@ -47,7 +47,7 @@ def _queue_or_run_generate_invoices(autotransport):
                     autotransport.number,
                     len(invoices),
                 )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.error("AutoTransport %s invoice error: %s", autotransport.number, e)
 
 

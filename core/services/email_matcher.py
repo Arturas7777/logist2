@@ -91,7 +91,7 @@ class MatchResult:
 
 
 def match_email_to_containers(
-    msg: 'ParsedMessage',
+    msg: ParsedMessage,
     *,
     booking_index: dict[str, int] | None = None,
 ) -> MatchResult:
@@ -169,7 +169,7 @@ def match_email_to_containers(
 
 
 def match_email_to_container(
-    msg: 'ParsedMessage',
+    msg: ParsedMessage,
     *,
     booking_index: dict[str, int] | None = None,
 ) -> MatchResult:

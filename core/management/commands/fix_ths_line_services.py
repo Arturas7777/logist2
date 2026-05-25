@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Команда для исправления услуг линий THS.
 
@@ -91,7 +90,7 @@ class Command(BaseCommand):
             self.stdout.write(f'      Avtomobilej: {car_count}, Motociklov: {moto_count}')
 
             # Анализируем каждый автомобиль в контейнере
-            self.stdout.write(f'\n      [CARS] Transportnye sredstva:')
+            self.stdout.write('\n      [CARS] Transportnye sredstva:')
             for car in cars:
                 # Получаем линию из автомобиля (не из контейнера!)
                 line = car.line
@@ -120,7 +119,7 @@ class Command(BaseCommand):
 
                 if not line:
                     self.stdout.write(f'        [!] [{car.vehicle_type}] {car.brand} (ID={car.id}): {current_service_name}')
-                    self.stdout.write(self.style.WARNING(f'           Liniya ne ukazana na avto!'))
+                    self.stdout.write(self.style.WARNING('           Liniya ne ukazana na avto!'))
                     continue
 
                 # Ищем услуги для этой линии
@@ -178,7 +177,7 @@ class Command(BaseCommand):
                         # Если установлена 4 АВТО, но должна быть другая (есть мотоциклы)
                         needs_change = True
                         new_service = service_3_avto
-                        reason = f"4 AVTO -> 3 AVTO (est motocikly)"
+                        reason = "4 AVTO -> 3 AVTO (est motocikly)"
 
                 # Выводим информацию
                 status_icon = "[OK]" if not needs_change and service_exists else "[!!]"
@@ -276,7 +275,7 @@ class Command(BaseCommand):
             except Exception as e:
                 self.stdout.write(self.style.ERROR(f'  [ERR] Oshibka peresceta dlya Car ID={car_id}: {e}'))
 
-        self.stdout.write(self.style.SUCCESS(f'\n[OK] Gotovo!'))
+        self.stdout.write(self.style.SUCCESS('\n[OK] Gotovo!'))
         self.stdout.write(f'  Obnovleno: {updated_count}')
         self.stdout.write(f'  Sozdano: {created_count}')
         self.stdout.write(f'  Pereschitano cen: {len(cars_to_recalc)}')

@@ -129,7 +129,7 @@ class Command(BaseCommand):
                             'nhtsa_ok': nhtsa.get('ok'),
                         }
                         changed = True
-                    except Exception as e:  # noqa: BLE001
+                    except Exception as e:
                         self.stdout.write(self.style.WARNING(
                             f"  candidate {c.get('vin')} validation failed: {e}"
                         ))

@@ -681,7 +681,7 @@ def process_scan_job(self, job_id):
             extracted = extract_dock_receipt(pdf_path)
         else:
             raise ValueError(f"Unknown scan_type: {job.scan_type}")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("process_scan_job #%s failed", job_id)
         job.status = ScanProcessingJob.STATUS_ERROR
         job.error_message = f"{type(exc).__name__}: {exc}"[:500]

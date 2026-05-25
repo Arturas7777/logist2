@@ -25,9 +25,9 @@ logger = logging.getLogger(__name__)
 
 
 __all__ = [
+    'SendError',
     'build_mime_message',
     'send_message',
-    'SendError',
 ]
 
 

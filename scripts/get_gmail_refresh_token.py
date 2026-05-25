@@ -92,7 +92,7 @@ def main() -> int:
     print("Следующий шаг — добавить в .env на сервере:")
     print()
     print(f"    GMAIL_CLIENT_ID={creds.client_id}")
-    print(f"    GMAIL_CLIENT_SECRET=<из client_secret.json>")
+    print("    GMAIL_CLIENT_SECRET=<из client_secret.json>")
     print(f"    GMAIL_REFRESH_TOKEN={creds.refresh_token}")
     print()
     print("ВНИМАНИЕ: НЕ коммитьте client_secret.json и token.json в git!")

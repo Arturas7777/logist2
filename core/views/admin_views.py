@@ -1,7 +1,6 @@
 """Staff-only admin views: dashboards, payments, photos, GDrive sync, personal cards."""
 import logging
 from decimal import Decimal, InvalidOperation
-from typing import Optional
 
 from django.contrib import admin, messages
 from django.contrib.admin.views.decorators import staff_member_required
@@ -33,7 +32,7 @@ def register_payment(request):
     if request.method != 'POST':
         return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=400)
 
-    invoice_id: Optional[str] = request.POST.get('invoice_id')
+    invoice_id: str | None = request.POST.get('invoice_id')
     amount_raw = request.POST.get('amount', '0')
     try:
         amount = Decimal(amount_raw)
@@ -42,10 +41,10 @@ def register_payment(request):
     except (InvalidOperation, Exception):
         return JsonResponse({'status': 'error', 'message': 'Некорректная сумма'}, status=400)
 
-    payment_method: Optional[str] = request.POST.get('payment_type', 'TRANSFER')
+    payment_method: str | None = request.POST.get('payment_type', 'TRANSFER')
     from_balance: bool = request.POST.get('from_balance') == 'on'
     description: str = request.POST.get('description', '')
-    payer_id: Optional[str] = request.POST.get('payer_id')
+    payer_id: str | None = request.POST.get('payer_id')
 
     try:
         with db_transaction.atomic():
@@ -753,7 +752,7 @@ def personal_card_balance_reset(request, card_id):
                     transfer_type='CARD_INCOME',
                     to_card=card,
                     amount=abs(diff),
-                    description=f'Сверка баланса — корректировка вверх',
+                    description='Сверка баланса — корректировка вверх',
                     date=timezone.now(),
                     created_by=request.user if request.user.is_authenticated else None,
                 )
@@ -762,7 +761,7 @@ def personal_card_balance_reset(request, card_id):
                     transfer_type='CARD_EXPENSE',
                     from_card=card,
                     amount=abs(diff),
-                    description=f'Сверка баланса — корректировка вниз',
+                    description='Сверка баланса — корректировка вниз',
                     date=timezone.now(),
                     created_by=request.user if request.user.is_authenticated else None,
                 )

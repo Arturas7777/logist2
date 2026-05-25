@@ -436,7 +436,7 @@ print(f"  Sections: {total_sections}")
 print("=" * 60)
 
 if errors:
-    print(f"\n  Failed tests:")
+    print("\n  Failed tests:")
     for e in errors:
         print(f"    - {e}")
     sys.exit(1)

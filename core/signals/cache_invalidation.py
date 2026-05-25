@@ -43,7 +43,7 @@ def _invalidate_stats_cache(sender, instance, **kwargs):
         # Откладываем до commit, чтобы инвалидация происходила после записи в БД.
         instance_id = getattr(instance, "pk", None)
         transaction.on_commit(lambda: invalidate_related_cache(model_name, instance_id))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("Cache invalidation skipped for %s: %s", model_name, exc)
 
 

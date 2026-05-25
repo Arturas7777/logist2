@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import base64
-from datetime import datetime
-from datetime import timezone as dt_timezone
+from datetime import UTC, datetime
 
 from django.test import TestCase
 
@@ -38,7 +37,7 @@ def _make_parsed(
         from_addr='sender@example.com',
         to_addrs='to@example.com',
         cc_addrs='',
-        received_at=datetime.now(tz=dt_timezone.utc),
+        received_at=datetime.now(tz=UTC),
         snippet='',
         body_text=body_text,
         body_html='',
@@ -142,7 +141,7 @@ class EmailMatcherTest(TestCase):
             direction=ContainerEmail.DIRECTION_INCOMING,
             from_addr='a@b.c',
             subject='Original',
-            received_at=datetime.now(tz=dt_timezone.utc),
+            received_at=datetime.now(tz=UTC),
             matched_by=ContainerEmail.MATCHED_BY_CONTAINER_NUMBER,
         )
         parent.containers.add(self.container_a)
@@ -161,7 +160,7 @@ class EmailMatcherTest(TestCase):
             direction=ContainerEmail.DIRECTION_INCOMING,
             from_addr='a@b.c',
             subject='Parent',
-            received_at=datetime.now(tz=dt_timezone.utc),
+            received_at=datetime.now(tz=UTC),
             matched_by=ContainerEmail.MATCHED_BY_CONTAINER_NUMBER,
         )
         parent.containers.add(self.container_b)

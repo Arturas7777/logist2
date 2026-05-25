@@ -5,7 +5,7 @@
 import logging
 from datetime import timedelta
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Any
 
 from django.db import models
 from django.db.models import Count, Q, Sum
@@ -24,7 +24,7 @@ class ComparisonService:
     def __init__(self):
         self.tolerance = Decimal('0.01')  # Допустимая разница в 1 цент
 
-    def compare_car_costs_with_warehouse_invoices(self, car: Car) -> Dict[str, Any]:
+    def compare_car_costs_with_warehouse_invoices(self, car: Car) -> dict[str, Any]:
         """
         Сравнивает стоимость автомобиля с инвойсами склада
 
@@ -85,7 +85,7 @@ class ComparisonService:
 
     def compare_client_costs_with_warehouse_invoices(self, client: Client,
                                                    start_date=None,
-                                                   end_date=None) -> Dict[str, Any]:
+                                                   end_date=None) -> dict[str, Any]:
         """
         Сравнивает общую стоимость автомобилей клиента с инвойсами склада
 
@@ -173,7 +173,7 @@ class ComparisonService:
 
     def compare_warehouse_costs_with_payments(self, warehouse: Warehouse,
                                             start_date=None,
-                                            end_date=None) -> Dict[str, Any]:
+                                            end_date=None) -> dict[str, Any]:
         """
         Сравнивает стоимость услуг склада с фактическими платежами
 
@@ -254,7 +254,7 @@ class ComparisonService:
             }
         }
 
-    def get_comparison_report(self, start_date=None, end_date=None) -> Dict[str, Any]:
+    def get_comparison_report(self, start_date=None, end_date=None) -> dict[str, Any]:
         """
         Генерирует общий отчет по сравнению сумм
 
@@ -315,7 +315,7 @@ class ComparisonService:
             'status': 'success'
         }
 
-    def batch_compare_clients(self, start_date=None, end_date=None) -> List[Dict[str, Any]]:
+    def batch_compare_clients(self, start_date=None, end_date=None) -> list[dict[str, Any]]:
         """Batch comparison for all clients with cars — 2-3 SQL queries instead of N+1."""
         car_filters = Q(unload_date__isnull=False)
         if start_date:
@@ -371,7 +371,7 @@ class ComparisonService:
             })
         return results
 
-    def batch_compare_warehouses(self, start_date=None, end_date=None) -> List[Dict[str, Any]]:
+    def batch_compare_warehouses(self, start_date=None, end_date=None) -> list[dict[str, Any]]:
         """Batch comparison for all warehouses — 2 SQL queries instead of N+1."""
         inv_filters = Q(issuer_warehouse__isnull=False)
         if start_date:
@@ -432,7 +432,7 @@ class ComparisonService:
             })
         return results
 
-    def find_discrepancies(self, start_date=None, end_date=None) -> List[Dict[str, Any]]:
+    def find_discrepancies(self, start_date=None, end_date=None) -> list[dict[str, Any]]:
         """
         Находит расхождения в суммах
 

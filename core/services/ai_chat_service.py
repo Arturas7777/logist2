@@ -1,6 +1,5 @@
 import logging
 import re
-from typing import List, Optional
 
 import requests
 from django.conf import settings
@@ -15,7 +14,7 @@ class AIServiceError(Exception):
     pass
 
 
-def _get_recent_messages(session_id: Optional[str], user) -> List[dict]:
+def _get_recent_messages(session_id: str | None, user) -> list[dict]:
     if not session_id:
         return []
 
@@ -232,7 +231,7 @@ def _build_tracking_context(message: str, user=None, client=None) -> str:
     return " ".join(parts)
 
 
-def _call_ai_api(messages: List[dict]) -> str:
+def _call_ai_api(messages: list[dict]) -> str:
     if not settings.AI_CHAT_ENABLED:
         raise AIServiceError("AI chat is disabled")
 
@@ -279,7 +278,7 @@ def _call_ai_api(messages: List[dict]) -> str:
         raise AIServiceError("AI API response parsing error") from exc
 
 
-def generate_ai_response(message: str, user=None, client=None, session_id: Optional[str] = None,
+def generate_ai_response(message: str, user=None, client=None, session_id: str | None = None,
                          language_code: str = "ru") -> str:
     system_prompt = _build_system_prompt(language_code)
     company_context = _build_company_context()

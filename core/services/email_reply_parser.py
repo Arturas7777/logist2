@@ -20,7 +20,6 @@ Gmail (en/ru), Outlook (en/ru), Yahoo, Apple Mail, Thunderbird,
 from __future__ import annotations
 
 import re
-from typing import Tuple
 
 try:
     import ftfy  # type: ignore
@@ -82,16 +81,16 @@ def _fix_mojibake(text: str) -> str:
 
 
 __all__ = [
-    'split_reply_and_quote',
-    'split_reply_and_quote_html',
     'clean_message_body',
-    'messenger_body',
-    'messenger_body_from_email',
-    'html_to_plain',
+    'compose_reply_html',
     'extract_display_name',
     'format_quoted_reply',
+    'html_to_plain',
+    'messenger_body',
+    'messenger_body_from_email',
     'plain_text_to_simple_html',
-    'compose_reply_html',
+    'split_reply_and_quote',
+    'split_reply_and_quote_html',
 ]
 
 
@@ -149,7 +148,7 @@ def _first_quote_line_offset(text: str) -> int:
     return len(text)
 
 
-def split_reply_and_quote(text: str) -> Tuple[str, str]:
+def split_reply_and_quote(text: str) -> tuple[str, str]:
     """Разделяет текст на (reply, quoted).
 
     Если разделитель не найден — возвращает ``(text.strip(), '')``.
@@ -224,7 +223,7 @@ _HTML_QUOTE_ENTRY_PATTERNS = [
 ]
 
 
-def split_reply_and_quote_html(html: str) -> Tuple[str, str]:
+def split_reply_and_quote_html(html: str) -> tuple[str, str]:
     """Аналог для HTML. Возвращает (reply_html, quoted_html).
 
     Режем ПО НАЧАЛУ контейнера цитаты — это несбалансированный HTML,

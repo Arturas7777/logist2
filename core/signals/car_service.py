@@ -62,7 +62,7 @@ def _schedule_car_price_recalc(car_id):
                 days=car.days,
                 storage_cost=car.storage_cost,
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.error("Error recalculating price for car %s: %s", car_id, e)
         finally:
             _get_pending_pricing_cars().discard(car_id)

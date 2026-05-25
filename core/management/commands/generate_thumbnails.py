@@ -34,7 +34,7 @@ class Command(BaseCommand):
             except Exception as e:
                 error_count += 1
                 self.stdout.write(
-                    self.style.ERROR(f'Ошибка для фото ID {photo.id}: {str(e)}')
+                    self.style.ERROR(f'Ошибка для фото ID {photo.id}: {e!s}')
                 )
 
         self.stdout.write(

@@ -90,9 +90,13 @@ class Command(BaseCommand):
         # shim, чтобы не тянуть ParsedMessage.
         class _Shim:
             __slots__ = (
-                'subject', 'body_text', 'body_html',
-                'from_addr', 'to_addrs', 'cc_addrs',
+                'body_html',
+                'body_text',
+                'cc_addrs',
+                'from_addr',
+                'subject',
                 'thread_id',
+                'to_addrs',
             )
 
             def __init__(self, e: ContainerEmail) -> None:

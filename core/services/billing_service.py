@@ -16,7 +16,6 @@ BillingService - централизованная точка входа для:
 
 import logging
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Dict, List, Optional, Union
 
 from django.db import models, transaction
 from django.db.models import Sum
@@ -42,7 +41,7 @@ class BillingService:
     # ========================================================================
 
     @staticmethod
-    def quantize(amount: Union[Decimal, int, float, str]) -> Decimal:
+    def quantize(amount: Decimal | int | float | str) -> Decimal:
         """Нормализовать сумму до 2 знаков после запятой"""
         return Decimal(str(amount)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
@@ -61,8 +60,8 @@ class BillingService:
         cls,
         issuer,
         recipient,
-        cars: List = None,
-        items: List[Dict] = None,
+        cars: list = None,
+        items: list[dict] = None,
         due_days: int = 14,
         notes: str = "",
         created_by=None
@@ -413,7 +412,7 @@ class BillingService:
     def refund(
         cls,
         original_transaction,
-        amount: Optional[Decimal] = None,
+        amount: Decimal | None = None,
         reason: str = "",
         created_by=None
     ):
@@ -669,7 +668,7 @@ class BillingService:
     # ========================================================================
 
     @classmethod
-    def auto_reconcile_bank_transactions(cls) -> Dict:
+    def auto_reconcile_bank_transactions(cls) -> dict:
         """
         Автоматическое сопоставление банковских транзакций с инвойсами.
 
@@ -881,7 +880,7 @@ class BillingService:
     # ========================================================================
 
     @classmethod
-    def get_entity_balance_report(cls, entity) -> Dict:
+    def get_entity_balance_report(cls, entity) -> dict:
         """
         Получить детальный отчет по балансам сущности
 
@@ -943,7 +942,7 @@ class BillingService:
         return report
 
     @classmethod
-    def get_invoice_report(cls, invoice) -> Dict:
+    def get_invoice_report(cls, invoice) -> dict:
         """
         Получить детальный отчет по инвойсу
 

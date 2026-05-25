@@ -66,7 +66,7 @@ class Command(BaseCommand):
                     ))
                     if fix:
                         cs.delete()
-                        self.stdout.write(f'    -> Deleted')
+                        self.stdout.write('    -> Deleted')
 
         if orphans == 0:
             self.stdout.write(self.style.SUCCESS('  No orphan CarService records found.'))

@@ -80,7 +80,7 @@ def auto_push_invoice_to_sitepro(sender, instance, created, **kwargs):
             from core.tasks import push_invoice_to_sitepro_task
 
             push_invoice_to_sitepro_task.delay(invoice_id)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(
                 "[SitePro] Celery unavailable for invoice %s, pushing inline: %s",
                 invoice_number,
@@ -100,7 +100,7 @@ def auto_push_invoice_to_sitepro(sender, instance, created, **kwargs):
                     logger.info("[SitePro] Auto-pushed invoice %s on ISSUED (sync)", invoice_number)
                 finally:
                     instance._pushing_to_sitepro = False
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.error("[SitePro] Error auto-pushing invoice %s: %s", invoice_number, e)
 
     transaction.on_commit(_queue)

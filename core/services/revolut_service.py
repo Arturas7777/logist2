@@ -548,6 +548,6 @@ class RevolutService:
             result['error'] = str(e)
             self.connection.last_error = f'Неожиданная ошибка: {str(e)[:400]}'
             self.connection.save(update_fields=['last_error', 'updated_at'])
-            logger.exception(f'[Revolut] Неожиданная ошибка синхронизации')
+            logger.exception('[Revolut] Неожиданная ошибка синхронизации')
 
         return result

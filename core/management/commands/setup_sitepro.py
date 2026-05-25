@@ -65,7 +65,7 @@ class Command(BaseCommand):
 
         # Создаём/обновляем подключение
         conn_name = input(
-            f'  Название подключения (по умолчанию "Site.pro Caromoto"): '
+            '  Название подключения (по умолчанию "Site.pro Caromoto"): '
         ).strip()
         if not conn_name:
             conn_name = 'Site.pro Caromoto'

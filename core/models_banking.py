@@ -12,6 +12,7 @@
 """
 
 import logging
+from datetime import UTC
 
 from django.db import models
 from django.utils import timezone
@@ -20,7 +21,7 @@ from django.utils import timezone
 # command'ом `rotate_encryption_key` и в `models_accounting.py`.
 # Старый импорт `from core.models_banking import encrypt_value` продолжает
 # работать благодаря этим реэкспортам.
-from core.encryption import decrypt_value, encrypt_value  # noqa: F401
+from core.encryption import decrypt_value, encrypt_value
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +162,6 @@ class BankConnection(models.Model):
             import base64
             import json
             from datetime import datetime
-            from datetime import timezone as dt_tz
 
             payload_b64 = jwt.split(".")[1]
             padded = payload_b64 + "=" * (-len(payload_b64) % 4)
@@ -169,7 +169,7 @@ class BankConnection(models.Model):
             exp = payload.get("exp")
             if exp is None:
                 return None
-            return datetime.fromtimestamp(int(exp), tz=dt_tz.utc)
+            return datetime.fromtimestamp(int(exp), tz=UTC)
         except Exception:
             logger.warning("Не удалось декодировать payload JWT-assertion для %s", self)
             return None

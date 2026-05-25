@@ -775,7 +775,7 @@ class SiteProService:
         return True
 
     # Back-compat alias (раньше метод назывался get_invoice_pdf_url и был сломан)
-    def get_invoice_pdf_url(self, invoice) -> str:  # noqa: D401
+    def get_invoice_pdf_url(self, invoice) -> str:
         """DEPRECATED: site.pro отдаёт PDF напрямую. Используйте `download_invoice_pdf()` или
         `save_invoice_pdf_to_attachment()`. Метод оставлен для обратной совместимости и
         возвращает data-URL с base64-закодированным PDF (или пустую строку)."""
