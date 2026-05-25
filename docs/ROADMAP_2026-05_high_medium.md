@@ -203,12 +203,18 @@ Throttle 20–30/min только замедляет scraping, не защища
 
 **Этапы** (отдельные PR):
 
-- [ ] `H6a` — `core/models.py` → пакет `core/models/`:
+- [x] `H6a` — `core/models.py` → пакет `core/models/`:
   - `__init__.py` реэкспортирует все классы (чтобы `from core.models import X` работало);
-  - `containers.py`, `cars.py`, `clients.py`, `warehouses.py`, `lines.py`,
-    `notifications.py`, `vin_blacklist.py`, `tracking.py` и т.д.
-  - Все `app_label = 'core'` на месте, миграций не добавляется.
-  - Тесты должны пройти **без изменения**.
+  - подмодули: `_vehicle_types.py`, `lines.py`, `carriers.py`, `clients.py`,
+    `warehouses.py`, `company.py`, `containers.py`, `cars.py`,
+    `services.py`, `auto_transport.py`, `tasks.py`.
+  - Все `app_label = 'core'` на месте, миграций не добавляется
+    (`makemigrations --check --dry-run` → No changes detected).
+  - Тесты прошли **без изменений** (166 passed, был тот же набор
+    до сплита).
+  - Самый большой файл — `cars.py` (621 строка), остальные ≤ 280 строк.
+  - Реэкспорт `models_contact/email/invoice_audit/monitoring/scans`
+    сохранён в `__init__.py` (как был в хвосте старого `models.py`).
 - [ ] `H6b` — `core/admin_billing.py` → `core/admin/billing/` пакет.
 - [ ] `H6c` — `core/views_website.py` → `core/views_website/` пакет.
 - [ ] `H6d` — `core/signals.py` → разнести по доменам:
