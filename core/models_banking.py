@@ -12,7 +12,9 @@
 """
 
 import logging
-from datetime import UTC
+from datetime import timezone
+
+UTC = timezone.utc
 
 from django.db import models
 from django.utils import timezone
