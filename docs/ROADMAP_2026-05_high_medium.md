@@ -166,19 +166,26 @@ Throttle 20–30/min только замедляет scraping, не защища
 
 **Действия**:
 
-- [ ] Локализовать все `AllowAny` / открытые view: `rg 'AllowAny|permission_classes\s*=\s*\[\]' core/`
-      + URL-конфиги.
-- [ ] Для фото: signed URL (Django storages → S3 presigned, либо
-      собственный HMAC-токен на час). Реализация в `core/views_website.py`
-      и `core/serializers_*.py`.
-- [ ] Для tracking-страниц: rate limit оставить, но добавить **CAPTCHA**
-      (hCaptcha free) на форму, либо доступ только по уникальной ссылке
-      из письма клиенту (что фактически signed URL).
-- [ ] CSP-заголовки для страниц с фото — запретить hotlinking.
-- [ ] Логировать массовые загрузки в Sentry / отдельный лог.
+- [x] Локализовать все `AllowAny` / открытые view: аудит выполнен,
+      зафиксирован в `docs/PUBLIC_ENDPOINTS.md` (раздел 1).
+- [x] **H5a:** Для фото — signed URL через `django.core.signing.TimestampSigner`
+      (HMAC по `SECRET_KEY`, TTL = 1 час). Реализовано в
+      `core/services/signed_urls.py` + новые view `serve_signed_photo`
+      и обновлённые `get_container_photos` / `download_photos_archive`
+      (`container_token` обязателен для ZIP, фильтрация `photo_ids` по
+      контейнеру). Тесты: `core/tests/test_signed_photos.py` (18/18 ok).
+- [x] Логирование загрузок: `logger.info` на каждый `serve_signed_photo`
+      и `download_photos_archive` (см. `docs/PUBLIC_ENDPOINTS.md`, §3.3).
+- [ ] **H5b (TODO):** CAPTCHA (hCaptcha) на формы `track_shipment` и
+      `ContactMessageViewSet`. План в `docs/PUBLIC_ENDPOINTS.md`, §4.2.
+- [ ] **H5c (TODO):** CSP / Referrer-Policy / CORP-заголовки + закрыть
+      `/media/photos/` в nginx через `X-Accel-Redirect`. План в
+      `docs/PUBLIC_ENDPOINTS.md`, §4.1 и §4.3.
 
-**DoD**: фото невозможно скачать без подписи; tracking-форма не
-ботабельна; в `docs/PUBLIC_ENDPOINTS.md` зафиксирована модель угроз.
+**DoD**: фото невозможно скачать без свежей подписи (H5a — выполнено,
+старые прямые ссылки `/media/photos/...` всё ещё доступны через nginx,
+закрытие в H5c). В `docs/PUBLIC_ENDPOINTS.md` зафиксирована модель угроз
+и план для оставшихся пунктов.
 
 ---
 

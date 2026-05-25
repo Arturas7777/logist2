@@ -46,5 +46,9 @@ urlpatterns = [
     # Container Photos API
     path('api/container-photos/<str:container_number>/', views_website.get_container_photos, name='get_container_photos'),
     path('api/download-photos-archive/', views_website.download_photos_archive, name='download_photos_archive'),
+
+    # Signed photo URL (H5a): отдаёт ContainerPhoto/CarPhoto только при
+    # валидной TimestampSigner-подписи. См. core/services/signed_urls.py.
+    path('photo/s/<str:token>/', views_website.serve_signed_photo, name='serve_signed_photo'),
 ]
 

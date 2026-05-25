@@ -288,6 +288,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const photosModal = new bootstrap.Modal(document.getElementById('photosModal'));
     
     let currentContainerNumber = null;
+    // H5a: токен из ответа get_container_photos. Нужен для download_photos_archive.
+    let currentContainerToken = null;
     const urlParams = new URLSearchParams(window.location.search);
     const autoTrack = urlParams.get('track');
     let autoShowPhotos = urlParams.get('photos') === '1';
@@ -472,6 +474,9 @@ document.addEventListener('DOMContentLoaded', function() {
             photosLoading.style.display = 'none';
             
             if (data.success && data.photos.length > 0) {
+                // H5a: сохраняем подписанный токен для последующего ZIP-запроса.
+                currentContainerToken = data.container_token || null;
+
                 // Очищаем все grid'ы
                 photosGridAll.innerHTML = '';
                 photosGridInContainer.innerHTML = '';
@@ -628,6 +633,10 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function downloadPhotosArchive(photoIds) {
+        // H5a: на сервер обязательно передаём container_token, который
+        // мы получили в ответе get_container_photos. Без него endpoint
+        // вернёт 400 — это защищает от перебора photo_ids в обход
+        // галереи.
         fetch('/api/download-photos-archive/', {
             method: 'POST',
             headers: {
@@ -635,7 +644,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
             },
             body: JSON.stringify({
-                photo_ids: photoIds
+                photo_ids: photoIds,
+                container_token: currentContainerToken || ''
             })
         })
         .then(response => {
