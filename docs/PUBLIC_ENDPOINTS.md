@@ -24,7 +24,7 @@
 | `/api/ai-chat/` | POST | `ai_chat` | `AllowAny` | `AIChatThrottle` | SessionAuthentication опционально, лимит на IP |
 | `/api/container-photos/<num>/` | GET | `get_container_photos` | `AllowAny` | `PhotoDownloadThrottle` (30/min) | **signed URL'ы в ответе (H5a)**, кэш 15 мин |
 | `/api/download-photos-archive/` | POST | `download_photos_archive` | `AllowAny` | `PhotoDownloadThrottle` (30/min) | **обязателен `container_token` (H5a)**, фильтрация `photo_ids` по контейнеру |
-| `/photo/s/<token>/` | GET | `serve_signed_photo` | `AllowAny` | `PhotoDownloadThrottle` (30/min) | **TimestampSigner-подпись, TTL=1ч (H5a)**, only `is_public=True` |
+| `/photo/s/<token>/` | GET | `serve_signed_photo` | `AllowAny` | — (см. ниже) | **TimestampSigner-подпись, TTL=1ч (H5a)**, only `is_public=True` |
 
 Закрытые (`@login_required` / `IsAuthenticated` / `IsClientUser`) эндпоинты
 здесь не перечисляются — их security-модель — стандартная аутентификация
@@ -76,7 +76,27 @@ Django/DRF.
   - если фронт не передал токен, либо токен битый — `400` / `403` / `410` (для просроченного).
 - **Эффект:** клиент должен сперва открыть `get_container_photos` для нужного контейнера. Сторонний скрипт, не имеющий токена, отлуплен на этапе валидации до того, как запустится ORM-запрос и сборка ZIP.
 
-### 3.3 Логирование
+### 3.3 Почему `serve_signed_photo` без throttle
+
+Изначально я навесил `PhotoDownloadThrottle` (30/min) и на отдачу
+файла, но галерея с 200+ фото на lazy-load выкачивает превью пачками и
+быстро ловит 429. Раньше `/media/...` отдавал nginx **без всяких
+лимитов**, и галерея работала.
+
+Парсинг ограничен не на стадии отдачи, а на стадии **выдачи
+подписей**:
+
+- `get_container_photos` под `PhotoDownloadThrottle` (30/min) → не
+  больше 30 уникальных контейнеров в минуту;
+- каждая подпись живёт всего час, после чего возобновляется через тот
+  же rate-limited endpoint;
+- без знания номера контейнера или утечки signed URL получить файл
+  невозможно.
+
+Это та же модель, что у S3 pre-signed URL'ов — выдача под лимитом,
+сама отдача нет.
+
+### 3.4 Логирование
 
 - Каждый успешный `serve_signed_photo` → `logger.info(...)` с `kind`, `photo_id`, `variant`, `parent_id`, `REMOTE_ADDR`.
 - Каждый успешный `download_photos_archive` → `logger.info(...)` с `container_number`, `photo_ids`, `REMOTE_ADDR`, `size`.

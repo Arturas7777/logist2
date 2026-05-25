@@ -1069,7 +1069,6 @@ def download_photos_archive(request):
 @api_view(['GET'])
 @authentication_classes([])
 @permission_classes([AllowAny])
-@throttle_classes([PhotoDownloadThrottle])
 def serve_signed_photo(request, token):
     """Отдаёт media-файл фотографии по подписанному токену.
 
@@ -1077,6 +1076,12 @@ def serve_signed_photo(request, token):
     проверяется по SECRET_KEY с TTL `PHOTO_URL_TTL` (по умолчанию 1 час).
     Без валидного токена скачать файл невозможно — даже если кто-то знает
     `photo_id`.
+
+    Throttle намеренно НЕ навешан: в галерее одного контейнера живут
+    сотни превью, lazy-load быстро съедает 30/min лимит и ломает UX.
+    Парсинг ограничен на этапе **выдачи подписей** —
+    `get_container_photos` под `PhotoDownloadThrottle` (30/min), а сами
+    подписи живут только 1 час.
 
     Логирование: каждый скачанный файл записывается в `logger.info(...)`
     с client_ip, photo_id, container/car_id — для аудита массовых
