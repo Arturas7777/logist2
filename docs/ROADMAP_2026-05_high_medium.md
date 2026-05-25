@@ -231,7 +231,27 @@ Throttle 20–30/min только замедляет scraping, не защища
     `manage.py check` без warnings.
   - Импорт в `core/admin/__init__.py` переведён на
     `from core.admin.billing import ...`.
-- [ ] `H6c` — `core/views_website.py` → `core/views_website/` пакет.
+- [x] `H6c` — `core/views_website.py` → пакет `core/views_website/`:
+  - `__init__.py` реэкспортирует все 25 view-функций/класса (чтобы
+    `core/urls_website.py` с `from . import views_website` +
+    `views_website.<name>` работал без изменений);
+  - подмодули: `public.py` (home/about/services/contact/news),
+    `client_portal.py` (dashboard/car/container detail),
+    `api.py` (DRF ViewSet'ы + `IsClientUser`),
+    `tracking.py` (`track_shipment`),
+    `photos_authed.py` (`download_*_photo*`, login-required),
+    `ai_chat.py` (чат + история + локальный fallback
+    `get_ai_response`), `signed_photos.py` (H5a:
+    `get_container_photos` / `download_photos_archive` /
+    `serve_signed_photo`).
+  - Самый большой файл — `ai_chat.py` (476 строк), остальные ≤ 280;
+    DoD ≤ 700 выполнен.
+  - Миграций не добавляется
+    (`makemigrations --check --dry-run` → No changes detected),
+    тесты прошли **без изменений** (166 passed), `manage.py check` ок.
+  - Smoke: 25/25 имён реэкспортируются, все 19 URL `website:*`
+    резолвятся, локальный сайт `/`, `/about/`, `/news/`,
+    `/api/container-photos/MRSU5522473/` отвечают 200.
 - [ ] `H6d` — `core/signals.py` → разнести по доменам:
       `signals/lifecycle.py`, `signals/billing.py`, `signals/notifications.py`,
       `signals/banking.py`. Регистрация — в `core/apps.py` (`ready()`).
