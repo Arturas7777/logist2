@@ -9,7 +9,78 @@
 
 ### Added
 
-- Заполнить по мере появления новых изменений после последнего релиза.
+- **M1**: `CHANGELOG.md` (этот файл) + обновлённый `README.md`
+  (актуальный test count, H6-структура core-пакета).
+- **M4**: новый CI-job `tests-with-migrations` в `.github/workflows/ci.yml`
+  с ночным расписанием — прокатывает все миграции на PostgreSQL и
+  проверяет `makemigrations --check`. Новый профиль настроек
+  `logist2.settings.test_migrations` (включены миграции, реальный PG).
+- **M5**: `autocomplete_fields` для тяжёлых FK в админке —
+  `CarAdmin` (client/warehouse/line/carrier/container),
+  `ContainerAdmin` (line/warehouse),
+  `TransactionAdmin` (11 FK от/к Client/Warehouse/Line/Carrier/Company + invoice),
+  `ClientUserAdmin/NewsPostAdmin/TrackingRequestAdmin/AutoTransportAdmin/
+  BankConnectionAdmin/SiteProConnectionAdmin`.
+  Расширены `search_fields` в `CarAdmin` (`client__name`,
+  `container__number`) и `TransactionAdmin` (`from_client__name`,
+  `to_client__name`).
+- **M6**: `scripts/install_systemd.sh` — идемпотентная установка
+  systemd-unit'ов с поддержкой `PROJECT_DIR` и автоматическим бэкапом
+  при отличиях.
+- **M7**: structured logging:
+  - `core/middleware_logging.py` — `RequestContextMiddleware` сохраняет
+    `request_id` (из `X-Request-ID` или сгенерированный uuid),
+    `user_id`, `path`, `method` в `contextvars` (async-safe);
+    `RequestContextFilter` пристёгивает их к каждой LogRecord;
+    `get_request_id()/set_request_id()` для корреляции в Celery-таски;
+    middleware возвращает `X-Request-ID` в Response header.
+  - `RotatingFileHandler` (50 MB × 10) в `logist2/settings/base.py`
+    включается при `LOG_DIR=...` env-var; не активен в dev/CI.
+  - JSON-формат через `python-json-logger>=3.1` при `LOG_FORMAT=json`.
+  - `docs/LOGGING.md` — гайд по env-vars, jq-cookbook, Sentry, откат.
+- **scripts/gunicorn.service** — добавлен (раньше был только устаревший
+  `logist2.service`); все unit'ы синхронизированы с прод-конфигом
+  (paths `/var/www/www-root/data/www/logist2`, OOM-guardrails,
+  `EnvironmentFile=.env`).
+
+### Changed
+
+- **M3**: ruff `select` расширен до `["E","F","W","I","UP","B","C4","DJ","RUF"]`
+  (был только базовый набор). Добавлен продуманный `ignore`-список
+  (Cyrillic ambiguous-chars, Django-специфика, `RUF012` для
+  `ModelAdmin.list_display`, settings star-imports). `target-version = "py310"`
+  + `UP017` в ignore (защита от регрессии `datetime.UTC` на Python 3.10).
+- **M3**: `django-upgrade` pre-commit hook — `--target-version=5.2`
+  (был `5.1`).
+- **M3 (pre-commit)**: ruff-pre-commit получил явный
+  `--target-version=py310` (страховка от регрессии после
+  hotfix `a91de68`).
+- **M7**: Sentry `LoggingIntegration` теперь `level=INFO, event_level=ERROR`
+  — INFO/WARNING больше не создают отдельные events, остаются только
+  breadcrumbs для контекста ошибок.
+- **Git workflow rule** (`.cursor/rules/git-workflow.mdc`):
+  добавлен шаг «обновить CHANGELOG» в раздел «Заканчиваем работу».
+
+### Fixed
+
+- **Python 3.10 совместимость** (`a91de68`): откат автоматической
+  подмены `datetime.timezone.utc` → `datetime.UTC` (3.11+) в трёх
+  файлах (`models_banking.py`, `services/gmail_client.py`,
+  `tests/test_email_matcher.py`). Возникло после M3
+  `ruff --unsafe-fixes` и уронило `daphne` на проде.
+- **Select2 + warehouse_address.js** (`88112ed`): после M5
+  (`autocomplete_fields` для warehouse) JS не ловил `change`-event
+  от Select2, т.к. слушал нативный `addEventListener('change', ...)`.
+  Переподписка через `django.jQuery(...).on('change', ...)` с
+  fallback на нативный лиснер.
+
+### Removed
+
+- **M2**: переменная `CORS_ALLOWED_ORIGINS` из `env.example` —
+  фронтенд живёт на том же origin, `django-cors-headers` не
+  установлен. Закомментировано как подсказка на будущее.
+- **M6**: устаревшие unit-файлы `scripts/logist2.service` (старый
+  путь к gunicorn) и `scripts/caromoto-lt.service` (легаси неиспользуемый).
 
 ---
 

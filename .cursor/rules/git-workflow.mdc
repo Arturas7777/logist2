@@ -28,10 +28,15 @@ alwaysApply: true
 
 Когда пользователь говорит «заканчиваем работу» (или похожее), выполни по порядку:
 
-1. `git add .` + `git commit` — закоммитить все изменения (сообщение по типу: fix/feat/refactor/docs)
-2. `git push origin master` — запушить в GitHub
-3. `.\scripts\deploy.ps1` — задеплоить на сервер
-4. Сообщить пользователю результат деплоя
+1. Если в текущей сессии были значимые изменения (новая функциональность,
+   важный фикс, breaking change) — добавь запись в `CHANGELOG.md` под
+   секцию `[Unreleased]` в формате Keep a Changelog (Added / Changed /
+   Fixed / Removed). Мелочи (опечатки в комментариях, локальные tweaks)
+   можно пропустить.
+2. `git add .` + `git commit` — закоммитить все изменения (сообщение по типу: fix/feat/refactor/docs)
+3. `git push origin master` — запушить в GitHub
+4. `.\scripts\deploy.ps1` — задеплоить на сервер
+5. Сообщить пользователю результат деплоя
 
 ## Типы коммитов
 
