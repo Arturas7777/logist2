@@ -1061,12 +1061,33 @@
     // Инициализация Select2 для автомобилей с цветами по статусу
     var carAdminBaseUrl = '/admin/core/car/';
     
+    // Server-side AJAX поиск машин (post-M5):
+    // раньше пред-загружали 200 <option>-ов в HTML и фильтровали локально —
+    // машины с VIN вне топ-200 не находились. Теперь поиск идёт через
+    // /admin/core/newinvoice/cars-autocomplete/?term=... без ограничения
+    // top-N (с лимитом 20 на запрос).
     $('#cars_select').select2({
         placeholder: 'Введите VIN или марку для поиска...',
         allowClear: true,
+        minimumInputLength: 1,
+        ajax: {
+            url: '{% url "admin:newinvoice_cars_autocomplete" %}',
+            dataType: 'json',
+            delay: 200,
+            data: function(params) { return { term: params.term || '' }; },
+            processResults: function(data) {
+                return {
+                    results: (data.results || []).map(function(c) {
+                        return { id: c.id, text: c.text, status: c.status };
+                    })
+                };
+            },
+            cache: true
+        },
         templateResult: function(state) {
             if (!state.id) return state.text;
-            var status = $(state.element).data('status');
+            // status может прийти и из <option data-status="">, и из AJAX
+            var status = state.status || ($(state.element).data('status') || '');
             var statusLabels = {
                 'FLOATING': '🚢 В пути',
                 'IN_PORT': '⚓ В порту',
@@ -1078,7 +1099,7 @@
         },
         templateSelection: function(state) {
             if (!state.id) return state.text;
-            var status = $(state.element).data('status');
+            var status = state.status || ($(state.element).data('status') || '');
             var link = carAdminBaseUrl + state.id + '/change/';
             return $('<a href="' + link + '" target="_blank" data-status="' + status + '" ' +
                 'onclick="event.stopPropagation();" ' +

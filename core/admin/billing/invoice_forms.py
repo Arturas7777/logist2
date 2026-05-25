@@ -73,9 +73,12 @@ class NewInvoiceFormHandlerMixin:
         выбираются через AJAX-эндпоинты ``/core/api/search-*``). Поэтому:
 
         1. Убираем ``companies`` / ``clients`` из контекста полностью.
-        2. ``cars`` ограничиваем актуальными (не ``TRANSFERRED``) + 200 шт.
-           Уже привязанные к инвойсу машины (любого статуса) добавляются
-           поверх, чтобы они оставались видны при редактировании.
+        2. ``cars`` теперь — только УЖЕ выбранные машины этого инвойса
+           (или пустой queryset при создании). Раньше клали 200 свежих
+           машин для локального Select2-поиска; теперь поиск идёт
+           server-side через ``cars-autocomplete/`` AJAX-endpoint, и
+           прокачивать сотни <option> на каждый рендер change-формы
+           больше не нужно (страница стала легче ≈30–50 KB).
         """
         import os
 
@@ -93,17 +96,18 @@ class NewInvoiceFormHandlerMixin:
             if invoice:
                 selected_car_ids = list(invoice.cars.values_list("pk", flat=True))
 
-        # Активные машины + всё, что уже выбрано для редактируемого инвойса.
-        cars_qs = Car.objects.exclude(status="TRANSFERRED")
+        # Только выбранные — Select2 их покажет как pre-selected, а
+        # дальше пользователь ищет server-side. При создании нового
+        # инвойса список пуст.
         if selected_car_ids:
-            from django.db.models import Q
-
-            cars_qs = Car.objects.filter(Q(pk__in=selected_car_ids) | ~Q(status="TRANSFERRED"))
-        extra_context["cars"] = (
-            cars_qs.select_related("client")
-            .only("id", "vin", "brand", "year", "status", "client__name")
-            .order_by("-id")[:200]
-        )
+            extra_context["cars"] = (
+                Car.objects.filter(pk__in=selected_car_ids)
+                .select_related("client")
+                .only("id", "vin", "brand", "year", "status", "client__name")
+                .order_by("-id")
+            )
+        else:
+            extra_context["cars"] = Car.objects.none()
         extra_context["expense_categories"] = (
             ExpenseCategory.objects.filter(is_active=True).only("id", "name").order_by("order", "name")
         )

@@ -35,8 +35,61 @@ class NewInvoiceUrlsMixin:
                 self.admin_site.admin_view(self.calc_cars_total_view),
                 name="calc_cars_total",
             ),
+            path(
+                "cars-autocomplete/",
+                self.admin_site.admin_view(self.cars_autocomplete_view),
+                name="newinvoice_cars_autocomplete",
+            ),
         ]
         return custom_urls + urls
+
+    def cars_autocomplete_view(self, request):
+        """Server-side поиск машин для Select2 на change-форме инвойса.
+
+        Раньше change_form рендерил пред-список 200 машин и Select2
+        фильтровал локально — машины вне топ-200 не находились по VIN.
+        Теперь — server-side поиск по term без лимита top-N.
+
+        Query params:
+          term — подстрока для поиска (VIN / brand / client name);
+                 пустая → 20 последних созданных активных машин.
+
+        Response (Select2-совместимый):
+          {"results": [{"id": int, "text": str, "status": str}, ...]}
+        """
+        from django.db.models import Q
+
+        from core.models import Car
+
+        term = (request.GET.get("term") or "").strip()
+        # Машины, уже находящиеся в TRANSFERRED, скрываем — соответствует
+        # старой логике `cars_qs.exclude(status="TRANSFERRED")`.
+        qs = (
+            Car.objects.exclude(status="TRANSFERRED")
+            .select_related("client")
+            .only("id", "vin", "brand", "year", "status", "client__name")
+        )
+        if term:
+            qs = qs.filter(
+                Q(vin__icontains=term)
+                | Q(brand__icontains=term)
+                | Q(client__name__icontains=term)
+            )
+        qs = qs.order_by("-id")[:20]
+
+        def _text(car):
+            label = f"{car.brand or ''} {car.year or ''} ({car.vin})".strip()
+            if car.client_id:
+                label += f" - {car.client.name}"
+            return label
+
+        return JsonResponse(
+            {
+                "results": [
+                    {"id": c.pk, "text": _text(c), "status": c.status} for c in qs
+                ],
+            }
+        )
 
     def calc_cars_total_view(self, request):
         """AJAX: предварительная сумма по выбранным автомобилям и выставителю."""
