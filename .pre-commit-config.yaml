@@ -3,7 +3,13 @@ repos:
     rev: v0.9.10
     hooks:
       - id: ruff
-        args: [--fix]
+        # --target-version=py310 дублирует [tool.ruff] из pyproject.toml,
+        # это defensive guard: pre-commit может игнорировать pyproject в
+        # некоторых сценариях (CI без рабочего dir, isolated tmpdir),
+        # а UP-правила для 3.11+ ломают прод (Python 3.10 на VPS).
+        # См. fix-коммит a91de68 (datetime.UTC → ImportError) и
+        # docs/ROADMAP_2026-05_high_medium.md → M3.
+        args: [--fix, --target-version=py310]
       - id: ruff-format
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -22,4 +28,6 @@ repos:
     hooks:
       - id: django-upgrade
         # Django версия из requirements.txt (Django==5.2.14).
+        # У django-upgrade нет Python-target — он преобразует только
+        # Django-API. Python-совместимость рулится ruff (см. выше).
         args: [--target-version, "5.2"]

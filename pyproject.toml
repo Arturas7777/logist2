@@ -77,6 +77,13 @@ ignore = [
     #   на отдельный refactor (см. M3 в roadmap).
     "B904",     # raise-without-from-inside-except
     "UP035",    # deprecated-import (typing → collections.abc)
+    # — UP017 (datetime.timezone.utc → datetime.UTC) требует Python 3.11+.
+    #   Прод-сервер на 3.10 (см. scripts/*.service / README). При
+    #   `target-version = "py310"` ruff и так не должен применять UP017,
+    #   но `--unsafe-fixes` исторически уже один раз заменил импорт
+    #   и уронил daphne (см. fix-коммит a91de68). Подавляем явно как
+    #   defensive guard от регрессий при будущих ruff/pyupgrade-апдейтах.
+    "UP017",    # datetime-timezone-utc
     "B007",     # unused-loop-control-variable
     "E722",     # bare-except (5 случаев, точечно обернуть отдельным PR)
     "E741",     # ambiguous-variable-name (l/I/O)
