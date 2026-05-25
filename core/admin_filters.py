@@ -1,5 +1,3 @@
-import json
-
 from django.contrib.admin import SimpleListFilter
 from django.utils.translation import gettext_lazy as _
 
@@ -113,35 +111,75 @@ class MultiWarehouseFilter(SimpleListFilter):
 
 
 class ClientAutocompleteFilter(SimpleListFilter):
-    """Фильтр клиентов с автодополнением (поиск по имени)"""
+    """Фильтр клиентов с server-side autocomplete.
+
+    Раньше (до post-M5 рефакторинга) фильтр прокачивал ВСЕХ клиентов
+    в JSON прямо в HTML changelist'а — sidebar раздувался по мере
+    роста справочника (200+ клиентов = ~30 KB лишнего HTML на каждой
+    странице списка).
+
+    Теперь — server-side AJAX (`/admin/clients-autocomplete/?term=...`),
+    `lookups()` пустой, при наличии value дополнительно подгружаем
+    имя выбранного клиента (один запрос по PK) для отображения в
+    "✓ Иванов" блоке.
+
+    Чтобы переиспользовать для других FK на Client (например
+    `NewInvoice.recipient_client`), достаточно унаследовать и
+    переопределить `field_name` (вычисляется `parameter_name`):
+
+        class RecipientClientAutocompleteFilter(ClientAutocompleteFilter):
+            title = "Получатель"
+            field_name = "recipient_client"
+    """
+
     title = _('Клиент')
-    parameter_name = 'client__id__exact'
+    field_name = 'client'
     template = 'admin/client_autocomplete_filter.html'
 
+    @property
+    def parameter_name(self):  # type: ignore[override]
+        return f"{self.field_name}__id__exact"
+
     def lookups(self, request, model_admin):
-        from core.models import Client
-        return Client.objects.values_list('id', 'name').order_by('name')
+        # Возвращаем пустой список — данные подгружаются через AJAX.
+        # Django требует, чтобы lookups вернул что-то truthy, иначе
+        # фильтр не отрисует choices(). Возвращаем sentinel для
+        # current value (если выбран), иначе пустой кортеж — choices()
+        # сам отдаст единственный yield.
+        return ()
+
+    def has_output(self):  # type: ignore[override]
+        # Sidebar показывается всегда (для поискового поля), независимо
+        # от наличия lookups.
+        return True
 
     def queryset(self, request, queryset):
         if self.value():
-            return queryset.filter(client_id=self.value())
+            return queryset.filter(**{f"{self.field_name}_id": self.value()})
         return queryset
 
     def choices(self, changelist):
-        clients_data = [{'id': str(pk), 'text': name} for pk, name in self.lookup_choices]
-
         current_value = self.value()
         current_text = ''
         if current_value:
-            lookup = {str(pk): name for pk, name in self.lookup_choices}
-            current_text = lookup.get(str(current_value), '')
+            from core.models import Client
+            current_text = (
+                Client.objects.filter(pk=current_value).values_list('name', flat=True).first()
+                or ''
+            )
 
         yield {
             'selected': current_value is None,
             'query_string': changelist.get_query_string(remove=[self.parameter_name]),
             'display': _('Все'),
-            'clients_json': json.dumps(clients_data),
             'current_value': current_value or '',
             'current_text': current_text,
             'parameter_name': self.parameter_name,
         }
+
+
+class RecipientClientAutocompleteFilter(ClientAutocompleteFilter):
+    """ClientAutocompleteFilter для `NewInvoice.recipient_client`."""
+
+    title = _('Получатель')
+    field_name = 'recipient_client'

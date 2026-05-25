@@ -5,140 +5,133 @@
 {% for choice in choices %}
 <ul>
 <li style="padding: 0; list-style: none;">
-    <!-- Поле поиска -->
-    <input type="text" 
-           id="client-search-input" 
-           placeholder="🔍 Введите имя клиента..."
-           autocomplete="off"
-           class="client-search-field">
-    
-    <!-- Результаты поиска -->
-    <div id="client-search-results" class="client-search-results"></div>
-    
+    <input type="text"
+           class="client-search-field client-ac-input"
+           data-param="{{ choice.parameter_name }}"
+           placeholder="🔍 {% translate 'Введите имя клиента…' %}"
+           autocomplete="off">
+
+    <div class="client-search-results client-ac-results" hidden></div>
+
     {% if choice.current_value %}
     <div class="client-selected">
         <span>✓ {{ choice.current_text }}</span>
-        <a href="{{ choice.query_string }}" title="Сбросить">✕</a>
+        <a href="{{ choice.query_string }}" title="{% translate 'Сбросить' %}">✕</a>
     </div>
     {% endif %}
 </li>
 </ul>
+{% endfor %}
 
 <script type="text/javascript">
 (function() {
-    var clientsData = {{ choice.clients_json|safe }};
-    var paramName = '{{ choice.parameter_name }}';
-    
-    function initSearch() {
-        var input = document.getElementById('client-search-input');
-        var results = document.getElementById('client-search-results');
-        if (!input || !results) return;
-        
+    if (window.__clientAcInit) return;
+    window.__clientAcInit = true;
+
+    var AJAX_URL = '{% url "admin-clients-autocomplete" %}';
+    var DEBOUNCE_MS = 200;
+
+    function debounce(fn, wait) {
+        var t;
+        return function() {
+            var ctx = this, args = arguments;
+            clearTimeout(t);
+            t = setTimeout(function() { fn.apply(ctx, args); }, wait);
+        };
+    }
+
+    function attach(input) {
+        var results = input.parentElement.querySelector('.client-ac-results');
+        var paramName = input.dataset.param;
         var selectedIndex = -1;
-        var filteredClients = [];
-        
-        function showResults(clients) {
-            filteredClients = clients;
+        var items = [];
+
+        function render(list) {
+            items = list;
             selectedIndex = -1;
-            
-            if (clients.length === 0) {
-                results.innerHTML = '<div class="no-results">Не найдено</div>';
-                results.style.display = 'block';
+            if (!list.length) {
+                results.innerHTML = '<div class="no-results">{% translate "Не найдено" %}</div>';
+                results.hidden = false;
                 return;
             }
-            
             var html = '';
-            clients.forEach(function(client, index) {
-                html += '<div class="client-option" data-id="' + client.id + '" data-index="' + index + '">' +
-                        client.text + '</div>';
+            list.forEach(function(c, i) {
+                html += '<div class="client-option" data-id="' + c.id + '" data-index="' + i + '">' + c.text + '</div>';
             });
             results.innerHTML = html;
-            results.style.display = 'block';
-            
-            var options = results.querySelectorAll('.client-option');
-            options.forEach(function(opt) {
-                opt.addEventListener('click', function() {
-                    selectClient(this.dataset.id);
-                });
-                opt.addEventListener('mouseenter', function() {
-                    highlightOption(parseInt(this.dataset.index));
-                });
+            results.hidden = false;
+            results.querySelectorAll('.client-option').forEach(function(opt) {
+                opt.addEventListener('click', function() { go(this.dataset.id); });
+                opt.addEventListener('mouseenter', function() { highlight(parseInt(this.dataset.index, 10)); });
             });
         }
-        
-        function highlightOption(index) {
-            var options = results.querySelectorAll('.client-option');
-            options.forEach(function(opt, i) {
-                opt.style.backgroundColor = (i === index) ? 'var(--selected-row)' : '';
+
+        function highlight(idx) {
+            var opts = results.querySelectorAll('.client-option');
+            opts.forEach(function(o, i) {
+                o.style.backgroundColor = (i === idx) ? 'var(--selected-row)' : '';
             });
-            selectedIndex = index;
+            selectedIndex = idx;
         }
-        
-        function selectClient(clientId) {
+
+        function go(clientId) {
             var url = new URL(window.location.href);
             url.searchParams.set(paramName, clientId);
             window.location.href = url.toString();
         }
-        
+
+        function search(term) {
+            fetch(AJAX_URL + '?term=' + encodeURIComponent(term), {credentials: 'same-origin'})
+                .then(function(r) { return r.ok ? r.json() : {results: []}; })
+                .then(function(data) { render(data.results || []); })
+                .catch(function() { render([]); });
+        }
+
+        var doSearch = debounce(function() { search(input.value.trim()); }, DEBOUNCE_MS);
+
         input.addEventListener('input', function() {
-            var query = this.value.toLowerCase().trim();
-            
-            if (query.length < 1) {
-                results.style.display = 'none';
+            if (this.value.trim().length < 1) {
+                results.hidden = true;
                 return;
             }
-            
-            var filtered = clientsData.filter(function(client) {
-                return client.text.toLowerCase().indexOf(query) !== -1;
-            });
-            
-            showResults(filtered.slice(0, 15));
+            doSearch();
         });
-        
+
+        input.addEventListener('focus', function() {
+            if (this.value.trim().length >= 1) doSearch();
+        });
+
         input.addEventListener('keydown', function(e) {
-            if (results.style.display === 'none') return;
-            
+            if (results.hidden) return;
             if (e.key === 'ArrowDown') {
                 e.preventDefault();
-                if (selectedIndex < filteredClients.length - 1) {
-                    highlightOption(selectedIndex + 1);
-                }
+                if (selectedIndex < items.length - 1) highlight(selectedIndex + 1);
             } else if (e.key === 'ArrowUp') {
                 e.preventDefault();
-                if (selectedIndex > 0) {
-                    highlightOption(selectedIndex - 1);
-                }
+                if (selectedIndex > 0) highlight(selectedIndex - 1);
             } else if (e.key === 'Enter') {
                 e.preventDefault();
-                if (selectedIndex >= 0 && filteredClients[selectedIndex]) {
-                    selectClient(filteredClients[selectedIndex].id);
-                }
+                if (selectedIndex >= 0 && items[selectedIndex]) go(items[selectedIndex].id);
             } else if (e.key === 'Escape') {
-                results.style.display = 'none';
+                results.hidden = true;
             }
         });
-        
+
         document.addEventListener('click', function(e) {
             if (!input.contains(e.target) && !results.contains(e.target)) {
-                results.style.display = 'none';
-            }
-        });
-        
-        input.addEventListener('focus', function() {
-            if (this.value.length >= 1) {
-                var query = this.value.toLowerCase().trim();
-                var filtered = clientsData.filter(function(client) {
-                    return client.text.toLowerCase().indexOf(query) !== -1;
-                });
-                showResults(filtered.slice(0, 15));
+                results.hidden = true;
             }
         });
     }
-    
+
+    function init() {
+        document.querySelectorAll('.client-ac-input').forEach(attach);
+    }
+
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initSearch);
+        document.addEventListener('DOMContentLoaded', init);
     } else {
-        setTimeout(initSearch, 50);
+        setTimeout(init, 0);
     }
 })();
 </script>
@@ -158,22 +151,22 @@
     border-color: var(--primary, #417690);
     outline: none;
 }
-.client-search-field::placeholder {
-    color: var(--body-quiet-color, #999);
-}
+.client-search-field::placeholder { color: var(--body-quiet-color, #999); }
+
 .client-search-results {
-    display: none;
     position: absolute;
     z-index: 1000;
     background: var(--body-bg, #fff);
     border: 1px solid var(--hairline-color, #ccc);
     border-top: none;
     border-radius: 0 0 4px 4px;
-    max-height: 200px;
+    max-height: 220px;
     overflow-y: auto;
     width: calc(100% - 30px);
     box-shadow: 0 4px 8px rgba(0,0,0,0.15);
 }
+.client-search-results[hidden] { display: none; }
+
 .client-search-results .client-option {
     padding: 6px 10px;
     cursor: pointer;
@@ -181,17 +174,14 @@
     border-bottom: 1px solid var(--hairline-color, #eee);
     color: var(--body-fg, #333);
 }
-.client-search-results .client-option:hover {
-    background: var(--selected-row, #e8f4f8);
-}
-.client-search-results .client-option:last-child {
-    border-bottom: none;
-}
+.client-search-results .client-option:hover { background: var(--selected-row, #e8f4f8); }
+.client-search-results .client-option:last-child { border-bottom: none; }
 .client-search-results .no-results {
     padding: 8px 10px;
     color: var(--body-quiet-color, #999);
     font-size: 11px;
 }
+
 .client-selected {
     margin-top: 6px;
     padding: 5px 8px;
@@ -202,16 +192,11 @@
     align-items: center;
     font-size: 11px;
 }
-.client-selected span {
-    color: var(--body-fg, #333);
-}
+.client-selected span { color: var(--body-fg, #333); }
 .client-selected a {
     color: var(--delete-button-bg, #ba2121);
     text-decoration: none;
     font-weight: bold;
 }
-.client-selected a:hover {
-    color: var(--delete-button-hover-bg, #a41515);
-}
+.client-selected a:hover { color: var(--delete-button-hover-bg, #a41515); }
 </style>
-{% endfor %}

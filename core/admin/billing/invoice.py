@@ -18,6 +18,8 @@ from django.contrib import admin
 from core.admin_export import CSVExportMixin
 from core.models_billing import NewInvoice
 
+from core.admin_filters import RecipientClientAutocompleteFilter
+
 from .filters import InvoiceDirectionFilter
 from .inlines import InvoiceItemInline
 from .invoice_actions import NewInvoiceActionsMixin
@@ -67,11 +69,10 @@ class NewInvoiceAdmin(
         ("notes", "Примечания"),
     ]
 
-    class Media:
-        css = {
-            "all": ("admin/css/widgets.css",),
-        }
-        js = ("admin/js/SelectBox.js", "admin/js/SelectFilter2.js")
+    # post-M5: убрали `class Media` с `SelectFilter2.js` — это было нужно
+    # для встроенного Django filter_horizontal, который мы заменили на
+    # кастомный Select2 + server-side AJAX (см. change_form.html).
+    # widgets.css сохранять не имеет смысла, других widget'ов нет.
 
     list_display = (
         "number_display",
@@ -95,7 +96,10 @@ class NewInvoiceAdmin(
         "status",
         "category",
         "date",
-        "recipient_client",
+        # post-M5: было `"recipient_client"` — Django рисовал стену
+        # ссылок по всем клиентам в sidebar (100+ записей). Заменено
+        # на server-side autocomplete (core.admin_filters).
+        RecipientClientAutocompleteFilter,
     )
 
     search_fields = (
@@ -188,7 +192,9 @@ class NewInvoiceAdmin(
     inlines = [InvoiceItemInline]
 
     autocomplete_fields = ["linked_invoice"]
-    filter_horizontal = ("cars",)
+    # `cars` намеренно НЕ в filter_horizontal/autocomplete_fields —
+    # UI рисуется кастомным шаблоном `change_form.html` с Select2
+    # + AJAX в `cars-autocomplete/` (см. invoice_urls.py).
 
     actions = [
         "mark_as_issued",

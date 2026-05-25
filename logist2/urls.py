@@ -6,6 +6,7 @@ from rest_framework.routers import DefaultRouter
 from core.views import car_list_api, get_invoice_total, get_container_data, register_payment, get_client_balance, company_dashboard, get_payment_objects, search_partners_api, get_warehouse_cars_api, get_invoice_cars_api, comparison_dashboard, compare_car_costs_api, compare_client_costs_api, compare_warehouse_costs_api, get_discrepancies_api, get_available_services, add_services, get_warehouses, get_companies, add_cash_expense, add_cash_income, cash_wallet_reset, expense_analytics, upload_expense_receipt, personal_cards_page, personal_card_add, personal_transfer, personal_card_expense, personal_card_income, personal_card_deactivate, personal_card_delete, personal_card_balance_reset, health, ready, system_monitor_page, system_monitor_snapshot, system_monitor_history
 from core.routing import websocket_urlpatterns
 from core.api import CarViewSet, InvoiceViewSet
+from core.views_admin_autocomplete import clients_autocomplete
 from core.views_invoice_audit import (
     invoice_audit_list, invoice_audit_upload, invoice_audit_detail,
     invoice_audit_status, invoice_audit_delete, invoice_audit_reprocess,
@@ -123,6 +124,10 @@ urlpatterns += [
     path('core/', include('core.urls')),
 
     # ========== АДМИН ПАНЕЛЬ ==========
+    # Кастомный admin-AJAX endpoint должен стоять ДО `admin.site.urls`,
+    # иначе Django зарезолвит `/admin/...` в общую админку и отдаст 404
+    # (или попытается найти model admin с slug'ом 'clients-autocomplete').
+    path('admin/clients-autocomplete/', clients_autocomplete, name='admin-clients-autocomplete'),
     path('admin/', admin.site.urls),
 ]
 
