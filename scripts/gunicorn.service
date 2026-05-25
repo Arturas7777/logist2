@@ -1,0 +1,40 @@
+[Unit]
+Description=Gunicorn instance for logist2
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+User=www-root
+Group=www-root
+WorkingDirectory=/var/www/www-root/data/www/logist2
+Environment="PATH=/var/www/www-root/data/www/logist2/.venv/bin"
+Environment="DJANGO_SETTINGS_MODULE=logist2.settings.prod"
+EnvironmentFile=-/var/www/www-root/data/www/logist2/.env
+
+ExecStart=/var/www/www-root/data/www/logist2/.venv/bin/gunicorn \
+    --workers 3 \
+    --worker-class sync \
+    --max-requests 1000 \
+    --max-requests-jitter 100 \
+    --timeout 120 \
+    --graceful-timeout 30 \
+    --bind unix:/var/www/www-root/data/www/logist2/gunicorn.sock \
+    logist2.wsgi:application
+
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+# OOM guardrails (см. scripts/harden_server.sh + docs).
+MemoryHigh=1500M
+MemoryMax=1800M
+
+KillMode=mixed
+TimeoutStopSec=30
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

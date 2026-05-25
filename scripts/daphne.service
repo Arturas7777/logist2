@@ -1,5 +1,5 @@
 [Unit]
-Description=Daphne ASGI server for logist2 (WebSockets)
+Description=Daphne ASGI server for logist2
 After=network.target redis.service
 
 [Service]

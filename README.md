@@ -149,12 +149,39 @@ python manage.py runserver 127.0.0.1:8000
 
 1. Проверяет, что все локальные коммиты запушены в GitHub.
 2. На сервере одной SSH-сессией: `git pull` → `migrate` → `collectstatic`
-   → restart gunicorn/daphne/celery.
+   → restart gunicorn/daphne/celery/celerybeat.
 3. Показывает статус сервисов.
 
 Сервер: `root@176.118.198.78`, путь
 `/var/www/www-root/data/www/logist2`. Подробнее — см.
 `.cursor/rules/git-workflow.mdc`.
+
+### Развёртывание с нуля (новый VPS)
+
+systemd unit-файлы лежат в `scripts/`:
+
+- `gunicorn.service` — Django (WSGI) на Unix socket;
+- `daphne.service` — ASGI / WebSockets (порт 8001);
+- `celery.service` — Celery worker;
+- `celerybeat.service` — периодические задачи.
+
+Все они жёстко указывают путь `/var/www/www-root/data/www/logist2`,
+venv `.venv/`, пользователя `www-root`. Установка идемпотентным
+скриптом (требует `sudo`):
+
+```bash
+cd /var/www/www-root/data/www/logist2
+sudo ./scripts/install_systemd.sh
+# или для нестандартного PROJECT_DIR:
+sudo PROJECT_DIR=/srv/logist2 ./scripts/install_systemd.sh
+```
+
+Скрипт сравнит каждый unit с уже установленным, сделает backup
+(`.bak.YYYYMMDD-HHMMSS`) только если содержимое отличается, выполнит
+`daemon-reload` и `enable`. Первый старт — `systemctl start <unit>`
+руками; дальше при `deploy.ps1` юниты сами перезапускаются.
+
+Бэкап БД: см. `docs/BACKUPS.md` (`scripts/install_logist2_backup.sh`).
 
 ## Структура проекта
 

@@ -446,18 +446,31 @@ Throttle 20–30/min только замедляет scraping, не защища
 реальный путь на сервере `/var/www/www-root/data/www/logist2`.
 В случае передислокации или восстановления — путаница.
 
-**Действия**:
+**Действия (сделано)**:
 
-- [ ] Привести `scripts/gunicorn.service`, `daphne.service`,
-      `celery.service`, `celerybeat.service` к реальному пути.
-- [ ] Либо параметризовать через ENV (`PROJECT_DIR=...`) и шаблон
-      рендерить через `envsubst` при установке.
-- [ ] Скрипт `scripts/install_systemd.sh` — копирует unit-файлы
-      в `/etc/systemd/system/`, делает `daemon-reload`, `enable`.
-- [ ] Документировать в `docs/DEPLOY.md` (если такого нет — создать).
+- [x] Все 4 unit-файла приведены к реальному прод-пути
+      `/var/www/www-root/data/www/logist2`, пользователь `www-root`,
+      venv `.venv/`, settings `logist2.settings.prod`:
+  - `scripts/gunicorn.service` (новый, был `logist2.service` со
+    старым `/var/www/logist2` и неправильным именем — удалён);
+  - `scripts/daphne.service` (приведён к точному виду прод-файла);
+  - `scripts/celery.service` (то же);
+  - `scripts/celerybeat.service` (то же).
+- [x] Удалён legacy `scripts/caromoto-lt.service` (старый юнит,
+      путь `/var/www/caromoto-lt`).
+- [x] `scripts/install_systemd.sh` — идемпотентный bootstrap.
+      Параметризован через `PROJECT_DIR`: если задан другой путь,
+      `sed` подставляет его в копии unit'ов. Сравнивает с уже
+      установленным, делает backup `.bak.YYYYMMDD-HHMMSS` только при
+      реальных отличиях, выполняет `daemon-reload` + `enable`.
+- [x] Документация в README — раздел «Развёртывание с нуля» с
+      примером команды и описанием всех 4 unit'ов. Отдельный
+      `docs/DEPLOY.md` не создавали: README + комментарии в самих
+      скриптах покрывают onboarding.
 
-**DoD**: `diff /etc/systemd/system/gunicorn.service repo/scripts/gunicorn.service`
-пустой; на новой машине bootstrap-скрипт сам всё разворачивает.
+**DoD**: ✅ `diff /etc/systemd/system/<unit>.service repo/scripts/<unit>.service`
+пустой для всех 4-х (проверено через сравнение скачанных файлов).
+Bootstrap-скрипт идемпотентен (`cmp -s` пропускает совпадающие).
 
 ---
 
