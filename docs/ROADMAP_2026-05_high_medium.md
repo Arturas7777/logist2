@@ -283,7 +283,34 @@ Throttle 20–30/min только замедляет scraping, не защища
 
 ---
 
-### H7. (резерв под обнаруженные при H1–H6 проблемы)
+- [x] `H7` — резерв под обнаруженные при H1–H6 проблемы (3 фикса
+  в одном коммите):
+  1. **`/api/track/` 500 → 400 на битом JSON.** В `track_shipment`
+     ловился `except Exception`, который проглатывал DRF `ParseError`
+     и отдавал 500 c generic-сообщением. Клиент не видел причину,
+     Sentry заваливался ложными 500-ками. Достали `request.data`
+     наружу `try`, добавили `except APIException: raise` чтобы все
+     DRF-исключения (`ParseError`, `Throttled`, `NotAuthenticated`)
+     пробрасывались с правильным кодом. Покрыто 6 новыми тестами
+     в `core/tests/test_track_shipment.py` (включая regression на
+     битый JSON и form-data без `tracking_number`).
+  2. **`.gitignore`: общее `!**/__init__.py` вместо точечных.**
+     Маска `_*.py` (для временных скриптов) уже трижды (H6a, H6b,
+     H6c, H6d) ловила свежие `__init__.py` новых пакетов, и каждый
+     раз приходилось добавлять отдельное negation. Заменили 4
+     точечных правила одним wildcard'ом — будущие пакеты будут
+     работать «из коробки». `_vehicle_types.py` (H6a) оставили
+     отдельным исключением, потому что он не `__init__.py`.
+  3. **`pytest-env` для `DJANGO_SETTINGS_MODULE`.** Если в шелле
+     остался `DJANGO_SETTINGS_MODULE=logist2.settings.dev` от
+     `manage.py check`/`runserver`, `pytest-django` подхватывал dev
+     (PostgreSQL + legacy schema) и тесты падали с
+     `FieldDoesNotExist: NewBalanceTransaction.recipient_content_type`.
+     Подключили `pytest-env` (`[tool.pytest_env]` в `pyproject.toml`),
+     который безусловно override-ит env-var до того, как
+     `pytest-django` её прочитает. Зависимость добавлена в
+     `requirements-dev.txt`. Все 172 теста проходят даже с
+     намеренно битой `$env:DJANGO_SETTINGS_MODULE='logist2.settings.dev'`.
 
 ---
 

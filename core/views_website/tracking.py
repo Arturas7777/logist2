@@ -10,6 +10,7 @@ import logging
 from django.db.models import Prefetch
 from rest_framework import status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes, throttle_classes
+from rest_framework.exceptions import APIException
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
@@ -27,18 +28,22 @@ logger = logging.getLogger(__name__)
 @throttle_classes([TrackShipmentThrottle])
 def track_shipment(request):
     """Отследить груз по номеру VIN или контейнера."""
+    # H7: ``request.data`` доступ для не-JSON / битого JSON бросает DRF
+    # ``ParseError``. Раньше он попадал в ``except Exception`` ниже и
+    # отдавался как 500 (с шумом в Sentry и без понятной ошибки клиенту).
+    # Достаём данные ДО try/except: DRF сам обработает ParseError → 400.
+    tracking_number = (request.data.get("tracking_number") or "").strip()
+    email = (request.data.get("email") or "").strip()
+
+    logger.info("[TRACK] Поиск груза: '%s'", tracking_number)
+
+    if not tracking_number:
+        return Response(
+            {"error": "Пожалуйста, укажите номер для отслеживания"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     try:
-        tracking_number = request.data.get("tracking_number", "").strip()
-        email = request.data.get("email", "").strip()
-
-        logger.info("[TRACK] Поиск груза: '%s'", tracking_number)
-
-        if not tracking_number:
-            return Response(
-                {"error": "Пожалуйста, укажите номер для отслеживания"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         # Нормализуем: убираем пробелы/тире, переводим в верхний регистр.
         normalized_number = tracking_number.upper().replace(" ", "").replace("-", "")
         logger.info("[TRACK] Нормализованный номер: '%s'", normalized_number)
@@ -99,6 +104,11 @@ def track_shipment(request):
                 {"error": "Груз не найден. Проверьте правильность номера."},
                 status=status.HTTP_404_NOT_FOUND,
             )
+    except APIException:
+        # Любые DRF-исключения (ParseError, NotAuthenticated, Throttled,
+        # NotFound и т.д.) пробрасываем — DRF сам отдаст правильный код.
+        # Этим catch'ем ловим ТОЛЬКО неожиданные баги ниже.
+        raise
     except Exception as e:
         logger.error("[TRACK] Ошибка при поиске груза: %s", e, exc_info=True)
         # Не возвращаем str(e) клиенту: stacktrace в JSON-ответе — утечка

@@ -15,6 +15,11 @@
 pytest>=8.0
 pytest-django>=4.8
 pytest-cov>=5.0
+# pytest-env: безусловно override DJANGO_SETTINGS_MODULE при запуске тестов.
+# Без него env var из шелла (после `manage.py check`) перебивает settings и
+# тесты падают на FieldDoesNotExist (PostgreSQL legacy schema vs SQLite test).
+# См. H7 в docs/ROADMAP_2026-05_high_medium.md и [tool.pytest_env] в pyproject.toml.
+pytest-env>=1.1
 # Заморозка времени для billing/storage тестов (используется как @freeze_time).
 freezegun>=1.5
 

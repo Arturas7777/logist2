@@ -9,6 +9,17 @@ markers = [
     "integration: marks integration tests",
 ]
 
+# pytest-env: безусловно override DJANGO_SETTINGS_MODULE, даже если в шелле
+# уже выставлено `logist2.settings.dev` (типичный случай после `manage.py
+# check` / `runserver`). Без этого тесты загружали dev-настройки + PG
+# legacy schema и падали с FieldDoesNotExist. См. H7.
+#
+# Native TOML-форма (`[tool.pytest_env]`) переопределяет значения из env по
+# умолчанию (в отличие от INI-формы с `D:` префиксом, который наоборот
+# default-only). См. https://pypi.org/project/pytest-env/.
+[tool.pytest_env]
+DJANGO_SETTINGS_MODULE = "logist2.settings.test"
+
 [tool.ruff]
 target-version = "py312"
 line-length = 120

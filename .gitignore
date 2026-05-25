@@ -95,13 +95,15 @@ _*.py
 _*.sh
 scripts/debug/_*
 !scripts/debug/README.md
-# Не игнорировать служебные Python-модули внутри пакетов core/.
-# (__init__.py и _vehicle_types.py попадают под маску _*.py).
-!core/models/_*.py
-!core/models/__init__.py
-!core/admin/billing/__init__.py
-!core/views_website/__init__.py
-!core/signals/__init__.py
+# __init__.py пакетов не должны попадать под маску _*.py выше.
+# Раньше для каждого нового пакета (core/models, core/admin/billing,
+# core/views_website, core/signals) приходилось добавлять отдельную
+# negation — теперь одно общее правило покрывает все будущие пакеты.
+# H7, см. docs/ROADMAP_2026-05_high_medium.md.
+!**/__init__.py
+# Служебный модуль внутри core/models/ (H6a): подчёркивание в имени
+# использовано как маркер «приватный для пакета», но это обычный код.
+!core/models/_vehicle_types.py
 
 # Local data (AI RAG index, generated dumps, etc.)
 /data/
