@@ -27,7 +27,9 @@ from core.models import (
     AutoTransport,
     Car,
     Carrier,
+    CarrierDriver,
     CarrierService,
+    CarrierTruck,
     Client,
     Company,
     Container,
@@ -1708,3 +1710,35 @@ class AutoTransportAdmin(admin.ModelAdmin):
             extra_context['selected_car_ids'] = []
 
         return extra_context
+
+
+# ==============================================================================
+# CarrierTruck / CarrierDriver — отдельные ModelAdmin
+# ==============================================================================
+#
+# Регистрируем явно (раньше были только inline в CarrierAdmin), потому что:
+#   1) `AutoTransportAdmin.autocomplete_fields = ('truck', 'driver')`
+#      (если такое появится) требует search_fields в target-админке.
+#   2) При нескольких сотнях автовозов/водителей удобно искать/
+#      фильтровать через стандартный changelist.
+#   3) Inline в CarrierAdmin сохраняется — это два независимых способа
+#      редактирования (массовый через changelist vs точечный inline).
+
+@admin.register(CarrierTruck)
+class CarrierTruckAdmin(admin.ModelAdmin):
+    list_display = ('truck_number', 'trailer_number', 'carrier', 'is_active', 'created_at')
+    list_filter = ('is_active',)
+    search_fields = ('truck_number', 'trailer_number', 'carrier__name')
+    autocomplete_fields = ('carrier',)
+    list_select_related = ('carrier',)
+    ordering = ('-created_at',)
+
+
+@admin.register(CarrierDriver)
+class CarrierDriverAdmin(admin.ModelAdmin):
+    list_display = ('full_name', 'carrier', 'phone', 'is_active', 'updated_at')
+    list_filter = ('is_active',)
+    search_fields = ('first_name', 'last_name', 'phone', 'carrier__name')
+    autocomplete_fields = ('carrier',)
+    list_select_related = ('carrier',)
+    ordering = ('last_name', 'first_name')
