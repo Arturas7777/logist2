@@ -419,9 +419,24 @@ Throttle 20–30/min только замедляет scraping, не защища
     `pytest -p no:env --tb=short --maxfail=5` (`-p no:env` нужен,
     чтобы `pytest-env` из `pyproject.toml` не перебил
     `DJANGO_SETTINGS_MODULE`).
-- [ ] squashmigrations до бэкап-точки — пока не нужно (169 миграций,
-      ~30 сек прокат на PG-16). Зафиксировано как TODO на момент
-      когда счёт перевалит за 250.
+- [x] squashmigrations — **попробовано, отложено**.
+      `python manage.py squashmigrations core 0001_initial
+      0172_add_performance_indexes --no-optimize --noinput` создаёт
+      файл, **но НЕ компилируется** Python'ом:
+      Django генерирует ссылки вида
+      `core.migrations.0041_remove_old_payment_fields.drop_legacy_payment_columns`
+      — это невалидный Python (имя модуля не может начинаться с
+      цифры → `SyntaxError: invalid decimal literal`). Это
+      «Manual porting required» из вывода Django: нужно ВРУЧНУЮ
+      скопировать ~20 RunPython-функций из 17 файлов миграций в
+      squashed-файл и переписать ссылки. Учитывая, что эти функции
+      затрагивают платёжные поля, балансы компании, AV-padding,
+      M2M-копирование email-контейнеров, sitepro defaults — риск
+      data-corruption при ошибке порта неприемлемо высок при
+      нынешнем выигрыше (≈30 сек на свежем install). Возвращаемся
+      к задаче когда: (a) счёт миграций перевалит ≥250, или (b)
+      число `RunPython` устаканится (новые backfill-миграции
+      перестанут добавляться часто).
 
 **DoD**: ✅ pyproject и settings профили локально валидируются
 (`python -c "from django.conf import settings; …"` показывает
