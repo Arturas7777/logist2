@@ -77,6 +77,13 @@ copy env.example .env
 Остальное (Revolut, site.pro, Gmail, AI) для базовой разработки не
 нужно — оставьте пусто.
 
+> **CORS не используется.** Фронтенд (`templates/website/`) и DRF
+> живут на одном origin `caromoto-lt.com`, поэтому
+> `django-cors-headers` не подключён и `CORS_ALLOWED_ORIGINS` не
+> читается. Если когда-то понадобится открыть API внешнему фронту
+> или мобильному приложению — см. M2 в
+> `docs/ROADMAP_2026-05_high_medium.md`.
+
 > **Профиль настроек.** Локально `manage.py`, `wsgi.py`, `asgi.py` и
 > `celery.py` по умолчанию загружают `logist2.settings.dev` (DEBUG=True,
 > debug-toolbar при `USE_DEBUG_TOOLBAR=1`, CELERY_TASK_ALWAYS_EAGER).

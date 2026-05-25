@@ -318,16 +318,22 @@ Throttle 20–30/min только замедляет scraping, не защища
 
 ### M1. README + CHANGELOG.md
 
-- [ ] README — обновить версии (Django 5.2.14, Python 3.10+),
-      пути к `settings/`, корректное расположение `scripts/deploy.ps1`,
-      раздел «Setup for development» (с H1+H2).
-- [ ] Создать `CHANGELOG.md` в формате [Keep a Changelog](https://keepachangelog.com/).
-      Backfill с момента критических изменений (май 2026 — Critical 1+2+3).
-- [ ] В `.cursor/rules/git-workflow.mdc` добавить шаг «обновить CHANGELOG»
-      в раздел «Заканчиваем работу» (опционально).
+- [x] README — обновлено: структура проекта под H6 (пакеты
+      `core/models/`, `core/signals/`, `core/admin/billing/`,
+      `core/views_website/`), 148+ → 172+ тестов, упоминание
+      `pytest-env`/`freezegun`, расширен раздел документации
+      (CHANGELOG, BACKUPS, PUBLIC_ENDPOINTS, ENCRYPTION_KEY,
+      ROADMAP).
+- [x] Создан `CHANGELOG.md` в формате
+      [Keep a Changelog](https://keepachangelog.com/) с backfill от
+      мая 2026: Critical 1+2+3, все 7 High-задач (H1–H7),
+      мониторинг/инфра, бизнес-фичи апреля-мая.
+- [ ] В `.cursor/rules/git-workflow.mdc` добавить шаг «обновить
+      CHANGELOG» в раздел «Заканчиваем работу» (опционально, не
+      обязателен).
 
-**DoD**: новый разработчик по README запускает проект; в CHANGELOG.md
-видно, что изменилось между релизами.
+**DoD**: ✅ новый разработчик по README запускает проект; в
+`CHANGELOG.md` видно, что изменилось между релизами. Commit `d7ebcca`.
 
 ---
 
@@ -337,20 +343,19 @@ Throttle 20–30/min только замедляет scraping, не защища
 `django-cors-headers` не установлен и не подключен → переменные не
 работают, дают ложное чувство защиты.
 
-**Действия (выбрать одно)**:
+**Выбран вариант B** (frontend на том же origin `caromoto-lt.com`).
 
-- **A. Подключить**:
-  - [ ] `pip install django-cors-headers` → `requirements.txt`;
-  - [ ] `INSTALLED_APPS += ['corsheaders']`;
-  - [ ] `MIDDLEWARE` — `corsheaders.middleware.CorsMiddleware` **выше** `CommonMiddleware`;
-  - [ ] `CORS_ALLOWED_ORIGINS = os.getenv(...).split(',')`;
-  - [ ] доку: для каких доменов открыто и почему.
-- **B. Снести**:
-  - [ ] удалить `CORS_*` из `env.example`;
-  - [ ] в README — «CORS не используется, frontend на том же origin».
+**Действия (сделано)**:
 
-**DoD**: либо CORS реально работает (curl с другого origin показывает
-заголовки), либо переменных нет.
+- [x] `CORS_ALLOWED_ORIGINS` удалена из `env.example`, оставлен
+      комментарий с указанием на M2-roadmap, если потребуется
+      внешний фронт.
+- [x] В README (раздел «3. Переменные окружения») добавлена сноска
+      «CORS не используется». Поиск по репо подтвердил: ни одна
+      настройка / middleware / зависимость не читала эту переменную
+      — это было «мёртвое объявление».
+
+**DoD**: ✅ переменная ушла, ложного чувства защиты больше нет.
 
 ---
 
