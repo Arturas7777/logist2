@@ -53,11 +53,25 @@
             updateAddressSelect(addressSelect, [], '1');
         }
 
-        warehouseSelect.addEventListener('change', function() {
-            fetchAddresses(this.value, function(addresses) {
+        function onWarehouseChange() {
+            fetchAddresses(warehouseSelect.value, function(addresses) {
                 updateAddressSelect(addressSelect, addresses, '1');
             });
-        });
+        }
+
+        // M5 (autocomplete_fields для warehouse) ломал нативный change-event:
+        // Django admin оборачивает <select> в Select2, а Select2 триггерит
+        // change через jQuery.trigger('change') — это jQuery-only event,
+        // нативный addEventListener его не ловит. Поэтому регистрируем
+        // обработчик ОБОИМИ способами: через django.jQuery (поймает события
+        // от Select2) и нативно (страховка на случай если autocomplete
+        // отключён или jQuery отсутствует).
+        var $ = window.django && window.django.jQuery;
+        if ($) {
+            $(warehouseSelect).on('change', onWarehouseChange);
+        } else {
+            warehouseSelect.addEventListener('change', onWarehouseChange);
+        }
     }
 
     if (document.readyState === 'loading') {
