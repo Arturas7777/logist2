@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 from pathlib import Path
@@ -126,6 +127,9 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # M7: structured logging — request_id / user_id / path в каждой
+    # записи лога. Должен идти ПОСЛЕ AuthenticationMiddleware.
+    "core.middleware_logging.RequestContextMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -363,34 +367,98 @@ SESSION_CACHE_ALIAS = "default"
 SESSION_SAVE_EVERY_REQUEST = False
 
 # ---------------------------------------------------------------------------
-# Logging
+# Logging  (M7 — structured logs + RotatingFileHandler)
 # ---------------------------------------------------------------------------
+#
+# Поддерживаются два формата строки лога: текстовый (`verbose`) и JSON
+# (`json`, через python-json-logger). Выбирается env-var `LOG_FORMAT`
+# ("verbose" по умолчанию для dev, "json" в проде):
+#
+#   LOG_FORMAT=json
+#   LOG_LEVEL=INFO            # уровень для core/django loggers
+#   LOG_DIR=/var/log/logist2  # если задан — добавляется RotatingFileHandler
+#                             #   (50 MB × 10 backups → 500 MB max)
+#
+# Контекст запроса (request_id / user_id / path / method) пристёгивается
+# через `core.middleware_logging.RequestContextFilter`. Этот же filter
+# работает и вне HTTP-запроса (например в Celery): тогда поля = "-" / None.
+# См. docs/LOGGING.md.
+
+LOG_FORMAT = os.getenv("LOG_FORMAT", "verbose").lower()
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO" if DEBUG else "WARNING").upper()
+LOG_DIR = os.getenv("LOG_DIR", "").strip()
+
+_logging_formatters = {
+    "verbose": {
+        # Текстовый формат с request_id для удобства tail -f в dev.
+        "format": (
+            "{asctime} {levelname} [{request_id}] {name} {message} "
+            "(user={user_id} {method} {path})"
+        ),
+        "style": "{",
+    },
+    "json": {
+        # python-json-logger автоматически подхватит дополнительные
+        # поля из LogRecord (request_id/user_id/path/method — добавляет
+        # RequestContextFilter). Конкретные поля из record указываем
+        # в format-строке для гарантированного включения.
+        "()": "pythonjsonlogger.json.JsonFormatter",
+        "format": (
+            "%(asctime)s %(levelname)s %(name)s %(message)s "
+            "%(request_id)s %(user_id)s %(path)s %(method)s"
+        ),
+        "rename_fields": {"levelname": "level", "asctime": "ts", "name": "logger"},
+    },
+}
+
+_logging_filters = {
+    "request_context": {
+        "()": "core.middleware_logging.RequestContextFilter",
+    },
+}
+
+_logging_handlers: dict = {
+    "console": {
+        "level": "DEBUG",
+        "class": "logging.StreamHandler",
+        "formatter": LOG_FORMAT if LOG_FORMAT in _logging_formatters else "verbose",
+        "filters": ["request_context"],
+    },
+}
+
+if LOG_DIR:
+    # RotatingFileHandler с ротацией по размеру: 50 MB × 10 файлов.
+    # Daily-rotation (TimedRotatingFileHandler) намеренно не используем —
+    # при гранулярности «один файл = одни сутки» сложно вычислять
+    # ретеншн при импорте/всплеске. По размеру предсказуемее.
+    _logging_handlers["file"] = {
+        "level": LOG_LEVEL,
+        "class": "logging.handlers.RotatingFileHandler",
+        "filename": os.path.join(LOG_DIR, "app.log"),
+        "maxBytes": int(os.getenv("LOG_MAX_BYTES", str(50 * 1024 * 1024))),
+        "backupCount": int(os.getenv("LOG_BACKUP_COUNT", "10")),
+        "formatter": "json",
+        "filters": ["request_context"],
+        "encoding": "utf-8",
+    }
+
+_loggers_handlers = ["console"] + (["file"] if LOG_DIR else [])
 
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "formatters": {
-        "verbose": {
-            "format": "{asctime} {levelname} {name} {message}",
-            "style": "{",
-        },
-    },
-    "handlers": {
-        "console": {
-            "level": "DEBUG",
-            "class": "logging.StreamHandler",
-            "formatter": "verbose",
-        },
-    },
+    "formatters": _logging_formatters,
+    "filters": _logging_filters,
+    "handlers": _logging_handlers,
     "loggers": {
         "django": {
-            "handlers": ["console"],
+            "handlers": _loggers_handlers,
             "level": "WARNING",
             "propagate": True,
         },
         "core": {
-            "handlers": ["console"],
-            "level": "INFO" if DEBUG else "WARNING",
+            "handlers": _loggers_handlers,
+            "level": LOG_LEVEL,
             "propagate": False,
         },
     },
@@ -570,6 +638,9 @@ if SENTRY_DSN:
         from sentry_sdk.integrations.logging import LoggingIntegration
         from sentry_sdk.integrations.redis import RedisIntegration
 
+        # M7: фильтруем поток в Sentry — теперь file-handler ловит INFO+,
+        # а в Sentry уходят только ERROR+ events (breadcrumbs остаются по
+        # умолчанию = INFO+ для контекста ошибки).
         sentry_sdk.init(
             dsn=SENTRY_DSN,
             environment=SENTRY_ENVIRONMENT,
@@ -582,7 +653,10 @@ if SENTRY_DSN:
                 ),
                 CeleryIntegration(monitor_beat_tasks=True),
                 RedisIntegration(),
-                LoggingIntegration(level=None, event_level=None),
+                LoggingIntegration(
+                    level=logging.INFO,
+                    event_level=logging.ERROR,
+                ),
             ],
             traces_sample_rate=SENTRY_TRACES_SAMPLE_RATE,
             profiles_sample_rate=SENTRY_PROFILES_SAMPLE_RATE,

@@ -65,3 +65,9 @@ sentry-sdk[django,celery]>=2.58.0,<3.0.0
 # psutil — для страницы /admin/system-monitor/ (CPU/RAM/disk/процессы/сервисы).
 # Используется в core/services/system_monitor.py.
 psutil>=5.9.0
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+# JSON-форматтер для structured logs (RotatingFileHandler + Loki/CloudWatch).
+# Используется в logist2/settings/base.py → LOGGING.formatters.json
+# (включается env-флагом LOG_FORMAT=json). См. docs/LOGGING.md.
+python-json-logger>=3.1,<4.0

@@ -275,6 +275,8 @@ logist2/
 - `docs/PUBLIC_ENDPOINTS.md` — аудит публичных endpoints, signed URLs
   для фото (H5a).
 - `docs/ENCRYPTION_KEY.md` — ротация ключа шифрования банковских токенов.
+- `docs/LOGGING.md` — structured logs (JSON, RotatingFileHandler,
+  request_id, связка с Sentry).
 - `docs/ROADMAP_2026-05_high_medium.md` — текущий roadmap по High/Medium-задачам.
 - `docs/` — остальные roadmap'ы, аудиты, инструкции по ключевым
   подсистемам (banking, AI и т.п.).

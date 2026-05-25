@@ -523,18 +523,31 @@ operations) нужен поиск по тексту.
 
 **Действия**:
 
-- [ ] В `logist2/settings/prod.py` (а лучше в `base.py` под флагом):
-      `RotatingFileHandler` или `TimedRotatingFileHandler` для
-      `/var/log/logist2/app.log` (с ротацией 50MB × 10 файлов).
-- [ ] Перейти на JSON-формат (`python-json-logger`) — для будущей
-      интеграции с Loki/Grafana/CloudWatch.
-- [ ] Контекстные поля: `request_id` (middleware), `user_id`,
-      `domain` (billing/signal/sync).
-- [ ] Sentry: оставить только ERROR+ (info шум).
-- [ ] `docs/LOGGING.md` — где какие логи смотреть.
+- [x] В `logist2/settings/base.py` под env-флагами добавлен
+      `RotatingFileHandler` (50 MB × 10 файлов, путь из `LOG_DIR`).
+      Handler пишет только если `LOG_DIR` задан, что не ломает dev/CI.
+- [x] JSON-формат через `python-json-logger>=3.1,<4.0`
+      (`pythonjsonlogger.json.JsonFormatter`). Поля: ts/level/logger/
+      message + request_id/user_id/path/method + любые `extra=`.
+- [x] Контекстные поля через `core.middleware_logging`:
+      - `RequestContextMiddleware` сохраняет request_id (из
+        `X-Request-ID` или `uuid4()`), user_id, path, method в
+        `contextvars` (safe для async/threads);
+      - `RequestContextFilter` пристёгивает их к каждому LogRecord;
+      - `get_request_id()` / `set_request_id()` для использования в
+        Celery-тасках (передача из producer → worker).
+- [x] Sentry: `LoggingIntegration(level=INFO, event_level=ERROR)` —
+      INFO+ остаются breadcrumbs, отдельные events создаются только
+      на ERROR+.
+- [x] `docs/LOGGING.md` — env-vars, примеры запросов через `jq`,
+      связка с Sentry, инструкция по откату, что НЕ логировать.
+- [x] `env.example` дополнен секцией Logging
+      (`LOG_FORMAT`/`LOG_LEVEL`/`LOG_DIR`/`LOG_MAX_BYTES`/`LOG_BACKUP_COUNT`).
 
 **DoD**: `tail -f /var/log/logist2/app.log | jq` показывает структурные
 события; `grep "billing.payment"` находит все платежи за период.
+Локальный smoke: `LOG_FORMAT=json python _smoke_log.py` → валидный JSON
+с request_id/user_id; `pytest -x -q` → 172 passed.
 
 ---
 
