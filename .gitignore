@@ -101,6 +101,7 @@ scripts/debug/_*
 !core/models/__init__.py
 !core/admin/billing/__init__.py
 !core/views_website/__init__.py
+!core/signals/__init__.py
 
 # Local data (AI RAG index, generated dumps, etc.)
 /data/

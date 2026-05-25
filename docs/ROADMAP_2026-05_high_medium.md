@@ -252,9 +252,28 @@ Throttle 20–30/min только замедляет scraping, не защища
   - Smoke: 25/25 имён реэкспортируются, все 19 URL `website:*`
     резолвятся, локальный сайт `/`, `/about/`, `/news/`,
     `/api/container-photos/MRSU5522473/` отвечают 200.
-- [ ] `H6d` — `core/signals.py` → разнести по доменам:
-      `signals/lifecycle.py`, `signals/billing.py`, `signals/notifications.py`,
-      `signals/banking.py`. Регистрация — в `core/apps.py` (`ready()`).
+- [x] `H6d` — `core/signals.py` → пакет `core/signals/`:
+  - `__init__.py` импортирует все 10 submodules (это регистрирует
+    `@receiver`-декораторы), затем вызывает `connect_autotransport_signals()`
+    и `connect_cache_invalidation_signals()`. Backward-compat
+    реэкспорт для `core.admin.container` (5 имён) сохранён.
+  - подмодули по доменам: `service_cache.py` (per-instance svc cache),
+    `container.py` (pre/post_save + email + gdrive-note),
+    `car.py` (pre/post_save + 5 хелперов: services, email,
+    is_important → Task, WS), `car_service.py` (recalc total_price +
+    invoice regen с thread-local дедупом),
+    `service_catalog.py` (catalog change → bulk CarService update +
+    cascade delete), `invoice.py` (auto-categorize + sitepro +
+    linked_paid), `transaction.py` (balance/paid_amount sync),
+    `bank.py` (BT.matched_invoice → auto Transaction),
+    `autotransport.py` (m2m + TRANSFERRED + container status),
+    `cache_invalidation.py` (stats/payment_objects cache).
+  - Самый большой файл — `car.py` (337 строк), остальные ≤ 200;
+    DoD ≤ 700 выполнен с большим запасом.
+  - `core/apps.py` НЕ менялся — `from . import signals` подтягивает
+    пакет автоматически. Регистрация 28 receiver'ов проверена,
+    166 тестов (включая save/delete real сигналов) прошли
+    **без изменений**, миграции не добавляются.
 
 **DoD**: ни один файл из вышеперечисленных не больше ~700 строк;
 `pytest` зелёный; `python manage.py check --deploy` без warnings.
