@@ -92,29 +92,32 @@ maintainability) и **Medium** (документация, performance hygiene,
 
 ### H3. Удалить 4 неиспользуемых пакета
 
-**Кандидаты на удаление**:
+**Кандидаты на удаление** (все 4 удалены):
 
 - `django-admin-interface` — нет в `INSTALLED_APPS`, не используется.
 - `django-modeltranslation` — то же.
 - `django-colorfield` — то же.
 - `django-cleanup` — то же.
 
-**Действия**:
+**Действия (сделано)**:
 
-- [ ] Поиском убедиться: `rg -i 'admin_interface|modeltranslation|colorfield|cleanup'`
-      по всему репо (включая templates, миграции). Если найдётся
-      сноска в миграциях (например, `ColorField` в исторической
-      миграции) — оставить пакет, либо отрефакторить миграцию.
-- [ ] Удалить из `requirements.txt`.
-- [ ] Локально пересобрать venv (`pip install -r requirements.txt`),
-      прогнать `pytest`, прогнать `python manage.py check`,
-      `python manage.py makemigrations --check`.
-- [ ] Deploy и проверить, что collectstatic не падает.
+- [x] Поиск по всему репо (`admin_interface|modeltranslation|colorfield|django_cleanup`,
+      `ColorField`, `TranslationOptions`) — единственные упоминания
+      нашлись только в `requirements.txt`, `.cursor/rules/project-overview.mdc`
+      и самом этом roadmap. Ни в `INSTALLED_APPS`, ни в миграциях
+      `core/migrations/`, ни в `templates/`, ни в импортах — нигде.
+- [x] Удалены из `requirements.txt`.
+- [x] Локально `pip uninstall` всех 4, прогон тестов:
+      - `pytest` — 148 passed
+      - `python manage.py check` — System check identified no issues
+      - `python manage.py makemigrations --check --dry-run` — No changes detected
+- [x] Deploy: `collectstatic` без ошибок, gunicorn/daphne/celery/celerybeat —
+      active.
+- [x] Заодно поправил `.cursor/rules/project-overview.mdc` (Django 5.2.14
+      вместо 5.1.7, убраны упоминания удалённых пакетов, добавлен Sentry
+      и `pytest`+freezegun из dev-deps).
 
-**DoD**: пакеты ушли, тесты зелёные, прод поднялся.
-
-**Риск**: какая-нибудь забытая миграция использует `ColorField`. План B:
-оставить только колорфилд, остальные снести.
+**DoD**: ✅ пакеты ушли, тесты зелёные, прод поднялся.
 
 ---
 

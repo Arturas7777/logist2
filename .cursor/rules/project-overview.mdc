@@ -22,7 +22,7 @@ globs:
 ## Стек и зависимости
 
 - Python 3.13 (лок.), 3.10 (сервер)
-- **Django 5.1.7**, Daphne (ASGI), Gunicorn (WSGI fallback)
+- **Django 5.2.14**, Daphne (ASGI), Gunicorn (WSGI fallback)
 - **Channels** + channels_redis (WebSocket)
 - **Celery** + Redis (фоновые задачи)
 - **DRF** (rest_framework)
@@ -31,16 +31,17 @@ globs:
 - **Revolut Business API** (банкинг)
 - **site.pro API** (бухгалтерия)
 - **Anthropic** (Claude — аудит счетов, invoice_audit_service)
-- **OpenAI** (AI-чат, RAG — используется в коде, но НЕ в requirements.txt!)
+- **OpenAI** (AI-чат, RAG — теперь в requirements.txt)
 - **Google APIs** (google-api-python-client — синхронизация фото с Google Drive)
 - **pdfplumber / pymupdf** (парсинг PDF-счетов)
 - **Pillow** (обработка изображений, thumbnails)
-- **cryptography** (шифрование токенов Revolut)
-- **django-admin-interface**, django-cleanup, django-colorfield
+- **cryptography** (шифрование токенов Revolut/site.pro/Paysera)
+- **Sentry** (`sentry-sdk[django,celery]`) — мониторинг ошибок
 - **HTMX** (htmx.min.js — динамические обновления в админке)
 - **jQuery 3.6 + Select2** (vendor JS)
 - **ruff** (линтер, настроен в pyproject.toml)
-- **pytest** (тесты, настроен в pyproject.toml)
+- **pytest + pytest-django + pytest-cov + freezegun** (тесты,
+  настроены в pyproject.toml; dev-зависимости в requirements-dev.txt)
 
 ## Структура проекта
 
