@@ -42,6 +42,22 @@
   `logist2.service`); все unit'ы синхронизированы с прод-конфигом
   (paths `/var/www/www-root/data/www/logist2`, OOM-guardrails,
   `EnvironmentFile=.env`).
+- **CarrierTruck / CarrierDriver ModelAdmin** (`899903f`): отдельные
+  страницы changelist'а (раньше только inline в `CarrierAdmin`).
+  `search_fields` с `carrier__name`, `autocomplete_fields=('carrier',)`,
+  `list_select_related=('carrier',)`.
+- **`/admin/clients-autocomplete/` endpoint** (`e089872`):
+  server-side AJAX-поиск клиентов для `ClientAutocompleteFilter`.
+  `core/views_admin_autocomplete.py`, `@staff_member_required`,
+  Select2-совместимый JSON (`{"results": [{"id", "text"}, ...]}`,
+  лимит 20).
+- **`RecipientClientAutocompleteFilter`** (`e089872`) для
+  `NewInvoice.recipient_client` — параметризованный наследник
+  `ClientAutocompleteFilter` (новый class-attr `field_name`).
+- **`cars-autocomplete/` endpoint в `NewInvoiceAdmin`** (`1830e5f`):
+  server-side поиск машин по VIN / brand / client name (раньше
+  Select2 фильтровал локально по топ-200 → машины вне топ-200
+  не находились). Лимит 20.
 
 ### Changed
 
@@ -60,6 +76,18 @@
   breadcrumbs для контекста ошибок.
 - **Git workflow rule** (`.cursor/rules/git-workflow.mdc`):
   добавлен шаг «обновить CHANGELOG» в раздел «Заканчиваем работу».
+- **`ClientAutocompleteFilter`** (`e089872`): прокачка ВСЕХ клиентов
+  в HTML changelist'а → server-side AJAX через
+  `/admin/clients-autocomplete/`. Параметризация `field_name` —
+  можно унаследовать для других FK на Client.
+- **`NewInvoiceAdmin.cars` Select2** (`1830e5f`): локальный фильтр по
+  топ-200 → server-side AJAX (`cars-autocomplete/`). `extra_context["cars"]`
+  теперь содержит только уже выбранные машины этого инвойса
+  (раньше — 200 свежих + selected merged). Каждая страница change-формы
+  ≈30–50 KB легче.
+- **`NewInvoiceAdmin.list_filter`** (`e089872`): `"recipient_client"`
+  заменён на `RecipientClientAutocompleteFilter` — раньше Django рисовал
+  стену ссылок на каждого клиента в правом sidebar.
 
 ### Fixed
 
@@ -81,6 +109,21 @@
   установлен. Закомментировано как подсказка на будущее.
 - **M6**: устаревшие unit-файлы `scripts/logist2.service` (старый
   путь к gunicorn) и `scripts/caromoto-lt.service` (легаси неиспользуемый).
+- **`filter_horizontal = ("cars",)` + `class Media` в NewInvoiceAdmin**
+  (`1830e5f`): была мёртвая конфигурация (UI давно рисуется
+  кастомным шаблоном, а filter_horizontal на change-форме не
+  отображался). Заодно убран `SelectBox.js` / `SelectFilter2.js` из Media.
+
+### Notes
+
+- **squashmigrations** (`25ffc97`): попробовано на 169 миграциях,
+  отложено. Django генерирует синтаксически невалидный squashed-файл
+  (ссылки `core.migrations.0041_*.func` не валидный Python), требует
+  ручного порта ~20 RunPython-функций из 17 файлов. Риск
+  data-corruption > выигрыш (~30 сек на свежей установке). В roadmap
+  фиксированы триггеры возврата: ≥250 миграций или стабилизация
+  RunPython-добавлений. Альтернатива на будущее: fresh-start вместо
+  squash в плановое downtime-окно.
 
 ---
 
