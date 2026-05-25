@@ -1,13 +1,22 @@
 # Dev/CI зависимости (тесты, линтер, форматтер).
 #
-# Установка:
+# Установка на чистом venv:
+#   python -m venv .venv
+#   .\.venv\Scripts\activate           # Windows
+#   source .venv/bin/activate          # Linux/macOS
 #   pip install -r requirements.txt -r requirements-dev.txt
+#   pytest
 #
 # Не подключайте этот файл в production-окружении.
 
 -r requirements.txt
 
+# ── Тесты ────────────────────────────────────────────────────────────────────
 pytest>=8.0
 pytest-django>=4.8
 pytest-cov>=5.0
+# Заморозка времени для billing/storage тестов (используется как @freeze_time).
+freezegun>=1.5
+
+# ── Линтер / форматтер ───────────────────────────────────────────────────────
 ruff>=0.9.10
