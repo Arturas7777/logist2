@@ -19,7 +19,7 @@ m2m-сигнал требует доступа к ``AutoTransport.cars.through``
 import logging
 
 from django.db import transaction
-from django.db.models.signals import m2m_changed, post_save
+from django.db.models.signals import m2m_changed, post_save, pre_save
 from django.dispatch import receiver
 
 from core.models import Car, Container
@@ -51,9 +51,27 @@ def _queue_or_run_generate_invoices(autotransport):
             logger.error("AutoTransport %s invoice error: %s", autotransport.number, e)
 
 
+@receiver(pre_save, sender="core.AutoTransport")
+def autotransport_pre_save(sender, instance, **kwargs):
+    """Снимок старого статуса — чтобы ``post_save`` отличал ПЕРЕХОД в FORMED
+    от повторного сохранения уже сформированного автовоза."""
+    if not instance.pk:
+        instance._pre_save_status = None
+        return
+    instance._pre_save_status = sender.objects.filter(pk=instance.pk).values_list("status", flat=True).first()
+
+
 @receiver(post_save, sender="core.AutoTransport")
 def autotransport_post_save(sender, instance, created, **kwargs):
-    if instance.status == "FORMED":
+    old_status = getattr(instance, "_pre_save_status", None)
+    instance._pre_save_status = None
+
+    # Генерация инвойсов только при ПЕРЕХОДЕ в FORMED (новый автовоз сразу в
+    # FORMED или смена статуса на FORMED). Раньше срабатывало на КАЖДОМ
+    # сохранении сформированного автовоза — лишняя нагрузка и риск перезаписи
+    # DRAFT/ISSUED. Изменение состава машин обрабатывается отдельно через
+    # m2m_changed (post_add/post_remove).
+    if instance.status == "FORMED" and old_status != "FORMED":
         _queue_or_run_generate_invoices(instance)
 
     if instance.status in ("LOADED", "IN_TRANSIT", "DELIVERED"):

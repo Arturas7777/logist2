@@ -220,10 +220,10 @@ jobs:
     # SCA (pip-audit) + SAST (bandit). Для финансового приложения это
     # обязательный минимум аудита уязвимостей зависимостей и кода.
     #
-    # Сейчас шаги помечены `continue-on-error: true` (advisory): они печатают
-    # находки, но не валят сборку, чтобы не блокировать CI на легаси-базе.
-    # ПОСЛЕ зачистки baseline снять `continue-on-error` (сделать блокирующими)
-    # — отдельной задачей в roadmap.
+    # Baseline зачищен: зависимости обновлены до фикс-версий (pip-audit
+    # чист), HIGH-находки bandit устранены. Поэтому pip-audit и bandit-HIGH
+    # теперь БЛОКИРУЮЩИЕ. Bandit-MEDIUM (mark_safe в admin) пока advisory —
+    # требует перевода на format_html в отдельном PR.
     name: Security scan (pip-audit + bandit)
     runs-on: ubuntu-latest
     needs: lint
@@ -237,11 +237,14 @@ jobs:
       - name: Install scanners
         run: pip install pip-audit bandit[toml]
 
-      - name: pip-audit (зависимости / known CVE)
-        continue-on-error: true
+      - name: pip-audit (зависимости / known CVE) — блокирующий
         run: pip-audit -r requirements.txt --progress-spinner off
 
-      - name: bandit (статический анализ безопасности)
+      - name: bandit HIGH severity — блокирующий
+        run: bandit -r core logist2 --severity-level high --confidence-level high -x core/tests,core/migrations
+
+      - name: bandit MEDIUM severity — advisory
+        # Medium-находки (mark_safe в admin-дисплеях) информативны: не валят
+        # сборку. Закрыть переводом на format_html отдельной задачей.
         continue-on-error: true
-        # -ll: только severity medium и выше; тесты/миграции исключены.
         run: bandit -r core logist2 -ll -x core/tests,core/migrations

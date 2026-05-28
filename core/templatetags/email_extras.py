@@ -151,7 +151,8 @@ def avatar_color_filter(name_or_addr: str) -> str:
     key = (name_or_addr or '').strip().lower()
     if not key:
         return _AVATAR_COLORS[0]
-    h = int(hashlib.md5(key.encode('utf-8')).hexdigest(), 16)
+    # usedforsecurity=False: хеш нужен лишь для стабильного выбора цвета, не для защиты.
+    h = int(hashlib.md5(key.encode('utf-8'), usedforsecurity=False).hexdigest(), 16)
     return _AVATAR_COLORS[h % len(_AVATAR_COLORS)]
 
 

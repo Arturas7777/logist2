@@ -76,7 +76,8 @@ def _load_index_cached(index_path: str) -> dict | None:
 
 def _embedding_cache_key(model: str, text: str) -> str:
     """Стабильный ключ для одного embedding-запроса."""
-    digest = hashlib.sha1(f"{model}::{text}".encode()).hexdigest()
+    # usedforsecurity=False: хеш используется только как ключ кэша, не для защиты.
+    digest = hashlib.sha1(f"{model}::{text}".encode(), usedforsecurity=False).hexdigest()
     return f"{_EMBEDDING_CACHE_PREFIX}{digest}"
 
 

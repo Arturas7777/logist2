@@ -63,9 +63,9 @@
   CANCELLED не пересоздаются, DRAFT регенерируется, `force=True`
   обходит guard.
 - **CI security-scan job** (`.github/workflows/ci.yml`): `pip-audit`
-  (CVE в зависимостях) + `bandit` (SAST по `core`/`logist2`). Пока
-  advisory (`continue-on-error`), чтобы legacy-находки не блокировали
-  сборку — перевести в блокирующие после зачистки baseline.
+  (CVE в зависимостях) + `bandit` (SAST по `core`/`logist2`).
+  `pip-audit` и `bandit` (high severity) — **блокирующие**; `bandit`
+  medium (`mark_safe`) пока advisory (`continue-on-error`) как legacy-долг.
 
 ### Changed
 
@@ -102,6 +102,21 @@
   требование label `run-migrations-ci` и `labeled`-триггер — прогон всей
   цепочки миграций на чистой PostgreSQL ловит регрессии схемы до master,
   а не только ночным job'ом.
+- **Унификация путей регенерации инвойсов.** `car_post_save`
+  (`core/signals/car.py`) теперь использует общий Celery-путь
+  `_deferred_invoice_regeneration` из `core/signals/car_service.py`
+  вместо собственной синхронной ветки — единая защита guard'ом и
+  единое поведение для всех триггеров (Car / CarService / авто-транспорт).
+- **`AutoTransport` → генерация инвойсов только при переходе в `FORMED`.**
+  `autotransport_post_save` (`core/signals/autotransport.py`) запускает
+  `_queue_or_run_generate_invoices` только когда статус *меняется* на
+  `FORMED` (новый `autotransport_pre_save` фиксирует старый статус).
+  Раньше — на каждом сохранении уже сформированного транспорта.
+- **`float()` → `Decimal()` в денежных полях** (`core/admin/partners.py`):
+  legacy-поля склада в admin-change-view считаются через `Decimal`
+  (+`InvalidOperation`-guard), без потери точности.
+- **CI security-scan переведён в блокирующий** (`pip-audit` + `bandit`
+  high) — см. раздел Added.
 
 ### Fixed
 
@@ -127,6 +142,16 @@
   или создании машины и фильтрует инвойсы по
   `REGENERATABLE_INVOICE_STATUSES`.
 - **Сортировка импортов** в `core/admin/billing/invoice.py` (`ruff I001`).
+- **Слабые хеши помечены `usedforsecurity=False`** (bandit high):
+  `hashlib.sha1` в `core/services/ai_rag.py` (cache-key эмбеддингов) и
+  `hashlib.md5` в `core/templatetags/email_extras.py` (выбор цвета
+  аватара) — не криптографическое применение.
+- **Обновлены уязвимые зависимости** (`requirements.txt`, по `pip-audit`):
+  `cryptography` 45.0.3→46.0.7, `Twisted` 24.11.0→26.4.0,
+  `pyOpenSSL` 25.1.0→26.0.0, `urllib3` 2.5.0→2.7.0, `requests`
+  2.32.5→2.33.0, `idna` 3.10→3.15, `python-dotenv` 1.0.1→1.2.2,
+  `sqlparse` 0.5.3→0.5.4, `pyasn1` 0.6.1→0.6.3, `cffi` 1.17.1→2.0.0
+  (зависимость `cryptography`). `pip-audit` — 0 уязвимостей.
 
 ### Removed
 
@@ -141,6 +166,9 @@
   отображался). Заодно убран `SelectBox.js` / `SelectFilter2.js` из Media.
 - **`experiment_photos/` из git-индекса** (6 JPG, ~6 MB бинарников) —
   каталог добавлен в `.gitignore`, файлы оставлены на диске.
+- **Мёртвый код `invoices_display` / `payments_display`**
+  (`core/admin/partners.py`): методы импортировали несуществующие
+  модели `Invoice`/`Payment` и не использовались в `fieldsets`.
 
 ### Notes
 

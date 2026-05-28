@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.contrib import admin, messages
 from django.db import models
@@ -215,19 +215,23 @@ class WarehouseAdmin(admin.ModelAdmin):
                 for key, value in request.POST.items():
                     if key.startswith('clear_field_'):
                         field_name = key.replace('clear_field_', '')
-                        setattr(obj, field_name, 0)
+                        setattr(obj, field_name, Decimal('0'))
                         obj.save()
 
                 for field_name, model_field in old_fields_mapping.items():
                     if field_name in request.POST:
+                        raw = request.POST[field_name]
                         try:
-                            value = float(request.POST[field_name]) if request.POST[field_name] else 0
+                            # Денежные поля — DecimalField; пишем Decimal,
+                            # а не float, чтобы избежать артефактов вида
+                            # 0.1 + 0.2 при последующих вычислениях.
+                            value = Decimal(raw) if raw else Decimal('0')
                             setattr(obj, model_field, value)
                             obj.save()
-                        except ValueError:
+                        except (InvalidOperation, ValueError):
                             logger.warning(
                                 "Invalid legacy field value '%s' for %s on warehouse %s",
-                                request.POST[field_name], model_field, obj.pk,
+                                raw, model_field, obj.pk,
                             )
 
         return super().change_view(request, object_id, form_url, extra_context)
@@ -784,129 +788,6 @@ class CompanyAdmin(admin.ModelAdmin):
         return obj.name == "Caromoto Lithuania"
     is_main_company.boolean = True
     is_main_company.short_description = "Главная компания"
-
-    def invoices_display(self, obj):
-        """Shows related invoices"""
-        try:
-            from core.models_billing import Invoice
-            # Invoices issued by company
-            outgoing_invoices = Invoice.objects.filter(
-                from_entity_type='COMPANY',
-                from_entity_id=obj.id
-            ).order_by('-issue_date')[:10]
-
-            # Invoices received by company
-            incoming_invoices = Invoice.objects.filter(
-                to_entity_type='COMPANY',
-                to_entity_id=obj.id
-            ).order_by('-issue_date')[:10]
-
-            html = ['<div style="margin-top:15px;">']
-
-            # Outgoing invoices
-            html.append('<h4 style="margin-bottom:10px; color:#495057;">Инвойсы, выставляемые компанией</h4>')
-            if outgoing_invoices.exists():
-                html.append('<table style="width:100%; border-collapse:collapse; font-size:12px;">')
-                html.append('<tr style="background-color:#f8f9fa;">')
-                html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Номер</th>')
-                html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Кому</th>')
-                html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Сумма</th>')
-                html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Статус</th>')
-                html.append('</tr>')
-
-                for invoice in outgoing_invoices:
-                    status_color = '#28a745' if invoice.paid else '#dc3545'
-                    status_text = 'Оплачен' if invoice.paid else 'Не оплачен'
-                    html.append('<tr>')
-                    html.append(f'<td style="border:1px solid #dee2e6; padding:8px;"><a href="/admin/core/invoice/{invoice.id}/change/">{invoice.number}</a></td>')
-                    html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{invoice.to_entity_name}</td>')
-                    html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{invoice.total_amount:.2f}</td>')
-                    html.append(f'<td style="border:1px solid #dee2e6; padding:8px; color:{status_color};">{status_text}</td>')
-                    html.append('</tr>')
-
-                html.append('</table>')
-            else:
-                html.append('<p style="color:#6c757d;">Нет исходящих инвойсов</p>')
-
-            # Incoming invoices
-            html.append('<h4 style="margin-top:20px; margin-bottom:10px; color:#495057;">Инвойсы, получаемые компанией</h4>')
-            if incoming_invoices.exists():
-                html.append('<table style="width:100%; border-collapse:collapse; font-size:12px;">')
-                html.append('<tr style="background-color:#f8f9fa;">')
-                html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Номер</th>')
-                html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">От кого</th>')
-                html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Сумма</th>')
-                html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Статус</th>')
-                html.append('</tr>')
-
-                for invoice in incoming_invoices:
-                    status_color = '#28a745' if invoice.paid else '#dc3545'
-                    status_text = 'Оплачен' if invoice.paid else 'Не оплачен'
-                    html.append('<tr>')
-                    html.append(f'<td style="border:1px solid #dee2e6; padding:8px;"><a href="/admin/core/invoice/{invoice.id}/change/">{invoice.number}</a></td>')
-                    html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{invoice.from_entity_name}</td>')
-                    html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{invoice.total_amount:.2f}</td>')
-                    html.append(f'<td style="border:1px solid #dee2e6; padding:8px; color:{status_color};">{status_text}</td>')
-                    html.append('</tr>')
-
-                html.append('</table>')
-            else:
-                html.append('<p style="color:#6c757d;">Нет входящих инвойсов</p>')
-
-            html.append('</div>')
-            return format_html(''.join(html))
-        except Exception as e:
-            return format_html(f'<p style="color:#dc3545;">Ошибка загрузки инвойсов: {e}</p>')
-    invoices_display.short_description = 'Связанные инвойсы'
-
-    def payments_display(self, obj):
-        """Shows related payments"""
-        try:
-            from core.models_billing import Payment
-            payments = Payment.objects.filter(
-                models.Q(from_company=obj) | models.Q(to_company=obj)
-            ).order_by('-date')[:20]
-
-            if not payments.exists():
-                return format_html('<p style="color:#6c757d;">Нет связанных платежей</p>')
-
-            html = ['<div style="margin-top:15px;">']
-            html.append('<h4 style="margin-bottom:10px; color:#495057;">Последние платежи</h4>')
-            html.append('<table style="width:100%; border-collapse:collapse; font-size:12px;">')
-            html.append('<tr style="background-color:#f8f9fa;">')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Дата</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Тип</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Сумма</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">От кого</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Кому</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Описание</th>')
-            html.append('</tr>')
-
-            for payment in payments:
-                if payment.from_company == obj:
-                    amount_color = '#dc3545'
-                    amount_sign = '-'
-                    amount_display = f"{amount_sign}{payment.amount:.2f}"
-                else:
-                    amount_color = '#28a745'
-                    amount_sign = '+'
-                    amount_display = f"{amount_sign}{payment.amount:.2f}"
-
-                html.append('<tr>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.date}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.get_payment_type_display()}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px; color:{amount_color}; font-weight:bold;">{amount_display}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.sender or "-"}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.recipient or "-"}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.description or "-"}</td>')
-                html.append('</tr>')
-
-            html.append('</table>')
-            html.append('</div>')
-            return format_html(''.join(html))
-        except Exception as e:
-            return format_html(f'<p style="color:#dc3545;">Ошибка загрузки платежей: {e}</p>')
-    payments_display.short_description = 'Платежи'
 
     def balance_summary_display(self, obj):
         """Shows company balance summary"""

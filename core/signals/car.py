@@ -20,18 +20,16 @@
 import logging
 from decimal import Decimal
 
-from django.db import OperationalError, transaction
+from django.db import transaction
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 from django.utils import timezone
 
-from core.mixins import REGENERATABLE_INVOICE_STATUSES
 from core.models import (
     Car,
     CarService,
     DeletedCarService,
 )
-from core.models_billing import NewInvoice
 from core.service_codes import ServiceCode, is_storage_service
 
 logger = logging.getLogger(__name__)
@@ -151,25 +149,20 @@ def car_post_save(sender, instance, **kwargs):
     created = kwargs.get("created", False)
 
     # --- 1. Invoice regeneration ---
-    # Дедупликация уже сделана внутри `_deferred_invoice_regeneration_for_car`
-    # через thread-local множество; ранее здесь была проверка флага
-    # `_updating_invoices`, который нигде не устанавливался — мёртвый код.
+    # Единый путь регенерации: делегируем в `car_service._deferred_invoice_regeneration`,
+    # который ставит Celery-задачу `regenerate_invoices_for_car_task` (с inline-fallback
+    # при недоступности брокера) и фильтрует инвойсы по `REGENERATABLE_INVOICE_STATUSES`.
+    # Раньше здесь был отдельный СИНХРОННЫЙ путь (`_deferred_invoice_regeneration_for_car`)
+    # — он дублировал логику и не дедуплицировался с путём от CarService. Теперь оба
+    # триггера (Car.save и CarService.save) делят один thread-local bucket и одну задачу.
     #
-    # Регенерируем только когда:
-    #   а) изменились ценообразующие поля машины (контрактники / unload_date)
-    #      либо машина только что создана — иначе любое сохранение Car
-    #      (комментарий, is_important) лишний раз пересчитывало бы инвойсы;
-    #   б) статус инвойса допускает регенерацию (PAID/LINKED_PAID/CANCELLED
-    #      исключаются на уровне запроса; модель тоже защищена guard'ом).
+    # Регенерируем только когда изменились ценообразующие поля машины
+    # (контрактники / unload_date) либо машина только что создана — иначе любое
+    # сохранение Car (комментарий, is_important) лишний раз пересчитывало бы инвойсы.
     if _car_pricing_relevant_changed(instance, created):
-        invoice_ids = list(
-            NewInvoice.objects.filter(
-                cars=instance,
-                status__in=REGENERATABLE_INVOICE_STATUSES,
-            ).values_list("id", flat=True)
-        )
-        if invoice_ids:
-            _deferred_invoice_regeneration_for_car(instance.pk, invoice_ids)
+        from core.signals.car_service import _deferred_invoice_regeneration
+
+        _deferred_invoice_regeneration(instance.pk)
 
     # --- 2. CarService creation (delegates to helper) ---
     _create_car_services_if_needed(instance, created=created, kwargs=kwargs)
@@ -274,25 +267,6 @@ def _handle_car_important_transition(car, *, created: bool):
         )
         if updated:
             logger.info("Auto-completed %d task(s) for car %s (is_important unset)", updated, car.vin)
-
-
-def _deferred_invoice_regeneration_for_car(car_id, invoice_ids):
-    """Schedule invoice regeneration after commit."""
-
-    def _do():
-        for inv_id in invoice_ids:
-            try:
-                with transaction.atomic():
-                    inv = NewInvoice.objects.select_for_update(nowait=True).get(id=inv_id)
-                    inv.regenerate_items_from_cars()
-            except OperationalError:
-                logger.warning("Skipping invoice %s - locked", inv_id)
-            except NewInvoice.DoesNotExist:
-                pass
-            except Exception as e:
-                logger.error("Failed to regenerate invoice %s: %s", inv_id, e)
-
-    transaction.on_commit(_do)
 
 
 def _maybe_send_car_unload_notification(instance, *, created):
