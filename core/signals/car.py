@@ -25,6 +25,7 @@ from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 from django.utils import timezone
 
+from core.mixins import REGENERATABLE_INVOICE_STATUSES
 from core.models import (
     Car,
     CarService,
@@ -86,6 +87,41 @@ def save_old_car_values(sender, instance, **kwargs):
         instance._pre_save_is_important = None
 
 
+def _car_pricing_relevant_changed(instance, created):
+    """True, если у машины изменились поля, влияющие на позиции инвойса.
+
+    Ценообразующими считаем контрактников (``warehouse``/``line``/``carrier``,
+    определяют набор и цены услуг) и ``unload_date`` (влияет на дни хранения).
+    Снимок старых значений делает :func:`save_old_car_values` в ``pre_save``.
+
+    Логика:
+    * новая машина (``created``) → всегда True;
+    * ``pre_save`` не снял старые значения (``save(update_fields=...)`` без
+      ценообразующих полей) → False, эти поля точно не менялись;
+    * иначе сравниваем старые значения с текущими.
+    """
+    if created:
+        return True
+
+    old_contractors = getattr(instance, "_pre_save_contractors", None)
+    old_notification = getattr(instance, "_pre_save_car_notification", None)
+
+    if old_contractors is None and old_notification is None:
+        return False
+
+    if old_contractors and (
+        old_contractors.get("warehouse_id") != instance.warehouse_id
+        or old_contractors.get("line_id") != instance.line_id
+        or old_contractors.get("carrier_id") != instance.carrier_id
+    ):
+        return True
+
+    if old_notification and old_notification.get("unload_date") != instance.unload_date:
+        return True
+
+    return False
+
+
 @receiver(post_save, sender=Car)
 def car_post_save(sender, instance, **kwargs):
     """Consolidated post_save handler for Car.
@@ -118,9 +154,22 @@ def car_post_save(sender, instance, **kwargs):
     # Дедупликация уже сделана внутри `_deferred_invoice_regeneration_for_car`
     # через thread-local множество; ранее здесь была проверка флага
     # `_updating_invoices`, который нигде не устанавливался — мёртвый код.
-    invoice_ids = list(NewInvoice.objects.filter(cars=instance).values_list("id", flat=True))
-    if invoice_ids:
-        _deferred_invoice_regeneration_for_car(instance.pk, invoice_ids)
+    #
+    # Регенерируем только когда:
+    #   а) изменились ценообразующие поля машины (контрактники / unload_date)
+    #      либо машина только что создана — иначе любое сохранение Car
+    #      (комментарий, is_important) лишний раз пересчитывало бы инвойсы;
+    #   б) статус инвойса допускает регенерацию (PAID/LINKED_PAID/CANCELLED
+    #      исключаются на уровне запроса; модель тоже защищена guard'ом).
+    if _car_pricing_relevant_changed(instance, created):
+        invoice_ids = list(
+            NewInvoice.objects.filter(
+                cars=instance,
+                status__in=REGENERATABLE_INVOICE_STATUSES,
+            ).values_list("id", flat=True)
+        )
+        if invoice_ids:
+            _deferred_invoice_regeneration_for_car(instance.pk, invoice_ids)
 
     # --- 2. CarService creation (delegates to helper) ---
     _create_car_services_if_needed(instance, created=created, kwargs=kwargs)

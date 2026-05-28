@@ -16,9 +16,8 @@
 from django.contrib import admin
 
 from core.admin_export import CSVExportMixin
-from core.models_billing import NewInvoice
-
 from core.admin_filters import RecipientClientAutocompleteFilter
+from core.models_billing import NewInvoice
 
 from .filters import InvoiceDirectionFilter
 from .inlines import InvoiceItemInline

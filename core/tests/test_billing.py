@@ -3,12 +3,15 @@
 
 Запуск: python manage.py test core.tests.test_billing
 """
+
+from decimal import Decimal
+
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
 
 from core.models import Client, Company, Warehouse
-from core.models_billing import NewInvoice
+from core.models_billing import InvoiceItem, NewInvoice
 
 
 class NewInvoiceValidationTest(TestCase):
@@ -56,7 +59,7 @@ class NewInvoiceValidationTest(TestCase):
         )
         with self.assertRaises(ValidationError) as ctx:
             invoice.clean()
-        self.assertIn('recipient_company', ctx.exception.message_dict)
+        self.assertIn("recipient_company", ctx.exception.message_dict)
 
     def test_due_date_before_date(self):
         """Срок оплаты не может быть раньше даты выставления"""
@@ -68,7 +71,7 @@ class NewInvoiceValidationTest(TestCase):
         )
         with self.assertRaises(ValidationError) as ctx:
             invoice.clean()
-        self.assertIn('due_date', ctx.exception.message_dict)
+        self.assertIn("due_date", ctx.exception.message_dict)
 
 
 class NewInvoiceSaveTest(TestCase):
@@ -98,6 +101,64 @@ class NewInvoiceSaveTest(TestCase):
         self.assertIsNotNone(invoice.due_date)
 
 
+class RegenerateItemsGuardTest(TestCase):
+    """Guard: regenerate_items_from_cars не трогает оплаченные/отменённые инвойсы.
+
+    Регенерация удаляет все позиции и перезаписывает total. Для PAID /
+    LINKED_PAID / CANCELLED это нарушило бы инвариант «оплачен = total
+    совпадает с paid_amount», поэтому метод должен быть no-op.
+    """
+
+    def setUp(self):
+        self.company = Company.objects.create(name="Caromoto Lithuania")
+        self.client = Client.objects.create(name="Test Client")
+
+    def _make_invoice_with_item(self, status):
+        invoice = NewInvoice.objects.create(
+            issuer_company=self.company,
+            recipient_client=self.client,
+            date=timezone.now().date(),
+        )
+        InvoiceItem.objects.create(
+            invoice=invoice,
+            description="Тест",
+            quantity=1,
+            unit_price=Decimal("100.00"),
+        )
+        # Статус выставляем через .update(), минуя сигналы пересчёта оплаты,
+        # чтобы они не вернули PAID → ISSUED при отсутствии транзакций.
+        NewInvoice.objects.filter(pk=invoice.pk).update(status=status)
+        invoice.refresh_from_db()
+        return invoice
+
+    def test_paid_invoice_not_regenerated(self):
+        invoice = self._make_invoice_with_item("PAID")
+        invoice.regenerate_items_from_cars()
+        self.assertEqual(invoice.items.count(), 1)
+
+    def test_linked_paid_invoice_not_regenerated(self):
+        invoice = self._make_invoice_with_item("LINKED_PAID")
+        invoice.regenerate_items_from_cars()
+        self.assertEqual(invoice.items.count(), 1)
+
+    def test_cancelled_invoice_not_regenerated(self):
+        invoice = self._make_invoice_with_item("CANCELLED")
+        invoice.regenerate_items_from_cars()
+        self.assertEqual(invoice.items.count(), 1)
+
+    def test_draft_invoice_is_regenerated(self):
+        # DRAFT регенерируется: без привязанных машин позиции очищаются.
+        invoice = self._make_invoice_with_item("DRAFT")
+        invoice.regenerate_items_from_cars()
+        self.assertEqual(invoice.items.count(), 0)
+
+    def test_force_bypasses_guard(self):
+        # force=True пересоздаёт позиции независимо от статуса.
+        invoice = self._make_invoice_with_item("PAID")
+        invoice.regenerate_items_from_cars(force=True)
+        self.assertEqual(invoice.items.count(), 0)
+
+
 class CompanyGetDefaultTest(TestCase):
     """Тесты Company.get_default()"""
 
@@ -109,6 +170,7 @@ class CompanyGetDefaultTest(TestCase):
         «Caromoto Lithuania, MB» в разных окружениях).
         """
         from django.conf import settings
+
         Company.objects.create(name=settings.COMPANY_NAME)
         result = Company.get_default()
         self.assertIsNotNone(result)

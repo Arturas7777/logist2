@@ -1003,7 +1003,7 @@ class NewInvoice(models.Model):
             self.recalculate_paid_amount()
             logger.info('Reversed %d cash payments for invoice %s', cash_payments.count(), self.number)
 
-    def regenerate_items_from_cars(self):
+    def regenerate_items_from_cars(self, *, force=False):
         """
         Автоматически создает позиции инвойса из услуг выбранных автомобилей.
 
@@ -1012,8 +1012,26 @@ class NewInvoice(models.Model):
         - Услуги с одинаковым short_name суммируются (напр. Разгрузка+Погрузка+Декларация → "Порт")
         - Хранение — отдельная группа "Хран"
         - description = short_name (для группировки в таблице)
+
+        Guard: для PAID / LINKED_PAID / CANCELLED регенерация запрещена —
+        она удаляет позиции и перезаписывает ``total``, что нарушает
+        инвариант «оплачен = total совпадает с paid_amount». Это единая
+        защита для всех путей вызова (сигналы Car/CarService, Celery,
+        admin-actions, авто-транспорт). Передайте ``force=True`` только
+        если осознанно нужно пересоздать позиции вне зависимости от статуса.
         """
         from django.db import transaction
+
+        from core.mixins import REGENERATABLE_INVOICE_STATUSES
+
+        if not force and self.status not in REGENERATABLE_INVOICE_STATUSES:
+            logger.warning(
+                "regenerate_items_from_cars: пропущен инвойс %s (status=%s) — "
+                "регенерация запрещена для оплаченных/отменённых",
+                self.number or self.pk,
+                self.status,
+            )
+            return
 
         with transaction.atomic():
             self._regenerate_items_from_cars_inner()

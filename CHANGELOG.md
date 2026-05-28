@@ -58,6 +58,14 @@
   server-side поиск машин по VIN / brand / client name (раньше
   Select2 фильтровал локально по топ-200 → машины вне топ-200
   не находились). Лимит 20.
+- **Тесты guard'а регенерации позиций.** `RegenerateItemsGuardTest`
+  в `core/tests/test_billing.py` (5 тестов): PAID / LINKED_PAID /
+  CANCELLED не пересоздаются, DRAFT регенерируется, `force=True`
+  обходит guard.
+- **CI security-scan job** (`.github/workflows/ci.yml`): `pip-audit`
+  (CVE в зависимостях) + `bandit` (SAST по `core`/`logist2`). Пока
+  advisory (`continue-on-error`), чтобы legacy-находки не блокировали
+  сборку — перевести в блокирующие после зачистки baseline.
 
 ### Changed
 
@@ -88,6 +96,12 @@
 - **`NewInvoiceAdmin.list_filter`** (`e089872`): `"recipient_client"`
   заменён на `RecipientClientAutocompleteFilter` — раньше Django рисовал
   стену ссылок на каждого клиента в правом sidebar.
+- **CI: порог покрытия `core/` 30% → 32%** (ratchet по фактически
+  измеренному уровню; держим, чтобы новый код не снижал процент).
+- **CI: `tests-with-migrations` теперь обязателен на каждом PR.** Убраны
+  требование label `run-migrations-ci` и `labeled`-триггер — прогон всей
+  цепочки миграций на чистой PostgreSQL ловит регрессии схемы до master,
+  а не только ночным job'ом.
 
 ### Fixed
 
@@ -101,6 +115,18 @@
   от Select2, т.к. слушал нативный `addEventListener('change', ...)`.
   Переподписка через `django.jQuery(...).on('change', ...)` с
   fallback на нативный лиснер.
+- **КРИТИЧНО: защита оплаченных инвойсов от перезаписи.**
+  `NewInvoice.regenerate_items_from_cars()` теперь no-op для статусов
+  PAID / LINKED_PAID / CANCELLED (guard через
+  `REGENERATABLE_INVOICE_STATUSES`, параметр `force=True` для обхода).
+  Раньше любое сохранение `Car` синхронно перегенерировало ВСЕ его
+  инвойсы без фильтра статуса — удаляло позиции и перезаписывало `total`,
+  нарушая инвариант «оплачен = total совпадает с paid_amount».
+  Дополнительно `car_post_save` запускает регенерацию только при
+  изменении ценообразующих полей (warehouse/line/carrier/unload_date)
+  или создании машины и фильтрует инвойсы по
+  `REGENERATABLE_INVOICE_STATUSES`.
+- **Сортировка импортов** в `core/admin/billing/invoice.py` (`ruff I001`).
 
 ### Removed
 
@@ -113,6 +139,8 @@
   (`1830e5f`): была мёртвая конфигурация (UI давно рисуется
   кастомным шаблоном, а filter_horizontal на change-форме не
   отображался). Заодно убран `SelectBox.js` / `SelectFilter2.js` из Media.
+- **`experiment_photos/` из git-индекса** (6 JPG, ~6 MB бинарников) —
+  каталог добавлен в `.gitignore`, файлы оставлены на диске.
 
 ### Notes
 

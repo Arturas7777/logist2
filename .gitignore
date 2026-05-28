@@ -114,6 +114,9 @@ renumber_out.txt
 revolut_expenses/
 _backup_*.dump
 
+# Эксперименты со сжатием фото (локальные бинарники, не версионируем)
+experiment_photos/
+
 # Ad-hoc config/files
 denis.conf
 denis_qr.png

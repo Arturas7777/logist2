@@ -5,9 +5,6 @@ on:
     branches: [master, main]
   pull_request:
     branches: [master, main]
-    # tests-with-migrations job триггерится отдельно при добавлении label
-    # `run-migrations-ci` (см. ниже).
-    types: [opened, synchronize, reopened, labeled]
   schedule:
     # tests-with-migrations: каждую ночь в 04:00 UTC (M4).
     - cron: '0 4 * * *'
@@ -117,7 +114,10 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Run pytest (full suite)
-        run: pytest --tb=short --maxfail=5 --cov=core --cov-fail-under=30
+        # Порог по core/ — ratchet: держим его на текущем фактическом
+        # уровне покрытия, чтобы новый код не снижал общий процент.
+        # Поднимать по мере роста покрытия (не опускать).
+        run: pytest --tb=short --maxfail=5 --cov=core --cov-fail-under=32
 
       - name: Critical modules coverage (billing/encryption/reconciliation)
         # Money-critical модули должны иметь высокое покрытие, даже если общий
@@ -139,21 +139,16 @@ jobs:
             core/tests/test_billing.py
 
   tests-with-migrations:
-    # M4: ночной job + опциональный triggers через PR-label
-    # `run-migrations-ci`. Прокатывает ВСЮ цепочку миграций
-    # `core/migrations/0001..*` на чистой PostgreSQL — ловит расхождения
-    # между моделями и миграциями, которые маскирует `DisableMigrations`
-    # в `logist2.settings.test`. Использует отдельный профиль
-    # `logist2.settings.test_migrations`.
-    name: Tests with migrations (nightly + run-migrations-ci label)
+    # Прокатывает ВСЮ цепочку миграций `core/migrations/0001..*` на чистой
+    # PostgreSQL — ловит расхождения между моделями и миграциями, которые
+    # маскирует `DisableMigrations` в `logist2.settings.test`. Использует
+    # отдельный профиль `logist2.settings.test_migrations`.
+    #
+    # Теперь обязателен на каждом PR (а не только ночью / по label), чтобы
+    # регрессии миграций не доезжали до master до ночного прогона.
+    name: Tests with migrations
     runs-on: ubuntu-latest
     needs: lint
-    if: >-
-      github.event_name == 'schedule' ||
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' &&
-       contains(github.event.pull_request.labels.*.name, 'run-migrations-ci'))
     services:
       postgres:
         image: postgres:16-alpine
@@ -220,3 +215,33 @@ jobs:
         # DJANGO_SETTINGS_MODULE на logist2.settings.test (с
         # DisableMigrations). См. pyproject.toml [tool.pytest_env].
         run: pytest -p no:env --tb=short --maxfail=5
+
+  security-scan:
+    # SCA (pip-audit) + SAST (bandit). Для финансового приложения это
+    # обязательный минимум аудита уязвимостей зависимостей и кода.
+    #
+    # Сейчас шаги помечены `continue-on-error: true` (advisory): они печатают
+    # находки, но не валят сборку, чтобы не блокировать CI на легаси-базе.
+    # ПОСЛЕ зачистки baseline снять `continue-on-error` (сделать блокирующими)
+    # — отдельной задачей в roadmap.
+    name: Security scan (pip-audit + bandit)
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install scanners
+        run: pip install pip-audit bandit[toml]
+
+      - name: pip-audit (зависимости / known CVE)
+        continue-on-error: true
+        run: pip-audit -r requirements.txt --progress-spinner off
+
+      - name: bandit (статический анализ безопасности)
+        continue-on-error: true
+        # -ll: только severity medium и выше; тесты/миграции исключены.
+        run: bandit -r core logist2 -ll -x core/tests,core/migrations
