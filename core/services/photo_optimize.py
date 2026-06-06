@@ -60,6 +60,95 @@ def compress_image_bytes(
         return None
 
 
+# --- Картинки моделей авто (CarModelImage) -------------------------------
+# Единый стандарт для иллюстрации в карточке авто: все изображения
+# приводятся к одному прозрачному канвасу 16:9 и кодируются в WebP, чтобы
+# любая загруженная картинка (разной ширины/высоты/пропорций) выглядела
+# одинаково ровно по центру.
+CAR_MODEL_CANVAS = (800, 450)  # 16:9
+CAR_MODEL_PADDING = 0.06       # доля поля по краям (6%)
+WEBP_QUALITY = 88
+
+
+def normalize_car_model_image_bytes(
+    data: bytes,
+    *,
+    canvas: tuple[int, int] = CAR_MODEL_CANVAS,
+    padding: float = CAR_MODEL_PADDING,
+    quality: int = WEBP_QUALITY,
+) -> bytes | None:
+    """Вписывает изображение в прозрачный канвас фикс. размера и отдаёт WebP.
+
+    Сохраняет пропорции исходника, центрирует, добавляет поля. Возвращает
+    None при ошибке (тогда вызывающий оставляет файл как есть).
+    """
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            im.load()
+            im = ImageOps.exif_transpose(im)
+            if im.mode != 'RGBA':
+                im = im.convert('RGBA')
+
+            cw, ch = canvas
+            max_w = int(cw * (1 - 2 * padding))
+            max_h = int(ch * (1 - 2 * padding))
+            im.thumbnail((max_w, max_h), Image.LANCZOS)
+
+            board = Image.new('RGBA', (cw, ch), (0, 0, 0, 0))
+            x = (cw - im.width) // 2
+            y = (ch - im.height) // 2
+            board.paste(im, (x, y), im)
+
+            buf = io.BytesIO()
+            board.save(buf, 'WEBP', quality=quality, method=6)
+            return buf.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError) as e:
+        logger.warning('normalize_car_model_image: ошибка обработки (%s)', e)
+        return None
+
+
+def normalize_car_model_image_field(instance, field_name: str = 'image') -> bool:
+    """Нормализует поле картинки модели авто под единый канвас (WebP).
+
+    Возвращает True, если файл был переписан. Идемпотентность обеспечивается
+    тем, что результат всегда .webp фикс. размера — повторная обработка даёт
+    тот же канвас (визуально стабильно)."""
+    field = getattr(instance, field_name, None)
+    if not field or not getattr(field, 'name', ''):
+        return False
+
+    try:
+        field.open('rb')
+        try:
+            raw = field.read()
+        finally:
+            try:
+                field.close()
+            except Exception:
+                pass
+    except (OSError, ValueError) as e:
+        logger.warning('normalize_car_model_image: не удалось прочитать %s: %s', field.name, e)
+        return False
+
+    new_bytes = normalize_car_model_image_bytes(raw)
+    if not new_bytes:
+        return False
+
+    old_name = field.name
+    base = os.path.splitext(os.path.basename(old_name))[0] + '.webp'
+    storage = field.storage
+    try:
+        if storage.exists(old_name):
+            storage.delete(old_name)
+    except (OSError, ValueError) as e:
+        logger.warning('normalize_car_model_image: не удалось удалить оригинал %s: %s', old_name, e)
+
+    field.save(base, ContentFile(new_bytes), save=False)
+    logger.info('normalize_car_model_image: %s → %d KB (canvas %dx%d)',
+                base, len(new_bytes) // 1024, *CAR_MODEL_CANVAS)
+    return True
+
+
 def maybe_compress_image_field(
     instance,
     field_name: str = 'photo',

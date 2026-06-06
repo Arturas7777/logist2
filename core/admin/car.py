@@ -15,6 +15,7 @@ from core.admin_export import CSVExportMixin
 from core.admin_filters import ClientAutocompleteFilter, MultiStatusFilter, MultiWarehouseFilter
 from core.models import (
     Car,
+    CarModelImage,
     CarrierService,
     CarService,
     CompanyService,
@@ -168,6 +169,36 @@ def find_car_image(year, brand):
     return None
 
 
+def find_car_model_image_url(year, brand):
+    """Ищет картинку модели в БД (CarModelImage). Возвращает MEDIA-URL или None.
+
+    Приоритет: точное совпадение brand+год > brand без года > частичное
+    (brand записи — начало brand авто, напр. «BMW» ⊂ «BMW 430I»; берётся
+    самая специфичная запись)."""
+    if not brand:
+        return None
+    from core.models import CarModelImage
+
+    brand = brand.strip()
+    qs = CarModelImage.objects.filter(is_active=True).exclude(image='')
+
+    match = qs.filter(brand__iexact=brand, year=year).first()
+    if not match:
+        match = qs.filter(brand__iexact=brand, year__isnull=True).first()
+    if not match:
+        brand_lower = brand.lower()
+        candidates = [c for c in qs if brand_lower.startswith(c.brand.strip().lower())]
+        candidates.sort(key=lambda c: (len(c.brand), c.year == year), reverse=True)
+        match = candidates[0] if candidates else None
+
+    if match and match.image:
+        try:
+            return match.image.url
+        except ValueError:
+            return None
+    return None
+
+
 class CarHasUnreadEmailsFilter(SimpleListFilter):
     """Фильтр по наличию писем и непрочитанных писем в карточке машины."""
 
@@ -196,6 +227,41 @@ class CarHasUnreadEmailsFilter(SimpleListFilter):
         if value == 'none':
             return queryset.filter(email_links__isnull=True)
         return queryset
+
+
+@admin.register(CarModelImage)
+class CarModelImageAdmin(admin.ModelAdmin):
+    list_display = ('preview', 'brand', 'year', 'is_active', 'updated_at')
+    list_display_links = ('preview', 'brand')
+    list_filter = ('is_active',)
+    search_fields = ('brand',)
+    list_editable = ('is_active',)
+    readonly_fields = ('preview_large', 'created_at', 'updated_at')
+    fields = ('brand', 'year', 'is_active', 'image', 'preview_large', 'created_at', 'updated_at')
+    ordering = ('brand', '-year')
+
+    @admin.display(description='Превью')
+    def preview(self, obj):
+        if obj.image:
+            return format_html(
+                '<img src="{}" style="width:96px;height:54px;object-fit:contain;'
+                'background:linear-gradient(135deg,#f8fafc,#eef2f7);'
+                'border:1px solid #e5e7eb;border-radius:6px;">',
+                obj.image.url,
+            )
+        return '—'
+
+    @admin.display(description='Изображение (как в карточке)')
+    def preview_large(self, obj):
+        if obj.image:
+            return format_html(
+                '<img src="{}" style="width:360px;max-width:100%;aspect-ratio:16/9;'
+                'object-fit:contain;padding:10px;box-sizing:border-box;'
+                'background:linear-gradient(135deg,#f8fafc,#eef2f7);'
+                'border:1px solid #e5e7eb;border-radius:12px;">',
+                obj.image.url,
+            )
+        return 'Загрузите изображение и сохраните — оно приведётся к единому виду.'
 
 
 @admin.register(Car)
@@ -394,11 +460,13 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
                 obj = self.get_object(request, object_id)
                 if obj:
                     extra_context = extra_context or {}
-                    img_path = find_car_image(obj.year, obj.brand)
-                    if img_path:
-                        extra_context['car_header_image'] = static(img_path)
-                    else:
-                        extra_context['car_header_image'] = static('icons/car_unknown.png')
+                    # 1) картинка из БД (загружается через админку),
+                    # 2) фолбэк на старые статические PNG, 3) заглушка.
+                    url = find_car_model_image_url(obj.year, obj.brand)
+                    if not url:
+                        img_path = find_car_image(obj.year, obj.brand)
+                        url = static(img_path) if img_path else static('icons/car_unknown.png')
+                    extra_context['car_header_image'] = url
             except Exception:
                 logger.warning("Car image lookup failed for %s", object_id, exc_info=True)
 

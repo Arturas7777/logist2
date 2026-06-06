@@ -46,7 +46,7 @@
 
 from ._vehicle_types import VEHICLE_TYPE_CHOICES
 from .auto_transport import AutoTransport
-from .cars import Car
+from .cars import Car, CarModelImage
 from .carriers import Carrier, CarrierDriver, CarrierTruck
 from .clients import Client, ClientEmail, ClientTariffRate
 from .company import Company
@@ -104,6 +104,7 @@ __all__ = [
     # основные сущности
     'Container',
     'Car',
+    'CarModelImage',
     # услуги
     'BaseService',
     'CompanyService', 'LineService', 'CarrierService', 'WarehouseService',

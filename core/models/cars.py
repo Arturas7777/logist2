@@ -886,3 +886,55 @@ class Car(models.Model):
             models.Index(fields=["unload_date"]),
             models.Index(fields=["transfer_date"]),
         ]
+
+
+class CarModelImage(models.Model):
+    """Иллюстрация модели авто для карточки (подбирается по марке/модели + году).
+
+    Заменяет ручную заливку PNG на сервер: картинки добавляются через админку,
+    при сохранении автоматически нормализуются под единый канвас 16:9 (WebP),
+    поэтому все авто в карточках выглядят одинаково ровно. Подбор для
+    конкретного Car идёт по полю ``brand`` (оно содержит марку+модель,
+    например «BMW 430I») и опционально ``year``.
+    """
+
+    brand = models.CharField(
+        max_length=100, db_index=True, verbose_name="Марка/модель",
+        help_text="Как в карточке авто, напр. «BMW 430I» или просто «BMW».",
+    )
+    year = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="Год",
+        help_text="Год выпуска. Пусто = подходит для любого года этой модели.",
+    )
+    image = models.ImageField(
+        upload_to="car_model_images/", verbose_name="Изображение",
+        help_text="Любой формат/размер — приведётся к единому виду автоматически.",
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Активна")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создана")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлена")
+
+    class Meta:
+        app_label = "core"
+        verbose_name = "Картинка модели авто"
+        verbose_name_plural = "Картинки моделей авто"
+        ordering = ["brand", "-year"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["brand", "year"], name="uniq_carmodelimage_brand_year",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.brand}{f' ({self.year})' if self.year else ''}"
+
+    def save(self, *args, **kwargs):
+        # Нормализуем картинку (единый канвас + WebP) только когда меняется
+        # само изображение — чтобы повторные save() (смена is_active и т.п.)
+        # не перекодировали файл лишний раз.
+        update_fields = kwargs.get("update_fields")
+        if self.image and (update_fields is None or "image" in update_fields):
+            if not str(self.image.name).lower().endswith(".webp"):
+                from core.services.photo_optimize import normalize_car_model_image_field
+                normalize_car_model_image_field(self, "image")
+        super().save(*args, **kwargs)

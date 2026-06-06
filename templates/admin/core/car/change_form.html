@@ -355,16 +355,18 @@
 <div class="cm-form-grid" {% if original %}style="--cm-status-color: {{ original.get_status_color }};"{% endif %}>
   <div class="cm-form-main">
     {% if original %}
-    <img src="{% if car_header_image %}{{ car_header_image }}{% else %}{% static 'icons/car_unknown.png' %}{% endif %}"
-         id="cm-car-photo-el" class="cm-car-photo" alt="{{ original.brand }}">
+    <div id="cm-car-photo-frame" class="cm-car-photo-frame">
+      <img src="{% if car_header_image %}{{ car_header_image }}{% else %}{% static 'icons/car_unknown.png' %}{% endif %}"
+           id="cm-car-photo-el" class="cm-car-photo" loading="lazy" alt="{{ original.brand }}">
+    </div>
     {% endif %}
     {{ block.super }}
   </div>
 
   <script>
   document.addEventListener('DOMContentLoaded', function() {
-    var img = document.getElementById('cm-car-photo-el');
-    if (!img) return;
+    var frame = document.getElementById('cm-car-photo-frame');
+    if (!frame) return;
     // Берём первый fieldset «основных данных», исключая секцию «Переписка»
     // (её JS поднимает наверх .cm-form-main, и без фильтра картинка
     // прилипала бы к шапке переписки).
@@ -374,9 +376,9 @@
     if (!fieldset) return;
     var heading = fieldset.querySelector('.fieldset-heading');
     if (heading) {
-      heading.after(img);
+      heading.after(frame);
     } else {
-      fieldset.prepend(img);
+      fieldset.prepend(frame);
     }
   });
   </script>
