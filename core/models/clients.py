@@ -20,12 +20,12 @@ class Client(BalanceMethodsMixin, models.Model):
     email2 = models.EmailField(blank=True, null=True, verbose_name="Email 2")
     email3 = models.EmailField(blank=True, null=True, verbose_name="Email 3")
     email4 = models.EmailField(blank=True, null=True, verbose_name="Email 4")
-    notification_enabled = models.BooleanField(default=True, verbose_name="Получать уведомления")
+    notification_enabled = models.BooleanField(default=True, verbose_name="E-mail уведомления")
     telegram_chat_id = models.CharField(max_length=64, blank=True, null=True, verbose_name="Telegram Chat ID 1")
     telegram_chat_id2 = models.CharField(max_length=64, blank=True, null=True, verbose_name="Telegram Chat ID 2")
     telegram_chat_id3 = models.CharField(max_length=64, blank=True, null=True, verbose_name="Telegram Chat ID 3")
     telegram_chat_id4 = models.CharField(max_length=64, blank=True, null=True, verbose_name="Telegram Chat ID 4")
-    telegram_enabled = models.BooleanField(default=True, verbose_name="Уведомления в Telegram")
+    telegram_enabled = models.BooleanField(default=True, verbose_name="Telegram уведомления")
     tariff_type = models.CharField(
         max_length=10,
         choices=TARIFF_CHOICES,
