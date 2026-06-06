@@ -367,9 +367,9 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             'fields': (
                 ('year', 'brand', 'vin', 'vehicle_type', 'weight_kg', 'status'),
                 ('client', 'warehouse', 'unload_site'),
+                ('unload_date', 'transfer_date'),
                 ('has_title', 'title_link_display', 'title_notes'),
                 ('is_important', 'notes'),
-                ('unload_date', 'transfer_date'),
             )
         }),
         ('Линии', {

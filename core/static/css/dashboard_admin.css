@@ -2093,6 +2093,34 @@ body.popup #footer {
     padding: 8px 12px !important;
 }
 
+/* Select2 (автодополняемые Клиент/Склад/Линия/Перевозчик) — приводим к виду
+   обычных полей карточки: та же высота/отступы/рамка/шрифт. Django admin
+   использует тему `--admin-autocomplete`, поэтому таргетим ЛЮБОЙ select2
+   внутри формы (а не только `--default`). Функционал автодополнения не
+   трогаем — меняется только оформление контейнера. */
+.cm-form-main .select2-container .select2-selection--single {
+    height: auto !important;
+    min-height: 36px !important;
+    box-sizing: border-box !important;
+    padding: 8px 12px !important;
+    background: var(--cm-white) !important;
+    border: 1px solid var(--cm-border) !important;
+    border-radius: var(--cm-radius-xs) !important;
+    display: flex !important;
+    align-items: center !important;
+}
+.cm-form-main .select2-container .select2-selection--single .select2-selection__rendered {
+    line-height: 1.4 !important;
+    font-size: .88rem !important;
+    color: var(--cm-text) !important;
+    padding-left: 0 !important;
+    padding-right: 18px !important;
+}
+.cm-form-main .select2-container .select2-selection--single .select2-selection__arrow {
+    height: 100% !important;
+    top: 0 !important;
+}
+
 /* Container/Car detail cards */
 .container-details, .car-details {
     margin: 20px 0;
@@ -2156,14 +2184,14 @@ body.popup #footer {
     max-width: 100%;
     aspect-ratio: 16 / 9;
     margin: 4px 24px 16px 0;
-    padding: 6px;
+    padding: 0;
     box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%);
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
+    background: transparent;
+    border: none;
+    border-radius: 0;
     flex-shrink: 0;
 }
 
