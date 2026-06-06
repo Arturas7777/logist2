@@ -2152,11 +2152,11 @@ body.popup #footer {
    contain внутри фиксированного бокса => всё выглядит одинаково ровно. */
 .cm-car-photo-frame {
     float: left;
-    width: 360px;
+    width: 460px;
     max-width: 100%;
     aspect-ratio: 16 / 9;
     margin: 4px 24px 16px 0;
-    padding: 10px;
+    padding: 8px;
     box-sizing: border-box;
     display: flex;
     align-items: center;
@@ -2752,7 +2752,7 @@ body.model-newinvoice.change-form #content > h2 {
     .cm-car-photo-frame {
         float: none;
         width: 100%;
-        max-width: 420px;
+        max-width: 460px;
         margin: 0 auto 14px auto;
     }
 
