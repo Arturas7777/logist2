@@ -34,15 +34,15 @@ class Client(BalanceMethodsMixin, models.Model):
     notification_enabled = models.BooleanField(
         default=True, verbose_name="Получать уведомления", help_text="Отправлять email-уведомления о контейнерах"
     )
-    telegram_chat_id = models.CharField(
-        max_length=64,
+    telegram_chat_id = models.TextField(
         blank=True,
         null=True,
         verbose_name="Telegram Chat ID",
         help_text=(
-            "ID чата клиента в Telegram для уведомлений о разгрузке. "
-            "Клиент должен написать боту /start, после чего chat_id можно "
-            "получить командой manage.py telegram_updates."
+            "Один или несколько chat_id в Telegram для уведомлений о разгрузке "
+            "(через запятую или с новой строки). Клиент должен написать боту "
+            "/start, после чего chat_id можно получить командой "
+            "manage.py telegram_updates."
         ),
     )
     telegram_enabled = models.BooleanField(
@@ -91,15 +91,28 @@ class Client(BalanceMethodsMixin, models.Model):
         """Проверяет, есть ли хотя бы один email для уведомлений"""
         return len(self.get_notification_emails()) > 0
 
-    def get_telegram_chat_id(self):
-        """Возвращает очищенный Telegram chat_id или None."""
-        if self.telegram_chat_id and self.telegram_chat_id.strip():
-            return self.telegram_chat_id.strip()
-        return None
+    def get_telegram_chat_ids(self):
+        """Возвращает список всех chat_id клиента для уведомлений.
+
+        Значения разделяются запятой, точкой с запятой, пробелом или
+        переносом строки. Пустые и дубликаты отбрасываются (порядок
+        сохраняется).
+        """
+        if not self.telegram_chat_id:
+            return []
+        import re
+
+        parts = re.split(r"[\s,;]+", self.telegram_chat_id.strip())
+        result = []
+        for p in parts:
+            p = p.strip()
+            if p and p not in result:
+                result.append(p)
+        return result
 
     def has_telegram(self):
         """Проверяет, можно ли слать клиенту уведомления в Telegram."""
-        return bool(self.telegram_enabled and self.get_telegram_chat_id())
+        return bool(self.telegram_enabled and self.get_telegram_chat_ids())
 
     @property
     def open_invoices_debt(self):

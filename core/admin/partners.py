@@ -379,12 +379,14 @@ class ClientAdmin(admin.ModelAdmin):
 
     def telegram_display(self, obj):
         """Показывает статус Telegram-уведомлений клиента."""
-        chat_id = obj.get_telegram_chat_id()
-        if not chat_id:
+        chat_ids = obj.get_telegram_chat_ids()
+        if not chat_ids:
             return format_html('<span style="color: #999;">—</span>')
+        title = ', '.join(chat_ids)
+        suffix = f' (+{len(chat_ids) - 1})' if len(chat_ids) > 1 else ''
         if not obj.telegram_enabled:
-            return format_html('<span style="color: #999;" title="{}">выкл</span>', chat_id)
-        return format_html('<span style="color: #229ED9;" title="{}">✓ TG</span>', chat_id)
+            return format_html('<span style="color: #999;" title="{}">выкл{}</span>', title, suffix)
+        return format_html('<span style="color: #229ED9;" title="{}">✓ TG{}</span>', title, suffix)
     telegram_display.short_description = 'Telegram'
 
     def real_balance_display(self, obj):

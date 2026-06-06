@@ -304,42 +304,60 @@ class TelegramNotificationService:
 
     @staticmethod
     def _send_and_log(notification_type, container, car, client, subject, text, cars_list, user=None):
-        """Отправляет одно сообщение клиенту и пишет NotificationLog."""
+        """Отправляет сообщение на все chat_id клиента и пишет лог по каждому.
+
+        Возвращает True, если хотя бы одно сообщение доставлено успешно.
+        """
         from core.models_website import NotificationLog
 
-        chat_id = client.get_telegram_chat_id()
-        success, error_message = send_telegram_message(chat_id, text)
+        chat_ids = client.get_telegram_chat_ids()
+        if not chat_ids:
+            return False
 
         ref = container.number if container else (car.vin if car else "")
-        if success:
-            logger.info("✅ Telegram отправлен: %s для %s → chat %s", notification_type, ref, chat_id)
-        else:
-            logger.error(
-                "❌ Telegram не отправлен: %s для %s → chat %s: %s",
-                notification_type,
-                ref,
-                chat_id,
-                error_message,
-            )
+        success_count = 0
 
-        try:
-            NotificationLog.objects.create(
-                container=container,
-                car=car,
-                client=client,
-                notification_type=notification_type,
-                channel="TELEGRAM",
-                email_to=str(chat_id or ""),
-                subject=subject,
-                cars_info=json.dumps(cars_list, ensure_ascii=False),
-                success=success,
-                error_message=error_message,
-                created_by=user,
-            )
-        except Exception as e:
-            logger.error("Failed to create telegram notification log: %s", e)
+        for chat_id in chat_ids:
+            success, error_message = send_telegram_message(chat_id, text)
 
-        return success
+            if success:
+                success_count += 1
+                logger.info("✅ Telegram отправлен: %s для %s → chat %s", notification_type, ref, chat_id)
+            else:
+                logger.error(
+                    "❌ Telegram не отправлен: %s для %s → chat %s: %s",
+                    notification_type,
+                    ref,
+                    chat_id,
+                    error_message,
+                )
+
+            try:
+                NotificationLog.objects.create(
+                    container=container,
+                    car=car,
+                    client=client,
+                    notification_type=notification_type,
+                    channel="TELEGRAM",
+                    email_to=str(chat_id or ""),
+                    subject=subject,
+                    cars_info=json.dumps(cars_list, ensure_ascii=False),
+                    success=success,
+                    error_message=error_message,
+                    created_by=user,
+                )
+            except Exception as e:
+                logger.error("Failed to create telegram notification log: %s", e)
+
+        logger.info(
+            "📨 Telegram %s для %s: %d/%d доставлено клиенту %s",
+            notification_type,
+            ref,
+            success_count,
+            len(chat_ids),
+            client.name,
+        )
+        return success_count > 0
 
     # ── Дедуп-хелперы ──────────────────────────────────────────────────────
 
