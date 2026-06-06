@@ -355,9 +355,13 @@
 <div class="cm-form-grid" {% if original %}style="--cm-status-color: {{ original.get_status_color }};"{% endif %}>
   <div class="cm-form-main">
     {% if original %}
-    <div id="cm-car-photo-frame" class="cm-car-photo-frame">
+    <div id="cm-car-photo-frame" class="cm-car-photo-frame"
+         data-upload-url="{% url 'admin:core_car_upload_model_image' original.pk %}">
       <img src="{% if car_header_image %}{{ car_header_image }}{% else %}{% static 'icons/car_unknown.png' %}{% endif %}"
            id="cm-car-photo-el" class="cm-car-photo" loading="lazy" alt="{{ original.brand }}">
+      <button type="button" id="cm-car-photo-upload" class="cm-car-photo-upload"
+              title="Загрузить фото для {{ original.brand }} {{ original.year }}">+</button>
+      <input type="file" id="cm-car-photo-input" accept="image/*" style="display:none">
     </div>
     {% endif %}
     {{ block.super }}
@@ -379,6 +383,47 @@
       heading.after(frame);
     } else {
       fieldset.prepend(frame);
+    }
+
+    // Встроенная загрузка картинки модели: «+» по наведению → проводник →
+    // upload → авто-привязка к марке/году текущего авто + нормализация.
+    var btn = document.getElementById('cm-car-photo-upload');
+    var input = document.getElementById('cm-car-photo-input');
+    var imgEl = document.getElementById('cm-car-photo-el');
+    if (btn && input && frame) {
+      var getCookie = function(name) {
+        var m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+        return m ? m.pop() : '';
+      };
+      btn.addEventListener('click', function() { input.click(); });
+      input.addEventListener('change', function() {
+        if (!input.files || !input.files[0]) return;
+        var fd = new FormData();
+        fd.append('image', input.files[0]);
+        var prev = btn.textContent;
+        btn.textContent = '…';
+        btn.classList.add('cm-car-photo-upload--busy');
+        fetch(frame.getAttribute('data-upload-url'), {
+          method: 'POST',
+          headers: { 'X-CSRFToken': getCookie('csrftoken') },
+          body: fd,
+          credentials: 'same-origin'
+        })
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            if (d && d.url) {
+              imgEl.src = d.url;
+            } else {
+              alert((d && d.error) ? d.error : 'Ошибка загрузки');
+            }
+          })
+          .catch(function() { alert('Ошибка загрузки'); })
+          .finally(function() {
+            btn.textContent = prev;
+            btn.classList.remove('cm-car-photo-upload--busy');
+            input.value = '';
+          });
+      });
     }
   });
   </script>

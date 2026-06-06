@@ -478,6 +478,71 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
 
         return super().change_view(request, object_id, form_url, extra_context)
 
+    def get_urls(self):
+        from django.urls import path
+        custom = [
+            path(
+                '<int:object_id>/upload-model-image/',
+                self.admin_site.admin_view(self.upload_model_image_view),
+                name='core_car_upload_model_image',
+            ),
+        ]
+        return custom + super().get_urls()
+
+    def upload_model_image_view(self, request, object_id):
+        """AJAX-загрузка картинки модели прямо из карточки авто.
+
+        Файл привязывается к CarModelImage по марке+году ТЕКУЩЕГО авто
+        (год/марка подхватываются автоматически), нормализуется под единый
+        канвас и возвращается URL для мгновенного обновления картинки.
+        """
+        from django.core.files.base import ContentFile
+        from django.http import JsonResponse
+
+        if request.method != 'POST':
+            return JsonResponse({'error': 'Только POST'}, status=405)
+        if not self.has_change_permission(request):
+            return JsonResponse({'error': 'Нет прав'}, status=403)
+
+        car = self.get_object(request, object_id)
+        if not car:
+            return JsonResponse({'error': 'Авто не найдено'}, status=404)
+        if not car.brand:
+            return JsonResponse({'error': 'У авто не указана марка'}, status=400)
+
+        upload = request.FILES.get('image')
+        if not upload:
+            return JsonResponse({'error': 'Файл не передан'}, status=400)
+
+        # Нормализуем сразу из байтов (обрезка прозрачных полей + единый
+        # канвас + WebP). Так загрузка любого формата (PNG/JPG/WebP)
+        # приводится к единому виду ровно один раз.
+        from core.services.photo_optimize import normalize_car_model_image_bytes
+        try:
+            upload.seek(0)
+            raw = upload.read()
+        except (OSError, ValueError):
+            return JsonResponse({'error': 'Не удалось прочитать файл'}, status=400)
+
+        new_bytes = normalize_car_model_image_bytes(raw)
+        if new_bytes is None:
+            return JsonResponse({'error': 'Это не изображение или формат не поддерживается'}, status=400)
+
+        from core.models import CarModelImage
+        obj = CarModelImage.objects.filter(brand__iexact=car.brand, year=car.year).first()
+        if not obj:
+            obj = CarModelImage(brand=car.brand, year=car.year)
+        obj.is_active = True
+        base = f"{car.brand} {car.year or ''}".strip().replace('/', '-') + '.webp'
+        # Имя уже .webp → save() не будет повторно нормализовать.
+        obj.image.save(base, ContentFile(new_bytes), save=False)
+        obj.save()
+
+        url = obj.image.url
+        if obj.updated_at:
+            url = f"{url}?v={int(obj.updated_at.timestamp())}"
+        return JsonResponse({'url': url, 'brand': car.brand, 'year': car.year})
+
     def set_transferred_today(self, request, queryset):
         """Sets status to 'Transferred' and transfer date to today"""
         from django.utils import timezone

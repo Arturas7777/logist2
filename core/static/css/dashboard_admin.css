@@ -2193,6 +2193,42 @@ body.popup #footer {
     border: none;
     border-radius: 0;
     flex-shrink: 0;
+    position: relative;
+}
+
+/* Кнопка-оверлей «+» для загрузки картинки модели прямо из карточки */
+.cm-car-photo-upload {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 56px;
+    height: 56px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(108, 92, 231, .92);
+    color: #fff;
+    font-size: 32px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .15s ease, background .15s ease;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .25);
+}
+.cm-car-photo-frame:hover .cm-car-photo-upload {
+    opacity: 1;
+    pointer-events: auto;
+}
+.cm-car-photo-upload:hover {
+    background: #5a4bd6;
+}
+.cm-car-photo-upload--busy {
+    opacity: 1;
+    pointer-events: none;
+    cursor: default;
 }
 
 .cm-car-photo {
@@ -2782,6 +2818,11 @@ body.model-newinvoice.change-form #content > h2 {
         width: 100%;
         max-width: 520px;
         margin: 0 auto 14px auto;
+    }
+    /* На тач-устройствах нет hover — показываем кнопку загрузки всегда */
+    .cm-car-photo-upload {
+        opacity: .9;
+        pointer-events: auto;
     }
 
     .cm-form-main .form-row .form-multiline {
