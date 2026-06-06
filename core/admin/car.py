@@ -193,9 +193,15 @@ def find_car_model_image_url(year, brand):
 
     if match and match.image:
         try:
-            return match.image.url
+            url = match.image.url
         except ValueError:
             return None
+        # Сброс кэша: имя файла при перезаливке не меняется (.webp под тем же
+        # brand), поэтому добавляем версию по времени обновления — иначе
+        # браузер показывал бы старую версию картинки.
+        if match.updated_at:
+            url = f"{url}?v={int(match.updated_at.timestamp())}"
+        return url
     return None
 
 
