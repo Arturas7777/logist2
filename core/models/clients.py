@@ -34,16 +34,28 @@ class Client(BalanceMethodsMixin, models.Model):
     notification_enabled = models.BooleanField(
         default=True, verbose_name="Получать уведомления", help_text="Отправлять email-уведомления о контейнерах"
     )
-    telegram_chat_id = models.TextField(
+    telegram_chat_id = models.CharField(
+        max_length=64,
         blank=True,
         null=True,
-        verbose_name="Telegram Chat ID",
+        verbose_name="Telegram Chat ID 1",
         help_text=(
-            "Один или несколько chat_id в Telegram для уведомлений о разгрузке "
-            "(через запятую или с новой строки). Клиент должен написать боту "
-            "/start, после чего chat_id можно получить командой "
-            "manage.py telegram_updates."
+            "Основной chat_id в Telegram для уведомлений о разгрузке. Клиент "
+            "должен написать боту /start, после чего chat_id можно получить "
+            "командой manage.py telegram_updates."
         ),
+    )
+    telegram_chat_id2 = models.CharField(
+        max_length=64, blank=True, null=True, verbose_name="Telegram Chat ID 2",
+        help_text="Дополнительный chat_id для уведомлений",
+    )
+    telegram_chat_id3 = models.CharField(
+        max_length=64, blank=True, null=True, verbose_name="Telegram Chat ID 3",
+        help_text="Дополнительный chat_id для уведомлений",
+    )
+    telegram_chat_id4 = models.CharField(
+        max_length=64, blank=True, null=True, verbose_name="Telegram Chat ID 4",
+        help_text="Дополнительный chat_id для уведомлений",
     )
     telegram_enabled = models.BooleanField(
         default=True,
@@ -92,22 +104,19 @@ class Client(BalanceMethodsMixin, models.Model):
         return len(self.get_notification_emails()) > 0
 
     def get_telegram_chat_ids(self):
-        """Возвращает список всех chat_id клиента для уведомлений.
+        """Возвращает список всех заполненных chat_id клиента для уведомлений.
 
-        Значения разделяются запятой, точкой с запятой, пробелом или
-        переносом строки. Пустые и дубликаты отбрасываются (порядок
-        сохраняется).
+        Пустые значения и дубликаты отбрасываются (порядок сохраняется).
         """
-        if not self.telegram_chat_id:
-            return []
-        import re
-
-        parts = re.split(r"[\s,;]+", self.telegram_chat_id.strip())
         result = []
-        for p in parts:
-            p = p.strip()
-            if p and p not in result:
-                result.append(p)
+        for field in [
+            self.telegram_chat_id,
+            self.telegram_chat_id2,
+            self.telegram_chat_id3,
+            self.telegram_chat_id4,
+        ]:
+            if field and field.strip() and field.strip() not in result:
+                result.append(field.strip())
         return result
 
     def has_telegram(self):

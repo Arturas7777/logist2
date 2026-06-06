@@ -276,7 +276,7 @@ class ClientAdmin(admin.ModelAdmin):
     change_form_template = 'admin/client_change.html'
     list_display = ('name', 'tariff_display', 'emails_display', 'telegram_display', 'notification_enabled', 'new_balance_display', 'balance_status_new')
     list_filter = (ClientDebtFilter, 'notification_enabled', 'telegram_enabled', 'tariff_type')
-    search_fields = ('name', 'email', 'email2', 'email3', 'email4', 'telegram_chat_id')
+    search_fields = ('name', 'email', 'email2', 'email3', 'email4', 'telegram_chat_id', 'telegram_chat_id2', 'telegram_chat_id3', 'telegram_chat_id4')
     actions = ['reset_balances', 'recalculate_balance', 'reset_client_balance']
     list_per_page = 50
     show_full_result_count = False
@@ -336,10 +336,11 @@ class ClientAdmin(admin.ModelAdmin):
             'description': 'Уведомления о разгрузке контейнеров будут отправлены на все указанные адреса'
         }),
         ('📨 Telegram-уведомления', {
-            'fields': ('telegram_enabled', 'telegram_chat_id'),
+            'fields': ('telegram_enabled', 'telegram_chat_id', 'telegram_chat_id2', 'telegram_chat_id3', 'telegram_chat_id4'),
             'description': (
-                'Дублирование уведомлений о разгрузке в Telegram. Клиент должен написать боту /start, '
-                'после чего chat_id можно получить командой: python manage.py telegram_updates'
+                'Дублирование уведомлений о разгрузке в Telegram (на все указанные chat_id). '
+                'Клиент должен написать боту /start, после чего chat_id можно получить '
+                'командой: python manage.py telegram_updates'
             )
         }),
         ('📊 Тариф', {
