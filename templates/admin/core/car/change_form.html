@@ -391,8 +391,12 @@
     var input = document.getElementById('cm-car-photo-input');
     var imgEl = document.getElementById('cm-car-photo-el');
     if (btn && input && frame) {
-      var getCookie = function(name) {
-        var m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+      // Токен берём из скрытого поля формы, а не из cookie: на проде
+      // CSRF_COOKIE_HTTPONLY=True и document.cookie его не отдаёт.
+      var getCsrfToken = function() {
+        var el = document.querySelector('input[name=csrfmiddlewaretoken]');
+        if (el && el.value) return el.value;
+        var m = document.cookie.match('(^|;)\\s*csrftoken\\s*=\\s*([^;]+)');
         return m ? m.pop() : '';
       };
       btn.addEventListener('click', function() { input.click(); });
@@ -405,7 +409,7 @@
         btn.classList.add('cm-car-photo-upload--busy');
         fetch(frame.getAttribute('data-upload-url'), {
           method: 'POST',
-          headers: { 'X-CSRFToken': getCookie('csrftoken') },
+          headers: { 'X-CSRFToken': getCsrfToken() },
           body: fd,
           credentials: 'same-origin'
         })
