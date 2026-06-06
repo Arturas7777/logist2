@@ -153,7 +153,10 @@ def send_container_notifications_on_save(sender, instance, created, **kwargs):
                 send_planned_notifications_task.delay(instance.pk)
             except Exception:
                 from core.services.email_service import ContainerNotificationService
+                from core.services.telegram_service import TelegramNotificationService
 
+                if not TelegramNotificationService.was_planned_notification_sent(instance):
+                    TelegramNotificationService.send_planned_to_all_clients(instance)
                 if not ContainerNotificationService.was_planned_notification_sent(instance):
                     ContainerNotificationService.send_planned_to_all_clients(instance)
 
@@ -168,7 +171,10 @@ def send_container_notifications_on_save(sender, instance, created, **kwargs):
                 send_unload_notifications_task.delay(instance.pk)
             except Exception:
                 from core.services.email_service import ContainerNotificationService
+                from core.services.telegram_service import TelegramNotificationService
 
+                if not TelegramNotificationService.was_unload_notification_sent(instance):
+                    TelegramNotificationService.send_unload_to_all_clients(instance)
                 if not ContainerNotificationService.was_unload_notification_sent(instance):
                     ContainerNotificationService.send_unload_to_all_clients(instance)
 

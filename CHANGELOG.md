@@ -9,6 +9,22 @@
 
 ### Added
 
+- **Telegram-уведомления о разгрузке**: параллельный email-каналу способ
+  оповещения клиентов о планируемой/фактической разгрузке контейнера и
+  разгрузке отдельного ТС. Новый `core/services/telegram_service.py`
+  (`TelegramNotificationService`), отправка через Telegram Bot API.
+  - У `Client` добавлены поля `telegram_chat_id` и `telegram_enabled`.
+  - `NotificationLog` получил поле `channel` (`EMAIL` / `TELEGRAM`) —
+    дедуп отправок независим по каналам.
+  - Celery-задачи `send_planned_notifications_task` /
+    `send_unload_notifications_task` / `send_car_unload_notification_task`
+    шлют оба канала (сбой одного не влияет на другой).
+  - Админка: блок «Telegram-уведомления» у клиента, колонка/фильтр
+    «Канал» в логах, действия «📨 Telegram: уведомить…» у контейнера и ТС.
+  - Команда `python manage.py telegram_updates` — поиск `chat_id`
+    клиентов через getUpdates.
+  - Настройки `TELEGRAM_BOT_TOKEN`, `TELEGRAM_NOTIFICATIONS_ENABLED`,
+    `TELEGRAM_API_TIMEOUT` (env), `env.example` обновлён.
 - **M1**: `CHANGELOG.md` (этот файл) + обновлённый `README.md`
   (актуальный test count, H6-структура core-пакета).
 - **M4**: новый CI-job `tests-with-migrations` в `.github/workflows/ci.yml`

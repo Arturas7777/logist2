@@ -212,6 +212,7 @@ class ContainerNotificationService:
                 container=container,
                 client=client,
                 notification_type=notification_type,
+                channel='EMAIL',
                 email_to=email_to,
                 subject=subject,
                 cars_info=json.dumps(cars_list, ensure_ascii=False),
@@ -242,6 +243,7 @@ class ContainerNotificationService:
                 NotificationLog.objects.select_for_update().filter(
                     container=container,
                     notification_type='PLANNED',
+                    channel='EMAIL',
                     success=True
                 ).values_list('client_id', flat=True)
             )
@@ -281,6 +283,7 @@ class ContainerNotificationService:
                 NotificationLog.objects.select_for_update().filter(
                     container=container,
                     notification_type='UNLOADED',
+                    channel='EMAIL',
                     success=True
                 ).values_list('client_id', flat=True)
             )
@@ -311,6 +314,7 @@ class ContainerNotificationService:
         return NotificationLog.objects.filter(
             container=container,
             notification_type='UNLOADED',
+            channel='EMAIL',
             success=True
         ).exists()
 
@@ -323,6 +327,7 @@ class ContainerNotificationService:
         return NotificationLog.objects.filter(
             container=container,
             notification_type='PLANNED',
+            channel='EMAIL',
             success=True
         ).exists()
 
@@ -447,6 +452,7 @@ class CarNotificationService:
                 car=car,
                 client=client,
                 notification_type='CAR_UNLOADED',
+                channel='EMAIL',
                 email_to=email_to,
                 subject=subject,
                 cars_info=json.dumps([car_info], ensure_ascii=False),
@@ -468,6 +474,7 @@ class CarNotificationService:
         return NotificationLog.objects.filter(
             car=car,
             notification_type='CAR_UNLOADED',
+            channel='EMAIL',
             success=True
         ).exists()
 

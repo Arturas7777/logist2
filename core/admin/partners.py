@@ -274,9 +274,9 @@ class ClientDebtFilter(admin.SimpleListFilter):
 @admin.register(Client)
 class ClientAdmin(admin.ModelAdmin):
     change_form_template = 'admin/client_change.html'
-    list_display = ('name', 'tariff_display', 'emails_display', 'notification_enabled', 'new_balance_display', 'balance_status_new')
-    list_filter = (ClientDebtFilter, 'notification_enabled', 'tariff_type')
-    search_fields = ('name', 'email', 'email2', 'email3', 'email4')
+    list_display = ('name', 'tariff_display', 'emails_display', 'telegram_display', 'notification_enabled', 'new_balance_display', 'balance_status_new')
+    list_filter = (ClientDebtFilter, 'notification_enabled', 'telegram_enabled', 'tariff_type')
+    search_fields = ('name', 'email', 'email2', 'email3', 'email4', 'telegram_chat_id')
     actions = ['reset_balances', 'recalculate_balance', 'reset_client_balance']
     list_per_page = 50
     show_full_result_count = False
@@ -335,6 +335,13 @@ class ClientAdmin(admin.ModelAdmin):
             'fields': ('email', 'email2', 'email3', 'email4'),
             'description': 'Уведомления о разгрузке контейнеров будут отправлены на все указанные адреса'
         }),
+        ('📨 Telegram-уведомления', {
+            'fields': ('telegram_enabled', 'telegram_chat_id'),
+            'description': (
+                'Дублирование уведомлений о разгрузке в Telegram. Клиент должен написать боту /start, '
+                'после чего chat_id можно получить командой: python manage.py telegram_updates'
+            )
+        }),
         ('📊 Тариф', {
             'fields': ('tariff_type',),
             'description': 'NONE = обычные наценки. FIXED = фикс.общая цена за авто (не зависит от кол-ва). FLEXIBLE = общая цена зависит от кол-ва авто в контейнере. Цена = сумма ВСЕХ услуг кроме хранения. Ставки заполняются в таблице ниже.'
@@ -369,6 +376,16 @@ class ClientAdmin(admin.ModelAdmin):
             all_emails = ', '.join(emails)
             return format_html('<span title="{}">{} (+{})</span>', all_emails, emails[0], count - 1)
     emails_display.short_description = 'Email'
+
+    def telegram_display(self, obj):
+        """Показывает статус Telegram-уведомлений клиента."""
+        chat_id = obj.get_telegram_chat_id()
+        if not chat_id:
+            return format_html('<span style="color: #999;">—</span>')
+        if not obj.telegram_enabled:
+            return format_html('<span style="color: #999;" title="{}">выкл</span>', chat_id)
+        return format_html('<span style="color: #229ED9;" title="{}">✓ TG</span>', chat_id)
+    telegram_display.short_description = 'Telegram'
 
     def real_balance_display(self, obj):
         """Shows invoice-balance of client (invoices - payments)"""

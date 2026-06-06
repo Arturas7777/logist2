@@ -51,11 +51,23 @@ def sync_container_photos_gdrive_task(self, container_id, folder_url=None):
 def send_planned_notifications_task(self, container_id):
     from core.models import Container
     from core.services.email_service import ContainerNotificationService
+    from core.services.telegram_service import TelegramNotificationService
     try:
         container = Container.objects.get(id=container_id)
     except Container.DoesNotExist:
         logger.warning("Container %s not found, skipping planned notifications", container_id)
         return
+
+    # Telegram-канал независим от email: ошибка одного не должна откатывать
+    # отправку/ретрай другого, поэтому каждый канал в своём try.
+    try:
+        if not TelegramNotificationService.was_planned_notification_sent(container):
+            tg_sent, tg_failed = TelegramNotificationService.send_planned_to_all_clients(container)
+            if tg_sent or tg_failed:
+                logger.info(f"Planned TG notifications for {container.number}: {tg_sent} sent, {tg_failed} failed")
+    except Exception as exc:
+        logger.error(f"Failed planned Telegram notifications for container {container_id}: {exc}")
+
     try:
         if not ContainerNotificationService.was_planned_notification_sent(container):
             sent, failed = ContainerNotificationService.send_planned_to_all_clients(container)
@@ -69,11 +81,21 @@ def send_planned_notifications_task(self, container_id):
 def send_unload_notifications_task(self, container_id):
     from core.models import Container
     from core.services.email_service import ContainerNotificationService
+    from core.services.telegram_service import TelegramNotificationService
     try:
         container = Container.objects.get(id=container_id)
     except Container.DoesNotExist:
         logger.warning("Container %s not found, skipping unload notifications", container_id)
         return
+
+    try:
+        if not TelegramNotificationService.was_unload_notification_sent(container):
+            tg_sent, tg_failed = TelegramNotificationService.send_unload_to_all_clients(container)
+            if tg_sent or tg_failed:
+                logger.info(f"Unload TG notifications for {container.number}: {tg_sent} sent, {tg_failed} failed")
+    except Exception as exc:
+        logger.error(f"Failed unload Telegram notifications for container {container_id}: {exc}")
+
     try:
         if not ContainerNotificationService.was_unload_notification_sent(container):
             sent, failed = ContainerNotificationService.send_unload_to_all_clients(container)
@@ -519,8 +541,21 @@ def parse_pending_receipts(self):
 def send_car_unload_notification_task(self, car_id):
     from core.models import Car
     from core.services.email_service import CarNotificationService
+    from core.services.telegram_service import TelegramNotificationService
     try:
         car = Car.objects.select_related('client', 'warehouse').get(id=car_id)
+    except Car.DoesNotExist:
+        logger.warning("Car %s not found, skipping unload notification", car_id)
+        return
+
+    try:
+        if not TelegramNotificationService.was_car_unload_notification_sent(car):
+            if TelegramNotificationService.send_car_unload_notification(car):
+                logger.info(f"Car unload Telegram notification sent for {car.vin}")
+    except Exception as exc:
+        logger.error(f"Failed car unload Telegram notification for car {car_id}: {exc}")
+
+    try:
         if not CarNotificationService.was_car_unload_notification_sent(car):
             CarNotificationService.send_car_unload_notification(car)
             logger.info(f"Car unload notification sent for {car.vin}")

@@ -133,7 +133,7 @@ class ContainerAdmin(admin.ModelAdmin):
         }),
     )
     readonly_fields = ('days', 'storage_cost')
-    actions = ['print_labels_action', 'reset_labels_printed_action', 'set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'check_container_status', 'bulk_update_container_statuses', 'sync_photos_from_gdrive', 'resend_planned_notifications', 'resend_unload_notifications']
+    actions = ['print_labels_action', 'reset_labels_printed_action', 'set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'check_container_status', 'bulk_update_container_statuses', 'sync_photos_from_gdrive', 'resend_planned_notifications', 'resend_unload_notifications', 'resend_planned_telegram', 'resend_unload_telegram']
 
     class Media:
         css = {'all': ('css/dashboard_admin.css',)}
@@ -800,6 +800,60 @@ class ContainerAdmin(admin.ModelAdmin):
             )
 
     resend_unload_notifications.short_description = "📧 Повторить уведомление о разгрузке"
+
+    def resend_planned_telegram(self, request, queryset):
+        """Повторная отправка уведомления о планируемой разгрузке в Telegram"""
+        from core.services.telegram_service import TelegramNotificationService
+
+        total_sent = 0
+        total_failed = 0
+        for container in queryset:
+            if not container.planned_unload_date:
+                self.message_user(
+                    request,
+                    f"Контейнер {container.number}: не указана планируемая дата разгрузки",
+                    level='WARNING'
+                )
+                continue
+            sent, failed = TelegramNotificationService.send_planned_to_all_clients(container, user=request.user)
+            total_sent += sent
+            total_failed += failed
+
+        if total_sent > 0:
+            self.message_user(request, f"Telegram: отправлено {total_sent} уведомлений. Ошибок: {total_failed}", level='SUCCESS')
+        elif total_failed > 0:
+            self.message_user(request, f"Telegram: не удалось отправить. Ошибок: {total_failed}.", level='ERROR')
+        else:
+            self.message_user(request, "Нет клиентов с Telegram (или уведомления уже отправлены). Проверьте, включён ли TELEGRAM_BOT_TOKEN.", level='WARNING')
+
+    resend_planned_telegram.short_description = "📨 Telegram: уведомить о планируемой разгрузке"
+
+    def resend_unload_telegram(self, request, queryset):
+        """Повторная отправка уведомления о разгрузке в Telegram"""
+        from core.services.telegram_service import TelegramNotificationService
+
+        total_sent = 0
+        total_failed = 0
+        for container in queryset:
+            if not container.unload_date:
+                self.message_user(
+                    request,
+                    f"Контейнер {container.number}: не указана дата разгрузки",
+                    level='WARNING'
+                )
+                continue
+            sent, failed = TelegramNotificationService.send_unload_to_all_clients(container, user=request.user)
+            total_sent += sent
+            total_failed += failed
+
+        if total_sent > 0:
+            self.message_user(request, f"Telegram: отправлено {total_sent} уведомлений. Ошибок: {total_failed}", level='SUCCESS')
+        elif total_failed > 0:
+            self.message_user(request, f"Telegram: не удалось отправить. Ошибок: {total_failed}.", level='ERROR')
+        else:
+            self.message_user(request, "Нет клиентов с Telegram (или уведомления уже отправлены). Проверьте, включён ли TELEGRAM_BOT_TOKEN.", level='WARNING')
+
+    resend_unload_telegram.short_description = "📨 Telegram: уведомить о разгрузке"
 
     def print_labels_action(self, request, queryset):
         """Редиректит на страницу настройки печати наклеек с выбранными контейнерами."""

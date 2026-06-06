@@ -34,6 +34,22 @@ class Client(BalanceMethodsMixin, models.Model):
     notification_enabled = models.BooleanField(
         default=True, verbose_name="Получать уведомления", help_text="Отправлять email-уведомления о контейнерах"
     )
+    telegram_chat_id = models.CharField(
+        max_length=64,
+        blank=True,
+        null=True,
+        verbose_name="Telegram Chat ID",
+        help_text=(
+            "ID чата клиента в Telegram для уведомлений о разгрузке. "
+            "Клиент должен написать боту /start, после чего chat_id можно "
+            "получить командой manage.py telegram_updates."
+        ),
+    )
+    telegram_enabled = models.BooleanField(
+        default=True,
+        verbose_name="Уведомления в Telegram",
+        help_text="Дублировать уведомления о разгрузке в Telegram (если указан Chat ID)",
+    )
     tariff_type = models.CharField(
         max_length=10,
         choices=TARIFF_CHOICES,
@@ -74,6 +90,16 @@ class Client(BalanceMethodsMixin, models.Model):
     def has_notification_emails(self):
         """Проверяет, есть ли хотя бы один email для уведомлений"""
         return len(self.get_notification_emails()) > 0
+
+    def get_telegram_chat_id(self):
+        """Возвращает очищенный Telegram chat_id или None."""
+        if self.telegram_chat_id and self.telegram_chat_id.strip():
+            return self.telegram_chat_id.strip()
+        return None
+
+    def has_telegram(self):
+        """Проверяет, можно ли слать клиенту уведомления в Telegram."""
+        return bool(self.telegram_enabled and self.get_telegram_chat_id())
 
     @property
     def open_invoices_debt(self):

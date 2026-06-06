@@ -331,7 +331,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             )
         }),
     )
-    actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'set_transferred_today', 'set_title_with_us', 'resend_car_unload_notification', 'export_selected_as_csv']
+    actions = ['set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'set_transferred_today', 'set_title_with_us', 'resend_car_unload_notification', 'resend_car_unload_telegram', 'export_selected_as_csv']
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
@@ -916,7 +916,36 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             self.message_user(request, f"Уведомления отправлены для {sent} ТС.")
         if skipped:
             self.message_user(request, f"Пропущено {skipped} ТС (привязаны к контейнеру).", level='WARNING')
-    resend_car_unload_notification.short_description = "Повторить уведомление о разгрузке ТС"
+    resend_car_unload_notification.short_description = "📧 Повторить уведомление о разгрузке ТС"
+
+    def resend_car_unload_telegram(self, request, queryset):
+        """Повторная отправка уведомления о разгрузке ТС (без контейнера) в Telegram"""
+        from core.services.telegram_service import TelegramNotificationService
+
+        sent = 0
+        skipped = 0
+
+        for car in queryset.select_related('client', 'warehouse'):
+            if car.container_id:
+                skipped += 1
+                continue
+            if not car.unload_date:
+                self.message_user(request, f"ТС {car.vin}: не указана дата разгрузки", level='WARNING')
+                continue
+            if not car.client:
+                self.message_user(request, f"ТС {car.vin}: не указан клиент", level='WARNING')
+                continue
+
+            if TelegramNotificationService.send_car_unload_notification(car, user=request.user):
+                sent += 1
+            else:
+                self.message_user(request, f"ТС {car.vin}: Telegram не отправлен (нет chat_id/выключен)", level='WARNING')
+
+        if sent:
+            self.message_user(request, f"Telegram-уведомления отправлены для {sent} ТС.")
+        if skipped:
+            self.message_user(request, f"Пропущено {skipped} ТС (привязаны к контейнеру).", level='WARNING')
+    resend_car_unload_telegram.short_description = "📨 Telegram: уведомить о разгрузке ТС"
 
     class Media:
         # NB: dashboard_admin.css уже подключается в templates/admin/base_site.html.

@@ -177,17 +177,17 @@ class TrackingRequestAdmin(admin.ModelAdmin):
 @admin.register(NotificationLog)
 class NotificationLogAdmin(admin.ModelAdmin):
     """Просмотр истории отправленных уведомлений"""
-    list_display = ['sent_at', 'notification_type_display', 'container', 'client', 'email_to', 'success_display', 'created_by']
-    list_filter = ['notification_type', 'success', 'sent_at']
-    list_select_related = ('container', 'client', 'created_by')
-    search_fields = ['container__number', 'client__name', 'email_to', 'subject']
-    readonly_fields = ['container', 'client', 'notification_type', 'email_to', 'subject', 'cars_info', 'sent_at', 'success', 'error_message', 'created_by']
+    list_display = ['sent_at', 'notification_type_display', 'channel_display', 'container', 'car', 'client', 'email_to', 'success_display', 'created_by']
+    list_filter = ['notification_type', 'channel', 'success', 'sent_at']
+    list_select_related = ('container', 'car', 'client', 'created_by')
+    search_fields = ['container__number', 'car__vin', 'client__name', 'email_to', 'subject']
+    readonly_fields = ['container', 'car', 'client', 'notification_type', 'channel', 'email_to', 'subject', 'cars_info', 'sent_at', 'success', 'error_message', 'created_by']
     ordering = ['-sent_at']
     date_hierarchy = 'sent_at'
 
     fieldsets = (
         ('Уведомление', {
-            'fields': ('notification_type', 'container', 'client', 'email_to', 'subject')
+            'fields': ('notification_type', 'channel', 'container', 'car', 'client', 'email_to', 'subject')
         }),
         ('Автомобили', {
             'fields': ('cars_info',),
@@ -203,6 +203,7 @@ class NotificationLogAdmin(admin.ModelAdmin):
         colors = {
             'PLANNED': '#2196F3',  # синий
             'UNLOADED': '#4CAF50',  # зеленый
+            'CAR_UNLOADED': '#4CAF50',  # зеленый
         }
         color = colors.get(obj.notification_type, '#666')
         return format_html(
@@ -212,6 +213,18 @@ class NotificationLogAdmin(admin.ModelAdmin):
         )
     notification_type_display.short_description = 'Тип'
     notification_type_display.admin_order_field = 'notification_type'
+
+    def channel_display(self, obj):
+        """Канал доставки: Email / Telegram."""
+        colors = {'EMAIL': '#607D8B', 'TELEGRAM': '#229ED9'}
+        color = colors.get(obj.channel, '#666')
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 8px; border-radius: 3px;">{}</span>',
+            color,
+            obj.get_channel_display()
+        )
+    channel_display.short_description = 'Канал'
+    channel_display.admin_order_field = 'channel'
 
     def success_display(self, obj):
         """Красивое отображение статуса"""

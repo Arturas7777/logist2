@@ -522,6 +522,20 @@ EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "Caromoto Lithuania <noreply@caromoto-lt.com>")
 
 # ---------------------------------------------------------------------------
+# Telegram — уведомления клиентам о разгрузке (дублируют email-канал)
+# ---------------------------------------------------------------------------
+# Токен бота из @BotFather. Если пусто — Telegram-уведомления отключены,
+# работает только email-канал.
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+# Глобальный флаг (по умолчанию включён, если задан токен). Позволяет
+# выключить рассылку, не удаляя токен.
+TELEGRAM_NOTIFICATIONS_ENABLED = (
+    str(os.getenv("TELEGRAM_NOTIFICATIONS_ENABLED", "True")).lower() == "true" and bool(TELEGRAM_BOT_TOKEN)
+)
+# Таймаут HTTP-запросов к Telegram Bot API, сек.
+TELEGRAM_API_TIMEOUT = int(os.getenv("TELEGRAM_API_TIMEOUT", "10"))
+
+# ---------------------------------------------------------------------------
 # AI Chat
 # ---------------------------------------------------------------------------
 

@@ -287,7 +287,10 @@ def _maybe_send_car_unload_notification(instance, *, created):
                 send_car_unload_notification_task.delay(instance.pk)
             except Exception:
                 from core.services.email_service import CarNotificationService
+                from core.services.telegram_service import TelegramNotificationService
 
+                if not TelegramNotificationService.was_car_unload_notification_sent(instance):
+                    TelegramNotificationService.send_car_unload_notification(instance)
                 if not CarNotificationService.was_car_unload_notification_sent(instance):
                     CarNotificationService.send_car_unload_notification(instance)
 

@@ -412,6 +412,11 @@ class NotificationLog(models.Model):
         ('CAR_UNLOADED', 'Разгрузка ТС (без контейнера)'),
     ]
 
+    CHANNEL_CHOICES = [
+        ('EMAIL', 'Email'),
+        ('TELEGRAM', 'Telegram'),
+    ]
+
     container = models.ForeignKey(Container, on_delete=models.CASCADE, related_name='notifications',
                                   verbose_name="Контейнер", null=True, blank=True)
     car = models.ForeignKey('Car', on_delete=models.CASCADE, related_name='notifications',
@@ -421,8 +426,11 @@ class NotificationLog(models.Model):
                                verbose_name="Клиент")
     notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES,
                                          verbose_name="Тип уведомления")
+    channel = models.CharField(max_length=10, choices=CHANNEL_CHOICES, default='EMAIL',
+                               db_index=True, verbose_name="Канал")
 
-    email_to = models.EmailField(verbose_name="Email получателя")
+    email_to = models.CharField(max_length=255, blank=True, verbose_name="Получатель",
+                                help_text="Email-адрес или Telegram chat_id получателя")
     subject = models.CharField(max_length=255, verbose_name="Тема письма")
 
     cars_info = models.TextField(blank=True, verbose_name="Информация об авто",
@@ -440,16 +448,16 @@ class NotificationLog(models.Model):
         verbose_name_plural = "Логи уведомлений"
         ordering = ['-sent_at']
         indexes = [
-            models.Index(fields=['container', 'notification_type']),
-            models.Index(fields=['car', 'notification_type']),
+            models.Index(fields=['container', 'notification_type', 'channel']),
+            models.Index(fields=['car', 'notification_type', 'channel']),
             models.Index(fields=['client', 'sent_at']),
         ]
 
     def __str__(self):
         status = "✓" if self.success else "✗"
         if self.container:
-            return f"{status} {self.get_notification_type_display()} - {self.container.number} → {self.email_to}"
+            return f"{status} [{self.channel}] {self.get_notification_type_display()} - {self.container.number} → {self.email_to}"
         elif self.car:
-            return f"{status} {self.get_notification_type_display()} - {self.car.vin} → {self.email_to}"
-        return f"{status} {self.get_notification_type_display()} → {self.email_to}"
+            return f"{status} [{self.channel}] {self.get_notification_type_display()} - {self.car.vin} → {self.email_to}"
+        return f"{status} [{self.channel}] {self.get_notification_type_display()} → {self.email_to}"
 
