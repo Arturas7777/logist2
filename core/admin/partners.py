@@ -339,12 +339,6 @@ class ClientAdmin(admin.ModelAdmin):
                 ('email3', 'telegram_chat_id3'),
                 ('email4', 'telegram_chat_id4'),
             ),
-            'description': (
-                'Слева — email-адреса, справа — Telegram chat_id. Уведомления о разгрузке '
-                'отправляются на все заполненные адреса и chat_id. '
-                'Чтобы получить chat_id: клиент пишет боту /start, затем команда '
-                'python manage.py telegram_updates.'
-            )
         }),
         ('📊 Тариф', {
             'fields': ('tariff_type',),

@@ -16,52 +16,16 @@ class Client(BalanceMethodsMixin, models.Model):
     ]
 
     name = models.CharField(max_length=100, verbose_name="Имя клиента", db_index=True)
-    email = models.EmailField(
-        blank=True,
-        null=True,
-        verbose_name="Email 1",
-        help_text="Основной email для уведомлений о разгрузке контейнеров",
-    )
-    email2 = models.EmailField(
-        blank=True, null=True, verbose_name="Email 2", help_text="Дополнительный email для уведомлений"
-    )
-    email3 = models.EmailField(
-        blank=True, null=True, verbose_name="Email 3", help_text="Дополнительный email для уведомлений"
-    )
-    email4 = models.EmailField(
-        blank=True, null=True, verbose_name="Email 4", help_text="Дополнительный email для уведомлений"
-    )
-    notification_enabled = models.BooleanField(
-        default=True, verbose_name="Получать уведомления", help_text="Отправлять email-уведомления о контейнерах"
-    )
-    telegram_chat_id = models.CharField(
-        max_length=64,
-        blank=True,
-        null=True,
-        verbose_name="Telegram Chat ID 1",
-        help_text=(
-            "Основной chat_id в Telegram для уведомлений о разгрузке. Клиент "
-            "должен написать боту /start, после чего chat_id можно получить "
-            "командой manage.py telegram_updates."
-        ),
-    )
-    telegram_chat_id2 = models.CharField(
-        max_length=64, blank=True, null=True, verbose_name="Telegram Chat ID 2",
-        help_text="Дополнительный chat_id для уведомлений",
-    )
-    telegram_chat_id3 = models.CharField(
-        max_length=64, blank=True, null=True, verbose_name="Telegram Chat ID 3",
-        help_text="Дополнительный chat_id для уведомлений",
-    )
-    telegram_chat_id4 = models.CharField(
-        max_length=64, blank=True, null=True, verbose_name="Telegram Chat ID 4",
-        help_text="Дополнительный chat_id для уведомлений",
-    )
-    telegram_enabled = models.BooleanField(
-        default=True,
-        verbose_name="Уведомления в Telegram",
-        help_text="Дублировать уведомления о разгрузке в Telegram (если указан Chat ID)",
-    )
+    email = models.EmailField(blank=True, null=True, verbose_name="Email 1")
+    email2 = models.EmailField(blank=True, null=True, verbose_name="Email 2")
+    email3 = models.EmailField(blank=True, null=True, verbose_name="Email 3")
+    email4 = models.EmailField(blank=True, null=True, verbose_name="Email 4")
+    notification_enabled = models.BooleanField(default=True, verbose_name="Получать уведомления")
+    telegram_chat_id = models.CharField(max_length=64, blank=True, null=True, verbose_name="Telegram Chat ID 1")
+    telegram_chat_id2 = models.CharField(max_length=64, blank=True, null=True, verbose_name="Telegram Chat ID 2")
+    telegram_chat_id3 = models.CharField(max_length=64, blank=True, null=True, verbose_name="Telegram Chat ID 3")
+    telegram_chat_id4 = models.CharField(max_length=64, blank=True, null=True, verbose_name="Telegram Chat ID 4")
+    telegram_enabled = models.BooleanField(default=True, verbose_name="Уведомления в Telegram")
     tariff_type = models.CharField(
         max_length=10,
         choices=TARIFF_CHOICES,
