@@ -329,18 +329,21 @@ class ClientAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ('Основная информация', {
-            'fields': ('name', 'notification_enabled')
+            'fields': ('name',)
         }),
-        ('📧 Email-адреса для уведомлений', {
-            'fields': ('email', 'email2', 'email3', 'email4'),
-            'description': 'Уведомления о разгрузке контейнеров будут отправлены на все указанные адреса'
-        }),
-        ('📨 Telegram-уведомления', {
-            'fields': ('telegram_enabled', 'telegram_chat_id', 'telegram_chat_id2', 'telegram_chat_id3', 'telegram_chat_id4'),
+        ('🔔 Уведомления', {
+            'fields': (
+                ('notification_enabled', 'telegram_enabled'),
+                ('email', 'telegram_chat_id'),
+                ('email2', 'telegram_chat_id2'),
+                ('email3', 'telegram_chat_id3'),
+                ('email4', 'telegram_chat_id4'),
+            ),
             'description': (
-                'Дублирование уведомлений о разгрузке в Telegram (на все указанные chat_id). '
-                'Клиент должен написать боту /start, после чего chat_id можно получить '
-                'командой: python manage.py telegram_updates'
+                'Слева — email-адреса, справа — Telegram chat_id. Уведомления о разгрузке '
+                'отправляются на все заполненные адреса и chat_id. '
+                'Чтобы получить chat_id: клиент пишет боту /start, затем команда '
+                'python manage.py telegram_updates.'
             )
         }),
         ('📊 Тариф', {
