@@ -86,16 +86,23 @@
         .field-telegram_enabled input[type="checkbox"] {
             width: 20px;
             height: 20px;
-            transform: scale(1.3);
+            min-width: 20px;
             margin-right: 10px;
             vertical-align: middle;
+            accent-color: #6c5ce7;
             cursor: pointer;
         }
         .field-notification_enabled label,
-        .field-telegram_enabled label,
+        .field-telegram_enabled label {
+            display: inline-flex;
+            align-items: center;
+            white-space: nowrap;
+            line-height: 24px;
+        }
         .field-notification_enabled,
         .field-telegram_enabled {
             white-space: nowrap;
+            overflow: visible;
         }
     </style>
 {% endblock %}
