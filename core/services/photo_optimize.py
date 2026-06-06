@@ -66,7 +66,7 @@ def compress_image_bytes(
 # любая загруженная картинка (разной ширины/высоты/пропорций) выглядела
 # одинаково ровно по центру.
 CAR_MODEL_CANVAS = (800, 450)  # 16:9
-CAR_MODEL_PADDING = 0.0        # без внутреннего поля — «воздух» даёт рамка в карточке
+CAR_MODEL_PADDING = 0.04       # небольшое поле ПОСЛЕ обрезки прозрачных краёв
 WEBP_QUALITY = 88
 
 
@@ -89,10 +89,22 @@ def normalize_car_model_image_bytes(
             if im.mode != 'RGBA':
                 im = im.convert('RGBA')
 
+            # Обрезаем прозрачные поля вокруг машины по альфа-каналу — иначе
+            # «воздух», заложенный в исходный PNG, делает авто мелким и
+            # смещённым в канвасе. После обрезки авто заполняет канвас целиком.
+            bbox = im.getchannel('A').getbbox()
+            if bbox:
+                im = im.crop(bbox)
+
             cw, ch = canvas
             max_w = int(cw * (1 - 2 * padding))
             max_h = int(ch * (1 - 2 * padding))
-            im.thumbnail((max_w, max_h), Image.LANCZOS)
+            # Масштабируем под рамку (contain), РАЗРЕШАЯ увеличение — thumbnail()
+            # только уменьшает, из-за чего мелкие исходники оставались мелкими.
+            bw, bh = im.size
+            if bw and bh:
+                scale = min(max_w / bw, max_h / bh)
+                im = im.resize((max(1, round(bw * scale)), max(1, round(bh * scale))), Image.LANCZOS)
 
             board = Image.new('RGBA', (cw, ch), (0, 0, 0, 0))
             x = (cw - im.width) // 2
