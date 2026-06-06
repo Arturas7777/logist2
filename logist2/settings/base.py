@@ -527,6 +527,9 @@ DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "Caromoto Lithuania <norepl
 # Токен бота из @BotFather. Если пусто — Telegram-уведомления отключены,
 # работает только email-канал.
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+# Username бота (без @) — нужен для персональных deep-link приглашений
+# вида https://t.me/<username>?start=<token>.
+TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "CaromotoLT_bot").strip().lstrip("@")
 # Глобальный флаг (по умолчанию включён, если задан токен). Позволяет
 # выключить рассылку, не удаляя токен.
 TELEGRAM_NOTIFICATIONS_ENABLED = (

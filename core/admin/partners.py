@@ -280,7 +280,7 @@ class ClientAdmin(admin.ModelAdmin):
     actions = ['reset_balances', 'recalculate_balance', 'reset_client_balance']
     list_per_page = 50
     show_full_result_count = False
-    readonly_fields = ('balance', 'balance_updated_at', 'new_invoices_display', 'new_transactions_display')
+    readonly_fields = ('balance', 'balance_updated_at', 'new_invoices_display', 'new_transactions_display', 'telegram_link_display')
     inlines = [ClientTariffRateInline]
 
     def get_queryset(self, request):
@@ -338,6 +338,7 @@ class ClientAdmin(admin.ModelAdmin):
                 ('email2', 'telegram_chat_id2'),
                 ('email3', 'telegram_chat_id3'),
                 ('email4', 'telegram_chat_id4'),
+                'telegram_link_display',
             ),
         }),
         ('📊 Тариф', {
@@ -386,6 +387,25 @@ class ClientAdmin(admin.ModelAdmin):
             return format_html('<span style="color: #999;" title="{}">выкл{}</span>', title, suffix)
         return format_html('<span style="color: #229ED9;" title="{}">✓ TG{}</span>', title, suffix)
     telegram_display.short_description = 'Telegram'
+
+    def telegram_link_display(self, obj):
+        """Персональная ссылка-приглашение клиента в Telegram."""
+        if not obj or not obj.pk:
+            return format_html('<span style="color:#999;">Сохраните клиента, чтобы получить ссылку.</span>')
+        link = obj.get_telegram_deep_link()
+        if not link:
+            return format_html('<span style="color:#999;">Не задан TELEGRAM_BOT_USERNAME.</span>')
+        return format_html(
+            '<div style="max-width:760px;">'
+            '<a href="{}" target="_blank" style="color:#229ED9;font-weight:600;word-break:break-all;">{}</a>'
+            '<div style="color:#6b7280;font-size:12px;margin-top:6px;">'
+            'Отправьте эту персональную ссылку клиенту. Когда он перейдёт по ней и нажмёт '
+            '«Start», его Telegram автоматически привяжется к этому клиенту (chat_id заполнится сам, '
+            'обычно в течение минуты). Ссылка индивидуальна — не путать между клиентами.'
+            '</div></div>',
+            link, link,
+        )
+    telegram_link_display.short_description = 'Ссылка-приглашение в Telegram'
 
     def real_balance_display(self, obj):
         """Shows invoice-balance of client (invoices - payments)"""

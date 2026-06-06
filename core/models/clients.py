@@ -26,6 +26,10 @@ class Client(BalanceMethodsMixin, models.Model):
     telegram_chat_id3 = models.CharField(max_length=64, blank=True, null=True, verbose_name="Telegram Chat ID 3")
     telegram_chat_id4 = models.CharField(max_length=64, blank=True, null=True, verbose_name="Telegram Chat ID 4")
     telegram_enabled = models.BooleanField(default=True, verbose_name="Telegram уведомления")
+    telegram_link_token = models.CharField(
+        max_length=32, blank=True, null=True, unique=True, editable=False,
+        verbose_name="Токен Telegram-привязки",
+    )
     tariff_type = models.CharField(
         max_length=10,
         choices=TARIFF_CHOICES,
@@ -109,6 +113,49 @@ class Client(BalanceMethodsMixin, models.Model):
     def has_telegram(self):
         """Проверяет, можно ли слать клиенту уведомления в Telegram."""
         return bool(self.telegram_enabled and self.get_telegram_chat_ids())
+
+    def ensure_telegram_link_token(self):
+        """Возвращает токен персональной ссылки-приглашения, создавая при отсутствии."""
+        if not self.telegram_link_token:
+            import secrets
+
+            self.telegram_link_token = secrets.token_urlsafe(16)
+            if self.pk:
+                Client.objects.filter(pk=self.pk).update(telegram_link_token=self.telegram_link_token)
+        return self.telegram_link_token
+
+    def get_telegram_deep_link(self):
+        """Персональная ссылка вида https://t.me/<bot>?start=<token>.
+
+        Клиент переходит по ней и жмёт Start — система сама привязывает его
+        chat_id к этому клиенту (см. telegram_service.process_telegram_starts).
+        """
+        from django.conf import settings
+
+        username = getattr(settings, "TELEGRAM_BOT_USERNAME", "")
+        if not username:
+            return ""
+        token = self.ensure_telegram_link_token()
+        return f"https://t.me/{username}?start={token}"
+
+    def add_telegram_chat_id(self, chat_id):
+        """Добавляет chat_id в первый свободный слот.
+
+        Возвращает True, если добавлен; False — если уже есть или нет свободных
+        слотов. Сохраняет изменение в БД.
+        """
+        chat_id = str(chat_id).strip()
+        if not chat_id:
+            return False
+        if chat_id in self.get_telegram_chat_ids():
+            return False
+        for field in ["telegram_chat_id", "telegram_chat_id2", "telegram_chat_id3", "telegram_chat_id4"]:
+            if not (getattr(self, field) or "").strip():
+                setattr(self, field, chat_id)
+                if self.pk:
+                    Client.objects.filter(pk=self.pk).update(**{field: chat_id})
+                return True
+        return False
 
     @property
     def open_invoices_debt(self):

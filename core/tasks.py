@@ -537,6 +537,19 @@ def parse_pending_receipts(self):
     return {'queued': parsed}
 
 
+@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+def process_telegram_starts_task(self):
+    """Привязывает chat_id к клиентам по персональным ссылкам ?start=<token>."""
+    from core.services.telegram_service import process_telegram_starts
+    try:
+        linked = process_telegram_starts()
+        if linked:
+            logger.info("process_telegram_starts_task: привязано %d чатов", linked)
+    except Exception as exc:
+        logger.error("process_telegram_starts_task failed: %s", exc)
+        raise self.retry(exc=exc)
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def send_car_unload_notification_task(self, car_id):
     from core.models import Car

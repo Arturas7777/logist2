@@ -23,6 +23,7 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 TELEGRAM_API_URL = "https://api.telegram.org/bot{token}/sendMessage"
+TELEGRAM_GET_UPDATES_URL = "https://api.telegram.org/bot{token}/getUpdates"
 
 
 def _telegram_enabled():
@@ -71,6 +72,71 @@ def send_telegram_message(chat_id, text):
         return False, str(error)
     except requests.RequestException as e:
         return False, str(e)
+
+
+def process_telegram_starts():
+    """Привязывает chat_id к клиентам по персональным ссылкам ?start=<token>.
+
+    Опрашивает getUpdates и для каждого сообщения вида ``/start <token>``
+    находит клиента по ``telegram_link_token`` и добавляет chat_id в первый
+    свободный слот. Бот отвечает подтверждением. Идемпотентно: если chat_id
+    уже привязан, повторного сообщения не будет (поэтому безопасно вызывать
+    периодически без отслеживания offset — Telegram хранит апдейты ~24ч).
+
+    Возвращает количество новых привязок.
+    """
+    token = getattr(settings, "TELEGRAM_BOT_TOKEN", "")
+    if not token:
+        return 0
+
+    from core.models import Client
+
+    url = TELEGRAM_GET_UPDATES_URL.format(token=token)
+    timeout = int(getattr(settings, "TELEGRAM_API_TIMEOUT", 10))
+
+    try:
+        resp = requests.get(url, params={"limit": 100}, timeout=timeout)
+        data = resp.json() if resp.content else {}
+    except (requests.RequestException, ValueError) as e:
+        logger.error("Telegram getUpdates failed: %s", e)
+        return 0
+
+    if not data.get("ok"):
+        logger.error("Telegram getUpdates not ok: %s", data.get("description"))
+        return 0
+
+    linked = 0
+    for upd in data.get("result", []):
+        msg = upd.get("message") or upd.get("edited_message") or {}
+        text = (msg.get("text") or "").strip()
+        if not text.startswith("/start"):
+            continue
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2:
+            continue  # просто /start без токена — привязать не к кому
+        start_token = parts[1].strip()
+        chat = msg.get("chat") or {}
+        chat_id = chat.get("id")
+        if not start_token or chat_id is None:
+            continue
+
+        client = Client.objects.filter(telegram_link_token=start_token).first()
+        if not client:
+            logger.warning("Telegram /start с неизвестным токеном: %s (chat %s)", start_token, chat_id)
+            continue
+
+        if client.add_telegram_chat_id(chat_id):
+            linked += 1
+            logger.info("Telegram: привязан chat %s к клиенту %s (id=%s)", chat_id, client.name, client.id)
+            send_telegram_message(
+                chat_id,
+                f"✅ Вы подписаны на уведомления о разгрузке для клиента "
+                f"<b>{client.name}</b>.",
+            )
+
+    if linked:
+        logger.info("Telegram process_telegram_starts: привязано %d новых чатов", linked)
+    return linked
 
 
 class TelegramNotificationService:
