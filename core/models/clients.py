@@ -52,6 +52,29 @@ class Client(BalanceMethodsMixin, models.Model):
     def __str__(self):
         return self.name
 
+    def clean(self):
+        """Валидирует Telegram chat_id: только числовой ID, не @username.
+
+        Telegram Bot API не может отправлять личные сообщения по @username —
+        нужен числовой chat_id (его выдаёт `manage.py telegram_updates`).
+        """
+        super().clean()
+        from django.core.exceptions import ValidationError
+
+        errors = {}
+        for field in ["telegram_chat_id", "telegram_chat_id2", "telegram_chat_id3", "telegram_chat_id4"]:
+            val = (getattr(self, field) or "").strip()
+            if not val:
+                continue
+            if val.startswith("@") or not val.lstrip("-").isdigit():
+                errors[field] = (
+                    "Укажите числовой chat_id (например, 985022123), а не @username. "
+                    "Числовой ID можно получить командой manage.py telegram_updates "
+                    "после того как клиент напишет боту /start."
+                )
+        if errors:
+            raise ValidationError(errors)
+
     def get_notification_emails(self):
         """
         Возвращает список всех заполненных email-адресов для уведомлений.
