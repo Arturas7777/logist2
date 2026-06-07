@@ -7,6 +7,41 @@
 
 ## [Unreleased]
 
+### Performance
+
+- **Аудит производительности и устранение узких мест (этапы A–E).**
+  - **Админка контейнера**: смена `unload_date` больше не регенерирует
+    инвойсы синхронно в HTTP — вынесено в Celery `on_commit` с
+    дедупликацией по `car_id`; убран N+1 по `car.newinvoice_set`.
+  - **`CarAdmin`**: ставка хранения берётся одним `Subquery` на весь
+    список (`_storage_daily_rate_ann`), а не запросом `WarehouseService`
+    на каждую строку (было до ~50 SELECT на страницу); `_bulk_updating`
+    выставляется до первого `save()`, чтобы первый `car_post_save` не
+    ставил лишнюю Celery-задачу пересчёта.
+  - **Шаблоны/админка**: `.count()` заменён на `len(prefetch)` в портале
+    (`car_detail`, `container_detail`) и в `EmailGroupAdmin`/`ContactAdmin`.
+  - **Индексы БД (миграция 0180)**: `ContainerPhoto(container, is_public)`
+    (раньше индексов не было вовсе), `CarPhoto(car,is_public)` /
+    `(car,-uploaded_at)`, `Car(container,status)` / `is_important`,
+    `Container(status,unload_date)` / `labels_printed_at`,
+    `BankTransaction(connection,created_at)` / `(state,created_at)`.
+  - **Клиентский портал/API**: префетч фото авто и `container_cars` в
+    tracking, `select_related('author')` в News API, `.only()` для
+    `container_cars` в карточке контейнера.
+  - **ZIP-архивы фото** (`photos_authed`, `signed_photos`): сборка через
+    `SpooledTemporaryFile` + `FileResponse` вместо `BytesIO`/`getvalue`
+    (маленькие архивы в RAM, большие — на диск; снят риск OOM и двойного
+    копирования).
+  - **`BillingService.create_invoice`**: позиции создаются одним
+    `bulk_create` вместо `item.save()` в цикле (раньше каждый `save()`
+    пересчитывал итоги всего инвойса — N+1).
+  - **Celery inline-fallback** пересчёта цен (`service_catalog`) теперь
+    обновляет `days`/`storage_cost` наравне с `total_price` — при
+    недоступном брокере поля больше не расходятся с БД.
+  - **Кэш галереи** `container_photos:<n>` инвалидируется сигналом при
+    изменении/удалении `ContainerPhoto` (загрузка в админке, GDrive sync).
+  - **`AutoTransportAdmin`**: `list_per_page=50` + `show_full_result_count=False`.
+
 ### Added
 
 - **База картинок моделей авто (`CarModelImage`)**: иллюстрация в карточке
