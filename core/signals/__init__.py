@@ -50,6 +50,7 @@ from core.signals import (  # noqa: F401
     cache_invalidation,
     container,
     invoice,
+    photos,
     service_cache,
     service_catalog,
     transaction,

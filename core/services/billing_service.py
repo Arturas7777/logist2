@@ -125,16 +125,22 @@ class BillingService:
 
         logger.info(f"Created invoice {invoice.number} from {issuer} to {recipient}")
 
-        # Добавляем позиции
+        # Добавляем позиции.
+        # ВАЖНО: собираем все InvoiceItem в список и создаём одним
+        # bulk_create вместо item.save() в цикле. Раньше каждый save()
+        # дополнительно вызывал invoice.calculate_totals() + invoice.save()
+        # (N+1: на каждую позицию — пересчёт всех позиций инвойса). Итоги
+        # считаем один раз в конце. total_price выставляем вручную, т.к.
+        # bulk_create обходит InvoiceItem.save() (где он считается).
+        items_to_create = []
         order = 0
 
         if cars:
             # Автоматически создаем позиции из услуг автомобилей
+            recipient_type = recipient.__class__.__name__
 
             for car in cars:
                 # Получаем услуги автомобиля по типу получателя
-                recipient_type = recipient.__class__.__name__
-
                 if recipient_type == 'Warehouse':
                     services = car.get_warehouse_services()
                     service_prefix = 'Склад'
@@ -167,10 +173,9 @@ class BillingService:
                         car=car,
                         order=order
                     )
-                    invoice_item.save()
+                    invoice_item.calculate_total()
+                    items_to_create.append(invoice_item)
                     order += 1
-
-                    logger.debug(f"Added service item to invoice {invoice.number}: {description}")
 
         elif items:
             # Создаем позиции вручную
@@ -194,9 +199,12 @@ class BillingService:
                     car=car,
                     order=idx
                 )
-                invoice_item.save()
+                invoice_item.calculate_total()
+                items_to_create.append(invoice_item)
 
-                logger.debug(f"Added item to invoice {invoice.number}: {description}")
+        if items_to_create:
+            InvoiceItem.objects.bulk_create(items_to_create)
+            logger.debug(f"Added {len(items_to_create)} items to invoice {invoice.number}")
 
         # Пересчитываем итоги
         invoice.calculate_totals()

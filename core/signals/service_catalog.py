@@ -64,13 +64,19 @@ def _enqueue_recalc_cars_total_price(car_ids):
 
 
 def _recalc_cars_total_price_inline(car_ids):
-    """Синхронный fallback для ``recalculate_cars_total_price_task``."""
+    """Синхронный fallback для ``recalculate_cars_total_price_task``.
+
+    Обновляет те же три поля, что и Celery-таска: ``calculate_total_price()``
+    через ``update_days_and_storage()`` меняет days/storage_cost, поэтому
+    bulk_update тянет все три (раньше fallback сохранял только total_price,
+    из-за чего при недоступном брокере days/storage_cost расходились с БД).
+    """
     cars_to_update = []
-    for car in Car.objects.filter(pk__in=car_ids).prefetch_related("car_services"):
+    for car in Car.objects.filter(pk__in=car_ids).prefetch_related("car_services").select_related("warehouse"):
         car.calculate_total_price()
         cars_to_update.append(car)
     if cars_to_update:
-        Car.objects.bulk_update(cars_to_update, ["total_price"], batch_size=200)
+        Car.objects.bulk_update(cars_to_update, ["total_price", "days", "storage_cost"], batch_size=200)
 
 
 # ---------------------------------------------------------------------------
