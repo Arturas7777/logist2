@@ -214,9 +214,8 @@ class ContainerAdmin(admin.ModelAdmin):
                     logger.debug(f"Car {obj.vin}: inherited unload_date={obj.unload_date} from container {parent.number}")
 
                 creating = obj.pk is None
-                if creating and obj.warehouse_id:
-                    # Pull warehouse defaults (rate/free_days etc.) BEFORE first save()
-                    obj.set_initial_warehouse_values()
+                # Фаза 2: legacy fee-поля больше не заполняем — складские
+                # услуги создаются ниже как CarService (force-create блок).
 
                 # Recalculate before saving
                 obj.update_days_and_storage()

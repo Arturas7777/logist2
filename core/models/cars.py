@@ -290,82 +290,6 @@ class Car(models.Model):
             return self.warehouse.get_site_address(self.unload_site)
         return ("", "")
 
-    def apply_warehouse_defaults(self, force: bool = False):
-        """
-        Копирует дефолты со склада в авто из кастомных услуг.
-        force=True — перезаписывает ВСЕ соответствующие поля значениями склада.
-        force=False — перезаписывает только если поле пустое или равно дефолту модели.
-
-        .. deprecated::
-            Метод пишет в legacy-поля Car (``unload_fee``, ``delivery_fee``,
-            ``loading_fee``, ``docs_fee``, ``transfer_fee``,
-            ``transit_declaration``, ``export_declaration``, ``extra_costs``,
-            ``complex_fee``, ``free_days``, ``rate``). Эти поля больше не
-            используются в ``calculate_total_price()`` — расчёт идёт через
-            ``CarService``. Метод оставлен для совместимости со старой
-            админкой и историческими отчётами; новый код **не должен**
-            на него полагаться. Будет удалён после переноса всех читателей
-            legacy полей на CarService (см. план в docstring класса Car).
-        """
-        if not self.warehouse:
-            return
-
-        import warnings
-
-        warnings.warn(
-            "Car.apply_warehouse_defaults() writes to deprecated legacy fields. "
-            "Use CarService records via car_service_manager instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
-        from decimal import Decimal
-
-        from .services import WarehouseService
-
-        warehouse_services = WarehouseService.objects.filter(warehouse=self.warehouse, is_active=True)
-
-        from core.service_codes import NAME_TO_CODE, ServiceCode
-
-        code_to_car_field = {
-            ServiceCode.UNLOADING: "unload_fee",
-            ServiceCode.DELIVERY: "delivery_fee",
-            ServiceCode.LOADING: "loading_fee",
-            ServiceCode.DOCUMENTS: "docs_fee",
-            ServiceCode.TRANSFER: "transfer_fee",
-            ServiceCode.TRANSIT_DECLARATION: "transit_declaration",
-            ServiceCode.EXPORT_DECLARATION: "export_declaration",
-            ServiceCode.EXTRA_COSTS: "extra_costs",
-            ServiceCode.COMPLEX: "complex_fee",
-            ServiceCode.DAILY_RATE: "rate",
-            ServiceCode.FREE_DAYS: "free_days",
-        }
-
-        for service in warehouse_services:
-            svc_code = service.code if service.code else NAME_TO_CODE.get(service.name)
-            car_field = code_to_car_field.get(svc_code) if svc_code else None
-            if car_field:
-                wh_val = service.default_price or 0
-                cur_val = getattr(self, car_field, None)
-
-                if force:
-                    setattr(self, car_field, wh_val)
-                else:
-                    if cur_val is None:
-                        setattr(self, car_field, wh_val)
-                    else:
-                        try:
-                            cur = Decimal(str(cur_val))
-                            if cur == 0:
-                                setattr(self, car_field, wh_val)
-                            else:
-                                model_default = self._meta.get_field(car_field).default
-                                mdl = Decimal(str(model_default or 0))
-                                if cur == mdl:
-                                    setattr(self, car_field, wh_val)
-                        except Exception:
-                            setattr(self, car_field, wh_val)
-
     def warehouse_details(self):
         """Возвращает дефолтные цены на услуги из склада из кастомных услуг."""
         if not self.warehouse:
@@ -380,59 +304,6 @@ class Car(models.Model):
             details[service.name] = str(service.default_price)
 
         return details
-
-    def set_initial_warehouse_values(self):
-        """Подтягивает дефолты со склада при создании авто.
-        Если текущее значение = модельному дефолту (например, rate=5) или 0 — берём значение со склада.
-
-        .. deprecated::
-            Пишет в legacy-поля Car (free_days, unload_fee, delivery_fee и т.д.).
-            При создании нового авто эти поля больше не нужны — расчёт идёт
-            через CarService, который автоматически создаётся signal'ом
-            ``car_post_save`` → ``_create_car_services_if_needed`` →
-            ``apply_warehouse_services_to_car`` из ``car_service_manager``.
-            Метод оставлен для совместимости со старыми отчётами, читающими
-            ``car.unload_fee`` и др. напрямую.
-        """
-        if not self.warehouse:
-            return
-
-        initializing = self._state.adding
-
-        def _override(cur_val, field_name, wh_val):
-            if cur_val is None:
-                return wh_val
-            if initializing:
-                # перетираем, если 0 или равно модельному дефолту
-                try:
-                    cur = Decimal(str(cur_val))
-                    if cur == 0:
-                        return wh_val
-                    model_default = self._meta.get_field(field_name).default
-                    mdl = Decimal(str(model_default or 0))
-                    if cur == mdl:
-                        return wh_val
-                except Exception:
-                    return wh_val
-            return cur_val
-
-        # ключевые поля (rate удалён - ставка теперь берётся из услуги "Хранение")
-        self.free_days = _override(self.free_days, "free_days", self.warehouse.free_days or 0)
-
-        # заодно остальные складские услуги, если нужно
-        self.unload_fee = _override(self.unload_fee, "unload_fee", self.warehouse.default_unloading_fee or 0)
-        self.delivery_fee = _override(self.delivery_fee, "delivery_fee", self.warehouse.delivery_to_warehouse or 0)
-        self.loading_fee = _override(self.loading_fee, "loading_fee", self.warehouse.loading_on_trawl or 0)
-        self.docs_fee = _override(self.docs_fee, "docs_fee", self.warehouse.documents_fee or 0)
-        self.transfer_fee = _override(self.transfer_fee, "transfer_fee", self.warehouse.transfer_fee or 0)
-        self.transit_declaration = _override(
-            self.transit_declaration, "transit_declaration", self.warehouse.transit_declaration or 0
-        )
-        self.export_declaration = _override(
-            self.export_declaration, "export_declaration", self.warehouse.export_declaration or 0
-        )
-        self.extra_costs = _override(self.extra_costs, "extra_costs", self.warehouse.additional_expenses or 0)
-        self.complex_fee = _override(self.complex_fee, "complex_fee", self.warehouse.complex_fee or 0)
 
     def calculate_total_price(self):
         """Пересчитывает цену используя систему услуг CarService.
@@ -577,16 +448,18 @@ class Car(models.Model):
         except Exception:
             pass  # Игнорируем ошибки - модель может быть ещё не сохранена
 
-    def sync_with_container(self, container, ths_per_car):
-        """Синхронизирует данные автомобиля с контейнером."""
+    def sync_with_container(self, container, ths_per_car=None):
+        """Синхронизирует данные автомобиля с контейнером.
+
+        Фаза 2: пишутся только «живые» поля (статус/склад/даты), а цена
+        берётся из ``CarService`` через ``calculate_total_price()``. Запись
+        legacy fee-полей (``ths``/``declaration_fee``/``markup`` и складских
+        дефолтов) прекращена — они больше не источник истины.
+        """
         self.status = container.status
         self.warehouse = container.warehouse
         self.unload_date = container.unload_date
         self.transfer_date = timezone.now().date() if container.status == "TRANSFERRED" else None
-        self.ths = ths_per_car
-        self.declaration_fee = container.declaration_fee
-        self.markup = container.markup
-        self.set_initial_warehouse_values()
         self.update_days_and_storage()
         self.calculate_total_price()
 
@@ -766,11 +639,11 @@ class Car(models.Model):
         self._sync_status_and_dates()
 
         is_new = self.pk is None
-        if is_new and self.warehouse:
-            try:
-                self.set_initial_warehouse_values()
-            except Exception as e:
-                logger.error("Failed to set initial warehouse values for car %s: %s", self.vin, e)
+        # NOTE (Фаза 2): ранее тут вызывался ``set_initial_warehouse_values()``,
+        # который копировал дефолты склада в legacy fee-поля Car (unload_fee,
+        # delivery_fee, …). Эти поля больше не источник цены — расчёт идёт
+        # через ``CarService`` (создаётся сигналом ``car_post_save`` →
+        # ``_create_car_services_if_needed``). Запись в legacy-поля прекращена.
 
         # NOTE: ранее тут вызывался `after_car_save(self, is_new=is_new)` из
         # `core.services.car_lifecycle_service`. Это создавало двойной путь

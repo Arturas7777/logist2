@@ -66,6 +66,24 @@
   - Новые сервисы покрыты unit-тестами (`test_car_admin_service.py`,
     `test_container_lifecycle.py`). Поведение не изменилось — весь набор
     тестов зелёный.
+- **Рефакторинг (фаза 2): единый источник цены — `CarService`.**
+  - **Мастер инвойсов** (`get_invoice_cars_api`) теперь берёт стоимость
+    услуг линии/перевозчика из агрегатов `CarService`, а не из legacy-полей
+    `Car` (`ocean_freight`/`ths`/`delivery_fee`/`transport_kz`). JSON-ключи
+    и JS не менялись.
+  - **Прекращена запись legacy fee-полей** `Car` (`unload_fee`,
+    `delivery_fee`, `loading_fee`, `docs_fee`, `transfer_fee`,
+    `transit_declaration`, `export_declaration`, `extra_costs`,
+    `complex_fee`, а также `ths`/`markup`/`declaration_fee`/`rate`/
+    `free_days` при синхронизации). Источник истины — `CarService`.
+    Удалены методы `Car.set_initial_warehouse_values()` и
+    `Car.apply_warehouse_defaults()`, мёртвый `Container.sync_cars_after_edit()`.
+  - `sync_with_container` / `update_related` / `sync_cars_after_warehouse_change`
+    обновляют только живые поля (статус/склад/даты + денормализованные
+    `days`/`storage_cost`/`total_price`).
+  - Колонки legacy-полей из БД **не удалены** — это отдельный шаг после
+    периода наблюдения. Контракт покрыт тестами
+    (`test_phase2_legacy_decouple.py`).
 
 ### Added
 

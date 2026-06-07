@@ -274,7 +274,33 @@ def get_invoice_cars_api(request):
             )
 
         limit = int(request.GET.get('limit', 200))
-        cars = cars[:limit]
+        cars = list(cars[:limit])
+
+        # Суммы услуг берём из CarService (единый источник цены), а не из
+        # legacy-полей Car (ocean_freight/ths/delivery_fee/transport_kz),
+        # которые больше не заполняются. JSON-ключи сохранены, чтобы не
+        # трогать JS мастера инвойсов: LINE-итог кладём в ocean_freight,
+        # CARRIER-итог — в delivery_fee, парные поля обнуляем
+        # (JS считает ocean_freight+ths и delivery_fee+transport_kz).
+        from django.db.models import DecimalField, F, Sum, Value
+        from django.db.models.functions import Coalesce
+
+        from core.models import CarService
+
+        line_totals = {}
+        carrier_totals = {}
+        car_ids = [c.id for c in cars]
+        if car_ids:
+            zero = Value(Decimal('0.00'), output_field=DecimalField(max_digits=12, decimal_places=2))
+            rows = (
+                CarService.objects
+                .filter(car_id__in=car_ids, service_type__in=('LINE', 'CARRIER'))
+                .values('car_id', 'service_type')
+                .annotate(total=Sum(Coalesce(F('custom_price'), zero) + Coalesce(F('markup_amount'), zero)))
+            )
+            for r in rows:
+                bucket = line_totals if r['service_type'] == 'LINE' else carrier_totals
+                bucket[r['car_id']] = r['total'] or Decimal('0.00')
 
         cars_data = []
         for car in cars:
@@ -291,10 +317,10 @@ def get_invoice_cars_api(request):
                 'transfer_date': car.transfer_date.strftime('%d.%m.%Y') if car.transfer_date else 'Не указана',
                 'total_cost': f"{total_cost:.2f}",
                 'storage_cost': float(car.storage_cost or 0),
-                'ocean_freight': float(car.ocean_freight or 0),
-                'ths': float(car.ths or 0),
-                'delivery_fee': float(car.delivery_fee or 0),
-                'transport_kz': float(car.transport_kz or 0),
+                'ocean_freight': float(line_totals.get(car.id, 0) or 0),
+                'ths': 0.0,
+                'delivery_fee': float(carrier_totals.get(car.id, 0) or 0),
+                'transport_kz': 0.0,
             })
 
         return JsonResponse({'cars': cars_data})

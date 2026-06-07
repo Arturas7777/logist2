@@ -100,27 +100,18 @@ class OptimizedContainerManager(models.Manager):
         cars = list(instance.container_cars.select_related('warehouse').all())
         if not cars:
             return
-        # Decimal-арифметика обязательна: instance.ths — DecimalField. Если
-        # хоть раз попадёт ``int(0) / len(cars)`` или float-деление, получим
-        # потерю точности при последующем сохранении в DecimalField (Django
-        # сделает ``Decimal(repr(float))`` и финансовые отчёты сместит на
-        # копейки).
-        from decimal import Decimal
-        ths_total = instance.ths if instance.ths is not None else Decimal('0')
-        if not isinstance(ths_total, Decimal):
-            ths_total = Decimal(str(ths_total))
-        ths_per_car = ths_total / Decimal(len(cars))
+        # Фаза 2: legacy fee-поля (ths/markup/unload_fee/…/rate) больше не
+        # пишутся — цена считается из CarService. Обновляем только живые
+        # поля: статус/склад/даты + денормализованные days/storage_cost/
+        # total_price.
         for car in cars:
-            car.sync_with_container(instance, ths_per_car)
+            car.sync_with_container(instance)
 
         from core.models import Car
         Car.objects.bulk_update(
             cars,
-            ['status', 'warehouse', 'unload_date', 'transfer_date', 'ths',
-             'declaration_fee', 'markup', 'free_days', 'unload_fee',
-             'delivery_fee', 'loading_fee', 'docs_fee', 'transfer_fee',
-             'transit_declaration', 'export_declaration', 'extra_costs',
-             'complex_fee', 'days', 'storage_cost', 'total_price', 'rate'],
+            ['status', 'warehouse', 'unload_date', 'transfer_date',
+             'days', 'storage_cost', 'total_price'],
             batch_size=50,
         )
 

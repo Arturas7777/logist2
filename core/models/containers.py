@@ -189,23 +189,15 @@ class Container(models.Model):
         if not cars:
             return
 
+        # Фаза 2: legacy fee-поля больше не пишутся (источник цены —
+        # CarService). Обновляем склад/дату разгрузки + денормализованные
+        # days/storage_cost/total_price.
         update_fields = [
             "warehouse",
             "unload_date",
-            "rate",
-            "free_days",
             "storage_cost",
             "days",
             "total_price",
-            "unload_fee",
-            "delivery_fee",
-            "loading_fee",
-            "docs_fee",
-            "transfer_fee",
-            "transit_declaration",
-            "export_declaration",
-            "extra_costs",
-            "complex_fee",
         ]
 
         from .cars import Car
@@ -213,7 +205,6 @@ class Container(models.Model):
         with transaction.atomic():
             for car in cars:
                 car.warehouse = self.warehouse
-                car.apply_warehouse_defaults(force=True)
                 if self.unload_date:
                     car.unload_date = self.unload_date
                     logger.debug(f"Car {car.vin}: forced unload_date={self.unload_date} from container {self.number}")
@@ -221,68 +212,6 @@ class Container(models.Model):
                 car.calculate_total_price()
 
             Car.objects.bulk_update(cars, update_fields, batch_size=50)
-
-    def sync_cars_after_edit(self):
-        """
-        Обновляет поля машин после изменения контейнера:
-        — проставляет склад/клиента, если у авто они пустые,
-        — дата разгрузки ВСЕГДА берется из контейнера (принудительное наследование),
-        — подтягивает дефолты склада (rate/free_days/и т.д.) при пустых/дефолтных значениях,
-        — пересчитывает хранение и цены.
-        Использует bulk_update для минимизации запросов.
-        """
-        if not self.pk:
-            return
-
-        cars = list(self.container_cars.select_related("warehouse").all())
-        if not cars:
-            return
-
-        cars_to_bulk_update = []
-        update_fields = {
-            "warehouse",
-            "client",
-            "unload_date",
-            "rate",
-            "free_days",
-            "storage_cost",
-            "days",
-            "total_price",
-            "unload_fee",
-            "delivery_fee",
-            "loading_fee",
-            "docs_fee",
-            "transfer_fee",
-            "transit_declaration",
-            "export_declaration",
-            "extra_costs",
-            "complex_fee",
-        }
-
-        from .cars import Car
-
-        with transaction.atomic():
-            for car in cars:
-                if not car.warehouse and self.warehouse:
-                    car.warehouse = self.warehouse
-                if not car.client and self.client:
-                    car.client = self.client
-
-                if self.unload_date and car.unload_date != self.unload_date:
-                    car.unload_date = self.unload_date
-                    logger.info(
-                        f"Car {car.vin}: forced unload_date update to {self.unload_date} from container {self.number}"
-                    )
-
-                if car.warehouse:
-                    car.apply_warehouse_defaults(override_on_defaults=True)
-
-                car.update_days_and_storage()
-                car.calculate_total_price()
-                cars_to_bulk_update.append(car)
-
-            if cars_to_bulk_update:
-                Car.objects.bulk_update(cars_to_bulk_update, list(update_fields), batch_size=50)
 
     def check_and_update_status_from_cars(self):
         """Если ВСЕ авто в контейнере уже TRANSFERRED — обновить статус контейнера.
