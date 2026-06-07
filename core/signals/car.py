@@ -164,59 +164,33 @@ def car_post_save(sender, instance, **kwargs):
 
         _deferred_invoice_regeneration(instance.pk)
 
-    # --- 2. CarService creation (delegates to helper) ---
+    # --- 2. CarService creation [COMMAND/orchestration] ---
     _create_car_services_if_needed(instance, created=created, kwargs=kwargs)
 
-    # --- 3. Email notification for standalone cars ---
+    # --- 3. Email notification for standalone cars [EVENT] ---
     _maybe_send_car_unload_notification(instance, created=created)
 
-    # --- 4. Container status auto-update ---
+    # --- 4. Container status auto-update [COMMAND/denorm] ---
     old_status = getattr(instance, "_pre_save_status", None)
     instance._pre_save_status = None
     if instance.status == "TRANSFERRED" and old_status != "TRANSFERRED" and instance.container_id:
         _update_container_status_if_all_transferred(instance.container_id)
 
-    # --- 5. Авто-создание/закрытие "Дела" по флагу is_important ---
+    # --- 5. Авто-создание/закрытие "Дела" по флагу is_important [COMMAND/orchestration] ---
     _handle_car_important_transition(instance, created=created)
 
-    # --- 6. Recalculate total_price / days / storage_cost (deferred to Celery) ---
+    # --- 6. Recalculate total_price / days / storage_cost (deferred to Celery) [COMMAND/denorm] ---
     # Раньше делалось синхронно в `Car.save()` через `after_car_save()`.
     # Теперь — в фоне через ту же таску что и для catalog-changes, с
     # graceful inline-fallback если broker лежит.
     if not getattr(instance, "_bulk_updating", False) and not getattr(instance, "_creating_services", False):
         _enqueue_recalc_cars_total_price([instance.pk])
 
-    # --- 7. WebSocket data_update notification ---
-    _enqueue_car_ws_notification(instance)
+    # --- 7. WebSocket data_update notification [EVENT] ---
+    # Фаза 3: единый источник EVENT-нотификации — сервис; сигнал делегирует.
+    from core.services.car_lifecycle_service import send_car_ws_notification
 
-
-def _enqueue_car_ws_notification(car):
-    """Поставить WebSocket-нотификацию ``data_update`` на ``on_commit``."""
-    car_id = car.pk
-    payload = {
-        "type": "data_update",
-        "data": {
-            "model": "Car",
-            "id": car_id,
-            "status": car.status,
-            "storage_cost": str(car.storage_cost),
-            "days": car.days,
-            "price": str(car.total_price),
-        },
-    }
-
-    def _notify():
-        try:
-            from asgiref.sync import async_to_sync
-            from channels.layers import get_channel_layer
-
-            channel_layer = get_channel_layer()
-            if channel_layer is not None:
-                async_to_sync(channel_layer.group_send)("updates", payload)
-        except Exception as e:
-            logger.error("WS notification failed for car %s: %s", car_id, e)
-
-    transaction.on_commit(_notify)
+    send_car_ws_notification(instance)
 
 
 def _handle_car_important_transition(car, *, created: bool):

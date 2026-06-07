@@ -57,7 +57,8 @@ def send_car_ws_notification(car) -> None:
     def _notify():
         try:
             channel_layer = get_channel_layer()
-            async_to_sync(channel_layer.group_send)('updates', payload)
+            if channel_layer is not None:
+                async_to_sync(channel_layer.group_send)('updates', payload)
         except Exception as e:
             logger.error('Failed to send WebSocket notification for car %s: %s', car_id, e)
 
