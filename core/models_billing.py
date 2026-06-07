@@ -1812,6 +1812,40 @@ class Transaction(models.Model):
     # сумму каждого уплаченного нами FACT.
     _NON_INVOICE_BALANCE_ENTITIES = ('company', 'warehouse', 'line', 'carrier')
 
+    @classmethod
+    def _balance_queryset_for(cls, model_name):
+        """COMPLETED-транзакции, формирующие ``balance`` для данной модели.
+
+        Для контрагентов из ``_NON_INVOICE_BALANCE_ENTITIES`` учитываются
+        только Tx **без** инвойса (инвойсные потоки идут в ``total_balance``
+        через ``open_fact_debt`` / ``open_pardp_receivable``). Это —
+        ЕДИНСТВЕННЫЙ источник правды о том, какие транзакции входят в
+        ``balance``; все проверки консистентности обязаны использовать
+        именно его, иначе для контрагентов с инвойсными платежами появятся
+        ложные расхождения.
+        """
+        qs = Transaction.objects.filter(status='COMPLETED')
+        if model_name in cls._NON_INVOICE_BALANCE_ENTITIES:
+            qs = qs.filter(invoice__isnull=True)
+        return qs
+
+    @classmethod
+    def expected_entity_balance(cls, entity):
+        """Ожидаемый ``balance`` сущности по COMPLETED-транзакциям (без записи).
+
+        Чистый расчёт ``incoming − outgoing`` по той же логике, что и
+        :meth:`recalculate_entity_balance`. Вынесен отдельно, чтобы команды
+        сверки (`verify_balances`, `check_data_integrity`, Celery-ревизор)
+        и пересчёт пользовались одной формулой.
+        """
+        if entity is None or not hasattr(entity, 'balance'):
+            return Decimal('0.00')
+        model_name = entity.__class__.__name__.lower()
+        qs = cls._balance_queryset_for(model_name)
+        incoming = qs.filter(**{f'to_{model_name}': entity}).aggregate(s=models.Sum('amount'))['s'] or Decimal('0.00')
+        outgoing = qs.filter(**{f'from_{model_name}': entity}).aggregate(s=models.Sum('amount'))['s'] or Decimal('0.00')
+        return incoming - outgoing
+
     @staticmethod
     def recalculate_entity_balance(entity):
         """Пересчитать баланс entity строго по COMPLETED-транзакциям из БД.
@@ -1851,9 +1885,7 @@ class Transaction(models.Model):
                 if locked is None:
                     return
 
-            qs = Transaction.objects.filter(status='COMPLETED')
-            if model_name in Transaction._NON_INVOICE_BALANCE_ENTITIES:
-                qs = qs.filter(invoice__isnull=True)
+            qs = Transaction._balance_queryset_for(model_name)
             incoming = qs.filter(
                 **{f'to_{model_name}': locked}
             ).aggregate(s=models.Sum('amount'))['s'] or Decimal('0.00')

@@ -70,28 +70,23 @@ class BalanceManager:
 
     @classmethod
     def validate_balance_consistency(cls, entity) -> dict:
-        """Проверить, совпадает ли entity.balance с расчётом из транзакций."""
-        from django.db.models import Sum
+        """Проверить, совпадает ли entity.balance с расчётом из транзакций.
 
+        Использует единую каноническую формулу
+        ``Transaction.expected_entity_balance`` (для контрагентов — только
+        транзакции без инвойса), чтобы не давать ложных расхождений.
+        """
         from core.models_billing import Transaction
 
         if not hasattr(entity, 'balance'):
             return {'is_valid': True, 'issues': [], 'entity': str(entity)}
 
-        model_name = entity.__class__.__name__.lower()
-        incoming = Transaction.objects.filter(
-            status='COMPLETED', **{f'to_{model_name}': entity}
-        ).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
-        outgoing = Transaction.objects.filter(
-            status='COMPLETED', **{f'from_{model_name}': entity}
-        ).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
-        expected = incoming - outgoing
+        expected = Transaction.expected_entity_balance(entity)
 
         issues = []
         if entity.balance != expected:
             issues.append(
-                f"Balance mismatch: stored={entity.balance}, expected={expected} "
-                f"(incoming={incoming}, outgoing={outgoing})"
+                f"Balance mismatch: stored={entity.balance}, expected={expected}"
             )
 
         return {

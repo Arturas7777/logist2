@@ -151,15 +151,24 @@ def _collect_balance_mismatches():
         to_field = f'to_{key}'
         from_field = f'from_{key}'
 
+        # Для контрагентов (company/warehouse/line/carrier) balance считается
+        # ТОЛЬКО по транзакциям без инвойса — та же логика, что в
+        # Transaction.recalculate_entity_balance. Без этого фильтра проверка
+        # давала ложные расхождения, а repair --fix мог затереть верный
+        # баланс инвойсными платежами.
+        base_qs = Transaction.objects.filter(status='COMPLETED')
+        if key in Transaction._NON_INVOICE_BALANCE_ENTITIES:
+            base_qs = base_qs.filter(invoice__isnull=True)
+
         incoming_by_id = dict(
-            Transaction.objects
-            .filter(status='COMPLETED', **{f'{to_field}__isnull': False})
+            base_qs
+            .filter(**{f'{to_field}__isnull': False})
             .values_list(to_field)
             .annotate(s=Sum('amount'))
         )
         outgoing_by_id = dict(
-            Transaction.objects
-            .filter(status='COMPLETED', **{f'{from_field}__isnull': False})
+            base_qs
+            .filter(**{f'{from_field}__isnull': False})
             .values_list(from_field)
             .annotate(s=Sum('amount'))
         )

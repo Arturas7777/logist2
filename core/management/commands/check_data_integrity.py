@@ -79,15 +79,10 @@ class Command(BaseCommand):
         self.stdout.write('\n--- Balance consistency check ---')
         issues = 0
         for model in [Client, Warehouse, Line, Company, Carrier]:
-            model_name = model.__name__.lower()
             for entity in model.objects.all():
-                incoming = Transaction.objects.filter(
-                    status='COMPLETED', **{f'to_{model_name}': entity}
-                ).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
-                outgoing = Transaction.objects.filter(
-                    status='COMPLETED', **{f'from_{model_name}': entity}
-                ).aggregate(s=Sum('amount'))['s'] or Decimal('0.00')
-                expected = incoming - outgoing
+                # Единая каноническая формула (для контрагентов — только Tx
+                # без инвойса), иначе ложные расхождения и порча балансов.
+                expected = Transaction.expected_entity_balance(entity)
                 if entity.balance != expected:
                     issues += 1
                     self.stdout.write(self.style.WARNING(
