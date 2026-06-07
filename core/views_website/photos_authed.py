@@ -7,8 +7,8 @@
 
 import logging
 import os
+import tempfile
 import zipfile
-from io import BytesIO
 
 from django.contrib.auth.decorators import login_required
 from django.http import FileResponse, Http404
@@ -80,7 +80,11 @@ def download_all_car_photos(request, car_id):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        zip_buffer = BytesIO()
+        # SpooledTemporaryFile держит маленькие архивы в памяти, а большие
+        # (> 16 МБ) сбрасывает на диск — без риска OOM на контейнерах/авто
+        # с большим числом фото. FileResponse стримит чанками и закрывает
+        # файл (а с ним temp) после отдачи.
+        zip_buffer = tempfile.SpooledTemporaryFile(max_size=16 * 1024 * 1024)
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
             for photo in photos:
                 if photo.photo and os.path.exists(photo.photo.path):

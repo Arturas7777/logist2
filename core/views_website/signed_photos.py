@@ -18,11 +18,11 @@
 
 import logging
 import os
+import tempfile
 import zipfile
-from io import BytesIO
 
 from django.core.cache import cache as django_cache
-from django.http import FileResponse, Http404, HttpResponse
+from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from rest_framework.decorators import api_view, authentication_classes, permission_classes, throttle_classes
@@ -220,7 +220,10 @@ def download_photos_archive(request):
 
         photo_ids_found = list(photos.values_list("id", flat=True))
 
-        zip_buffer = BytesIO()
+        # SpooledTemporaryFile: маленькие архивы в RAM, большие — на диск
+        # (порог 16 МБ). Раньше HttpResponse(zip_buffer.getvalue()) держал
+        # весь ZIP в памяти дважды (буфер + копия getvalue).
+        zip_buffer = tempfile.SpooledTemporaryFile(max_size=16 * 1024 * 1024)
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
             for photo in photos:
                 if photo.photo and os.path.exists(photo.photo.path):
@@ -229,6 +232,7 @@ def download_photos_archive(request):
                         f"{photo.container.number}_{photo.filename}",
                     )
 
+        zip_size = zip_buffer.tell()
         zip_buffer.seek(0)
 
         logger.info(
@@ -236,10 +240,10 @@ def download_photos_archive(request):
             container_number,
             photo_ids_found,
             request.META.get("REMOTE_ADDR"),
-            zip_buffer.getbuffer().nbytes,
+            zip_size,
         )
 
-        response = HttpResponse(zip_buffer.getvalue(), content_type="application/zip")
+        response = FileResponse(zip_buffer, content_type="application/zip")
         response["Content-Disposition"] = f'attachment; filename="container_photos_{container_number}.zip"'
         return response
 

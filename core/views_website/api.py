@@ -64,7 +64,9 @@ class NewsViewSet(viewsets.ReadOnlyModelViewSet):
 
     serializer_class = NewsPostSerializer
     permission_classes = [AllowAny]
-    queryset = NewsPost.objects.filter(published=True).order_by("-published_at")
+    # select_related('author') — сериализатор отдаёт author.username, без
+    # этого был N+1 на список новостей.
+    queryset = NewsPost.objects.filter(published=True).select_related("author").order_by("-published_at")
     lookup_field = "slug"
 
 

@@ -15,7 +15,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from core.models import Car, Container
-from core.models_website import ContainerPhoto, TrackingRequest
+from core.models_website import CarPhoto, ContainerPhoto, TrackingRequest
 from core.serializers_website import ClientCarSerializer, ClientContainerSerializer
 from core.throttles import TrackShipmentThrottle
 
@@ -57,8 +57,11 @@ def track_shipment(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # ClientCarSerializer сериализует и фото авто, и фото контейнера —
+        # префетчим оба, иначе по запросу на каждую коллекцию.
         car_qs = Car.objects.select_related("container", "container__warehouse", "warehouse").prefetch_related(
-            Prefetch("container__photos", queryset=ContainerPhoto.objects.filter(is_public=True))
+            Prefetch("photos", queryset=CarPhoto.objects.filter(is_public=True)),
+            Prefetch("container__photos", queryset=ContainerPhoto.objects.filter(is_public=True)),
         )
 
         # Только точное совпадение VIN. Раньше тут был vin__icontains в качестве
@@ -71,8 +74,11 @@ def track_shipment(request):
         container = None
 
         if not car:
+            # ClientContainerSerializer.get_cars_count читает container_cars —
+            # префетчим, чтобы не делать отдельный COUNT.
             container_qs = Container.objects.select_related("warehouse").prefetch_related(
-                Prefetch("photos", queryset=ContainerPhoto.objects.filter(is_public=True))
+                Prefetch("photos", queryset=ContainerPhoto.objects.filter(is_public=True)),
+                "container_cars",
             )
             container = container_qs.filter(number__iexact=tracking_number).first()
             if not container and normalized_number != tracking_number.upper():

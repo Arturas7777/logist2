@@ -77,7 +77,11 @@ def container_detail(request, container_id):
         container = get_object_or_404(
             Container.objects.select_related("line", "warehouse").prefetch_related(
                 Prefetch("photos", queryset=ContainerPhoto.objects.filter(is_public=True)),
-                Prefetch("container_cars", queryset=Car.objects.all()),
+                # Шаблону нужны только эти поля авто — не тянем всю строку Car.
+                Prefetch(
+                    "container_cars",
+                    queryset=Car.objects.only("id", "vin", "brand", "year", "status", "container"),
+                ),
             ),
             id=container_id,
             client=client_user.client,
