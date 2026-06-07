@@ -896,6 +896,11 @@ class Car(models.Model):
             models.Index(fields=["container"]),
             models.Index(fields=["unload_date"]),
             models.Index(fields=["transfer_date"]),
+            # Авто контейнера по статусу: check_and_update_status_from_cars,
+            # автовоз, bulk-обновления статуса/даты.
+            models.Index(fields=["container", "status"], name="car_container_status_idx"),
+            # Фильтр «Важное» в админке (is_important).
+            models.Index(fields=["is_important"], name="car_is_important_idx"),
         ]
 
 

@@ -366,6 +366,10 @@ class Container(models.Model):
             models.Index(fields=["planned_unload_date"]),
             # photo sync wait-window: unloaded_status_at >= now - N days.
             models.Index(fields=["unloaded_status_at"]),
+            # GoogleDrive sync: status__in + unload_date__gte.
+            models.Index(fields=["status", "unload_date"], name="ctr_status_unload_idx"),
+            # Фильтр LabelsPrintedFilter (печать этикеток) в админке.
+            models.Index(fields=["labels_printed_at"], name="ctr_labels_printed_idx"),
         ]
         constraints = [
             models.CheckConstraint(

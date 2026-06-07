@@ -79,6 +79,12 @@ class CarPhoto(models.Model):
         verbose_name = "Фотография автомобиля"
         verbose_name_plural = "Фотографии автомобилей"
         ordering = ['-uploaded_at']
+        indexes = [
+            # Галерея/портал: фото авто, доступные клиенту.
+            models.Index(fields=['car', 'is_public'], name='carphoto_car_public_idx'),
+            # ordering = ['-uploaded_at'].
+            models.Index(fields=['car', '-uploaded_at'], name='carphoto_car_uploaded_idx'),
+        ]
 
 
 class ContainerPhoto(models.Model):
@@ -168,6 +174,12 @@ class ContainerPhoto(models.Model):
         verbose_name = "Фотография контейнера"
         verbose_name_plural = "Фотографии контейнеров"
         ordering = ['photo']  # Сортировка по имени файла для сохранения последовательности
+        indexes = [
+            # Самая частая выборка: публичные фото конкретного контейнера
+            # (галерея, tracking, портал). Раньше indexes не было вовсе —
+            # только FK-индекс на container_id.
+            models.Index(fields=['container', 'is_public'], name='ctrphoto_container_public_idx'),
+        ]
 
 
 def _create_thumbnail_async(photo_pk):

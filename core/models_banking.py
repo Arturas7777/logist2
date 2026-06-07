@@ -368,6 +368,10 @@ class BankTransaction(models.Model):
             models.Index(fields=["reconciliation_skipped", "created_at"], name="bt_skipped_created_idx"),
             # Сортировка + фильтр по валюте — частый запрос дашбордов.
             models.Index(fields=["currency", "created_at"], name="bt_ccy_created_idx"),
+            # Список админки: фильтр по подключению + сортировка -created_at.
+            models.Index(fields=["connection", "created_at"], name="bt_conn_created_idx"),
+            # Фильтр по состоянию транзакции (list_filter state) + дата.
+            models.Index(fields=["state", "created_at"], name="bt_state_created_idx"),
         ]
 
     def __str__(self):
