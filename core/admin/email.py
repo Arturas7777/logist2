@@ -398,17 +398,19 @@ class EmailGroupAdmin(admin.ModelAdmin):
 
     @admin.display(description='Участники')
     def members_preview(self, obj: EmailGroup) -> str:
-        names = []
-        for m in obj.members.all()[:6]:
-            names.append(m.display_name or m.email)
-        rest = max(0, obj.members.count() - 6)
+        # members префетчатся в get_queryset — берём из кэша (len/срез по
+        # уже загруженному queryset не делает доп. запросов, в отличие от
+        # .count()).
+        members = list(obj.members.all())
+        names = [m.display_name or m.email for m in members[:6]]
+        rest = max(0, len(members) - 6)
         if rest:
             names.append(f'… и ещё {rest}')
         return ', '.join(names) or '—'
 
     @admin.display(description='Кол-во', ordering='name')
     def members_count_display(self, obj: EmailGroup) -> int:
-        return obj.members.count()
+        return len(obj.members.all())
 
     def save_model(self, request, obj, form, change):
         if not change and not obj.created_by_id:

@@ -107,7 +107,7 @@
                             {% endif %}
                             <tr>
                                 <th>Количество автомобилей:</th>
-                                <td><strong>{{ container.container_cars.count }}</strong></td>
+                                <td><strong>{{ container.container_cars.all|length }}</strong></td>
                             </tr>
                         </tbody>
                     </table>

@@ -500,6 +500,17 @@ class Car(models.Model):
         if hasattr(self, cache_attr) and getattr(self, cached_wh, None) == self.warehouse_id:
             return getattr(self, cache_attr)
 
+        # Ставка может быть предзагружена аннотацией в списке админки
+        # (один Subquery на весь queryset вместо запроса на каждую строку,
+        # см. CarAdmin.get_queryset). Используем её только если аннотация
+        # посчитана для того же склада (защита от смены склада на форме).
+        ann_wh = getattr(self, "_storage_daily_rate_ann_wh", None)
+        if ann_wh is not None and ann_wh == self.warehouse_id:
+            rate = Decimal(str(getattr(self, "_storage_daily_rate_ann", 0) or 0))
+            setattr(self, cache_attr, rate)
+            setattr(self, cached_wh, self.warehouse_id)
+            return rate
+
         rate = Decimal("0.00")
         try:
             from .services import WarehouseService

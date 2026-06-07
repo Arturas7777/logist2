@@ -207,16 +207,20 @@ class ContactAdmin(admin.ModelAdmin):
     counterparty_display.short_description = 'Контрагент'
 
     def emails_display(self, obj):
-        preview = ', '.join(e.email for e in obj.emails.all()[:3])
-        more = obj.emails.count() - 3
+        # emails префетчатся в get_queryset — используем кэш (len вместо
+        # .count(), который всегда делает отдельный SQL на строку).
+        emails = list(obj.emails.all())
+        preview = ', '.join(e.email for e in emails[:3])
+        more = len(emails) - 3
         if more > 0:
             preview += f' +{more}'
         return preview or '—'
     emails_display.short_description = 'Emails'
 
     def phones_display(self, obj):
-        preview = ', '.join(p.phone for p in obj.phones.all()[:3])
-        more = obj.phones.count() - 3
+        phones = list(obj.phones.all())
+        preview = ', '.join(p.phone for p in phones[:3])
+        more = len(phones) - 3
         if more > 0:
             preview += f' +{more}'
         return preview or '—'

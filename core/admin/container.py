@@ -219,7 +219,6 @@ class ContainerAdmin(admin.ModelAdmin):
 
                 with signals_disabled(*CAR_SIGNALS):
                     cars_to_update = []
-                    affected_invoices = set()
                     update_fields = ['unload_date', 'days', 'storage_cost', 'total_price']
 
                     for car in obj.container_cars.select_related('warehouse').all():
@@ -232,9 +231,6 @@ class ContainerAdmin(admin.ModelAdmin):
                         car.calculate_total_price()
                         cars_to_update.append(car)
 
-                        for invoice in car.newinvoice_set.all():
-                            affected_invoices.add(invoice)
-
                     if cars_to_update:
                         Car.objects.bulk_update(
                             cars_to_update,
@@ -243,17 +239,15 @@ class ContainerAdmin(admin.ModelAdmin):
                         )
                         logger.info(f"Bulk updated {len(cars_to_update)} cars in container {obj.number}")
 
-                if affected_invoices:
-                    logger.info(f"Updating {len(affected_invoices)} affected invoices...")
-                    for invoice in affected_invoices:
-                        try:
-                            if hasattr(invoice, 'regenerate_items_from_cars'):
-                                invoice.regenerate_items_from_cars()
-                            else:
-                                invoice.update_total_amount()
-                        except Exception as e:
-                            logger.error(f"Error updating invoice {invoice.id}: {e}")
-                    logger.info(f"Updated {len(affected_invoices)} invoices")
+                # Регенерацию инвойсов выносим из HTTP в Celery (on_commit,
+                # дедупликация по car_id). Раньше здесь был синхронный
+                # цикл regenerate_items_from_cars() по всем инвойсам +
+                # N+1 на car.newinvoice_set — сотни запросов в одном запросе
+                # при контейнере на 50 авто.
+                if cars_to_update:
+                    from core.signals.car_service import _deferred_invoice_regeneration
+                    for car in cars_to_update:
+                        _deferred_invoice_regeneration(car.id)
 
             except Exception as e:
                 logger.error(f"Failed to update cars after unload_date change for container {obj.id}: {e}")

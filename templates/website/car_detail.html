@@ -202,7 +202,7 @@
                 </div>
                 <div class="card-body">
                     <div class="d-grid gap-2">
-                        {% if car.photos.count > 0 %}
+                        {% if car.photos.all %}
                         <a href="{% url 'website:download_all_car_photos' car.id %}" 
                            class="btn btn-success">
                             <i class="bi bi-download"></i> Скачать все фото

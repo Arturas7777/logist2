@@ -322,14 +322,30 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         умножена на число писем. См. карточку авто (services_summary_display)
         — там расчёт через отдельный aggregate, всегда корректен.
         """
-        from django.db.models import Count, DecimalField, OuterRef, Q, Subquery, Sum
+        from django.db.models import Count, DecimalField, F, OuterRef, Q, Subquery, Sum
         from django.db.models.functions import Coalesce
+
+        from core.service_codes import ServiceCode
 
         markup_subquery = (
             CarService.objects.filter(car_id=OuterRef('pk'))
             .values('car_id')
             .annotate(total=Sum('markup_amount'))
             .values('total')
+        )
+
+        # Ставка хранения склада одним Subquery на весь список вместо
+        # запроса WarehouseService на каждую строку (storage_cost_display →
+        # calculate_storage_cost → _get_storage_daily_rate). См. также
+        # Car._get_storage_daily_rate — он подхватывает эту аннотацию.
+        storage_rate_subquery = (
+            WarehouseService.objects.filter(
+                warehouse_id=OuterRef('warehouse_id'),
+                is_active=True,
+            )
+            .filter(Q(code=ServiceCode.STORAGE) | Q(name='Хранение'))
+            .order_by('id')
+            .values('default_price')[:1]
         )
 
         qs = super().get_queryset(request)
@@ -341,6 +357,11 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
                 Decimal('0.00'),
                 output_field=DecimalField(max_digits=12, decimal_places=2),
             ),
+            _storage_daily_rate_ann=Subquery(
+                storage_rate_subquery,
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            ),
+            _storage_daily_rate_ann_wh=F('warehouse_id'),
             _emails_unread=Count(
                 'email_links',
                 filter=Q(email_links__is_read=False),
@@ -1240,8 +1261,12 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         Раньше эти три шага были инлайнены 4 раза подряд (~250 строк
         копипасты), что и было ядром пункта #10 из плана улучшений.
         """
-        super().save_model(request, obj, form, change)
+        # Флаг ставим ДО первого save: иначе первый car_post_save отрабатывает
+        # без _bulk_updating и шаг 6 (_enqueue_recalc_cars_total_price) ставит
+        # лишнюю Celery-задачу пересчёта, хотя итоговый пересчёт админка делает
+        # сама в конце _save_model_inner. См. core/signals/car.py:186.
         obj._bulk_updating = True
+        super().save_model(request, obj, form, change)
 
         removed_services = self._process_removed_services(request, obj)
         logger.debug("Removed services: %s", removed_services)
