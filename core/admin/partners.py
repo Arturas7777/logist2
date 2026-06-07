@@ -1178,6 +1178,12 @@ class AutoTransportAdmin(admin.ModelAdmin):
     )
     list_display_links = ('number_with_unread',)
 
+    # Без явного значения Django берёт 100; при тяжёлых колонках
+    # (number_with_unread, actions_display) это лишняя нагрузка.
+    # show_full_result_count убирает второй COUNT(*) по всей таблице.
+    list_per_page = 50
+    show_full_result_count = False
+
     list_filter = (
         'status',
         'carrier',
