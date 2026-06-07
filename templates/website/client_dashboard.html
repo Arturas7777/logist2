@@ -198,6 +198,24 @@
                     </tbody>
                 </table>
             </div>
+            {% if cars_page.paginator.num_pages > 1 %}
+            <nav class="d-flex justify-content-between align-items-center p-3 border-top" aria-label="cars-pagination">
+                <span class="text-muted small">
+                    {% blocktrans with start=cars_page.start_index end=cars_page.end_index total=cars_page.paginator.count %}{{ start }}–{{ end }} из {{ total }}{% endblocktrans %}
+                </span>
+                <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item {% if not cars_page.has_previous %}disabled{% endif %}">
+                        <a class="page-link" href="{% if cars_page.has_previous %}?page={{ cars_page.previous_page_number }}{% else %}#{% endif %}">&laquo;</a>
+                    </li>
+                    <li class="page-item disabled">
+                        <span class="page-link">{{ cars_page.number }} / {{ cars_page.paginator.num_pages }}</span>
+                    </li>
+                    <li class="page-item {% if not cars_page.has_next %}disabled{% endif %}">
+                        <a class="page-link" href="{% if cars_page.has_next %}?page={{ cars_page.next_page_number }}{% else %}#{% endif %}">&raquo;</a>
+                    </li>
+                </ul>
+            </nav>
+            {% endif %}
             {% else %}
             <div class="empty-state">
                 <i class="bi bi-car-front"></i>

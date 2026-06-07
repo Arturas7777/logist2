@@ -1,11 +1,17 @@
 """Личный кабинет клиента: dashboard, car_detail, container_detail."""
 
 from django.contrib.auth.decorators import login_required
-from django.db.models import Prefetch
+from django.core.paginator import Paginator
+from django.db.models import Count, Prefetch, Q
 from django.shortcuts import get_object_or_404, render
 
 from core.models import Car, Container
 from core.models_website import CarPhoto, ClientUser, ContainerPhoto
+
+# Размер страницы списка авто в кабинете клиента. Раньше дашборд грузил
+# ВСЕ авто клиента (со всеми публичными фото) — для клиента с сотнями
+# машин это тяжёлый запрос и большой HTML. Теперь — постранично.
+CARS_PER_PAGE = 50
 
 
 @login_required
@@ -15,7 +21,7 @@ def client_dashboard(request):
         client_user = request.user.clientuser
         client = client_user.client
 
-        cars = list(
+        cars_qs = (
             Car.objects.filter(client=client)
             .select_related("warehouse", "container")
             .prefetch_related(
@@ -24,6 +30,17 @@ def client_dashboard(request):
             )
             .order_by("-id")
         )
+
+        # Статистика считается одним агрегатом по всей выборке клиента,
+        # чтобы цифры были верны независимо от текущей страницы.
+        stats = Car.objects.filter(client=client).aggregate(
+            total=Count("id"),
+            in_transit=Count("id", filter=Q(status__in=("FLOATING", "IN_PORT"))),
+            transferred=Count("id", filter=Q(status="TRANSFERRED")),
+        )
+
+        paginator = Paginator(cars_qs, CARS_PER_PAGE)
+        cars_page = paginator.get_page(request.GET.get("page"))
 
         containers = list(
             Container.objects.filter(client=client)
@@ -35,17 +52,15 @@ def client_dashboard(request):
             .order_by("-id")
         )
 
-        cars_in_transit = sum(1 for c in cars if c.status in ("FLOATING", "IN_PORT"))
-        cars_transferred = sum(1 for c in cars if c.status == "TRANSFERRED")
-
         context = {
             "client": client,
-            "cars": cars,
+            "cars": cars_page,
+            "cars_page": cars_page,
             "containers": containers,
-            "cars_count": len(cars),
+            "cars_count": stats["total"] or 0,
             "containers_count": len(containers),
-            "cars_in_transit": cars_in_transit,
-            "cars_transferred": cars_transferred,
+            "cars_in_transit": stats["in_transit"] or 0,
+            "cars_transferred": stats["transferred"] or 0,
         }
 
         return render(request, "website/client_dashboard.html", context)
