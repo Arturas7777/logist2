@@ -42,6 +42,31 @@
     изменении/удалении `ContainerPhoto` (загрузка в админке, GDrive sync).
   - **`AutoTransportAdmin`**: `list_per_page=50` + `show_full_result_count=False`.
 
+### Changed
+
+- **Рефакторинг (фазы 0–1): бизнес-логика из админки в сервисы.**
+  - **Фаза 0 — сеть безопасности.** Добавлены характеризующие тесты,
+    фиксирующие поведение перед рефакторингом: пересчёт балансов
+    `Client`/`Company`/`Warehouse`/`Line`/`Carrier`
+    (`test_balance_recalc.py`), каскад цены авто и хранения
+    (`test_price_cascade.py`), константные бюджеты SQL на горячих
+    выборках (`test_query_budgets.py`), генерация позиций инвойса из услуг
+    машины (`test_invoice_from_cars.py`).
+  - **Фаза 1 — оркестрация услуг авто** вынесена из
+    `CarAdmin._save_model_inner` в `core/services/car_admin_service.py`
+    (декаплено от `request`: на вход обычный mapping POST). Три приватных
+    helper-метода админки удалены.
+  - **Каскады контейнера** (синхронизация склада/статуса/даты разгрузки,
+    THS) вынесены из `ContainerAdmin._save_model_inner` в
+    `core/services/container_lifecycle_service.py`.
+  - **Управление каскадными сигналами** (`signals_disabled`, `CAR_SIGNALS`,
+    `INVOICE_SIGNALS`) собрано в одном месте —
+    `core/services/cascade_control.py` (раньше дублировалось в админке
+    контейнера).
+  - Новые сервисы покрыты unit-тестами (`test_car_admin_service.py`,
+    `test_container_lifecycle.py`). Поведение не изменилось — весь набор
+    тестов зелёный.
+
 ### Added
 
 - **База картинок моделей авто (`CarModelImage`)**: иллюстрация в карточке

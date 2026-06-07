@@ -1,11 +1,9 @@
 import logging
 import time
-from contextlib import contextmanager
 
 from django.contrib import admin
 from django.contrib.admin import SimpleListFilter
 from django.db import transaction
-from django.db.models.signals import post_delete, post_save
 from django.utils import timezone
 from django.utils.html import format_html
 
@@ -13,44 +11,10 @@ from core.admin.inlines import CarInline
 from core.admin_filters import ClientAutocompleteFilter, MultiStatusFilter, MultiWarehouseFilter
 from core.models import (
     Car,
-    CarService,
     Container,
-    LineService,
-    WarehouseService,
-)
-from core.signals import (
-    car_post_save,
-    recalculate_car_price_on_service_delete,
-    recalculate_car_price_on_service_save,
-    recalculate_invoices_on_car_service_delete,
-    recalculate_invoices_on_car_service_save,
 )
 
 logger = logging.getLogger(__name__)
-
-
-@contextmanager
-def signals_disabled(*signal_pairs):
-    """Temporarily disconnect signals, guaranteed reconnection even on exception."""
-    for signal, handler, sender in signal_pairs:
-        signal.disconnect(handler, sender=sender)
-    try:
-        yield
-    finally:
-        for signal, handler, sender in signal_pairs:
-            signal.connect(handler, sender=sender)
-
-
-CAR_SIGNALS = [
-    (post_save, car_post_save, Car),
-    (post_save, recalculate_car_price_on_service_save, CarService),
-    (post_delete, recalculate_car_price_on_service_delete, CarService),
-]
-
-INVOICE_SIGNALS = [
-    (post_save, recalculate_invoices_on_car_service_save, CarService),
-    (post_delete, recalculate_invoices_on_car_service_delete, CarService),
-]
 
 CONTAINER_STATUS_COLORS = {
     'В пути': '#2772a8',  # Darker blue
@@ -172,7 +136,13 @@ class ContainerAdmin(admin.ModelAdmin):
         logger.info(f"[TIMING] Container save_model completed in {time.time() - start_time:.2f}s")
 
     def _save_model_inner(self, request, obj, form, change):
-        """Внутренний метод save_model, выполняемый внутри transaction.atomic()"""
+        """Внутренний метод save_model, выполняемый внутри transaction.atomic().
+
+        Каскады (синхронизация склада/статуса/даты разгрузки, THS) вынесены
+        в ``core.services.container_lifecycle_service`` — здесь только
+        админ-слой: авто-статус + сохранение объекта + делегирование.
+        """
+        from core.services.container_lifecycle_service import apply_post_save_cascades
 
         # Auto-set status to UNLOADED when unload_date is filled and status is still before unloading
         obj._status_auto_changed = False
@@ -190,144 +160,13 @@ class ContainerAdmin(admin.ModelAdmin):
 
         logger.info("[TIMING] Container saved to DB")
 
-        # If warehouse changed - sync warehouse to all cars
-        if change and form and 'warehouse' in getattr(form, 'changed_data', []):
-            try:
-                logger.info(f"Warehouse changed for container {obj.id}, syncing cars...")
-                obj.sync_cars_after_warehouse_change()
-                logger.info(f"Successfully synced warehouse for {obj.container_cars.count()} cars")
-            except Exception as e:
-                logger.error(f"Failed to sync cars after warehouse change for container {obj.id}: {e}")
-
-        # If status changed (manually or auto-set) - update status for ALL cars in container
         changed_data = getattr(form, 'changed_data', []) if form else []
-        status_changed_by_user = change and 'status' in changed_data
-        status_changed_auto = change and getattr(obj, '_status_auto_changed', False)
-        if status_changed_by_user or status_changed_auto:
-            try:
-                logger.info(f"Status changed for container {obj.id} to {obj.status}, bulk updating all cars...")
-                updated_count = obj.container_cars.update(status=obj.status)
-                logger.info(f"Updated status to '{obj.status}' for {updated_count} cars in container {obj.number}")
-            except Exception as e:
-                logger.error(f"Failed to update car statuses for container {obj.id}: {e}")
-
-        # If unload date changed - update date for ALL cars in container
-        if change and form and 'unload_date' in getattr(form, 'changed_data', []):
-            try:
-                logger.info(f"Unload date changed for container {obj.id} to {obj.unload_date}, bulk updating all cars...")
-                obj.refresh_from_db()
-
-                with signals_disabled(*CAR_SIGNALS):
-                    cars_to_update = []
-                    update_fields = ['unload_date', 'days', 'storage_cost', 'total_price']
-
-                    for car in obj.container_cars.select_related('warehouse').all():
-                        car.unload_date = obj.unload_date
-                        if not obj.unload_date and car.status == 'UNLOADED':
-                            car.status = obj.status or 'IN_PORT'
-                            if 'status' not in update_fields:
-                                update_fields.append('status')
-                        car.update_days_and_storage()
-                        car.calculate_total_price()
-                        cars_to_update.append(car)
-
-                    if cars_to_update:
-                        Car.objects.bulk_update(
-                            cars_to_update,
-                            update_fields,
-                            batch_size=50
-                        )
-                        logger.info(f"Bulk updated {len(cars_to_update)} cars in container {obj.number}")
-
-                # Регенерацию инвойсов выносим из HTTP в Celery (on_commit,
-                # дедупликация по car_id). Раньше здесь был синхронный
-                # цикл regenerate_items_from_cars() по всем инвойсам +
-                # N+1 на car.newinvoice_set — сотни запросов в одном запросе
-                # при контейнере на 50 авто.
-                if cars_to_update:
-                    from core.signals.car_service import _deferred_invoice_regeneration
-                    for car in cars_to_update:
-                        _deferred_invoice_regeneration(car.id)
-
-            except Exception as e:
-                logger.error(f"Failed to update cars after unload_date change for container {obj.id}: {e}")
-
-        # Check THS-related changes: line, THS amount, THS payer, warehouse
-        changed_data = getattr(form, 'changed_data', []) if form else []
-        ths_related_changed = any(field in changed_data for field in ['line', 'ths', 'ths_payer', 'warehouse'])
-
-        # For new container - create THS if line and ths are set
-        # For existing - only if THS fields or warehouse changed
-        should_create_ths = (not change and obj.line and obj.ths) or (change and ths_related_changed)
-
-        # If creating new container with THS or changed THS fields - update THS services
-        if should_create_ths:
-            line_start = time.time()
-            try:
-                from core.models_billing import NewInvoice
-                from core.services.car_service_manager import (
-                    apply_client_tariffs_for_container,
-                    create_ths_services_for_container,
-                )
-
-                logger.info(f"[TIMING] THS-related change started for container {obj.id}, line: {obj.line}, ths: {obj.ths}, ths_payer: {obj.ths_payer}")
-
-                with signals_disabled(*(CAR_SIGNALS + INVOICE_SIGNALS)):
-                    if 'line' in changed_data:
-                        updated_count = obj.container_cars.update(line=obj.line)
-                        logger.info(f"[TIMING] Line updated for {updated_count} cars")
-
-                    if obj.line and obj.ths:
-                        created_count = create_ths_services_for_container(obj)
-                        logger.info(f"[TIMING] Created {created_count} THS services with proportional distribution")
-                        apply_client_tariffs_for_container(obj)
-                    else:
-                        car_ids = list(obj.container_cars.values_list('id', flat=True))
-                        deleted_line = CarService.objects.filter(
-                            car_id__in=car_ids,
-                            service_type='LINE'
-                        ).filter(
-                            service_id__in=LineService.objects.filter(name__icontains='THS').values_list('id', flat=True)
-                        ).delete()
-                        deleted_wh = CarService.objects.filter(
-                            car_id__in=car_ids,
-                            service_type='WAREHOUSE'
-                        ).filter(
-                            service_id__in=WarehouseService.objects.filter(name__icontains='THS').values_list('id', flat=True)
-                        ).delete()
-                        logger.info(f"[TIMING] Deleted {deleted_line[0]} line THS services and {deleted_wh[0]} warehouse THS services")
-
-                    cars_to_update = []
-                    affected_invoices = set()
-                    for car in obj.container_cars.select_related('warehouse').all():
-                        car.update_days_and_storage()
-                        car.calculate_total_price()
-                        cars_to_update.append(car)
-                        from core.mixins import REGENERATABLE_INVOICE_STATUSES
-                        for invoice in NewInvoice.objects.filter(cars=car, status__in=REGENERATABLE_INVOICE_STATUSES):
-                            affected_invoices.add(invoice)
-
-                    if cars_to_update:
-                        Car.objects.bulk_update(
-                            cars_to_update,
-                            ['days', 'storage_cost', 'total_price'],
-                            batch_size=50
-                        )
-                        logger.info(f"[TIMING] Recalculated prices for {len(cars_to_update)} cars")
-
-                    if affected_invoices:
-                        logger.info(f"[TIMING] Updating {len(affected_invoices)} affected invoices...")
-                        for invoice in affected_invoices:
-                            try:
-                                invoice.regenerate_items_from_cars()
-                            except Exception as e:
-                                logger.error(f"Error updating invoice {invoice.number}: {e}")
-                        logger.info("[TIMING] Invoices updated")
-
-                    logger.info(f"[TIMING] THS-related change completed in {time.time() - line_start:.2f}s")
-
-            except Exception as e:
-                logger.error(f"Failed to update cars after line change for container {obj.id}: {e}", exc_info=True)
+        apply_post_save_cascades(
+            obj,
+            changed_data=changed_data,
+            is_change=change,
+            status_auto_changed=getattr(obj, '_status_auto_changed', False),
+        )
 
     def save_formset(self, request, form, formset, change):
         formset_start = time.time()

@@ -19,7 +19,6 @@ from core.models import (
     CarrierService,
     CarService,
     CompanyService,
-    DeletedCarService,
     LineService,
     WarehouseService,
 )
@@ -1126,122 +1125,6 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         with transaction.atomic():
             self._save_model_inner(request, obj, form, change)
 
-    # ----- helpers вынесены ниже метода _save_model_inner --------
-
-    def _process_removed_services(self, request, obj):
-        """Сканирует POST на пометки `remove_<prefix>_service_<id>=1`,
-        удаляет соответствующие CarService и регистрирует в blacklist
-        DeletedCarService. Возвращает множество ключей вида
-        ``"<prefix>_<id>"`` для дальнейших проверок.
-        """
-        removed = set()
-        prefix_to_type = {
-            'warehouse': 'WAREHOUSE',
-            'line': 'LINE',
-            'carrier': 'CARRIER',
-            'company': 'COMPANY',
-        }
-        for key, value in request.POST.items():
-            if value != '1':
-                continue
-            for prefix, svc_type in prefix_to_type.items():
-                marker = f'remove_{prefix}_service_'
-                if not key.startswith(marker):
-                    continue
-                service_id = key[len(marker):]
-                removed.add(f'{prefix}_{service_id}')
-                try:
-                    CarService.objects.filter(
-                        car=obj, service_type=svc_type, service_id=service_id
-                    ).delete()
-                    DeletedCarService.objects.get_or_create(
-                        car=obj, service_type=svc_type, service_id=service_id,
-                    )
-                except Exception:
-                    logger.exception("Error deleting %s service %s", prefix, service_id)
-                break
-        return removed
-
-    def _update_existing_carservices(self, request, obj, *, prefix, service_type, removed_services):
-        """Обновляет custom_price/markup_amount у существующих CarService
-        по полям ``<prefix>_service_<id>`` / ``markup_<prefix>_service_<id>``
-        из POST-запроса. Возвращает QuerySet существующих CarService этого
-        типа (для дальнейшего использования в auto-add блоке).
-        """
-        existing_qs = CarService.objects.filter(car=obj, service_type=service_type)
-        for car_service in existing_qs:
-            if f'{prefix}_{car_service.service_id}' in removed_services:
-                continue
-            field_name = f'{prefix}_service_{car_service.service_id}'
-            if field_name not in request.POST:
-                continue
-            value = request.POST.get(field_name)
-            if value:
-                try:
-                    car_service.custom_price = float(value)
-                except (ValueError, TypeError):
-                    pass
-            markup_field = f'markup_{prefix}_service_{car_service.service_id}'
-            markup_value = request.POST.get(markup_field)
-            if markup_value is not None:
-                try:
-                    car_service.markup_amount = float(markup_value) if markup_value else 0
-                except (ValueError, TypeError):
-                    car_service.markup_amount = 0
-            car_service.save()
-        return existing_qs
-
-    def _auto_add_default_services(
-        self, request, obj, *, prefix, service_type, catalog_model,
-        related_field, related_value, removed_services, existing_qs,
-    ):
-        """Автодобавление дефолтных услуг провайдера при создании авто
-        или смене провайдера (warehouse/line/carrier).
-
-        :param catalog_model: модель каталога (WarehouseService/LineService/...).
-        :param related_field: имя FK на провайдере в каталоге
-            (``warehouse``/``line``/``carrier``).
-        :param related_value: текущий провайдер (``obj.warehouse`` и т.п.);
-            если None — выходим без действий.
-        """
-        if related_value is None:
-            return
-        new_service_ids = set(
-            catalog_model.objects.filter(**{related_field: related_value})
-            .values_list('id', flat=True)
-        )
-        DeletedCarService.objects.filter(
-            car=obj, service_type=service_type
-        ).exclude(service_id__in=new_service_ids).delete()
-        services = catalog_model.objects.filter(
-            **{related_field: related_value},
-            is_active=True,
-            add_by_default=True,
-        ).only('id', 'default_price', 'default_markup')
-        existing_ids = set(existing_qs.values_list('service_id', flat=True))
-        blacklisted = set(
-            DeletedCarService.objects.filter(
-                car=obj, service_type=service_type
-            ).values_list('service_id', flat=True)
-        )
-        for service in services:
-            if f'{prefix}_{service.id}' in removed_services:
-                continue
-            if service.id in blacklisted:
-                continue
-            if service.id in existing_ids:
-                continue
-            field_name = f'{prefix}_service_{service.id}'
-            value = request.POST.get(field_name) or service.default_price
-            default_markup = getattr(service, 'default_markup', 0) or 0
-            CarService.objects.create(
-                car=obj,
-                service_type=service_type,
-                service_id=service.id,
-                custom_price=float(value),
-                markup_amount=float(default_markup),
-            )
-
     def _save_model_inner(self, request, obj, form, change):
         """Внутренний метод save_model, выполняемый внутри transaction.atomic().
 
@@ -1268,124 +1151,14 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         obj._bulk_updating = True
         super().save_model(request, obj, form, change)
 
-        removed_services = self._process_removed_services(request, obj)
-        logger.debug("Removed services: %s", removed_services)
+        # Вся оркестрация услуг/цены вынесена в сервис (декаплено от request).
+        # Здесь — только тонкая адаптация админ-слоя: парсинг POST → сервис.
+        from core.services.car_admin_service import apply_car_service_edits
 
         changed_data = getattr(form, 'changed_data', []) if form else []
-
-        # WAREHOUSE
-        existing_warehouse_qs = self._update_existing_carservices(
-            request, obj, prefix='warehouse', service_type='WAREHOUSE',
-            removed_services=removed_services,
+        apply_car_service_edits(
+            obj, post=request.POST, changed_data=changed_data, is_change=change,
         )
-        if (not change) or 'warehouse' in changed_data:
-            self._auto_add_default_services(
-                request, obj,
-                prefix='warehouse', service_type='WAREHOUSE',
-                catalog_model=WarehouseService,
-                related_field='warehouse', related_value=obj.warehouse,
-                removed_services=removed_services,
-                existing_qs=existing_warehouse_qs,
-            )
-
-        # LINE (включая THS)
-        existing_line_qs = self._update_existing_carservices(
-            request, obj, prefix='line', service_type='LINE',
-            removed_services=removed_services,
-        )
-        if (not change) or 'line' in changed_data:
-            self._auto_add_default_services(
-                request, obj,
-                prefix='line', service_type='LINE',
-                catalog_model=LineService,
-                related_field='line', related_value=obj.line,
-                removed_services=removed_services,
-                existing_qs=existing_line_qs,
-            )
-
-        # CARRIER
-        existing_carrier_qs = self._update_existing_carservices(
-            request, obj, prefix='carrier', service_type='CARRIER',
-            removed_services=removed_services,
-        )
-        if (not change) or 'carrier' in changed_data:
-            self._auto_add_default_services(
-                request, obj,
-                prefix='carrier', service_type='CARRIER',
-                catalog_model=CarrierService,
-                related_field='carrier', related_value=obj.carrier,
-                removed_services=removed_services,
-                existing_qs=existing_carrier_qs,
-            )
-
-        # COMPANY: блок auto-add отсутствует (компания не привязана к Car).
-        self._update_existing_carservices(
-            request, obj, prefix='company', service_type='COMPANY',
-            removed_services=removed_services,
-        )
-
-        # Recalculate storage cost and days when warehouse changes
-        if change and form and 'warehouse' in getattr(form, 'changed_data', []):
-            logger.debug(f"Склад изменился для автомобиля {obj.vin}, пересчитываем стоимость хранения")
-            try:
-                # Update fields based on new warehouse
-                obj.update_days_and_storage()
-                obj.calculate_total_price()
-                # Save updated fields
-                obj.save(update_fields=['storage_cost', 'days', 'total_price'])
-                logger.debug(f"Обновлены поля: storage_cost={obj.storage_cost}, days={obj.days}")
-            except Exception as e:
-                logger.error(f"Ошибка при пересчете стоимости хранения: {e}")
-
-        # Применяем тариф клиента (FIXED / FLEXIBLE) только когда реально
-        # изменилось что-то, влияющее на распределение: клиент / склад /
-        # линия / перевозчик, или были правки самих услуг (любые поля
-        # *_service_* / markup_* / remove_* в POST).
-        # Это убирает лишний пересчёт при сохранении карточки авто без
-        # изменений (например, после смены статуса в list_editable).
-        client_cleared = change and 'client' in changed_data and not obj.client
-        services_touched = any(
-            key.startswith(prefix)
-            for key in request.POST.keys()
-            for prefix in (
-                'warehouse_service_', 'line_service_',
-                'carrier_service_', 'company_service_',
-                'markup_warehouse_service_', 'markup_line_service_',
-                'markup_carrier_service_', 'markup_company_service_',
-                'remove_warehouse_service_', 'remove_line_service_',
-                'remove_carrier_service_', 'remove_company_service_',
-            )
-        )
-        deps_touched = (
-            not change
-            or any(f in changed_data for f in ('client', 'warehouse', 'line', 'carrier'))
-            or services_touched
-            or client_cleared
-        )
-        if obj.status != 'TRANSFERRED' and deps_touched:
-            client = obj.client
-            try:
-                from core.services.car_service_manager import apply_client_tariff_for_car
-                if (client and client.tariff_type in ('FIXED', 'FLEXIBLE')) or client_cleared:
-                    apply_client_tariff_for_car(obj)
-                    obj.calculate_total_price()
-                    Car.objects.filter(pk=obj.pk).update(total_price=obj.total_price)
-            except Exception:
-                logger.exception("Ошибка при пересчете тарифа клиента для car=%s", obj.pk)
-
-        # Финальный пересчёт цены авто после всех манипуляций с CarService.
-        # Сигналы CarService.post_save/post_delete были заглушены флагом
-        # `_bulk_updating` — делаем один итоговый UPDATE здесь.
-        obj._bulk_updating = False
-        try:
-            obj.calculate_total_price()
-            Car.objects.filter(pk=obj.pk).update(
-                total_price=obj.total_price,
-                days=obj.days,
-                storage_cost=obj.storage_cost,
-            )
-        except Exception:
-            logger.exception("Ошибка финального пересчёта цены авто %s", obj.pk)
 
     def warehouse_services_display(self, obj):
         """Displays editable fields for all warehouse services"""
