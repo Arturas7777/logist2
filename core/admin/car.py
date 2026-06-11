@@ -185,10 +185,21 @@ def find_car_model_image_url(year, brand):
     if not match:
         match = qs.filter(brand__iexact=brand, year__isnull=True).first()
     if not match:
-        brand_lower = brand.lower()
-        candidates = [c for c in qs if brand_lower.startswith(c.brand.strip().lower())]
-        candidates.sort(key=lambda c: (len(c.brand), c.year == year), reverse=True)
-        match = candidates[0] if candidates else None
+        # Частичное совпадение: brand записи — префикс brand авто
+        # («BMW» ⊂ «BMW 430I»). Раньше для этого грузились ВСЕ записи
+        # CarModelImage в память; теперь сравнение делает БД:
+        # LOWER(LEFT(<brand авто>, LENGTH(brand))) = LOWER(TRIM(brand)).
+        from django.db.models import Case, F, IntegerField, Value, When
+        from django.db.models.functions import Length, Lower, Substr, Trim
+
+        match = (
+            qs.annotate(_brand_norm=Lower(Trim('brand')))
+            .annotate(_prefix=Lower(Substr(Value(brand), 1, Length('_brand_norm'))))
+            .filter(_prefix=F('_brand_norm'))
+            .annotate(_year_match=Case(When(year=year, then=1), default=0, output_field=IntegerField()))
+            .order_by(Length('_brand_norm').desc(), '-_year_match')
+            .first()
+        )
 
     if match and match.image:
         try:
@@ -655,12 +666,9 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             )
             company_names_by_id = {c.id: c.company.name for c in company_qs}
 
-        # Paid days for display — динамический расчёт (как в days_display)
+        # Paid days for display — единый расчёт через Car.get_storage_days()
         if obj.warehouse and obj.unload_date:
-            end_date = obj.transfer_date if obj.status == 'TRANSFERRED' and obj.transfer_date else timezone.now().date()
-            total_days = (end_date - obj.unload_date).days + 1
-            free_days_count = obj.warehouse.free_days or 0
-            paid_days = max(0, total_days - free_days_count)
+            paid_days, _ = obj.get_storage_days()
         else:
             paid_days = obj.days or 0
 
@@ -861,12 +869,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
     def days_display(self, obj):
         """Shows paid days accounting for free days from warehouse"""
         if obj.warehouse and obj.unload_date:
-            # Calculate total storage days
-            end_date = obj.transfer_date if obj.status == 'TRANSFERRED' and obj.transfer_date else timezone.now().date()
-            total_days = (end_date - obj.unload_date).days + 1
-
-            free_days = obj.warehouse.free_days or 0
-            chargeable_days = max(0, total_days - free_days)
+            chargeable_days, total_days = obj.get_storage_days()
             return f"{chargeable_days} (из {total_days})"
         return obj.days if hasattr(obj, 'days') else 0
     days_display.short_description = 'Плат.дн.'
@@ -1002,44 +1005,59 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         return "0.00"
     rate_display.short_description = 'Ставка/день'
 
+    # Массовые смены статусов: сам статус меняем одним UPDATE, а пересчёт
+    # total_price/days/storage_cost уходит в Celery (с inline-fallback).
+    # Раньше пересчёт шёл синхронно в цикле — при 100+ выбранных машинах
+    # HTTP-запрос висел десятки секунд (N×(SELECT+UPDATE) + услуги).
+
+    def _bulk_set_status(self, request, queryset, status, status_label):
+        from core.signals.service_catalog import _enqueue_recalc_cars_total_price
+
+        pks = list(queryset.values_list('pk', flat=True))
+        updated = queryset.update(status=status)
+        _enqueue_recalc_cars_total_price(pks)
+        self.message_user(
+            request,
+            f"Статус изменён на '{status_label}' для {updated} автомобилей. Цены пересчитываются в фоне.",
+        )
+
     def set_status_floating(self, request, queryset):
-        updated = queryset.update(status='FLOATING')
-        for obj in Car.objects.filter(pk__in=queryset.values_list('pk', flat=True)):
-            obj.calculate_total_price()
-            Car.objects.filter(pk=obj.pk).update(days=obj.days, storage_cost=obj.storage_cost, total_price=obj.total_price)
-        self.message_user(request, f"Статус изменён на 'В пути' для {updated} автомобилей.")
+        self._bulk_set_status(request, queryset, 'FLOATING', 'В пути')
     set_status_floating.short_description = "Изменить статус на В пути"
 
     def set_status_in_port(self, request, queryset):
-        updated = queryset.update(status='IN_PORT')
-        for obj in Car.objects.filter(pk__in=queryset.values_list('pk', flat=True)):
-            obj.calculate_total_price()
-            Car.objects.filter(pk=obj.pk).update(days=obj.days, storage_cost=obj.storage_cost, total_price=obj.total_price)
-        self.message_user(request, f"Статус изменён на 'В порту' для {updated} автомобилей.")
+        self._bulk_set_status(request, queryset, 'IN_PORT', 'В порту')
     set_status_in_port.short_description = "Изменить статус на В порту"
 
     def set_status_unloaded(self, request, queryset):
-        updated = 0
-        for obj in Car.objects.filter(pk__in=queryset.values_list('pk', flat=True)):
-            if obj.warehouse and obj.unload_date:
-                obj.status = 'UNLOADED'
-                obj.calculate_total_price()
-                Car.objects.filter(pk=obj.pk).update(status=obj.status, days=obj.days, storage_cost=obj.storage_cost, total_price=obj.total_price)
-                updated += 1
+        from core.signals.service_catalog import _enqueue_recalc_cars_total_price
+
+        # Для UNLOADED обязательны склад и дата разгрузки — проверяем без
+        # загрузки полных объектов.
+        ready_pks = []
+        for pk, vin, wh_id, unload_date in queryset.values_list('pk', 'vin', 'warehouse_id', 'unload_date'):
+            if wh_id and unload_date:
+                ready_pks.append(pk)
             else:
-                self.message_user(request, f"Автомобиль {obj.vin} не обновлён: требуются поля 'Склад' и 'Дата разгрузки'.", level='warning')
-        self.message_user(request, f"Статус изменён на 'Разгружен' для {updated} автомобилей.")
+                self.message_user(
+                    request,
+                    f"Автомобиль {vin} не обновлён: требуются поля 'Склад' и 'Дата разгрузки'.",
+                    level='warning',
+                )
+        updated = Car.objects.filter(pk__in=ready_pks).update(status='UNLOADED')
+        _enqueue_recalc_cars_total_price(ready_pks)
+        self.message_user(request, f"Статус изменён на 'Разгружен' для {updated} автомобилей. Цены пересчитываются в фоне.")
     set_status_unloaded.short_description = "Изменить статус на Разгружен"
 
     def set_status_transferred(self, request, queryset):
+        from core.signals.service_catalog import _enqueue_recalc_cars_total_price
+
         car_pks = list(queryset.values_list('pk', flat=True))
         updated = queryset.update(status='TRANSFERRED')
-        for obj in Car.objects.filter(pk__in=car_pks):
-            if not obj.transfer_date:
-                obj.transfer_date = timezone.now().date()
-            obj.calculate_total_price()
-            Car.objects.filter(pk=obj.pk).update(transfer_date=obj.transfer_date, days=obj.days, storage_cost=obj.storage_cost, total_price=obj.total_price)
-        self.message_user(request, f"Статус изменён на 'Передан' для {updated} автомобилей.")
+        # Дата передачи проставляется только там, где её ещё нет
+        Car.objects.filter(pk__in=car_pks, transfer_date__isnull=True).update(transfer_date=timezone.now().date())
+        _enqueue_recalc_cars_total_price(car_pks)
+        self.message_user(request, f"Статус изменён на 'Передан' для {updated} автомобилей. Цены пересчитываются в фоне.")
     set_status_transferred.short_description = "Изменить статус на Передан"
 
     def set_title_with_us(self, request, queryset):

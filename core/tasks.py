@@ -1020,3 +1020,25 @@ def recalculate_cars_total_price_task(self, car_ids):
         len(car_ids), len(cars_to_update),
     )
     return {'requested': len(car_ids), 'updated': len(cars_to_update)}
+
+
+@shared_task(time_limit=600)
+def refresh_unloaded_storage_daily():
+    """Ежедневный пересчёт days/storage_cost/total_price машин на складе.
+
+    Стоимость хранения растёт каждый день, но денормализованные поля
+    Car.days/storage_cost/total_price обновляются только по событиям
+    (save, смена каталога). Без ежедневного пересчёта Sum("storage_cost")
+    на дашборде и сортировка по «Хран» в админке отстают от реальности
+    на дни. Пересчитываем только UNLOADED — у остальных статусов хранение
+    не накапливается (FLOATING/IN_PORT — нет unload_date, TRANSFERRED —
+    зафиксировано по transfer_date).
+    """
+    from core.models import Car
+
+    ids = list(Car.objects.filter(status='UNLOADED').values_list('pk', flat=True))
+    batch_size = 500
+    for i in range(0, len(ids), batch_size):
+        recalculate_cars_total_price_task.delay(ids[i:i + batch_size])
+    logger.info("[refresh_unloaded_storage_daily] enqueued %s cars", len(ids))
+    return {'enqueued': len(ids)}

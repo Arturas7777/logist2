@@ -20,6 +20,13 @@ app.conf.beat_schedule = {
         'task': 'core.tasks.check_overdue_invoices',
         'schedule': crontab(hour=6, minute=0),
     },
+    'refresh-unloaded-storage-daily': {
+        # Хранение растёт каждый день — освежаем денормализованные
+        # days/storage_cost/total_price у машин на складе, чтобы дашборд
+        # и сортировки в админке не отставали от реальности.
+        'task': 'core.tasks.refresh_unloaded_storage_daily',
+        'schedule': crontab(hour=0, minute=30),
+    },
     'check-balance-consistency-weekly': {
         'task': 'core.tasks.check_balance_consistency',
         'schedule': crontab(hour=3, minute=0, day_of_week='sunday'),

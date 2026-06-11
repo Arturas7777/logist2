@@ -158,6 +158,7 @@ class NewInvoice(models.Model):
         max_length=100,
         blank=True,
         default='',
+        db_index=True,  # search_fields в админке + поиск в API инвойсов
         verbose_name="Номер счёта контрагента",
         help_text="Номер с бумажного/PDF счёта от поставщика (для входящих инвойсов)"
     )

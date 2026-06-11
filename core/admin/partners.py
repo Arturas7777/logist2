@@ -574,18 +574,6 @@ class ClientAdmin(admin.ModelAdmin):
 
     sync_all_balances.short_description = 'Синхронизировать инвойс-балансы'
 
-    def change_view(self, request, object_id, form_url='', extra_context=None):
-        extra_context = extra_context or {}
-        client = self.get_object(request, object_id)
-        if client:
-            try:
-                summary = client.get_balance_summary()
-                extra_context['balance_summary'] = summary
-            except Exception as e:
-                logger.error(f"Failed to get balance summary for client {client.name}: {e}")
-                extra_context['balance_summary_error'] = f"Ошибка загрузки сводки баланса: {e!s}"
-        return super().change_view(request, object_id, form_url, extra_context)
-
     def reset_balances(self, request, queryset):
         if 'confirm' in request.POST:
             client_ids = request.POST.getlist('_selected_action')

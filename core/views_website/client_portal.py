@@ -12,6 +12,7 @@ from core.models_website import CarPhoto, ClientUser, ContainerPhoto
 # ВСЕ авто клиента (со всеми публичными фото) — для клиента с сотнями
 # машин это тяжёлый запрос и большой HTML. Теперь — постранично.
 CARS_PER_PAGE = 50
+CONTAINERS_PER_PAGE = 50
 
 
 @login_required
@@ -42,23 +43,26 @@ def client_dashboard(request):
         paginator = Paginator(cars_qs, CARS_PER_PAGE)
         cars_page = paginator.get_page(request.GET.get("page"))
 
-        containers = list(
+        # Таблице контейнеров нужны только номер/линия/склад/статус/даты и
+        # количество машин — фото и сами машины не выводятся, поэтому вместо
+        # prefetch — один Count в SQL. Список постраничный, как и авто.
+        containers_qs = (
             Container.objects.filter(client=client)
             .select_related("line", "warehouse")
-            .prefetch_related(
-                Prefetch("photos", queryset=ContainerPhoto.objects.filter(is_public=True)),
-                "container_cars",
-            )
+            .annotate(cars_count=Count("container_cars"))
             .order_by("-id")
         )
+        containers_paginator = Paginator(containers_qs, CONTAINERS_PER_PAGE)
+        containers_page = containers_paginator.get_page(request.GET.get("cpage"))
 
         context = {
             "client": client,
             "cars": cars_page,
             "cars_page": cars_page,
-            "containers": containers,
+            "containers": containers_page,
+            "containers_page": containers_page,
             "cars_count": stats["total"] or 0,
-            "containers_count": len(containers),
+            "containers_count": containers_paginator.count,
             "cars_in_transit": stats["in_transit"] or 0,
             "cars_transferred": stats["transferred"] or 0,
         }

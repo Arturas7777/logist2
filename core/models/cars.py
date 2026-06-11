@@ -336,6 +336,22 @@ class Car(models.Model):
         self.total_price = total
         return self.total_price
 
+    def get_storage_days(self):
+        """Возвращает кортеж (платные_дни, всего_дней) хранения на складе.
+
+        ЕДИНСТВЕННОЕ место с формулой платных дней — не дублировать её
+        в админке/сервисах: день разгрузки и день передачи включаются,
+        бесплатные дни склада вычитаются. Для TRANSFERRED отсчёт
+        останавливается на transfer_date, иначе — по сегодняшний день.
+        """
+        if not self.unload_date or not self.warehouse:
+            return 0, 0
+
+        end_date = self.transfer_date if self.status == "TRANSFERRED" and self.transfer_date else timezone.now().date()
+        total_days = (end_date - self.unload_date).days + 1
+        free_days = int(self.warehouse.free_days or 0)
+        return max(0, total_days - free_days), total_days
+
     def update_days_and_storage(self):
         """Обновляет платные дни и стоимость хранения для автомобиля.
 
@@ -345,19 +361,11 @@ class Car(models.Model):
         НЕ обновляет CarService и НЕ пересчитывает total_price.
         Для полного пересчёта используйте calculate_total_price().
         """
+        self.days, _ = self.get_storage_days()
         if not self.unload_date or not self.warehouse:
-            self.days = 0
             self.storage_cost = Decimal("0.00")
             return
-
-        free_days = int(self.warehouse.free_days or 0)
-
-        end_date = self.transfer_date if self.status == "TRANSFERRED" and self.transfer_date else timezone.now().date()
-        total_days = (end_date - self.unload_date).days + 1
-        self.days = max(0, total_days - free_days)
-
-        daily_rate = self._get_storage_daily_rate()
-        self.storage_cost = Decimal(str(self.days)) * daily_rate
+        self.storage_cost = Decimal(str(self.days)) * self._get_storage_daily_rate()
 
     def _get_storage_daily_rate(self):
         """Получает ставку хранения за день из услуги 'Хранение' склада.
@@ -559,22 +567,8 @@ class Car(models.Model):
         if not self.warehouse or not self.unload_date:
             return Decimal("0.00")
 
-        # Получаем ставку из услуги "Хранение" и бесплатные дни со склада
-        daily_rate = self._get_storage_daily_rate()
-        free_days = self.warehouse.free_days or 0
-
-        # Рассчитываем общее количество дней хранения
-        # Включаем день разгрузки и день забора авто
-        end_date = self.transfer_date if self.status == "TRANSFERRED" and self.transfer_date else timezone.now().date()
-        total_days = (end_date - self.unload_date).days + 1
-
-        # Рассчитываем платные дни (общие дни минус бесплатные)
-        chargeable_days = max(0, total_days - free_days)
-
-        # Рассчитываем стоимость
-        storage_cost = daily_rate * chargeable_days
-
-        return storage_cost
+        chargeable_days, _ = self.get_storage_days()
+        return self._get_storage_daily_rate() * chargeable_days
 
     def clean(self):
         from django.core.exceptions import ValidationError

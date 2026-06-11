@@ -9,6 +9,47 @@
 
 ### Added
 
+- **Ежедневный пересчёт хранения** (`refresh_unloaded_storage_daily`,
+  beat 00:30): денормализованные `Car.days/storage_cost/total_price` у
+  машин на складе освежаются раз в сутки — `Sum("storage_cost")` на
+  дашборде и сортировка «Хран» в админке больше не отстают от реальности.
+- **`Car.get_storage_days()`** — единственное место с формулой платных
+  дней хранения (день разгрузки/передачи включаются, бесплатные дни
+  склада вычитаются). Дубли формулы в `update_days_and_storage`,
+  `calculate_storage_cost`, `CarAdmin.days_display` и
+  `services_summary_display` заменены вызовом хелпера.
+- **Индексы**: `ContainerEmailLink(container, is_read)` (фильтр
+  непрочитанных писем в списке контейнеров) и
+  `NewInvoice.external_number` (`db_index`, поиск в админке/API) —
+  миграция 0182.
+
+### Changed
+
+- **PNG-иконки админки сжаты с 27.7 MB до 0.8 MB**
+  (`scripts/compress_icons.py`): ресайз до 640px + квантизация в палитру.
+  Раньше открытие карточки инвойса/клиента тянуло картинки по 4-5 MB.
+- **Массовые admin-actions смены статуса Car**: пересчёт
+  `total_price/days/storage_cost` ушёл в Celery
+  (`recalculate_cars_total_price_task`) — HTTP-запрос больше не висит
+  на синхронном цикле «SELECT+UPDATE на каждую машину».
+- **`ContainerAdmin.save_formset`**: пересчёт цен машин контейнера после
+  обновления THS — одним `bulk_update` вместо N×`save()` с полным
+  сигнальным каскадом (WS, Celery, email) на каждую машину;
+  `bulk_update_container_statuses` — условная агрегация одним SQL вместо
+  `exists()/count()`+загрузки машин на каждый контейнер.
+- **Кабинет клиента**: список контейнеров постраничный (50/стр.),
+  количество машин — `Count` в SQL вместо prefetch всех машин и фото.
+- **`find_car_model_image_url`**: частичный подбор картинки модели
+  выполняется в БД (prefix-match через `Substr/Length`) вместо загрузки
+  всех `CarModelImage` в память на каждое открытие карточки авто.
+
+### Fixed
+
+- **Карточка клиента**: удалён вызов несуществующего
+  `client.get_balance_summary()` в `ClientAdmin.change_view` — каждый
+  открытый клиент писал ошибку в лог; контекст шёл в шаблон, который его
+  не использовал.
+
 - **Иммутабельный леджер транзакций** (`Transaction._validate_ledger_rules`):
   денежные поля проведённой (COMPLETED) транзакции заморожены
   (`LEDGER_FROZEN_FIELDS`: сумма, тип, стороны, инвойс, дата);

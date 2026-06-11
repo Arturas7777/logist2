@@ -279,6 +279,9 @@ class ContainerEmailLink(models.Model):
         ]
         indexes = [
             models.Index(fields=['container', 'email']),
+            # Под аннотацию непрочитанных писем в changelist контейнеров
+            # (Count с filter=Q(email_links__is_read=False)) — как у CarEmailLink.
+            models.Index(fields=['container', 'is_read']),
         ]
 
     def __str__(self) -> str:

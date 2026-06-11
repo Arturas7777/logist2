@@ -298,22 +298,22 @@ class ContainerAdmin(admin.ModelAdmin):
 
                 # Use savepoint for safe recalculation
                 with transaction.atomic():
-                    # Recalculate THS for ALL cars in container
-                    cars_in_container = list(parent.container_cars.all())
-                    logger.info(f"[FORMSET] Found {len(cars_in_container)} cars in container")
-
-                    if cars_in_container:
+                    if parent.container_cars.exists():
                         created = create_ths_services_for_container(parent)
                         logger.info(f"[FORMSET] Created/updated {created} THS services for container {parent.number}")
                         # Apply client tariffs
                         apply_client_tariffs_for_container(parent)
 
-                        # Recalculate prices for ALL cars in container after THS update
+                        # Пересчёт цен ВСЕХ машин контейнера после обновления THS.
+                        # Перечитываем машины уже ПОСЛЕ изменений THS/тарифов (вместо
+                        # refresh_from_db на каждую) и пишем итог одним bulk_update —
+                        # без N save() и без N сигнальных каскадов (WS, Celery и т.д.).
+                        cars_in_container = list(
+                            parent.container_cars.select_related('warehouse').prefetch_related('car_services')
+                        )
                         for car in cars_in_container:
-                            car.refresh_from_db()  # Refresh car data from DB
                             car.calculate_total_price()
-                            car.save(update_fields=['total_price', 'storage_cost', 'days'])
-                            logger.info(f"[FORMSET] Recalculated price for car {car.vin}: {car.total_price}")
+                        Car.objects.bulk_update(cars_in_container, ['total_price', 'storage_cost', 'days'])
                         logger.info(f"[FORMSET] Recalculated prices for all {len(cars_in_container)} cars")
                     else:
                         logger.info(f"[FORMSET] No cars left in container {parent.number}")
@@ -465,17 +465,22 @@ class ContainerAdmin(admin.ModelAdmin):
         skipped_count = 0
         error_count = 0
 
-        for container in queryset:
+        # Считаем машины одним SQL-запросом с условной агрегацией вместо
+        # exists()/count()/загрузки всех машин на каждый контейнер.
+        from django.db.models import Count, Q
+
+        annotated = queryset.annotate(
+            _cars_total=Count('container_cars'),
+            _cars_transferred=Count('container_cars', filter=Q(container_cars__status='TRANSFERRED')),
+        )
+
+        for container in annotated:
             try:
-                cars = container.container_cars.all()
-                if not cars.exists():
+                if not container._cars_total:
                     skipped_count += 1
                     continue
 
-                # Check if all cars are transferred
-                all_transferred = all(car.status == 'TRANSFERRED' for car in cars)
-                sum(1 for car in cars if car.status == 'TRANSFERRED')
-                cars.count()
+                all_transferred = container._cars_transferred == container._cars_total
 
                 if all_transferred and container.status != 'TRANSFERRED':
                     old_status = container.status
