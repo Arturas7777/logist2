@@ -16,7 +16,9 @@ from decimal import Decimal, InvalidOperation
 from django.contrib import messages
 from django.shortcuts import redirect
 
+from core.admin.billing.invoice_display import build_items_pivot_table
 from core.models_billing import ExpenseCategory, InvoiceItem, NewInvoice
+from core.services.billing_service import BillingService
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +119,7 @@ class NewInvoiceFormHandlerMixin:
 
         if invoice:
             try:
-                extra_context["pivot_table"] = invoice.get_items_pivot_table()
+                extra_context["pivot_table"] = build_items_pivot_table(invoice)
                 extra_context["is_incoming"] = invoice.direction == "INCOMING"
                 if invoice.attachment:
                     file_path = os.path.join(settings.MEDIA_ROOT, str(invoice.attachment))
@@ -252,7 +254,7 @@ class NewInvoiceFormHandlerMixin:
         if new_doc_type not in dict(NewInvoice.DOCUMENT_TYPE_CHOICES):
             new_doc_type = "PROFORMA"
         if object_id and invoice.document_type != new_doc_type:
-            old_num = invoice.change_series(new_doc_type, created_by=request.user)
+            old_num = BillingService.change_invoice_series(invoice, new_doc_type, created_by=request.user)
             messages.info(request, f"Серия изменена: {old_num} → {invoice.number}")
         else:
             invoice.document_type = new_doc_type
@@ -379,7 +381,7 @@ class NewInvoiceFormHandlerMixin:
 
         if not object_id and invoice.document_type in NewInvoice.CASH_DOCUMENT_TYPES and invoice.remaining_amount > 0:
             cash_amount = invoice.remaining_amount
-            invoice._register_cash_payment(created_by=request.user)
+            BillingService.register_cash_payment(invoice, created_by=request.user)
             messages.info(request, f"💵 Оплата наличными зарегистрирована: {cash_amount:.2f} €")
 
         has_audit = False

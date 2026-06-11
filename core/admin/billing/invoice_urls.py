@@ -181,7 +181,7 @@ class NewInvoiceUrlsMixin:
         if request.method == "POST":
             try:
                 if invoice.document_type == "PROFORMA_BLC":
-                    old_num = invoice.change_series("INVOICE_BLC", created_by=request.user)
+                    old_num = BillingService.change_invoice_series(invoice, "INVOICE_BLC", created_by=request.user)
                     messages.success(
                         request,
                         f"Серия {old_num} → {invoice.number}, оплата наличными зарегистрирована.",
@@ -190,7 +190,7 @@ class NewInvoiceUrlsMixin:
 
                 if invoice.document_type in NewInvoice.CASH_DOCUMENT_TYPES and invoice.remaining_amount > 0:
                     cash_amount = invoice.remaining_amount
-                    invoice._register_cash_payment(created_by=request.user)
+                    BillingService.register_cash_payment(invoice, created_by=request.user)
                     messages.success(
                         request,
                         f"💵 Оплата наличными зарегистрирована: {cash_amount:.2f} €",

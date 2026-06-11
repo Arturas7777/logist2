@@ -268,6 +268,99 @@ class BillingService:
         return locked_invoice
 
     # ========================================================================
+    # СМЕНА СЕРИИ ДОКУМЕНТА (A2, AUDIT_ROUND3)
+    #
+    # Правило: модель NewInvoice хранит инварианты/валидацию/FSM-переходы;
+    # команды с побочными эффектами (платежи, перенумерование) — только здесь.
+    # ========================================================================
+
+    @classmethod
+    def change_invoice_series(cls, invoice, new_document_type, created_by=None):
+        """Перевести инвойс в другую серию с автоматическим перенумерованием.
+
+        При переходе на любую кассовую серию (INVOICE_BLC / INVOICE_INCBLC)
+        автоматически создаётся кассовый платёж (CASH) на оставшуюся сумму
+        и инвойс закрывается. При уходе с кассовой серии на некассовую —
+        кассовые платежи отменяются. Переход между кассовыми сериями
+        (PARBLC ↔ INCBLC) не трогает платежи, только меняет номер.
+
+        Returns:
+            str: старый номер инвойса (для логирования).
+        """
+        if new_document_type == invoice.document_type:
+            return invoice.number
+
+        old_number = invoice.number
+        old_type = invoice.document_type
+        invoice.document_type = new_document_type
+        with transaction.atomic():
+            invoice.number = invoice.generate_number()
+            invoice.save(update_fields=['document_type', 'number', 'updated_at'])
+
+            was_cash = old_type in invoice.CASH_DOCUMENT_TYPES
+            is_cash = new_document_type in invoice.CASH_DOCUMENT_TYPES
+
+            if is_cash and not was_cash and invoice.remaining_amount > 0:
+                cls.register_cash_payment(invoice, created_by=created_by)
+            elif was_cash and not is_cash:
+                cls.reverse_cash_payments(invoice)
+
+        return old_number
+
+    @classmethod
+    def register_cash_payment(cls, invoice, created_by=None):
+        """Создать CASH-платёж на оставшуюся сумму инвойса (кассовые серии)."""
+        from core.models_billing import Transaction
+
+        remaining = invoice.remaining_amount
+        if remaining <= 0:
+            return None
+
+        payer = invoice.recipient
+        issuer = invoice.issuer
+        if not payer or not issuer:
+            return None
+
+        payer_field = f'from_{payer.__class__.__name__.lower()}'
+        issuer_field = f'to_{issuer.__class__.__name__.lower()}'
+
+        trx = Transaction(
+            type='PAYMENT',
+            method='CASH',
+            invoice=invoice,
+            amount=remaining,
+            currency=invoice.currency or 'EUR',
+            description=f"Оплата наличными ({invoice.number})",
+            created_by=created_by,
+            status='COMPLETED',
+        )
+        setattr(trx, payer_field, payer)
+        setattr(trx, issuer_field, issuer)
+        trx.save()
+        logger.info(
+            'Auto cash payment %s: %s for invoice %s', trx.number, remaining, invoice.number
+        )
+        return trx
+
+    @classmethod
+    def reverse_cash_payments(cls, invoice):
+        """Отменить авто-созданные CASH-платежи при уходе с кассовой серии."""
+        cash_payments = invoice.transactions.filter(
+            type='PAYMENT', method='CASH', status='COMPLETED',
+            description__contains='Оплата наличными',
+        )
+        for trx in cash_payments:
+            trx.status = 'CANCELLED'
+            trx._skip_balance_recalc = True
+            trx.save(update_fields=['status'])
+        if cash_payments.exists():
+            invoice.recalculate_paid_amount()
+            logger.info(
+                'Reversed %d cash payments for invoice %s',
+                cash_payments.count(), invoice.number,
+            )
+
+    # ========================================================================
     # РАБОТА С ПЛАТЕЖАМИ
     # ========================================================================
 

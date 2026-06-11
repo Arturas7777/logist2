@@ -45,12 +45,12 @@ class NewInvoiceActionsMixin:
                 continue
 
             if invoice.document_type == "PROFORMA_BLC":
-                invoice.change_series("INVOICE_BLC", created_by=request.user)
+                BillingService.change_invoice_series(invoice, "INVOICE_BLC", created_by=request.user)
                 updated += 1
                 continue
 
             if invoice.document_type in NewInvoice.CASH_DOCUMENT_TYPES and invoice.remaining_amount > 0:
-                invoice._register_cash_payment(created_by=request.user)
+                BillingService.register_cash_payment(invoice, created_by=request.user)
                 updated += 1
                 continue
 
@@ -233,7 +233,7 @@ class NewInvoiceActionsMixin:
 
             changed = 0
             for inv in queryset:
-                old_number = inv.change_series(new_type, created_by=request.user)
+                old_number = BillingService.change_invoice_series(inv, new_type, created_by=request.user)
                 if old_number != inv.number:
                     changed += 1
                     logger.info("Invoice %s -> %s (series %s)", old_number, inv.number, new_type)

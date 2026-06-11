@@ -46,7 +46,7 @@
 
 **Решение:** перенести `models_billing.py` → `core/models/billing.py`, `admin_banking.py` → `core/admin/banking.py` и т.д. с реэкспортом из старых путей (python-only, без миграций БД — паттерн `0131_rename_fields_python_only`). На отдельные Django-приложения НЕ дробить.
 
-### [ ] A2. Разгрузить «жирную» модель NewInvoice
+### [x] A2. Разгрузить «жирную» модель NewInvoice
 `get_items_pivot_table()` (~150 строк presentation-кода, строки 663–817 `models_billing.py`) → `core/admin/billing/invoice_display.py`. Зафиксировать правило: модель = инварианты/валидация/FSM; команды с побочными эффектами (платежи, смена серий `change_series`/`_register_cash_payment`/`_reverse_cash_payments`) — только через `BillingService`.
 
 ### [x] A3. Бизнес-логика из админки → сервисы
