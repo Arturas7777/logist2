@@ -23,6 +23,7 @@ from core.models_email import (
     ContainerEmailLink,
     EmailGroup,
 )
+from core.services.email_compose import resolve_group_addrs, sanitize_email_html
 from core.services.email_reply_parser import (
     format_quoted_reply,
     split_reply_and_quote,
@@ -55,9 +56,9 @@ def email_detail(request, email_id: int):
     safe_html_quoted = ''
     if show_html and email.body_html:
         reply_html, quoted_html = split_reply_and_quote_html(email.body_html)
-        safe_html_reply = _sanitize_html(reply_html)
+        safe_html_reply = sanitize_email_html(reply_html)
         if quoted_html:
-            safe_html_quoted = _sanitize_html(quoted_html)
+            safe_html_quoted = sanitize_email_html(quoted_html)
 
     # Фильтруем inline-картинки из HTML-сигнатуры (логотипы, Outlook-… .png)
     # — пользователю они не нужны. Индекс сохраняем оригинальный, чтобы
@@ -578,52 +579,6 @@ def email_compose_send(request):
     )
 
 
-def _resolve_group_addrs(members) -> list:
-    """Возвращает RFC 5322-адреса участников группы, предпочитая имя из ``Contact``
-    над ``EmailGroupMember.display_name`` — чтобы имена одного email были
-    консистентны между группами, карточкой контакта и автодополнением.
-
-    Если email присутствует в ``ContactEmail`` — берём ``Contact.name`` (если
-    задано), иначе остаёмся на имени из группы.
-    """
-    if not members:
-        return []
-
-    emails_lc = {(m.email or '').lower(): m.email for m in members if m.email}
-    if not emails_lc:
-        return [m.as_header_format for m in members]
-
-    # Одним запросом собираем маппинг email_lc → Contact.name (если есть).
-    ce_qs = (
-        ContactEmail.objects
-        .filter(email__in=list(emails_lc.values()))
-        .select_related('contact')
-        .order_by('-is_primary', 'position')
-    )
-    name_map: dict = {}
-    for ce in ce_qs:
-        lc = (ce.email or '').lower()
-        if lc in name_map:
-            continue  # первый (is_primary раньше в order_by) — побеждает
-        cname = (ce.contact.name or '').strip() if ce.contact else ''
-        if cname:
-            name_map[lc] = cname
-
-    def _quote_if_needed(name: str) -> str:
-        if any(ch in name for ch in ',;<>"'):
-            return '"' + name.replace('"', '\\"') + '"'
-        return name
-
-    out: list = []
-    for m in members:
-        lc = (m.email or '').lower()
-        if lc in name_map:
-            out.append(f'{_quote_if_needed(name_map[lc])} <{m.email}>')
-        else:
-            out.append(m.as_header_format)
-    return out
-
-
 @staff_member_required
 @require_GET
 def email_groups_list(request):
@@ -652,7 +607,7 @@ def email_groups_list(request):
             'name': g.name,
             'description': g.description or '',
             'count': len(members),
-            'addrs': _resolve_group_addrs(members),
+            'addrs': resolve_group_addrs(members),
         })
     return JsonResponse({'ok': True, 'groups': data})
 
@@ -707,7 +662,7 @@ def contacts_autocomplete(request):
             'id': g.pk,
             'label': g.name,
             'sub': f'{len(members)} адрес(ов)',
-            'addrs': _resolve_group_addrs(members),
+            'addrs': resolve_group_addrs(members),
         })
 
     # ── 2. Контакты ────────────────────────────────────────────────────
@@ -1146,44 +1101,6 @@ def email_trigger_sync(request):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-_ALLOWED_TAGS = [
-    'a', 'abbr', 'acronym', 'b', 'blockquote', 'br', 'code', 'div', 'em',
-    'i', 'img', 'li', 'ol', 'p', 'pre', 'span', 'strong', 'table', 'tbody',
-    'td', 'th', 'thead', 'tr', 'u', 'ul', 'hr', 'h1', 'h2', 'h3', 'h4',
-    'h5', 'h6', 'sub', 'sup', 'small',
-]
-
-_ALLOWED_ATTRS = {
-    '*': ['style', 'class', 'title'],
-    'a': ['href', 'name', 'target', 'rel'],
-    'img': ['src', 'alt', 'width', 'height'],
-}
-
-_ALLOWED_PROTOCOLS = ['http', 'https', 'mailto', 'cid', 'data']
-
-
-def _sanitize_html(raw: str) -> str:
-    """bleach.clean с whitelist; возвращает безопасный HTML для рендера в iframe/div.
-
-    Если bleach не установлен — возвращаем пустую строку (лучше показать текст,
-    чем рисковать XSS в админке).
-    """
-    try:
-        import bleach  # type: ignore
-    except ImportError:
-        logger.warning('[email] bleach not installed; HTML rendering disabled.')
-        return ''
-
-    cleaned = bleach.clean(
-        raw,
-        tags=_ALLOWED_TAGS,
-        attributes=_ALLOWED_ATTRS,
-        protocols=_ALLOWED_PROTOCOLS,
-        strip=True,
-    )
-    return cleaned
-
 
 def _safe_header_filename(filename: str) -> str:
     """Простейшая санитизация: убираем кавычки и CR/LF для Content-Disposition."""

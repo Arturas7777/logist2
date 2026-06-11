@@ -54,7 +54,96 @@ __all__ = [
     'compose_new_email_from_autotransport',
     'compose_new_email_from_car',
     'reply_to_email',
+    'resolve_group_addrs',
+    'sanitize_email_html',
 ]
+
+
+# ---------------------------------------------------------------------------
+# Хелперы для composer-вьюх (A5, AUDIT_ROUND3 — вынесены из core/views/emails.py)
+# ---------------------------------------------------------------------------
+
+_ALLOWED_TAGS = [
+    'a', 'abbr', 'acronym', 'b', 'blockquote', 'br', 'code', 'div', 'em',
+    'i', 'img', 'li', 'ol', 'p', 'pre', 'span', 'strong', 'table', 'tbody',
+    'td', 'th', 'thead', 'tr', 'u', 'ul', 'hr', 'h1', 'h2', 'h3', 'h4',
+    'h5', 'h6', 'sub', 'sup', 'small',
+]
+
+_ALLOWED_ATTRS = {
+    '*': ['style', 'class', 'title'],
+    'a': ['href', 'name', 'target', 'rel'],
+    'img': ['src', 'alt', 'width', 'height'],
+}
+
+_ALLOWED_PROTOCOLS = ['http', 'https', 'mailto', 'cid', 'data']
+
+
+def sanitize_email_html(raw: str) -> str:
+    """bleach.clean с whitelist; возвращает безопасный HTML для рендера в iframe/div.
+
+    Если bleach не установлен — возвращаем пустую строку (лучше показать текст,
+    чем рисковать XSS в админке).
+    """
+    try:
+        import bleach  # type: ignore
+    except ImportError:
+        logger.warning('[email] bleach not installed; HTML rendering disabled.')
+        return ''
+
+    return bleach.clean(
+        raw,
+        tags=_ALLOWED_TAGS,
+        attributes=_ALLOWED_ATTRS,
+        protocols=_ALLOWED_PROTOCOLS,
+        strip=True,
+    )
+
+
+def resolve_group_addrs(members) -> list:
+    """Возвращает RFC 5322-адреса участников группы, предпочитая имя из ``Contact``
+    над ``EmailGroupMember.display_name`` — чтобы имена одного email были
+    консистентны между группами, карточкой контакта и автодополнением.
+
+    Если email присутствует в ``ContactEmail`` — берём ``Contact.name`` (если
+    задано), иначе остаёмся на имени из группы.
+    """
+    if not members:
+        return []
+
+    emails_lc = {(m.email or '').lower(): m.email for m in members if m.email}
+    if not emails_lc:
+        return [m.as_header_format for m in members]
+
+    # Одним запросом собираем маппинг email_lc → Contact.name (если есть).
+    ce_qs = (
+        ContactEmail.objects
+        .filter(email__in=list(emails_lc.values()))
+        .select_related('contact')
+        .order_by('-is_primary', 'position')
+    )
+    name_map: dict = {}
+    for ce in ce_qs:
+        lc = (ce.email or '').lower()
+        if lc in name_map:
+            continue  # первый (is_primary раньше в order_by) — побеждает
+        cname = (ce.contact.name or '').strip() if ce.contact else ''
+        if cname:
+            name_map[lc] = cname
+
+    def _quote_if_needed(name: str) -> str:
+        if any(ch in name for ch in ',;<>"'):
+            return '"' + name.replace('"', '\\"') + '"'
+        return name
+
+    out: list = []
+    for m in members:
+        lc = (m.email or '').lower()
+        if lc in name_map:
+            out.append(f'{_quote_if_needed(name_map[lc])} <{m.email}>')
+        else:
+            out.append(m.as_header_format)
+    return out
 
 
 class ComposeError(Exception):

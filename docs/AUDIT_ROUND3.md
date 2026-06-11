@@ -59,7 +59,7 @@
 
 **Решение:** явный вызов сервиса из save-путей (admin, API, lifecycle service), исключения пробрасывать (Sentry-алерт). Сигналы — только для дешёвых event-нотификаций (WS, email enqueue). См. `docs/signals_classification.md` (COMMAND/EVENT). Учесть `threading.local` дедупликацию (`_pricing_local`/`_regen_local` в `car_service.py`) — мина при async.
 
-### [ ] A5. Email-домен: вынести логику из вьюх
+### [x] A5. Email-домен: вынести логику из вьюх
 `core/views/emails.py` (1190 строк): `_resolve_group_addrs`, `_sanitize_html` → в сервис (`email_compose.py` или новый `core/emails/`). Не срочно, но в рамках плана сделать.
 
 ## 2. Бизнес-логика
