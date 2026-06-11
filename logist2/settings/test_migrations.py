@@ -25,12 +25,30 @@ from .base import *
 DEBUG = False
 ALLOWED_HOSTS = ["*"]
 
-# Берём настройки БД целиком из base.py (там уже DB_* из env). На CI:
+# БД — PostgreSQL из env-переменных DB_* (как prod / CI). На CI:
 #   DB_NAME=test_logist2 DB_USER=test_user DB_PASSWORD=test_pass
 #   DB_HOST=localhost DB_PORT=5432
 # (см. github workflow service postgres).
 # Локально, если кто-то решит запустить с миграциями: должен поднять
 # свой Postgres с такими же кредами или переопределить env.
+#
+# ВАЖНО: base.py при запуске под pytest подменяет DATABASES на SQLite
+# (быстрый дефолт для logist2.settings.test). Для этого профиля возвращаем
+# PostgreSQL явно — иначе «тесты с миграциями» молча бегут на SQLite.
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("DB_NAME"),
+        "USER": os.getenv("DB_USER"),
+        "PASSWORD": os.getenv("DB_PASSWORD"),
+        "HOST": os.getenv("DB_HOST", "127.0.0.1"),
+        "PORT": os.getenv("DB_PORT", "5432"),
+        "CONN_MAX_AGE": 0,
+        "OPTIONS": {
+            "connect_timeout": 10,
+        },
+    }
+}
 
 # Миграции НЕ отключаем (это смысл этого профиля). Если в base.py
 # вдруг появится MIGRATION_MODULES — здесь его не трогаем.

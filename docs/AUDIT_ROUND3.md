@@ -128,8 +128,10 @@
 ### [x] T1. Контрактные тесты интеграций
 Без тестов: `invoice_audit_service.py` (1271 строка), `sitepro_service.py` (961), `revolut_service.py` (553), `dashboard_service.py` (820), `google_drive_sync.py` (981). Контрактные тесты с замоканным HTTP (записанные JSON-ответы как фикстуры). Начать с `revolut_service.sync_all` и `sitepro_service.push_invoice`.
 
-### [ ] T2. Конкурентные тесты + ratchet покрытия
+### [x] T2. Конкурентные тесты + ratchet покрытия
 (а) Тесты на гонки (двойная оплата, гонка нумерации B1) через `threading` в PG-профиле, `@pytest.mark.integration`; (б) ratchet 32 → 40 → 50; критичные модули 55 → 75, добавить `core.models_billing` в список критичных; (в) при росте тестов — `factory_boy`.
+
+> Сделано: `core/tests/test_concurrency.py` (гонка нумерации SeriesCounter, параллельные платежи без lost update) — на SQLite скипаются, в CI бегут в PG-джобе. Попутно исправлен `logist2.settings.test_migrations`: base.py подменял БД на SQLite под pytest, и «тесты с миграциями» молча бежали на SQLite. Ratchet: core 32 → 38 (факт 40%), критичные 55 → 60 (факт 64%) + добавлен `core.models.billing`. `factory_boy` отложен — текущие фикстуры справляются.
 
 ---
 

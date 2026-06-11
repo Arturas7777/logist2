@@ -352,7 +352,9 @@ class TestCreateExpenseFromBankTransaction:
     def category(self, db):
         from core.models_billing import ExpenseCategory
 
-        return ExpenseCategory.objects.create(name="Логистика", category_type="OPERATIONAL")
+        # get_or_create: в PG-профиле с миграциями категория «Логистика»
+        # уже засеяна baseline-миграцией.
+        return ExpenseCategory.objects.get_or_create(name="Логистика", defaults={"category_type": "OPERATIONAL"})[0]
 
     @pytest.fixture
     def bank_trx(self, db, company):

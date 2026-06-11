@@ -118,11 +118,14 @@ jobs:
         # Порог по core/ — ratchet: держим его на текущем фактическом
         # уровне покрытия, чтобы новый код не снижал общий процент.
         # Поднимать по мере роста покрытия (не опускать).
-        run: pytest --tb=short --maxfail=5 --cov=core --cov-fail-under=32
+        # T2 (AUDIT_ROUND3): 32 → 38 (факт ~40%). Следующая цель — 50.
+        run: pytest --tb=short --maxfail=5 --cov=core --cov-fail-under=38
 
       - name: Critical modules coverage (billing/encryption/reconciliation)
         # Money-critical модули должны иметь высокое покрытие, даже если общий
         # порог по core/ ниже. Поднимать постепенно по мере роста покрытия.
+        # T2 (AUDIT_ROUND3): добавлен core.models.billing, порог 55 → 60
+        # (факт ~64%). Следующая цель — 75.
         run: |
           pytest \
             --tb=short \
@@ -131,8 +134,9 @@ jobs:
             --cov=core.services.car_lifecycle_service \
             --cov=core.management.commands.auto_reconcile \
             --cov=core.management.commands.rotate_encryption_key \
+            --cov=core.models.billing \
             --cov-report=term \
-            --cov-fail-under=55 \
+            --cov-fail-under=60 \
             core/tests/test_encryption.py \
             core/tests/test_billing_service.py \
             core/tests/test_reconciliation.py \
