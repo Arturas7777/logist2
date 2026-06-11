@@ -42,9 +42,7 @@ CSRF_COOKIE_SAMESITE = "Strict"
 CSRF_FAILURE_VIEW = "django.views.csrf.csrf_failure"
 
 # Email: use real SMTP in production
-EMAIL_BACKEND = os.getenv(
-    "EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend"
-)
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
 
 # Жёсткий guard: ConsoleEmailBackend в проде = тихая потеря писем.
 # Если кто-то по ошибке выставит EMAIL_BACKEND=console.EmailBackend в

@@ -130,8 +130,7 @@ def process_telegram_starts():
             logger.info("Telegram: привязан chat %s к клиенту %s (id=%s)", chat_id, client.name, client.id)
             send_telegram_message(
                 chat_id,
-                f"✅ Вы подписаны на уведомления о разгрузке для клиента "
-                f"<b>{client.name}</b>.",
+                f"✅ Вы подписаны на уведомления о разгрузке для клиента <b>{client.name}</b>.",
             )
 
     if linked:

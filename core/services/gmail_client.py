@@ -40,7 +40,7 @@ class GmailHistoryExpired(RuntimeError):
 # Gmail API дедуплицирует history events по messageId, но иногда отдаёт
 # один и тот же id дважды (например, при messageAdded + labelAdded). Используем
 # set для фильтрации.
-_HISTORY_TYPES_ADDED = ['messageAdded']
+_HISTORY_TYPES_ADDED = ["messageAdded"]
 
 
 @dataclass
@@ -50,8 +50,8 @@ class ParsedAttachment:
     size: int
     attachment_id: str  # Gmail attachmentId для messages.attachments.get
     data: bytes | None = None  # заполняется только если уже скачано
-    is_inline: bool = False     # картинка из <img src="cid:…"> (логотип, подпись)
-    content_id: str = ''        # значение Content-ID для связи с HTML (без <>)
+    is_inline: bool = False  # картинка из <img src="cid:…"> (логотип, подпись)
+    content_id: str = ""  # значение Content-ID для связи с HTML (без <>)
 
 
 @dataclass
@@ -59,7 +59,7 @@ class ParsedMessage:
     gmail_id: str
     thread_id: str
     history_id: int | None
-    message_id: str       # RFC 5322 Message-ID, может быть ''
+    message_id: str  # RFC 5322 Message-ID, может быть ''
     in_reply_to: str
     references: str
     subject: str
@@ -75,14 +75,14 @@ class ParsedMessage:
 
     @property
     def is_outgoing(self) -> bool:
-        return 'SENT' in self.labels
+        return "SENT" in self.labels
 
 
 class GmailApiClient:
     """Тонкая обёртка, которая:
-      * Строит OAuth Credentials из settings (никаких файлов на проде).
-      * Ленивая инициализация service — не тянет API до первого вызова.
-      * Методы возвращают уже распарсенные dataclass-ы, а не сырые dict.
+    * Строит OAuth Credentials из settings (никаких файлов на проде).
+    * Ленивая инициализация service — не тянет API до первого вызова.
+    * Методы возвращают уже распарсенные dataclass-ы, а не сырые dict.
     """
 
     def __init__(
@@ -97,13 +97,13 @@ class GmailApiClient:
         self._client_id = client_id or settings.GMAIL_CLIENT_ID
         self._client_secret = client_secret or settings.GMAIL_CLIENT_SECRET
         self._refresh_token = refresh_token or settings.GMAIL_REFRESH_TOKEN
-        self._user_email = user_email or settings.GMAIL_USER_EMAIL or 'me'
+        self._user_email = user_email or settings.GMAIL_USER_EMAIL or "me"
         self._scopes = list(scopes or settings.GMAIL_SCOPES)
 
         if not (self._client_id and self._client_secret and self._refresh_token):
             raise GmailNotConfigured(
-                'GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET / GMAIL_REFRESH_TOKEN не заданы. '
-                'Установите переменные окружения или GMAIL_ENABLED=false.'
+                "GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET / GMAIL_REFRESH_TOKEN не заданы. "
+                "Установите переменные окружения или GMAIL_ENABLED=false."
             )
 
         self._service = None
@@ -124,7 +124,7 @@ class GmailApiClient:
             token_uri=settings.GMAIL_TOKEN_URI,
             scopes=self._scopes,
         )
-        return build('gmail', 'v1', credentials=creds, cache_discovery=False)
+        return build("gmail", "v1", credentials=creds, cache_discovery=False)
 
     @property
     def service(self):
@@ -151,24 +151,29 @@ class GmailApiClient:
         page_token: str | None = None
         try:
             while True:
-                resp = self.service.users().history().list(
-                    userId=self._user_email,
-                    startHistoryId=str(start_history_id),
-                    historyTypes=_HISTORY_TYPES_ADDED,
-                    pageToken=page_token,
-                ).execute()
-                for entry in resp.get('history', []) or []:
-                    for ma in entry.get('messagesAdded', []) or []:
-                        msg = ma.get('message', {})
-                        mid = msg.get('id')
+                resp = (
+                    self.service.users()
+                    .history()
+                    .list(
+                        userId=self._user_email,
+                        startHistoryId=str(start_history_id),
+                        historyTypes=_HISTORY_TYPES_ADDED,
+                        pageToken=page_token,
+                    )
+                    .execute()
+                )
+                for entry in resp.get("history", []) or []:
+                    for ma in entry.get("messagesAdded", []) or []:
+                        msg = ma.get("message", {})
+                        mid = msg.get("id")
                         if mid and mid not in seen:
                             seen.add(mid)
                             yield mid
-                page_token = resp.get('nextPageToken')
+                page_token = resp.get("nextPageToken")
                 if not page_token:
                     return
         except HttpError as err:
-            status = getattr(err, 'status_code', None) or getattr(err.resp, 'status', None)
+            status = getattr(err, "status_code", None) or getattr(err.resp, "status", None)
             try:
                 status = int(status) if status is not None else None
             except (TypeError, ValueError):
@@ -181,37 +186,53 @@ class GmailApiClient:
         """messages.list (пагинация) — возвращает id писем по Gmail-запросу (q=...)."""
         page_token: str | None = None
         while True:
-            resp = self.service.users().messages().list(
-                userId=self._user_email,
-                q=query,
-                maxResults=min(500, max_results),
-                pageToken=page_token,
-            ).execute()
-            for m in resp.get('messages', []) or []:
-                mid = m.get('id')
+            resp = (
+                self.service.users()
+                .messages()
+                .list(
+                    userId=self._user_email,
+                    q=query,
+                    maxResults=min(500, max_results),
+                    pageToken=page_token,
+                )
+                .execute()
+            )
+            for m in resp.get("messages", []) or []:
+                mid = m.get("id")
                 if mid:
                     yield mid
-            page_token = resp.get('nextPageToken')
+            page_token = resp.get("nextPageToken")
             if not page_token:
                 return
 
     def get_message(self, gmail_id: str) -> ParsedMessage:
         """messages.get(format=full) + парсинг payload в ParsedMessage."""
-        raw = self.service.users().messages().get(
-            userId=self._user_email,
-            id=gmail_id,
-            format='full',
-        ).execute()
+        raw = (
+            self.service.users()
+            .messages()
+            .get(
+                userId=self._user_email,
+                id=gmail_id,
+                format="full",
+            )
+            .execute()
+        )
         return parse_gmail_message(raw)
 
     def get_attachment(self, gmail_id: str, attachment_id: str) -> bytes:
         """messages.attachments.get → raw bytes (декодированные из base64url)."""
-        resp = self.service.users().messages().attachments().get(
-            userId=self._user_email,
-            messageId=gmail_id,
-            id=attachment_id,
-        ).execute()
-        data = resp.get('data', '')
+        resp = (
+            self.service.users()
+            .messages()
+            .attachments()
+            .get(
+                userId=self._user_email,
+                messageId=gmail_id,
+                id=attachment_id,
+            )
+            .execute()
+        )
+        data = resp.get("data", "")
         return _b64url_decode(data)
 
     def mark_messages_read(self, gmail_ids: Iterable[str]) -> int:
@@ -237,19 +258,21 @@ class GmailApiClient:
                 self.service.users().messages().batchModify(
                     userId=self._user_email,
                     body={
-                        'ids': list(chunk),
-                        'removeLabelIds': ['UNREAD'],
+                        "ids": list(chunk),
+                        "removeLabelIds": ["UNREAD"],
                     },
                 ).execute()
                 total += len(chunk)
             except HttpError as err:
                 logger.warning(
-                    '[gmail_client] batchModify(removeLabelIds=UNREAD) '
-                    'failed for %d ids: %s', len(chunk), err,
+                    "[gmail_client] batchModify(removeLabelIds=UNREAD) failed for %d ids: %s",
+                    len(chunk),
+                    err,
                 )
             except Exception as exc:  # pragma: no cover
                 logger.exception(
-                    '[gmail_client] batchModify unexpected error: %s', exc,
+                    "[gmail_client] batchModify unexpected error: %s",
+                    exc,
                 )
         return total
 
@@ -267,34 +290,34 @@ def parse_gmail_message(raw: dict[str, Any]) -> ParsedMessage:
     Тестируется юнит-тестами — содержит всю «грязь» по декодингу заголовков и
     обходу multipart-дерева.
     """
-    payload = raw.get('payload') or {}
-    headers = {h.get('name', '').lower(): h.get('value', '') for h in (payload.get('headers') or [])}
+    payload = raw.get("payload") or {}
+    headers = {h.get("name", "").lower(): h.get("value", "") for h in (payload.get("headers") or [])}
 
-    subject = _decode_header_value(headers.get('subject', ''))
-    from_addr = _decode_header_value(headers.get('from', ''))
-    to_addrs = _decode_header_value(headers.get('to', ''))
-    cc_addrs = _decode_header_value(headers.get('cc', ''))
-    message_id = headers.get('message-id', '').strip()
-    in_reply_to = headers.get('in-reply-to', '').strip()
-    references = headers.get('references', '').strip()
-    date_hdr = headers.get('date', '')
+    subject = _decode_header_value(headers.get("subject", ""))
+    from_addr = _decode_header_value(headers.get("from", ""))
+    to_addrs = _decode_header_value(headers.get("to", ""))
+    cc_addrs = _decode_header_value(headers.get("cc", ""))
+    message_id = headers.get("message-id", "").strip()
+    in_reply_to = headers.get("in-reply-to", "").strip()
+    references = headers.get("references", "").strip()
+    date_hdr = headers.get("date", "")
 
-    received_at = _parse_date_header(date_hdr) or _internal_date_ms_to_dt(raw.get('internalDate'))
+    received_at = _parse_date_header(date_hdr) or _internal_date_ms_to_dt(raw.get("internalDate"))
 
     body_text_parts: list[str] = []
     body_html_parts: list[str] = []
     attachments: list[ParsedAttachment] = []
     _walk_payload(payload, body_text_parts, body_html_parts, attachments)
 
-    history_id = raw.get('historyId')
+    history_id = raw.get("historyId")
     try:
         history_id_int = int(history_id) if history_id is not None else None
     except (TypeError, ValueError):
         history_id_int = None
 
     return ParsedMessage(
-        gmail_id=raw.get('id', ''),
-        thread_id=raw.get('threadId', '') or message_id or raw.get('id', ''),
+        gmail_id=raw.get("id", ""),
+        thread_id=raw.get("threadId", "") or message_id or raw.get("id", ""),
         history_id=history_id_int,
         message_id=message_id,
         in_reply_to=in_reply_to,
@@ -304,10 +327,10 @@ def parse_gmail_message(raw: dict[str, Any]) -> ParsedMessage:
         to_addrs=to_addrs,
         cc_addrs=cc_addrs,
         received_at=received_at,
-        snippet=raw.get('snippet', '') or '',
-        body_text='\n'.join(body_text_parts).strip(),
-        body_html='\n'.join(body_html_parts).strip(),
-        labels=list(raw.get('labelIds') or []),
+        snippet=raw.get("snippet", "") or "",
+        body_text="\n".join(body_text_parts).strip(),
+        body_html="\n".join(body_html_parts).strip(),
+        labels=list(raw.get("labelIds") or []),
         attachments=attachments,
     )
 
@@ -318,39 +341,41 @@ def _walk_payload(
     body_html_parts: list[str],
     attachments: list[ParsedAttachment],
 ) -> None:
-    mime = (part.get('mimeType') or '').lower()
-    filename = part.get('filename') or ''
-    body = part.get('body') or {}
-    body_data = body.get('data') or ''
-    body_size = body.get('size') or 0
-    attachment_id = body.get('attachmentId') or ''
+    mime = (part.get("mimeType") or "").lower()
+    filename = part.get("filename") or ""
+    body = part.get("body") or {}
+    body_data = body.get("data") or ""
+    body_size = body.get("size") or 0
+    attachment_id = body.get("attachmentId") or ""
 
     if filename and attachment_id:
         is_inline, content_id = _detect_inline(part, mime)
-        attachments.append(ParsedAttachment(
-            filename=_decode_header_value(filename),
-            mime_type=mime or 'application/octet-stream',
-            size=int(body_size or 0),
-            attachment_id=attachment_id,
-            is_inline=is_inline,
-            content_id=content_id,
-        ))
+        attachments.append(
+            ParsedAttachment(
+                filename=_decode_header_value(filename),
+                mime_type=mime or "application/octet-stream",
+                size=int(body_size or 0),
+                attachment_id=attachment_id,
+                is_inline=is_inline,
+                content_id=content_id,
+            )
+        )
         return
 
-    if mime.startswith('multipart/') and part.get('parts'):
-        for sub in part['parts']:
+    if mime.startswith("multipart/") and part.get("parts"):
+        for sub in part["parts"]:
             _walk_payload(sub, body_text_parts, body_html_parts, attachments)
         return
 
     if body_data:
         try:
-            decoded = _b64url_decode(body_data).decode(_guess_charset(part), errors='replace')
+            decoded = _b64url_decode(body_data).decode(_guess_charset(part), errors="replace")
         except Exception:
             logger.warning("Failed to decode body data (mime=%s)", mime, exc_info=True)
             return
-        if mime == 'text/plain':
+        if mime == "text/plain":
             body_text_parts.append(decoded)
-        elif mime == 'text/html':
+        elif mime == "text/html":
             body_html_parts.append(decoded)
 
 
@@ -364,42 +389,42 @@ def _detect_inline(part: dict[str, Any], mime: str) -> tuple[bool, str]:
     В обоих случаях это элемент вёрстки/подписи (логотип, иконка, трекер),
     а не пользовательское вложение.
     """
-    content_id = ''
-    disposition = ''
-    for h in part.get('headers') or []:
-        name = (h.get('name') or '').lower()
-        value = h.get('value') or ''
-        if name == 'content-id':
-            content_id = value.strip().strip('<>').strip()
-        elif name == 'content-disposition':
+    content_id = ""
+    disposition = ""
+    for h in part.get("headers") or []:
+        name = (h.get("name") or "").lower()
+        value = h.get("value") or ""
+        if name == "content-id":
+            content_id = value.strip().strip("<>").strip()
+        elif name == "content-disposition":
             disposition = value.strip().lower()
-    is_inline = bool(content_id) or disposition.startswith('inline')
+    is_inline = bool(content_id) or disposition.startswith("inline")
     # Страхуем: если имя файла явно автосгенерировано Gmail/Outlook под
     # inline-картинку (``image001.png``, ``Outlook-abc123.jpg``) — тоже
     # считаем inline, даже если Content-ID потерялся.
-    filename_lower = (part.get('filename') or '').lower()
-    if mime.startswith('image/') and not is_inline:
-        if re.match(r'^image\d+\.(png|jpe?g|gif|bmp)$', filename_lower):
+    filename_lower = (part.get("filename") or "").lower()
+    if mime.startswith("image/") and not is_inline:
+        if re.match(r"^image\d+\.(png|jpe?g|gif|bmp)$", filename_lower):
             is_inline = True
-        elif re.match(r'^outlook-[\w-]+\.(png|jpe?g|gif|bmp)$', filename_lower):
+        elif re.match(r"^outlook-[\w-]+\.(png|jpe?g|gif|bmp)$", filename_lower):
             is_inline = True
     return is_inline, content_id
 
 
 def _guess_charset(part: dict[str, Any]) -> str:
-    headers = part.get('headers') or []
+    headers = part.get("headers") or []
     for h in headers:
-        if (h.get('name') or '').lower() == 'content-type':
-            value = h.get('value', '')
+        if (h.get("name") or "").lower() == "content-type":
+            value = h.get("value", "")
             m = re.search(r'charset="?([\w\-]+)"?', value, re.IGNORECASE)
             if m:
                 return m.group(1)
-    return 'utf-8'
+    return "utf-8"
 
 
 def _decode_header_value(value: str) -> str:
     if not value:
-        return ''
+        return ""
     try:
         return str(make_header(decode_header(value)))
     except Exception:
@@ -430,12 +455,12 @@ def _internal_date_ms_to_dt(value: Any) -> datetime:
 
 def _b64url_decode(data: str) -> bytes:
     if not data:
-        return b''
-    padding = '=' * (-len(data) % 4)
+        return b""
+    padding = "=" * (-len(data) % 4)
     return base64.urlsafe_b64decode(data + padding)
 
 
 def _chunked(seq: list, size: int) -> Iterator[list]:
     """Режет список на чанки указанного размера — для batch-API с лимитами."""
     for i in range(0, len(seq), size):
-        yield seq[i:i + size]
+        yield seq[i : i + size]

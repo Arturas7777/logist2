@@ -139,7 +139,8 @@ class TestSyncAllContract:
         # Повторная синхронизация: в API остался только EUR-счёт
         session2 = FakeSession()
         session2.add(
-            "GET", "/api/1.0/accounts",
+            "GET",
+            "/api/1.0/accounts",
             FakeResponse([load_fixture("revolut_accounts.json")[0]]),
         )
         service2 = _make_service(connection, session2)
@@ -172,9 +173,7 @@ class TestTokenRefreshContract:
         form = token_calls[0][2]["data"]
         assert form["grant_type"] == "refresh_token"
         assert form["refresh_token"] == "valid-refresh-token"
-        assert form["client_assertion_type"] == (
-            "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-        )
+        assert form["client_assertion_type"] == ("urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
 
         connection.refresh_from_db()
         assert connection.access_token == "oa_prod_new-access-token-value"
@@ -192,7 +191,8 @@ class TestTokenRefreshContract:
 
         session = FakeSession()
         session.add(
-            "POST", "/api/1.0/auth/token",
+            "POST",
+            "/api/1.0/auth/token",
             FakeResponse({"error": "invalid_grant"}, status_code=401),
         )
         service = _make_service(connection, session)
@@ -214,7 +214,8 @@ class TestSyncErrorContract:
     def test_api_error_recorded_not_raised(self, connection):
         session = FakeSession()
         session.add(
-            "GET", "/api/1.0/accounts",
+            "GET",
+            "/api/1.0/accounts",
             FakeResponse({"message": "Internal error"}, status_code=500),
         )
         service = _make_service(connection, session)
@@ -231,7 +232,8 @@ class TestSyncErrorContract:
         session.add("GET", "/api/1.0/accounts", FakeResponse(load_fixture("revolut_accounts.json")))
         session.add("GET", "/api/1.0/transactions", FakeResponse(load_fixture("revolut_transactions.json")))
         session.add(
-            "GET", "/api/1.0/expenses",
+            "GET",
+            "/api/1.0/expenses",
             FakeResponse({"message": "Forbidden"}, status_code=403),
         )
         service = _make_service(connection, session)

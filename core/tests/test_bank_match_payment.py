@@ -42,11 +42,16 @@ def _bt(connection, amount, **extra):
 
 def _outgoing_invoice(company, client, total="300.00"):
     inv = NewInvoice.objects.create(
-        issuer_company=company, recipient_client=client,
-        date=timezone.now().date(), status="ISSUED",
+        issuer_company=company,
+        recipient_client=client,
+        date=timezone.now().date(),
+        status="ISSUED",
     )
     InvoiceItem.objects.create(
-        invoice=inv, description="Услуги", quantity=Decimal("1"), unit_price=Decimal(total),
+        invoice=inv,
+        description="Услуги",
+        quantity=Decimal("1"),
+        unit_price=Decimal(total),
     )
     inv.calculate_totals()
     inv.save(update_fields=["subtotal", "total"])

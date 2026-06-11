@@ -41,65 +41,65 @@ from core.services.email_ingest import (
 
 class Command(BaseCommand):
     help = (
-        'Применить активные EmailIngestFilter к уже загруженным письмам: '
-        'скрыть матчащиеся (удалить ContainerEmailLink/CarEmailLink).'
+        "Применить активные EmailIngestFilter к уже загруженным письмам: "
+        "скрыть матчащиеся (удалить ContainerEmailLink/CarEmailLink)."
     )
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--dry-run',
-            action='store_true',
-            help='Только показать, какие письма будут затронуты.',
+            "--dry-run",
+            action="store_true",
+            help="Только показать, какие письма будут затронуты.",
         )
         parser.add_argument(
-            '--days',
+            "--days",
             type=int,
             default=60,
-            help=(
-                'Сканировать только письма за последние N дней '
-                '(default: 60). Для полного прогона укажите 0.'
-            ),
+            help=("Сканировать только письма за последние N дней (default: 60). Для полного прогона укажите 0."),
         )
         parser.add_argument(
-            '--limit-preview',
+            "--limit-preview",
             type=int,
             default=15,
-            help='Сколько писем показать в превью (default: 15).',
+            help="Сколько писем показать в превью (default: 15).",
         )
         parser.add_argument(
-            '--restore',
-            action='store_true',
+            "--restore",
+            action="store_true",
             help=(
-                'Режим восстановления: вместо скрытия матчащих писем '
-                'повторно прогнать match_email_to_containers для писем '
-                'без связей, не попадающих под активные фильтры.'
+                "Режим восстановления: вместо скрытия матчащих писем "
+                "повторно прогнать match_email_to_containers для писем "
+                "без связей, не попадающих под активные фильтры."
             ),
         )
 
     def handle(self, *args, **opts):
-        dry_run: bool = opts['dry_run']
-        days: int = opts['days']
-        preview_limit: int = opts['limit_preview']
-        restore: bool = opts['restore']
+        dry_run: bool = opts["dry_run"]
+        days: int = opts["days"]
+        preview_limit: int = opts["limit_preview"]
+        restore: bool = opts["restore"]
 
         filters = load_active_ingest_filters()
-        self.stdout.write(
-            f'Активных фильтров: {len(filters)}.'
-        )
+        self.stdout.write(f"Активных фильтров: {len(filters)}.")
         for _, scope, match_type, phrase in filters:
-            self.stdout.write(f'  · [{scope}/{match_type}] {phrase!r}')
+            self.stdout.write(f"  · [{scope}/{match_type}] {phrase!r}")
 
         if not filters and not restore:
-            self.stdout.write(self.style.WARNING(
-                'Нет активных фильтров — нечего применять. '
-                'Добавьте фильтры в /admin/core/emailingestfilter/.'
-            ))
+            self.stdout.write(
+                self.style.WARNING(
+                    "Нет активных фильтров — нечего применять. Добавьте фильтры в /admin/core/emailingestfilter/."
+                )
+            )
             return
 
         qs = ContainerEmail.objects.only(
-            'id', 'from_addr', 'subject', 'body_text', 'body_html',
-            'received_at',
-        ).order_by('-id')
+            "id",
+            "from_addr",
+            "subject",
+            "body_text",
+            "body_html",
+            "received_at",
+        ).order_by("-id")
         if days and days > 0:
             since = timezone.now() - timedelta(days=days)
             qs = qs.filter(received_at__gte=since)
@@ -115,31 +115,26 @@ class Command(BaseCommand):
         for e in qs.iterator(chunk_size=200):
             scanned += 1
             hit = matches_ingest_filter(
-                subject=e.subject or '',
-                body_text=e.body_text or '',
-                body_html=e.body_html or '',
+                subject=e.subject or "",
+                body_text=e.body_text or "",
+                body_html=e.body_html or "",
                 filters=filters,
             )
             if hit:
-                matched.append((e.id, hit, e.from_addr or '', e.subject or ''))
+                matched.append((e.id, hit, e.from_addr or "", e.subject or ""))
 
-        self.stdout.write(
-            f'Просмотрено писем: {scanned}. Матчей фильтра: {len(matched)}.'
-        )
+        self.stdout.write(f"Просмотрено писем: {scanned}. Матчей фильтра: {len(matched)}.")
         if not matched:
-            self.stdout.write(self.style.SUCCESS('Нечего скрывать.'))
+            self.stdout.write(self.style.SUCCESS("Нечего скрывать."))
             return
 
         for mid, phrase, frm, subj in matched[:preview_limit]:
-            self.stdout.write(
-                f'  · #{mid} «{(subj or "(без темы)")[:55]}» '
-                f'от «{frm[:40]}» → фраза «{phrase[:40]}»'
-            )
+            self.stdout.write(f"  · #{mid} «{(subj or '(без темы)')[:55]}» от «{frm[:40]}» → фраза «{phrase[:40]}»")
         if len(matched) > preview_limit:
-            self.stdout.write(f'  … и ещё {len(matched) - preview_limit}')
+            self.stdout.write(f"  … и ещё {len(matched) - preview_limit}")
 
         if dry_run:
-            self.stdout.write(self.style.WARNING('--dry-run: изменений нет.'))
+            self.stdout.write(self.style.WARNING("--dry-run: изменений нет."))
             return
 
         ids = [m[0] for m in matched]
@@ -147,11 +142,13 @@ class Command(BaseCommand):
             r1 = ContainerEmailLink.objects.filter(email_id__in=ids).delete()
             r2 = CarEmailLink.objects.filter(email_id__in=ids).delete()
 
-        self.stdout.write(self.style.SUCCESS(
-            f'Скрыто {len(ids)} писем. '
-            f'Удалено ContainerEmailLink: {r1[0]}, CarEmailLink: {r2[0]}. '
-            f'Сами ContainerEmail сохранены для идемпотентности sync.'
-        ))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Скрыто {len(ids)} писем. "
+                f"Удалено ContainerEmailLink: {r1[0]}, CarEmailLink: {r2[0]}. "
+                f"Сами ContainerEmail сохранены для идемпотентности sync."
+            )
+        )
 
     def _handle_restore(self, qs, filters, dry_run: bool, preview_limit: int):
         """Повторно прогнать matcher для писем без связей, не попадающих
@@ -166,36 +163,37 @@ class Command(BaseCommand):
 
         candidate_ids = list(
             qs.filter(
-                containers__isnull=True, cars__isnull=True,
-            ).values_list('id', flat=True)
+                containers__isnull=True,
+                cars__isnull=True,
+            ).values_list("id", flat=True)
         )
         self.stdout.write(
-            f'Писем без связей в окне: {len(candidate_ids)}. '
-            f'Проверяем, не скрыты ли они активными фильтрами…'
+            f"Писем без связей в окне: {len(candidate_ids)}. Проверяем, не скрыты ли они активными фильтрами…"
         )
 
         restored: list[tuple[int, int, int]] = []  # (email_id, container_links, car_links)
 
         for chunk_start in range(0, len(candidate_ids), 200):
-            chunk_ids = candidate_ids[chunk_start:chunk_start + 200]
+            chunk_ids = candidate_ids[chunk_start : chunk_start + 200]
             for e in ContainerEmail.objects.filter(id__in=chunk_ids):
                 if filters and matches_ingest_filter(
-                    subject=e.subject or '',
-                    body_text=e.body_text or '',
-                    body_html=e.body_html or '',
+                    subject=e.subject or "",
+                    body_text=e.body_text or "",
+                    body_html=e.body_html or "",
                     filters=filters,
                 ):
                     continue  # письмо всё ещё скрыто активным фильтром
 
                 class _Tmp:
                     pass
+
                 parsed = _Tmp()
-                parsed.subject = e.subject or ''
-                parsed.body_text = e.body_text or ''
-                parsed.body_html = e.body_html or ''
-                parsed.thread_id = e.thread_id or ''
-                parsed.in_reply_to = e.in_reply_to or ''
-                parsed.from_addr = e.from_addr or ''
+                parsed.subject = e.subject or ""
+                parsed.body_text = e.body_text or ""
+                parsed.body_html = e.body_html or ""
+                parsed.thread_id = e.thread_id or ""
+                parsed.in_reply_to = e.in_reply_to or ""
+                parsed.from_addr = e.from_addr or ""
 
                 match = match_email_to_containers(parsed, booking_index=booking_index)
                 if not match.hits and not match.car_hits:
@@ -210,8 +208,10 @@ class Command(BaseCommand):
                         ContainerEmailLink.objects.bulk_create(
                             [
                                 ContainerEmailLink(
-                                    email=e, container_id=h.container_id,
-                                    matched_by=h.matched_by, is_read=False,
+                                    email=e,
+                                    container_id=h.container_id,
+                                    matched_by=h.matched_by,
+                                    is_read=False,
                                 )
                                 for h in match.hits
                             ],
@@ -221,8 +221,10 @@ class Command(BaseCommand):
                         CarEmailLink.objects.bulk_create(
                             [
                                 CarEmailLink(
-                                    email=e, car_id=h.car_id,
-                                    matched_by=h.matched_by, is_read=False,
+                                    email=e,
+                                    car_id=h.car_id,
+                                    matched_by=h.matched_by,
+                                    is_read=False,
                                 )
                                 for h in match.car_hits
                             ],
@@ -230,19 +232,13 @@ class Command(BaseCommand):
                         )
                 restored.append((e.id, len(match.hits), len(match.car_hits)))
 
-        self.stdout.write(
-            f'Кандидатов на восстановление: {len(restored)}.'
-        )
+        self.stdout.write(f"Кандидатов на восстановление: {len(restored)}.")
         for eid, nc, ncar in restored[:preview_limit]:
-            self.stdout.write(
-                f'  · #{eid} → контейнеров: {nc}, машин: {ncar}'
-            )
+            self.stdout.write(f"  · #{eid} → контейнеров: {nc}, машин: {ncar}")
         if len(restored) > preview_limit:
-            self.stdout.write(f'  … и ещё {len(restored) - preview_limit}')
+            self.stdout.write(f"  … и ещё {len(restored) - preview_limit}")
 
         if dry_run:
-            self.stdout.write(self.style.WARNING('--dry-run: изменений нет.'))
+            self.stdout.write(self.style.WARNING("--dry-run: изменений нет."))
         else:
-            self.stdout.write(self.style.SUCCESS(
-                f'Восстановлено писем: {len(restored)}.'
-            ))
+            self.stdout.write(self.style.SUCCESS(f"Восстановлено писем: {len(restored)}."))

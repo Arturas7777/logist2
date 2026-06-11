@@ -20,6 +20,7 @@
 4. Загружаем новые фото (которых ещё нет)
 5. Создаём миниатюры автоматически
 """
+
 import logging
 import re
 
@@ -34,8 +35,8 @@ logger = logging.getLogger(__name__)
 # Конфигурация папок Google Drive
 # Эти ID берутся из URL папки: https://drive.google.com/drive/folders/ID_ПАПКИ
 GOOGLE_DRIVE_FOLDERS = {
-    'unloaded': '1711SSTZ3_YgUcZfNrgNzhscbmlHXlsKb',  # AUTO IŠ KONTO (ВЫГРУЖЕННЫЕ)
-    'in_container': '11poTWYYG3uKTuGTYDWS2m8uA52mlzP6f',  # KONTO VIDUS (В КОНТЕЙНЕРЕ)
+    "unloaded": "1711SSTZ3_YgUcZfNrgNzhscbmlHXlsKb",  # AUTO IŠ KONTO (ВЫГРУЖЕННЫЕ)
+    "in_container": "11poTWYYG3uKTuGTYDWS2m8uA52mlzP6f",  # KONTO VIDUS (В КОНТЕЙНЕРЕ)
 }
 
 
@@ -49,9 +50,9 @@ class GoogleDriveSync:
             return None
 
         patterns = [
-            r'/folders/([a-zA-Z0-9_-]+)',
-            r'id=([a-zA-Z0-9_-]+)',
-            r'^([a-zA-Z0-9_-]{20,})$',  # Просто ID без URL
+            r"/folders/([a-zA-Z0-9_-]+)",
+            r"id=([a-zA-Z0-9_-]+)",
+            r"^([a-zA-Z0-9_-]{20,})$",  # Просто ID без URL
         ]
 
         for pattern in patterns:
@@ -75,13 +76,8 @@ class GoogleDriveSync:
                 continue
             seen_ids.add(file_id)
             filename = match.group(2).strip()
-            if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')):
-                files.append({
-                    'id': file_id,
-                    'name': filename,
-                    'mimeType': 'image/jpeg',
-                    'is_folder': False
-                })
+            if filename.lower().endswith((".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp")):
+                files.append({"id": file_id, "name": filename, "mimeType": "image/jpeg", "is_folder": False})
 
         # Паттерн 2: подпапки
         folder_pattern = r'href="https://drive\.google\.com/drive/folders/([a-zA-Z0-9_-]+)[^"]*"[^>]*>.*?<div class="flip-entry-title">([^<]+)</div>'
@@ -90,12 +86,14 @@ class GoogleDriveSync:
             if fid in seen_ids:
                 continue
             seen_ids.add(fid)
-            files.append({
-                'id': fid,
-                'name': match.group(2).strip(),
-                'mimeType': 'application/vnd.google-apps.folder',
-                'is_folder': True
-            })
+            files.append(
+                {
+                    "id": fid,
+                    "name": match.group(2).strip(),
+                    "mimeType": "application/vnd.google-apps.folder",
+                    "is_folder": True,
+                }
+            )
 
         # Паттерн 3 (fallback): простой поиск file ID + название
         if not files:
@@ -107,13 +105,8 @@ class GoogleDriveSync:
                 seen_ids.add(file_id)
                 if i < len(filenames):
                     filename = filenames[i].strip()
-                    if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')):
-                        files.append({
-                            'id': file_id,
-                            'name': filename,
-                            'mimeType': 'image/jpeg',
-                            'is_folder': False
-                        })
+                    if filename.lower().endswith((".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp")):
+                        files.append({"id": file_id, "name": filename, "mimeType": "image/jpeg", "is_folder": False})
 
         return files
 
@@ -136,12 +129,7 @@ class GoogleDriveSync:
             filename = match.group(2)
             if file_id not in seen_ids:
                 seen_ids.add(file_id)
-                files.append({
-                    'id': file_id,
-                    'name': filename,
-                    'mimeType': 'image/jpeg',
-                    'is_folder': False
-                })
+                files.append({"id": file_id, "name": filename, "mimeType": "image/jpeg", "is_folder": False})
 
         # Паттерн для папок в JS-данных: ID папки + имя + application/vnd.google-apps.folder
         js_folder_pattern = r'\["([a-zA-Z0-9_-]{25,})","([^"]+)","application/vnd\.google-apps\.folder"'
@@ -149,12 +137,14 @@ class GoogleDriveSync:
             fid = match.group(1)
             if fid not in seen_ids:
                 seen_ids.add(fid)
-                files.append({
-                    'id': fid,
-                    'name': match.group(2),
-                    'mimeType': 'application/vnd.google-apps.folder',
-                    'is_folder': True
-                })
+                files.append(
+                    {
+                        "id": fid,
+                        "name": match.group(2),
+                        "mimeType": "application/vnd.google-apps.folder",
+                        "is_folder": True,
+                    }
+                )
 
         return files
 
@@ -188,26 +178,30 @@ class GoogleDriveSync:
                 # дальше фильтрует по расширению имени — поэтому оставляем
                 # как есть.
                 if api_items:
-                    images_count = sum(1 for f in api_items if not f.get('is_folder'))
-                    folders_count = sum(1 for f in api_items if f.get('is_folder'))
+                    images_count = sum(1 for f in api_items if not f.get("is_folder"))
+                    folders_count = sum(1 for f in api_items if f.get("is_folder"))
                     logger.debug(
-                        '[gdrive] API: folder %s -> %d files (%d images, %d subfolders)',
-                        folder_id, len(api_items), images_count, folders_count,
+                        "[gdrive] API: folder %s -> %d files (%d images, %d subfolders)",
+                        folder_id,
+                        len(api_items),
+                        images_count,
+                        folders_count,
                     )
                     return api_items
                 # Пустая выдача от API — возможно, папка реально пустая.
                 # Чтобы не зацикливаться на HTML (где мы можем распарсить
                 # мусор), возвращаем пусто.
-                logger.debug('[gdrive] API: folder %s is empty', folder_id)
+                logger.debug("[gdrive] API: folder %s is empty", folder_id)
                 return []
             except Exception as exc:  # pragma: no cover — сеть/креды
                 logger.warning(
-                    '[gdrive] API fallback to HTML for folder %s: %s',
-                    folder_id, exc,
+                    "[gdrive] API fallback to HTML for folder %s: %s",
+                    folder_id,
+                    exc,
                 )
 
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
         }
 
         try:
@@ -223,7 +217,7 @@ class GoogleDriveSync:
 
             # Если нашли файлы — проверяем, не обрезан ли результат
             if files:
-                images_count = sum(1 for f in files if not f.get('is_folder'))
+                images_count = sum(1 for f in files if not f.get("is_folder"))
                 if images_count >= 50:
                     logger.warning(
                         f"Папка {folder_id}: найдено {images_count} изображений — "
@@ -269,11 +263,11 @@ class GoogleDriveSync:
         """Проверяет, является ли содержимое файла изображением по magic bytes."""
         if not content or len(content) < 100:
             return False
-        is_jpeg = content[:2] == b'\xff\xd8'
-        is_png = content[:4] == b'\x89PNG'
-        is_webp = len(content) > 12 and content[:4] == b'RIFF' and content[8:12] == b'WEBP'
-        is_gif = content[:3] == b'GIF'
-        is_bmp = content[:2] == b'BM'
+        is_jpeg = content[:2] == b"\xff\xd8"
+        is_png = content[:4] == b"\x89PNG"
+        is_webp = len(content) > 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP"
+        is_gif = content[:3] == b"GIF"
+        is_bmp = content[:2] == b"BM"
         return is_jpeg or is_png or is_webp or is_gif or is_bmp
 
     @staticmethod
@@ -303,16 +297,17 @@ class GoogleDriveSync:
                     return content
                 if content:
                     logger.warning(
-                        '[gdrive] API returned non-image payload for %s '
-                        '(size=%d, header=%s) — falling back to HTML',
-                        file_id, len(content),
-                        content[:4].hex() if content else 'empty',
+                        "[gdrive] API returned non-image payload for %s (size=%d, header=%s) — falling back to HTML",
+                        file_id,
+                        len(content),
+                        content[:4].hex() if content else "empty",
                     )
                 # если API вернул None — пробуем HTML
             except Exception as exc:  # pragma: no cover — сеть/креды
                 logger.warning(
-                    '[gdrive] API download failed for %s, falling back to '
-                    'HTML: %s', file_id, exc,
+                    "[gdrive] API download failed for %s, falling back to HTML: %s",
+                    file_id,
+                    exc,
                 )
 
         import time
@@ -334,18 +329,19 @@ class GoogleDriveSync:
                 content = response.content
 
                 # Если Google вернул HTML-страницу подтверждения скачивания
-                if content[:5] == b'<!DOC' or content[:5] == b'<html' or b'download_warning' in content[:5000]:
+                if content[:5] == b"<!DOC" or content[:5] == b"<html" or b"download_warning" in content[:5000]:
                     # Ищем токен подтверждения в cookies или в HTML
                     confirm_token = None
                     for key, value in response.cookies.items():
-                        if 'download_warning' in key:
+                        if "download_warning" in key:
                             confirm_token = value
                             break
 
                     if not confirm_token:
                         # Ищем токен в HTML (новый формат Google Drive)
                         import re as _re
-                        token_match = _re.search(r'confirm=([a-zA-Z0-9_-]+)', response.text)
+
+                        token_match = _re.search(r"confirm=([a-zA-Z0-9_-]+)", response.text)
                         if token_match:
                             confirm_token = token_match.group(1)
 
@@ -355,7 +351,9 @@ class GoogleDriveSync:
                         content = response.content
                     else:
                         # Пробуем прямой URL без подтверждения
-                        alt_url = f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t"
+                        alt_url = (
+                            f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t"
+                        )
                         response = session.get(alt_url, timeout=60)
                         content = response.content
 
@@ -384,7 +382,7 @@ class GoogleDriveSync:
         return None
 
     @staticmethod
-    def download_folder_photos(folder_url, container, photo_type='UNLOADING'):
+    def download_folder_photos(folder_url, container, photo_type="UNLOADING"):
         """
         Скачивает все фотографии из папки Google Drive для конкретного контейнера.
 
@@ -401,7 +399,7 @@ class GoogleDriveSync:
         from .models_website import ContainerPhoto
 
         try:
-            type_label = "В контейнере" if photo_type == 'IN_CONTAINER' else "Разгрузка"
+            type_label = "В контейнере" if photo_type == "IN_CONTAINER" else "Разгрузка"
             logger.info(f"[SYNC] {container.number} - {type_label}")
 
             # Извлекаем ID папки из URL
@@ -415,7 +413,7 @@ class GoogleDriveSync:
             files = GoogleDriveSync.get_folder_files_web(folder_id)
 
             # Фильтруем только изображения
-            images = [f for f in files if not f.get('is_folder', False)]
+            images = [f for f in files if not f.get("is_folder", False)]
 
             if not images:
                 logger.info("   No images found")
@@ -425,15 +423,14 @@ class GoogleDriveSync:
 
             # Получаем список уже загруженных фото (по описанию)
             existing_descriptions = set(
-                ContainerPhoto.objects.filter(container=container)
-                .values_list('description', flat=True)
+                ContainerPhoto.objects.filter(container=container).values_list("description", flat=True)
             )
 
             photos_added = 0
 
             for file_info in images:
-                filename = file_info['name']
-                file_id = file_info['id']
+                filename = file_info["name"]
+                file_id = file_info["id"]
                 description = f"Google Drive: {filename}"
 
                 # Проверяем, не добавляли ли уже это фото
@@ -454,6 +451,7 @@ class GoogleDriveSync:
                     # maybe_compress_image_field создавал бы рядом сжатую
                     # копию с суффиксом — а оригинал оставался orphan.
                     from .services.photo_optimize import compress_image_bytes
+
                     compressed = compress_image_bytes(file_content)
                     if compressed is not None:
                         file_content = compressed
@@ -463,7 +461,7 @@ class GoogleDriveSync:
                         container=container,
                         photo_type=photo_type,  # IN_CONTAINER или UNLOADING
                         description=description,
-                        is_public=True
+                        is_public=True,
                     )
 
                     # Сохраняем файл
@@ -506,32 +504,32 @@ class GoogleDriveSync:
         """
         try:
             # Нормализуем номер контейнера (убираем пробелы, верхний регистр)
-            search_number = container_number.strip().upper().replace(' ', '')
+            search_number = container_number.strip().upper().replace(" ", "")
 
             # Получаем список месячных папок
             month_folders = GoogleDriveSync.get_folder_files_web(root_folder_id)
-            month_folders = [f for f in month_folders if f.get('is_folder', False)]
+            month_folders = [f for f in month_folders if f.get("is_folder", False)]
 
             if verbose:
                 logger.info(f"   Searching in {len(month_folders)} month folders...")
 
             for month_folder in month_folders:
                 # Получаем папки контейнеров в этом месяце
-                container_folders = GoogleDriveSync.get_folder_files_web(month_folder['id'])
-                container_folders = [f for f in container_folders if f.get('is_folder', False)]
+                container_folders = GoogleDriveSync.get_folder_files_web(month_folder["id"])
+                container_folders = [f for f in container_folders if f.get("is_folder", False)]
 
                 if verbose and container_folders:
                     logger.info(f"   Month '{month_folder['name']}': {len(container_folders)} container folders")
 
                 for container_folder in container_folders:
-                    folder_name = container_folder['name'].strip().upper()
-                    folder_name_no_spaces = folder_name.replace(' ', '')
+                    folder_name = container_folder["name"].strip().upper()
+                    folder_name_no_spaces = folder_name.replace(" ", "")
 
                     # Ищем по ВХОЖДЕНИЮ номера контейнера в название папки
                     # Это найдёт папки типа "ECMU5566195 Toyota" или "15.01 ECMU5566195"
                     if search_number in folder_name_no_spaces:
                         logger.info(f"   [FOUND] '{container_folder['name']}' -> {container_number}")
-                        return container_folder['id']
+                        return container_folder["id"]
 
             logger.debug(f"[NOT FOUND] No folder for container {container_number}")
             return None
@@ -562,8 +560,8 @@ class GoogleDriveSync:
 
         # Соответствие папок и типов фото
         FOLDER_PHOTO_TYPES = {
-            'unloaded': 'UNLOADING',       # AUTO IŠ KONTO -> Фото после разгрузки
-            'in_container': 'IN_CONTAINER'  # KONTO VIDUS -> Фото внутри контейнера
+            "unloaded": "UNLOADING",  # AUTO IŠ KONTO -> Фото после разгрузки
+            "in_container": "IN_CONTAINER",  # KONTO VIDUS -> Фото внутри контейнера
         }
 
         try:
@@ -580,16 +578,14 @@ class GoogleDriveSync:
 
             # ВСЕГДА ищем в обеих корневых папках (ВЫГРУЖЕННЫЕ + В КОНТЕЙНЕРЕ)
             for folder_type, folder_id in GOOGLE_DRIVE_FOLDERS.items():
-                photo_type = FOLDER_PHOTO_TYPES.get(folder_type, 'GENERAL')
-                type_label = "Выгруженные" if folder_type == 'unloaded' else "В контейнере"
+                photo_type = FOLDER_PHOTO_TYPES.get(folder_type, "GENERAL")
+                type_label = "Выгруженные" if folder_type == "unloaded" else "В контейнере"
 
                 # Для папки "unloaded" используем прямую ссылку если есть
-                if folder_type == 'unloaded' and container.google_drive_folder_url:
+                if folder_type == "unloaded" and container.google_drive_folder_url:
                     logger.info(f"   [{type_label}] Используем прямую ссылку из карточки")
                     added = GoogleDriveSync.download_folder_photos(
-                        container.google_drive_folder_url,
-                        container,
-                        photo_type=photo_type
+                        container.google_drive_folder_url, container, photo_type=photo_type
                     )
                     total_added += added
                     continue
@@ -597,24 +593,16 @@ class GoogleDriveSync:
                 if verbose:
                     logger.info(f"   [{type_label}] Поиск папки на Google Drive...")
 
-                found_folder_id = GoogleDriveSync.find_container_folder(
-                    container_number,
-                    folder_id,
-                    verbose=verbose
-                )
+                found_folder_id = GoogleDriveSync.find_container_folder(container_number, folder_id, verbose=verbose)
 
                 if found_folder_id:
-                    added = GoogleDriveSync.download_folder_photos(
-                        found_folder_id,
-                        container,
-                        photo_type=photo_type
-                    )
+                    added = GoogleDriveSync.download_folder_photos(found_folder_id, container, photo_type=photo_type)
                     total_added += added
 
                     # Сохраняем ссылку на папку ВЫГРУЖЕННЫХ если ещё не сохранена
-                    if folder_type == 'unloaded' and not container.google_drive_folder_url:
+                    if folder_type == "unloaded" and not container.google_drive_folder_url:
                         container.google_drive_folder_url = f"https://drive.google.com/drive/folders/{found_folder_id}"
-                        container.save(update_fields=['google_drive_folder_url'])
+                        container.save(update_fields=["google_drive_folder_url"])
                         logger.info(f"[{container_number}] Saved Google Drive folder URL")
 
                 elif verbose:
@@ -643,12 +631,7 @@ class GoogleDriveSync:
         """
         from .models import Container
 
-        stats = {
-            'containers_processed': 0,
-            'photos_added': 0,
-            'containers_not_found': [],
-            'errors': []
-        }
+        stats = {"containers_processed": 0, "photos_added": 0, "containers_not_found": [], "errors": []}
 
         try:
             logger.info("=" * 70)
@@ -663,7 +646,7 @@ class GoogleDriveSync:
 
                 # Получаем месячные папки
                 month_folders = GoogleDriveSync.get_folder_files_web(folder_id)
-                month_folders = [f for f in month_folders if f.get('is_folder', False)]
+                month_folders = [f for f in month_folders if f.get("is_folder", False)]
 
                 logger.info(f"Найдено {len(month_folders)} месячных папок")
 
@@ -671,14 +654,14 @@ class GoogleDriveSync:
                     logger.info(f"\n📁 Месяц: {month_folder['name']}")
 
                     # Получаем папки контейнеров
-                    container_folders = GoogleDriveSync.get_folder_files_web(month_folder['id'])
-                    container_folders = [f for f in container_folders if f.get('is_folder', False)]
+                    container_folders = GoogleDriveSync.get_folder_files_web(month_folder["id"])
+                    container_folders = [f for f in container_folders if f.get("is_folder", False)]
 
                     for container_folder in container_folders:
-                        container_number = container_folder['name'].strip()
+                        container_number = container_folder["name"].strip()
 
                         # Проверяем лимит
-                        if limit and stats['containers_processed'] >= limit:
+                        if limit and stats["containers_processed"] >= limit:
                             logger.info(f"Достигнут лимит в {limit} контейнеров")
                             break
 
@@ -693,18 +676,15 @@ class GoogleDriveSync:
 
                         if not container:
                             logger.warning(f"⚠ Контейнер {container_number} не найден в БД")
-                            stats['containers_not_found'].append(container_number)
+                            stats["containers_not_found"].append(container_number)
                             continue
 
                         try:
                             # Синхронизируем фотографии
-                            added = GoogleDriveSync.download_folder_photos(
-                                container_folder['id'],
-                                container
-                            )
+                            added = GoogleDriveSync.download_folder_photos(container_folder["id"], container)
 
-                            stats['containers_processed'] += 1
-                            stats['photos_added'] += added
+                            stats["containers_processed"] += 1
+                            stats["photos_added"] += added
 
                             if added > 0:
                                 logger.info(f"✅ {container_number}: добавлено {added} фото")
@@ -712,12 +692,12 @@ class GoogleDriveSync:
                         except Exception as e:
                             error_msg = f"Ошибка при обработке {container_number}: {e}"
                             logger.error(error_msg)
-                            stats['errors'].append(error_msg)
+                            stats["errors"].append(error_msg)
 
-                    if limit and stats['containers_processed'] >= limit:
+                    if limit and stats["containers_processed"] >= limit:
                         break
 
-                if limit and stats['containers_processed'] >= limit:
+                if limit and stats["containers_processed"] >= limit:
                     break
 
             logger.info("\n" + "=" * 70)
@@ -730,7 +710,7 @@ class GoogleDriveSync:
 
         except Exception as e:
             logger.error(f"Критическая ошибка синхронизации: {e}", exc_info=True)
-            stats['errors'].append(str(e))
+            stats["errors"].append(str(e))
 
         return stats
 
@@ -750,25 +730,18 @@ class GoogleDriveSync:
 
         from .models import Container
 
-        stats = {
-            'containers_checked': 0,
-            'containers_with_new_photos': 0,
-            'photos_added': 0,
-            'errors': []
-        }
+        stats = {"containers_checked": 0, "containers_with_new_photos": 0, "photos_added": 0, "errors": []}
 
         try:
             threshold = timezone.now() - timedelta(hours=hours)
 
             containers_no_photos = (
                 Container.objects.filter(
-                    status='UNLOADED',
-                    unloaded_status_at__isnull=False,
-                    unloaded_status_at__lte=threshold
+                    status="UNLOADED", unloaded_status_at__isnull=False, unloaded_status_at__lte=threshold
                 )
-                .annotate(photos_count=Count('photos'))
+                .annotate(photos_count=Count("photos"))
                 .filter(photos_count=0)
-                .order_by('unloaded_status_at')
+                .order_by("unloaded_status_at")
             )
 
             count = containers_no_photos.count()
@@ -781,32 +754,31 @@ class GoogleDriveSync:
             for container in containers_no_photos:
                 try:
                     if container.google_drive_folder_url:
-                        added = GoogleDriveSync.download_folder_photos(
-                            container.google_drive_folder_url,
-                            container
-                        )
+                        added = GoogleDriveSync.download_folder_photos(container.google_drive_folder_url, container)
                     else:
                         added = GoogleDriveSync.sync_container_by_number(container.number)
 
-                    stats['containers_checked'] += 1
-                    stats['photos_added'] += added
+                    stats["containers_checked"] += 1
+                    stats["photos_added"] += added
 
                     if added > 0:
-                        stats['containers_with_new_photos'] += 1
+                        stats["containers_with_new_photos"] += 1
                         logger.info(f"   🎉 {container.number}: найдено {added} фото!")
                     else:
                         logger.debug(f"   ⏳ {container.number}: фото пока нет на Google Drive")
 
                 except Exception as e:
-                    stats['errors'].append(f"{container.number}: {e}")
+                    stats["errors"].append(f"{container.number}: {e}")
 
-            logger.info(f"✅ Проверено: {stats['containers_checked']}, "
-                       f"с новыми фото: {stats['containers_with_new_photos']}, "
-                       f"всего фото: {stats['photos_added']}")
+            logger.info(
+                f"✅ Проверено: {stats['containers_checked']}, "
+                f"с новыми фото: {stats['containers_with_new_photos']}, "
+                f"всего фото: {stats['photos_added']}"
+            )
 
         except Exception as e:
             logger.error(f"Ошибка sync_unloaded_containers_after_delay: {e}", exc_info=True)
-            stats['errors'].append(str(e))
+            stats["errors"].append(str(e))
 
         return stats
 
@@ -833,12 +805,7 @@ class GoogleDriveSync:
 
         from .models import Container
 
-        stats = {
-            'containers_processed': 0,
-            'containers_with_new_photos': 0,
-            'photos_added': 0,
-            'errors': []
-        }
+        stats = {"containers_processed": 0, "containers_with_new_photos": 0, "photos_added": 0, "errors": []}
 
         try:
             # Получаем контейнеры за последние N дней
@@ -846,17 +813,14 @@ class GoogleDriveSync:
 
             # Базовый queryset - разгруженные или в порту
             recent_containers = Container.objects.filter(
-                unload_date__gte=start_date,
-                status__in=['UNLOADED', 'IN_PORT', 'TRANSFERRED']
-            ).annotate(
-                photos_count=Count('photos')
-            )
+                unload_date__gte=start_date, status__in=["UNLOADED", "IN_PORT", "TRANSFERRED"]
+            ).annotate(photos_count=Count("photos"))
 
             if prioritize_no_photos:
                 # Сначала контейнеры БЕЗ фото, потом остальные
-                recent_containers = recent_containers.order_by('photos_count', '-unload_date')
+                recent_containers = recent_containers.order_by("photos_count", "-unload_date")
             else:
-                recent_containers = recent_containers.order_by('-unload_date')
+                recent_containers = recent_containers.order_by("-unload_date")
 
             total_count = recent_containers.count()
             logger.info(f"🔄 Синхронизация фотографий для {total_count} контейнеров (за последние {days} дней)")
@@ -870,32 +834,31 @@ class GoogleDriveSync:
                 try:
                     # Если есть ссылка на Google Drive - используем её
                     if container.google_drive_folder_url:
-                        added = GoogleDriveSync.download_folder_photos(
-                            container.google_drive_folder_url,
-                            container
-                        )
+                        added = GoogleDriveSync.download_folder_photos(container.google_drive_folder_url, container)
                     else:
                         # Ищем папку автоматически по номеру контейнера
                         added = GoogleDriveSync.sync_container_by_number(container.number)
 
-                    stats['containers_processed'] += 1
-                    stats['photos_added'] += added
+                    stats["containers_processed"] += 1
+                    stats["photos_added"] += added
 
                     if added > 0:
-                        stats['containers_with_new_photos'] += 1
+                        stats["containers_with_new_photos"] += 1
                         logger.info(f"   ✅ {container.number}: +{added} фото")
 
                 except Exception as e:
-                    stats['errors'].append(f"{container.number}: {e}")
+                    stats["errors"].append(f"{container.number}: {e}")
                     logger.error(f"Ошибка синхронизации {container.number}: {e}")
 
-            logger.info(f"✅ Итого: обработано {stats['containers_processed']}, "
-                       f"с новыми фото: {stats['containers_with_new_photos']}, "
-                       f"добавлено фото: {stats['photos_added']}")
+            logger.info(
+                f"✅ Итого: обработано {stats['containers_processed']}, "
+                f"с новыми фото: {stats['containers_with_new_photos']}, "
+                f"добавлено фото: {stats['photos_added']}"
+            )
 
         except Exception as e:
             logger.error(f"Ошибка sync_recent_containers: {e}", exc_info=True)
-            stats['errors'].append(str(e))
+            stats["errors"].append(str(e))
 
         return stats
 
@@ -920,25 +883,18 @@ class GoogleDriveSync:
 
         from .models import Container
 
-        stats = {
-            'containers_checked': 0,
-            'containers_with_new_photos': 0,
-            'photos_added': 0,
-            'errors': []
-        }
+        stats = {"containers_checked": 0, "containers_with_new_photos": 0, "photos_added": 0, "errors": []}
 
         try:
             start_date = timezone.now().date() - timedelta(days=days)
 
             # Только контейнеры БЕЗ фото
-            containers_no_photos = Container.objects.filter(
-                unload_date__gte=start_date,
-                status__in=['UNLOADED', 'IN_PORT', 'TRANSFERRED']
-            ).annotate(
-                photos_count=Count('photos')
-            ).filter(
-                photos_count=0
-            ).order_by('-unload_date')
+            containers_no_photos = (
+                Container.objects.filter(unload_date__gte=start_date, status__in=["UNLOADED", "IN_PORT", "TRANSFERRED"])
+                .annotate(photos_count=Count("photos"))
+                .filter(photos_count=0)
+                .order_by("-unload_date")
+            )
 
             count = containers_no_photos.count()
 
@@ -951,31 +907,30 @@ class GoogleDriveSync:
             for container in containers_no_photos:
                 try:
                     if container.google_drive_folder_url:
-                        added = GoogleDriveSync.download_folder_photos(
-                            container.google_drive_folder_url,
-                            container
-                        )
+                        added = GoogleDriveSync.download_folder_photos(container.google_drive_folder_url, container)
                     else:
                         added = GoogleDriveSync.sync_container_by_number(container.number)
 
-                    stats['containers_checked'] += 1
-                    stats['photos_added'] += added
+                    stats["containers_checked"] += 1
+                    stats["photos_added"] += added
 
                     if added > 0:
-                        stats['containers_with_new_photos'] += 1
+                        stats["containers_with_new_photos"] += 1
                         logger.info(f"   🎉 {container.number}: найдено {added} фото!")
                     else:
                         logger.debug(f"   ⏳ {container.number}: фото пока нет на Google Drive")
 
                 except Exception as e:
-                    stats['errors'].append(f"{container.number}: {e}")
+                    stats["errors"].append(f"{container.number}: {e}")
 
-            logger.info(f"✅ Проверено: {stats['containers_checked']}, "
-                       f"с новыми фото: {stats['containers_with_new_photos']}, "
-                       f"всего фото: {stats['photos_added']}")
+            logger.info(
+                f"✅ Проверено: {stats['containers_checked']}, "
+                f"с новыми фото: {stats['containers_with_new_photos']}, "
+                f"всего фото: {stats['photos_added']}"
+            )
 
         except Exception as e:
             logger.error(f"Ошибка sync_containers_without_photos: {e}", exc_info=True)
-            stats['errors'].append(str(e))
+            stats["errors"].append(str(e))
 
         return stats

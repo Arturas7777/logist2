@@ -39,8 +39,15 @@ def _clear_pricing_thread_locals():
 
 
 LEGACY_FEE_FIELDS = (
-    "unload_fee", "delivery_fee", "loading_fee", "docs_fee", "transfer_fee",
-    "transit_declaration", "export_declaration", "extra_costs", "complex_fee",
+    "unload_fee",
+    "delivery_fee",
+    "loading_fee",
+    "docs_fee",
+    "transfer_fee",
+    "transit_declaration",
+    "export_declaration",
+    "extra_costs",
+    "complex_fee",
 )
 
 
@@ -63,14 +70,17 @@ class TestNoLegacyWriteOnCreate:
     def test_new_car_does_not_populate_legacy_fee_fields(self, warehouse):
         container = Container.objects.create(number="P2-CR-1", status="FLOATING")
         car = Car.objects.create(
-            year=2023, brand="Toyota", vin="P2DECOUPLE0000001",
-            status="FLOATING", container=container, warehouse=warehouse,
+            year=2023,
+            brand="Toyota",
+            vin="P2DECOUPLE0000001",
+            status="FLOATING",
+            container=container,
+            warehouse=warehouse,
         )
         car.refresh_from_db()
         for field in LEGACY_FEE_FIELDS:
             assert getattr(car, field) is None, (
-                f"Поле {field} было заполнено при создании авто — запись legacy "
-                f"полей должна быть прекращена (Фаза 2)"
+                f"Поле {field} было заполнено при создании авто — запись legacy полей должна быть прекращена (Фаза 2)"
             )
 
 
@@ -78,11 +88,15 @@ class TestNoLegacyWriteOnCreate:
 class TestSyncWithContainer:
     def test_sync_updates_live_fields_only(self, warehouse):
         container = Container.objects.create(
-            number="P2-SY-1", status="UNLOADED", warehouse=warehouse,
+            number="P2-SY-1",
+            status="UNLOADED",
+            warehouse=warehouse,
             unload_date=timezone.now().date(),
         )
         car = Car.objects.create(
-            year=2022, brand="Honda", vin="P2DECOUPLE0000002",
+            year=2022,
+            brand="Honda",
+            vin="P2DECOUPLE0000002",
             status="FLOATING",
         )
 
@@ -98,21 +112,33 @@ class TestSyncWithContainer:
 
     def test_price_comes_from_car_services_after_sync(self, warehouse):
         container = Container.objects.create(
-            number="P2-SY-2", status="UNLOADED", warehouse=warehouse,
+            number="P2-SY-2",
+            status="UNLOADED",
+            warehouse=warehouse,
             unload_date=timezone.now().date(),
         )
         car = Car.objects.create(
-            year=2022, brand="Honda", vin="P2DECOUPLE0000003",
-            status="UNLOADED", container=container, warehouse=warehouse,
+            year=2022,
+            brand="Honda",
+            vin="P2DECOUPLE0000003",
+            status="UNLOADED",
+            container=container,
+            warehouse=warehouse,
             unload_date=timezone.now().date(),
         )
         svc = WarehouseService.objects.create(
-            warehouse=warehouse, name="Разгрузка", default_price=Decimal("40.00"),
+            warehouse=warehouse,
+            name="Разгрузка",
+            default_price=Decimal("40.00"),
             is_active=True,
         )
         CarService.objects.create(
-            car=car, service_type="WAREHOUSE", service_id=svc.id,
-            custom_price=Decimal("40.00"), markup_amount=Decimal("0.00"), quantity=1,
+            car=car,
+            service_type="WAREHOUSE",
+            service_id=svc.id,
+            custom_price=Decimal("40.00"),
+            markup_amount=Decimal("0.00"),
+            quantity=1,
         )
 
         car.sync_with_container(container)

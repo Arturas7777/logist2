@@ -43,12 +43,12 @@ class BillingService:
     @staticmethod
     def quantize(amount: Decimal | int | float | str) -> Decimal:
         """Нормализовать сумму до 2 знаков после запятой"""
-        return Decimal(str(amount)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        return Decimal(str(amount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     @staticmethod
     def validate_entity(entity) -> bool:
         """Проверить, что сущность валидна"""
-        return entity is not None and hasattr(entity, 'pk') and entity.pk is not None
+        return entity is not None and hasattr(entity, "pk") and entity.pk is not None
 
     # ========================================================================
     # РАБОТА С ИНВОЙСАМИ
@@ -64,7 +64,7 @@ class BillingService:
         items: list[dict] | None = None,
         due_days: int = 14,
         notes: str = "",
-        created_by=None
+        created_by=None,
     ):
         """
         Создать новый инвойс
@@ -98,21 +98,16 @@ class BillingService:
 
         # Определяем тип выставителя
         issuer_type = issuer.__class__.__name__
-        issuer_field = f'issuer_{issuer_type.lower()}'
+        issuer_field = f"issuer_{issuer_type.lower()}"
 
         # Определяем тип получателя
         recipient_type = recipient.__class__.__name__
-        recipient_field = f'recipient_{recipient_type.lower()}'
+        recipient_field = f"recipient_{recipient_type.lower()}"
 
         # Создаем инвойс
         due_date = timezone.now().date() + timezone.timedelta(days=due_days)
 
-        invoice = NewInvoice(
-            due_date=due_date,
-            notes=notes,
-            created_by=created_by,
-            status='DRAFT'
-        )
+        invoice = NewInvoice(due_date=due_date, notes=notes, created_by=created_by, status="DRAFT")
 
         # Устанавливаем выставителя
         setattr(invoice, issuer_field, issuer)
@@ -147,10 +142,10 @@ class BillingService:
         elif items:
             # Создаем позиции вручную
             for idx, item_data in enumerate(items):
-                description = item_data.get('description', '')
-                quantity = cls.quantize(item_data.get('quantity', 1))
-                unit_price = cls.quantize(item_data.get('unit_price', 0))
-                car = item_data.get('car')
+                description = item_data.get("description", "")
+                quantity = cls.quantize(item_data.get("quantity", 1))
+                unit_price = cls.quantize(item_data.get("unit_price", 0))
+                car = item_data.get("car")
 
                 if not description:
                     raise ValueError(f"Позиция {idx + 1}: описание обязательно")
@@ -164,7 +159,7 @@ class BillingService:
                     quantity=quantity,
                     unit_price=unit_price,
                     car=car,
-                    order=idx
+                    order=idx,
                 )
                 invoice_item.calculate_total()
                 items_to_create.append(invoice_item)
@@ -175,7 +170,7 @@ class BillingService:
 
         # Пересчитываем итоги
         invoice.calculate_totals()
-        invoice.status = 'ISSUED'
+        invoice.status = "ISSUED"
         invoice.save()
 
         logger.info(f"Invoice {invoice.number} created: {invoice.items.count()} items, total={invoice.total}")
@@ -184,14 +179,7 @@ class BillingService:
 
     @classmethod
     @transaction.atomic
-    def add_invoice_item(
-        cls,
-        invoice,
-        description: str,
-        quantity: Decimal,
-        unit_price: Decimal,
-        car=None
-    ):
+    def add_invoice_item(cls, invoice, description: str, quantity: Decimal, unit_price: Decimal, car=None):
         """
         Добавить позицию в существующий инвойс
 
@@ -207,11 +195,11 @@ class BillingService:
         """
         from core.models_billing import InvoiceItem
 
-        if invoice.status not in ['DRAFT', 'ISSUED']:
+        if invoice.status not in ["DRAFT", "ISSUED"]:
             raise ValueError(f"Нельзя добавлять позиции в инвойс со статусом {invoice.get_status_display()}")
 
         # Находим максимальный порядок
-        max_order = invoice.items.aggregate(max_order=models.Max('order'))['max_order'] or 0
+        max_order = invoice.items.aggregate(max_order=models.Max("order"))["max_order"] or 0
 
         item = InvoiceItem(
             invoice=invoice,
@@ -219,7 +207,7 @@ class BillingService:
             quantity=cls.quantize(quantity),
             unit_price=cls.quantize(unit_price),
             car=car,
-            order=max_order + 1
+            order=max_order + 1,
         )
         item.save()
 
@@ -254,11 +242,10 @@ class BillingService:
         if locked_invoice.paid_amount > 0:
             raise ValueError("Нельзя отменить инвойс, по которому уже были платежи")
 
-        locked_invoice.status = 'CANCELLED'
+        locked_invoice.status = "CANCELLED"
         if reason:
             locked_invoice.notes = (
-                f"{locked_invoice.notes}\n\nОТМЕНЕН: {reason}"
-                if locked_invoice.notes else f"ОТМЕНЕН: {reason}"
+                f"{locked_invoice.notes}\n\nОТМЕНЕН: {reason}" if locked_invoice.notes else f"ОТМЕНЕН: {reason}"
             )
         locked_invoice.save()
 
@@ -295,7 +282,7 @@ class BillingService:
         invoice.document_type = new_document_type
         with transaction.atomic():
             invoice.number = invoice.generate_number()
-            invoice.save(update_fields=['document_type', 'number', 'updated_at'])
+            invoice.save(update_fields=["document_type", "number", "updated_at"])
 
             was_cash = old_type in invoice.CASH_DOCUMENT_TYPES
             is_cash = new_document_type in invoice.CASH_DOCUMENT_TYPES
@@ -321,43 +308,44 @@ class BillingService:
         if not payer or not issuer:
             return None
 
-        payer_field = f'from_{payer.__class__.__name__.lower()}'
-        issuer_field = f'to_{issuer.__class__.__name__.lower()}'
+        payer_field = f"from_{payer.__class__.__name__.lower()}"
+        issuer_field = f"to_{issuer.__class__.__name__.lower()}"
 
         trx = Transaction(
-            type='PAYMENT',
-            method='CASH',
+            type="PAYMENT",
+            method="CASH",
             invoice=invoice,
             amount=remaining,
-            currency=invoice.currency or 'EUR',
+            currency=invoice.currency or "EUR",
             description=f"Оплата наличными ({invoice.number})",
             created_by=created_by,
-            status='COMPLETED',
+            status="COMPLETED",
         )
         setattr(trx, payer_field, payer)
         setattr(trx, issuer_field, issuer)
         trx.save()
-        logger.info(
-            'Auto cash payment %s: %s for invoice %s', trx.number, remaining, invoice.number
-        )
+        logger.info("Auto cash payment %s: %s for invoice %s", trx.number, remaining, invoice.number)
         return trx
 
     @classmethod
     def reverse_cash_payments(cls, invoice):
         """Отменить авто-созданные CASH-платежи при уходе с кассовой серии."""
         cash_payments = invoice.transactions.filter(
-            type='PAYMENT', method='CASH', status='COMPLETED',
-            description__contains='Оплата наличными',
+            type="PAYMENT",
+            method="CASH",
+            status="COMPLETED",
+            description__contains="Оплата наличными",
         )
         for trx in cash_payments:
-            trx.status = 'CANCELLED'
+            trx.status = "CANCELLED"
             trx._skip_balance_recalc = True
-            trx.save(update_fields=['status'])
+            trx.save(update_fields=["status"])
         if cash_payments.exists():
             invoice.recalculate_paid_amount()
             logger.info(
-                'Reversed %d cash payments for invoice %s',
-                cash_payments.count(), invoice.number,
+                "Reversed %d cash payments for invoice %s",
+                cash_payments.count(),
+                invoice.number,
             )
 
     # ========================================================================
@@ -374,7 +362,7 @@ class BillingService:
         payer,
         description: str = "",
         created_by=None,
-        bank_transaction_id=None
+        bank_transaction_id=None,
     ):
         """
         Оплатить инвойс
@@ -406,10 +394,10 @@ class BillingService:
 
         locked_invoice = NewInvoice.objects.select_for_update().get(pk=invoice.pk)
 
-        if locked_invoice.status == 'CANCELLED':
+        if locked_invoice.status == "CANCELLED":
             raise ValueError("Нельзя оплатить отмененный инвойс")
 
-        if locked_invoice.status == 'PAID':
+        if locked_invoice.status == "PAID":
             raise ValueError("Инвойс уже полностью оплачен")
 
         remaining = locked_invoice.remaining_amount
@@ -417,23 +405,23 @@ class BillingService:
             amount = remaining
 
         payer_type = payer.__class__.__name__
-        from_field = f'from_{payer_type.lower()}'
+        from_field = f"from_{payer_type.lower()}"
 
         invoice_issuer = locked_invoice.issuer
         if not invoice_issuer:
             raise ValueError("У инвойса не указан выставитель")
         issuer_type = invoice_issuer.__class__.__name__
-        to_field = f'to_{issuer_type.lower()}'
+        to_field = f"to_{issuer_type.lower()}"
 
         trx = Transaction(
-            type='PAYMENT',
+            type="PAYMENT",
             method=method,
             invoice=locked_invoice,
             amount=amount,
-            currency=locked_invoice.currency or 'EUR',
+            currency=locked_invoice.currency or "EUR",
             description=description or f"Оплата инвойса {locked_invoice.number}",
             created_by=created_by,
-            status='COMPLETED'
+            status="COMPLETED",
         )
 
         setattr(trx, from_field, payer)
@@ -447,21 +435,24 @@ class BillingService:
         invoice.refresh_from_db()
 
         remaining = locked_invoice.remaining_amount
-        overpayment = Decimal('0.00')
+        overpayment = Decimal("0.00")
 
         if locked_invoice.paid_amount > locked_invoice.total:
             overpayment = locked_invoice.paid_amount - locked_invoice.total
             logger.warning(f"Overpayment detected for invoice {locked_invoice.number}: {overpayment}")
 
-        logger.info(f"Invoice {locked_invoice.number} payment processed: paid={locked_invoice.paid_amount}, total={locked_invoice.total}, remaining={remaining}")
+        logger.info(
+            f"Invoice {locked_invoice.number} payment processed: paid={locked_invoice.paid_amount}, total={locked_invoice.total}, remaining={remaining}"
+        )
 
         if bank_transaction_id:
             try:
                 from core.models_banking import BankTransaction as BankTrx
+
                 bank_trx = BankTrx.objects.get(pk=bank_transaction_id)
                 bank_trx.matched_transaction = trx
                 bank_trx.matched_invoice = locked_invoice
-                bank_trx.save(update_fields=['matched_transaction', 'matched_invoice'])
+                bank_trx.save(update_fields=["matched_transaction", "matched_invoice"])
                 logger.info(f"Linked bank transaction {bank_trx.external_id} to payment {trx.number}")
             except BankTrx.DoesNotExist:
                 logger.warning(f"Bank transaction {bank_transaction_id} not found for linking")
@@ -472,12 +463,7 @@ class BillingService:
                 logger.exception("Error linking bank transaction %s", bank_transaction_id)
                 raise
 
-        return {
-            'transaction': trx,
-            'invoice': locked_invoice,
-            'remaining': remaining,
-            'overpayment': overpayment
-        }
+        return {"transaction": trx, "invoice": locked_invoice, "remaining": remaining, "overpayment": overpayment}
 
     @classmethod
     @transaction.atomic
@@ -523,29 +509,30 @@ class BillingService:
             raise ValueError(f"У инвойса {invoice.number} не указан получатель (плательщик)")
 
         company = Company.get_default()
-        currency = invoice.currency or 'EUR'
-        is_client = payer.__class__.__name__ == 'Client'
+        currency = invoice.currency or "EUR"
+        is_client = payer.__class__.__name__ == "Client"
 
         tx_date = date or timezone.now()
 
         if is_client:
             topup = Transaction(
-                type='BALANCE_TOPUP',
-                method='TRANSFER',
-                status='COMPLETED',
+                type="BALANCE_TOPUP",
+                method="TRANSFER",
+                status="COMPLETED",
                 amount=amount,
                 currency=currency,
                 to_client=payer,
-                description=(description and f"Пополнение: {description}") or f"Пополнение с банковского платежа ({invoice.number})",
+                description=(description and f"Пополнение: {description}")
+                or f"Пополнение с банковского платежа ({invoice.number})",
                 date=tx_date,
                 created_by=created_by,
             )
             topup.save()
 
             payment = Transaction(
-                type='PAYMENT',
-                method='BALANCE',
-                status='COMPLETED',
+                type="PAYMENT",
+                method="BALANCE",
+                status="COMPLETED",
                 amount=amount,
                 currency=currency,
                 invoice=invoice,
@@ -559,9 +546,9 @@ class BillingService:
             return payment
 
         payment = Transaction(
-            type='PAYMENT',
-            method='TRANSFER',
-            status='COMPLETED',
+            type="PAYMENT",
+            method="TRANSFER",
+            status="COMPLETED",
             amount=amount,
             currency=currency,
             invoice=invoice,
@@ -570,7 +557,7 @@ class BillingService:
             date=tx_date,
             created_by=created_by,
         )
-        setattr(payment, f'from_{payer.__class__.__name__.lower()}', payer)
+        setattr(payment, f"from_{payer.__class__.__name__.lower()}", payer)
         payment.save()
         return payment
 
@@ -612,20 +599,23 @@ class BillingService:
                 invoice = NewInvoice.objects.select_for_update().get(pk=bt.matched_invoice_id)
             except NewInvoice.DoesNotExist:
                 return None
-            if invoice.status == 'CANCELLED':
+            if invoice.status == "CANCELLED":
                 return None
 
             # B2 (AUDIT_ROUND3): валюты должны совпадать — иначе сумма BT
             # попала бы в EUR-баланс без конверсии. Не-EUR банковские
             # операции сопоставляются вручную после конверсии суммы.
-            bt_currency = (bt.currency or 'EUR').upper()
-            invoice_currency = (invoice.currency or 'EUR').upper()
+            bt_currency = (bt.currency or "EUR").upper()
+            invoice_currency = (invoice.currency or "EUR").upper()
             if bt_currency != invoice_currency:
                 logger.warning(
                     "[BT match] Пропуск BT %s: валюта банковской операции (%s) "
                     "не совпадает с валютой инвойса %s (%s) — требуется ручная "
                     "конверсия суммы",
-                    bt.pk, bt_currency, invoice.number, invoice_currency,
+                    bt.pk,
+                    bt_currency,
+                    invoice.number,
+                    invoice_currency,
                 )
                 return None
 
@@ -636,11 +626,12 @@ class BillingService:
 
             direction = invoice.direction
 
-            if bt.amount > 0 and direction == 'OUTGOING':
+            if bt.amount > 0 and direction == "OUTGOING":
                 if not invoice.recipient:
                     logger.info(
                         "[BT match] Пропуск BT %s: у инвойса %s нет получателя",
-                        bt.pk, invoice.number,
+                        bt.pk,
+                        invoice.number,
                     )
                     return None
                 tx = cls.register_incoming_bank_payment(
@@ -651,20 +642,21 @@ class BillingService:
                 )
                 if tx is None:
                     return None
-            elif bt.amount < 0 and direction == 'INCOMING':
+            elif bt.amount < 0 and direction == "INCOMING":
                 issuer = invoice.issuer
                 if not issuer:
                     logger.info(
                         "[BT match] Пропуск BT %s: у инвойса %s нет выставителя",
-                        bt.pk, invoice.number,
+                        bt.pk,
+                        invoice.number,
                     )
                     return None
                 tx = Transaction(
-                    type='PAYMENT',
-                    method='TRANSFER',
-                    status='COMPLETED',
+                    type="PAYMENT",
+                    method="TRANSFER",
+                    status="COMPLETED",
                     amount=payment_amount,
-                    currency=invoice.currency or 'EUR',
+                    currency=invoice.currency or "EUR",
                     invoice=invoice,
                     from_company=Company.get_default(),
                     description=f"Оплата входящего счёта {invoice.number} ({bt.counterparty_name})",
@@ -675,7 +667,9 @@ class BillingService:
             else:
                 logger.info(
                     "[BT match] Пропуск BT %s: направление не совпадает (amount=%s, invoice=%s)",
-                    bt.pk, bt.amount, direction,
+                    bt.pk,
+                    bt.amount,
+                    direction,
                 )
                 return None
 
@@ -686,7 +680,11 @@ class BillingService:
 
             logger.info(
                 "[BT match] Создан платёж %s по инвойсу %s (%.2f %s) из BT %s",
-                tx.number, invoice.number, float(payment_amount), tx.currency, bt.pk,
+                tx.number,
+                invoice.number,
+                float(payment_amount),
+                tx.currency,
+                bt.pk,
             )
             return tx
 
@@ -698,7 +696,7 @@ class BillingService:
         *,
         category,
         issuer,
-        description: str = '',
+        description: str = "",
         attachment=None,
     ):
         """Создать FACT-расход из исходящей банковской операции.
@@ -729,21 +727,21 @@ class BillingService:
 
         caromoto = Company.get_default()
         if not caromoto:
-            raise Company.DoesNotExist('Компания по умолчанию не найдена')
+            raise Company.DoesNotExist("Компания по умолчанию не найдена")
 
         expense_amount = cls.quantize(abs(bank_trx.amount))
         issuer_type = issuer.__class__.__name__.lower()
 
         invoice = NewInvoice(
-            document_type='INVOICE_FACT',
+            document_type="INVOICE_FACT",
             date=bank_trx.created_at.date(),
-            status='ISSUED',
+            status="ISSUED",
             category=category,
             recipient_company=caromoto,
-            currency=bank_trx.currency or 'EUR',
-            notes=f'Авто-создано из банковской операции {bank_trx.external_id}',
+            currency=bank_trx.currency or "EUR",
+            notes=f"Авто-создано из банковской операции {bank_trx.external_id}",
         )
-        setattr(invoice, f'issuer_{issuer_type}', issuer)
+        setattr(invoice, f"issuer_{issuer_type}", issuer)
         if attachment:
             invoice.attachment = attachment
         elif bank_trx.receipt_file:
@@ -751,7 +749,8 @@ class BillingService:
             import os
 
             from django.core.files.base import ContentFile
-            bank_trx.receipt_file.open('rb')
+
+            bank_trx.receipt_file.open("rb")
             try:
                 content = bank_trx.receipt_file.read()
             finally:
@@ -760,39 +759,37 @@ class BillingService:
             invoice.attachment.save(fname, ContentFile(content), save=False)
         invoice.save()  # генерирует номер серии FACT
 
-        item_desc = description or bank_trx.counterparty_name or f'Расход ({category.name})'
+        item_desc = description or bank_trx.counterparty_name or f"Расход ({category.name})"
         InvoiceItem.objects.create(
             invoice=invoice,
             description=item_desc,
-            quantity=Decimal('1'),
+            quantity=Decimal("1"),
             unit_price=expense_amount,
             total_price=expense_amount,
             order=0,
         )
         invoice.calculate_totals()
-        invoice.save(update_fields=['subtotal', 'total', 'updated_at'])
+        invoice.save(update_fields=["subtotal", "total", "updated_at"])
 
         bank_trx.matched_invoice = invoice
-        bank_trx.reconciliation_note = f'FACT-расход создан: {category.name}'
-        bank_trx.save(update_fields=['matched_invoice', 'reconciliation_note', 'fetched_at'])
+        bank_trx.reconciliation_note = f"FACT-расход создан: {category.name}"
+        bank_trx.save(update_fields=["matched_invoice", "reconciliation_note", "fetched_at"])
         cls.create_payment_for_bank_match(bank_trx.pk)
 
         logger.info(
-            '[create_expense] BT %s → FACT %s (%s %s, issuer=%s:%s)',
-            bank_trx.pk, invoice.number, expense_amount, bank_trx.currency,
-            issuer_type, issuer.pk,
+            "[create_expense] BT %s → FACT %s (%s %s, issuer=%s:%s)",
+            bank_trx.pk,
+            invoice.number,
+            expense_amount,
+            bank_trx.currency,
+            issuer_type,
+            issuer.pk,
         )
         return invoice
 
     @classmethod
     @transaction.atomic
-    def refund(
-        cls,
-        original_transaction,
-        amount: Decimal | None = None,
-        reason: str = "",
-        created_by=None
-    ):
+    def refund(cls, original_transaction, amount: Decimal | None = None, reason: str = "", created_by=None):
         """
         Вернуть деньги
 
@@ -813,7 +810,7 @@ class BillingService:
         # (классический double-refund race condition).
         locked_original = Transaction.objects.select_for_update().get(pk=original_transaction.pk)
 
-        if locked_original.type == 'REFUND':
+        if locked_original.type == "REFUND":
             raise ValueError("Нельзя сделать возврат возврата")
 
         refund_amount = cls.quantize(amount) if amount else locked_original.amount
@@ -822,10 +819,10 @@ class BillingService:
             raise ValueError("Некорректная сумма возврата")
 
         already_refunded = Transaction.objects.filter(
-            type='REFUND',
-            status='COMPLETED',
+            type="REFUND",
+            status="COMPLETED",
             description__contains=locked_original.number,
-        ).aggregate(total=models.Sum('amount'))['total'] or Decimal('0.00')
+        ).aggregate(total=models.Sum("amount"))["total"] or Decimal("0.00")
 
         max_refundable = locked_original.amount - already_refunded
         if refund_amount > max_refundable:
@@ -836,13 +833,13 @@ class BillingService:
 
         # Создаем транзакцию возврата (меняем отправителя и получателя местами)
         refund_trx = Transaction(
-            type='REFUND',
+            type="REFUND",
             method=locked_original.method,
             invoice=locked_original.invoice,
             amount=refund_amount,
             description=f"Возврат по транзакции {locked_original.number}. {reason}",
             created_by=created_by,
-            status='COMPLETED'
+            status="COMPLETED",
         )
 
         sender = locked_original.sender
@@ -852,14 +849,16 @@ class BillingService:
         recipient_type = recipient.__class__.__name__ if recipient else None
 
         if sender_type:
-            setattr(refund_trx, f'to_{sender_type.lower()}', sender)
+            setattr(refund_trx, f"to_{sender_type.lower()}", sender)
 
         if recipient_type:
-            setattr(refund_trx, f'from_{recipient_type.lower()}', recipient)
+            setattr(refund_trx, f"from_{recipient_type.lower()}", recipient)
 
         refund_trx.save()
 
-        logger.info(f"Created refund transaction {refund_trx.number}: {refund_amount} for transaction {locked_original.number}")
+        logger.info(
+            f"Created refund transaction {refund_trx.number}: {refund_amount} for transaction {locked_original.number}"
+        )
 
         # Балансы и paid_amount пересчитываются автоматически сигналом post_save Transaction
 
@@ -868,13 +867,7 @@ class BillingService:
     @classmethod
     @transaction.atomic
     def transfer(
-        cls,
-        from_entity,
-        to_entity,
-        amount: Decimal,
-        method: str = 'TRANSFER',
-        description: str = "",
-        created_by=None
+        cls, from_entity, to_entity, amount: Decimal, method: str = "TRANSFER", description: str = "", created_by=None
     ):
         """
         Перевести деньги между сущностями
@@ -901,7 +894,7 @@ class BillingService:
             raise ValueError("Отправитель и получатель должны быть указаны")
 
         # Re-read with row-level lock to prevent concurrent balance drain
-        if hasattr(from_entity, 'balance'):
+        if hasattr(from_entity, "balance"):
             locked_entity = type(from_entity).objects.select_for_update().get(pk=from_entity.pk)
             if locked_entity.balance < amount:
                 raise ValueError(f"Недостаточно средств: доступно {locked_entity.balance}, требуется {amount}")
@@ -910,16 +903,16 @@ class BillingService:
         to_type = to_entity.__class__.__name__
 
         trx = Transaction(
-            type='TRANSFER',
+            type="TRANSFER",
             method=method,
             amount=amount,
             description=description or f"Перевод от {from_entity} к {to_entity}",
             created_by=created_by,
-            status='COMPLETED'
+            status="COMPLETED",
         )
 
-        setattr(trx, f'from_{from_type.lower()}', from_entity)
-        setattr(trx, f'to_{to_type.lower()}', to_entity)
+        setattr(trx, f"from_{from_type.lower()}", from_entity)
+        setattr(trx, f"to_{to_type.lower()}", to_entity)
 
         trx.save()
 
@@ -931,14 +924,7 @@ class BillingService:
 
     @classmethod
     @transaction.atomic
-    def topup_balance(
-        cls,
-        entity,
-        amount: Decimal,
-        method: str = 'CASH',
-        description: str = "",
-        created_by=None
-    ):
+    def topup_balance(cls, entity, amount: Decimal, method: str = "CASH", description: str = "", created_by=None):
         """
         Пополнить баланс сущности
 
@@ -965,15 +951,15 @@ class BillingService:
         entity_type = entity.__class__.__name__
 
         trx = Transaction(
-            type='BALANCE_TOPUP',
+            type="BALANCE_TOPUP",
             method=method,
             amount=amount,
             description=description or f"Пополнение баланса {entity}",
             created_by=created_by,
-            status='COMPLETED'
+            status="COMPLETED",
         )
 
-        setattr(trx, f'to_{entity_type.lower()}', entity)
+        setattr(trx, f"to_{entity_type.lower()}", entity)
 
         trx.save()
 
@@ -985,13 +971,7 @@ class BillingService:
 
     @classmethod
     @transaction.atomic
-    def adjust_balance(
-        cls,
-        entity,
-        amount: Decimal,
-        reason: str,
-        created_by=None
-    ):
+    def adjust_balance(cls, entity, amount: Decimal, reason: str, created_by=None):
         """
         Корректировка баланса (может быть положительной или отрицательной)
 
@@ -1018,19 +998,19 @@ class BillingService:
         entity_type = entity.__class__.__name__
 
         trx = Transaction(
-            type='ADJUSTMENT',
-            method='OTHER',
+            type="ADJUSTMENT",
+            method="OTHER",
             amount=abs(amount),
             description=f"Корректировка баланса: {reason}",
             created_by=created_by,
-            status='COMPLETED'
+            status="COMPLETED",
         )
 
         # Если корректировка положительная - пополнение, если отрицательная - списание
         if amount > 0:
-            setattr(trx, f'to_{entity_type.lower()}', entity)
+            setattr(trx, f"to_{entity_type.lower()}", entity)
         else:
-            setattr(trx, f'from_{entity_type.lower()}', entity)
+            setattr(trx, f"from_{entity_type.lower()}", entity)
 
         trx.save()
 
@@ -1066,42 +1046,44 @@ class BillingService:
         from core.models_billing import NewInvoice
 
         result = {
-            'auto_paid': [],      # Инвойсы, автоматически оплаченные
-            'linked_only': [],    # Только привязано (сумма не совпала)
-            'errors': [],         # Ошибки
+            "auto_paid": [],  # Инвойсы, автоматически оплаченные
+            "linked_only": [],  # Только привязано (сумма не совпала)
+            "errors": [],  # Ошибки
         }
 
         # 1. Все несопоставленные исходящие (amount < 0) завершённые банковские транзакции
         #    Исключаем помеченные как "не требует привязки"
-        unmatched_bank_txns = BankTransaction.objects.filter(
-            state='completed',
-            matched_invoice__isnull=True,
-            matched_transaction__isnull=True,
-            reconciliation_skipped=False,
-            amount__lt=0,  # Исходящие платежи (мы заплатили)
-        ).exclude(
-            description=''
-        ).select_related('connection__company')
+        unmatched_bank_txns = (
+            BankTransaction.objects.filter(
+                state="completed",
+                matched_invoice__isnull=True,
+                matched_transaction__isnull=True,
+                reconciliation_skipped=False,
+                amount__lt=0,  # Исходящие платежи (мы заплатили)
+            )
+            .exclude(description="")
+            .select_related("connection__company")
+        )
 
         if not unmatched_bank_txns.exists():
-            logger.debug('[AutoReconcile] Нет несопоставленных банковских транзакций')
+            logger.debug("[AutoReconcile] Нет несопоставленных банковских транзакций")
             return result
 
         from core.mixins import OPEN_INVOICE_STATUSES
+
         default_company_id = Company.get_default_id()
         unpaid_invoices = NewInvoice.objects.filter(
             status__in=OPEN_INVOICE_STATUSES,
             recipient_company_id=default_company_id,
-        ).exclude(
-            external_number=''
-        )
+        ).exclude(external_number="")
 
         if not unpaid_invoices.exists():
-            logger.debug('[AutoReconcile] Нет неоплаченных входящих инвойсов с external_number')
+            logger.debug("[AutoReconcile] Нет неоплаченных входящих инвойсов с external_number")
             return result
 
         # Строим индекс: external_number → invoice (для быстрого поиска)
         import re
+
         ext_num_to_invoices = {}
         for inv in unpaid_invoices:
             key = inv.external_number.strip()
@@ -1111,7 +1093,7 @@ class BillingService:
         # 3. Сопоставляем
         caromoto = Company.get_default()
         if not caromoto:
-            logger.error('[AutoReconcile] Компания по умолчанию не найдена (проверьте settings.COMPANY_NAME)')
+            logger.error("[AutoReconcile] Компания по умолчанию не найдена (проверьте settings.COMPANY_NAME)")
             return result
 
         for bank_trx in unmatched_bank_txns:
@@ -1122,10 +1104,10 @@ class BillingService:
             # Ищем совпадение: external_number как целое слово в description
             matched_invoice = None
             for ext_num, invoices in ext_num_to_invoices.items():
-                if re.search(r'(?<!\w)' + re.escape(ext_num) + r'(?!\w)', desc):
+                if re.search(r"(?<!\w)" + re.escape(ext_num) + r"(?!\w)", desc):
                     # Берём первый неоплаченный инвойс с таким номером
                     for inv in invoices:
-                        if inv.status not in ['PAID', 'CANCELLED']:
+                        if inv.status not in ["PAID", "CANCELLED"]:
                             matched_invoice = inv
                             break
                     if matched_invoice:
@@ -1137,39 +1119,43 @@ class BillingService:
             bank_amount = abs(bank_trx.amount)
             remaining = matched_invoice.remaining_amount
 
-            invoice_currency = matched_invoice.currency or 'EUR'
-            bank_currency = getattr(bank_trx, 'currency', 'EUR') or 'EUR'
+            invoice_currency = matched_invoice.currency or "EUR"
+            bank_currency = getattr(bank_trx, "currency", "EUR") or "EUR"
             if bank_currency.upper() != invoice_currency.upper():
                 logger.warning(
-                    f'[AutoReconcile] Пропуск: валюта банка ({bank_currency}) != '
-                    f'валюта инвойса ({invoice_currency}) для {matched_invoice.number}'
+                    f"[AutoReconcile] Пропуск: валюта банка ({bank_currency}) != "
+                    f"валюта инвойса ({invoice_currency}) для {matched_invoice.number}"
                 )
-                result['errors'].append({
-                    'bank_trx': str(bank_trx),
-                    'invoice': matched_invoice.number,
-                    'error': f'Несовпадение валют: банк {bank_currency}, инвойс {invoice_currency}',
-                })
+                result["errors"].append(
+                    {
+                        "bank_trx": str(bank_trx),
+                        "invoice": matched_invoice.number,
+                        "error": f"Несовпадение валют: банк {bank_currency}, инвойс {invoice_currency}",
+                    }
+                )
                 continue
 
             logger.info(
                 f'[AutoReconcile] Совпадение: банк "{desc}" ({bank_amount} {bank_currency}) '
-                f'↔ инвойс {matched_invoice.number} (external: {matched_invoice.external_number}, '
-                f'remaining: {remaining})'
+                f"↔ инвойс {matched_invoice.number} (external: {matched_invoice.external_number}, "
+                f"remaining: {remaining})"
             )
 
             # Определяем плательщика: тот, кому выставлен инвойс (Caromoto Lithuania)
             payer = matched_invoice.recipient  # Company id=1
             if not payer:
-                logger.warning(f'[AutoReconcile] У инвойса {matched_invoice.number} нет получателя, пропускаем')
-                result['errors'].append({
-                    'bank_trx': str(bank_trx),
-                    'invoice': matched_invoice.number,
-                    'error': 'Нет получателя у инвойса',
-                })
+                logger.warning(f"[AutoReconcile] У инвойса {matched_invoice.number} нет получателя, пропускаем")
+                result["errors"].append(
+                    {
+                        "bank_trx": str(bank_trx),
+                        "invoice": matched_invoice.number,
+                        "error": "Нет получателя у инвойса",
+                    }
+                )
                 continue
 
             # Проверяем совпадение сумм (допускаем разницу до 0.02 € на округление)
-            tolerance = Decimal('0.02')
+            tolerance = Decimal("0.02")
             amounts_match = abs(bank_amount - remaining) <= tolerance
 
             if amounts_match or bank_amount >= remaining:
@@ -1179,75 +1165,80 @@ class BillingService:
                     cls.pay_invoice(
                         invoice=matched_invoice,
                         amount=pay_amount,
-                        method='TRANSFER',
+                        method="TRANSFER",
                         payer=payer,
-                        description=f'Авто-оплата по банковской операции: {desc}',
+                        description=f"Авто-оплата по банковской операции: {desc}",
                         bank_transaction_id=bank_trx.pk,
                     )
                     # Добавляем reconciliation_note
                     bank_trx.refresh_from_db()
                     bank_trx.reconciliation_note = (
                         f'Авто-сопоставлено: external_number "{matched_invoice.external_number}" '
-                        f'найден в описании банковской операции'
+                        f"найден в описании банковской операции"
                     )
-                    bank_trx.save(update_fields=['reconciliation_note'])
+                    bank_trx.save(update_fields=["reconciliation_note"])
 
-                    result['auto_paid'].append({
-                        'invoice': matched_invoice.number,
-                        'external_number': matched_invoice.external_number,
-                        'amount': str(pay_amount),
-                        'bank_trx': str(bank_trx),
-                        'new_status': matched_invoice.status,
-                    })
+                    result["auto_paid"].append(
+                        {
+                            "invoice": matched_invoice.number,
+                            "external_number": matched_invoice.external_number,
+                            "amount": str(pay_amount),
+                            "bank_trx": str(bank_trx),
+                            "new_status": matched_invoice.status,
+                        }
+                    )
 
                     # Убираем инвойс из индекса (уже оплачен)
                     ext_key = matched_invoice.external_number.strip()
                     if ext_key in ext_num_to_invoices:
                         ext_num_to_invoices[ext_key] = [
-                            i for i in ext_num_to_invoices[ext_key]
-                            if i.pk != matched_invoice.pk
+                            i for i in ext_num_to_invoices[ext_key] if i.pk != matched_invoice.pk
                         ]
 
                     logger.info(
-                        f'[AutoReconcile] ✅ Авто-оплата: инвойс {matched_invoice.number} '
-                        f'оплачен на {pay_amount} € → статус {matched_invoice.status}'
+                        f"[AutoReconcile] ✅ Авто-оплата: инвойс {matched_invoice.number} "
+                        f"оплачен на {pay_amount} € → статус {matched_invoice.status}"
                     )
 
                 except Exception as e:
-                    logger.error(f'[AutoReconcile] Ошибка авто-оплаты инвойса {matched_invoice.number}: {e}')
-                    result['errors'].append({
-                        'bank_trx': str(bank_trx),
-                        'invoice': matched_invoice.number,
-                        'error': str(e),
-                    })
+                    logger.error(f"[AutoReconcile] Ошибка авто-оплаты инвойса {matched_invoice.number}: {e}")
+                    result["errors"].append(
+                        {
+                            "bank_trx": str(bank_trx),
+                            "invoice": matched_invoice.number,
+                            "error": str(e),
+                        }
+                    )
             else:
                 # Суммы НЕ совпадают (банковская < остаток) → только привязка, без оплаты
                 bank_trx.matched_invoice = matched_invoice
                 bank_trx.reconciliation_note = (
-                    f'Авто-привязано (суммы не совпали): банк {bank_amount} € ≠ остаток {remaining} €. '
-                    f'Требуется ручная обработка.'
+                    f"Авто-привязано (суммы не совпали): банк {bank_amount} € ≠ остаток {remaining} €. "
+                    f"Требуется ручная обработка."
                 )
-                bank_trx.save(update_fields=['matched_invoice', 'reconciliation_note'])
+                bank_trx.save(update_fields=["matched_invoice", "reconciliation_note"])
 
-                result['linked_only'].append({
-                    'invoice': matched_invoice.number,
-                    'external_number': matched_invoice.external_number,
-                    'bank_amount': str(bank_amount),
-                    'invoice_remaining': str(remaining),
-                    'bank_trx': str(bank_trx),
-                })
+                result["linked_only"].append(
+                    {
+                        "invoice": matched_invoice.number,
+                        "external_number": matched_invoice.external_number,
+                        "bank_amount": str(bank_amount),
+                        "invoice_remaining": str(remaining),
+                        "bank_trx": str(bank_trx),
+                    }
+                )
 
                 logger.info(
-                    f'[AutoReconcile] ⚠️ Привязано без оплаты: инвойс {matched_invoice.number} '
-                    f'(банк {bank_amount} ≠ остаток {remaining})'
+                    f"[AutoReconcile] ⚠️ Привязано без оплаты: инвойс {matched_invoice.number} "
+                    f"(банк {bank_amount} ≠ остаток {remaining})"
                 )
 
-        total = len(result['auto_paid']) + len(result['linked_only'])
+        total = len(result["auto_paid"]) + len(result["linked_only"])
         if total:
             logger.info(
-                f'[AutoReconcile] Итого: {len(result["auto_paid"])} авто-оплачено, '
-                f'{len(result["linked_only"])} привязано без оплаты, '
-                f'{len(result["errors"])} ошибок'
+                f"[AutoReconcile] Итого: {len(result['auto_paid'])} авто-оплачено, "
+                f"{len(result['linked_only'])} привязано без оплаты, "
+                f"{len(result['errors'])} ошибок"
             )
 
         return result
@@ -1269,51 +1260,45 @@ class BillingService:
         """
         from core.models_billing import NewInvoice, Transaction
 
-        if not hasattr(entity, 'balance'):
-            return {'error': 'Эта сущность не поддерживает балансы'}
+        if not hasattr(entity, "balance"):
+            return {"error": "Эта сущность не поддерживает балансы"}
 
         entity_type = entity.__class__.__name__
 
         # Базовая информация о балансе
         report = {
-            'entity': str(entity),
-            'entity_type': entity_type,
-            'current_balance': entity.balance,
-            'balance_updated_at': entity.balance_updated_at if hasattr(entity, 'balance_updated_at') else None,
+            "entity": str(entity),
+            "entity_type": entity_type,
+            "current_balance": entity.balance,
+            "balance_updated_at": entity.balance_updated_at if hasattr(entity, "balance_updated_at") else None,
         }
 
         # Разбивка баланса по способам оплаты
-        if hasattr(entity, 'get_balance_breakdown'):
-            report['breakdown'] = entity.get_balance_breakdown()
+        if hasattr(entity, "get_balance_breakdown"):
+            report["breakdown"] = entity.get_balance_breakdown()
 
         # Статистика по инвойсам
-        incoming_invoices = NewInvoice.objects.filter(
-            **{f'recipient_{entity_type.lower()}': entity}
-        )
+        incoming_invoices = NewInvoice.objects.filter(**{f"recipient_{entity_type.lower()}": entity})
 
-        report['invoices'] = {
-            'total_count': incoming_invoices.count(),
-            'unpaid_count': incoming_invoices.exclude(status='PAID').count(),
-            'total_amount': incoming_invoices.aggregate(Sum('total'))['total__sum'] or Decimal('0.00'),
-            'paid_amount': incoming_invoices.aggregate(Sum('paid_amount'))['paid_amount__sum'] or Decimal('0.00'),
-            'remaining_amount': (incoming_invoices.aggregate(Sum('total'))['total__sum'] or Decimal('0.00')) -
-                              (incoming_invoices.aggregate(Sum('paid_amount'))['paid_amount__sum'] or Decimal('0.00')),
+        report["invoices"] = {
+            "total_count": incoming_invoices.count(),
+            "unpaid_count": incoming_invoices.exclude(status="PAID").count(),
+            "total_amount": incoming_invoices.aggregate(Sum("total"))["total__sum"] or Decimal("0.00"),
+            "paid_amount": incoming_invoices.aggregate(Sum("paid_amount"))["paid_amount__sum"] or Decimal("0.00"),
+            "remaining_amount": (incoming_invoices.aggregate(Sum("total"))["total__sum"] or Decimal("0.00"))
+            - (incoming_invoices.aggregate(Sum("paid_amount"))["paid_amount__sum"] or Decimal("0.00")),
         }
 
         # Статистика по транзакциям
-        incoming_transactions = Transaction.objects.filter(
-            **{f'to_{entity_type.lower()}': entity}
-        )
+        incoming_transactions = Transaction.objects.filter(**{f"to_{entity_type.lower()}": entity})
 
-        outgoing_transactions = Transaction.objects.filter(
-            **{f'from_{entity_type.lower()}': entity}
-        )
+        outgoing_transactions = Transaction.objects.filter(**{f"from_{entity_type.lower()}": entity})
 
-        report['transactions'] = {
-            'incoming_count': incoming_transactions.count(),
-            'outgoing_count': outgoing_transactions.count(),
-            'incoming_amount': incoming_transactions.aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00'),
-            'outgoing_amount': outgoing_transactions.aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00'),
+        report["transactions"] = {
+            "incoming_count": incoming_transactions.count(),
+            "outgoing_count": outgoing_transactions.count(),
+            "incoming_amount": incoming_transactions.aggregate(Sum("amount"))["amount__sum"] or Decimal("0.00"),
+            "outgoing_amount": outgoing_transactions.aggregate(Sum("amount"))["amount__sum"] or Decimal("0.00"),
         }
 
         return report
@@ -1333,45 +1318,45 @@ class BillingService:
 
         # Базовая информация
         report = {
-            'number': invoice.number,
-            'date': invoice.date,
-            'due_date': invoice.due_date,
-            'status': invoice.get_status_display(),
-            'issuer': str(invoice.issuer),
-            'recipient': invoice.recipient_name,
-            'subtotal': invoice.subtotal,
-            'discount': invoice.discount,
-            'tax': invoice.tax,
-            'total': invoice.total,
-            'paid_amount': invoice.paid_amount,
-            'remaining_amount': invoice.remaining_amount,
-            'is_overdue': invoice.is_overdue,
-            'days_until_due': invoice.days_until_due,
+            "number": invoice.number,
+            "date": invoice.date,
+            "due_date": invoice.due_date,
+            "status": invoice.get_status_display(),
+            "issuer": str(invoice.issuer),
+            "recipient": invoice.recipient_name,
+            "subtotal": invoice.subtotal,
+            "discount": invoice.discount,
+            "tax": invoice.tax,
+            "total": invoice.total,
+            "paid_amount": invoice.paid_amount,
+            "remaining_amount": invoice.remaining_amount,
+            "is_overdue": invoice.is_overdue,
+            "days_until_due": invoice.days_until_due,
         }
 
         # Позиции инвойса
-        report['items'] = [
+        report["items"] = [
             {
-                'description': item.description,
-                'quantity': item.quantity,
-                'unit_price': item.unit_price,
-                'total_price': item.total_price,
-                'car': str(item.car) if item.car else None,
+                "description": item.description,
+                "quantity": item.quantity,
+                "unit_price": item.unit_price,
+                "total_price": item.total_price,
+                "car": str(item.car) if item.car else None,
             }
             for item in invoice.items.all()
         ]
 
         # История платежей
-        transactions = Transaction.objects.filter(invoice=invoice).order_by('date')
+        transactions = Transaction.objects.filter(invoice=invoice).order_by("date")
 
-        report['payments'] = [
+        report["payments"] = [
             {
-                'number': trx.number,
-                'date': trx.date,
-                'type': trx.get_type_display(),
-                'method': trx.get_method_display(),
-                'amount': trx.amount,
-                'sender': trx.sender_name,
+                "number": trx.number,
+                "date": trx.date,
+                "type": trx.get_type_display(),
+                "method": trx.get_method_display(),
+                "amount": trx.amount,
+                "sender": trx.sender_name,
             }
             for trx in transactions
         ]

@@ -3,6 +3,7 @@ Tests for core.services.car_service_manager.
 
 Run: python manage.py test core.tests.test_car_service_manager
 """
+
 from decimal import Decimal
 
 from django.test import TestCase
@@ -29,42 +30,50 @@ class CalculateTHSForContainerTest(TestCase):
             number="THS-001",
             status="FLOATING",
             line=self.line,
-            ths=Decimal('500.00'),
+            ths=Decimal("500.00"),
         )
 
     def test_empty_container_returns_empty(self):
         from core.services.car_service_manager import calculate_ths_for_container
+
         result = calculate_ths_for_container(self.container)
         self.assertEqual(result, {})
 
     def test_single_car_gets_all_ths(self):
         from core.services.car_service_manager import calculate_ths_for_container
+
         car = Car.objects.create(
-            year=2023, brand="Toyota", vin="THS01234567890123",
-            status="FLOATING", container=self.container,
+            year=2023,
+            brand="Toyota",
+            vin="THS01234567890123",
+            status="FLOATING",
+            container=self.container,
             vehicle_type="SEDAN",
         )
         result = calculate_ths_for_container(self.container)
         self.assertIn(car.id, result)
-        self.assertGreater(result[car.id], Decimal('0'))
+        self.assertGreater(result[car.id], Decimal("0"))
 
     def test_distribution_with_coefficients(self):
         from core.services.car_service_manager import calculate_ths_for_container
-        LineTHSCoefficient.objects.create(
-            line=self.line, vehicle_type='SEDAN', coefficient=Decimal('1.00')
-        )
-        LineTHSCoefficient.objects.create(
-            line=self.line, vehicle_type='SUV', coefficient=Decimal('2.00')
-        )
+
+        LineTHSCoefficient.objects.create(line=self.line, vehicle_type="SEDAN", coefficient=Decimal("1.00"))
+        LineTHSCoefficient.objects.create(line=self.line, vehicle_type="SUV", coefficient=Decimal("2.00"))
 
         sedan = Car.objects.create(
-            year=2023, brand="Sedan", vin="SEDVN12345678901A",
-            status="FLOATING", container=self.container,
+            year=2023,
+            brand="Sedan",
+            vin="SEDVN12345678901A",
+            status="FLOATING",
+            container=self.container,
             vehicle_type="SEDAN",
         )
         suv = Car.objects.create(
-            year=2023, brand="SUV", vin="SUVVN12345678901A",
-            status="FLOATING", container=self.container,
+            year=2023,
+            brand="SUV",
+            vin="SUVVN12345678901A",
+            status="FLOATING",
+            container=self.container,
             vehicle_type="SUV",
         )
 
@@ -75,15 +84,17 @@ class CalculateTHSForContainerTest(TestCase):
 
     def test_no_ths_returns_empty(self):
         from core.services.car_service_manager import calculate_ths_for_container
-        self.container.ths = Decimal('0')
-        self.container.save(update_fields=['ths'])
+
+        self.container.ths = Decimal("0")
+        self.container.save(update_fields=["ths"])
         result = calculate_ths_for_container(self.container)
         self.assertEqual(result, {})
 
     def test_no_line_returns_empty(self):
         from core.services.car_service_manager import calculate_ths_for_container
+
         self.container.line = None
-        self.container.save(update_fields=['line_id'])
+        self.container.save(update_fields=["line_id"])
         result = calculate_ths_for_container(self.container)
         self.assertEqual(result, {})
 
@@ -93,14 +104,21 @@ class ServiceLookupHelperTest(TestCase):
 
     def test_find_warehouse_services_returns_defaults_only(self):
         from core.services.car_service_manager import find_warehouse_services_for_car
+
         wh = Warehouse.objects.create(name="WH2")
         WarehouseService.objects.create(
-            warehouse=wh, name="Regular", default_price=10,
-            is_active=True, add_by_default=False,
+            warehouse=wh,
+            name="Regular",
+            default_price=10,
+            is_active=True,
+            add_by_default=False,
         )
         default_svc = WarehouseService.objects.create(
-            warehouse=wh, name="Auto-add", default_price=20,
-            is_active=True, add_by_default=True,
+            warehouse=wh,
+            name="Auto-add",
+            default_price=20,
+            is_active=True,
+            add_by_default=True,
         )
         result = find_warehouse_services_for_car(wh)
         self.assertEqual(len(result), 1)
@@ -108,14 +126,21 @@ class ServiceLookupHelperTest(TestCase):
 
     def test_find_line_services_excludes_ths(self):
         from core.services.car_service_manager import find_line_services_for_car
+
         line = Line.objects.create(name="CMA")
         LineService.objects.create(
-            line=line, name="THS CMA", default_price=100,
-            is_active=True, add_by_default=True,
+            line=line,
+            name="THS CMA",
+            default_price=100,
+            is_active=True,
+            add_by_default=True,
         )
         regular = LineService.objects.create(
-            line=line, name="Ocean Freight", default_price=200,
-            is_active=True, add_by_default=True,
+            line=line,
+            name="Ocean Freight",
+            default_price=200,
+            is_active=True,
+            add_by_default=True,
         )
         result = find_line_services_for_car(line)
         self.assertEqual(len(result), 1)
@@ -128,6 +153,7 @@ class ServiceLookupHelperTest(TestCase):
             find_line_services_for_car,
             find_warehouse_services_for_car,
         )
+
         self.assertEqual(find_warehouse_services_for_car(None), [])
         self.assertEqual(find_line_services_for_car(None), [])
         self.assertEqual(find_carrier_services_for_car(None), [])
@@ -145,19 +171,25 @@ class CreateTHSServicesTest(TestCase):
             number="CREATE-THS-001",
             status="FLOATING",
             line=line,
-            ths=Decimal('300.00'),
+            ths=Decimal("300.00"),
         )
         Car.objects.create(
-            year=2023, brand="Honda", vin="HNDVN12345678901A",
-            status="FLOATING", container=container,
+            year=2023,
+            brand="Honda",
+            vin="HNDVN12345678901A",
+            status="FLOATING",
+            container=container,
             vehicle_type="SEDAN",
         )
         Car.objects.create(
-            year=2023, brand="Jeep", vin="JEPVN12345678901A",
-            status="FLOATING", container=container,
+            year=2023,
+            brand="Jeep",
+            vin="JEPVN12345678901A",
+            status="FLOATING",
+            container=container,
             vehicle_type="SUV",
         )
 
         count = create_ths_services_for_container(container)
         self.assertEqual(count, 2)
-        self.assertEqual(CarService.objects.filter(service_type='LINE').count(), 2)
+        self.assertEqual(CarService.objects.filter(service_type="LINE").count(), 2)

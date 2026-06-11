@@ -12,7 +12,10 @@ pytest-cov>=5.0
 pytest-env>=1.1
 freezegun>=1.5
 
-ruff>=0.9.10
+# Ruff запинен жёстко: новые версии меняют стиль ruff format
+# (репо-wide reformat ~180 файлов). Апгрейд — отдельным PR вместе
+# с `ruff format .` и обновлением версии в .github/workflows/ci.yml.
+ruff==0.9.10
 
 # Используются в CI (security-джоба)
 bandit>=1.8

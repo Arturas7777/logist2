@@ -351,11 +351,13 @@ class TestCreateExpenseFromBankTransaction:
     @pytest.fixture
     def category(self, db):
         from core.models_billing import ExpenseCategory
+
         return ExpenseCategory.objects.create(name="Логистика", category_type="OPERATIONAL")
 
     @pytest.fixture
     def bank_trx(self, db, company):
         from core.models_banking import BankConnection, BankTransaction
+
         conn = BankConnection.objects.create(bank_type="REVOLUT", company=company, name="Test Revolut")
         return BankTransaction.objects.create(
             connection=conn,
@@ -369,7 +371,10 @@ class TestCreateExpenseFromBankTransaction:
 
     def test_creates_fact_invoice_and_payment(self, company, warehouse, category, bank_trx):
         invoice = BillingService.create_expense_from_bank_transaction(
-            bank_trx, category=category, issuer=warehouse, description="Хранение",
+            bank_trx,
+            category=category,
+            issuer=warehouse,
+            description="Хранение",
         )
 
         invoice.refresh_from_db()
@@ -397,7 +402,9 @@ class TestCreateExpenseFromBankTransaction:
 
     def test_description_fallback_to_counterparty(self, company, warehouse, category, bank_trx):
         invoice = BillingService.create_expense_from_bank_transaction(
-            bank_trx, category=category, issuer=warehouse,
+            bank_trx,
+            category=category,
+            issuer=warehouse,
         )
         assert invoice.items.first().description == "Logispace"
 
@@ -407,5 +414,7 @@ class TestCreateExpenseFromBankTransaction:
         company.save()
         with pytest.raises(Company.DoesNotExist):
             BillingService.create_expense_from_bank_transaction(
-                bank_trx, category=category, issuer=warehouse,
+                bank_trx,
+                category=category,
+                issuer=warehouse,
             )

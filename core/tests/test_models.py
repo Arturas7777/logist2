@@ -4,6 +4,7 @@
 Используется стандартный Django TestCase с тестовой БД (SQLite).
 Запуск: python manage.py test core.tests.test_models
 """
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.test import TestCase
@@ -83,7 +84,7 @@ class ContainerModelTest(TestCase):
         )
         with self.assertRaises(ValidationError) as ctx:
             container.clean()
-        self.assertIn('warehouse', ctx.exception.message_dict)
+        self.assertIn("warehouse", ctx.exception.message_dict)
 
     def test_clean_validation_unload_before_eta(self):
         """clean() не позволяет дате разгрузки быть раньше ETA"""
@@ -96,7 +97,7 @@ class ContainerModelTest(TestCase):
         )
         with self.assertRaises(ValidationError) as ctx:
             container.clean()
-        self.assertIn('unload_date', ctx.exception.message_dict)
+        self.assertIn("unload_date", ctx.exception.message_dict)
 
     def test_storage_is_aggregate_of_cars(self):
         """Хранение контейнера — агрегат хранения его машин (read-only)."""
@@ -178,7 +179,7 @@ class CarModelTest(TestCase):
         )
         with self.assertRaises(ValidationError) as ctx:
             car.clean()
-        self.assertIn('vin', ctx.exception.message_dict)
+        self.assertIn("vin", ctx.exception.message_dict)
 
     def test_clean_validation_year_range(self):
         """clean() проверяет диапазон года"""
@@ -190,7 +191,7 @@ class CarModelTest(TestCase):
         )
         with self.assertRaises(ValidationError) as ctx:
             car.clean()
-        self.assertIn('year', ctx.exception.message_dict)
+        self.assertIn("year", ctx.exception.message_dict)
 
     def test_vehicle_type_choices_not_duplicated(self):
         """VEHICLE_TYPE_CHOICES в Car ссылается на модульный уровень"""
@@ -204,7 +205,7 @@ class VehicleTypeChoicesTest(TestCase):
         """Все 11 типов ТС присутствуют"""
         self.assertEqual(len(VEHICLE_TYPE_CHOICES), 11)
         codes = [code for code, _ in VEHICLE_TYPE_CHOICES]
-        self.assertIn('SEDAN', codes)
-        self.assertIn('MOTO', codes)
-        self.assertIn('SUV', codes)
-        self.assertIn('CONSTRUCTION', codes)
+        self.assertIn("SEDAN", codes)
+        self.assertIn("MOTO", codes)
+        self.assertIn("SUV", codes)
+        self.assertIn("CONSTRUCTION", codes)

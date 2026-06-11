@@ -33,11 +33,11 @@ logger = logging.getLogger(__name__)
 
 # ISO 6346: 4 заглавные буквы + 7 цифр. Контейнер без контрольной суммы,
 # но для матчинга достаточно — коллизий практически не бывает.
-_CONTAINER_NUMBER_RE = re.compile(r'\b([A-Z]{4}\d{7})\b')
+_CONTAINER_NUMBER_RE = re.compile(r"\b([A-Z]{4}\d{7})\b")
 
 # VIN: 17 символов из A-HJ-NPR-Z0-9 (без I, O, Q чтобы не путать с 1/0).
 # Границы \b чтобы не цеплять подстроки длинных строк.
-_VIN_RE = re.compile(r'\b([A-HJ-NPR-Z0-9]{17})\b')
+_VIN_RE = re.compile(r"\b([A-HJ-NPR-Z0-9]{17})\b")
 
 # Чтобы не ловить "U1", "UV3" как букинги — нижний предел длины.
 _MIN_BOOKING_LEN = 4
@@ -46,6 +46,7 @@ _MIN_BOOKING_LEN = 4
 @dataclass(frozen=True)
 class MatchHit:
     """Одна привязка: контейнер + причина."""
+
     container_id: int
     matched_by: str  # одно из ContainerEmail.MATCHED_BY_*
 
@@ -53,8 +54,9 @@ class MatchHit:
 @dataclass(frozen=True)
 class CarMatchHit:
     """Одна привязка письма к машине по VIN."""
+
     car_id: int
-    matched_by: str = 'VIN'
+    matched_by: str = "VIN"
 
 
 @dataclass
@@ -67,6 +69,7 @@ class MatchResult:
     ``CarEmailLink``; НЕ попадают в ``hits`` (автолинк Car → Container
     не делаем — только если номер контейнера тоже упомянут).
     """
+
     hits: list[MatchHit] = field(default_factory=list)
     car_hits: list[CarMatchHit] = field(default_factory=list)
 
@@ -86,6 +89,7 @@ class MatchResult:
     @property
     def primary_matched_by(self) -> str:
         from core.models_email import ContainerEmail
+
         hit = self.primary
         return hit.matched_by if hit else ContainerEmail.MATCHED_BY_UNMATCHED
 
@@ -113,30 +117,24 @@ def match_email_to_containers(
         hits.append(MatchHit(container_id=cid, matched_by=matched_by))
 
     # 1) По треду — наследуем все привязки из сохранённых писем того же треда
-    tid = (msg.thread_id or '').strip()
+    tid = (msg.thread_id or "").strip()
     if tid:
         thread_links = (
-            ContainerEmailLink.objects
-            .filter(email__thread_id=tid)
-            .values_list('container_id', flat=True)
-            .distinct()
+            ContainerEmailLink.objects.filter(email__thread_id=tid).values_list("container_id", flat=True).distinct()
         )
         for cid in thread_links:
             _add(cid, ContainerEmail.MATCHED_BY_THREAD)
 
     # 2) По In-Reply-To (указывает на Message-ID родителя) — привязки родителя
-    irt = (msg.in_reply_to or '').strip()
+    irt = (msg.in_reply_to or "").strip()
     if irt and not hits:
         parent_links = (
-            ContainerEmailLink.objects
-            .filter(email__message_id=irt)
-            .values_list('container_id', flat=True)
-            .distinct()
+            ContainerEmailLink.objects.filter(email__message_id=irt).values_list("container_id", flat=True).distinct()
         )
         for cid in parent_links:
             _add(cid, ContainerEmail.MATCHED_BY_THREAD)
 
-    haystack = f'{msg.subject}\n{msg.body_text}'
+    haystack = f"{msg.subject}\n{msg.body_text}"
 
     # 3) По номеру контейнера (ISO 6346) — ВСЕ найденные
     for cid in _match_by_container_numbers(haystack):
@@ -157,10 +155,12 @@ def match_email_to_containers(
         if car_id in seen_cars:
             continue
         seen_cars.add(car_id)
-        car_hits.append(CarMatchHit(
-            car_id=car_id,
-            matched_by=ContainerEmail.MATCHED_BY_VIN,
-        ))
+        car_hits.append(
+            CarMatchHit(
+                car_id=car_id,
+                matched_by=ContainerEmail.MATCHED_BY_VIN,
+            )
+        )
 
     return MatchResult(hits=hits, car_hits=car_hits)
 
@@ -189,6 +189,7 @@ def match_email_to_container(
 # helpers
 # ---------------------------------------------------------------------------
 
+
 def build_booking_index(queryset=None) -> dict[str, int]:
     """``{booking_lower: container_id}`` — единоразово на прогоне задачи.
 
@@ -204,8 +205,8 @@ def build_booking_index(queryset=None) -> dict[str, int]:
 
     index: dict[str, int] = {}
     if queryset is None:
-        queryset = Container.objects.exclude(booking_number='')
-    rows = queryset.values_list('id', 'booking_number')
+        queryset = Container.objects.exclude(booking_number="")
+    rows = queryset.values_list("id", "booking_number")
     for cid, booking in rows:
         if not booking:
             continue
@@ -214,9 +215,11 @@ def build_booking_index(queryset=None) -> dict[str, int]:
             continue
         if key in index and index[key] != cid:
             logger.warning(
-                "Booking collision: '%s' used by containers %d and %d. "
-                "Will attach email to %d (first seen).",
-                booking, index[key], cid, index[key],
+                "Booking collision: '%s' used by containers %d and %d. Will attach email to %d (first seen).",
+                booking,
+                index[key],
+                cid,
+                index[key],
             )
             continue
         index[key] = cid
@@ -237,11 +240,7 @@ def _match_by_container_numbers(text: str) -> list[int]:
     for idx, m in enumerate(_CONTAINER_NUMBER_RE.finditer(text.upper())):
         order_map.setdefault(m.group(1), idx)
 
-    rows = list(
-        Container.objects
-        .filter(number__in=candidates)
-        .values_list('id', 'number')
-    )
+    rows = list(Container.objects.filter(number__in=candidates).values_list("id", "number"))
     rows.sort(key=lambda row: order_map.get(row[1], 1_000_000))
     return [cid for cid, _number in rows]
 
@@ -265,10 +264,8 @@ def _match_by_vins(text: str) -> list[int]:
     for idx, m in enumerate(_VIN_RE.finditer(upper)):
         order_map.setdefault(m.group(1), idx)
 
-    rows = list(
-        Car.objects.filter(vin__in=candidates).values_list('id', 'vin')
-    )
-    rows.sort(key=lambda row: order_map.get((row[1] or '').upper(), 1_000_000))
+    rows = list(Car.objects.filter(vin__in=candidates).values_list("id", "vin"))
+    rows.sort(key=lambda row: order_map.get((row[1] or "").upper(), 1_000_000))
     return [cid for cid, _vin in rows]
 
 
@@ -282,7 +279,7 @@ def _match_by_bookings(text: str, booking_index: dict[str, int]) -> list[int]:
     for booking_lower, cid in booking_index.items():
         if booking_lower not in lowered:
             continue
-        pattern = rf'(?<![A-Za-z0-9]){re.escape(booking_lower)}(?![A-Za-z0-9])'
+        pattern = rf"(?<![A-Za-z0-9]){re.escape(booking_lower)}(?![A-Za-z0-9])"
         if re.search(pattern, lowered):
             if cid not in seen:
                 seen.add(cid)

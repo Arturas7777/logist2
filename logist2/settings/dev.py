@@ -1,10 +1,10 @@
 from .base import *
 
 DEBUG = True
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '*']
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "*"]
 
-LOGGING['loggers']['django']['level'] = 'DEBUG'
-LOGGING['loggers']['core']['level'] = 'DEBUG'
+LOGGING["loggers"]["django"]["level"] = "DEBUG"
+LOGGING["loggers"]["core"]["level"] = "DEBUG"
 
 SECURE_SSL_REDIRECT = False
 SESSION_COOKIE_SECURE = False
@@ -18,7 +18,7 @@ CSRF_COOKIE_SECURE = False
 #   celery -A logist2 worker -l info --pool=solo  (Windows)
 import os as _os
 
-if _os.getenv('CELERY_TASK_ALWAYS_EAGER', '1') == '1':
+if _os.getenv("CELERY_TASK_ALWAYS_EAGER", "1") == "1":
     CELERY_TASK_ALWAYS_EAGER = True
     CELERY_TASK_EAGER_PROPAGATES = True
 
@@ -28,20 +28,21 @@ if _os.getenv('CELERY_TASK_ALWAYS_EAGER', '1') == '1':
 # Зачем:      сразу видеть N+1, медленные SQL и кэш-промахи.
 import os as _os
 
-if _os.getenv('USE_DEBUG_TOOLBAR') == '1':
+if _os.getenv("USE_DEBUG_TOOLBAR") == "1":
     try:
         import debug_toolbar  # noqa: F401
-        if 'debug_toolbar' not in INSTALLED_APPS:
-            INSTALLED_APPS.append('debug_toolbar')
-        _DT_MW = 'debug_toolbar.middleware.DebugToolbarMiddleware'
+
+        if "debug_toolbar" not in INSTALLED_APPS:
+            INSTALLED_APPS.append("debug_toolbar")
+        _DT_MW = "debug_toolbar.middleware.DebugToolbarMiddleware"
         if _DT_MW not in MIDDLEWARE:
             # Toolbar должен идти ПОСЛЕ GZipMiddleware и ПЕРЕД остальными.
             MIDDLEWARE.insert(0, _DT_MW)
-        INTERNAL_IPS = ['127.0.0.1']
+        INTERNAL_IPS = ["127.0.0.1"]
         DEBUG_TOOLBAR_CONFIG = {
             # Показывать toolbar только при наличии заголовка / куки —
             # удобно при работе через VPN / staging.
-            'SHOW_TOOLBAR_CALLBACK': lambda request: DEBUG and request.META.get('REMOTE_ADDR') in INTERNAL_IPS,
+            "SHOW_TOOLBAR_CALLBACK": lambda request: DEBUG and request.META.get("REMOTE_ADDR") in INTERNAL_IPS,
         }
     except ImportError:
         # Тулбар не установлен — просто не включаем, без падений.

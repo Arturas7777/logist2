@@ -15,6 +15,7 @@
 Поведение полностью повторяет прежний код админки (характеризующие тесты
 фазы 0 + unit-тесты сервиса гарантируют отсутствие регрессий).
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,22 +41,24 @@ PREFIX_TO_TYPE = {
 
 # Префиксы POST-полей, наличие которых означает «услуги правились вручную».
 _SERVICE_FIELD_PREFIXES = (
-    "warehouse_service_", "line_service_",
-    "carrier_service_", "company_service_",
-    "markup_warehouse_service_", "markup_line_service_",
-    "markup_carrier_service_", "markup_company_service_",
-    "remove_warehouse_service_", "remove_line_service_",
-    "remove_carrier_service_", "remove_company_service_",
+    "warehouse_service_",
+    "line_service_",
+    "carrier_service_",
+    "company_service_",
+    "markup_warehouse_service_",
+    "markup_line_service_",
+    "markup_carrier_service_",
+    "markup_company_service_",
+    "remove_warehouse_service_",
+    "remove_line_service_",
+    "remove_carrier_service_",
+    "remove_company_service_",
 )
 
 
 def services_touched(post) -> bool:
     """True, если в POST есть хоть одно поле правки услуг."""
-    return any(
-        key.startswith(prefix)
-        for key in post.keys()
-        for prefix in _SERVICE_FIELD_PREFIXES
-    )
+    return any(key.startswith(prefix) for key in post.keys() for prefix in _SERVICE_FIELD_PREFIXES)
 
 
 def process_removed_services(car, post) -> set[str]:
@@ -71,14 +74,14 @@ def process_removed_services(car, post) -> set[str]:
             marker = f"remove_{prefix}_service_"
             if not key.startswith(marker):
                 continue
-            service_id = key[len(marker):]
+            service_id = key[len(marker) :]
             removed.add(f"{prefix}_{service_id}")
             try:
-                CarService.objects.filter(
-                    car=car, service_type=svc_type, service_id=service_id
-                ).delete()
+                CarService.objects.filter(car=car, service_type=svc_type, service_id=service_id).delete()
                 DeletedCarService.objects.get_or_create(
-                    car=car, service_type=svc_type, service_id=service_id,
+                    car=car,
+                    service_type=svc_type,
+                    service_id=service_id,
                 )
             except Exception:
                 # B4 (AUDIT_ROUND3): ценообразующая операция — не глотаем,
@@ -119,20 +122,25 @@ def update_existing_carservices(car, post, *, prefix, service_type, removed_serv
 
 
 def auto_add_default_services(
-    car, post, *, prefix, service_type, catalog_model,
-    related_field, related_value, removed_services, existing_qs,
+    car,
+    post,
+    *,
+    prefix,
+    service_type,
+    catalog_model,
+    related_field,
+    related_value,
+    removed_services,
+    existing_qs,
 ):
     """Автодобавление дефолтных услуг провайдера при создании авто или смене
     провайдера (warehouse/line/carrier)."""
     if related_value is None:
         return
-    new_service_ids = set(
-        catalog_model.objects.filter(**{related_field: related_value})
-        .values_list("id", flat=True)
-    )
-    DeletedCarService.objects.filter(
-        car=car, service_type=service_type
-    ).exclude(service_id__in=new_service_ids).delete()
+    new_service_ids = set(catalog_model.objects.filter(**{related_field: related_value}).values_list("id", flat=True))
+    DeletedCarService.objects.filter(car=car, service_type=service_type).exclude(
+        service_id__in=new_service_ids
+    ).delete()
     services = catalog_model.objects.filter(
         **{related_field: related_value},
         is_active=True,
@@ -140,9 +148,7 @@ def auto_add_default_services(
     ).only("id", "default_price", "default_markup")
     existing_ids = set(existing_qs.values_list("service_id", flat=True))
     blacklisted = set(
-        DeletedCarService.objects.filter(
-            car=car, service_type=service_type
-        ).values_list("service_id", flat=True)
+        DeletedCarService.objects.filter(car=car, service_type=service_type).values_list("service_id", flat=True)
     )
     for service in services:
         if f"{prefix}_{service.id}" in removed_services:
@@ -182,46 +188,73 @@ def apply_car_service_edits(car, *, post, changed_data, is_change) -> None:
 
     # WAREHOUSE
     existing_warehouse_qs = update_existing_carservices(
-        car, post, prefix="warehouse", service_type="WAREHOUSE",
+        car,
+        post,
+        prefix="warehouse",
+        service_type="WAREHOUSE",
         removed_services=removed_services,
     )
     if (not is_change) or "warehouse" in changed_data:
         auto_add_default_services(
-            car, post, prefix="warehouse", service_type="WAREHOUSE",
+            car,
+            post,
+            prefix="warehouse",
+            service_type="WAREHOUSE",
             catalog_model=WarehouseService,
-            related_field="warehouse", related_value=car.warehouse,
-            removed_services=removed_services, existing_qs=existing_warehouse_qs,
+            related_field="warehouse",
+            related_value=car.warehouse,
+            removed_services=removed_services,
+            existing_qs=existing_warehouse_qs,
         )
 
     # LINE (включая THS)
     existing_line_qs = update_existing_carservices(
-        car, post, prefix="line", service_type="LINE",
+        car,
+        post,
+        prefix="line",
+        service_type="LINE",
         removed_services=removed_services,
     )
     if (not is_change) or "line" in changed_data:
         auto_add_default_services(
-            car, post, prefix="line", service_type="LINE",
+            car,
+            post,
+            prefix="line",
+            service_type="LINE",
             catalog_model=LineService,
-            related_field="line", related_value=car.line,
-            removed_services=removed_services, existing_qs=existing_line_qs,
+            related_field="line",
+            related_value=car.line,
+            removed_services=removed_services,
+            existing_qs=existing_line_qs,
         )
 
     # CARRIER
     existing_carrier_qs = update_existing_carservices(
-        car, post, prefix="carrier", service_type="CARRIER",
+        car,
+        post,
+        prefix="carrier",
+        service_type="CARRIER",
         removed_services=removed_services,
     )
     if (not is_change) or "carrier" in changed_data:
         auto_add_default_services(
-            car, post, prefix="carrier", service_type="CARRIER",
+            car,
+            post,
+            prefix="carrier",
+            service_type="CARRIER",
             catalog_model=CarrierService,
-            related_field="carrier", related_value=car.carrier,
-            removed_services=removed_services, existing_qs=existing_carrier_qs,
+            related_field="carrier",
+            related_value=car.carrier,
+            removed_services=removed_services,
+            existing_qs=existing_carrier_qs,
         )
 
     # COMPANY: auto-add отсутствует (компания не привязана к Car).
     update_existing_carservices(
-        car, post, prefix="company", service_type="COMPANY",
+        car,
+        post,
+        prefix="company",
+        service_type="COMPANY",
         removed_services=removed_services,
     )
 
@@ -250,6 +283,7 @@ def apply_car_service_edits(car, *, post, changed_data, is_change) -> None:
         client = car.client
         try:
             from core.services.car_service_manager import apply_client_tariff_for_car
+
             if (client and client.tariff_type in ("FIXED", "FLEXIBLE")) or client_cleared:
                 apply_client_tariff_for_car(car)
                 car.calculate_total_price()

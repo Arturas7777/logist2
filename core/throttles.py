@@ -2,11 +2,11 @@ from rest_framework.throttling import AnonRateThrottle
 
 
 class TrackShipmentThrottle(AnonRateThrottle):
-    scope = 'track_shipment'
+    scope = "track_shipment"
 
 
 class AIChatThrottle(AnonRateThrottle):
-    scope = 'ai_chat'
+    scope = "ai_chat"
 
 
 class PhotoDownloadThrottle(AnonRateThrottle):
@@ -17,4 +17,5 @@ class PhotoDownloadThrottle(AnonRateThrottle):
     ни на `download_photos_archive`. Теперь оба endpoint'а используют этот
     класс, защищая от скриптового скачивания всех фотографий подряд.
     """
-    scope = 'photo_download'
+
+    scope = "photo_download"

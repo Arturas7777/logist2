@@ -5,10 +5,23 @@ from .models_billing import NewInvoice
 
 
 class CarSerializer(serializers.ModelSerializer):
-    text = serializers.CharField(source='__str__')
+    text = serializers.CharField(source="__str__")
+
     class Meta:
         model = Car
-        fields = ['id', 'text', 'vin', 'brand', 'year', 'status', 'warehouse', 'client', 'total_price', 'storage_cost', 'days']
+        fields = [
+            "id",
+            "text",
+            "vin",
+            "brand",
+            "year",
+            "status",
+            "warehouse",
+            "client",
+            "total_price",
+            "storage_cost",
+            "days",
+        ]
 
 
 class InvoiceSerializer(serializers.ModelSerializer):
@@ -17,7 +30,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = NewInvoice
-        fields = ['id', 'number', 'recipient', 'recipient_name', 'total', 'created_at', 'status', 'cars']
+        fields = ["id", "number", "recipient", "recipient_name", "total", "created_at", "status", "cars"]
 
     def get_recipient_name(self, obj):
         return str(obj.recipient) if obj.recipient else None

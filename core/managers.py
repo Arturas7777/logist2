@@ -16,9 +16,7 @@ class OptimizedCarManager(models.Manager):
 
     def with_related(self):
         """Получить автомобили с предзагруженными связанными объектами"""
-        return self.select_related(
-            'client', 'warehouse', 'container', 'container__line'
-        )
+        return self.select_related("client", "warehouse", "container", "container__line")
 
     def by_client(self, client_id):
         """Автомобили клиента с оптимизацией"""
@@ -34,14 +32,11 @@ class OptimizedCarManager(models.Manager):
 
     def by_date_range(self, start_date, end_date):
         """Автомобили за период с оптимизацией"""
-        return self.with_related().filter(
-            unload_date__gte=start_date,
-            unload_date__lte=end_date
-        )
+        return self.with_related().filter(unload_date__gte=start_date, unload_date__lte=end_date)
 
     def active_cars(self):
         """Активные автомобили (не переданные)"""
-        return self.with_related().exclude(status='TRANSFERRED')
+        return self.with_related().exclude(status="TRANSFERRED")
 
     def recent_cars(self, days=30):
         """Недавние автомобили"""
@@ -51,9 +46,7 @@ class OptimizedCarManager(models.Manager):
     def search_cars(self, query):
         """Поиск автомобилей по VIN, марке, году"""
         return self.with_related().filter(
-            Q(vin__icontains=query) |
-            Q(brand__icontains=query) |
-            Q(year__icontains=query)
+            Q(vin__icontains=query) | Q(brand__icontains=query) | Q(year__icontains=query)
         )
 
     def update_related(self, instance):
@@ -66,9 +59,7 @@ class OptimizedContainerManager(models.Manager):
 
     def with_related(self):
         """Получить контейнеры с предзагруженными связанными объектами"""
-        return self.select_related(
-            'client', 'warehouse', 'line'
-        ).prefetch_related('container_cars')
+        return self.select_related("client", "warehouse", "line").prefetch_related("container_cars")
 
     def by_client(self, client_id):
         return self.with_related().filter(client_id=client_id)
@@ -80,16 +71,13 @@ class OptimizedContainerManager(models.Manager):
         return self.with_related().filter(status=status)
 
     def by_date_range(self, start_date, end_date):
-        return self.with_related().filter(
-            eta__gte=start_date,
-            eta__lte=end_date
-        )
+        return self.with_related().filter(eta__gte=start_date, eta__lte=end_date)
 
     def with_car_stats(self):
         return self.with_related().annotate(
-            cars_count=Count('container_cars'),
-            total_car_value=Sum('container_cars__total_price'),
-            avg_car_value=Avg('container_cars__total_price')
+            cars_count=Count("container_cars"),
+            total_car_value=Sum("container_cars__total_price"),
+            avg_car_value=Avg("container_cars__total_price"),
         )
 
     def with_storage_aggregates(self):
@@ -100,8 +88,8 @@ class OptimizedContainerManager(models.Manager):
         ``_storage_cost_ann`` / ``_days_ann`` и используют их как кэш.
         """
         return self.annotate(
-            _storage_cost_ann=Sum('container_cars__storage_cost'),
-            _days_ann=Max('container_cars__days'),
+            _storage_cost_ann=Sum("container_cars__storage_cost"),
+            _days_ann=Max("container_cars__days"),
         )
 
     def update_related(self, instance):
@@ -109,7 +97,7 @@ class OptimizedContainerManager(models.Manager):
         if not instance.pk:
             return
 
-        cars = list(instance.container_cars.select_related('warehouse').all())
+        cars = list(instance.container_cars.select_related("warehouse").all())
         if not cars:
             return
         # Фаза 2: legacy fee-поля (ths/markup/unload_fee/…/rate) больше не
@@ -120,10 +108,10 @@ class OptimizedContainerManager(models.Manager):
             car.sync_with_container(instance)
 
         from core.models import Car
+
         Car.objects.bulk_update(
             cars,
-            ['status', 'warehouse', 'unload_date', 'transfer_date',
-             'days', 'storage_cost', 'total_price'],
+            ["status", "warehouse", "unload_date", "transfer_date", "days", "storage_cost", "total_price"],
             batch_size=50,
         )
 
@@ -134,24 +122,24 @@ class OptimizedClientManager(models.Manager):
     def with_balance_info(self):
         """Клиенты с информацией о балансах — использует единое поле balance"""
         return self.annotate(
-            cars_count=Count('car'),
-            active_cars_count=Count(
-                'car',
-                filter=Q(car__status__in=['FLOATING', 'IN_PORT', 'UNLOADED'])
-            ),
+            cars_count=Count("car"),
+            active_cars_count=Count("car", filter=Q(car__status__in=["FLOATING", "IN_PORT", "UNLOADED"])),
             unpaid_invoices_count=Count(
-                'received_invoices_new',
-                filter=Q(received_invoices_new__status__in=OPEN_INVOICE_STATUSES)
-            )
+                "received_invoices_new", filter=Q(received_invoices_new__status__in=OPEN_INVOICE_STATUSES)
+            ),
         )
 
     def with_recent_activity(self, days=30):
         cutoff_date = timezone.now().date() - timedelta(days=days)
-        return self.with_balance_info().filter(
-            Q(car__unload_date__gte=cutoff_date) |
-            Q(received_invoices_new__date__gte=cutoff_date) |
-            Q(transactions_sent_new__date__gte=cutoff_date)
-        ).distinct()
+        return (
+            self.with_balance_info()
+            .filter(
+                Q(car__unload_date__gte=cutoff_date)
+                | Q(received_invoices_new__date__gte=cutoff_date)
+                | Q(transactions_sent_new__date__gte=cutoff_date)
+            )
+            .distinct()
+        )
 
     def search_clients(self, query):
         return self.with_balance_info().filter(name__icontains=query)
@@ -163,23 +151,17 @@ class OptimizedWarehouseManager(models.Manager):
     def with_activity_info(self):
         """Склады с информацией об активности"""
         return self.annotate(
-            cars_count=Count('car'),
-            active_cars_count=Count(
-                'car',
-                filter=Q(car__status__in=['FLOATING', 'IN_PORT', 'UNLOADED'])
-            ),
-            containers_count=Count('container'),
+            cars_count=Count("car"),
+            active_cars_count=Count("car", filter=Q(car__status__in=["FLOATING", "IN_PORT", "UNLOADED"])),
+            containers_count=Count("container"),
             active_containers_count=Count(
-                'container',
-                filter=Q(container__status__in=['FLOATING', 'IN_PORT', 'UNLOADED'])
+                "container", filter=Q(container__status__in=["FLOATING", "IN_PORT", "UNLOADED"])
             ),
-            total_cars_value=Sum('car__total_price')
+            total_cars_value=Sum("car__total_price"),
         )
 
     def active_warehouses(self):
-        return self.with_activity_info().filter(
-            Q(cars_count__gt=0) | Q(containers_count__gt=0)
-        )
+        return self.with_activity_info().filter(Q(cars_count__gt=0) | Q(containers_count__gt=0))
 
 
 class OptimizedCompanyManager(models.Manager):
@@ -189,21 +171,19 @@ class OptimizedCompanyManager(models.Manager):
         """Компании с финансовой информацией через новую систему"""
         return self.annotate(
             outgoing_invoices_total=Sum(
-                'issued_invoices_new__total',
+                "issued_invoices_new__total",
             ),
             incoming_invoices_total=Sum(
-                'received_invoices_new__total',
+                "received_invoices_new__total",
             ),
             received_payments_total=Sum(
-                'transactions_received_new__amount',
-                filter=Q(transactions_received_new__status='COMPLETED')
+                "transactions_received_new__amount", filter=Q(transactions_received_new__status="COMPLETED")
             ),
             sent_payments_total=Sum(
-                'transactions_sent_new__amount',
-                filter=Q(transactions_sent_new__status='COMPLETED')
+                "transactions_sent_new__amount", filter=Q(transactions_sent_new__status="COMPLETED")
             ),
         )
 
     def default_company(self):
         """Получить компанию по умолчанию (Caromoto Lithuania)"""
-        return self.filter(name__icontains='Caromoto').first()
+        return self.filter(name__icontains="Caromoto").first()

@@ -24,131 +24,164 @@ logger = logging.getLogger(__name__)
 # SITE.PRO CONNECTION
 # ============================================================================
 
+
 class SiteProConnection(models.Model):
     """Подключение к site.pro (b1.lt) бухгалтерскому API."""
 
     company = models.ForeignKey(
-        'core.Company', on_delete=models.CASCADE,
-        related_name='sitepro_connections', verbose_name='Компания',
+        "core.Company",
+        on_delete=models.CASCADE,
+        related_name="sitepro_connections",
+        verbose_name="Компания",
     )
     name = models.CharField(
-        max_length=100, verbose_name='Название подключения',
-        help_text='Например: Site.pro Caromoto Lithuania',
+        max_length=100,
+        verbose_name="Название подключения",
+        help_text="Например: Site.pro Caromoto Lithuania",
     )
 
     # --- Credentials (зашифрованы через Fernet) ---
     _username = models.TextField(
-        blank=True, default='', db_column='sp_username',
-        verbose_name='Username (encrypted)',
+        blank=True,
+        default="",
+        db_column="sp_username",
+        verbose_name="Username (encrypted)",
     )
     _password = models.TextField(
-        blank=True, default='', db_column='sp_password',
-        verbose_name='Password (encrypted)',
+        blank=True,
+        default="",
+        db_column="sp_password",
+        verbose_name="Password (encrypted)",
     )
     _api_key = models.TextField(
-        blank=True, default='', db_column='sp_api_key',
-        verbose_name='API Key (encrypted)',
-        help_text='API raktas из настроек site.pro',
+        blank=True,
+        default="",
+        db_column="sp_api_key",
+        verbose_name="API Key (encrypted)",
+        help_text="API raktas из настроек site.pro",
     )
     _private_key = models.TextField(
-        blank=True, default='', db_column='sp_private_key',
-        verbose_name='Private Key (encrypted)',
-        help_text='Privatus raktas из настроек site.pro',
+        blank=True,
+        default="",
+        db_column="sp_private_key",
+        verbose_name="Private Key (encrypted)",
+        help_text="Privatus raktas из настроек site.pro",
     )
     _access_token = models.TextField(
-        blank=True, default='', db_column='sp_access_token',
-        verbose_name='Access Token (encrypted)',
+        blank=True,
+        default="",
+        db_column="sp_access_token",
+        verbose_name="Access Token (encrypted)",
     )
     access_token_expires_at = models.DateTimeField(
-        null=True, blank=True, verbose_name='Access Token истекает',
+        null=True,
+        blank=True,
+        verbose_name="Access Token истекает",
     )
     sitepro_user_id = models.CharField(
-        max_length=50, blank=True, default='',
-        verbose_name='SitePro User ID',
-        help_text='ID пользователя в site.pro (из ответа /token)',
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="SitePro User ID",
+        help_text="ID пользователя в site.pro (из ответа /token)",
     )
     sitepro_company_id = models.CharField(
-        max_length=50, blank=True, default='',
-        verbose_name='SitePro Company ID',
-        help_text='ID компании в site.pro (spcoid из ответа /token)',
+        max_length=50,
+        blank=True,
+        default="",
+        verbose_name="SitePro Company ID",
+        help_text="ID компании в site.pro (spcoid из ответа /token)",
     )
 
     # --- Настройки ---
-    is_active = models.BooleanField(default=True, verbose_name='Активно')
+    is_active = models.BooleanField(default=True, verbose_name="Активно")
     auto_push_on_issue = models.BooleanField(
-        default=False, verbose_name='Авто-отправка при выставлении',
-        help_text='Автоматически отправлять инвойс в site.pro при смене статуса на ISSUED',
+        default=False,
+        verbose_name="Авто-отправка при выставлении",
+        help_text="Автоматически отправлять инвойс в site.pro при смене статуса на ISSUED",
     )
     default_vat_rate = models.DecimalField(
-        max_digits=5, decimal_places=2, default=0,
-        verbose_name='Ставка НДС по умолчанию (%)',
-        help_text='Ставка НДС для позиций инвойса (0 = без НДС)',
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        verbose_name="Ставка НДС по умолчанию (%)",
+        help_text="Ставка НДС для позиций инвойса (0 = без НДС)",
     )
     default_currency = models.CharField(
-        max_length=3, default='EUR', verbose_name='Валюта по умолчанию',
+        max_length=3,
+        default="EUR",
+        verbose_name="Валюта по умолчанию",
     )
     invoice_series = models.CharField(
-        max_length=20, blank=True, default='',
-        verbose_name='Серия инвойсов в site.pro',
-        help_text='Серия нумерации инвойсов (например: PARDP). '
-                  'Шлётся текстовым полем series в sales/create.',
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Серия инвойсов в site.pro",
+        help_text="Серия нумерации инвойсов (например: PARDP). Шлётся текстовым полем series в sales/create.",
     )
 
     # --- Справочники site.pro (обязательные в новом API) ---
     default_warehouse_id = models.IntegerField(
-        null=True, blank=True,
-        verbose_name='Warehouse ID',
-        help_text='ID склада в site.pro (обязательно для sales/create). '
-                  'Узнать через action "Загрузить справочники". Обычно 1 = Pagrindinis.',
+        null=True,
+        blank=True,
+        verbose_name="Warehouse ID",
+        help_text="ID склада в site.pro (обязательно для sales/create). "
+        'Узнать через action "Загрузить справочники". Обычно 1 = Pagrindinis.',
     )
     default_operation_type_id = models.IntegerField(
-        null=True, blank=True,
-        verbose_name='Operation Type ID',
-        help_text='ID типа операции (обязательно для sales/create). '
-                  'Для продаж обычно 2 = Pardavimai (isSale=True).',
+        null=True,
+        blank=True,
+        verbose_name="Operation Type ID",
+        help_text="ID типа операции (обязательно для sales/create). Для продаж обычно 2 = Pardavimai (isSale=True).",
     )
     default_series_id = models.IntegerField(
-        null=True, blank=True,
-        verbose_name='Series ID (опц.)',
-        help_text='ID серии в site.pro (опционально). '
-                  'Если не задан, серия шлётся только текстом через invoice_series.',
+        null=True,
+        blank=True,
+        verbose_name="Series ID (опц.)",
+        help_text="ID серии в site.pro (опционально). Если не задан, серия шлётся только текстом через invoice_series.",
     )
     default_location_id = models.IntegerField(
-        null=True, blank=True,
-        verbose_name='Default Tax Residency',
-        help_text='Тип налогового резидентства по умолчанию для новых клиентов. '
-                  '1 = Lietuva, 2 = Europos Sąjunga, 3 = Trečiosios šalys. '
-                  'Обязательно для clients/create.',
+        null=True,
+        blank=True,
+        verbose_name="Default Tax Residency",
+        help_text="Тип налогового резидентства по умолчанию для новых клиентов. "
+        "1 = Lietuva, 2 = Europos Sąjunga, 3 = Trečiosios šalys. "
+        "Обязательно для clients/create.",
     )
     default_item_id = models.IntegerField(
-        null=True, blank=True,
-        verbose_name='Default Item ID',
-        help_text='ID справочного товара/услуги для позиций инвойса (обязательно для sale-items/create). '
-                  'Для логистических услуг обычно 24 = Paslauga (vnt.).',
+        null=True,
+        blank=True,
+        verbose_name="Default Item ID",
+        help_text="ID справочного товара/услуги для позиций инвойса (обязательно для sale-items/create). "
+        "Для логистических услуг обычно 24 = Paslauga (vnt.).",
     )
     default_calculation_mode = models.IntegerField(
         default=1,
-        verbose_name='Calculation Mode',
-        help_text='Режим расчёта позиций инвойса. 1 = без НДС (стандарт для Caromoto).',
+        verbose_name="Calculation Mode",
+        help_text="Режим расчёта позиций инвойса. 1 = без НДС (стандарт для Caromoto).",
     )
 
     # --- Статус ---
     last_synced_at = models.DateTimeField(
-        null=True, blank=True, verbose_name='Последняя синхронизация',
+        null=True,
+        blank=True,
+        verbose_name="Последняя синхронизация",
     )
     last_error = models.TextField(
-        blank=True, default='', verbose_name='Последняя ошибка',
+        blank=True,
+        default="",
+        verbose_name="Последняя ошибка",
     )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Создано')
-    updated_at = models.DateTimeField(auto_now=True, verbose_name='Обновлено')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
 
     class Meta:
-        verbose_name = 'Подключение site.pro'
-        verbose_name_plural = 'Подключения site.pro'
+        verbose_name = "Подключение site.pro"
+        verbose_name_plural = "Подключения site.pro"
 
     def __str__(self):
-        status = 'активно' if self.is_active else 'неактивно'
-        return f'Site.pro — {self.name} ({status})'
+        status = "активно" if self.is_active else "неактивно"
+        return f"Site.pro — {self.name} ({status})"
 
     # --- Property-обёртки для шифрования ---
     @property
@@ -200,69 +233,86 @@ class SiteProConnection(models.Model):
     @property
     def base_url(self):
         """Accounting API base URL (не путать с api.sitepro.com — это builder API)."""
-        return 'https://site.pro/My-Accounting/api'
+        return "https://site.pro/My-Accounting/api"
 
 
 # ============================================================================
 # SITE.PRO INVOICE SYNC LOG
 # ============================================================================
 
+
 class SiteProInvoiceSync(models.Model):
     """Лог синхронизации инвойсов с site.pro."""
 
     SYNC_STATUS_CHOICES = [
-        ('PENDING', 'Ожидает отправки'),
-        ('SENT', 'Отправлен'),
-        ('FAILED', 'Ошибка'),
-        ('PDF_READY', 'PDF готов'),
+        ("PENDING", "Ожидает отправки"),
+        ("SENT", "Отправлен"),
+        ("FAILED", "Ошибка"),
+        ("PDF_READY", "PDF готов"),
     ]
 
     connection = models.ForeignKey(
-        SiteProConnection, on_delete=models.CASCADE,
-        related_name='invoice_syncs', verbose_name='Подключение',
+        SiteProConnection,
+        on_delete=models.CASCADE,
+        related_name="invoice_syncs",
+        verbose_name="Подключение",
     )
     invoice = models.ForeignKey(
-        'core.NewInvoice', on_delete=models.CASCADE,
-        related_name='sitepro_syncs', verbose_name='Инвойс',
+        "core.NewInvoice",
+        on_delete=models.CASCADE,
+        related_name="sitepro_syncs",
+        verbose_name="Инвойс",
     )
 
     # --- Данные из site.pro ---
     external_id = models.CharField(
-        max_length=100, blank=True, default='',
-        verbose_name='ID в site.pro',
-        help_text='ID инвойса/продажи в site.pro',
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="ID в site.pro",
+        help_text="ID инвойса/продажи в site.pro",
     )
     external_number = models.CharField(
-        max_length=100, blank=True, default='',
-        verbose_name='Номер в site.pro',
-        help_text='Номер инвойса в site.pro',
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Номер в site.pro",
+        help_text="Номер инвойса в site.pro",
     )
     pdf_url = models.URLField(
-        blank=True, default='', verbose_name='PDF URL',
-        help_text='Ссылка на PDF инвойса в site.pro',
+        blank=True,
+        default="",
+        verbose_name="PDF URL",
+        help_text="Ссылка на PDF инвойса в site.pro",
     )
 
     # --- Статус ---
     sync_status = models.CharField(
-        max_length=20, choices=SYNC_STATUS_CHOICES, default='PENDING',
-        verbose_name='Статус синхронизации',
+        max_length=20,
+        choices=SYNC_STATUS_CHOICES,
+        default="PENDING",
+        verbose_name="Статус синхронизации",
     )
     error_message = models.TextField(
-        blank=True, default='', verbose_name='Ошибка',
+        blank=True,
+        default="",
+        verbose_name="Ошибка",
     )
     last_synced_at = models.DateTimeField(
-        null=True, blank=True, verbose_name='Последняя синхронизация',
+        null=True,
+        blank=True,
+        verbose_name="Последняя синхронизация",
     )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Создано')
-    updated_at = models.DateTimeField(auto_now=True, verbose_name='Обновлено')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
 
     class Meta:
-        verbose_name = 'Синхронизация инвойса (site.pro)'
-        verbose_name_plural = 'Синхронизация инвойсов (site.pro)'
+        verbose_name = "Синхронизация инвойса (site.pro)"
+        verbose_name_plural = "Синхронизация инвойсов (site.pro)"
         constraints = [
-            models.UniqueConstraint(fields=['connection', 'invoice'], name='unique_sitepro_invoice_sync'),
+            models.UniqueConstraint(fields=["connection", "invoice"], name="unique_sitepro_invoice_sync"),
         ]
-        ordering = ['-created_at']
+        ordering = ["-created_at"]
 
     def __str__(self):
-        return f'{self.invoice.number} → site.pro ({self.get_sync_status_display()})'
+        return f"{self.invoice.number} → site.pro ({self.get_sync_status_display()})"

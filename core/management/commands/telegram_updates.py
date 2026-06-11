@@ -49,10 +49,12 @@ class Command(BaseCommand):
 
         results = data.get("result", [])
         if not results:
-            self.stdout.write(self.style.WARNING(
-                "Нет новых сообщений. Попросите клиента написать боту /start и повторите команду.\n"
-                "Учтите: getUpdates показывает только сообщения за последние ~24 часа и не работает при webhook."
-            ))
+            self.stdout.write(
+                self.style.WARNING(
+                    "Нет новых сообщений. Попросите клиента написать боту /start и повторите команду.\n"
+                    "Учтите: getUpdates показывает только сообщения за последние ~24 часа и не работает при webhook."
+                )
+            )
             return
 
         seen = {}
@@ -62,9 +64,7 @@ class Command(BaseCommand):
             chat_id = chat.get("id")
             if chat_id is None or chat_id in seen:
                 continue
-            title = chat.get("title") or " ".join(
-                p for p in [chat.get("first_name"), chat.get("last_name")] if p
-            )
+            title = chat.get("title") or " ".join(p for p in [chat.get("first_name"), chat.get("last_name")] if p)
             username = chat.get("username")
             seen[chat_id] = (title or "—", username or "—", chat.get("type", "—"))
 
@@ -75,6 +75,4 @@ class Command(BaseCommand):
             uname = ("@" + username) if username != "—" else "—"
             self.stdout.write(f"{chat_id!s:<16}{ctype:<12}{uname:<22}{title}")
 
-        self.stdout.write(
-            "\nВпишите нужный chat_id в карточку клиента (Партнёры -> Клиент -> Telegram Chat ID)."
-        )
+        self.stdout.write("\nВпишите нужный chat_id в карточку клиента (Партнёры -> Клиент -> Telegram Chat ID).")

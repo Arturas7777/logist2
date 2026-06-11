@@ -1,6 +1,7 @@
 """
 Сервис отправки email-уведомлений клиентам о контейнерах и отдельных ТС
 """
+
 import json
 import logging
 
@@ -46,34 +47,34 @@ class ContainerNotificationService:
             logger.warning(f"No cars for client {client.name} in container {container.number}")
             return False
 
-        cars_list = [{'vin': car.vin, 'brand': car.brand, 'year': car.year} for car in cars]
+        cars_list = [{"vin": car.vin, "brand": car.brand, "year": car.year} for car in cars]
 
         _site_name, site_address = container.get_unload_address()
 
         context = {
-            'container_number': container.number,
-            'planned_date': container.planned_unload_date,
-            'warehouse': container.warehouse.name if container.warehouse else 'Не указан',
-            'warehouse_address': site_address,
-            'cars': cars_list,
-            'client_name': client.name,
-            'company_name': getattr(settings, 'COMPANY_NAME', 'Caromoto Lithuania'),
-            'company_phone': getattr(settings, 'COMPANY_PHONE', ''),
-            'company_email': getattr(settings, 'COMPANY_EMAIL', ''),
-            'company_website': getattr(settings, 'COMPANY_WEBSITE', ''),
+            "container_number": container.number,
+            "planned_date": container.planned_unload_date,
+            "warehouse": container.warehouse.name if container.warehouse else "Не указан",
+            "warehouse_address": site_address,
+            "cars": cars_list,
+            "client_name": client.name,
+            "company_name": getattr(settings, "COMPANY_NAME", "Caromoto Lithuania"),
+            "company_phone": getattr(settings, "COMPANY_PHONE", ""),
+            "company_email": getattr(settings, "COMPANY_EMAIL", ""),
+            "company_website": getattr(settings, "COMPANY_WEBSITE", ""),
         }
 
         subject = f"Планируемая разгрузка контейнера {container.number}"
 
         return ContainerNotificationService._send_notification_to_all_emails(
-            notification_type='PLANNED',
+            notification_type="PLANNED",
             container=container,
             client=client,
             subject=subject,
-            template_name='email/planned_notification.html',
+            template_name="email/planned_notification.html",
             context=context,
             cars_list=cars_list,
-            user=user
+            user=user,
         )
 
     @staticmethod
@@ -104,38 +105,40 @@ class ContainerNotificationService:
             logger.warning(f"No cars for client {client.name} in container {container.number}")
             return False
 
-        cars_list = [{'vin': car.vin, 'brand': car.brand, 'year': car.year} for car in cars]
+        cars_list = [{"vin": car.vin, "brand": car.brand, "year": car.year} for car in cars]
 
         _site_name, site_address = container.get_unload_address()
 
         context = {
-            'container_number': container.number,
-            'unload_date': container.unload_date,
-            'warehouse': container.warehouse.name if container.warehouse else 'Не указан',
-            'warehouse_address': site_address,
-            'cars': cars_list,
-            'client_name': client.name,
-            'company_name': getattr(settings, 'COMPANY_NAME', 'Caromoto Lithuania'),
-            'company_phone': getattr(settings, 'COMPANY_PHONE', ''),
-            'company_email': getattr(settings, 'COMPANY_EMAIL', ''),
-            'company_website': getattr(settings, 'COMPANY_WEBSITE', ''),
+            "container_number": container.number,
+            "unload_date": container.unload_date,
+            "warehouse": container.warehouse.name if container.warehouse else "Не указан",
+            "warehouse_address": site_address,
+            "cars": cars_list,
+            "client_name": client.name,
+            "company_name": getattr(settings, "COMPANY_NAME", "Caromoto Lithuania"),
+            "company_phone": getattr(settings, "COMPANY_PHONE", ""),
+            "company_email": getattr(settings, "COMPANY_EMAIL", ""),
+            "company_website": getattr(settings, "COMPANY_WEBSITE", ""),
         }
 
         subject = f"Контейнер {container.number} разгружен"
 
         return ContainerNotificationService._send_notification_to_all_emails(
-            notification_type='UNLOADED',
+            notification_type="UNLOADED",
             container=container,
             client=client,
             subject=subject,
-            template_name='email/unload_notification.html',
+            template_name="email/unload_notification.html",
             context=context,
             cars_list=cars_list,
-            user=user
+            user=user,
         )
 
     @staticmethod
-    def _send_notification_to_all_emails(notification_type, container, client, subject, template_name, context, cars_list, user=None):
+    def _send_notification_to_all_emails(
+        notification_type, container, client, subject, template_name, context, cars_list, user=None
+    ):
         """
         Отправляет уведомление на все email-адреса клиента.
         Каждый email получает отдельное письмо и логируется отдельно.
@@ -166,33 +169,34 @@ class ContainerNotificationService:
                 html_content=html_content,
                 text_content=text_content,
                 cars_list=cars_list,
-                user=user
+                user=user,
             )
             if success:
                 success_count += 1
 
-        logger.info(f"📧 Sent {success_count}/{len(emails)} emails for {notification_type} notification to {client.name}")
+        logger.info(
+            f"📧 Sent {success_count}/{len(emails)} emails for {notification_type} notification to {client.name}"
+        )
 
         # Возвращаем True если хотя бы одно письмо отправлено успешно
         return success_count > 0
 
     @staticmethod
-    def _send_single_email(notification_type, container, client, email_to, subject, html_content, text_content, cars_list, user=None):
+    def _send_single_email(
+        notification_type, container, client, email_to, subject, html_content, text_content, cars_list, user=None
+    ):
         """
         Отправляет одно письмо на указанный email и логирует результат.
         """
         from core.models_website import NotificationLog
 
-        error_message = ''
+        error_message = ""
         success = False
 
         try:
             # Создаём email
             email = EmailMultiAlternatives(
-                subject=subject,
-                body=text_content,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                to=[email_to]
+                subject=subject, body=text_content, from_email=settings.DEFAULT_FROM_EMAIL, to=[email_to]
             )
             email.attach_alternative(html_content, "text/html")
 
@@ -212,13 +216,13 @@ class ContainerNotificationService:
                 container=container,
                 client=client,
                 notification_type=notification_type,
-                channel='EMAIL',
+                channel="EMAIL",
                 email_to=email_to,
                 subject=subject,
                 cars_info=json.dumps(cars_list, ensure_ascii=False),
                 success=success,
                 error_message=error_message,
-                created_by=user
+                created_by=user,
             )
         except Exception as e:
             logger.error(f"Failed to create notification log: {e}")
@@ -240,16 +244,13 @@ class ContainerNotificationService:
 
         with db_transaction.atomic():
             already_notified_clients = set(
-                NotificationLog.objects.select_for_update().filter(
-                    container=container,
-                    notification_type='PLANNED',
-                    channel='EMAIL',
-                    success=True
-                ).values_list('client_id', flat=True)
+                NotificationLog.objects.select_for_update()
+                .filter(container=container, notification_type="PLANNED", channel="EMAIL", success=True)
+                .values_list("client_id", flat=True)
             )
 
             clients = set()
-            for car in container.container_cars.select_related('client').all():
+            for car in container.container_cars.select_related("client").all():
                 if car.client and car.client.has_notification_emails() and car.client.notification_enabled:
                     if car.client.id not in already_notified_clients:
                         clients.add(car.client)
@@ -280,16 +281,13 @@ class ContainerNotificationService:
 
         with db_transaction.atomic():
             already_notified_clients = set(
-                NotificationLog.objects.select_for_update().filter(
-                    container=container,
-                    notification_type='UNLOADED',
-                    channel='EMAIL',
-                    success=True
-                ).values_list('client_id', flat=True)
+                NotificationLog.objects.select_for_update()
+                .filter(container=container, notification_type="UNLOADED", channel="EMAIL", success=True)
+                .values_list("client_id", flat=True)
             )
 
             clients = set()
-            for car in container.container_cars.select_related('client').all():
+            for car in container.container_cars.select_related("client").all():
                 if car.client and car.client.has_notification_emails() and car.client.notification_enabled:
                     if car.client.id not in already_notified_clients:
                         clients.add(car.client)
@@ -311,11 +309,9 @@ class ContainerNotificationService:
         Проверяет, было ли уже отправлено уведомление о разгрузке для контейнера
         """
         from core.models_website import NotificationLog
+
         return NotificationLog.objects.filter(
-            container=container,
-            notification_type='UNLOADED',
-            channel='EMAIL',
-            success=True
+            container=container, notification_type="UNLOADED", channel="EMAIL", success=True
         ).exists()
 
     @staticmethod
@@ -324,11 +320,9 @@ class ContainerNotificationService:
         Проверяет, было ли уже отправлено уведомление о планируемой разгрузке для контейнера
         """
         from core.models_website import NotificationLog
+
         return NotificationLog.objects.filter(
-            container=container,
-            notification_type='PLANNED',
-            channel='EMAIL',
-            success=True
+            container=container, notification_type="PLANNED", channel="EMAIL", success=True
         ).exists()
 
 
@@ -359,20 +353,20 @@ class CarNotificationService:
             logger.warning(f"Cannot send car unload notification for {car.vin}: no unload_date set")
             return False
 
-        car_info = {'vin': car.vin, 'brand': car.brand, 'year': car.year}
+        car_info = {"vin": car.vin, "brand": car.brand, "year": car.year}
 
         _site_name, site_address = car.get_unload_address()
 
         context = {
-            'car': car_info,
-            'unload_date': car.unload_date,
-            'warehouse': car.warehouse.name if car.warehouse else 'Не указан',
-            'warehouse_address': site_address,
-            'client_name': client.name,
-            'company_name': getattr(settings, 'COMPANY_NAME', 'Caromoto Lithuania'),
-            'company_phone': getattr(settings, 'COMPANY_PHONE', ''),
-            'company_email': getattr(settings, 'COMPANY_EMAIL', ''),
-            'company_website': getattr(settings, 'COMPANY_WEBSITE', ''),
+            "car": car_info,
+            "unload_date": car.unload_date,
+            "warehouse": car.warehouse.name if car.warehouse else "Не указан",
+            "warehouse_address": site_address,
+            "client_name": client.name,
+            "company_name": getattr(settings, "COMPANY_NAME", "Caromoto Lithuania"),
+            "company_phone": getattr(settings, "COMPANY_PHONE", ""),
+            "company_email": getattr(settings, "COMPANY_EMAIL", ""),
+            "company_website": getattr(settings, "COMPANY_WEBSITE", ""),
         }
 
         subject = f"Ваш автомобиль {car.brand} ({car.vin}) разгружен"
@@ -381,10 +375,10 @@ class CarNotificationService:
             car=car,
             client=client,
             subject=subject,
-            template_name='email/car_unload_notification.html',
+            template_name="email/car_unload_notification.html",
             context=context,
             car_info=car_info,
-            user=user
+            user=user,
         )
 
     @staticmethod
@@ -412,7 +406,7 @@ class CarNotificationService:
                 html_content=html_content,
                 text_content=text_content,
                 car_info=car_info,
-                user=user
+                user=user,
             )
             if success:
                 success_count += 1
@@ -427,15 +421,12 @@ class CarNotificationService:
         """
         from core.models_website import NotificationLog
 
-        error_message = ''
+        error_message = ""
         success = False
 
         try:
             email = EmailMultiAlternatives(
-                subject=subject,
-                body=text_content,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                to=[email_to]
+                subject=subject, body=text_content, from_email=settings.DEFAULT_FROM_EMAIL, to=[email_to]
             )
             email.attach_alternative(html_content, "text/html")
             email.send(fail_silently=False)
@@ -451,14 +442,14 @@ class CarNotificationService:
             NotificationLog.objects.create(
                 car=car,
                 client=client,
-                notification_type='CAR_UNLOADED',
-                channel='EMAIL',
+                notification_type="CAR_UNLOADED",
+                channel="EMAIL",
                 email_to=email_to,
                 subject=subject,
                 cars_info=json.dumps([car_info], ensure_ascii=False),
                 success=success,
                 error_message=error_message,
-                created_by=user
+                created_by=user,
             )
         except Exception as e:
             logger.error(f"Failed to create notification log: {e}")
@@ -471,11 +462,7 @@ class CarNotificationService:
         Проверяет, было ли уже отправлено уведомление о разгрузке для этого ТС
         """
         from core.models_website import NotificationLog
+
         return NotificationLog.objects.filter(
-            car=car,
-            notification_type='CAR_UNLOADED',
-            channel='EMAIL',
-            success=True
+            car=car, notification_type="CAR_UNLOADED", channel="EMAIL", success=True
         ).exists()
-
-

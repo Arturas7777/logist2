@@ -34,9 +34,12 @@ def company(db):
 
 def _payment(client_entity, company, status="COMPLETED", amount="100.00"):
     return Transaction.objects.create(
-        type="TRANSFER", method="TRANSFER", status=status,
+        type="TRANSFER",
+        method="TRANSFER",
+        status=status,
         amount=Decimal(amount),
-        from_client=client_entity, to_company=company,
+        from_client=client_entity,
+        to_company=company,
         description="ledger test",
     )
 

@@ -1,4 +1,5 @@
 """Админка для AI-обработки сканов титулов и Dock Receipts."""
+
 from __future__ import annotations
 
 import logging
@@ -33,191 +34,244 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
     """
 
     list_display = (
-        'id', 'scan_type_badge', 'status_badge', 'extracted_summary',
-        'linked_car_link', 'linked_container_link',
-        'created_new_flags',
-        'created_by', 'created_at',
+        "id",
+        "scan_type_badge",
+        "status_badge",
+        "extracted_summary",
+        "linked_car_link",
+        "linked_container_link",
+        "created_new_flags",
+        "created_by",
+        "created_at",
     )
-    list_filter = ('scan_type', 'status', 'created_at')
-    list_select_related = ('linked_car', 'linked_container', 'created_by')
+    list_filter = ("scan_type", "status", "created_at")
+    list_select_related = ("linked_car", "linked_container", "created_by")
     search_fields = (
-        'extracted_data__container_number',
-        'extracted_data__booking_number',
-        'extracted_data__vins',
-        'extracted_data__vehicles__vin',
-        'linked_car__vin',
-        'linked_container__number',
-        'error_message',
+        "extracted_data__container_number",
+        "extracted_data__booking_number",
+        "extracted_data__vins",
+        "extracted_data__vehicles__vin",
+        "linked_car__vin",
+        "linked_container__number",
+        "error_message",
     )
     readonly_fields = (
-        'scan_type', 'status', 'original_file_preview',
-        'extracted_data_pretty', 'applied_changes_pretty',
-        'linked_car', 'linked_container',
-        'created_new_car', 'created_new_container',
-        'error_message', 'created_at', 'processed_at', 'applied_at',
-        'created_by', 'applied_by',
+        "scan_type",
+        "status",
+        "original_file_preview",
+        "extracted_data_pretty",
+        "applied_changes_pretty",
+        "linked_car",
+        "linked_container",
+        "created_new_car",
+        "created_new_container",
+        "error_message",
+        "created_at",
+        "processed_at",
+        "applied_at",
+        "created_by",
+        "applied_by",
     )
     fieldsets = (
-        ('Скан', {
-            'fields': ('scan_type', 'status', 'original_file_preview'),
-        }),
-        ('AI извлечение', {
-            'fields': ('extracted_data_pretty', 'error_message'),
-        }),
-        ('Применение', {
-            'fields': ('linked_car', 'linked_container',
-                       'created_new_car', 'created_new_container',
-                       'applied_changes_pretty'),
-        }),
-        ('Аудит', {
-            'fields': ('created_by', 'created_at', 'processed_at',
-                       'applied_by', 'applied_at'),
-        }),
+        (
+            "Скан",
+            {
+                "fields": ("scan_type", "status", "original_file_preview"),
+            },
+        ),
+        (
+            "AI извлечение",
+            {
+                "fields": ("extracted_data_pretty", "error_message"),
+            },
+        ),
+        (
+            "Применение",
+            {
+                "fields": (
+                    "linked_car",
+                    "linked_container",
+                    "created_new_car",
+                    "created_new_container",
+                    "applied_changes_pretty",
+                ),
+            },
+        ),
+        (
+            "Аудит",
+            {
+                "fields": ("created_by", "created_at", "processed_at", "applied_by", "applied_at"),
+            },
+        ),
     )
     actions = (
-        'apply_jobs_action',
-        'apply_jobs_force_action',
-        'ignore_jobs_action',
-        'reprocess_jobs_action',
+        "apply_jobs_action",
+        "apply_jobs_force_action",
+        "ignore_jobs_action",
+        "reprocess_jobs_action",
     )
 
-    change_form_template = 'admin/scan_processing_job/change_form.html'
+    change_form_template = "admin/scan_processing_job/change_form.html"
 
     # ── Список ────────────────────────────────────────────────────────────
 
     def scan_type_badge(self, obj):
         colors = {
-            ScanProcessingJob.SCAN_TYPE_TITLE: '#0d6efd',
-            ScanProcessingJob.SCAN_TYPE_DOCK_RECEIPT: '#198754',
+            ScanProcessingJob.SCAN_TYPE_TITLE: "#0d6efd",
+            ScanProcessingJob.SCAN_TYPE_DOCK_RECEIPT: "#198754",
         }
-        color = colors.get(obj.scan_type, '#6c757d')
+        color = colors.get(obj.scan_type, "#6c757d")
         return format_html(
             '<span style="background:{};color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;">{}</span>',
-            color, obj.get_scan_type_display(),
+            color,
+            obj.get_scan_type_display(),
         )
-    scan_type_badge.short_description = 'Тип'
+
+    scan_type_badge.short_description = "Тип"
 
     def status_badge(self, obj):
         palette = {
-            ScanProcessingJob.STATUS_PENDING: '#6c757d',
-            ScanProcessingJob.STATUS_PROCESSING: '#0dcaf0',
-            ScanProcessingJob.STATUS_NEEDS_REVIEW: '#fd7e14',
-            ScanProcessingJob.STATUS_APPLIED: '#198754',
-            ScanProcessingJob.STATUS_ERROR: '#dc3545',
-            ScanProcessingJob.STATUS_IGNORED: '#adb5bd',
+            ScanProcessingJob.STATUS_PENDING: "#6c757d",
+            ScanProcessingJob.STATUS_PROCESSING: "#0dcaf0",
+            ScanProcessingJob.STATUS_NEEDS_REVIEW: "#fd7e14",
+            ScanProcessingJob.STATUS_APPLIED: "#198754",
+            ScanProcessingJob.STATUS_ERROR: "#dc3545",
+            ScanProcessingJob.STATUS_IGNORED: "#adb5bd",
         }
-        color = palette.get(obj.status, '#6c757d')
+        color = palette.get(obj.status, "#6c757d")
         return format_html(
             '<span style="background:{};color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;">{}</span>',
-            color, obj.get_status_display(),
+            color,
+            obj.get_status_display(),
         )
-    status_badge.short_description = 'Статус'
+
+    status_badge.short_description = "Статус"
 
     def extracted_summary(self, obj):
         d = obj.extracted_data or {}
         if obj.scan_type == ScanProcessingJob.SCAN_TYPE_TITLE:
-            vins = d.get('vins') or []
-            year = d.get('year') or ''
-            make = d.get('make') or ''
+            vins = d.get("vins") or []
+            year = d.get("year") or ""
+            make = d.get("make") or ""
             return format_html(
-                '<code>{}</code> {} {}',
-                ', '.join(vins) or '—', year, make,
+                "<code>{}</code> {} {}",
+                ", ".join(vins) or "—",
+                year,
+                make,
             )
         if obj.scan_type == ScanProcessingJob.SCAN_TYPE_DOCK_RECEIPT:
-            cn = d.get('container_number') or '—'
-            bn = d.get('booking_number') or ''
-            n = len(d.get('vehicles') or [])
+            cn = d.get("container_number") or "—"
+            bn = d.get("booking_number") or ""
+            n = len(d.get("vehicles") or [])
             return format_html(
                 '<code>{}</code> {} <span style="color:#6c757d;">({} авто)</span>',
-                cn, f'/{bn}' if bn else '', n,
+                cn,
+                f"/{bn}" if bn else "",
+                n,
             )
-        return '—'
-    extracted_summary.short_description = 'AI извлёк'
+        return "—"
+
+    extracted_summary.short_description = "AI извлёк"
 
     def linked_car_link(self, obj):
         if not obj.linked_car_id:
-            return '—'
-        url = reverse('admin:core_car_change', args=[obj.linked_car_id])
+            return "—"
+        url = reverse("admin:core_car_change", args=[obj.linked_car_id])
         return format_html('<a href="{}">{}</a>', url, obj.linked_car.vin)
-    linked_car_link.short_description = 'Car'
+
+    linked_car_link.short_description = "Car"
 
     def linked_container_link(self, obj):
         if not obj.linked_container_id:
-            return '—'
-        url = reverse('admin:core_container_change', args=[obj.linked_container_id])
+            return "—"
+        url = reverse("admin:core_container_change", args=[obj.linked_container_id])
         return format_html('<a href="{}">{}</a>', url, obj.linked_container.number)
-    linked_container_link.short_description = 'Container'
+
+    linked_container_link.short_description = "Container"
 
     def created_new_flags(self, obj):
         flags = []
         if obj.created_new_car:
-            flags.append(format_html(
-                '<span style="background:#0d6efd;color:#fff;padding:2px 6px;'
-                'border-radius:4px;font-size:11px;">🆕 Car</span>'
-            ))
+            flags.append(
+                format_html(
+                    '<span style="background:#0d6efd;color:#fff;padding:2px 6px;'
+                    'border-radius:4px;font-size:11px;">🆕 Car</span>'
+                )
+            )
         if obj.created_new_container:
-            flags.append(format_html(
-                '<span style="background:#198754;color:#fff;padding:2px 6px;'
-                'border-radius:4px;font-size:11px;">🆕 Container</span>'
-            ))
+            flags.append(
+                format_html(
+                    '<span style="background:#198754;color:#fff;padding:2px 6px;'
+                    'border-radius:4px;font-size:11px;">🆕 Container</span>'
+                )
+            )
         # Подозрение на VIN-mismatch (OCR-ошибка): показываем заметный бейдж.
-        if (obj.extracted_data or {}).get('vin_mismatch_review'):
-            flags.append(format_html(
-                '<span style="background:#ffc107;color:#212529;padding:2px 6px;'
-                'border-radius:4px;font-size:11px;font-weight:bold;" '
-                'title="AI извлёк VIN, но в БД есть очень похожий — '
-                'возможно ошибка OCR">⚠ VIN ?</span>'
-            ))
+        if (obj.extracted_data or {}).get("vin_mismatch_review"):
+            flags.append(
+                format_html(
+                    '<span style="background:#ffc107;color:#212529;padding:2px 6px;'
+                    'border-radius:4px;font-size:11px;font-weight:bold;" '
+                    'title="AI извлёк VIN, но в БД есть очень похожий — '
+                    'возможно ошибка OCR">⚠ VIN ?</span>'
+                )
+            )
         # VIN-валидатор поднял предупреждения (checksum / NHTSA / mismatch
         # с make/year). Показываем красный бейдж — это серьёзный сигнал.
         data = obj.extracted_data or {}
         has_validation_warning = False
-        for v in (data.get('vin_validations') or []):
-            if v.get('warnings'):
+        for v in data.get("vin_validations") or []:
+            if v.get("warnings"):
                 has_validation_warning = True
                 break
         if not has_validation_warning:
-            for veh in (data.get('vehicles') or []):
-                if (veh.get('vin_validation') or {}).get('warnings'):
+            for veh in data.get("vehicles") or []:
+                if (veh.get("vin_validation") or {}).get("warnings"):
                     has_validation_warning = True
                     break
         if has_validation_warning:
-            flags.append(format_html(
-                '<span style="background:#dc3545;color:#fff;padding:2px 6px;'
-                'border-radius:4px;font-size:11px;font-weight:bold;" '
-                'title="NHTSA / check digit поднял предупреждение по VIN">'
-                '⚠ VIN!</span>'
-            ))
+            flags.append(
+                format_html(
+                    '<span style="background:#dc3545;color:#fff;padding:2px 6px;'
+                    'border-radius:4px;font-size:11px;font-weight:bold;" '
+                    'title="NHTSA / check digit поднял предупреждение по VIN">'
+                    "⚠ VIN!</span>"
+                )
+            )
         if not flags:
-            return '—'
-        return format_html(' '.join(['{}'] * len(flags)), *flags)
-    created_new_flags.short_description = 'Создано'
+            return "—"
+        return format_html(" ".join(["{}"] * len(flags)), *flags)
+
+    created_new_flags.short_description = "Создано"
 
     # ── Read-only детали ──────────────────────────────────────────────────
 
     def original_file_preview(self, obj):
         if not obj.original_file:
-            return '—'
+            return "—"
         url = obj.original_file.url
         return format_html(
             '<a href="{0}" target="_blank">📄 Открыть PDF</a><br>'
             '<iframe src="{0}" width="100%" height="600" style="border:1px solid #dee2e6;border-radius:4px;margin-top:8px;"></iframe>',
             url,
         )
-    original_file_preview.short_description = 'Скан'
+
+    original_file_preview.short_description = "Скан"
 
     def extracted_data_pretty(self, obj):
         return self._json_block(obj.extracted_data)
-    extracted_data_pretty.short_description = 'Извлечённые данные'
+
+    extracted_data_pretty.short_description = "Извлечённые данные"
 
     def applied_changes_pretty(self, obj):
         return self._json_block(obj.applied_changes)
-    applied_changes_pretty.short_description = 'Применённые изменения'
+
+    applied_changes_pretty.short_description = "Применённые изменения"
 
     def _json_block(self, data):
         import json as _json
+
         if not data:
-            return '—'
+            return "—"
         formatted = _json.dumps(data, indent=2, ensure_ascii=False)
         return format_html(
             '<pre style="background:#f8f9fa;padding:12px;border-radius:4px;font-size:12px;'
@@ -229,6 +283,7 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
 
     def apply_jobs_action(self, request, queryset):
         from core.services.scan_applier import apply_job
+
         applied, errors = 0, 0
         for job in queryset:
             if not job.can_apply:
@@ -249,6 +304,7 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
                 "Нет задач в статусе 'Ожидает проверки' среди выбранных.",
                 messages.WARNING,
             )
+
     apply_jobs_action.short_description = "✅ Применить (Car/Container будут обновлены)"
 
     def apply_jobs_force_action(self, request, queryset):
@@ -259,14 +315,15 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
         и совпадение с существующим — случайно.
         """
         from core.services.scan_applier import apply_job
+
         applied, errors = 0, 0
         for job in queryset:
             if not job.can_apply:
                 continue
             data = job.extracted_data or {}
-            data['skip_vin_check'] = True
+            data["skip_vin_check"] = True
             job.extracted_data = data
-            job.save(update_fields=['extracted_data'])
+            job.save(update_fields=["extracted_data"])
             try:
                 apply_job(job, applied_by=request.user)
                 applied += 1
@@ -281,27 +338,30 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
             )
         if errors:
             self.message_user(request, f"Ошибок: {errors} (см. логи)", messages.ERROR)
-    apply_jobs_force_action.short_description = (
-        "⚠ Применить как НОВЫЙ Car (без проверки похожих VIN)"
-    )
+
+    apply_jobs_force_action.short_description = "⚠ Применить как НОВЫЙ Car (без проверки похожих VIN)"
 
     def ignore_jobs_action(self, request, queryset):
-        n = queryset.filter(status__in=[
-            ScanProcessingJob.STATUS_NEEDS_REVIEW,
-            ScanProcessingJob.STATUS_ERROR,
-        ]).update(status=ScanProcessingJob.STATUS_IGNORED)
+        n = queryset.filter(
+            status__in=[
+                ScanProcessingJob.STATUS_NEEDS_REVIEW,
+                ScanProcessingJob.STATUS_ERROR,
+            ]
+        ).update(status=ScanProcessingJob.STATUS_IGNORED)
         self.message_user(request, f"Помечено как 'Проигнорировано': {n}", messages.INFO)
+
     ignore_jobs_action.short_description = "🚫 Игнорировать"
 
     def reprocess_jobs_action(self, request, queryset):
         from core.tasks import process_scan_job
+
         n = 0
         for job in queryset:
             if job.status in (ScanProcessingJob.STATUS_PROCESSING, ScanProcessingJob.STATUS_APPLIED):
                 continue
             job.status = ScanProcessingJob.STATUS_PENDING
-            job.error_message = ''
-            job.save(update_fields=['status', 'error_message'])
+            job.error_message = ""
+            job.save(update_fields=["status", "error_message"])
             try:
                 process_scan_job.delay(job.id)
             except Exception:
@@ -309,24 +369,25 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
                 process_scan_job(job.id)  # type: ignore[call-arg]
             n += 1
         self.message_user(request, f"Поставлено на повторную обработку: {n}", messages.INFO)
+
     reprocess_jobs_action.short_description = "🔁 Повторить AI-обработку"
 
     # ── Custom URL: multi-file upload ─────────────────────────────────────
 
-    change_list_template = 'admin/scan_processing_job/change_list.html'
+    change_list_template = "admin/scan_processing_job/change_list.html"
 
     def get_urls(self):
         urls = super().get_urls()
         custom = [
             path(
-                'upload/',
+                "upload/",
                 self.admin_site.admin_view(self.upload_view),
-                name='core_scanprocessingjob_upload',
+                name="core_scanprocessingjob_upload",
             ),
             path(
-                '<int:job_id>/resolve-vin/',
+                "<int:job_id>/resolve-vin/",
                 self.admin_site.admin_view(self.resolve_vin_view),
-                name='core_scanprocessingjob_resolve_vin',
+                name="core_scanprocessingjob_resolve_vin",
             ),
         ]
         return custom + urls
@@ -343,36 +404,36 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
         """
         from core.services.scan_applier import apply_job
 
-        if request.method != 'POST':
-            return redirect('admin:core_scanprocessingjob_change', job_id)
+        if request.method != "POST":
+            return redirect("admin:core_scanprocessingjob_change", job_id)
 
         try:
             job = ScanProcessingJob.objects.get(pk=job_id)
         except ScanProcessingJob.DoesNotExist:
             messages.error(request, "Job не найден.")
-            return redirect('admin:core_scanprocessingjob_changelist')
+            return redirect("admin:core_scanprocessingjob_changelist")
 
-        action = request.POST.get('action', '')
+        action = request.POST.get("action", "")
         data = job.extracted_data or {}
-        mismatch = data.get('vin_mismatch_review') or {}
-        candidate_vins = {c.get('vin') for c in (mismatch.get('candidates') or [])}
+        mismatch = data.get("vin_mismatch_review") or {}
+        candidate_vins = {c.get("vin") for c in (mismatch.get("candidates") or [])}
 
-        if action == 'attach':
+        if action == "attach":
             # ВАРИАНТ 1: AI ошибся в тайтле, dock receipt прав.
             # Подменяем VIN из тайтла на VIN из БД (кандидата).
-            chosen_vin = (request.POST.get('chosen_vin') or '').strip().upper()
+            chosen_vin = (request.POST.get("chosen_vin") or "").strip().upper()
             if chosen_vin not in candidate_vins:
                 messages.error(request, "Выбранный VIN не из списка кандидатов.")
-                return redirect('admin:core_scanprocessingjob_change', job_id)
-            vins = data.get('vins') or []
+                return redirect("admin:core_scanprocessingjob_change", job_id)
+            vins = data.get("vins") or []
             if vins:
                 vins[0] = chosen_vin
             else:
                 vins = [chosen_vin]
-            data['vins'] = vins
-            data.pop('vin_mismatch_review', None)
+            data["vins"] = vins
+            data.pop("vin_mismatch_review", None)
             job.extracted_data = data
-            job.save(update_fields=['extracted_data'])
+            job.save(update_fields=["extracted_data"])
             try:
                 apply_job(job, applied_by=request.user)
                 messages.success(
@@ -382,24 +443,25 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
             except Exception:
                 logger.exception("Failed to apply after attach: job #%s", job.pk)
                 messages.error(request, "Ошибка при применении (см. логи).")
-            return redirect('admin:core_scanprocessingjob_change', job_id)
+            return redirect("admin:core_scanprocessingjob_change", job_id)
 
-        if action == 'fix_existing_car_vin':
+        if action == "fix_existing_car_vin":
             # ВАРИАНТ 2: AI ошибся в dock receipt, тайтл прав.
             # Обновляем VIN существующей карточки Car на VIN из тайтла,
             # затем applier найдёт её и прикрепит тайтл.
             from core.models import Car
+
             try:
-                car_id = int(request.POST.get('car_id') or 0)
+                car_id = int(request.POST.get("car_id") or 0)
             except (TypeError, ValueError):
                 car_id = 0
-            if not any(c.get('car_id') == car_id for c in (mismatch.get('candidates') or [])):
+            if not any(c.get("car_id") == car_id for c in (mismatch.get("candidates") or [])):
                 messages.error(request, "Car не из списка кандидатов.")
-                return redirect('admin:core_scanprocessingjob_change', job_id)
-            extracted_vin = (mismatch.get('extracted_vin') or '').strip().upper()
+                return redirect("admin:core_scanprocessingjob_change", job_id)
+            extracted_vin = (mismatch.get("extracted_vin") or "").strip().upper()
             if not extracted_vin:
                 messages.error(request, "В job отсутствует исходный VIN.")
-                return redirect('admin:core_scanprocessingjob_change', job_id)
+                return redirect("admin:core_scanprocessingjob_change", job_id)
             # Защита от дубликата: вдруг в БД уже есть Car с extracted_vin.
             collision = Car.objects.filter(vin=extracted_vin).exclude(pk=car_id).first()
             if collision:
@@ -408,64 +470,70 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
                     f"VIN {extracted_vin} уже занят другой карточкой "
                     f"(Car #{collision.id}). Конфликт нужно решить вручную.",
                 )
-                return redirect('admin:core_scanprocessingjob_change', job_id)
+                return redirect("admin:core_scanprocessingjob_change", job_id)
             try:
                 car = Car.objects.get(pk=car_id)
             except Car.DoesNotExist:
                 messages.error(request, "Car не найден.")
-                return redirect('admin:core_scanprocessingjob_change', job_id)
+                return redirect("admin:core_scanprocessingjob_change", job_id)
             old_vin = car.vin
             car.vin = extracted_vin
-            car.save(update_fields=['vin'])
-            data.pop('vin_mismatch_review', None)
+            car.save(update_fields=["vin"])
+            data.pop("vin_mismatch_review", None)
             job.extracted_data = data
-            job.save(update_fields=['extracted_data'])
+            job.save(update_fields=["extracted_data"])
             try:
                 apply_job(job, applied_by=request.user)
                 messages.success(
                     request,
-                    f"VIN в карточке Car #{car.id} исправлен: "
-                    f"{old_vin} → {extracted_vin}. Тайтл прикреплён.",
+                    f"VIN в карточке Car #{car.id} исправлен: {old_vin} → {extracted_vin}. Тайтл прикреплён.",
                 )
             except Exception:
                 logger.exception("Failed to apply after VIN-fix: job #%s", job.pk)
                 messages.error(request, "Ошибка при применении (см. логи).")
-            return redirect('admin:core_scanprocessingjob_change', job_id)
+            return redirect("admin:core_scanprocessingjob_change", job_id)
 
-        if action == 'force_new':
-            data['skip_vin_check'] = True
-            data.pop('vin_mismatch_review', None)
+        if action == "force_new":
+            data["skip_vin_check"] = True
+            data.pop("vin_mismatch_review", None)
             job.extracted_data = data
-            job.save(update_fields=['extracted_data'])
+            job.save(update_fields=["extracted_data"])
             try:
                 apply_job(job, applied_by=request.user)
                 messages.success(request, "Создана новая карточка Car (force).")
             except Exception:
                 logger.exception("Failed to force-apply: job #%s", job.pk)
                 messages.error(request, "Ошибка при применении (см. логи).")
-            return redirect('admin:core_scanprocessingjob_change', job_id)
+            return redirect("admin:core_scanprocessingjob_change", job_id)
 
         messages.warning(request, f"Неизвестное действие: {action}")
-        return redirect('admin:core_scanprocessingjob_change', job_id)
+        return redirect("admin:core_scanprocessingjob_change", job_id)
 
     def changelist_view(self, request, extra_context=None):
         extra_context = extra_context or {}
-        extra_context['upload_title_url'] = reverse(
-            'admin:core_scanprocessingjob_upload'
-        ) + f'?type={ScanProcessingJob.SCAN_TYPE_TITLE}'
-        extra_context['upload_dock_url'] = reverse(
-            'admin:core_scanprocessingjob_upload'
-        ) + f'?type={ScanProcessingJob.SCAN_TYPE_DOCK_RECEIPT}'
+        extra_context["upload_title_url"] = (
+            reverse("admin:core_scanprocessingjob_upload") + f"?type={ScanProcessingJob.SCAN_TYPE_TITLE}"
+        )
+        extra_context["upload_dock_url"] = (
+            reverse("admin:core_scanprocessingjob_upload") + f"?type={ScanProcessingJob.SCAN_TYPE_DOCK_RECEIPT}"
+        )
         # Счётчики, чтобы сразу было видно, сколько ждёт review.
         from django.db.models import Count, Q
+
         counts = ScanProcessingJob.objects.aggregate(
-            review=Count('id', filter=Q(status=ScanProcessingJob.STATUS_NEEDS_REVIEW)),
-            errors=Count('id', filter=Q(status=ScanProcessingJob.STATUS_ERROR)),
-            processing=Count('id', filter=Q(status__in=[
-                ScanProcessingJob.STATUS_PENDING, ScanProcessingJob.STATUS_PROCESSING,
-            ])),
+            review=Count("id", filter=Q(status=ScanProcessingJob.STATUS_NEEDS_REVIEW)),
+            errors=Count("id", filter=Q(status=ScanProcessingJob.STATUS_ERROR)),
+            processing=Count(
+                "id",
+                filter=Q(
+                    status__in=[
+                        ScanProcessingJob.STATUS_PENDING,
+                        ScanProcessingJob.STATUS_PROCESSING,
+                    ]
+                ),
+            ),
         )
-        extra_context['scan_counts'] = counts
+        extra_context["scan_counts"] = counts
         return super().changelist_view(request, extra_context=extra_context)
 
     def upload_view(self, request):
@@ -476,19 +544,19 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
         """
         from core.tasks import process_scan_job
 
-        scan_type = request.GET.get('type', ScanProcessingJob.SCAN_TYPE_TITLE)
+        scan_type = request.GET.get("type", ScanProcessingJob.SCAN_TYPE_TITLE)
         if scan_type not in dict(ScanProcessingJob.SCAN_TYPE_CHOICES):
             scan_type = ScanProcessingJob.SCAN_TYPE_TITLE
 
-        if request.method == 'POST':
-            files = request.FILES.getlist('files')
+        if request.method == "POST":
+            files = request.FILES.getlist("files")
             if not files:
                 messages.warning(request, "Не выбрано ни одного файла.")
                 return HttpResponseRedirect(request.get_full_path())
             created_ids = []
             for f in files:
                 # Быстрая sanity-проверка: хотим PDF.
-                if not f.name.lower().endswith('.pdf'):
+                if not f.name.lower().endswith(".pdf"):
                     messages.warning(request, f"Пропущен (не PDF): {f.name}")
                     continue
                 job = ScanProcessingJob.objects.create(
@@ -508,14 +576,14 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
                     f"Загружено {len(created_ids)} сканов. После обработки AI они "
                     f"появятся в списке со статусом 'Ожидает проверки'.",
                 )
-            return redirect('admin:core_scanprocessingjob_changelist')
+            return redirect("admin:core_scanprocessingjob_changelist")
 
         context = {
             **self.admin_site.each_context(request),
-            'title': 'Загрузка сканов',
-            'opts': self.model._meta,
-            'scan_type': scan_type,
-            'scan_type_label': dict(ScanProcessingJob.SCAN_TYPE_CHOICES)[scan_type],
-            'scan_type_choices': ScanProcessingJob.SCAN_TYPE_CHOICES,
+            "title": "Загрузка сканов",
+            "opts": self.model._meta,
+            "scan_type": scan_type,
+            "scan_type_label": dict(ScanProcessingJob.SCAN_TYPE_CHOICES)[scan_type],
+            "scan_type_choices": ScanProcessingJob.SCAN_TYPE_CHOICES,
         }
-        return render(request, 'admin/scan_processing_job/upload.html', context)
+        return render(request, "admin/scan_processing_job/upload.html", context)

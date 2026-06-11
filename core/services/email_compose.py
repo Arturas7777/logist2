@@ -49,13 +49,13 @@ logger = logging.getLogger(__name__)
 
 
 __all__ = [
-    'ComposeError',
-    'compose_new_email',
-    'compose_new_email_from_autotransport',
-    'compose_new_email_from_car',
-    'reply_to_email',
-    'resolve_group_addrs',
-    'sanitize_email_html',
+    "ComposeError",
+    "compose_new_email",
+    "compose_new_email_from_autotransport",
+    "compose_new_email_from_car",
+    "reply_to_email",
+    "resolve_group_addrs",
+    "sanitize_email_html",
 ]
 
 
@@ -64,19 +64,50 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 _ALLOWED_TAGS = [
-    'a', 'abbr', 'acronym', 'b', 'blockquote', 'br', 'code', 'div', 'em',
-    'i', 'img', 'li', 'ol', 'p', 'pre', 'span', 'strong', 'table', 'tbody',
-    'td', 'th', 'thead', 'tr', 'u', 'ul', 'hr', 'h1', 'h2', 'h3', 'h4',
-    'h5', 'h6', 'sub', 'sup', 'small',
+    "a",
+    "abbr",
+    "acronym",
+    "b",
+    "blockquote",
+    "br",
+    "code",
+    "div",
+    "em",
+    "i",
+    "img",
+    "li",
+    "ol",
+    "p",
+    "pre",
+    "span",
+    "strong",
+    "table",
+    "tbody",
+    "td",
+    "th",
+    "thead",
+    "tr",
+    "u",
+    "ul",
+    "hr",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "sub",
+    "sup",
+    "small",
 ]
 
 _ALLOWED_ATTRS = {
-    '*': ['style', 'class', 'title'],
-    'a': ['href', 'name', 'target', 'rel'],
-    'img': ['src', 'alt', 'width', 'height'],
+    "*": ["style", "class", "title"],
+    "a": ["href", "name", "target", "rel"],
+    "img": ["src", "alt", "width", "height"],
 }
 
-_ALLOWED_PROTOCOLS = ['http', 'https', 'mailto', 'cid', 'data']
+_ALLOWED_PROTOCOLS = ["http", "https", "mailto", "cid", "data"]
 
 
 def sanitize_email_html(raw: str) -> str:
@@ -88,8 +119,8 @@ def sanitize_email_html(raw: str) -> str:
     try:
         import bleach  # type: ignore
     except ImportError:
-        logger.warning('[email] bleach not installed; HTML rendering disabled.')
-        return ''
+        logger.warning("[email] bleach not installed; HTML rendering disabled.")
+        return ""
 
     return bleach.clean(
         raw,
@@ -111,23 +142,22 @@ def resolve_group_addrs(members) -> list:
     if not members:
         return []
 
-    emails_lc = {(m.email or '').lower(): m.email for m in members if m.email}
+    emails_lc = {(m.email or "").lower(): m.email for m in members if m.email}
     if not emails_lc:
         return [m.as_header_format for m in members]
 
     # Одним запросом собираем маппинг email_lc → Contact.name (если есть).
     ce_qs = (
-        ContactEmail.objects
-        .filter(email__in=list(emails_lc.values()))
-        .select_related('contact')
-        .order_by('-is_primary', 'position')
+        ContactEmail.objects.filter(email__in=list(emails_lc.values()))
+        .select_related("contact")
+        .order_by("-is_primary", "position")
     )
     name_map: dict = {}
     for ce in ce_qs:
-        lc = (ce.email or '').lower()
+        lc = (ce.email or "").lower()
         if lc in name_map:
             continue  # первый (is_primary раньше в order_by) — побеждает
-        cname = (ce.contact.name or '').strip() if ce.contact else ''
+        cname = (ce.contact.name or "").strip() if ce.contact else ""
         if cname:
             name_map[lc] = cname
 
@@ -138,9 +168,9 @@ def resolve_group_addrs(members) -> list:
 
     out: list = []
     for m in members:
-        lc = (m.email or '').lower()
+        lc = (m.email or "").lower()
         if lc in name_map:
-            out.append(f'{_quote_if_needed(name_map[lc])} <{m.email}>')
+            out.append(f"{_quote_if_needed(name_map[lc])} <{m.email}>")
         else:
             out.append(m.as_header_format)
     return out
@@ -154,7 +184,7 @@ class ComposeError(Exception):
 # Валидация адресов
 # ---------------------------------------------------------------------------
 
-_EMAIL_RE = re.compile(r'^[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+$')
+_EMAIL_RE = re.compile(r"^[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+$")
 
 
 def _parse_addrs(raw: str | Iterable[str] | None) -> list[str]:
@@ -162,20 +192,20 @@ def _parse_addrs(raw: str | Iterable[str] | None) -> list[str]:
     if raw is None:
         return []
     if isinstance(raw, str):
-        items = re.split(r'[,;\n]+', raw)
+        items = re.split(r"[,;\n]+", raw)
     else:
         items = list(raw)
     out: list[str] = []
     for it in items:
-        addr = (it or '').strip()
+        addr = (it or "").strip()
         if not addr:
             continue
         # "Имя <email@host>" — вытащим email
-        m = re.search(r'<([^>]+)>', addr)
+        m = re.search(r"<([^>]+)>", addr)
         if m:
             addr = m.group(1).strip()
         if not _EMAIL_RE.match(addr):
-            raise ComposeError(f'Некорректный email-адрес: {addr!r}')
+            raise ComposeError(f"Некорректный email-адрес: {addr!r}")
         out.append(addr)
     return out
 
@@ -189,19 +219,19 @@ def _parse_addrs_with_names(raw: str | Iterable[str] | None) -> list[tuple[str, 
     if raw is None:
         return []
     if isinstance(raw, str):
-        items = re.split(r'[,;\n]+', raw)
+        items = re.split(r"[,;\n]+", raw)
     else:
         items = list(raw)
     out: list[tuple[str, str]] = []
     for it in items:
-        addr = (it or '').strip()
+        addr = (it or "").strip()
         if not addr:
             continue
-        name = ''
-        m = re.search(r'^(.*?)<([^>]+)>\s*$', addr)
+        name = ""
+        m = re.search(r"^(.*?)<([^>]+)>\s*$", addr)
         if m:
-            name = (m.group(1) or '').strip().strip('"')
-            addr = (m.group(2) or '').strip()
+            name = (m.group(1) or "").strip().strip('"')
+            addr = (m.group(2) or "").strip()
         if _EMAIL_RE.match(addr):
             out.append((addr, name))
     return out
@@ -211,7 +241,7 @@ def _parse_addrs_with_names(raw: str | Iterable[str] | None) -> list[tuple[str, 
 # Вложения
 # ---------------------------------------------------------------------------
 
-_SAFE_FILENAME_RE = re.compile(r'[^A-Za-z0-9._\- а-яА-ЯёЁ]+')
+_SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._\- а-яА-ЯёЁ]+")
 
 
 def _validate_and_read_attachments(
@@ -223,7 +253,7 @@ def _validate_and_read_attachments(
     """
     if not files:
         return []
-    max_mb = int(getattr(settings, 'GMAIL_MAX_OUTBOUND_MB', 25))
+    max_mb = int(getattr(settings, "GMAIL_MAX_OUTBOUND_MB", 25))
     max_bytes = max_mb * 1024 * 1024
 
     result: list[tuple[str, bytes, str]] = []
@@ -234,11 +264,9 @@ def _validate_and_read_attachments(
         data = f.read()
         total += len(data)
         if total > max_bytes:
-            raise ComposeError(
-                f'Суммарный размер вложений превышает лимит {max_mb} МБ.'
-            )
-        filename = getattr(f, 'name', '') or 'attachment.bin'
-        mime = getattr(f, 'content_type', '') or 'application/octet-stream'
+            raise ComposeError(f"Суммарный размер вложений превышает лимит {max_mb} МБ.")
+        filename = getattr(f, "name", "") or "attachment.bin"
+        mime = getattr(f, "content_type", "") or "application/octet-stream"
         result.append((filename, data, mime))
     return result
 
@@ -253,28 +281,30 @@ def _save_outgoing_attachments(
         return []
 
     media_root = Path(settings.MEDIA_ROOT)
-    rel_dir = Path('container_emails') / when.strftime('%Y') / when.strftime('%m') / gmail_id
+    rel_dir = Path("container_emails") / when.strftime("%Y") / when.strftime("%m") / gmail_id
     abs_dir = media_root / rel_dir
     abs_dir.mkdir(parents=True, exist_ok=True)
 
     out: list[dict] = []
     for idx, (filename, data, mime) in enumerate(attachments):
-        safe_name = _SAFE_FILENAME_RE.sub('_', filename or f'attachment_{idx}')
-        if not safe_name or safe_name == '_':
-            safe_name = f'attachment_{idx}'
-        stored = f'{idx:02d}_{safe_name}'
+        safe_name = _SAFE_FILENAME_RE.sub("_", filename or f"attachment_{idx}")
+        if not safe_name or safe_name == "_":
+            safe_name = f"attachment_{idx}"
+        stored = f"{idx:02d}_{safe_name}"
         abs_path = abs_dir / stored
-        with open(abs_path, 'wb') as fh:
+        with open(abs_path, "wb") as fh:
             fh.write(data)
-        out.append({
-            'filename': filename,
-            'size': len(data),
-            'content_type': mime,
-            'storage_path': str((rel_dir / stored).as_posix()),
-            'attachment_id': '',
-            'is_inline': False,
-            'skipped_reason': '',
-        })
+        out.append(
+            {
+                "filename": filename,
+                "size": len(data),
+                "content_type": mime,
+                "storage_path": str((rel_dir / stored).as_posix()),
+                "attachment_id": "",
+                "is_inline": False,
+                "skipped_reason": "",
+            }
+        )
     return out
 
 
@@ -286,12 +316,12 @@ def _save_outgoing_attachments(
 def _append_signature(body_text: str, body_html: str) -> tuple[str, str]:
     """Добавляет подпись В КОНЕЦ тела письма. Используется для compose_new_email,
     где цитаты нет и подпись естественно ставится в самом низу."""
-    sig_text = getattr(settings, 'GMAIL_SIGNATURE_TEXT', '') or ''
-    sig_html = getattr(settings, 'GMAIL_SIGNATURE_HTML', '') or ''
+    sig_text = getattr(settings, "GMAIL_SIGNATURE_TEXT", "") or ""
+    sig_html = getattr(settings, "GMAIL_SIGNATURE_HTML", "") or ""
     if sig_text:
-        body_text = (body_text or '').rstrip() + '\n\n' + sig_text.strip() + '\n'
+        body_text = (body_text or "").rstrip() + "\n\n" + sig_text.strip() + "\n"
     if sig_html:
-        body_html = (body_html or '') + sig_html
+        body_html = (body_html or "") + sig_html
     return body_text, body_html
 
 
@@ -299,7 +329,7 @@ def _append_signature(body_text: str, body_html: str) -> tuple[str, str]:
 # format_quoted_reply(). По ней разрезаем plain-text ответ, чтобы вставить
 # подпись ПЕРЕД цитатой (как это делает веб-Gmail при клике "Ответить").
 _REPLY_ATTRIBUTION_TEXT_RE = re.compile(
-    r'^On\s[^\n]{0,400}\bwrote:\s*$',
+    r"^On\s[^\n]{0,400}\bwrote:\s*$",
     re.MULTILINE,
 )
 
@@ -312,20 +342,16 @@ def _build_reply_bodies(body_text: str) -> tuple[str, str]:
     в HTML-версии) — так делает веб-Gmail. Это даёт естественный вид:
     получатель сначала видит ответ + подпись, цитата схлопывается в "...".
     """
-    sig_text = getattr(settings, 'GMAIL_SIGNATURE_TEXT', '') or ''
-    sig_html = getattr(settings, 'GMAIL_SIGNATURE_HTML', '') or ''
-    src = body_text or ''
+    sig_text = getattr(settings, "GMAIL_SIGNATURE_TEXT", "") or ""
+    sig_html = getattr(settings, "GMAIL_SIGNATURE_HTML", "") or ""
+    src = body_text or ""
 
     # --- plain text: вставляем подпись перед "On ... wrote:" ---
     if sig_text:
-        sig_block = '\n\n' + sig_text.strip() + '\n'
+        sig_block = "\n\n" + sig_text.strip() + "\n"
         m = _REPLY_ATTRIBUTION_TEXT_RE.search(src)
         if m:
-            final_text = (
-                src[:m.start()].rstrip()
-                + sig_block
-                + '\n' + src[m.start():]
-            )
+            final_text = src[: m.start()].rstrip() + sig_block + "\n" + src[m.start() :]
         else:
             final_text = src.rstrip() + sig_block
     else:
@@ -345,19 +371,19 @@ def _build_reply_bodies(body_text: str) -> tuple[str, str]:
 def _build_references_header(parent: ContainerEmail) -> str:
     """Собирает заголовок References = parent.references + parent.message_id."""
     parts: list[str] = []
-    for chunk in (parent.references or '').split():
+    for chunk in (parent.references or "").split():
         chunk = chunk.strip()
         if chunk:
-            if not (chunk.startswith('<') and chunk.endswith('>')):
-                chunk = f'<{chunk.strip("<>")}>'
+            if not (chunk.startswith("<") and chunk.endswith(">")):
+                chunk = f"<{chunk.strip('<>')}>"
             parts.append(chunk)
     if parent.message_id:
         pm = parent.message_id.strip()
-        if not (pm.startswith('<') and pm.endswith('>')):
-            pm = f'<{pm.strip("<>")}>'
+        if not (pm.startswith("<") and pm.endswith(">")):
+            pm = f"<{pm.strip('<>')}>"
         if pm not in parts:
             parts.append(pm)
-    return ' '.join(parts)
+    return " ".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -380,11 +406,7 @@ def _autocreate_orphan_contacts(
         candidates = [(e.lower(), n) for e, n in raw_inputs if e]
         if not candidates:
             return created
-        known = set(
-            ContactEmail.objects
-            .filter(email__in=[e for e, _ in candidates])
-            .values_list('email', flat=True)
-        )
+        known = set(ContactEmail.objects.filter(email__in=[e for e, _ in candidates]).values_list("email", flat=True))
         known_lc = {e.lower() for e in known}
 
         for email_addr, display_name in candidates:
@@ -393,11 +415,11 @@ def _autocreate_orphan_contacts(
             # Не создаём дубликаты если уже в этом же вызове.
             known_lc.add(email_addr)
 
-            fallback_name = (display_name or '').strip() or email_addr.split('@')[0]
+            fallback_name = (display_name or "").strip() or email_addr.split("@")[0]
             contact = Contact.objects.create(
                 name=fallback_name[:200],
                 is_orphan=True,
-                comment='Создан автоматически при отправке email из карточки контейнера.',
+                comment="Создан автоматически при отправке email из карточки контейнера.",
             )
             ContactEmail.objects.create(
                 contact=contact,
@@ -406,11 +428,12 @@ def _autocreate_orphan_contacts(
             )
             created.append(contact)
             logger.info(
-                '[email_compose] auto-created orphan contact: %s <%s>',
-                fallback_name, email_addr,
+                "[email_compose] auto-created orphan contact: %s <%s>",
+                fallback_name,
+                email_addr,
             )
     except Exception as exc:  # pragma: no cover — защитная обёртка
-        logger.warning('[email_compose] failed to autocreate orphan contacts: %s', exc)
+        logger.warning("[email_compose] failed to autocreate orphan contacts: %s", exc)
     return created
 
 
@@ -426,8 +449,8 @@ def reply_to_email(
     to: str | Iterable[str],
     cc: str | Iterable[str] | None = None,
     bcc: str | Iterable[str] | None = None,
-    subject: str = '',
-    body_text: str = '',
+    subject: str = "",
+    body_text: str = "",
     attachments: Iterable[UploadedFile] | None = None,
     origin_container=None,
     origin_car=None,
@@ -450,7 +473,7 @@ def reply_to_email(
     cc_list = _parse_addrs(cc)
     bcc_list = _parse_addrs(bcc)
     if not to_list:
-        raise ComposeError('Не указан хотя бы один получатель.')
+        raise ComposeError("Не указан хотя бы один получатель.")
     # Сохраняем пары (email, name) для авто-создания контактов.
     raw_pairs: list[tuple[str, str]] = []
     raw_pairs.extend(_parse_addrs_with_names(to))
@@ -459,8 +482,8 @@ def reply_to_email(
 
     att_payload = _validate_and_read_attachments(attachments)
 
-    subject = subject.strip() or f'Re: {parent_email.subject or ""}'.strip()
-    body_text = body_text or ''
+    subject = subject.strip() or f"Re: {parent_email.subject or ''}".strip()
+    body_text = body_text or ""
     # Для ответа — Gmail-совместимый layout: <p>reply</p> + <подпись> +
     # <blockquote class="gmail_quote">...</blockquote>. Подпись ставится
     # МЕЖДУ ответом и цитатой, как в веб-Gmail, а сам блок цитаты
@@ -485,8 +508,8 @@ def reply_to_email(
         is_reply=True,
     )
 
-    local_message_id = mime.get('Message-ID', '') or make_msgid()
-    subject_final = mime.get('Subject', subject)
+    local_message_id = mime.get("Message-ID", "") or make_msgid()
+    subject_final = mime.get("Subject", subject)
 
     return _send_and_persist(
         mime=mime,
@@ -503,10 +526,10 @@ def reply_to_email(
         body_html_final=body_html_final,
         attachments_payload=att_payload,
         matched_by=ContainerEmail.MATCHED_BY_THREAD,
-        in_reply_to=parent_email.message_id or '',
+        in_reply_to=parent_email.message_id or "",
         references=references_hdr,
         raw_recipient_pairs=raw_pairs,
-        source_text_for_matching=f'{subject}\n{body_text_final}',
+        source_text_for_matching=f"{subject}\n{body_text_final}",
         origin_car=origin_car,
         origin_autotransport=origin_autotransport,
     )
@@ -519,8 +542,8 @@ def compose_new_email(
     to: str | Iterable[str],
     cc: str | Iterable[str] | None = None,
     bcc: str | Iterable[str] | None = None,
-    subject: str = '',
-    body_text: str = '',
+    subject: str = "",
+    body_text: str = "",
     attachments: Iterable[UploadedFile] | None = None,
 ) -> ContainerEmail:
     """Новое письмо по контейнеру (без родителя). Gmail создаст новый тред."""
@@ -529,7 +552,7 @@ def compose_new_email(
     cc_list = _parse_addrs(cc)
     bcc_list = _parse_addrs(bcc)
     if not to_list:
-        raise ComposeError('Не указан хотя бы один получатель.')
+        raise ComposeError("Не указан хотя бы один получатель.")
     raw_pairs: list[tuple[str, str]] = []
     raw_pairs.extend(_parse_addrs_with_names(to))
     raw_pairs.extend(_parse_addrs_with_names(cc))
@@ -537,10 +560,8 @@ def compose_new_email(
 
     att_payload = _validate_and_read_attachments(attachments)
 
-    subject = (subject or '').strip() or f'Container {getattr(container, "number", "")}'
-    body_text_final, body_html_final = _append_signature(
-        body_text or '', plain_text_to_simple_html(body_text or '')
-    )
+    subject = (subject or "").strip() or f"Container {getattr(container, 'number', '')}"
+    body_text_final, body_html_final = _append_signature(body_text or "", plain_text_to_simple_html(body_text or ""))
 
     from_addr, from_name = get_from_address()
 
@@ -557,8 +578,8 @@ def compose_new_email(
         is_reply=False,
     )
 
-    local_message_id = mime.get('Message-ID', '') or make_msgid()
-    subject_final = mime.get('Subject', subject)
+    local_message_id = mime.get("Message-ID", "") or make_msgid()
+    subject_final = mime.get("Subject", subject)
 
     return _send_and_persist(
         mime=mime,
@@ -575,10 +596,10 @@ def compose_new_email(
         body_html_final=body_html_final,
         attachments_payload=att_payload,
         matched_by=ContainerEmail.MATCHED_BY_MANUAL,
-        in_reply_to='',
-        references='',
+        in_reply_to="",
+        references="",
         raw_recipient_pairs=raw_pairs,
-        source_text_for_matching=f'{subject}\n{body_text_final}',
+        source_text_for_matching=f"{subject}\n{body_text_final}",
     )
 
 
@@ -606,7 +627,7 @@ def _send_and_persist(
     in_reply_to,
     references,
     raw_recipient_pairs: list[tuple[str, str]] | None = None,
-    source_text_for_matching: str = '',
+    source_text_for_matching: str = "",
     origin_car=None,
     origin_autotransport=None,
 ) -> ContainerEmail:
@@ -621,37 +642,37 @@ def _send_and_persist(
         )
     except SendError as exc:
         # Сохраняем «неудачную» запись — чтобы показать в UI с кнопкой «Повторить».
-        failed_id = local_message_id or f'<failed-{uuid.uuid4().hex}@logist2.local>'
+        failed_id = local_message_id or f"<failed-{uuid.uuid4().hex}@logist2.local>"
         email = ContainerEmail.objects.create(
             sent_from_container=container,
             message_id=failed_id,
-            thread_id=getattr(parent_email, 'thread_id', '') if parent_email else '',
+            thread_id=getattr(parent_email, "thread_id", "") if parent_email else "",
             in_reply_to=in_reply_to,
             references=references,
             direction=ContainerEmail.DIRECTION_OUTGOING,
             from_addr=from_addr,
-            to_addrs=', '.join(to_list),
-            cc_addrs=', '.join(cc_list),
+            to_addrs=", ".join(to_list),
+            cc_addrs=", ".join(cc_list),
             subject=subject_final,
             body_text=body_text_final,
             body_html=body_html_final,
-            snippet=(body_text_final or '')[:300],
+            snippet=(body_text_final or "")[:300],
             received_at=now,
-            gmail_id='',
+            gmail_id="",
             labels_json=[],
             attachments_json=[
                 {
-                    'filename': f[0],
-                    'size': len(f[1]),
-                    'content_type': f[2],
-                    'storage_path': '',
-                    'attachment_id': '',
-                    'is_inline': False,
+                    "filename": f[0],
+                    "size": len(f[1]),
+                    "content_type": f[2],
+                    "storage_path": "",
+                    "attachment_id": "",
+                    "is_inline": False,
                 }
                 for f in attachments_payload
             ],
             matched_by=matched_by,
-            sent_by_user=user if (user and getattr(user, 'is_authenticated', False)) else None,
+            sent_by_user=user if (user and getattr(user, "is_authenticated", False)) else None,
             send_status=ContainerEmail.SEND_STATUS_FAILED,
             send_error=str(exc)[:2000],
         )
@@ -671,12 +692,14 @@ def _send_and_persist(
         )
         raise
 
-    gmail_id = response.get('id', '') or ''
-    gmail_thread_id = response.get('threadId', '') or thread_id or ''
-    labels = list(response.get('labelIds') or [])
+    gmail_id = response.get("id", "") or ""
+    gmail_thread_id = response.get("threadId", "") or thread_id or ""
+    labels = list(response.get("labelIds") or [])
 
     stored_attachments = _save_outgoing_attachments(
-        attachments_payload, gmail_id, now,
+        attachments_payload,
+        gmail_id,
+        now,
     )
 
     email = ContainerEmail.objects.create(
@@ -687,21 +710,21 @@ def _send_and_persist(
         references=references,
         direction=ContainerEmail.DIRECTION_OUTGOING,
         from_addr=from_addr,
-        to_addrs=', '.join(to_list),
-        cc_addrs=', '.join(cc_list),
+        to_addrs=", ".join(to_list),
+        cc_addrs=", ".join(cc_list),
         subject=subject_final,
         body_text=body_text_final,
         body_html=body_html_final,
-        snippet=(body_text_final or '')[:300],
+        snippet=(body_text_final or "")[:300],
         received_at=now,
         gmail_id=gmail_id,
         gmail_history_id=None,
         labels_json=labels,
         attachments_json=stored_attachments,
         matched_by=matched_by,
-        sent_by_user=user if (user and getattr(user, 'is_authenticated', False)) else None,
+        sent_by_user=user if (user and getattr(user, "is_authenticated", False)) else None,
         send_status=ContainerEmail.SEND_STATUS_SENT,
-        send_error='',
+        send_error="",
     )
 
     _link_outgoing_to_containers(
@@ -721,24 +744,28 @@ def _send_and_persist(
 
     # Follow-up flag: если отвечаем на помеченное «ответить позже» письмо —
     # автоматически снимаем флаг, т.к. обязательство закрыто отправкой ответа.
-    if (parent_email is not None
-            and parent_email.needs_reply
-            and email.send_status == ContainerEmail.SEND_STATUS_SENT):
+    if parent_email is not None and parent_email.needs_reply and email.send_status == ContainerEmail.SEND_STATUS_SENT:
         parent_email.needs_reply = False
         parent_email.needs_reply_set_at = None
         parent_email.needs_reply_set_by = None
-        parent_email.save(update_fields=[
-            'needs_reply', 'needs_reply_set_at', 'needs_reply_set_by',
-        ])
+        parent_email.save(
+            update_fields=[
+                "needs_reply",
+                "needs_reply_set_at",
+                "needs_reply_set_by",
+            ]
+        )
         logger.info(
-            '[email_compose] auto-cleared needs_reply on parent email pk=%s',
+            "[email_compose] auto-cleared needs_reply on parent email pk=%s",
             parent_email.pk,
         )
 
     logger.info(
-        '[email_compose] outgoing saved: pk=%s gmail_id=%s thread=%s container=%s',
-        email.pk, gmail_id, gmail_thread_id,
-        getattr(container, 'pk', None),
+        "[email_compose] outgoing saved: pk=%s gmail_id=%s thread=%s container=%s",
+        email.pk,
+        gmail_id,
+        gmail_thread_id,
+        getattr(container, "pk", None),
     )
 
     # После успешной отправки — подтягиваем/создаём контакты, чтобы в
@@ -777,15 +804,17 @@ def _link_outgoing_to_containers(
         if not cid or cid in seen:
             return
         seen.add(cid)
-        links.append(ContainerEmailLink(
-            email=email,
-            container_id=cid,
-            matched_by=matched_by,
-            is_read=is_read,
-        ))
+        links.append(
+            ContainerEmailLink(
+                email=email,
+                container_id=cid,
+                matched_by=matched_by,
+                is_read=is_read,
+            )
+        )
 
     # 1) Карточка-источник: сами отправили → уже «прочитано» здесь.
-    if origin_container is not None and getattr(origin_container, 'pk', None):
+    if origin_container is not None and getattr(origin_container, "pk", None):
         _add(
             origin_container.pk,
             origin_matched_by or ContainerEmail.MATCHED_BY_MANUAL,
@@ -794,9 +823,7 @@ def _link_outgoing_to_containers(
 
     # 2) Контейнеры родительского треда: cross-linked, ещё не видели → unread.
     if parent_email is not None and parent_email.pk:
-        parent_cids = list(
-            parent_email.containers.values_list('id', flat=True)
-        )
+        parent_cids = list(parent_email.containers.values_list("id", flat=True))
         for cid in parent_cids:
             _add(cid, ContainerEmail.MATCHED_BY_THREAD, is_read=False)
 
@@ -809,7 +836,7 @@ def _link_outgoing_to_containers(
             for cid in _match_by_bookings(source_text, booking_index):
                 _add(cid, ContainerEmail.MATCHED_BY_BOOKING_NUMBER, is_read=False)
         except Exception as exc:  # pragma: no cover — защитная обёртка
-            logger.warning('[email_compose] link-by-text failed: %s', exc)
+            logger.warning("[email_compose] link-by-text failed: %s", exc)
 
     if links:
         ContainerEmailLink.objects.bulk_create(links, ignore_conflicts=True)
@@ -839,15 +866,17 @@ def _link_outgoing_to_cars(
         if not cid or cid in seen:
             return
         seen.add(cid)
-        links.append(CarEmailLink(
-            email=email,
-            car_id=cid,
-            matched_by=matched_by,
-            is_read=is_read,
-        ))
+        links.append(
+            CarEmailLink(
+                email=email,
+                car_id=cid,
+                matched_by=matched_by,
+                is_read=is_read,
+            )
+        )
 
     # 1) Машина-источник: сами отправили → «прочитано».
-    if origin_car is not None and getattr(origin_car, 'pk', None):
+    if origin_car is not None and getattr(origin_car, "pk", None):
         _add(
             origin_car.pk,
             ContainerEmail.MATCHED_BY_MANUAL,
@@ -855,9 +884,9 @@ def _link_outgoing_to_cars(
         )
 
     # 2) Все машины автовоза-источника: тоже «прочитано» в этих карточках.
-    if origin_autotransport is not None and getattr(origin_autotransport, 'pk', None):
+    if origin_autotransport is not None and getattr(origin_autotransport, "pk", None):
         try:
-            at_car_ids = list(origin_autotransport.cars.values_list('id', flat=True))
+            at_car_ids = list(origin_autotransport.cars.values_list("id", flat=True))
         except Exception:  # pragma: no cover — защитная обёртка
             at_car_ids = []
         for cid in at_car_ids:
@@ -866,9 +895,7 @@ def _link_outgoing_to_cars(
     # 3) Машины из треда (VIN-линки родителя): cross-link → unread.
     if parent_email is not None and parent_email.pk:
         try:
-            parent_car_ids = list(
-                parent_email.cars.values_list('id', flat=True)
-            )
+            parent_car_ids = list(parent_email.cars.values_list("id", flat=True))
         except Exception:  # pragma: no cover
             parent_car_ids = []
         for cid in parent_car_ids:
@@ -880,7 +907,7 @@ def _link_outgoing_to_cars(
             for cid in _match_by_vins(source_text):
                 _add(cid, ContainerEmail.MATCHED_BY_VIN, is_read=False)
         except Exception as exc:  # pragma: no cover — защитная обёртка
-            logger.warning('[email_compose] link-cars-by-vin failed: %s', exc)
+            logger.warning("[email_compose] link-cars-by-vin failed: %s", exc)
 
     if links:
         CarEmailLink.objects.bulk_create(links, ignore_conflicts=True)
@@ -915,7 +942,7 @@ def _compose_new_email_internal(
     cc_list = _parse_addrs(cc)
     bcc_list = _parse_addrs(bcc)
     if not to_list:
-        raise ComposeError('Не указан хотя бы один получатель.')
+        raise ComposeError("Не указан хотя бы один получатель.")
     raw_pairs: list[tuple[str, str]] = []
     raw_pairs.extend(_parse_addrs_with_names(to))
     raw_pairs.extend(_parse_addrs_with_names(cc))
@@ -923,10 +950,8 @@ def _compose_new_email_internal(
 
     att_payload = _validate_and_read_attachments(attachments)
 
-    subject = (subject or '').strip() or default_subject
-    body_text_final, body_html_final = _append_signature(
-        body_text or '', plain_text_to_simple_html(body_text or '')
-    )
+    subject = (subject or "").strip() or default_subject
+    body_text_final, body_html_final = _append_signature(body_text or "", plain_text_to_simple_html(body_text or ""))
 
     from_addr, from_name = get_from_address()
 
@@ -943,8 +968,8 @@ def _compose_new_email_internal(
         is_reply=False,
     )
 
-    local_message_id = mime.get('Message-ID', '') or make_msgid()
-    subject_final = mime.get('Subject', subject)
+    local_message_id = mime.get("Message-ID", "") or make_msgid()
+    subject_final = mime.get("Subject", subject)
 
     return _send_and_persist(
         mime=mime,
@@ -961,10 +986,10 @@ def _compose_new_email_internal(
         body_html_final=body_html_final,
         attachments_payload=att_payload,
         matched_by=ContainerEmail.MATCHED_BY_MANUAL,
-        in_reply_to='',
-        references='',
+        in_reply_to="",
+        references="",
         raw_recipient_pairs=raw_pairs,
-        source_text_for_matching=f'{subject}\n{body_text_final}',
+        source_text_for_matching=f"{subject}\n{body_text_final}",
         origin_car=origin_car,
         origin_autotransport=origin_autotransport,
     )
@@ -977,20 +1002,23 @@ def compose_new_email_from_car(
     to: str | Iterable[str],
     cc: str | Iterable[str] | None = None,
     bcc: str | Iterable[str] | None = None,
-    subject: str = '',
-    body_text: str = '',
+    subject: str = "",
+    body_text: str = "",
     attachments: Iterable[UploadedFile] | None = None,
 ) -> ContainerEmail:
     """Новое письмо из карточки машины (без родителя)."""
-    if car is None or not getattr(car, 'pk', None):
-        raise ComposeError('Не указана машина-источник.')
-    default_subject = f'VIN {getattr(car, "vin", "") or car.pk}'
+    if car is None or not getattr(car, "pk", None):
+        raise ComposeError("Не указана машина-источник.")
+    default_subject = f"VIN {getattr(car, 'vin', '') or car.pk}"
     return _compose_new_email_internal(
         origin_car=car,
         default_subject=default_subject,
         user=user,
-        to=to, cc=cc, bcc=bcc,
-        subject=subject, body_text=body_text,
+        to=to,
+        cc=cc,
+        bcc=bcc,
+        subject=subject,
+        body_text=body_text,
         attachments=attachments,
     )
 
@@ -1002,20 +1030,23 @@ def compose_new_email_from_autotransport(
     to: str | Iterable[str],
     cc: str | Iterable[str] | None = None,
     bcc: str | Iterable[str] | None = None,
-    subject: str = '',
-    body_text: str = '',
+    subject: str = "",
+    body_text: str = "",
     attachments: Iterable[UploadedFile] | None = None,
 ) -> ContainerEmail:
     """Новое письмо из карточки автовоза (рейса)."""
-    if autotransport is None or not getattr(autotransport, 'pk', None):
-        raise ComposeError('Не указан автовоз-источник.')
-    at_number = getattr(autotransport, 'number', '') or f'#{autotransport.pk}'
-    default_subject = f'AutoTransport {at_number}'
+    if autotransport is None or not getattr(autotransport, "pk", None):
+        raise ComposeError("Не указан автовоз-источник.")
+    at_number = getattr(autotransport, "number", "") or f"#{autotransport.pk}"
+    default_subject = f"AutoTransport {at_number}"
     return _compose_new_email_internal(
         origin_autotransport=autotransport,
         default_subject=default_subject,
         user=user,
-        to=to, cc=cc, bcc=bcc,
-        subject=subject, body_text=body_text,
+        to=to,
+        cc=cc,
+        bcc=bcc,
+        subject=subject,
+        body_text=body_text,
         attachments=attachments,
     )

@@ -4,9 +4,11 @@ from django.utils.deprecation import MiddlewareMixin
 
 class DebugQueryResetMiddleware(MiddlewareMixin):
     """Prevents memory leak from accumulated SQL queries when DEBUG=True."""
+
     def process_response(self, request, response):
         if settings.DEBUG:
             from django.db import reset_queries
+
             reset_queries()
         return response
 
@@ -14,13 +16,13 @@ class DebugQueryResetMiddleware(MiddlewareMixin):
 class SecurityHeadersMiddleware(MiddlewareMixin):
     def process_response(self, request, response):
         # X-Content-Type-Options
-        response.setdefault('X-Content-Type-Options', 'nosniff')
+        response.setdefault("X-Content-Type-Options", "nosniff")
         # X-Frame-Options
-        response.setdefault('X-Frame-Options', 'DENY')
+        response.setdefault("X-Frame-Options", "DENY")
         # X-XSS-Protection (legacy)
-        response.setdefault('X-XSS-Protection', '1; mode=block')
+        response.setdefault("X-XSS-Protection", "1; mode=block")
         # Referrer-Policy
-        response.setdefault('Referrer-Policy', settings.SECURE_REFERRER_POLICY)
+        response.setdefault("Referrer-Policy", settings.SECURE_REFERRER_POLICY)
         # Content-Security-Policy (basic, allow self & data:)
         if not settings.DEBUG:
             csp = (
@@ -31,7 +33,5 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
                 "connect-src 'self' ws: wss: https:; "
                 "font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net https://unpkg.com;"
             )
-            response.setdefault('Content-Security-Policy', csp)
+            response.setdefault("Content-Security-Policy", csp)
         return response
-
-

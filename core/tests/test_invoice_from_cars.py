@@ -55,23 +55,33 @@ def warehouse(db):
 def car(db, warehouse):
     container = Container.objects.create(number="INV-CARS-1", status="FLOATING")
     return Car.objects.create(
-        year=2023, brand="Toyota", vin="INVFROMCARS000001",
-        status="FLOATING", container=container, warehouse=warehouse,
+        year=2023,
+        brand="Toyota",
+        vin="INVFROMCARS000001",
+        status="FLOATING",
+        container=container,
+        warehouse=warehouse,
     )
 
 
 def _wh_service(warehouse, name, short_name, price):
     return WarehouseService.objects.create(
-        warehouse=warehouse, name=name, short_name=short_name,
-        default_price=Decimal(str(price)), is_active=True,
+        warehouse=warehouse,
+        name=name,
+        short_name=short_name,
+        default_price=Decimal(str(price)),
+        is_active=True,
     )
 
 
 def _add(car, svc, *, custom_price=None, markup=0):
     return CarService.objects.create(
-        car=car, service_type="WAREHOUSE", service_id=svc.id,
+        car=car,
+        service_type="WAREHOUSE",
+        service_id=svc.id,
         custom_price=None if custom_price is None else Decimal(str(custom_price)),
-        markup_amount=Decimal(str(markup)), quantity=1,
+        markup_amount=Decimal(str(markup)),
+        quantity=1,
     )
 
 
@@ -124,8 +134,12 @@ class TestRegenerateItemsFromCars:
     def test_storage_is_separate_group(self, company, warehouse):
         container = Container.objects.create(number="INV-STORAGE-1", status="FLOATING")
         car = Car.objects.create(
-            year=2023, brand="Toyota", vin="INVSTORAGE0000001",
-            status="FLOATING", container=container, warehouse=warehouse,
+            year=2023,
+            brand="Toyota",
+            vin="INVSTORAGE0000001",
+            status="FLOATING",
+            container=container,
+            warehouse=warehouse,
             unload_date=timezone.now().date() - timezone.timedelta(days=2),
         )
         _wh_service(warehouse, "Хранение", "Хран", 5)  # код по имени

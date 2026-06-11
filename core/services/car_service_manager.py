@@ -3,6 +3,7 @@ Business logic for managing CarService records, THS distribution, and client tar
 
 Extracted from signals.py to keep signal handlers thin and testable.
 """
+
 import logging
 from decimal import Decimal
 
@@ -34,15 +35,14 @@ def calculate_ths_for_container(container):
         return {}
 
     ths_coefficients = {
-        tc.vehicle_type: Decimal(str(tc.coefficient))
-        for tc in LineTHSCoefficient.objects.filter(line=container.line)
+        tc.vehicle_type: Decimal(str(tc.coefficient)) for tc in LineTHSCoefficient.objects.filter(line=container.line)
     }
 
-    total_coefficient = Decimal('0.00')
+    total_coefficient = Decimal("0.00")
     car_coefficients = {}
 
     for car in cars:
-        coeff = ths_coefficients.get(car.vehicle_type, Decimal('1.00'))
+        coeff = ths_coefficients.get(car.vehicle_type, Decimal("1.00"))
         car_coefficients[car.id] = coeff
         total_coefficient += coeff
 
@@ -60,7 +60,10 @@ def calculate_ths_for_container(container):
 
     logger.info(
         "THS distribution for container %s: total=%s, coefficients=%s, result=%s",
-        container.number, total_ths, car_coefficients, result,
+        container.number,
+        total_ths,
+        car_coefficients,
+        result,
     )
     return result
 
@@ -86,51 +89,61 @@ def create_ths_services_for_container(container):
     if not ths_distribution:
         return 0
 
-    service_type = container.ths_payer if hasattr(container, 'ths_payer') else 'LINE'
+    service_type = container.ths_payer if hasattr(container, "ths_payer") else "LINE"
 
-    if service_type == 'WAREHOUSE' and not container.warehouse:
+    if service_type == "WAREHOUSE" and not container.warehouse:
         logger.warning(
             "Container %s: ths_payer=WAREHOUSE but no warehouse set. Falling back to LINE.",
             container.number,
         )
-        service_type = 'LINE'
+        service_type = "LINE"
 
     line_service = None
-    if service_type == 'LINE':
-        line_service = LineService.objects.filter(
-            line=container.line, is_active=True,
-        ).filter(
-            Q(code=ServiceCode.THS) | Q(name__icontains='THS'),
-        ).first()
+    if service_type == "LINE":
+        line_service = (
+            LineService.objects.filter(
+                line=container.line,
+                is_active=True,
+            )
+            .filter(
+                Q(code=ServiceCode.THS) | Q(name__icontains="THS"),
+            )
+            .first()
+        )
         if not line_service:
             line_service, _ = LineService.objects.get_or_create(
                 line=container.line,
                 name=f"THS {container.line.name}",
                 defaults={
-                    'code': ServiceCode.THS,
-                    'description': 'Услуга THS (рассчитывается пропорционально)',
-                    'default_price': 0,
-                    'is_active': True,
+                    "code": ServiceCode.THS,
+                    "description": "Услуга THS (рассчитывается пропорционально)",
+                    "default_price": 0,
+                    "is_active": True,
                 },
             )
 
     warehouse_service = None
-    if service_type == 'WAREHOUSE' and container.warehouse:
-        warehouse_service = WarehouseService.objects.filter(
-            warehouse=container.warehouse, is_active=True,
-        ).filter(
-            Q(code=ServiceCode.THS) | Q(name__icontains='THS'),
-        ).first()
+    if service_type == "WAREHOUSE" and container.warehouse:
+        warehouse_service = (
+            WarehouseService.objects.filter(
+                warehouse=container.warehouse,
+                is_active=True,
+            )
+            .filter(
+                Q(code=ServiceCode.THS) | Q(name__icontains="THS"),
+            )
+            .first()
+        )
         if not warehouse_service:
             warehouse_service, _ = WarehouseService.objects.get_or_create(
                 warehouse=container.warehouse,
                 name=f"THS {container.warehouse.name}",
                 defaults={
-                    'code': ServiceCode.THS,
-                    'description': 'Услуга THS (рассчитывается пропорционально)',
-                    'default_price': 0,
-                    'is_active': True,
-                    'add_by_default': False,
+                    "code": ServiceCode.THS,
+                    "description": "Услуга THS (рассчитывается пропорционально)",
+                    "default_price": 0,
+                    "is_active": True,
+                    "add_by_default": False,
                 },
             )
 
@@ -145,36 +158,32 @@ def create_ths_services_for_container(container):
                 logger.warning("Car %s not found when creating THS service", car_id)
                 continue
 
-            CarService.objects.filter(
-                car=car, service_type='LINE'
-            ).filter(
+            CarService.objects.filter(car=car, service_type="LINE").filter(
                 service_id__in=LineService.objects.filter(
-                    Q(code=ServiceCode.THS) | Q(name__icontains='THS')
-                ).values_list('id', flat=True)
+                    Q(code=ServiceCode.THS) | Q(name__icontains="THS")
+                ).values_list("id", flat=True)
             ).delete()
 
-            CarService.objects.filter(
-                car=car, service_type='WAREHOUSE'
-            ).filter(
+            CarService.objects.filter(car=car, service_type="WAREHOUSE").filter(
                 service_id__in=WarehouseService.objects.filter(
-                    Q(code=ServiceCode.THS) | Q(name__icontains='THS')
-                ).values_list('id', flat=True)
+                    Q(code=ServiceCode.THS) | Q(name__icontains="THS")
+                ).values_list("id", flat=True)
             ).delete()
 
-            if service_type == 'LINE' and line_service:
+            if service_type == "LINE" and line_service:
                 CarService.objects.create(
                     car=car,
-                    service_type='LINE',
+                    service_type="LINE",
                     service_id=line_service.id,
                     custom_price=ths_amount,
                     quantity=1,
                     notes=f"THS рассчитан пропорционально. Тип ТС: {car.get_vehicle_type_display()}",
                 )
                 created_count += 1
-            elif service_type == 'WAREHOUSE' and warehouse_service:
+            elif service_type == "WAREHOUSE" and warehouse_service:
                 CarService.objects.create(
                     car=car,
-                    service_type='WAREHOUSE',
+                    service_type="WAREHOUSE",
                     service_id=warehouse_service.id,
                     custom_price=ths_amount,
                     quantity=1,
@@ -199,15 +208,14 @@ def apply_client_tariffs_for_container(container):
     if not container:
         return
 
-
-    cars = list(container.container_cars.select_related('client').all())
+    cars = list(container.container_cars.select_related("client").all())
     if not cars:
         return
 
     total_cars_in_container = len(cars)
 
     for car in cars:
-        if not car.client or car.client.tariff_type == 'NONE':
+        if not car.client or car.client.tariff_type == "NONE":
             continue
 
         client = car.client
@@ -216,7 +224,10 @@ def apply_client_tariffs_for_container(container):
         if agreed_total is None:
             logger.debug(
                 "Нет тарифа для %s (%s), тип ТС: %s, кол-во авто: %s",
-                client.name, client.tariff_type, car.vehicle_type, total_cars_in_container,
+                client.name,
+                client.tariff_type,
+                car.vehicle_type,
+                total_cars_in_container,
             )
             continue
 
@@ -234,7 +245,7 @@ def apply_client_tariff_for_car(car):
         return
 
     client = car.client
-    if not client or client.tariff_type == 'NONE':
+    if not client or client.tariff_type == "NONE":
         _reset_markup_to_defaults(car)
         return
 
@@ -254,20 +265,20 @@ def apply_client_tariff_for_car(car):
 def _get_agreed_total(client, vehicle_type, total_cars_in_container):
     from core.models import ClientTariffRate
 
-    if client.tariff_type == 'FIXED':
-        rate = ClientTariffRate.objects.filter(
-            client=client, vehicle_type=vehicle_type
-        ).first()
+    if client.tariff_type == "FIXED":
+        rate = ClientTariffRate.objects.filter(client=client, vehicle_type=vehicle_type).first()
         return rate.agreed_total_price if rate else None
 
-    if client.tariff_type == 'FLEXIBLE':
-        rate = ClientTariffRate.objects.filter(
-            client=client,
-            vehicle_type=vehicle_type,
-            min_cars__lte=total_cars_in_container,
-        ).filter(
-            db_models.Q(max_cars__gte=total_cars_in_container) | db_models.Q(max_cars__isnull=True)
-        ).first()
+    if client.tariff_type == "FLEXIBLE":
+        rate = (
+            ClientTariffRate.objects.filter(
+                client=client,
+                vehicle_type=vehicle_type,
+                min_cars__lte=total_cars_in_container,
+            )
+            .filter(db_models.Q(max_cars__gte=total_cars_in_container) | db_models.Q(max_cars__isnull=True))
+            .first()
+        )
         return rate.agreed_total_price if rate else None
 
     return None
@@ -290,20 +301,21 @@ def _distribute_markup_for_car(car, agreed_total, total_cars_in_container):
     all_services = list(CarService.objects.filter(car=car))
 
     warehouse_non_storage = [
-        svc for svc in all_services
-        if svc.service_type == 'WAREHOUSE' and not is_storage_service(svc)
+        svc for svc in all_services if svc.service_type == "WAREHOUSE" and not is_storage_service(svc)
     ]
 
     storage_services = [svc for svc in all_services if is_storage_service(svc)]
     for svc in storage_services:
         if svc.markup_amount != 0:
-            svc.markup_amount = Decimal('0')
-            svc.save(update_fields=['markup_amount'])
+            svc.markup_amount = Decimal("0")
+            svc.save(update_fields=["markup_amount"])
 
     if not warehouse_non_storage:
         logger.info(
             "Tariff for %s (%s): agreed=%s, но нет услуг склада (кроме хранения) — наценка не распределена",
-            car.vin, car.client.name if car.client else '?', agreed_total,
+            car.vin,
+            car.client.name if car.client else "?",
+            agreed_total,
         )
         return
 
@@ -312,27 +324,34 @@ def _distribute_markup_for_car(car, agreed_total, total_cars_in_container):
     if current_invoice_total >= agreed_total:
         logger.info(
             "Tariff for %s (%s): agreed=%s, текущий склад с наценкой=%s — уже >= тарифа, наценки не трогаем",
-            car.vin, car.client.name if car.client else '?',
-            agreed_total, current_invoice_total,
+            car.vin,
+            car.client.name if car.client else "?",
+            agreed_total,
+            current_invoice_total,
         )
         return
 
     actual_warehouse_total = sum(Decimal(str(svc.final_price)) for svc in warehouse_non_storage)
     diff = agreed_total - actual_warehouse_total
 
-    share = (diff / len(warehouse_non_storage)).quantize(Decimal('0.01'))
+    share = (diff / len(warehouse_non_storage)).quantize(Decimal("0.01"))
     remainder = diff - share * len(warehouse_non_storage)
 
     for i, svc in enumerate(warehouse_non_storage):
         svc.markup_amount = share
         if i == len(warehouse_non_storage) - 1:
             svc.markup_amount = share + remainder
-        svc.save(update_fields=['markup_amount'])
+        svc.save(update_fields=["markup_amount"])
 
     logger.info(
         "Tariff for %s (%s): agreed=%s, warehouse_final=%s, diff=%s, cars_count=%s, распределено по %d услугам склада",
-        car.vin, car.client.name if car.client else '?',
-        agreed_total, actual_warehouse_total, diff, total_cars_in_container, len(warehouse_non_storage),
+        car.vin,
+        car.client.name if car.client else "?",
+        agreed_total,
+        actual_warehouse_total,
+        diff,
+        total_cars_in_container,
+        len(warehouse_non_storage),
     )
 
 
@@ -340,67 +359,68 @@ def _reset_markup_to_defaults(car):
     from core.models import CarService
 
     for svc in CarService.objects.filter(car=car):
-        default_markup = Decimal('0')
+        default_markup = Decimal("0")
         try:
             service_obj = svc._get_service_obj()
             if service_obj:
-                default_markup = Decimal(str(getattr(service_obj, 'default_markup', 0) or 0))
+                default_markup = Decimal(str(getattr(service_obj, "default_markup", 0) or 0))
         except Exception:
             pass
 
         if svc.markup_amount != default_markup:
             svc.markup_amount = default_markup
-            svc.save(update_fields=['markup_amount'])
+            svc.save(update_fields=["markup_amount"])
 
 
 # ---------------------------------------------------------------------------
 # Service lookup helpers (used by signals to create CarService on contractor change)
 # ---------------------------------------------------------------------------
 
+
 def find_warehouse_services_for_car(warehouse):
     from core.models import WarehouseService
+
     if not warehouse:
         return []
-    return list(WarehouseService.objects.filter(
-        warehouse=warehouse, is_active=True, add_by_default=True
-    ))
+    return list(WarehouseService.objects.filter(warehouse=warehouse, is_active=True, add_by_default=True))
 
 
 def find_line_services_for_car(line):
     from core.models import LineService
+
     if not line:
         return []
-    return list(LineService.objects.filter(
-        line=line, is_active=True, add_by_default=True
-    ).exclude(name__icontains='THS'))
+    return list(
+        LineService.objects.filter(line=line, is_active=True, add_by_default=True).exclude(name__icontains="THS")
+    )
 
 
 def find_carrier_services_for_car(carrier):
     from core.models import CarrierService
+
     if not carrier:
         return []
-    return list(CarrierService.objects.filter(
-        carrier=carrier, is_active=True, add_by_default=True
-    ))
+    return list(CarrierService.objects.filter(carrier=carrier, is_active=True, add_by_default=True))
 
 
 def get_main_company():
     from core.models import Company
+
     return Company.get_default()
 
 
 def find_company_services_for_car(company):
     from core.models import CompanyService
+
     if not company:
         return []
-    return list(CompanyService.objects.filter(
-        company=company, is_active=True, add_by_default=True
-    ))
+    return list(CompanyService.objects.filter(company=company, is_active=True, add_by_default=True))
 
 
 # ---------------------------------------------------------------------------
 # Пересоздание ценообразующих CarService при смене контрактников
 # ---------------------------------------------------------------------------
+
 
 def sync_car_services_for_car(
     car,
@@ -464,9 +484,9 @@ def sync_car_services_for_car(
 
         # LINE (без THS: THS управляется create_ths_services_for_container)
         if line_changed:
-            ths_line_ids = LineService.objects.filter(
-                Q(code=ServiceCode.THS) | Q(name__icontains="THS")
-            ).values_list("id", flat=True)
+            ths_line_ids = LineService.objects.filter(Q(code=ServiceCode.THS) | Q(name__icontains="THS")).values_list(
+                "id", flat=True
+            )
             car.car_services.filter(service_type="LINE").exclude(service_id__in=ths_line_ids).delete()
             if car.line:
                 for service in find_line_services_for_car(car.line):

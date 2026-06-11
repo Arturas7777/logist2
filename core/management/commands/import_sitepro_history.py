@@ -32,9 +32,10 @@ def parse_date(value) -> date_type | None:
     if isinstance(value, datetime):
         return value.date()
     try:
-        return datetime.strptime(str(value), '%Y-%m-%d').date()
+        return datetime.strptime(str(value), "%Y-%m-%d").date()
     except (ValueError, TypeError):
         return None
+
 
 from core.models import Client, Company
 from core.models_accounting import SiteProConnection, SiteProInvoiceSync
@@ -45,8 +46,8 @@ from core.services.sitepro_service import SiteProService
 def normalize_name(name: str) -> str:
     """Normalize name for fuzzy matching."""
     name = name.strip().upper()
-    name = re.sub(r'["\'\u201c\u201d\u201e\u201f]', '', name)
-    name = re.sub(r'\s+', ' ', name)
+    name = re.sub(r'["\'\u201c\u201d\u201e\u201f]', "", name)
+    name = re.sub(r"\s+", " ", name)
     return name
 
 
@@ -62,56 +63,59 @@ def match_client(sp_name: str, django_clients: dict) -> Client | None:
 
 
 class Command(BaseCommand):
-    help = 'Импорт исторических данных из site.pro (клиенты, продажи)'
+    help = "Импорт исторических данных из site.pro (клиенты, продажи)"
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--dry-run', action='store_true',
-            help='Показать что будет импортировано, без изменений в БД',
+            "--dry-run",
+            action="store_true",
+            help="Показать что будет импортировано, без изменений в БД",
         )
         parser.add_argument(
-            '--force', action='store_true',
-            help='Перезаписать уже импортированные записи',
+            "--force",
+            action="store_true",
+            help="Перезаписать уже импортированные записи",
         )
         parser.add_argument(
-            '--skip-clients', action='store_true',
-            help='Пропустить импорт клиентов',
+            "--skip-clients",
+            action="store_true",
+            help="Пропустить импорт клиентов",
         )
 
     def handle(self, *args, **options):
-        sys.stdout.reconfigure(encoding='utf-8')
-        dry_run = options['dry_run']
-        force = options['force']
-        skip_clients = options['skip_clients']
+        sys.stdout.reconfigure(encoding="utf-8")
+        dry_run = options["dry_run"]
+        force = options["force"]
+        skip_clients = options["skip_clients"]
 
         if dry_run:
-            self.stdout.write(self.style.WARNING('\n  === DRY RUN — изменения не будут сохранены ===\n'))
+            self.stdout.write(self.style.WARNING("\n  === DRY RUN — изменения не будут сохранены ===\n"))
 
         conn = SiteProConnection.objects.filter(is_active=True).first()
         if not conn:
-            self.stderr.write(self.style.ERROR('Нет активного подключения SiteProConnection'))
+            self.stderr.write(self.style.ERROR("Нет активного подключения SiteProConnection"))
             return
 
         svc = SiteProService(conn)
         company = Company.get_default()
 
         # ── 1. КЛИЕНТЫ ──
-        self.stdout.write(self.style.MIGRATE_HEADING('\n  Этап 1: Клиенты'))
+        self.stdout.write(self.style.MIGRATE_HEADING("\n  Этап 1: Клиенты"))
 
         sp_clients = svc.list_all_clients()
         sp_sales = svc.list_all_sales()
 
-        client_ids_with_sales = {s.get('clientId') for s in sp_sales if s.get('isSale')}
-        relevant_sp_clients = [c for c in sp_clients if c.get('id') in client_ids_with_sales]
+        client_ids_with_sales = {s.get("clientId") for s in sp_sales if s.get("isSale")}
+        relevant_sp_clients = [c for c in sp_clients if c.get("id") in client_ids_with_sales]
 
-        self.stdout.write(f'  Клиентов в site.pro: {len(sp_clients)}')
-        self.stdout.write(f'  Клиентов с реальными продажами: {len(relevant_sp_clients)}')
+        self.stdout.write(f"  Клиентов в site.pro: {len(sp_clients)}")
+        self.stdout.write(f"  Клиентов с реальными продажами: {len(relevant_sp_clients)}")
 
         django_clients_by_norm = {}
         for c in Client.objects.all():
             django_clients_by_norm[normalize_name(c.name)] = c
 
-        self.stdout.write(f'  Клиентов в Django: {len(django_clients_by_norm)}')
+        self.stdout.write(f"  Клиентов в Django: {len(django_clients_by_norm)}")
 
         client_map = {}
         created_clients = 0
@@ -119,8 +123,8 @@ class Command(BaseCommand):
         unmatched_clients = []
 
         for sp_c in relevant_sp_clients:
-            sp_name = sp_c.get('name', '').strip()
-            sp_id = sp_c.get('id')
+            sp_name = sp_c.get("name", "").strip()
+            sp_id = sp_c.get("id")
             if not sp_name:
                 continue
 
@@ -128,61 +132,59 @@ class Command(BaseCommand):
             if existing:
                 client_map[sp_id] = existing
                 matched_clients += 1
-                self.stdout.write(f'    MATCH: {sp_name} -> {existing.name} (Django id={existing.pk})')
+                self.stdout.write(f"    MATCH: {sp_name} -> {existing.name} (Django id={existing.pk})")
             elif not skip_clients:
                 if dry_run:
-                    self.stdout.write(f'    CREATE (dry): {sp_name}')
+                    self.stdout.write(f"    CREATE (dry): {sp_name}")
                     created_clients += 1
                 else:
                     new_client = Client.objects.create(name=sp_name)
                     client_map[sp_id] = new_client
                     django_clients_by_norm[normalize_name(sp_name)] = new_client
                     created_clients += 1
-                    self.stdout.write(f'    CREATE: {sp_name} -> Django id={new_client.pk}')
+                    self.stdout.write(f"    CREATE: {sp_name} -> Django id={new_client.pk}")
             else:
                 unmatched_clients.append(sp_name)
 
-        self.stdout.write(f'\n  Итого: совпадений {matched_clients}, создано {created_clients}')
+        self.stdout.write(f"\n  Итого: совпадений {matched_clients}, создано {created_clients}")
         if unmatched_clients:
-            self.stdout.write(f'  Без совпадения (пропущены): {len(unmatched_clients)}')
+            self.stdout.write(f"  Без совпадения (пропущены): {len(unmatched_clients)}")
             for name in unmatched_clients:
-                self.stdout.write(f'    - {name}')
+                self.stdout.write(f"    - {name}")
 
         # ── 2. ПРОДАЖИ (PARDP — реальные инвойсы) ──
-        self.stdout.write(self.style.MIGRATE_HEADING('\n  Этап 2: Импорт реальных продаж (PARDP)'))
+        self.stdout.write(self.style.MIGRATE_HEADING("\n  Этап 2: Импорт реальных продаж (PARDP)"))
 
-        real_sales = [s for s in sp_sales if s.get('isSale')]
-        self.stdout.write(f'  Реальных продаж в site.pro: {len(real_sales)}')
+        real_sales = [s for s in sp_sales if s.get("isSale")]
+        self.stdout.write(f"  Реальных продаж в site.pro: {len(real_sales)}")
 
         already_synced_ids = set()
         if not force:
             already_synced_ids = set(
-                SiteProInvoiceSync.objects.filter(
-                    connection=conn
-                ).values_list('external_id', flat=True)
+                SiteProInvoiceSync.objects.filter(connection=conn).values_list("external_id", flat=True)
             )
-            self.stdout.write(f'  Уже синхронизировано (пропуск): {len(already_synced_ids)}')
+            self.stdout.write(f"  Уже синхронизировано (пропуск): {len(already_synced_ids)}")
 
         imported = 0
         skipped = 0
         errors = []
 
         for sale in real_sales:
-            sp_sale_id = str(sale.get('id', ''))
-            sp_number = sale.get('number', '')
-            sp_series = sale.get('series', '')
-            sp_date = parse_date(sale.get('saleDate'))
-            sp_pay_until = parse_date(sale.get('payUntil'))
-            sp_amount = Decimal(str(sale.get('sumWithVat', 0) or 0))
-            sp_vat = Decimal(str(sale.get('vat', 0) or 0))
-            sp_subtotal = Decimal(str(sale.get('sumWithoutVat', 0) or 0))
-            sp_client_id = sale.get('clientId')
-            sp_client_name = sale.get('clientName', '')
-            sp_currency = sale.get('currencyCode', 'EUR')
-            sp_balance = Decimal(str(sale.get('currencyBalance', 0) or 0))
-            sp_notes = sale.get('notes', '') or ''
+            sp_sale_id = str(sale.get("id", ""))
+            sp_number = sale.get("number", "")
+            sp_series = sale.get("series", "")
+            sp_date = parse_date(sale.get("saleDate"))
+            sp_pay_until = parse_date(sale.get("payUntil"))
+            sp_amount = Decimal(str(sale.get("sumWithVat", 0) or 0))
+            sp_vat = Decimal(str(sale.get("vat", 0) or 0))
+            sp_subtotal = Decimal(str(sale.get("sumWithoutVat", 0) or 0))
+            sp_client_id = sale.get("clientId")
+            sp_client_name = sale.get("clientName", "")
+            sp_currency = sale.get("currencyCode", "EUR")
+            sp_balance = Decimal(str(sale.get("currencyBalance", 0) or 0))
+            sp_notes = sale.get("notes", "") or ""
 
-            invoice_number = f'{sp_series}-{sp_number}'
+            invoice_number = f"{sp_series}-{sp_number}"
 
             if sp_sale_id in already_synced_ids:
                 skipped += 1
@@ -200,20 +202,20 @@ class Command(BaseCommand):
                 django_clients_by_norm[normalize_name(sp_client_name)] = django_client
                 client_map[sp_client_id] = django_client
 
-            paid_amount = max(sp_amount - sp_balance, Decimal('0'))
+            paid_amount = max(sp_amount - sp_balance, Decimal("0"))
 
             if sp_balance <= 0:
-                status = 'PAID'
+                status = "PAID"
             elif paid_amount > 0:
-                status = 'PARTIALLY_PAID'
+                status = "PARTIALLY_PAID"
             else:
-                status = 'ISSUED'
+                status = "ISSUED"
 
             if dry_run:
                 self.stdout.write(
-                    f'    IMPORT (dry): {invoice_number} {sp_date} '
-                    f'{sp_client_name} {sp_amount} {sp_currency} '
-                    f'(оплачено: {paid_amount}, статус: {status})'
+                    f"    IMPORT (dry): {invoice_number} {sp_date} "
+                    f"{sp_client_name} {sp_amount} {sp_currency} "
+                    f"(оплачено: {paid_amount}, статус: {status})"
                 )
                 imported += 1
                 continue
@@ -234,7 +236,7 @@ class Command(BaseCommand):
                         invoice.paid_amount = paid_amount
                         invoice.status = status
                         invoice.currency = sp_currency
-                        invoice.notes = f'[site.pro import] {sp_notes}'.strip()
+                        invoice.notes = f"[site.pro import] {sp_notes}".strip()
                         if sp_pay_until:
                             invoice.due_date = sp_pay_until
                         if django_client:
@@ -242,21 +244,21 @@ class Command(BaseCommand):
                         invoice.save()
                     else:
                         invoice_data = {
-                            'number': invoice_number,
-                            'date': sp_date,
-                            'issuer_company': company,
-                            'subtotal': sp_subtotal,
-                            'tax': sp_vat,
-                            'total': sp_amount,
-                            'paid_amount': paid_amount,
-                            'status': status,
-                            'currency': sp_currency,
-                            'notes': f'[site.pro import] {sp_notes}'.strip(),
+                            "number": invoice_number,
+                            "date": sp_date,
+                            "issuer_company": company,
+                            "subtotal": sp_subtotal,
+                            "tax": sp_vat,
+                            "total": sp_amount,
+                            "paid_amount": paid_amount,
+                            "status": status,
+                            "currency": sp_currency,
+                            "notes": f"[site.pro import] {sp_notes}".strip(),
                         }
                         if sp_pay_until:
-                            invoice_data['due_date'] = sp_pay_until
+                            invoice_data["due_date"] = sp_pay_until
                         if django_client:
-                            invoice_data['recipient_client'] = django_client
+                            invoice_data["recipient_client"] = django_client
 
                         invoice = NewInvoice(**invoice_data)
                         invoice._balance_updated = True
@@ -266,42 +268,44 @@ class Command(BaseCommand):
                         connection=conn,
                         invoice=invoice,
                         defaults={
-                            'external_id': sp_sale_id,
-                            'external_number': f'{sp_series}-{sp_number}',
-                            'sync_status': 'SENT',
-                            'last_synced_at': timezone.now(),
+                            "external_id": sp_sale_id,
+                            "external_number": f"{sp_series}-{sp_number}",
+                            "sync_status": "SENT",
+                            "last_synced_at": timezone.now(),
                         },
                     )
                     imported += 1
 
             except Exception as e:
-                errors.append(f'{invoice_number}: {str(e)[:200]}')
+                errors.append(f"{invoice_number}: {str(e)[:200]}")
 
-        self.stdout.write(f'\n  Итого: импортировано {imported}, пропущено {skipped}, ошибок {len(errors)}')
+        self.stdout.write(f"\n  Итого: импортировано {imported}, пропущено {skipped}, ошибок {len(errors)}")
         for err in errors:
-            self.stdout.write(self.style.ERROR(f'    {err}'))
+            self.stdout.write(self.style.ERROR(f"    {err}"))
 
         # ── 3. КОММЕРЧЕСКИЕ ПРЕДЛОЖЕНИЯ (AV) ──
-        self.stdout.write(self.style.MIGRATE_HEADING('\n  Этап 3: Коммерческие предложения (AV)'))
-        av_sales = [s for s in sp_sales if not s.get('isSale') and s.get('series') == 'AV']
-        self.stdout.write(f'  Коммерческих предложений: {len(av_sales)}')
+        self.stdout.write(self.style.MIGRATE_HEADING("\n  Этап 3: Коммерческие предложения (AV)"))
+        av_sales = [s for s in sp_sales if not s.get("isSale") and s.get("series") == "AV"]
+        self.stdout.write(f"  Коммерческих предложений: {len(av_sales)}")
         for s in av_sales:
-            num = s.get('number', '?')
-            d = s.get('saleDate', '?')
-            client = s.get('clientName', '?')
-            amt = s.get('sumWithVat', 0)
-            self.stdout.write(f'    AV-{num} {d}  {client}  {amt} EUR')
+            num = s.get("number", "?")
+            d = s.get("saleDate", "?")
+            client = s.get("clientName", "?")
+            amt = s.get("sumWithVat", 0)
+            self.stdout.write(f"    AV-{num} {d}  {client}  {amt} EUR")
 
         # ── 4. СВОДКА ──
-        self.stdout.write(self.style.MIGRATE_HEADING('\n  Сводка'))
-        self.stdout.write(f'  Клиентов совпало: {matched_clients}')
-        self.stdout.write(f'  Клиентов создано: {created_clients}')
-        self.stdout.write(f'  Инвойсов импортировано: {imported}')
-        self.stdout.write(f'  Инвойсов пропущено: {skipped}')
+        self.stdout.write(self.style.MIGRATE_HEADING("\n  Сводка"))
+        self.stdout.write(f"  Клиентов совпало: {matched_clients}")
+        self.stdout.write(f"  Клиентов создано: {created_clients}")
+        self.stdout.write(f"  Инвойсов импортировано: {imported}")
+        self.stdout.write(f"  Инвойсов пропущено: {skipped}")
         if errors:
-            self.stdout.write(self.style.ERROR(f'  Ошибок: {len(errors)}'))
+            self.stdout.write(self.style.ERROR(f"  Ошибок: {len(errors)}"))
 
         if dry_run:
-            self.stdout.write(self.style.WARNING('\n  Это был DRY RUN. Запустите без --dry-run для реального импорта.\n'))
+            self.stdout.write(
+                self.style.WARNING("\n  Это был DRY RUN. Запустите без --dry-run для реального импорта.\n")
+            )
         else:
-            self.stdout.write(self.style.SUCCESS('\n  Импорт завершён.\n'))
+            self.stdout.write(self.style.SUCCESS("\n  Импорт завершён.\n"))

@@ -57,15 +57,14 @@ def next_document_number(model, prefix: str, pad: int) -> str:
     seed = 0
     if not SeriesCounter.objects.filter(prefix=prefix).exists():
         last = (
-            model.objects
-            .filter(number__startswith=f'{prefix}-')
-            .order_by('-number')
-            .values_list('number', flat=True)
+            model.objects.filter(number__startswith=f"{prefix}-")
+            .order_by("-number")
+            .values_list("number", flat=True)
             .first()
         )
         if last:
             try:
-                seed = int(last.rsplit('-', 1)[1])
+                seed = int(last.rsplit("-", 1)[1])
             except (ValueError, IndexError):
                 seed = 0
     value = SeriesCounter.next_value(prefix, seed)

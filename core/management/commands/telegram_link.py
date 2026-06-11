@@ -25,7 +25,9 @@ class Command(BaseCommand):
         if linked:
             self.stdout.write(self.style.SUCCESS(f"Привязано новых чатов: {linked}"))
         else:
-            self.stdout.write(self.style.WARNING(
-                "Новых привязок нет. Убедитесь, что клиент перешёл по своей персональной "
-                "ссылке и нажал Start. Ссылку можно скопировать в карточке клиента."
-            ))
+            self.stdout.write(
+                self.style.WARNING(
+                    "Новых привязок нет. Убедитесь, что клиент перешёл по своей персональной "
+                    "ссылке и нажал Start. Ссылку можно скопировать в карточке клиента."
+                )
+            )

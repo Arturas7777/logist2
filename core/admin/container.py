@@ -17,27 +17,27 @@ from core.models import (
 logger = logging.getLogger(__name__)
 
 CONTAINER_STATUS_COLORS = {
-    'В пути': '#2772a8',  # Darker blue
-    'В порту': '#8B0000',  # Dark red
-    'Разгружен': '#239f58',  # Darker green
-    'Передан': '#78458c',  # Darker purple
+    "В пути": "#2772a8",  # Darker blue
+    "В порту": "#8B0000",  # Dark red
+    "Разгружен": "#239f58",  # Darker green
+    "Передан": "#78458c",  # Darker purple
 }
 
 
 class LabelsPrintedFilter(SimpleListFilter):
-    title = 'Наклейки'
-    parameter_name = 'labels_printed'
+    title = "Наклейки"
+    parameter_name = "labels_printed"
 
     def lookups(self, request, model_admin):
         return (
-            ('yes', 'Напечатаны'),
-            ('no', 'Не напечатаны'),
+            ("yes", "Напечатаны"),
+            ("no", "Не напечатаны"),
         )
 
     def queryset(self, request, queryset):
-        if self.value() == 'yes':
+        if self.value() == "yes":
             return queryset.filter(labels_printed_at__isnull=False)
-        if self.value() == 'no':
+        if self.value() == "no":
             return queryset.filter(labels_printed_at__isnull=True)
         return queryset
 
@@ -45,84 +45,121 @@ class LabelsPrintedFilter(SimpleListFilter):
 class HasUnreadEmailsFilter(SimpleListFilter):
     """Фильтр по наличию писем и непрочитанных писем в карточке контейнера."""
 
-    title = 'Переписка'
-    parameter_name = 'emails'
+    title = "Переписка"
+    parameter_name = "emails"
 
     def lookups(self, request, model_admin):
         return (
-            ('unread', 'Есть непрочитанные'),
-            ('need_reply', 'Ждут ответа'),
-            ('any', 'Есть переписка'),
-            ('none', 'Нет писем'),
+            ("unread", "Есть непрочитанные"),
+            ("need_reply", "Ждут ответа"),
+            ("any", "Есть переписка"),
+            ("none", "Нет писем"),
         )
 
     def queryset(self, request, queryset):
         value = self.value()
-        if value == 'unread':
+        if value == "unread":
             return queryset.filter(email_links__is_read=False).distinct()
-        if value == 'need_reply':
+        if value == "need_reply":
             return queryset.filter(
                 emails__needs_reply=True,
-                emails__direction='INCOMING',
+                emails__direction="INCOMING",
             ).distinct()
-        if value == 'any':
+        if value == "any":
             return queryset.filter(emails__isnull=False).distinct()
-        if value == 'none':
+        if value == "none":
             return queryset.filter(emails__isnull=True)
         return queryset
 
 
 @admin.register(Container)
 class ContainerAdmin(admin.ModelAdmin):
-    change_form_template = 'admin/core/container/change_form.html'
-    list_display = ('number_with_unread', 'booking_number', 'colored_status', 'eta', 'planned_unload_date', 'unload_date', 'line', 'warehouse', 'photos_count_display', 'labels_printed_display')
-    list_display_links = ('number_with_unread',)
-    list_filter = (MultiStatusFilter, ClientAutocompleteFilter, MultiWarehouseFilter, LabelsPrintedFilter, HasUnreadEmailsFilter)
-    search_fields = ('number', 'booking_number')
-    ordering = ['-unload_date', '-id']
+    change_form_template = "admin/core/container/change_form.html"
+    list_display = (
+        "number_with_unread",
+        "booking_number",
+        "colored_status",
+        "eta",
+        "planned_unload_date",
+        "unload_date",
+        "line",
+        "warehouse",
+        "photos_count_display",
+        "labels_printed_display",
+    )
+    list_display_links = ("number_with_unread",)
+    list_filter = (
+        MultiStatusFilter,
+        ClientAutocompleteFilter,
+        MultiWarehouseFilter,
+        LabelsPrintedFilter,
+        HasUnreadEmailsFilter,
+    )
+    search_fields = ("number", "booking_number")
+    ordering = ["-unload_date", "-id"]
     list_per_page = 50
     show_full_result_count = False
     inlines = [CarInline]
     # M5: убираем тяжёлые FK-дропдауны.
-    autocomplete_fields = ('line', 'warehouse')
+    autocomplete_fields = ("line", "warehouse")
     fieldsets = (
-        ('Основные данные', {
-            'classes': ('collapse',),
-            'fields': (
-                ('number', 'booking_number', 'line', 'ths', 'ths_payer', 'warehouse', 'unload_site', 'status'),
-                ('eta', 'planned_unload_date', 'unload_date'),
-                'google_drive_folder_url',
-                'dock_receipt_scan',
-            )
-        }),
+        (
+            "Основные данные",
+            {
+                "classes": ("collapse",),
+                "fields": (
+                    ("number", "booking_number", "line", "ths", "ths_payer", "warehouse", "unload_site", "status"),
+                    ("eta", "planned_unload_date", "unload_date"),
+                    "google_drive_folder_url",
+                    "dock_receipt_scan",
+                ),
+            },
+        ),
     )
-    actions = ['print_labels_action', 'reset_labels_printed_action', 'set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'check_container_status', 'bulk_update_container_statuses', 'sync_photos_from_gdrive', 'resend_planned_notifications', 'resend_unload_notifications', 'resend_planned_telegram', 'resend_unload_telegram']
+    actions = [
+        "print_labels_action",
+        "reset_labels_printed_action",
+        "set_status_floating",
+        "set_status_in_port",
+        "set_status_unloaded",
+        "set_status_transferred",
+        "check_container_status",
+        "bulk_update_container_statuses",
+        "sync_photos_from_gdrive",
+        "resend_planned_notifications",
+        "resend_unload_notifications",
+        "resend_planned_telegram",
+        "resend_unload_telegram",
+    ]
 
     class Media:
-        css = {'all': ('css/dashboard_admin.css',)}
-        js = ('js/htmx.min.js', 'js/warehouse_address.js')
+        css = {"all": ("css/dashboard_admin.css",)}
+        js = ("js/htmx.min.js", "js/warehouse_address.js")
 
     def get_queryset(self, request):
         from django.db.models import Count, Q
+
         qs = super().get_queryset(request)
-        return qs.select_related('line', 'client', 'warehouse').prefetch_related(
-            'container_cars'
-        ).annotate(
-            _photos_count=Count('photos', distinct=True),
-            _emails_total=Count('emails', distinct=True),
-            _emails_unread=Count(
-                'email_links',
-                filter=Q(email_links__is_read=False),
-                distinct=True,
-            ),
-            _emails_need_reply=Count(
-                'emails',
-                filter=Q(
-                    emails__needs_reply=True,
-                    emails__direction='INCOMING',
+        return (
+            qs.select_related("line", "client", "warehouse")
+            .prefetch_related("container_cars")
+            .annotate(
+                _photos_count=Count("photos", distinct=True),
+                _emails_total=Count("emails", distinct=True),
+                _emails_unread=Count(
+                    "email_links",
+                    filter=Q(email_links__is_read=False),
+                    distinct=True,
                 ),
-                distinct=True,
-            ),
+                _emails_need_reply=Count(
+                    "emails",
+                    filter=Q(
+                        emails__needs_reply=True,
+                        emails__direction="INCOMING",
+                    ),
+                    distinct=True,
+                ),
+            )
         )
 
     def save_model(self, request, obj, form, change):
@@ -145,8 +182,8 @@ class ContainerAdmin(admin.ModelAdmin):
 
         # Auto-set status to UNLOADED when unload_date is filled and status is still before unloading
         obj._status_auto_changed = False
-        if obj.unload_date and obj.status in ('FLOATING', 'IN_PORT'):
-            obj.status = 'UNLOADED'
+        if obj.unload_date and obj.status in ("FLOATING", "IN_PORT"):
+            obj.status = "UNLOADED"
             obj._status_auto_changed = True
             logger.info(f"Auto-set status to UNLOADED for container {obj.number} (unload_date={obj.unload_date})")
 
@@ -159,12 +196,12 @@ class ContainerAdmin(admin.ModelAdmin):
 
         logger.info("[TIMING] Container saved to DB")
 
-        changed_data = getattr(form, 'changed_data', []) if form else []
+        changed_data = getattr(form, "changed_data", []) if form else []
         apply_post_save_cascades(
             obj,
             changed_data=changed_data,
             is_change=change,
-            status_auto_changed=getattr(obj, '_status_auto_changed', False),
+            status_auto_changed=getattr(obj, "_status_auto_changed", False),
         )
 
     def save_formset(self, request, form, formset, change):
@@ -210,7 +247,9 @@ class ContainerAdmin(admin.ModelAdmin):
                 # Unload date ALWAYS inherited from container
                 if parent.unload_date:
                     obj.unload_date = parent.unload_date
-                    logger.debug(f"Car {obj.vin}: inherited unload_date={obj.unload_date} from container {parent.number}")
+                    logger.debug(
+                        f"Car {obj.vin}: inherited unload_date={obj.unload_date} from container {parent.number}"
+                    )
 
                 creating = obj.pk is None
                 # Фаза 2: legacy fee-поля больше не заполняем — складские
@@ -231,36 +270,41 @@ class ContainerAdmin(admin.ModelAdmin):
                     from core.models import CarService, WarehouseService
 
                     warehouse_services = WarehouseService.objects.filter(
-                        warehouse=obj.warehouse,
-                        is_active=True,
-                        add_by_default=True
+                        warehouse=obj.warehouse, is_active=True, add_by_default=True
                     )
 
                     for service in warehouse_services:
-                        if not CarService.objects.filter(car=obj, service_type='WAREHOUSE', service_id=service.id).exists():
+                        if not CarService.objects.filter(
+                            car=obj, service_type="WAREHOUSE", service_id=service.id
+                        ).exists():
                             from core.service_codes import is_storage_service
+
                             if is_storage_service(service):
                                 days = Decimal(str(obj.days or 0))
                                 custom_price = days * Decimal(str(service.default_price or 0))
                                 default_markup = days * Decimal(str(service.default_markup or 0))
                             else:
                                 custom_price = service.default_price
-                                default_markup = service.default_markup or Decimal('0')
+                                default_markup = service.default_markup or Decimal("0")
 
                             CarService.objects.create(
                                 car=obj,
-                                service_type='WAREHOUSE',
+                                service_type="WAREHOUSE",
                                 service_id=service.id,
                                 custom_price=custom_price,
-                                markup_amount=default_markup
+                                markup_amount=default_markup,
                             )
-                            logger.info(f"[FORMSET] Created warehouse service '{service.name}' for {obj.vin} (price: {custom_price}, markup: {default_markup})")
+                            logger.info(
+                                f"[FORMSET] Created warehouse service '{service.name}' for {obj.vin} (price: {custom_price}, markup: {default_markup})"
+                            )
             else:
                 obj.save()
 
         # Delete objects marked for deletion
         deleted_cars = [o for o in formset.deleted_objects if isinstance(o, Car)]
-        logger.info(f"[FORMSET] deleted_objects count: {len(formset.deleted_objects)}, deleted_cars: {len(deleted_cars)}")
+        logger.info(
+            f"[FORMSET] deleted_objects count: {len(formset.deleted_objects)}, deleted_cars: {len(deleted_cars)}"
+        )
 
         for o in formset.deleted_objects:
             try:
@@ -308,24 +352,23 @@ class ContainerAdmin(admin.ModelAdmin):
                         # refresh_from_db на каждую) и пишем итог одним bulk_update —
                         # без N save() и без N сигнальных каскадов (WS, Celery и т.д.).
                         cars_in_container = list(
-                            parent.container_cars.select_related('warehouse').prefetch_related('car_services')
+                            parent.container_cars.select_related("warehouse").prefetch_related("car_services")
                         )
                         for car in cars_in_container:
                             car.calculate_total_price()
-                        Car.objects.bulk_update(cars_in_container, ['total_price', 'storage_cost', 'days'])
+                        Car.objects.bulk_update(cars_in_container, ["total_price", "storage_cost", "days"])
                         logger.info(f"[FORMSET] Recalculated prices for all {len(cars_in_container)} cars")
                     else:
                         logger.info(f"[FORMSET] No cars left in container {parent.number}")
             except Exception as e:
                 logger.error(f"Failed to create THS services in formset for container {parent.id}: {e}", exc_info=True)
 
-
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
         for field in form.base_fields.values():
-            field.help_text = ''
-        if 'line' in form.base_fields:
-            form.base_fields['line'].label = 'Линия'
+            field.help_text = ""
+        if "line" in form.base_fields:
+            form.base_fields["line"].label = "Линия"
         return form
 
     def colored_status(self, obj):
@@ -333,23 +376,25 @@ class ContainerAdmin(admin.ModelAdmin):
         return format_html(
             '<span style="background-color: {}; color: white; padding: 4px 8px; border-radius: 4px;">{}</span>',
             color,
-            obj.get_status_display()
+            obj.get_status_display(),
         )
-    colored_status.short_description = 'Статус'
+
+    colored_status.short_description = "Статус"
 
     def photos_count_display(self, obj):
         """Displays count of container photos (uses annotation when available)"""
-        count = getattr(obj, '_photos_count', None)
+        count = getattr(obj, "_photos_count", None)
         if count is None:
             count = obj.photos.count()
         if count > 0:
             return format_html(
                 '<span style="background-color: #4285f4; color: white; padding: 2px 8px; border-radius: 10px;">📷 {}</span>',
-                count
+                count,
             )
-        return '-'
-    photos_count_display.short_description = 'Фото'
-    photos_count_display.admin_order_field = '_photos_count'
+        return "-"
+
+    photos_count_display.short_description = "Фото"
+    photos_count_display.admin_order_field = "_photos_count"
 
     def number_with_unread(self, obj):
         """Номер контейнера с маленьким бейджем непрочитанных писем + флажок.
@@ -358,77 +403,90 @@ class ContainerAdmin(admin.ModelAdmin):
         * Зелёный «0» — писем либо нет вовсе, либо все прочитаны
         * Оранжевый 🚩 — есть входящие, помеченные «ответить позже»
         """
-        unread = getattr(obj, '_emails_unread', None)
+        unread = getattr(obj, "_emails_unread", None)
         if unread is None:
             unread = obj.email_links.filter(is_read=False).count() if obj.pk else 0
 
-        need_reply = getattr(obj, '_emails_need_reply', 0) or 0
+        need_reply = getattr(obj, "_emails_need_reply", 0) or 0
 
         if unread > 0:
-            bg, title = '#dc2626', f'{unread} непрочитанных письма'
+            bg, title = "#dc2626", f"{unread} непрочитанных письма"
         else:
-            bg, title = '#10b981', 'Непрочитанных писем нет'
+            bg, title = "#10b981", "Непрочитанных писем нет"
 
-        need_reply_html = ''
+        need_reply_html = ""
         if need_reply > 0:
             need_reply_html = format_html(
                 '<span title="{}" style="background:#f97316;color:#fff;padding:1px 7px;'
-                'border-radius:10px;font-size:11px;font-weight:700;min-width:20px;'
+                "border-radius:10px;font-size:11px;font-weight:700;min-width:20px;"
                 'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">🚩 {}</span>',
-                f'{need_reply} письмо(-а) ждут ответа',
+                f"{need_reply} письмо(-а) ждут ответа",
                 need_reply,
             )
 
         return format_html(
             '<span style="display:inline-flex;align-items:center;gap:6px;">'
-            '<span>{}</span>'
+            "<span>{}</span>"
             '<span title="{}" style="background:{};color:#fff;padding:1px 7px;'
-            'border-radius:10px;font-size:11px;font-weight:700;min-width:20px;'
+            "border-radius:10px;font-size:11px;font-weight:700;min-width:20px;"
             'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">{}</span>'
-            '{}'
-            '</span>',
-            obj.number or '—', title, bg, unread, need_reply_html,
+            "{}"
+            "</span>",
+            obj.number or "—",
+            title,
+            bg,
+            unread,
+            need_reply_html,
         )
-    number_with_unread.short_description = '№'
-    number_with_unread.admin_order_field = 'number'
+
+    number_with_unread.short_description = "№"
+    number_with_unread.admin_order_field = "number"
 
     def set_status_floating(self, request, queryset):
-        pks = list(queryset.values_list('pk', flat=True))
-        updated = queryset.update(status='FLOATING')
+        pks = list(queryset.values_list("pk", flat=True))
+        updated = queryset.update(status="FLOATING")
         for obj in Container.objects.filter(pk__in=pks):
             # sync_cars (bulk) обновляет статус/склад/даты/days/storage_cost
             # машин; собственного хранения у контейнера больше нет.
             obj.sync_cars()
         self.message_user(request, f"Статус изменён на 'В пути' для {updated} контейнеров и их авто.")
+
     set_status_floating.short_description = "Изменить статус на В пути"
 
     def set_status_in_port(self, request, queryset):
-        pks = list(queryset.values_list('pk', flat=True))
-        updated = queryset.update(status='IN_PORT')
+        pks = list(queryset.values_list("pk", flat=True))
+        updated = queryset.update(status="IN_PORT")
         for obj in Container.objects.filter(pk__in=pks):
             obj.sync_cars()
         self.message_user(request, f"Статус изменён на 'В порту' для {updated} контейнеров и их авто.")
+
     set_status_in_port.short_description = "Изменить статус на В порту"
 
     def set_status_unloaded(self, request, queryset):
         updated = 0
         for obj in queryset:
             if obj.warehouse and obj.unload_date:
-                obj.status = 'UNLOADED'
-                obj.save(update_fields=['status'])
+                obj.status = "UNLOADED"
+                obj.save(update_fields=["status"])
                 obj.sync_cars()
                 updated += 1
             else:
-                self.message_user(request, f"Контейнер {obj.number} не обновлён: требуются поля 'Склад' и 'Дата разгрузки'.", level='warning')
+                self.message_user(
+                    request,
+                    f"Контейнер {obj.number} не обновлён: требуются поля 'Склад' и 'Дата разгрузки'.",
+                    level="warning",
+                )
         self.message_user(request, f"Статус изменён на 'Разгружен' для {updated} контейнеров и их авто.")
+
     set_status_unloaded.short_description = "Изменить статус на Разгружен"
 
     def set_status_transferred(self, request, queryset):
-        pks = list(queryset.values_list('pk', flat=True))
-        updated = queryset.update(status='TRANSFERRED')
+        pks = list(queryset.values_list("pk", flat=True))
+        updated = queryset.update(status="TRANSFERRED")
         for obj in Container.objects.filter(pk__in=pks):
             obj.sync_cars()
         self.message_user(request, f"Статус изменён на 'Передан' для {updated} контейнеров и их авто.")
+
     set_status_transferred.short_description = "Изменить статус на Передан"
 
     def check_container_status(self, request, queryset):
@@ -447,6 +505,7 @@ class ContainerAdmin(admin.ModelAdmin):
             self.message_user(request, f"Статус автоматически обновлён для {updated_count} контейнеров.")
         else:
             self.message_user(request, "Статус контейнеров не требует обновления.")
+
     check_container_status.short_description = "Проверить статус контейнера"
 
     def bulk_update_container_statuses(self, request, queryset):
@@ -460,8 +519,8 @@ class ContainerAdmin(admin.ModelAdmin):
         from django.db.models import Count, Q
 
         annotated = queryset.annotate(
-            _cars_total=Count('container_cars'),
-            _cars_transferred=Count('container_cars', filter=Q(container_cars__status='TRANSFERRED')),
+            _cars_total=Count("container_cars"),
+            _cars_transferred=Count("container_cars", filter=Q(container_cars__status="TRANSFERRED")),
         )
 
         for container in annotated:
@@ -472,10 +531,10 @@ class ContainerAdmin(admin.ModelAdmin):
 
                 all_transferred = container._cars_transferred == container._cars_total
 
-                if all_transferred and container.status != 'TRANSFERRED':
+                if all_transferred and container.status != "TRANSFERRED":
                     old_status = container.status
-                    container.status = 'TRANSFERRED'
-                    container.save(update_fields=['status'])
+                    container.status = "TRANSFERRED"
+                    container.save(update_fields=["status"])
                     logger.info(f"Container {container.number} status updated from {old_status} to TRANSFERRED")
                     updated_count += 1
                 else:
@@ -498,6 +557,7 @@ class ContainerAdmin(admin.ModelAdmin):
             self.message_user(request, "; ".join(messages))
         else:
             self.message_user(request, "Нет контейнеров для обновления.")
+
     bulk_update_container_statuses.short_description = "Массовое обновление статусов контейнеров"
 
     def sync_photos_from_gdrive(self, request, queryset):
@@ -525,13 +585,11 @@ class ContainerAdmin(admin.ModelAdmin):
                 request,
                 f"Запущена фоновая синхронизация фото для {queued} контейнеров. "
                 f"Результат появится в галереях через несколько минут.",
-                level='SUCCESS'
+                level="SUCCESS",
             )
         if errors:
             self.message_user(
-                request,
-                f"Не удалось поставить в очередь: {errors} (проверьте доступность Celery/Redis)",
-                level='ERROR'
+                request, f"Не удалось поставить в очередь: {errors} (проверьте доступность Celery/Redis)", level="ERROR"
             )
 
     sync_photos_from_gdrive.short_description = "📥 Загрузить фото с Google Drive"
@@ -550,22 +608,24 @@ class ContainerAdmin(admin.ModelAdmin):
         for container in queryset:
             if not getattr(container, date_field):
                 skipped += 1
-                self.message_user(
-                    request,
-                    f"Контейнер {container.number}: не указана {date_label}",
-                    level='WARNING'
-                )
+                self.message_user(request, f"Контейнер {container.number}: не указана {date_label}", level="WARNING")
                 continue
             try:
                 resend_container_notifications_task.delay(
-                    container.id, kind, channel, user_id=request.user.pk,
+                    container.id,
+                    kind,
+                    channel,
+                    user_id=request.user.pk,
                 )
                 queued += 1
             except Exception as e:
                 errors += 1
                 logger.error(
                     "Failed to queue %s/%s notifications for container %s: %s",
-                    kind, channel, container.number, e,
+                    kind,
+                    channel,
+                    container.number,
+                    e,
                 )
 
         if queued:
@@ -574,27 +634,24 @@ class ContainerAdmin(admin.ModelAdmin):
                 f"Поставлено в очередь уведомлений: {queued} контейнеров "
                 f"({'Telegram' if channel == 'telegram' else 'Email'}). "
                 f"Результаты — в журнале уведомлений.",
-                level='SUCCESS'
+                level="SUCCESS",
             )
         if errors:
             self.message_user(
-                request,
-                f"Не удалось поставить в очередь: {errors} (проверьте доступность Celery/Redis)",
-                level='ERROR'
+                request, f"Не удалось поставить в очередь: {errors} (проверьте доступность Celery/Redis)", level="ERROR"
             )
         if not queued and not errors and skipped:
-            self.message_user(
-                request,
-                "Нет контейнеров с заполненной датой для отправки.",
-                level='WARNING'
-            )
+            self.message_user(request, "Нет контейнеров с заполненной датой для отправки.", level="WARNING")
 
     def resend_planned_notifications(self, request, queryset):
         """Повторная отправка email-уведомлений о планируемой разгрузке (фоном)."""
         self._queue_forced_notifications(
-            request, queryset,
-            kind='planned', channel='email',
-            date_field='planned_unload_date', date_label='планируемая дата разгрузки',
+            request,
+            queryset,
+            kind="planned",
+            channel="email",
+            date_field="planned_unload_date",
+            date_label="планируемая дата разгрузки",
         )
 
     resend_planned_notifications.short_description = "📧 Повторить уведомление о планируемой разгрузке"
@@ -602,9 +659,12 @@ class ContainerAdmin(admin.ModelAdmin):
     def resend_unload_notifications(self, request, queryset):
         """Повторная отправка email-уведомлений о разгрузке (фоном)."""
         self._queue_forced_notifications(
-            request, queryset,
-            kind='unload', channel='email',
-            date_field='unload_date', date_label='дата разгрузки',
+            request,
+            queryset,
+            kind="unload",
+            channel="email",
+            date_field="unload_date",
+            date_label="дата разгрузки",
         )
 
     resend_unload_notifications.short_description = "📧 Повторить уведомление о разгрузке"
@@ -612,9 +672,12 @@ class ContainerAdmin(admin.ModelAdmin):
     def resend_planned_telegram(self, request, queryset):
         """Повторная отправка Telegram-уведомлений о планируемой разгрузке (фоном)."""
         self._queue_forced_notifications(
-            request, queryset,
-            kind='planned', channel='telegram',
-            date_field='planned_unload_date', date_label='планируемая дата разгрузки',
+            request,
+            queryset,
+            kind="planned",
+            channel="telegram",
+            date_field="planned_unload_date",
+            date_label="планируемая дата разгрузки",
         )
 
     resend_planned_telegram.short_description = "📨 Telegram: уведомить о планируемой разгрузке"
@@ -622,9 +685,12 @@ class ContainerAdmin(admin.ModelAdmin):
     def resend_unload_telegram(self, request, queryset):
         """Повторная отправка Telegram-уведомлений о разгрузке (фоном)."""
         self._queue_forced_notifications(
-            request, queryset,
-            kind='unload', channel='telegram',
-            date_field='unload_date', date_label='дата разгрузки',
+            request,
+            queryset,
+            kind="unload",
+            channel="telegram",
+            date_field="unload_date",
+            date_label="дата разгрузки",
         )
 
     resend_unload_telegram.short_description = "📨 Telegram: уведомить о разгрузке"
@@ -632,11 +698,13 @@ class ContainerAdmin(admin.ModelAdmin):
     def print_labels_action(self, request, queryset):
         """Редиректит на страницу настройки печати наклеек с выбранными контейнерами."""
         from core.views.labels import redirect_to_print_settings
-        ids = list(queryset.values_list('id', flat=True))
+
+        ids = list(queryset.values_list("id", flat=True))
         if not ids:
-            self.message_user(request, "Выберите хотя бы один контейнер.", level='WARNING')
+            self.message_user(request, "Выберите хотя бы один контейнер.", level="WARNING")
             return None
         return redirect_to_print_settings(ids)
+
     print_labels_action.short_description = "🏷️ Распечатать наклейки"
 
     def labels_printed_display(self, obj):
@@ -645,14 +713,13 @@ class ContainerAdmin(admin.ModelAdmin):
             local = timezone.localtime(obj.labels_printed_at)
             return format_html(
                 '<span title="{}" style="background-color: #2e7d32; color: #fff; padding: 2px 8px; border-radius: 10px; white-space: nowrap;">🏷️ {}</span>',
-                local.strftime('%d.%m.%Y %H:%M'),
-                local.strftime('%d.%m'),
+                local.strftime("%d.%m.%Y %H:%M"),
+                local.strftime("%d.%m"),
             )
-        return format_html(
-            '<span style="color: #9999b5;">—</span>'
-        )
-    labels_printed_display.short_description = 'Наклейки'
-    labels_printed_display.admin_order_field = 'labels_printed_at'
+        return format_html('<span style="color: #9999b5;">—</span>')
+
+    labels_printed_display.short_description = "Наклейки"
+    labels_printed_display.admin_order_field = "labels_printed_at"
 
     def reset_labels_printed_action(self, request, queryset):
         """Сбрасывает отметку о печати наклеек — чтобы можно было перепечатать с «чистого листа»."""
@@ -661,17 +728,18 @@ class ContainerAdmin(admin.ModelAdmin):
             self.message_user(
                 request,
                 f"Отметка о печати наклеек сброшена для {updated} контейнеров.",
-                level='SUCCESS',
+                level="SUCCESS",
             )
         else:
             self.message_user(
                 request,
                 "Выбранные контейнеры не имели отметки о печати.",
-                level='INFO',
+                level="INFO",
             )
+
     reset_labels_printed_action.short_description = "🏷️ Сбросить отметку о печати наклеек"
 
-    def change_view(self, request, object_id, form_url='', extra_context=None):
+    def change_view(self, request, object_id, form_url="", extra_context=None):
         """Override change_view to pass photo data to template"""
         extra_context = extra_context or {}
 
@@ -680,15 +748,15 @@ class ContainerAdmin(admin.ModelAdmin):
             if obj:
                 # Only count photos - fast COUNT query
                 # Photo data loaded via AJAX on click
-                extra_context['photos_count'] = obj.photos.count()
-                extra_context['container_id'] = object_id
+                extra_context["photos_count"] = obj.photos.count()
+                extra_context["container_id"] = object_id
 
         return super().change_view(request, object_id, form_url, extra_context)
 
     def get_changelist(self, request, **kwargs):
         """Adds default filtering for statuses 'In Port' and 'Unloaded'"""
-        if not request.GET.get('status_multi'):
+        if not request.GET.get("status_multi"):
             get_params = request.GET.copy()
-            get_params.setlist('status_multi', ['IN_PORT', 'UNLOADED'])
+            get_params.setlist("status_multi", ["IN_PORT", "UNLOADED"])
             request.GET = get_params
         return super().get_changelist(request, **kwargs)

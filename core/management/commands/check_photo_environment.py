@@ -1,6 +1,7 @@
 """
 Management command для проверки окружения для работы с фотографиями контейнеров
 """
+
 import os
 import sys
 
@@ -9,12 +10,12 @@ from django.core.management.base import BaseCommand
 
 
 class Command(BaseCommand):
-    help = 'Проверяет окружение для работы с фотографиями контейнеров'
+    help = "Проверяет окружение для работы с фотографиями контейнеров"
 
     def handle(self, *args, **options):
-        self.stdout.write("="*70)
+        self.stdout.write("=" * 70)
         self.stdout.write(self.style.HTTP_INFO("Проверка окружения для фотографий контейнеров"))
-        self.stdout.write("="*70 + "\n")
+        self.stdout.write("=" * 70 + "\n")
 
         all_checks_passed = True
 
@@ -22,14 +23,15 @@ class Command(BaseCommand):
         self.stdout.write(self.style.HTTP_INFO("1. Проверка библиотеки Pillow..."))
         try:
             from PIL import Image, features
-            pillow_version = Image.__version__ if hasattr(Image, '__version__') else "unknown"
+
+            pillow_version = Image.__version__ if hasattr(Image, "__version__") else "unknown"
             self.stdout.write(self.style.SUCCESS(f"   [OK] Pillow установлена: версия {pillow_version}"))
 
             # Проверка поддержки форматов
             formats = {
-                'JPEG': features.check('jpg'),
-                'PNG': features.check('png'),
-                'WEBP': features.check('webp'),
+                "JPEG": features.check("jpg"),
+                "PNG": features.check("png"),
+                "WEBP": features.check("webp"),
             }
 
             for fmt, supported in formats.items():
@@ -76,9 +78,9 @@ class Command(BaseCommand):
         self.stdout.write(self.style.HTTP_INFO("3. Проверка директорий для фотографий контейнеров..."))
 
         dirs_to_check = [
-            ('container_photos', os.path.join(media_root, 'container_photos')),
-            ('thumbnails', os.path.join(media_root, 'container_photos', 'thumbnails')),
-            ('archives', os.path.join(media_root, 'container_archives')),
+            ("container_photos", os.path.join(media_root, "container_photos")),
+            ("thumbnails", os.path.join(media_root, "container_photos", "thumbnails")),
+            ("archives", os.path.join(media_root, "container_archives")),
         ]
 
         for name, path in dirs_to_check:
@@ -119,7 +121,7 @@ class Command(BaseCommand):
             from core.models_website import ContainerPhoto, ContainerPhotoArchive
 
             total_photos = ContainerPhoto.objects.count()
-            photos_without_thumbs = ContainerPhoto.objects.filter(thumbnail='').count()
+            photos_without_thumbs = ContainerPhoto.objects.filter(thumbnail="").count()
             total_archives = ContainerPhotoArchive.objects.count()
             processed_archives = ContainerPhotoArchive.objects.filter(is_processed=True).count()
 
@@ -128,12 +130,10 @@ class Command(BaseCommand):
 
             if photos_without_thumbs > 0:
                 percentage = (photos_without_thumbs / total_photos * 100) if total_photos > 0 else 0
-                self.stdout.write(self.style.WARNING(
-                    f"   [WARNING] {percentage:.1f}% фотографий не имеют миниатюр"
-                ))
-                self.stdout.write(self.style.HTTP_INFO(
-                    "   Рекомендация: запустите 'python manage.py regenerate_thumbnails'"
-                ))
+                self.stdout.write(self.style.WARNING(f"   [WARNING] {percentage:.1f}% фотографий не имеют миниатюр"))
+                self.stdout.write(
+                    self.style.HTTP_INFO("   Рекомендация: запустите 'python manage.py regenerate_thumbnails'")
+                )
             else:
                 self.stdout.write(self.style.SUCCESS("   [OK] Все фотографии имеют миниатюры"))
 
@@ -154,14 +154,14 @@ class Command(BaseCommand):
             from PIL import Image
 
             # Создаем тестовое изображение
-            img = Image.new('RGB', (800, 600), color='red')
+            img = Image.new("RGB", (800, 600), color="red")
 
             # Создаем миниатюру
             img.thumbnail((400, 400), Image.Resampling.LANCZOS)
 
             # Сохраняем в буфер
             buffer = BytesIO()
-            img.save(buffer, format='JPEG', quality=85)
+            img.save(buffer, format="JPEG", quality=85)
 
             self.stdout.write(self.style.SUCCESS("   [OK] Тест создания миниатюры успешен"))
             self.stdout.write(f"   Размер миниатюры: {len(buffer.getvalue())} байт")
@@ -179,25 +179,20 @@ class Command(BaseCommand):
 
         try:
             import django
+
             self.stdout.write(f"   Django версия: {django.get_version()}")
         except:
             pass
 
         self.stdout.write("")
-        self.stdout.write("="*70)
+        self.stdout.write("=" * 70)
 
         if all_checks_passed:
             self.stdout.write(
-                self.style.SUCCESS(
-                    "[OK] Все проверки пройдены! Окружение готово для работы с фотографиями."
-                )
+                self.style.SUCCESS("[OK] Все проверки пройдены! Окружение готово для работы с фотографиями.")
             )
         else:
-            self.stdout.write(
-                self.style.ERROR(
-                    "[ERROR] Некоторые проверки не пройдены. См. детали выше."
-                )
-            )
+            self.stdout.write(self.style.ERROR("[ERROR] Некоторые проверки не пройдены. См. детали выше."))
             self.stdout.write("")
             self.stdout.write(self.style.HTTP_INFO("Рекомендуемые действия:"))
             self.stdout.write("   1. Установите системные библиотеки:")
@@ -208,5 +203,4 @@ class Command(BaseCommand):
             self.stdout.write("      sudo chown -R www-data:www-data media/")
             self.stdout.write("      sudo chmod -R 775 media/container_photos/")
 
-        self.stdout.write("="*70)
-
+        self.stdout.write("=" * 70)

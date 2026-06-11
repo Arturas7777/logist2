@@ -26,17 +26,17 @@ REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 """
 
-    env_file = Path('.env')
+    env_file = Path(".env")
 
     if env_file.exists():
         print("⚠️  Файл .env уже существует!")
         response = input("Перезаписать? (y/N): ").lower().strip()
-        if response != 'y':
+        if response != "y":
             print("❌ Файл .env не изменен")
             return False
 
     try:
-        with open(env_file, 'w', encoding='utf-8') as f:
+        with open(env_file, "w", encoding="utf-8") as f:
             f.write(env_content)
 
         print("✅ Файл .env создан успешно!")
@@ -51,13 +51,14 @@ REDIS_PORT=6379
         print(f"❌ Ошибка создания файла .env: {e}")
         return False
 
+
 def main():
     """Основная функция"""
     print("🔧 Создание файла .env для проекта Logist2")
     print("=" * 50)
 
     # Проверяем, что мы в правильной директории
-    if not Path('manage.py').exists():
+    if not Path("manage.py").exists():
         print("❌ Ошибка: файл manage.py не найден!")
         print("   Запустите скрипт из корневой папки проекта")
         return
@@ -72,7 +73,6 @@ def main():
         print("\n❌ Не удалось создать файл .env")
         print("   Создайте его вручную по образцу выше")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
-
-

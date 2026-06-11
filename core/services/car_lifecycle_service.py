@@ -5,6 +5,7 @@ embedded in ``Car.save()``.
 Call ``after_car_save()`` from model ``save()`` or admin ``save_model()``
 instead of scattering logic across signals and the model itself.
 """
+
 import logging
 
 from asgiref.sync import async_to_sync
@@ -26,7 +27,7 @@ def recalculate_car_price(car) -> None:
             storage_cost=car.storage_cost,
         )
     except Exception as e:
-        logger.error('Failed to calculate total price for car %s: %s', car.vin, e)
+        logger.error("Failed to calculate total price for car %s: %s", car.vin, e)
 
 
 def check_container_status(car) -> None:
@@ -36,21 +37,21 @@ def check_container_status(car) -> None:
     try:
         car.container.check_and_update_status_from_cars()
     except Exception as e:
-        logger.error('Failed to check container status for car %s: %s', car.pk, e)
+        logger.error("Failed to check container status for car %s: %s", car.pk, e)
 
 
 def send_car_ws_notification(car) -> None:
     """Enqueue a WebSocket notification after commit."""
     car_id = car.pk
     payload = {
-        'type': 'data_update',
-        'data': {
-            'model': 'Car',
-            'id': car_id,
-            'status': car.status,
-            'storage_cost': str(car.storage_cost),
-            'days': car.days,
-            'price': str(car.total_price),
+        "type": "data_update",
+        "data": {
+            "model": "Car",
+            "id": car_id,
+            "status": car.status,
+            "storage_cost": str(car.storage_cost),
+            "days": car.days,
+            "price": str(car.total_price),
         },
     }
 
@@ -58,9 +59,9 @@ def send_car_ws_notification(car) -> None:
         try:
             channel_layer = get_channel_layer()
             if channel_layer is not None:
-                async_to_sync(channel_layer.group_send)('updates', payload)
+                async_to_sync(channel_layer.group_send)("updates", payload)
         except Exception as e:
-            logger.error('Failed to send WebSocket notification for car %s: %s', car_id, e)
+            logger.error("Failed to send WebSocket notification for car %s: %s", car_id, e)
 
     transaction.on_commit(_notify)
 

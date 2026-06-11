@@ -17,27 +17,27 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = 'Синхронизация банковских счетов и транзакций через API (Revolut и др.)'
+    help = "Синхронизация банковских счетов и транзакций через API (Revolut и др.)"
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--id',
+            "--id",
             type=int,
-            help='ID конкретного BankConnection для синхронизации',
+            help="ID конкретного BankConnection для синхронизации",
         )
         parser.add_argument(
-            '--days',
+            "--days",
             type=int,
             default=30,
-            help='За сколько дней загружать транзакции (по умолчанию: 30)',
+            help="За сколько дней загружать транзакции (по умолчанию: 30)",
         )
 
     def handle(self, *args, **options):
         from core.models_banking import BankConnection
         from core.services.revolut_service import RevolutService
 
-        connection_id = options.get('id')
-        options.get('days', 30)
+        connection_id = options.get("id")
+        options.get("days", 30)
 
         if connection_id:
             connections = BankConnection.objects.filter(id=connection_id, is_active=True)
@@ -45,7 +45,7 @@ class Command(BaseCommand):
             connections = BankConnection.objects.filter(is_active=True)
 
         if not connections.exists():
-            self.stdout.write(self.style.WARNING('Нет активных банковских подключений.'))
+            self.stdout.write(self.style.WARNING("Нет активных банковских подключений."))
             return
 
         total_accounts = 0
@@ -53,76 +53,81 @@ class Command(BaseCommand):
         errors = 0
 
         for conn in connections:
-            self.stdout.write(f'Синхронизация: {conn} ...')
+            self.stdout.write(f"Синхронизация: {conn} ...")
 
-            if conn.bank_type == 'REVOLUT':
+            if conn.bank_type == "REVOLUT":
                 service = RevolutService(conn)
             else:
-                self.stdout.write(self.style.WARNING(
-                    f'  Тип банка {conn.bank_type} пока не поддерживается, пропускаем.'
-                ))
+                self.stdout.write(
+                    self.style.WARNING(f"  Тип банка {conn.bank_type} пока не поддерживается, пропускаем.")
+                )
                 continue
 
             result = service.sync_all()
 
-            if result['error']:
+            if result["error"]:
                 errors += 1
-                self.stdout.write(self.style.ERROR(f'  Ошибка: {result["error"]}'))
+                self.stdout.write(self.style.ERROR(f"  Ошибка: {result['error']}"))
             else:
-                n_accounts = len(result['accounts'])
-                n_transactions = len(result['transactions'])
+                n_accounts = len(result["accounts"])
+                n_transactions = len(result["transactions"])
                 total_accounts += n_accounts
                 total_transactions += n_transactions
-                self.stdout.write(self.style.SUCCESS(
-                    f'  OK: {n_accounts} счетов, {n_transactions} транзакций'
-                ))
+                self.stdout.write(self.style.SUCCESS(f"  OK: {n_accounts} счетов, {n_transactions} транзакций"))
 
-        self.stdout.write('')
-        self.stdout.write(self.style.SUCCESS(
-            f'Итого: {total_accounts} счетов, {total_transactions} транзакций'
-            f'{f", {errors} ошибок" if errors else ""}'
-        ))
+        self.stdout.write("")
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Итого: {total_accounts} счетов, {total_transactions} транзакций"
+                f"{f', {errors} ошибок' if errors else ''}"
+            )
+        )
 
         # ── Автоматическое сопоставление с инвойсами ──
         if total_transactions > 0 and errors == 0:
-            self.stdout.write('')
-            self.stdout.write('Запуск авто-сопоставления банковских транзакций с инвойсами...')
+            self.stdout.write("")
+            self.stdout.write("Запуск авто-сопоставления банковских транзакций с инвойсами...")
             try:
                 from core.services.billing_service import BillingService
+
                 reconcile_result = BillingService.auto_reconcile_bank_transactions()
 
-                n_paid = len(reconcile_result['auto_paid'])
-                n_linked = len(reconcile_result['linked_only'])
-                n_errors = len(reconcile_result['errors'])
+                n_paid = len(reconcile_result["auto_paid"])
+                n_linked = len(reconcile_result["linked_only"])
+                n_errors = len(reconcile_result["errors"])
 
                 if n_paid:
-                    for item in reconcile_result['auto_paid']:
-                        self.stdout.write(self.style.SUCCESS(
-                            f'  ✅ Авто-оплата: инвойс {item["invoice"]} '
-                            f'(ext: {item["external_number"]}) на {item["amount"]} € → {item["new_status"]}'
-                        ))
+                    for item in reconcile_result["auto_paid"]:
+                        self.stdout.write(
+                            self.style.SUCCESS(
+                                f"  ✅ Авто-оплата: инвойс {item['invoice']} "
+                                f"(ext: {item['external_number']}) на {item['amount']} € → {item['new_status']}"
+                            )
+                        )
 
                 if n_linked:
-                    for item in reconcile_result['linked_only']:
-                        self.stdout.write(self.style.WARNING(
-                            f'  ⚠️ Привязано: инвойс {item["invoice"]} '
-                            f'(банк {item["bank_amount"]} € ≠ остаток {item["invoice_remaining"]} €)'
-                        ))
+                    for item in reconcile_result["linked_only"]:
+                        self.stdout.write(
+                            self.style.WARNING(
+                                f"  ⚠️ Привязано: инвойс {item['invoice']} "
+                                f"(банк {item['bank_amount']} € ≠ остаток {item['invoice_remaining']} €)"
+                            )
+                        )
 
                 if n_errors:
-                    for item in reconcile_result['errors']:
-                        self.stdout.write(self.style.ERROR(
-                            f'  ❌ Ошибка: инвойс {item["invoice"]} — {item["error"]}'
-                        ))
+                    for item in reconcile_result["errors"]:
+                        self.stdout.write(self.style.ERROR(f"  ❌ Ошибка: инвойс {item['invoice']} — {item['error']}"))
 
                 if n_paid or n_linked:
-                    self.stdout.write(self.style.SUCCESS(
-                        f'Авто-сопоставление: {n_paid} оплачено, {n_linked} привязано'
-                        f'{f", {n_errors} ошибок" if n_errors else ""}'
-                    ))
+                    self.stdout.write(
+                        self.style.SUCCESS(
+                            f"Авто-сопоставление: {n_paid} оплачено, {n_linked} привязано"
+                            f"{f', {n_errors} ошибок' if n_errors else ''}"
+                        )
+                    )
                 else:
-                    self.stdout.write('  Новых совпадений не найдено.')
+                    self.stdout.write("  Новых совпадений не найдено.")
 
             except Exception as e:
-                self.stdout.write(self.style.ERROR(f'Ошибка авто-сопоставления: {e}'))
-                logger.error(f'[sync_bank_accounts] Ошибка auto_reconcile: {e}')
+                self.stdout.write(self.style.ERROR(f"Ошибка авто-сопоставления: {e}"))
+                logger.error(f"[sync_bank_accounts] Ошибка auto_reconcile: {e}")

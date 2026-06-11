@@ -1,11 +1,12 @@
 """
 Скрипт для создания тестового клиента
 """
+
 import os
 
 import django
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'logist2.settings.dev')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "logist2.settings.dev")
 django.setup()
 
 from django.contrib.auth.models import User
@@ -14,9 +15,9 @@ from core.models import Client
 from core.models_website import ClientUser
 
 # Создаем пользователя
-username = 'test_client'
-email = 'test@caromoto-lt.com'
-password = 'test123456'
+username = "test_client"
+email = "test@caromoto-lt.com"
+password = "test123456"
 
 # Проверяем, существует ли пользователь
 if User.objects.filter(username=username).exists():
@@ -32,34 +33,27 @@ else:
 try:
     client = Client.objects.first()
     if not client:
-        client = Client.objects.create(name='Тестовый клиент')
+        client = Client.objects.create(name="Тестовый клиент")
         print(f"[+] Создан клиент: {client.name}")
     else:
         print(f"[+] Используется существующий клиент: {client.name}")
 except Exception:
-    client = Client.objects.create(name='Тестовый клиент')
+    client = Client.objects.create(name="Тестовый клиент")
     print(f"[+] Создан клиент: {client.name}")
 
 # Связываем пользователя с клиентом
 if ClientUser.objects.filter(user=user).exists():
     print(f"[!] ClientUser для '{username}' уже существует")
 else:
-    ClientUser.objects.create(
-        user=user,
-        client=client,
-        phone='+370123456789',
-        language='ru',
-        is_verified=True
-    )
+    ClientUser.objects.create(user=user, client=client, phone="+370123456789", language="ru", is_verified=True)
     print(f"[+] Создан ClientUser для '{username}'")
 
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("ТЕСТОВЫЙ КЛИЕНТ УСПЕШНО СОЗДАН!")
-print("="*60)
+print("=" * 60)
 print("\nДанные для входа:")
 print("   URL: http://localhost:8000/dashboard/")
 print(f"   Username: {username}")
 print(f"   Password: {password}")
 print("\nДля входа в админку: http://localhost:8000/admin/")
-print("="*60)
-
+print("=" * 60)

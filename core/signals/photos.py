@@ -31,11 +31,7 @@ def _invalidate_container_gallery_cache(container_id):
         try:
             from core.models import Container
 
-            number = (
-                Container.objects.filter(pk=container_id)
-                .values_list("number", flat=True)
-                .first()
-            )
+            number = Container.objects.filter(pk=container_id).values_list("number", flat=True).first()
             if number:
                 cache.delete(f"container_photos:{number}")
         except Exception as e:  # инвалидация кэша не должна ронять основной flow

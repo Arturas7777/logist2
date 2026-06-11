@@ -4,9 +4,10 @@ from django.utils.translation import gettext_lazy as _
 
 class MultiStatusFilter(SimpleListFilter):
     """Кастомный фильтр для множественного выбора статусов с чекбоксами"""
-    title = _('Статус')
-    parameter_name = 'status_multi'
-    template = 'admin/multi_status_filter.html'
+
+    title = _("Статус")
+    parameter_name = "status_multi"
+    template = "admin/multi_status_filter.html"
 
     def lookups(self, request, model_admin):
         """Возвращает список доступных статусов"""
@@ -14,16 +15,17 @@ class MultiStatusFilter(SimpleListFilter):
         status_choices = None
 
         # Проверяем, есть ли STATUS_CHOICES в самой модели
-        if hasattr(model_admin.model, 'STATUS_CHOICES'):
+        if hasattr(model_admin.model, "STATUS_CHOICES"):
             status_choices = model_admin.model.STATUS_CHOICES
         # Если нет, проверяем Container.STATUS_CHOICES (для модели Car)
-        elif hasattr(model_admin.model, 'Container') and hasattr(model_admin.model.Container, 'STATUS_CHOICES'):
+        elif hasattr(model_admin.model, "Container") and hasattr(model_admin.model.Container, "STATUS_CHOICES"):
             status_choices = model_admin.model.Container.STATUS_CHOICES
         # Если и это не работает, импортируем Container напрямую
         else:
             try:
                 from core.models import Container
-                if hasattr(Container, 'STATUS_CHOICES'):
+
+                if hasattr(Container, "STATUS_CHOICES"):
                     status_choices = Container.STATUS_CHOICES
             except ImportError:
                 pass
@@ -35,7 +37,7 @@ class MultiStatusFilter(SimpleListFilter):
             return choices
 
         # Если ничего не найдено, получаем из данных
-        statuses = model_admin.model.objects.values_list('status', flat=True).distinct().order_by('status')
+        statuses = model_admin.model.objects.values_list("status", flat=True).distinct().order_by("status")
         choices = []
         for status in statuses:
             choices.append((status, status))
@@ -52,7 +54,7 @@ class MultiStatusFilter(SimpleListFilter):
     def choices(self, changelist):
         """Возвращает список вариантов для отображения в фильтре"""
         # Получаем текущие выбранные значения из request
-        request = getattr(changelist, 'request', None)
+        request = getattr(changelist, "request", None)
         if not request:
             # Если нет request, используем пустой список
             current_selections = []
@@ -61,25 +63,25 @@ class MultiStatusFilter(SimpleListFilter):
 
         for lookup, title in self.lookup_choices:
             yield {
-                'selected': lookup in current_selections,
-                'query_string': changelist.get_query_string({
-                    self.parameter_name: lookup
-                }, []),
-                'display': title,
-                'value': lookup,
+                "selected": lookup in current_selections,
+                "query_string": changelist.get_query_string({self.parameter_name: lookup}, []),
+                "display": title,
+                "value": lookup,
             }
 
 
 class MultiWarehouseFilter(SimpleListFilter):
     """Кастомный фильтр для множественного выбора складов с чекбоксами"""
-    title = _('Склад')
-    parameter_name = 'warehouse_multi'
-    template = 'admin/multi_warehouse_filter.html'
+
+    title = _("Склад")
+    parameter_name = "warehouse_multi"
+    template = "admin/multi_warehouse_filter.html"
 
     def lookups(self, request, model_admin):
         """Возвращает список доступных складов"""
         from core.models import Warehouse
-        return list(Warehouse.objects.values_list('id', 'name').order_by('name'))
+
+        return list(Warehouse.objects.values_list("id", "name").order_by("name"))
 
     def queryset(self, request, queryset):
         """Фильтрует queryset на основе выбранных складов"""
@@ -92,7 +94,7 @@ class MultiWarehouseFilter(SimpleListFilter):
     def choices(self, changelist):
         """Возвращает список вариантов для отображения в фильтре"""
         # Получаем текущие выбранные значения из request
-        request = getattr(changelist, 'request', None)
+        request = getattr(changelist, "request", None)
         if not request:
             # Если нет request, используем пустой список
             current_selections = []
@@ -101,12 +103,10 @@ class MultiWarehouseFilter(SimpleListFilter):
 
         for lookup, title in self.lookup_choices:
             yield {
-                'selected': lookup in current_selections,
-                'query_string': changelist.get_query_string({
-                    self.parameter_name: lookup
-                }, []),
-                'display': title,
-                'value': lookup,
+                "selected": lookup in current_selections,
+                "query_string": changelist.get_query_string({self.parameter_name: lookup}, []),
+                "display": title,
+                "value": lookup,
             }
 
 
@@ -132,9 +132,9 @@ class ClientAutocompleteFilter(SimpleListFilter):
             field_name = "recipient_client"
     """
 
-    title = _('Клиент')
-    field_name = 'client'
-    template = 'admin/client_autocomplete_filter.html'
+    title = _("Клиент")
+    field_name = "client"
+    template = "admin/client_autocomplete_filter.html"
 
     @property
     def parameter_name(self):  # type: ignore[override]
@@ -160,26 +160,24 @@ class ClientAutocompleteFilter(SimpleListFilter):
 
     def choices(self, changelist):
         current_value = self.value()
-        current_text = ''
+        current_text = ""
         if current_value:
             from core.models import Client
-            current_text = (
-                Client.objects.filter(pk=current_value).values_list('name', flat=True).first()
-                or ''
-            )
+
+            current_text = Client.objects.filter(pk=current_value).values_list("name", flat=True).first() or ""
 
         yield {
-            'selected': current_value is None,
-            'query_string': changelist.get_query_string(remove=[self.parameter_name]),
-            'display': _('Все'),
-            'current_value': current_value or '',
-            'current_text': current_text,
-            'parameter_name': self.parameter_name,
+            "selected": current_value is None,
+            "query_string": changelist.get_query_string(remove=[self.parameter_name]),
+            "display": _("Все"),
+            "current_value": current_value or "",
+            "current_text": current_text,
+            "parameter_name": self.parameter_name,
         }
 
 
 class RecipientClientAutocompleteFilter(ClientAutocompleteFilter):
     """ClientAutocompleteFilter для `NewInvoice.recipient_client`."""
 
-    title = _('Получатель')
-    field_name = 'recipient_client'
+    title = _("Получатель")
+    field_name = "recipient_client"

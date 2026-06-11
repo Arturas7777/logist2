@@ -49,12 +49,7 @@ def _summarize_car(car: Car) -> str:
 
 
 def _summarize_invoice(invoice: NewInvoice) -> str:
-    issuer = (
-        invoice.issuer_company
-        or invoice.issuer_warehouse
-        or invoice.issuer_line
-        or invoice.issuer_carrier
-    )
+    issuer = invoice.issuer_company or invoice.issuer_warehouse or invoice.issuer_line or invoice.issuer_carrier
     recipient = (
         invoice.recipient_client
         or invoice.recipient_company
@@ -73,10 +68,8 @@ def _summarize_photos_for_car(car: Car) -> str:
     car_photos = CarPhoto.objects.filter(car=car)
     container_photos = ContainerPhoto.objects.filter(container=car.container) if car.container else None
     container_count = container_photos.count() if container_photos is not None else 0
-    return (
-        f"Фото авто: {car_photos.count()} шт., "
-        f"фото контейнера: {container_count} шт."
-    )
+    return f"Фото авто: {car_photos.count()} шт., фото контейнера: {container_count} шт."
+
 
 def _format_money(value: Decimal | None) -> str:
     try:
@@ -183,7 +176,7 @@ def _build_ui_guidance(message: str, page_context: dict) -> str:
         if model_name == "line":
             return (
                 "Кнопка пересчета THS находится в карточке линии: "
-                "откройте линию, сохраните коэффициенты, нажмите \"Пересчитать THS\"."
+                'откройте линию, сохраните коэффициенты, нажмите "Пересчитать THS".'
             )
         return (
             "THS пересчитывается при сохранении контейнера, если изменились line/ths/ths_payer/warehouse. "
@@ -192,7 +185,7 @@ def _build_ui_guidance(message: str, page_context: dict) -> str:
 
     if "хранение" in message_lower and "цена" in message_lower:
         return (
-            "Цена хранения рассчитывается динамически: платные дни × ставка из услуги \"Хранение\". "
+            'Цена хранения рассчитывается динамически: платные дни × ставка из услуги "Хранение". '
             "Проверьте дни, дату разгрузки и ставку услуги склада."
         )
 
@@ -204,6 +197,7 @@ def _build_ui_guidance(message: str, page_context: dict) -> str:
 
     return ""
 
+
 def _wants_price(message: str) -> bool:
     message_lower = (message or "").lower()
     keywords = ["цена", "стоимость", "сколько стоит", "итоговая цена", "итого", "total price"]
@@ -213,8 +207,16 @@ def _wants_price(message: str) -> bool:
 def _wants_diagnostics(message: str) -> bool:
     message_lower = (message or "").lower()
     triggers = [
-        "диагност", "debug", "ошибка", "почему", "не работает", "не обнов",
-        "не считается", "не создается", "не создает", "проверить",
+        "диагност",
+        "debug",
+        "ошибка",
+        "почему",
+        "не работает",
+        "не обнов",
+        "не считается",
+        "не создается",
+        "не создает",
+        "проверить",
     ]
     return any(trigger in message_lower for trigger in triggers)
 
@@ -238,11 +240,16 @@ def _diagnose_car(car: Car) -> list:
             from django.db.models import Q
 
             from core.service_codes import ServiceCode
-            storage_service = WarehouseService.objects.filter(
-                warehouse=car.warehouse,
-            ).filter(
-                Q(code=ServiceCode.STORAGE) | Q(name__iexact="Хранение"),
-            ).first()
+
+            storage_service = (
+                WarehouseService.objects.filter(
+                    warehouse=car.warehouse,
+                )
+                .filter(
+                    Q(code=ServiceCode.STORAGE) | Q(name__iexact="Хранение"),
+                )
+                .first()
+            )
             if not storage_service:
                 issues.append("На складе нет услуги 'Хранение' (нужна ставка по дням).")
             else:

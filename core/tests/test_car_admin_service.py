@@ -58,8 +58,12 @@ def warehouse(db):
 def car(db, warehouse):
     container = Container.objects.create(number="ADMSVC-1", status="FLOATING")
     car = Car.objects.create(
-        year=2023, brand="Toyota", vin="ADMINSERVICE00001",
-        status="FLOATING", container=container, warehouse=warehouse,
+        year=2023,
+        brand="Toyota",
+        vin="ADMINSERVICE00001",
+        status="FLOATING",
+        container=container,
+        warehouse=warehouse,
     )
     car._bulk_updating = True  # как делает админка до super().save_model
     return car
@@ -89,12 +93,18 @@ class TestPureHelpers:
 class TestApplyCarServiceEdits:
     def test_auto_adds_default_warehouse_services_on_create(self, car, warehouse):
         WarehouseService.objects.create(
-            warehouse=warehouse, name="Разгрузка", default_price=Decimal("50"),
-            is_active=True, add_by_default=True,
+            warehouse=warehouse,
+            name="Разгрузка",
+            default_price=Decimal("50"),
+            is_active=True,
+            add_by_default=True,
         )
         WarehouseService.objects.create(
-            warehouse=warehouse, name="Опция", default_price=Decimal("99"),
-            is_active=True, add_by_default=False,  # НЕ должна добавиться
+            warehouse=warehouse,
+            name="Опция",
+            default_price=Decimal("99"),
+            is_active=True,
+            add_by_default=False,  # НЕ должна добавиться
         )
         apply_car_service_edits(car, post={}, changed_data=[], is_change=False)
 
@@ -106,12 +116,18 @@ class TestApplyCarServiceEdits:
 
     def test_updates_existing_price_and_markup_from_post(self, car, warehouse):
         svc = WarehouseService.objects.create(
-            warehouse=warehouse, name="Разгрузка", default_price=Decimal("50"),
-            is_active=True, add_by_default=False,
+            warehouse=warehouse,
+            name="Разгрузка",
+            default_price=Decimal("50"),
+            is_active=True,
+            add_by_default=False,
         )
         CarService.objects.create(
-            car=car, service_type="WAREHOUSE", service_id=svc.id,
-            custom_price=Decimal("50"), markup_amount=Decimal("0"),
+            car=car,
+            service_type="WAREHOUSE",
+            service_id=svc.id,
+            custom_price=Decimal("50"),
+            markup_amount=Decimal("0"),
         )
         post = {
             f"warehouse_service_{svc.id}": "70",
@@ -128,11 +144,16 @@ class TestApplyCarServiceEdits:
 
     def test_removes_service_and_blacklists(self, car, warehouse):
         svc = WarehouseService.objects.create(
-            warehouse=warehouse, name="Разгрузка", default_price=Decimal("50"),
-            is_active=True, add_by_default=True,
+            warehouse=warehouse,
+            name="Разгрузка",
+            default_price=Decimal("50"),
+            is_active=True,
+            add_by_default=True,
         )
         CarService.objects.create(
-            car=car, service_type="WAREHOUSE", service_id=svc.id,
+            car=car,
+            service_type="WAREHOUSE",
+            service_id=svc.id,
             custom_price=Decimal("50"),
         )
         post = {f"remove_warehouse_service_{svc.id}": "1"}
@@ -142,9 +163,7 @@ class TestApplyCarServiceEdits:
         apply_car_service_edits(car, post=post, changed_data=[], is_change=True)
 
         assert not CarService.objects.filter(car=car, service_id=svc.id).exists()
-        assert DeletedCarService.objects.filter(
-            car=car, service_type="WAREHOUSE", service_id=svc.id
-        ).exists()
+        assert DeletedCarService.objects.filter(car=car, service_type="WAREHOUSE", service_id=svc.id).exists()
         car.refresh_from_db()
         assert car.total_price == Decimal("0.00")
 
@@ -152,14 +171,22 @@ class TestApplyCarServiceEdits:
         # Услуга add_by_default, но занесена в blacklist → не добавляется
         # повторно при смене склада.
         svc = WarehouseService.objects.create(
-            warehouse=warehouse, name="Разгрузка", default_price=Decimal("50"),
-            is_active=True, add_by_default=True,
+            warehouse=warehouse,
+            name="Разгрузка",
+            default_price=Decimal("50"),
+            is_active=True,
+            add_by_default=True,
         )
         DeletedCarService.objects.create(
-            car=car, service_type="WAREHOUSE", service_id=svc.id,
+            car=car,
+            service_type="WAREHOUSE",
+            service_id=svc.id,
         )
         apply_car_service_edits(
-            car, post={}, changed_data=["warehouse"], is_change=True,
+            car,
+            post={},
+            changed_data=["warehouse"],
+            is_change=True,
         )
         assert not CarService.objects.filter(car=car, service_id=svc.id).exists()
 
@@ -168,13 +195,17 @@ class TestApplyCarServiceEdits:
 class TestProcessRemovedServices:
     def test_returns_prefixed_keys(self, car, warehouse):
         svc = WarehouseService.objects.create(
-            warehouse=warehouse, name="X", default_price=Decimal("5"), is_active=True,
+            warehouse=warehouse,
+            name="X",
+            default_price=Decimal("5"),
+            is_active=True,
         )
         CarService.objects.create(
-            car=car, service_type="WAREHOUSE", service_id=svc.id, custom_price=Decimal("5"),
+            car=car,
+            service_type="WAREHOUSE",
+            service_id=svc.id,
+            custom_price=Decimal("5"),
         )
-        removed = process_removed_services(
-            car, {f"remove_warehouse_service_{svc.id}": "1"}
-        )
+        removed = process_removed_services(car, {f"remove_warehouse_service_{svc.id}": "1"})
         assert removed == {f"warehouse_{svc.id}"}
         assert not CarService.objects.filter(car=car, service_id=svc.id).exists()

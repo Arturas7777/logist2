@@ -1,6 +1,7 @@
 """
 Management command для очистки битых записей фотографий
 """
+
 import os
 
 from django.core.management.base import BaseCommand
@@ -9,21 +10,21 @@ from core.models_website import ContainerPhoto
 
 
 class Command(BaseCommand):
-    help = 'Удаляет записи фотографий контейнеров для которых нет файлов на диске'
+    help = "Удаляет записи фотографий контейнеров для которых нет файлов на диске"
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--delete',
-            action='store_true',
-            help='Удалить битые записи (без этого флага только показывает список)',
+            "--delete",
+            action="store_true",
+            help="Удалить битые записи (без этого флага только показывает список)",
         )
 
     def handle(self, *args, **options):
-        delete_mode = options.get('delete', False)
+        delete_mode = options.get("delete", False)
 
-        self.stdout.write("="*70)
+        self.stdout.write("=" * 70)
         self.stdout.write(self.style.HTTP_INFO("Проверка битых записей фотографий"))
-        self.stdout.write("="*70)
+        self.stdout.write("=" * 70)
         self.stdout.write("")
 
         all_photos = ContainerPhoto.objects.all()
@@ -44,16 +45,12 @@ class Command(BaseCommand):
                         )
                 except Exception as e:
                     broken_photos.append(photo)
-                    self.stdout.write(
-                        self.style.ERROR(
-                            f"[ERROR] ID {photo.id}: {e}"
-                        )
-                    )
+                    self.stdout.write(self.style.ERROR(f"[ERROR] ID {photo.id}: {e}"))
 
         self.stdout.write("")
-        self.stdout.write("="*70)
+        self.stdout.write("=" * 70)
         self.stdout.write(f"Найдено битых записей: {len(broken_photos)}")
-        self.stdout.write("="*70)
+        self.stdout.write("=" * 70)
 
         if broken_photos and delete_mode:
             self.stdout.write("")
@@ -76,4 +73,3 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("Все записи в порядке!"))
 
         self.stdout.write("")
-

@@ -26,8 +26,8 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 # UNREAD при пометке писем прочитанными в карточке контейнера).
 # При смене scope нужно перезапустить этот скрипт — refresh_token обновится.
 SCOPES = [
-    'https://www.googleapis.com/auth/gmail.modify',
-    'https://www.googleapis.com/auth/gmail.send',
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/gmail.send",
 ]
 
 
@@ -52,12 +52,10 @@ def main() -> int:
 
     creds = flow.run_local_server(
         port=0,
-        access_type='offline',
-        prompt='consent',
+        access_type="offline",
+        prompt="consent",
         open_browser=True,
-        success_message=(
-            'Готово! Можно закрыть вкладку и вернуться в терминал.'
-        ),
+        success_message=("Готово! Можно закрыть вкладку и вернуться в терминал."),
     )
 
     if not creds.refresh_token:
@@ -68,16 +66,16 @@ def main() -> int:
         print("с флагом prompt='consent'.")
         return 1
 
-    token_path = client_secret_path.parent / 'token.json'
+    token_path = client_secret_path.parent / "token.json"
     token_data = {
-        'refresh_token': creds.refresh_token,
-        'client_id': creds.client_id,
-        'client_secret': creds.client_secret,
-        'token_uri': creds.token_uri,
-        'scopes': creds.scopes,
-        'account': creds.id_token.get('email') if creds.id_token else None,
+        "refresh_token": creds.refresh_token,
+        "client_id": creds.client_id,
+        "client_secret": creds.client_secret,
+        "token_uri": creds.token_uri,
+        "scopes": creds.scopes,
+        "account": creds.id_token.get("email") if creds.id_token else None,
     }
-    token_path.write_text(json.dumps(token_data, indent=2, ensure_ascii=False), encoding='utf-8')
+    token_path.write_text(json.dumps(token_data, indent=2, ensure_ascii=False), encoding="utf-8")
 
     print()
     print("=" * 70)
@@ -100,5 +98,5 @@ def main() -> int:
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

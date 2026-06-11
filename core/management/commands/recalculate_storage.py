@@ -8,12 +8,12 @@ class Command(BaseCommand):
     help = "Recalculate paid days and storage cost for active (non-transferred) cars"
 
     def add_arguments(self, parser):
-        parser.add_argument('--all', action='store_true', help='Include transferred cars too')
-        parser.add_argument('--verbose', action='store_true', help='Show details per car')
+        parser.add_argument("--all", action="store_true", help="Include transferred cars too")
+        parser.add_argument("--verbose", action="store_true", help="Show details per car")
 
     def handle(self, *args, **options):
-        include_all = options.get('all', False)
-        verbose = options.get('verbose', False)
+        include_all = options.get("all", False)
+        verbose = options.get("verbose", False)
 
         updated_cars = 0
 
@@ -21,9 +21,9 @@ class Command(BaseCommand):
         # собственных полей days/storage_cost, это read-only properties
         # (агрегат по машинам, см. Container.storage_cost / days и
         # OptimizedContainerManager.with_storage_aggregates).
-        cars_qs = Car.objects.select_related('warehouse', 'container')
+        cars_qs = Car.objects.select_related("warehouse", "container")
         if not include_all:
-            cars_qs = cars_qs.exclude(status='TRANSFERRED')
+            cars_qs = cars_qs.exclude(status="TRANSFERRED")
 
         for car in cars_qs.iterator():
             old_days = car.days
@@ -41,13 +41,10 @@ class Command(BaseCommand):
                 updated_cars += 1
                 if verbose:
                     self.stdout.write(
-                        f"  {car.vin}: days {old_days} -> {car.days}, "
-                        f"storage {old_storage} -> {car.storage_cost}"
+                        f"  {car.vin}: days {old_days} -> {car.days}, storage {old_storage} -> {car.storage_cost}"
                     )
 
         self.stdout.write(f"Cars: {updated_cars} updated")
 
-        now = timezone.now().strftime('%Y-%m-%d %H:%M')
-        self.stdout.write(self.style.SUCCESS(
-            f"[{now}] Recalculation completed: {updated_cars} cars updated"
-        ))
+        now = timezone.now().strftime("%Y-%m-%d %H:%M")
+        self.stdout.write(self.style.SUCCESS(f"[{now}] Recalculation completed: {updated_cars} cars updated"))

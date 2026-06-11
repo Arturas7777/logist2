@@ -42,8 +42,10 @@ def _issued_invoice(company, client, total="100.00"):
         status="ISSUED",
     )
     InvoiceItem.objects.create(
-        invoice=inv, description="Услуги",
-        quantity=Decimal("1"), unit_price=Decimal(total),
+        invoice=inv,
+        description="Услуги",
+        quantity=Decimal("1"),
+        unit_price=Decimal(total),
     )
     inv.calculate_totals()
     inv.save(update_fields=["subtotal", "total"])
@@ -55,8 +57,12 @@ class TestExpectedEntityBalance:
     def test_partner_excludes_invoice_transactions(self, company, client_a):
         inv = _issued_invoice(company, client_a, total="100.00")
         Transaction.objects.create(
-            type="PAYMENT", method="CASH", status="COMPLETED",
-            amount=Decimal("100"), from_client=client_a, to_company=company,
+            type="PAYMENT",
+            method="CASH",
+            status="COMPLETED",
+            amount=Decimal("100"),
+            from_client=client_a,
+            to_company=company,
             invoice=inv,
         )
         # Инвойсный платёж не входит в balance контрагента.
@@ -64,16 +70,23 @@ class TestExpectedEntityBalance:
 
     def test_partner_includes_non_invoice_transactions(self, company):
         Transaction.objects.create(
-            type="BALANCE_TOPUP", method="CASH", status="COMPLETED",
-            amount=Decimal("250"), to_company=company,
+            type="BALANCE_TOPUP",
+            method="CASH",
+            status="COMPLETED",
+            amount=Decimal("250"),
+            to_company=company,
         )
         assert Transaction.expected_entity_balance(company) == Decimal("250.00")
 
     def test_client_includes_invoice_transactions(self, company, client_a):
         inv = _issued_invoice(company, client_a, total="150.00")
         Transaction.objects.create(
-            type="PAYMENT", method="CASH", status="COMPLETED",
-            amount=Decimal("150"), from_client=client_a, to_company=company,
+            type="PAYMENT",
+            method="CASH",
+            status="COMPLETED",
+            amount=Decimal("150"),
+            from_client=client_a,
+            to_company=company,
             invoice=inv,
         )
         # Для клиента инвойсный платёж учитывается.
@@ -85,27 +98,31 @@ class TestCollectMismatchesNoFalsePositives:
     def test_partner_with_invoice_payment_not_flagged(self, company, client_a):
         inv = _issued_invoice(company, client_a, total="100.00")
         Transaction.objects.create(
-            type="PAYMENT", method="CASH", status="COMPLETED",
-            amount=Decimal("100"), from_client=client_a, to_company=company,
+            type="PAYMENT",
+            method="CASH",
+            status="COMPLETED",
+            amount=Decimal("100"),
+            from_client=client_a,
+            to_company=company,
             invoice=inv,
         )
         company.refresh_from_db()
         assert company.balance == Decimal("0.00")
 
         balance_mismatches, _ = _collect_balance_mismatches()
-        flagged = [m for m in balance_mismatches if m['model'] is Company and m['pk'] == company.pk]
-        assert flagged == [], (
-            "Контрагент с инвойсным платежом не должен попадать в расхождения "
-            f"(получили: {flagged})"
-        )
+        flagged = [m for m in balance_mismatches if m["model"] is Company and m["pk"] == company.pk]
+        assert flagged == [], f"Контрагент с инвойсным платежом не должен попадать в расхождения (получили: {flagged})"
 
 
 @pytest.mark.django_db
 class TestVerifyBalancesCommand:
     def test_fix_restores_corrupted_balance(self, client_a, company):
         Transaction.objects.create(
-            type="BALANCE_TOPUP", method="CASH", status="COMPLETED",
-            amount=Decimal("200"), to_client=client_a,
+            type="BALANCE_TOPUP",
+            method="CASH",
+            status="COMPLETED",
+            amount=Decimal("200"),
+            to_client=client_a,
         )
         client_a.refresh_from_db()
         assert client_a.balance == Decimal("200.00")

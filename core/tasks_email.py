@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Простой advisory-lock через cache, чтобы две параллельные периодические задачи
 # не дёргали Gmail одновременно (quota + гонка за historyId).
-_LOCK_KEY = 'gmail_sync_lock'
+_LOCK_KEY = "gmail_sync_lock"
 _LOCK_TIMEOUT_SEC = 10 * 60
 
 
@@ -39,15 +39,18 @@ def gmail_mark_read_task(self, gmail_ids: list[str]) -> int:
         return 0
     try:
         from core.services.gmail_client import GmailApiClient, GmailNotConfigured
+
         try:
             client = GmailApiClient()
         except GmailNotConfigured:
-            logger.info('[gmail_mark_read_task] Gmail not configured — skip.')
+            logger.info("[gmail_mark_read_task] Gmail not configured — skip.")
             return 0
         return client.mark_messages_read(gmail_ids)
     except Exception as exc:
         logger.warning(
-            '[gmail_mark_read_task] failed for %d ids: %s', len(gmail_ids), exc,
+            "[gmail_mark_read_task] failed for %d ids: %s",
+            len(gmail_ids),
+            exc,
         )
         try:
             self.retry(exc=exc)
@@ -69,15 +72,15 @@ def sync_emails_from_gmail(self, force_full: bool = False) -> dict:
     """
     from core.services.email_ingest import sync_mailbox
 
-    if not cache.add(_LOCK_KEY, '1', _LOCK_TIMEOUT_SEC):
-        logger.info('[sync_emails_from_gmail] Another sync in progress — skip.')
-        return {'status': 'locked'}
+    if not cache.add(_LOCK_KEY, "1", _LOCK_TIMEOUT_SEC):
+        logger.info("[sync_emails_from_gmail] Another sync in progress — skip.")
+        return {"status": "locked"}
 
     try:
         report = sync_mailbox(force_full=force_full)
         return report.as_dict()
     except Exception as exc:
-        logger.exception('[sync_emails_from_gmail] Unhandled error: %s', exc)
-        return {'status': 'error', 'error': str(exc)[:500]}
+        logger.exception("[sync_emails_from_gmail] Unhandled error: %s", exc)
+        return {"status": "error", "error": str(exc)[:500]}
     finally:
         cache.delete(_LOCK_KEY)

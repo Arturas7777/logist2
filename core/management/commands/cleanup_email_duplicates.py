@@ -43,46 +43,49 @@ from core.services.email_ingest import _content_digest
 
 class Command(BaseCommand):
     help = (
-        'Найти и скрыть (удалив линки) или удалить физически дубли '
-        'ContainerEmail по видимому содержимому (FROM + SUBJECT + body).'
+        "Найти и скрыть (удалив линки) или удалить физически дубли "
+        "ContainerEmail по видимому содержимому (FROM + SUBJECT + body)."
     )
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--dry-run',
-            action='store_true',
-            help='Только показать найденные группы, без изменений в БД.',
+            "--dry-run",
+            action="store_true",
+            help="Только показать найденные группы, без изменений в БД.",
         )
         parser.add_argument(
-            '--hard-delete',
-            action='store_true',
-            help='Физически удалить дубли (а не только разлинковать).',
+            "--hard-delete",
+            action="store_true",
+            help="Физически удалить дубли (а не только разлинковать).",
         )
         parser.add_argument(
-            '--limit-preview',
+            "--limit-preview",
             type=int,
             default=10,
-            help='Сколько групп показать в превью (default: 10).',
+            help="Сколько групп показать в превью (default: 10).",
         )
 
     def handle(self, *args, **opts):
-        dry_run: bool = opts['dry_run']
-        hard: bool = opts['hard_delete']
-        preview_limit: int = opts['limit_preview']
+        dry_run: bool = opts["dry_run"]
+        hard: bool = opts["hard_delete"]
+        preview_limit: int = opts["limit_preview"]
 
-        self.stdout.write('Считаем digest для всех ContainerEmail…')
+        self.stdout.write("Считаем digest для всех ContainerEmail…")
 
         # digest → (earliest_id, [(id, received_at, from_addr, subject), ...])
         groups: dict[str, list[tuple[int, object, str, str]]] = defaultdict(list)
 
         # iterator + chunk_size чтобы не держать все письма в памяти.
         qs = (
-            ContainerEmail.objects
-            .only(
-                'id', 'from_addr', 'subject', 'body_text', 'body_html',
-                'received_at',
+            ContainerEmail.objects.only(
+                "id",
+                "from_addr",
+                "subject",
+                "body_text",
+                "body_html",
+                "received_at",
             )
-            .order_by('id')
+            .order_by("id")
             .iterator(chunk_size=200)
         )
 
@@ -90,31 +93,24 @@ class Command(BaseCommand):
         for e in qs:
             total += 1
             digest = _content_digest(
-                from_addr=e.from_addr or '',
-                subject=e.subject or '',
-                body_text=e.body_text or '',
-                body_html=e.body_html or '',
+                from_addr=e.from_addr or "",
+                subject=e.subject or "",
+                body_text=e.body_text or "",
+                body_html=e.body_html or "",
             )
-            groups[digest].append(
-                (e.id, e.received_at, e.from_addr or '', e.subject or '')
-            )
+            groups[digest].append((e.id, e.received_at, e.from_addr or "", e.subject or ""))
 
         # Оставляем только группы с ≥2 элементами.
         dup_groups = {d: rows for d, rows in groups.items() if len(rows) > 1}
 
-        self.stdout.write(
-            f'Писем обработано: {total}. '
-            f'Групп-дубликатов: {len(dup_groups)}.'
-        )
+        self.stdout.write(f"Писем обработано: {total}. Групп-дубликатов: {len(dup_groups)}.")
 
         if not dup_groups:
-            self.stdout.write(self.style.SUCCESS(
-                'Дубликатов не найдено — чистить нечего.'
-            ))
+            self.stdout.write(self.style.SUCCESS("Дубликатов не найдено — чистить нечего."))
             return
 
         total_dupes = sum(len(rows) - 1 for rows in dup_groups.values())
-        self.stdout.write(f'Всего лишних копий: {total_dupes}.')
+        self.stdout.write(f"Всего лишних копий: {total_dupes}.")
 
         # Превью: группы, отсортированные по числу копий убыв.
         sorted_groups = sorted(
@@ -126,16 +122,14 @@ class Command(BaseCommand):
             earliest = min(rows, key=lambda r: (r[1] or r[0], r[0]))
             self.stdout.write(
                 f'  · {len(rows)} писем от "{earliest[2][:50]}" '
-                f'/ «{(earliest[3] or "(без темы)")[:60]}» '
-                f'— оставим #{earliest[0]}'
+                f"/ «{(earliest[3] or '(без темы)')[:60]}» "
+                f"— оставим #{earliest[0]}"
             )
         if len(sorted_groups) > preview_limit:
-            self.stdout.write(
-                f'  … и ещё {len(sorted_groups) - preview_limit} групп'
-            )
+            self.stdout.write(f"  … и ещё {len(sorted_groups) - preview_limit} групп")
 
         if dry_run:
-            self.stdout.write(self.style.WARNING('--dry-run: изменений нет.'))
+            self.stdout.write(self.style.WARNING("--dry-run: изменений нет."))
             return
 
         # Распределяем id на (keep) и (to_strip / to_delete).
@@ -167,14 +161,13 @@ class Command(BaseCommand):
                 deleted = res[0]
 
         if hard:
-            self.stdout.write(self.style.SUCCESS(
-                f'Удалено ContainerEmail-дублей: {deleted} '
-                f'(вкл. каскадом линки).'
-            ))
+            self.stdout.write(self.style.SUCCESS(f"Удалено ContainerEmail-дублей: {deleted} (вкл. каскадом линки)."))
         else:
-            self.stdout.write(self.style.SUCCESS(
-                f'Разлинковано дублей: {len(to_strip)} писем. '
-                f'Удалено ContainerEmailLink: {stripped_container_links}, '
-                f'CarEmailLink: {stripped_car_links}. '
-                f'Сами ContainerEmail сохранены для идемпотентности sync.'
-            ))
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Разлинковано дублей: {len(to_strip)} писем. "
+                    f"Удалено ContainerEmailLink: {stripped_container_links}, "
+                    f"CarEmailLink: {stripped_car_links}. "
+                    f"Сами ContainerEmail сохранены для идемпотентности sync."
+                )
+            )

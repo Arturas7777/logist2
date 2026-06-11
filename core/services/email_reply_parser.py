@@ -34,29 +34,29 @@ except ImportError:  # pragma: no cover
 # корреспонденцию (Neto / MSC / Caromoto LT).
 _LT_MOJIBAKE_MAP = [
     # строчные
-    ('Ä…', 'ą'),   # C4 85
-    ('Ä¨', 'č'),   # C4 8D — нестандарт: 0x8D показали как ¨ (0xA8)
-    ('Ä\u008d', 'č'),
-    ('Ä™', 'ę'),   # C4 99
-    ('Ä—', 'ė'),   # C4 97
-    ('Ä¯', 'į'),   # C4 AF
-    ('Å¡', 'š'),   # C5 A1
-    ('Å³', 'ų'),   # C5 B3
-    ('Å«', 'ū'),   # C5 AB
-    ('Å¾', 'ž'),   # C5 BE
+    ("Ä…", "ą"),  # C4 85
+    ("Ä¨", "č"),  # C4 8D — нестандарт: 0x8D показали как ¨ (0xA8)
+    ("Ä\u008d", "č"),
+    ("Ä™", "ę"),  # C4 99
+    ("Ä—", "ė"),  # C4 97
+    ("Ä¯", "į"),  # C4 AF
+    ("Å¡", "š"),  # C5 A1
+    ("Å³", "ų"),  # C5 B3
+    ("Å«", "ū"),  # C5 AB
+    ("Å¾", "ž"),  # C5 BE
     # заглавные
-    ('Ä„', 'Ą'),
-    ('Ä\u008c', 'Č'),
-    ('Ä˜', 'Ę'),
-    ('Ä–', 'Ė'),
-    ('Ä®', 'Į'),
-    ('Å ', 'Š'),
-    ('Å²', 'Ų'),
-    ('Åª', 'Ū'),
-    ('Å½', 'Ž'),
+    ("Ä„", "Ą"),
+    ("Ä\u008c", "Č"),
+    ("Ä˜", "Ę"),
+    ("Ä–", "Ė"),
+    ("Ä®", "Į"),
+    ("Å ", "Š"),
+    ("Å²", "Ų"),
+    ("Åª", "Ū"),
+    ("Å½", "Ž"),
     # NBSP (UTF-8 C2 A0), декодированный как cp1252 → 'Â '
-    ('Â ', ' '),
-    ('Â\xa0', ' '),
+    ("Â ", " "),
+    ("Â\xa0", " "),
 ]
 
 
@@ -81,16 +81,16 @@ def _fix_mojibake(text: str) -> str:
 
 
 __all__ = [
-    'clean_message_body',
-    'compose_reply_html',
-    'extract_display_name',
-    'format_quoted_reply',
-    'html_to_plain',
-    'messenger_body',
-    'messenger_body_from_email',
-    'plain_text_to_simple_html',
-    'split_reply_and_quote',
-    'split_reply_and_quote_html',
+    "clean_message_body",
+    "compose_reply_html",
+    "extract_display_name",
+    "format_quoted_reply",
+    "html_to_plain",
+    "messenger_body",
+    "messenger_body_from_email",
+    "plain_text_to_simple_html",
+    "split_reply_and_quote",
+    "split_reply_and_quote_html",
 ]
 
 
@@ -102,36 +102,36 @@ __all__ = [
 # вхождение и текст режется по нему.
 _QUOTE_HEADER_PATTERNS = [
     # Gmail en: "On Wed, Apr 15, 2026 at 3:02 PM John <j@x.com> wrote:"
-    re.compile(r'^\s*On\s[^\n]{0,300}\bwrote:\s*$', re.MULTILINE | re.IGNORECASE),
+    re.compile(r"^\s*On\s[^\n]{0,300}\bwrote:\s*$", re.MULTILINE | re.IGNORECASE),
     # Gmail ru: "ср, 15 апр. 2026 г. в 15:02, Иван <i@x.com>:"
     re.compile(
-        r'^\s*(?:пн|вт|ср|чт|пт|сб|вс)[^\n]{0,300},\s*\n?[^\n]{0,300}[:：]\s*$',
+        r"^\s*(?:пн|вт|ср|чт|пт|сб|вс)[^\n]{0,300},\s*\n?[^\n]{0,300}[:：]\s*$",
         re.MULTILINE | re.IGNORECASE,
     ),
     # "15.04.2026 в 15:02, John <j@x.com>:" / "15.04.2026 15:02 пользователь X написал:"
     re.compile(
-        r'^\s*\d{1,2}\.\d{1,2}\.\d{2,4}[^\n]{0,300}[:：]\s*$',
+        r"^\s*\d{1,2}\.\d{1,2}\.\d{2,4}[^\n]{0,300}[:：]\s*$",
         re.MULTILINE,
     ),
     # "2026-04-15 15:02 GMT+03:00 John <j@x.com>:"
     re.compile(
-        r'^\s*\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}[^\n]{0,300}[:：]\s*$',
+        r"^\s*\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}[^\n]{0,300}[:：]\s*$",
         re.MULTILINE,
     ),
     # Outlook en-block: "From: …" (часто следом идёт Sent:/To:/Subject:)
-    re.compile(r'^\s*From:\s[^\n]+$', re.MULTILINE),
+    re.compile(r"^\s*From:\s[^\n]+$", re.MULTILINE),
     # Outlook ru-block: "От: …"
-    re.compile(r'^\s*От:\s[^\n]+$', re.MULTILINE),
+    re.compile(r"^\s*От:\s[^\n]+$", re.MULTILINE),
     # "-----Original Message-----" / "-----Пересланное сообщение-----"
     re.compile(
-        r'^\s*-{2,}\s*(?:Original Message|Пересланное сообщение|'
-        r'Forwarded message|Исходное сообщение)\s*-{2,}',
+        r"^\s*-{2,}\s*(?:Original Message|Пересланное сообщение|"
+        r"Forwarded message|Исходное сообщение)\s*-{2,}",
         re.MULTILINE | re.IGNORECASE,
     ),
     # Outlook HTML-ish plain-text separator — длинная линия underscore'ов
-    re.compile(r'^_{8,}\s*$', re.MULTILINE),
+    re.compile(r"^_{8,}\s*$", re.MULTILINE),
     # Apple Mail / некоторые клиенты: "Begin forwarded message:"
-    re.compile(r'^\s*Begin forwarded message:\s*$', re.MULTILINE | re.IGNORECASE),
+    re.compile(r"^\s*Begin forwarded message:\s*$", re.MULTILINE | re.IGNORECASE),
 ]
 
 
@@ -142,7 +142,7 @@ def _first_quote_line_offset(text: str) -> int:
     """
     offset = 0
     for line in text.splitlines(keepends=True):
-        if line.lstrip().startswith('>'):
+        if line.lstrip().startswith(">"):
             return offset
         offset += len(line)
     return len(text)
@@ -157,7 +157,7 @@ def split_reply_and_quote(text: str) -> tuple[str, str]:
     (человек не хочет, чтобы «пусто» было вверху).
     """
     if not text:
-        return '', ''
+        return "", ""
 
     earliest = len(text)
     for pattern in _QUOTE_HEADER_PATTERNS:
@@ -170,13 +170,13 @@ def split_reply_and_quote(text: str) -> tuple[str, str]:
         earliest = quote_line_off
 
     if earliest >= len(text):
-        return text.strip(), ''
+        return text.strip(), ""
 
     reply = text[:earliest].rstrip()
     quote = text[earliest:].strip()
 
     if len(reply.strip()) < 5 and quote:
-        return text.strip(), ''
+        return text.strip(), ""
 
     return reply, quote
 
@@ -219,7 +219,7 @@ _HTML_QUOTE_ENTRY_PATTERNS = [
         re.IGNORECASE,
     ),
     # Обычная <blockquote> — финальный фолбэк (Thunderbird, ручная вставка)
-    re.compile(r'<blockquote[^>]*>', re.IGNORECASE),
+    re.compile(r"<blockquote[^>]*>", re.IGNORECASE),
 ]
 
 
@@ -231,7 +231,7 @@ def split_reply_and_quote_html(html: str) -> tuple[str, str]:
     закрывающие теги автоматически).
     """
     if not html:
-        return '', ''
+        return "", ""
 
     earliest = len(html)
     for p in _HTML_QUOTE_ENTRY_PATTERNS:
@@ -240,15 +240,15 @@ def split_reply_and_quote_html(html: str) -> tuple[str, str]:
             earliest = m.start()
 
     if earliest >= len(html):
-        return html, ''
+        return html, ""
 
     reply_html = html[:earliest]
     quoted_html = html[earliest:]
 
     # Если reply получился почти пустым — лучше не резать.
-    visible = re.sub(r'<[^>]+>', '', reply_html).strip()
+    visible = re.sub(r"<[^>]+>", "", reply_html).strip()
     if len(visible) < 5 and quoted_html:
-        return html, ''
+        return html, ""
 
     return reply_html, quoted_html
 
@@ -259,39 +259,39 @@ def split_reply_and_quote_html(html: str) -> tuple[str, str]:
 
 # Closing-фразы — одна из них обычно открывает блок подписи.
 _CLOSING_PHRASE = re.compile(
-    r'^\s*(?:'
-    r'Kind\s+regards|Best\s+regards|Warm\s+regards|Regards|'
-    r'Yours\s+sincerely|Sincerely|Yours\s+faithfully|Yours\s+truly|'
-    r'Thanks(?:\s+again)?|Thank\s+you|Many\s+thanks|Cheers|'
-    r'Best|BR|'
-    r'С\s+уважением|С\s+наилучшими(?:\s+пожеланиями)?|Благодарю|'
-    r'Pagarbiai|Ačiū|'
-    r'Mit\s+freundlichen\s+Grüßen|Viele\s+Grüße|Beste\s+Grüße|'
-    r'Cordialement|Bien\s+cordialement|Sincères\s+salutations'
-    r')'
+    r"^\s*(?:"
+    r"Kind\s+regards|Best\s+regards|Warm\s+regards|Regards|"
+    r"Yours\s+sincerely|Sincerely|Yours\s+faithfully|Yours\s+truly|"
+    r"Thanks(?:\s+again)?|Thank\s+you|Many\s+thanks|Cheers|"
+    r"Best|BR|"
+    r"С\s+уважением|С\s+наилучшими(?:\s+пожеланиями)?|Благодарю|"
+    r"Pagarbiai|Ačiū|"
+    r"Mit\s+freundlichen\s+Grüßen|Viele\s+Grüße|Beste\s+Grüße|"
+    r"Cordialement|Bien\s+cordialement|Sincères\s+salutations"
+    r")"
     # Допустимо продолжение вроде «Pagarbiai/Best Regards» или
     # «С уважением / Regards» — один закрывающий токен через слэш.
-    r'(?:\s*/\s*[^\n]{0,40})?'
-    r'[,\s.!]*\s*$',
+    r"(?:\s*/\s*[^\n]{0,40})?"
+    r"[,\s.!]*\s*$",
     re.IGNORECASE | re.UNICODE,
 )
 
 # Строки, которые 100% относятся к подписи/шаблонному хвосту — cut-off.
 _SIGNATURE_SEPARATORS = [
     # RFC 3676 signature delimiter
-    re.compile(r'^\s*--\s*$'),
+    re.compile(r"^\s*--\s*$"),
     # Горизонтальная линия «---», «====», «___»
-    re.compile(r'^\s*[-=_]{3,}\s*$'),
+    re.compile(r"^\s*[-=_]{3,}\s*$"),
     # Gmail inline-image / attachment placeholders
-    re.compile(r'^\s*\[(?:cid|image):[^\]]*\]\s*$', re.IGNORECASE),
+    re.compile(r"^\s*\[(?:cid|image):[^\]]*\]\s*$", re.IGNORECASE),
     # Outlook-подобные баннеры классификации
-    re.compile(r'^\s*(?:CAUTION|WARNING|EXTERNAL)\s*[:!].{0,300}$', re.IGNORECASE),
+    re.compile(r"^\s*(?:CAUTION|WARNING|EXTERNAL)\s*[:!].{0,300}$", re.IGNORECASE),
     # Автодисклеймеры: "This email and any attachments..." / "Confidentiality Notice:"
     re.compile(
-        r'^\s*(?:This\s+e-?mail(?:\s+message)?|This\s+message\s+is|'
-        r'Confidentiality\s+Notice|Disclaimer|'
-        r'Please\s+consider\s+the\s+environment|'
-        r'Dear\s+customer,?)\b.{0,300}$',
+        r"^\s*(?:This\s+e-?mail(?:\s+message)?|This\s+message\s+is|"
+        r"Confidentiality\s+Notice|Disclaimer|"
+        r"Please\s+consider\s+the\s+environment|"
+        r"Dear\s+customer,?)\b.{0,300}$",
         re.IGNORECASE,
     ),
 ]
@@ -299,15 +299,15 @@ _SIGNATURE_SEPARATORS = [
 # Inline-токены (внутри строк), которые не несут смысла для чтения.
 _NOISE_INLINE = [
     # [cid:image001.png@...]
-    re.compile(r'\[(?:cid|image):[^\]]*\]', re.IGNORECASE),
+    re.compile(r"\[(?:cid|image):[^\]]*\]", re.IGNORECASE),
     # <mailto:x@y.com>, <http://...>, <https://...>
-    re.compile(r'<(?:mailto:|https?://)[^>]+>', re.IGNORECASE),
+    re.compile(r"<(?:mailto:|https?://)[^>]+>", re.IGNORECASE),
     # Markdown-style «Label ( https://tracker/long-url )» — типичный вид
     # plain-text альтернативы письма от SendGrid / Mailgun / Mandrill, где
     # каждая ссылка раскрывается в скобки, а URL — трекинговый (100+ симв.).
     # Убираем только URL-часть: якорь «Label» остаётся и остаётся читаемым;
     # исходную ссылку можно увидеть в full view (raw HTML).
-    re.compile(r'[ \t]*\(\s*https?://[^\s)]+\s*\)', re.IGNORECASE),
+    re.compile(r"[ \t]*\(\s*https?://[^\s)]+\s*\)", re.IGNORECASE),
 ]
 
 
@@ -319,28 +319,28 @@ _NOISE_INLINE = [
 _SCRIPT_GARBAGE_PATTERNS = [
     # UserContext.initialize({...});   (до закрывающей скобки с ; — жадно)
     re.compile(
-        r'UserContext\.initialize\s*\(\s*\{[\s\S]*?\}\s*\)\s*;?',
+        r"UserContext\.initialize\s*\(\s*\{[\s\S]*?\}\s*\)\s*;?",
         re.IGNORECASE,
     ),
     # if(!window.xxx) { window.xxx = new Something(); }
     re.compile(
-        r'if\s*\(\s*!\s*window\.[\w$]+\s*\)\s*\{[\s\S]*?\}\s*;?',
+        r"if\s*\(\s*!\s*window\.[\w$]+\s*\)\s*\{[\s\S]*?\}\s*;?",
         re.IGNORECASE,
     ),
     # j_id0__emailTemplate__j_id3__… = window.onload; window.onload=function(){ … };
     re.compile(
-        r'j_id\d+[\s\S]{0,400}?window\.onload[\s\S]{0,400}?\};?',
+        r"j_id\d+[\s\S]{0,400}?window\.onload[\s\S]{0,400}?\};?",
         re.IGNORECASE,
     ),
     # window.onload = function () { … };
     re.compile(
-        r'window\.onload\s*=\s*function\s*\([^)]*\)\s*\{[\s\S]*?\}\s*;?',
+        r"window\.onload\s*=\s*function\s*\([^)]*\)\s*\{[\s\S]*?\}\s*;?",
         re.IGNORECASE,
     ),
     # На всякий случай — любые остатки <script>…</script>
-    re.compile(r'<script[\s\S]*?</script>', re.IGNORECASE),
+    re.compile(r"<script[\s\S]*?</script>", re.IGNORECASE),
     # И <style>…</style> если html-теги затесались в plain-text.
-    re.compile(r'<style[\s\S]*?</style>', re.IGNORECASE),
+    re.compile(r"<style[\s\S]*?</style>", re.IGNORECASE),
 ]
 
 
@@ -355,15 +355,15 @@ _SCRIPT_GARBAGE_PATTERNS = [
 # внутри есть хотя бы одна пара ``ключ: значение;``.
 # ---------------------------------------------------------------------------
 _CSS_BLOCK_PATTERN = re.compile(
-    r'(?m)^[ \t]*[^\n{}]{0,200}\{[ \t]*\n'
-    r'(?:[ \t]*[\w\-]+[ \t]*:[^\n{}]*;?[ \t]*\n)+'
-    r'[ \t]*\}[ \t]*\n?'
+    r"(?m)^[ \t]*[^\n{}]{0,200}\{[ \t]*\n"
+    r"(?:[ \t]*[\w\-]+[ \t]*:[^\n{}]*;?[ \t]*\n)+"
+    r"[ \t]*\}[ \t]*\n?"
 )
 # Однострочный вариант: ``.foo { padding: 4px; margin: 0; }``
 _CSS_INLINE_PATTERN = re.compile(
-    r'(?m)^[ \t]*[^\n{}]{0,120}\{[ \t]*'
-    r'(?:[\w\-]+[ \t]*:[^;{}\n]+;[ \t]*){1,}'
-    r'[^{}\n]*\}[ \t]*$'
+    r"(?m)^[ \t]*[^\n{}]{0,120}\{[ \t]*"
+    r"(?:[\w\-]+[ \t]*:[^;{}\n]+;[ \t]*){1,}"
+    r"[^{}\n]*\}[ \t]*$"
 )
 
 
@@ -375,21 +375,21 @@ def clean_message_body(text: str) -> str:
     ответа вроде «OK»).
     """
     if not text:
-        return ''
+        return ""
 
     # 0a. Фиксим mojibake (UTF-8, ошибочно декодированный как cp1252 и т.п.).
-    cleaned = _fix_mojibake(text).replace('\r\n', '\n')
+    cleaned = _fix_mojibake(text).replace("\r\n", "\n")
 
     # 0b. Вырезаем мусор от Salesforce/JSF email-шаблонов (до split на строки,
     # т.к. эти блоки часто многострочные).
     for pat in _SCRIPT_GARBAGE_PATTERNS:
-        cleaned = pat.sub('', cleaned)
+        cleaned = pat.sub("", cleaned)
 
     # 0c. Вырезаем CSS-правила, попавшие в plain-text (``.foo { padding: 10px; }``).
-    cleaned = _CSS_BLOCK_PATTERN.sub('', cleaned)
-    cleaned = _CSS_INLINE_PATTERN.sub('', cleaned)
+    cleaned = _CSS_BLOCK_PATTERN.sub("", cleaned)
+    cleaned = _CSS_INLINE_PATTERN.sub("", cleaned)
 
-    lines = [line.rstrip() for line in cleaned.split('\n')]
+    lines = [line.rstrip() for line in cleaned.split("\n")]
     cutoff = len(lines)
 
     def _earliest(predicate) -> int:
@@ -422,25 +422,25 @@ def clean_message_body(text: str) -> str:
     cutoff = min(cutoff, _earliest_closing())
 
     head = lines[:cutoff]
-    head_joined = '\n'.join(head)
+    head_joined = "\n".join(head)
 
     for pat in _NOISE_INLINE:
-        head_joined = pat.sub('', head_joined)
+        head_joined = pat.sub("", head_joined)
 
     # После удаления [image:] и <mailto:> иногда остаётся строка-«скелет»
     # из markdown-символов — убираем такие строки целиком.
-    head_joined = re.sub(r'(?m)^\s*[*_~`\-\s]{0,40}\s*$', '', head_joined)
+    head_joined = re.sub(r"(?m)^\s*[*_~`\-\s]{0,40}\s*$", "", head_joined)
 
     # Схлопываем 3+ пустых строк в одну пустую
-    head_joined = re.sub(r'\n{3,}', '\n\n', head_joined)
+    head_joined = re.sub(r"\n{3,}", "\n\n", head_joined)
     head_joined = head_joined.strip()
 
     # Если всё вырезали — вернём текст без cut-off (но всё равно без script-мусора)
     if len(head_joined) < 3:
         full = cleaned
         for pat in _NOISE_INLINE:
-            full = pat.sub('', full)
-        full = re.sub(r'\n{3,}', '\n\n', full).strip()
+            full = pat.sub("", full)
+        full = re.sub(r"\n{3,}", "\n\n", full).strip()
         return full
 
     return head_joined
@@ -448,7 +448,7 @@ def clean_message_body(text: str) -> str:
 
 def messenger_body(text: str) -> str:
     """Композиция: split_reply_and_quote → clean_message_body для reply."""
-    reply, _ = split_reply_and_quote(text or '')
+    reply, _ = split_reply_and_quote(text or "")
     return clean_message_body(reply)
 
 
@@ -458,11 +458,12 @@ def messenger_body(text: str) -> str:
 
 import html as _html_module  # stdlib; импорт локальный чтобы не торчал в шапке
 
-_BR_RE = re.compile(r'<br\s*/?\s*>', re.IGNORECASE)
+_BR_RE = re.compile(r"<br\s*/?\s*>", re.IGNORECASE)
 _BLOCK_CLOSE_RE = re.compile(
-    r'</\s*(?:p|div|li|tr|h[1-6])\s*>', re.IGNORECASE,
+    r"</\s*(?:p|div|li|tr|h[1-6])\s*>",
+    re.IGNORECASE,
 )
-_TAG_RE = re.compile(r'<[^>]+>')
+_TAG_RE = re.compile(r"<[^>]+>")
 
 
 def html_to_plain(html: str) -> str:
@@ -473,14 +474,14 @@ def html_to_plain(html: str) -> str:
     в messenger-ленте. Полный HTML-просмотр живёт в expand-view.
     """
     if not html:
-        return ''
-    t = re.sub(r'<style[\s\S]*?</style>', '', html, flags=re.IGNORECASE)
-    t = re.sub(r'<script[\s\S]*?</script>', '', t, flags=re.IGNORECASE)
-    t = _BR_RE.sub('\n', t)
-    t = _BLOCK_CLOSE_RE.sub('\n\n', t)
-    t = _TAG_RE.sub('', t)
+        return ""
+    t = re.sub(r"<style[\s\S]*?</style>", "", html, flags=re.IGNORECASE)
+    t = re.sub(r"<script[\s\S]*?</script>", "", t, flags=re.IGNORECASE)
+    t = _BR_RE.sub("\n", t)
+    t = _BLOCK_CLOSE_RE.sub("\n\n", t)
+    t = _TAG_RE.sub("", t)
     t = _html_module.unescape(t)
-    t = t.replace('\xa0', ' ')
+    t = t.replace("\xa0", " ")
     return t.strip()
 
 
@@ -491,11 +492,11 @@ def messenger_body_from_email(body_text: str, body_html: str) -> str:
     покрывает HTML-only автонотификации, у которых ``body_text == ''``
     и в fallback раньше показывался серый Gmail-snippet.
     """
-    if (body_text or '').strip():
+    if (body_text or "").strip():
         return messenger_body(body_text)
-    plain = html_to_plain(body_html or '')
+    plain = html_to_plain(body_html or "")
     if not plain:
-        return ''
+        return ""
     reply, _ = split_reply_and_quote(plain)
     return clean_message_body(reply)
 
@@ -505,7 +506,7 @@ def messenger_body_from_email(body_text: str, body_html: str) -> str:
 # ---------------------------------------------------------------------------
 
 _FROM_NAME = re.compile(r'^\s*"?([^"<]+?)"?\s*<[^>]+>\s*$')
-_EMAIL_ONLY = re.compile(r'^\s*<?([^\s<>@]+@[^\s<>]+)>?\s*$')
+_EMAIL_ONLY = re.compile(r"^\s*<?([^\s<>@]+@[^\s<>]+)>?\s*$")
 
 
 def format_quoted_reply(parent, *, max_lines: int = 200) -> str:
@@ -519,28 +520,28 @@ def format_quoted_reply(parent, *, max_lines: int = 200) -> str:
         > вторая строка\\n
     """
     if parent is None:
-        return ''
-    received = getattr(parent, 'received_at', None)
+        return ""
+    received = getattr(parent, "received_at", None)
     # Формат повторяет веб-Gmail ("Sun, Apr 19, 2026 at 07:15") — увеличивает
     # шанс, что Gmail у получателя распознает и автоматически свернёт цитату.
-    when = received.strftime('%a, %b %d, %Y at %H:%M') if received else ''
-    who = (getattr(parent, 'from_addr', '') or '').strip()
+    when = received.strftime("%a, %b %d, %Y at %H:%M") if received else ""
+    who = (getattr(parent, "from_addr", "") or "").strip()
     header = f"\n\n\nOn {when} {who} wrote:" if when else f"\n\n\n{who} wrote:"
-    body = (getattr(parent, 'body_text', '') or '').strip()
+    body = (getattr(parent, "body_text", "") or "").strip()
     if not body:
         # fallback: plain из html
-        body = html_to_plain(getattr(parent, 'body_html', '') or '')
+        body = html_to_plain(getattr(parent, "body_html", "") or "")
     lines = body.splitlines()[:max_lines]
-    quoted = '\n'.join('> ' + ln for ln in lines)
+    quoted = "\n".join("> " + ln for ln in lines)
     return f"{header}\n{quoted}\n"
 
 
 _HTML_ESCAPE = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#x27;',
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#x27;",
 }
 
 
@@ -553,26 +554,26 @@ def plain_text_to_simple_html(text: str) -> str:
       (ограниченно — стандартная цитата для клиентов-получателей).
     """
     if not text:
-        return ''
-    escaped = ''.join(_HTML_ESCAPE.get(ch, ch) for ch in text)
-    paragraphs = escaped.split('\n\n')
+        return ""
+    escaped = "".join(_HTML_ESCAPE.get(ch, ch) for ch in text)
+    paragraphs = escaped.split("\n\n")
     rendered: list[str] = []
     for para in paragraphs:
         para_stripped = para.strip()
         if not para_stripped:
             continue
-        lines = para.split('\n')
+        lines = para.split("\n")
         # Если все строки цитата — выделим blockquote
-        if all(ln.lstrip().startswith('&gt;') for ln in lines if ln.strip()):
-            cleaned = '<br>'.join(ln.lstrip().removeprefix('&gt;').lstrip() for ln in lines)
+        if all(ln.lstrip().startswith("&gt;") for ln in lines if ln.strip()):
+            cleaned = "<br>".join(ln.lstrip().removeprefix("&gt;").lstrip() for ln in lines)
             rendered.append(
                 '<blockquote style="border-left:2px solid #cbd5e1;'
                 'padding-left:10px;color:#64748b;margin:8px 0;">'
-                f'{cleaned}</blockquote>'
+                f"{cleaned}</blockquote>"
             )
         else:
-            rendered.append('<p>' + '<br>'.join(lines) + '</p>')
-    return ''.join(rendered)
+            rendered.append("<p>" + "<br>".join(lines) + "</p>")
+    return "".join(rendered)
 
 
 # Attribution-заголовок, который мы сами генерируем в format_quoted_reply —
@@ -580,12 +581,12 @@ def plain_text_to_simple_html(text: str) -> str:
 # чтобы разделить в исходящем письме собственно reply и цитируемую историю
 # и обернуть цитату в Gmail-совместимый blockquote.
 _REPLY_ATTRIBUTION_RE = re.compile(
-    r'^On\s[^\n]{0,400}\bwrote:\s*$',
+    r"^On\s[^\n]{0,400}\bwrote:\s*$",
     re.MULTILINE,
 )
 
 
-def compose_reply_html(text: str, signature_html: str = '') -> str:
+def compose_reply_html(text: str, signature_html: str = "") -> str:
     """Сериализует текст ответа в HTML с Gmail-совместимой цитатой.
 
     Логика:
@@ -605,33 +606,33 @@ def compose_reply_html(text: str, signature_html: str = '') -> str:
     и дописываем подпись в конец.
     """
     if not text:
-        return signature_html or ''
+        return signature_html or ""
 
     match = _REPLY_ATTRIBUTION_RE.search(text)
     if not match:
         base = plain_text_to_simple_html(text)
-        return base + (signature_html or '')
+        return base + (signature_html or "")
 
-    reply_part = text[:match.start()].rstrip()
+    reply_part = text[: match.start()].rstrip()
     attribution = match.group(0).strip()
-    quote_part = text[match.end():].lstrip('\n')
+    quote_part = text[match.end() :].lstrip("\n")
 
     # Убираем один уровень '> ' из каждой строки цитаты — итоговый HTML
     # рендерит цитату через <blockquote> (клиент сам нарисует левую полоску).
     unquoted_lines: list[str] = []
     for line in quote_part.splitlines():
         stripped = line.lstrip()
-        if stripped.startswith('>'):
+        if stripped.startswith(">"):
             stripped = stripped[1:]
-            if stripped.startswith(' '):
+            if stripped.startswith(" "):
                 stripped = stripped[1:]
         unquoted_lines.append(stripped)
-    quote_clean = '\n'.join(unquoted_lines).strip('\n')
+    quote_clean = "\n".join(unquoted_lines).strip("\n")
 
-    reply_html = plain_text_to_simple_html(reply_part) if reply_part.strip() else ''
-    quote_inner_html = plain_text_to_simple_html(quote_clean) if quote_clean else ''
+    reply_html = plain_text_to_simple_html(reply_part) if reply_part.strip() else ""
+    quote_inner_html = plain_text_to_simple_html(quote_clean) if quote_clean else ""
 
-    attr_escaped = ''.join(_HTML_ESCAPE.get(ch, ch) for ch in attribution)
+    attr_escaped = "".join(_HTML_ESCAPE.get(ch, ch) for ch in attribution)
 
     gmail_quote = (
         '<div class="gmail_quote gmail_quote_container">'
@@ -639,14 +640,14 @@ def compose_reply_html(text: str, signature_html: str = '') -> str:
         '<blockquote class="gmail_quote" '
         'style="margin:0 0 0 0.8ex;border-left:1px solid rgb(204,204,204);'
         'padding-left:1ex;color:#555;">'
-        f'{quote_inner_html}'
-        '</blockquote>'
-        '</div>'
+        f"{quote_inner_html}"
+        "</blockquote>"
+        "</div>"
     )
 
     # <br> перед блоком цитаты — визуальная отбивка между (подписью/ответом)
     # и цитатой, полностью повторяет верстку, которую генерирует веб-Gmail.
-    return reply_html + (signature_html or '') + '<br>' + gmail_quote
+    return reply_html + (signature_html or "") + "<br>" + gmail_quote
 
 
 def extract_display_name(from_addr: str) -> str:
@@ -656,7 +657,7 @@ def extract_display_name(from_addr: str) -> str:
     (``RamunÄ—`` → ``Ramunė``) фиксится через ftfy.
     """
     if not from_addr:
-        return '—'
+        return "—"
     from_addr = _fix_mojibake(from_addr)
     m = _FROM_NAME.match(from_addr)
     if m:
@@ -665,5 +666,5 @@ def extract_display_name(from_addr: str) -> str:
             return name
     m = _EMAIL_ONLY.match(from_addr)
     if m:
-        return m.group(1).split('@')[0]
+        return m.group(1).split("@")[0]
     return from_addr.strip()

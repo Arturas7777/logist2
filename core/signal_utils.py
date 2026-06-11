@@ -35,10 +35,7 @@ def signals_muted(*signals, senders=()):
             # Оставляем приёмники, которые привязаны к другим sender'ам.
             # lookup_key у Django — (id(receiver), id(sender)).
             sender_ids = {id(s) for s in senders}
-            sig.receivers = [
-                (key, r) for (key, r) in sig.receivers
-                if key[1] not in sender_ids
-            ]
+            sig.receivers = [(key, r) for (key, r) in sig.receivers if key[1] not in sender_ids]
             # В Django также есть sender_receivers_cache — сбросим, чтобы не читал из кэша.
             try:
                 sig.sender_receivers_cache.clear()

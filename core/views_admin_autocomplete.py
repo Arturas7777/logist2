@@ -35,6 +35,8 @@ def clients_autocomplete(request):
     if term:
         qs = qs.filter(name__icontains=term)
     qs = qs.order_by("name")[:20]
-    return JsonResponse({
-        "results": [{"id": c.pk, "text": c.name} for c in qs],
-    })
+    return JsonResponse(
+        {
+            "results": [{"id": c.pk, "text": c.name} for c in qs],
+        }
+    )

@@ -23,7 +23,7 @@
 from .base import *
 
 DEBUG = False
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ["*"]
 
 # Берём настройки БД целиком из base.py (там уже DB_* из env). На CI:
 #   DB_NAME=test_logist2 DB_USER=test_user DB_PASSWORD=test_pass
@@ -36,26 +36,26 @@ ALLOWED_HOSTS = ['*']
 # вдруг появится MIGRATION_MODULES — здесь его не трогаем.
 
 CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
     }
 }
 
 CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
     },
 }
 
-EMAIL_BACKEND = 'django.core.mail.backends.locmem.EmailBackend'
+EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
 
 # MD5 — заметно быстрее на больших тестах с createsuperuser.
 PASSWORD_HASHERS = [
-    'django.contrib.auth.hashers.MD5PasswordHasher',
+    "django.contrib.auth.hashers.MD5PasswordHasher",
 ]
 
 # Sentry-отчёты из CI не нужны.
-SENTRY_DSN = ''
+SENTRY_DSN = ""

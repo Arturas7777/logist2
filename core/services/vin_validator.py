@@ -15,6 +15,7 @@ dock receipts. Если AI прочитал VIN с ошибкой и эта ош
   * validate_vin — комбинированная функция, суммирующая обе проверки в
     один dict-результат, удобный для сохранения в extracted_data.
 """
+
 from __future__ import annotations
 
 import logging
@@ -26,9 +27,29 @@ logger = logging.getLogger(__name__)
 # ── ISO 3779 check digit ──────────────────────────────────────────────────
 
 _TRANSLITERATION = {
-    'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5, 'F': 6, 'G': 7, 'H': 8,
-    'J': 1, 'K': 2, 'L': 3, 'M': 4, 'N': 5, 'P': 7, 'R': 9,
-    'S': 2, 'T': 3, 'U': 4, 'V': 5, 'W': 6, 'X': 7, 'Y': 8, 'Z': 9,
+    "A": 1,
+    "B": 2,
+    "C": 3,
+    "D": 4,
+    "E": 5,
+    "F": 6,
+    "G": 7,
+    "H": 8,
+    "J": 1,
+    "K": 2,
+    "L": 3,
+    "M": 4,
+    "N": 5,
+    "P": 7,
+    "R": 9,
+    "S": 2,
+    "T": 3,
+    "U": 4,
+    "V": 5,
+    "W": 6,
+    "X": 7,
+    "Y": 8,
+    "Z": 9,
 }
 _WEIGHTS = [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2]
 
@@ -47,7 +68,7 @@ def vin_check_digit(vin: str) -> str | None:
             return None  # I/O/Q или мусор — невалидный VIN
         total += value * _WEIGHTS[i]
     remainder = total % 11
-    return 'X' if remainder == 10 else str(remainder)
+    return "X" if remainder == 10 else str(remainder)
 
 
 def is_vin_checksum_valid(vin: str) -> bool:
@@ -61,12 +82,12 @@ def is_north_american_vin(vin: str) -> bool:
     """North American VIN (USA/Canada/Mexico) — check digit обязателен."""
     if not vin or len(vin) < 1:
         return False
-    return vin[0].upper() in {'1', '2', '3', '4', '5'}
+    return vin[0].upper() in {"1", "2", "3", "4", "5"}
 
 
 # ── NHTSA decode ──────────────────────────────────────────────────────────
 
-_NHTSA_URL = 'https://vpic.nhtsa.dot.gov/api/vehicles/decodevin/{vin}?format=json'
+_NHTSA_URL = "https://vpic.nhtsa.dot.gov/api/vehicles/decodevin/{vin}?format=json"
 _NHTSA_TIMEOUT = 5  # секунд
 
 
@@ -84,23 +105,23 @@ def decode_vin_nhtsa(vin: str, *, timeout: int = _NHTSA_TIMEOUT) -> dict[str, An
     На сетевые ошибки НЕ кидает исключений — возвращает raw_failed=True.
     """
     result: dict[str, Any] = {
-        'ok': False,
-        'make': None,
-        'model': None,
-        'year': None,
-        'error_code': '',
-        'error_text': '',
-        'suggested_vin': '',
-        'raw_failed': False,
+        "ok": False,
+        "make": None,
+        "model": None,
+        "year": None,
+        "error_code": "",
+        "error_text": "",
+        "suggested_vin": "",
+        "raw_failed": False,
     }
     if not vin or len(vin) != 17:
-        result['error_text'] = 'Invalid length'
+        result["error_text"] = "Invalid length"
         return result
     try:
         import requests
     except ImportError:
         logger.error("requests не установлен — NHTSA decode недоступен.")
-        result['raw_failed'] = True
+        result["raw_failed"] = True
         return result
 
     try:
@@ -109,24 +130,24 @@ def decode_vin_nhtsa(vin: str, *, timeout: int = _NHTSA_TIMEOUT) -> dict[str, An
         data = resp.json()
     except Exception as e:
         logger.warning("NHTSA decode failed for VIN=%s: %s", vin, e)
-        result['raw_failed'] = True
+        result["raw_failed"] = True
         return result
 
-    fields = {item.get('Variable'): item.get('Value') for item in data.get('Results') or []}
-    result['error_code'] = fields.get('Error Code') or ''
-    result['error_text'] = fields.get('Error Text') or ''
-    result['make'] = fields.get('Make') or None
-    result['model'] = fields.get('Model') or None
-    year_str = fields.get('Model Year') or ''
+    fields = {item.get("Variable"): item.get("Value") for item in data.get("Results") or []}
+    result["error_code"] = fields.get("Error Code") or ""
+    result["error_text"] = fields.get("Error Text") or ""
+    result["make"] = fields.get("Make") or None
+    result["model"] = fields.get("Model") or None
+    year_str = fields.get("Model Year") or ""
     try:
-        result['year'] = int(year_str) if year_str else None
+        result["year"] = int(year_str) if year_str else None
     except ValueError:
-        result['year'] = None
-    result['suggested_vin'] = fields.get('Suggested VIN') or ''
+        result["year"] = None
+    result["suggested_vin"] = fields.get("Suggested VIN") or ""
     # ErrorCode '0' = no error. '1','2','3'... = разные виды проблем.
     # Также приемлем '6' (incomplete) — частично декодировано но make/model есть.
     # Считаем VIN "ok" только если error_code == '0'.
-    result['ok'] = (result['error_code'] or '').strip() == '0'
+    result["ok"] = (result["error_code"] or "").strip() == "0"
     return result
 
 
@@ -140,52 +161,44 @@ def validate_vin(vin: str, *, use_nhtsa: bool = True) -> dict[str, Any]:
 
     use_nhtsa=False — для unit-тестов / offline режима.
     """
-    vin_norm = (vin or '').strip().upper()
+    vin_norm = (vin or "").strip().upper()
     out: dict[str, Any] = {
-        'vin': vin_norm,
-        'length_ok': len(vin_norm) == 17,
-        'checksum_ok': is_vin_checksum_valid(vin_norm),
-        'region_north_american': is_north_american_vin(vin_norm),
-        'nhtsa': None,
-        'warnings': [],
-        'suggested_vin': '',
+        "vin": vin_norm,
+        "length_ok": len(vin_norm) == 17,
+        "checksum_ok": is_vin_checksum_valid(vin_norm),
+        "region_north_american": is_north_american_vin(vin_norm),
+        "nhtsa": None,
+        "warnings": [],
+        "suggested_vin": "",
     }
-    if not out['length_ok']:
-        out['warnings'].append('VIN не 17-символьный')
+    if not out["length_ok"]:
+        out["warnings"].append("VIN не 17-символьный")
         return out
     # Check digit для NA-VIN — обязателен и важен.
-    if out['region_north_american'] and not out['checksum_ok']:
-        out['warnings'].append(
-            'Контрольная цифра VIN не сходится — для US/Canada VIN это '
-            'почти наверняка ошибка чтения.'
+    if out["region_north_american"] and not out["checksum_ok"]:
+        out["warnings"].append(
+            "Контрольная цифра VIN не сходится — для US/Canada VIN это почти наверняка ошибка чтения."
         )
     if use_nhtsa:
         nhtsa = decode_vin_nhtsa(vin_norm)
-        out['nhtsa'] = nhtsa
-        if nhtsa['raw_failed']:
-            out['warnings'].append('NHTSA API недоступен — пропустили проверку.')
-        elif not nhtsa['ok']:
+        out["nhtsa"] = nhtsa
+        if nhtsa["raw_failed"]:
+            out["warnings"].append("NHTSA API недоступен — пропустили проверку.")
+        elif not nhtsa["ok"]:
             # NHTSA error_code != '0'. Но для не-NA VIN'ов "check digit
             # does not calculate" — известная норма (Audi/BMW/Porsche
             # не используют ISO check digit). Если make+year декодированы
             # успешно — не считаем это проблемой.
-            err = (nhtsa.get('error_text') or '').strip()
-            partial_decode_ok = bool(nhtsa.get('make') and nhtsa.get('year'))
-            err_is_only_check_digit = (
-                'check digit' in err.lower()
-                and 'no detailed' not in err.lower()
-            )
-            if (not out['region_north_american']
-                    and partial_decode_ok
-                    and err_is_only_check_digit):
+            err = (nhtsa.get("error_text") or "").strip()
+            partial_decode_ok = bool(nhtsa.get("make") and nhtsa.get("year"))
+            err_is_only_check_digit = "check digit" in err.lower() and "no detailed" not in err.lower()
+            if not out["region_north_american"] and partial_decode_ok and err_is_only_check_digit:
                 pass  # типичный EU/Asian VIN — пропускаем
             else:
-                out['warnings'].append(f"NHTSA: VIN не валиден ({err or 'unknown'})")
-                if nhtsa.get('suggested_vin'):
-                    out['suggested_vin'] = nhtsa['suggested_vin']
-                    out['warnings'].append(
-                        f"NHTSA подсказывает правильный VIN: {nhtsa['suggested_vin']}"
-                    )
+                out["warnings"].append(f"NHTSA: VIN не валиден ({err or 'unknown'})")
+                if nhtsa.get("suggested_vin"):
+                    out["suggested_vin"] = nhtsa["suggested_vin"]
+                    out["warnings"].append(f"NHTSA подсказывает правильный VIN: {nhtsa['suggested_vin']}")
     return out
 
 
@@ -210,21 +223,19 @@ def cross_check_with_ai_data(
       → mismatch_year warning.
     """
     result = validate_vin(vin, use_nhtsa=use_nhtsa)
-    nhtsa = result.get('nhtsa') or {}
-    if not nhtsa or nhtsa.get('raw_failed'):
+    nhtsa = result.get("nhtsa") or {}
+    if not nhtsa or nhtsa.get("raw_failed"):
         return result  # сравнивать не с чем
 
-    n_year = nhtsa.get('year')
-    n_make = (nhtsa.get('make') or '').strip().upper()
-    (nhtsa.get('model') or '').strip().upper()
+    n_year = nhtsa.get("year")
+    n_make = (nhtsa.get("make") or "").strip().upper()
+    (nhtsa.get("model") or "").strip().upper()
 
     if ai_year and n_year and int(ai_year) != int(n_year):
-        result['warnings'].append(
-            f'Год не совпадает: AI прочитал в документе {ai_year}, '
-            f'но VIN декодируется как {n_year}-й год. Возможна ошибка в VIN.'
+        result["warnings"].append(
+            f"Год не совпадает: AI прочитал в документе {ai_year}, "
+            f"но VIN декодируется как {n_year}-й год. Возможна ошибка в VIN."
         )
     if ai_make and n_make and ai_make.strip().upper() not in n_make and n_make not in ai_make.strip().upper():
-        result['warnings'].append(
-            f'Производитель не совпадает: AI={ai_make}, VIN→NHTSA={n_make}.'
-        )
+        result["warnings"].append(f"Производитель не совпадает: AI={ai_make}, VIN→NHTSA={n_make}.")
     return result

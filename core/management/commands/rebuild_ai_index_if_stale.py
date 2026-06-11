@@ -27,6 +27,4 @@ class Command(BaseCommand):
         output_path = build_rag_index(sources, use_embeddings=use_embeddings)
         mode = "embeddings" if use_embeddings else "keyword-only"
         reason = stale_info.get("reason", "unknown")
-        self.stdout.write(self.style.SUCCESS(
-            f"AI index rebuilt ({mode}) due to {reason}: {output_path}"
-        ))
+        self.stdout.write(self.style.SUCCESS(f"AI index rebuilt ({mode}) due to {reason}: {output_path}"))

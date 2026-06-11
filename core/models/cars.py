@@ -680,8 +680,11 @@ class Car(models.Model):
 
         if is_new:
             sync_car_services_for_car(
-                self, created=True,
-                warehouse_changed=True, line_changed=True, carrier_changed=True,
+                self,
+                created=True,
+                warehouse_changed=True,
+                line_changed=True,
+                carrier_changed=True,
             )
         elif old_contractors is not None:
             warehouse_changed = old_contractors["warehouse_id"] != self.warehouse_id
@@ -689,7 +692,8 @@ class Car(models.Model):
             carrier_changed = old_contractors["carrier_id"] != self.carrier_id
             if warehouse_changed or line_changed or carrier_changed:
                 sync_car_services_for_car(
-                    self, created=False,
+                    self,
+                    created=False,
                     warehouse_changed=warehouse_changed,
                     line_changed=line_changed,
                     carrier_changed=carrier_changed,
@@ -826,15 +830,20 @@ class CarModelImage(models.Model):
     """
 
     brand = models.CharField(
-        max_length=100, db_index=True, verbose_name="Марка/модель",
+        max_length=100,
+        db_index=True,
+        verbose_name="Марка/модель",
         help_text="Как в карточке авто, напр. «BMW 430I» или просто «BMW».",
     )
     year = models.PositiveIntegerField(
-        null=True, blank=True, verbose_name="Год",
+        null=True,
+        blank=True,
+        verbose_name="Год",
         help_text="Год выпуска. Пусто = подходит для любого года этой модели.",
     )
     image = models.ImageField(
-        upload_to="car_model_images/", verbose_name="Изображение",
+        upload_to="car_model_images/",
+        verbose_name="Изображение",
         help_text="Любой формат/размер — приведётся к единому виду автоматически.",
     )
     is_active = models.BooleanField(default=True, verbose_name="Активна")
@@ -848,7 +857,8 @@ class CarModelImage(models.Model):
         ordering = ["brand", "-year"]
         constraints = [
             models.UniqueConstraint(
-                fields=["brand", "year"], name="uniq_carmodelimage_brand_year",
+                fields=["brand", "year"],
+                name="uniq_carmodelimage_brand_year",
             ),
         ]
 
@@ -863,5 +873,6 @@ class CarModelImage(models.Model):
         if self.image and (update_fields is None or "image" in update_fields):
             if not str(self.image.name).lower().endswith(".webp"):
                 from core.services.photo_optimize import normalize_car_model_image_field
+
                 normalize_car_model_image_field(self, "image")
         super().save(*args, **kwargs)

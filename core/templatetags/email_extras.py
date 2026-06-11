@@ -21,13 +21,13 @@ from core.services.email_reply_parser import (
 register = template.Library()
 
 
-@register.filter(name='messenger_body')
+@register.filter(name="messenger_body")
 def messenger_body_filter(text: str) -> str:
     """Чистит письмо для messenger-просмотра: только «суть» без подписи/цитат."""
-    return messenger_body(text or '')
+    return messenger_body(text or "")
 
 
-@register.filter(name='messenger_body_auto')
+@register.filter(name="messenger_body_auto")
 def messenger_body_auto_filter(email) -> str:
     """Берёт body_text, а если пусто — извлекает text из body_html.
 
@@ -35,38 +35,38 @@ def messenger_body_auto_filter(email) -> str:
     (тогда без этого фильтра в шаблоне показывается серый snippet).
     """
     if not email:
-        return ''
+        return ""
     return messenger_body_from_email(
-        getattr(email, 'body_text', '') or '',
-        getattr(email, 'body_html', '') or '',
+        getattr(email, "body_text", "") or "",
+        getattr(email, "body_html", "") or "",
     )
 
 
-@register.filter(name='quote_part')
+@register.filter(name="quote_part")
 def quote_part_filter(text: str) -> str:
     """Возвращает только цитируемую историю (то, что идёт после разделителя).
 
     Пусто — если явного маркера цитирования в письме нет.
     """
     if not text:
-        return ''
+        return ""
     _, quote = split_reply_and_quote(_fix_mojibake(text))
     return quote
 
 
-@register.filter(name='fix_mojibake')
+@register.filter(name="fix_mojibake")
 def fix_mojibake_filter(text: str) -> str:
     """Фиксит mojibake (``SiunÄ¨iu`` → ``Siunčiu``) — для subject/from."""
-    return _fix_mojibake(text or '')
+    return _fix_mojibake(text or "")
 
 
-@register.filter(name='display_name')
+@register.filter(name="display_name")
 def display_name_filter(from_addr: str) -> str:
     """Преобразует ``"A B" <a@b>`` в ``A B``."""
-    return extract_display_name(from_addr or '')
+    return extract_display_name(from_addr or "")
 
 
-@register.filter(name='extract_email')
+@register.filter(name="extract_email")
 def extract_email_filter(from_addr: str) -> str:
     """Из ``"A B" <a@b.com>`` возвращает ``a@b.com``.
 
@@ -76,12 +76,12 @@ def extract_email_filter(from_addr: str) -> str:
     from email.utils import parseaddr
 
     if not from_addr:
-        return ''
-    name, addr = parseaddr(_fix_mojibake(from_addr))
-    return (addr or from_addr or '').strip()
+        return ""
+    _name, addr = parseaddr(_fix_mojibake(from_addr))
+    return (addr or from_addr or "").strip()
 
 
-@register.filter(name='split_email_list')
+@register.filter(name="split_email_list")
 def split_email_list_filter(addrs: str) -> list[dict]:
     """Разбивает строку вроде ``"A" <a@x>, b@y, "C D" <c@z>`` на список
     словарей ``[{email, display}]`` — пригоден для рендеринга в <details>.
@@ -98,29 +98,31 @@ def split_email_list_filter(addrs: str) -> list[dict]:
     result: list[dict] = []
     seen: set[str] = set()
     for raw_name, raw_addr in parsed:
-        email = (raw_addr or '').strip()
-        if not email or '@' not in email:
+        email = (raw_addr or "").strip()
+        if not email or "@" not in email:
             continue
         key = email.lower()
         if key in seen:
             continue
         seen.add(key)
-        name = (raw_name or '').strip().strip('"').strip()
-        result.append({
-            'email': email,
-            'display': name or email,
-        })
+        name = (raw_name or "").strip().strip('"').strip()
+        result.append(
+            {
+                "email": email,
+                "display": name or email,
+            }
+        )
     return result
 
 
-@register.filter(name='initials')
+@register.filter(name="initials")
 def initials_filter(name_or_addr: str) -> str:
     """Две первые буквы имени (или адреса) для аватара. Заглавные."""
-    display = extract_display_name(name_or_addr or '')
+    display = extract_display_name(name_or_addr or "")
     display = display.strip()
     if not display:
-        return '??'
-    parts = [p for p in display.replace('.', ' ').replace('-', ' ').split() if p]
+        return "??"
+    parts = [p for p in display.replace(".", " ").replace("-", " ").split() if p]
     if len(parts) >= 2:
         return (parts[0][0] + parts[1][0]).upper()
     return display[:2].upper()
@@ -129,29 +131,29 @@ def initials_filter(name_or_addr: str) -> str:
 # Детерминированная палитра (яркая, но с хорошим контрастом на белом) —
 # выбирается через хэш, чтобы у одного отправителя всегда один цвет.
 _AVATAR_COLORS = [
-    '#ef4444',  # red
-    '#f97316',  # orange
-    '#f59e0b',  # amber
-    '#84cc16',  # lime
-    '#10b981',  # emerald
-    '#06b6d4',  # cyan
-    '#3b82f6',  # blue
-    '#6366f1',  # indigo
-    '#8b5cf6',  # violet
-    '#ec4899',  # pink
-    '#14b8a6',  # teal
-    '#0ea5e9',  # sky
+    "#ef4444",  # red
+    "#f97316",  # orange
+    "#f59e0b",  # amber
+    "#84cc16",  # lime
+    "#10b981",  # emerald
+    "#06b6d4",  # cyan
+    "#3b82f6",  # blue
+    "#6366f1",  # indigo
+    "#8b5cf6",  # violet
+    "#ec4899",  # pink
+    "#14b8a6",  # teal
+    "#0ea5e9",  # sky
 ]
 
 
-@register.filter(name='avatar_color')
+@register.filter(name="avatar_color")
 def avatar_color_filter(name_or_addr: str) -> str:
     """Стабильный цвет-заливка аватара по хэшу отправителя."""
-    key = (name_or_addr or '').strip().lower()
+    key = (name_or_addr or "").strip().lower()
     if not key:
         return _AVATAR_COLORS[0]
     # usedforsecurity=False: хеш нужен лишь для стабильного выбора цвета, не для защиты.
-    h = int(hashlib.md5(key.encode('utf-8'), usedforsecurity=False).hexdigest(), 16)
+    h = int(hashlib.md5(key.encode("utf-8"), usedforsecurity=False).hexdigest(), 16)
     return _AVATAR_COLORS[h % len(_AVATAR_COLORS)]
 
 
@@ -159,12 +161,12 @@ def avatar_color_filter(name_or_addr: str) -> str:
 # Фильтруем по имени: Gmail/Outlook автосгенерированные имена для embedded
 # изображений в HTML-сигнатурах.
 _INLINE_IMG_FILENAME = re.compile(
-    r'^(?:image\d+|outlook-[\w-]+)\.(?:png|jpe?g|gif|bmp)$',
+    r"^(?:image\d+|outlook-[\w-]+)\.(?:png|jpe?g|gif|bmp)$",
     re.IGNORECASE,
 )
 
 
-@register.filter(name='visible_attachments')
+@register.filter(name="visible_attachments")
 def visible_attachments_filter(attachments):
     """Оставляет только «настоящие» вложения — без inline-картинок подписи.
 
@@ -180,20 +182,20 @@ def visible_attachments_filter(attachments):
     for idx, att in enumerate(attachments):
         if not isinstance(att, dict):
             continue
-        if att.get('is_inline'):
+        if att.get("is_inline"):
             continue
-        if att.get('skipped_reason') == 'inline':
+        if att.get("skipped_reason") == "inline":
             continue
-        filename = (att.get('filename') or '').strip()
+        filename = (att.get("filename") or "").strip()
         if filename and _INLINE_IMG_FILENAME.match(filename):
             continue
         # Прокидываем оригинальный индекс — view email_attachment открывает
         # файл по индексу в attachments_json, а мы смещаемся при фильтрации.
-        result.append({**att, 'orig_index': idx})
+        result.append({**att, "orig_index": idx})
     return result
 
 
-@register.filter(name='linkify_urls', is_safe=True)
+@register.filter(name="linkify_urls", is_safe=True)
 def linkify_urls_filter(text: str) -> str:
     """Обёртка поверх django.utils.html.urlize, возвращает safe-строку.
 
@@ -202,4 +204,5 @@ def linkify_urls_filter(text: str) -> str:
     """
     # defaultfilters.urlize уже возвращает SafeString — mark_safe не нужен.
     from django.template.defaultfilters import urlize
-    return urlize(text or '', autoescape=True)
+
+    return urlize(text or "", autoescape=True)

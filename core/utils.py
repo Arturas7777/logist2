@@ -2,7 +2,6 @@
 Утилиты для оптимизации производительности и бизнес-логики
 """
 
-
 import logging
 import threading
 
@@ -22,6 +21,7 @@ def round_up_to_5(value):
         return value
     return value + (5 - remainder)
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -39,7 +39,7 @@ class WebSocketBatcher:
 
     @classmethod
     def _get_batch(cls):
-        bucket = getattr(cls._local, 'batch', None)
+        bucket = getattr(cls._local, "batch", None)
         if bucket is None:
             bucket = []
             cls._local.batch = bucket
@@ -49,11 +49,7 @@ class WebSocketBatcher:
     def add(cls, model_name, obj_id, data):
         """Добавить обновление в пакет (буфер привязан к текущему потоку)."""
         batch = cls._get_batch()
-        batch.append({
-            'model': model_name,
-            'id': obj_id,
-            **data
-        })
+        batch.append({"model": model_name, "id": obj_id, **data})
 
         if len(batch) >= cls._max_batch_size:
             cls.flush()
@@ -81,7 +77,7 @@ class WebSocketBatcher:
                 {
                     "type": "data_update_batch",
                     "data": payload,
-                }
+                },
             )
             logger.debug("Sent batch of %d WebSocket updates", len(payload))
         except Exception as e:
@@ -123,7 +119,7 @@ def batch_update_queryset(queryset, update_func, batch_size=100):
             queryset.model.objects.bulk_update(
                 objects_to_update,
                 [f.name for f in queryset.model._meta.fields if not f.primary_key],
-                batch_size=batch_size
+                batch_size=batch_size,
             )
             updated_count += len(objects_to_update)
             objects_to_update.clear()
@@ -131,9 +127,7 @@ def batch_update_queryset(queryset, update_func, batch_size=100):
     # Обновить остаток
     if objects_to_update:
         queryset.model.objects.bulk_update(
-            objects_to_update,
-            [f.name for f in queryset.model._meta.fields if not f.primary_key],
-            batch_size=batch_size
+            objects_to_update, [f.name for f in queryset.model._meta.fields if not f.primary_key], batch_size=batch_size
         )
         updated_count += len(objects_to_update)
 
@@ -168,6 +162,7 @@ def log_slow_queries(threshold_ms=100):
     Args:
         threshold_ms: Порог в миллисекундах
     """
+
     def decorator(func):
         def wrapper(*args, **kwargs):
             from time import time
@@ -183,16 +178,15 @@ def log_slow_queries(threshold_ms=100):
             queries_count = len(connection.queries)
 
             if elapsed > threshold_ms:
-                logger.warning(
-                    f"Slow function {func.__name__}: {elapsed:.2f}ms, "
-                    f"{queries_count} queries"
-                )
+                logger.warning(f"Slow function {func.__name__}: {elapsed:.2f}ms, {queries_count} queries")
                 # Логируем самые медленные запросы
                 for query in connection.queries:
-                    query_time = float(query['time']) * 1000
+                    query_time = float(query["time"]) * 1000
                     if query_time > threshold_ms / 2:
                         logger.warning(f"  Slow query ({query_time:.2f}ms): {query['sql'][:200]}")
 
             return result
+
         return wrapper
+
     return decorator

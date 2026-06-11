@@ -28,7 +28,8 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "--overwrite", action="store_true",
+            "--overwrite",
+            action="store_true",
             help="Перезаписывать изображение у существующих записей (brand+year).",
         )
 
@@ -82,7 +83,8 @@ class Command(BaseCommand):
                 failed += 1
                 self.stderr.write(self.style.ERROR(f"  ! ошибка {fname}: {e}"))
 
-        self.stdout.write(self.style.SUCCESS(
-            f"Готово. Добавлено: {created}, обновлено: {updated}, "
-            f"пропущено: {skipped}, ошибок: {failed}."
-        ))
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Готово. Добавлено: {created}, обновлено: {updated}, пропущено: {skipped}, ошибок: {failed}."
+            )
+        )

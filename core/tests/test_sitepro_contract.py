@@ -197,7 +197,8 @@ class TestPushInvoiceIdempotency:
         session = FakeSession()
         session.add("POST", "/clients/list", FakeResponse(load_fixture("sitepro_clients_found.json")))
         session.add(
-            "POST", "/warehouse/sales/create",
+            "POST",
+            "/warehouse/sales/create",
             FakeResponse({"message": "Sales document already exists", "code": 400}, status_code=400),
         )
         session.add("POST", "/warehouse/sales/list", FakeResponse(load_fixture("sitepro_sales_found.json")))
@@ -245,7 +246,8 @@ class TestPushInvoiceErrors:
         session = FakeSession()
         session.add("POST", "/clients/list", FakeResponse(load_fixture("sitepro_clients_found.json")))
         session.add(
-            "POST", "/warehouse/sales/create",
+            "POST",
+            "/warehouse/sales/create",
             FakeResponse({"message": "Internal error", "code": 500}, status_code=500),
         )
         service = _make_service(connection, session)

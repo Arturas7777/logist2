@@ -99,6 +99,7 @@ class AccountResult:
 
 # --------------------------- парсеры ---------------------------
 
+
 def parse_decimal(s: str, *, comma_decimal: bool) -> Decimal:
     s = (s or "").strip().replace("\xa0", "").replace(" ", "")
     if not s:
@@ -173,8 +174,9 @@ def parse_paysera(path: Path, label: str) -> list[Tx]:
     return txs
 
 
-def parse_revolut(path: Path, *, account_label: str = "Revolut (LT89...7316)",
-                  expected_currency: str = "EUR") -> list[Tx]:
+def parse_revolut(
+    path: Path, *, account_label: str = "Revolut (LT89...7316)", expected_currency: str = "EUR"
+) -> list[Tx]:
     """Парсер Revolut. Если валюта операции ≠ EUR, конвертирует в EUR по курсу
     Lietuvos banko (ECB) на дату операции из таблицы LB_RATES."""
     txs: list[Tx] = []
@@ -197,14 +199,12 @@ def parse_revolut(path: Path, *, account_label: str = "Revolut (LT89...7316)",
                 rates = LB_RATES.get(currency, {})
                 rate = rates.get(date_str)
                 if rate is None:
-                    fx_note = (f"!!! НЕТ КУРСА LB для {currency} на {date_str} — "
-                               f"подставьте вручную в LB_RATES")
+                    fx_note = f"!!! НЕТ КУРСА LB для {currency} на {date_str} — подставьте вручную в LB_RATES"
                     eur_amount = Decimal("0")
                 else:
                     # rate = 1 EUR в данной валюте → EUR = amount / rate
                     eur_amount = (amount / rate).quantize(Decimal("0.01"))
-                    fx_note = (f"конвертация {currency}→EUR по курсу LB/ECB "
-                               f"{date_str}: 1 EUR = {rate} {currency}")
+                    fx_note = f"конвертация {currency}→EUR по курсу LB/ECB {date_str}: 1 EUR = {rate} {currency}"
                 amount = eur_amount
 
             tx = Tx(
@@ -265,8 +265,20 @@ def classify(tx: Tx) -> None:
 
     # 4) Возврат / возмещение / Cashback / Refund
     low = (desc + " " + rtype).lower()
-    if any(k in low for k in ("cashback", "кэшбэк", "возврат", "refund", "reversal",
-                              "atšaukim", "grąžinim", "graz inim", "grazinim")):
+    if any(
+        k in low
+        for k in (
+            "cashback",
+            "кэшбэк",
+            "возврат",
+            "refund",
+            "reversal",
+            "atšaukim",
+            "grąžinim",
+            "graz inim",
+            "grazinim",
+        )
+    ):
         tx.is_income = False
         tx.category = "refund"
         tx.exclude_reason = "возврат/кэшбэк/корректировка"
@@ -296,8 +308,12 @@ def classify(tx: Tx) -> None:
     # 8) Пополнение наличными в банкомате — по решению пользователя учитывается
     #    как доход IV (наличная выручка от клиентов, внесённая в банк).
     #    Кассовая книга/чеки должны быть на руках для подтверждения.
-    if "brink" in (name or "").lower() or "grynųjų pinigų įneš" in low or \
-            "grynuju pinigu ines" in low or ("įnešimas" in low and "kortel" in low):
+    if (
+        "brink" in (name or "").lower()
+        or "grynųjų pinigų įneš" in low
+        or "grynuju pinigu ines" in low
+        or ("įnešimas" in low and "kortel" in low)
+    ):
         tx.is_income = True
         tx.category = "cash_deposit_income"
         tx.exclude_reason = ""
@@ -316,6 +332,7 @@ def classify(tx: Tx) -> None:
 
 
 # --------------------------- отчёт ---------------------------
+
 
 def fmt(amount: Decimal) -> str:
     return f"{amount:,.2f}".replace(",", " ")
@@ -352,8 +369,7 @@ def main() -> None:
     accounts.append(rev)
 
     rev_usd = AccountResult("Revolut USD")
-    for tx in parse_revolut(REVOLUT_USD_FILE, account_label=rev_usd.label,
-                            expected_currency="USD"):
+    for tx in parse_revolut(REVOLUT_USD_FILE, account_label=rev_usd.label, expected_currency="USD"):
         (rev_usd.incomes if tx.is_income else rev_usd.excluded).append(tx)
     accounts.append(rev_usd)
 
@@ -371,14 +387,12 @@ def main() -> None:
 
     # Подробно: доходы по каждому счёту
     for a in accounts:
-        print_section(f"{a.label} — учтено как доход ({len(a.incomes)} операций, "
-                      f"{fmt(a.total_income)} EUR)")
+        print_section(f"{a.label} — учтено как доход ({len(a.incomes)} операций, {fmt(a.total_income)} EUR)")
         # Группируем по контрагенту
         by_payer: dict[str, list[Tx]] = defaultdict(list)
         for t in a.incomes:
             by_payer[t.counterparty or "(без имени)"].append(t)
-        for payer, items in sorted(by_payer.items(),
-                                   key=lambda kv: -sum(t.amount for t in kv[1])):
+        for payer, items in sorted(by_payer.items(), key=lambda kv: -sum(t.amount for t in kv[1])):
             payer_total = sum((t.amount for t in items), Decimal("0"))
             print(f"\n  {payer}  —  {fmt(payer_total)} EUR  ({len(items)} оп.)")
             for t in items:
@@ -390,12 +404,10 @@ def main() -> None:
         if not a.excluded:
             continue
         excl_total = sum((t.amount for t in a.excluded), Decimal("0"))
-        print_section(f"{a.label} — ИСКЛЮЧЕНО ({len(a.excluded)} оп., "
-                      f"{fmt(excl_total)} EUR)", char="-")
+        print_section(f"{a.label} — ИСКЛЮЧЕНО ({len(a.excluded)} оп., {fmt(excl_total)} EUR)", char="-")
         for t in a.excluded:
             desc = t.description.replace("\n", " ")[:80]
-            print(f"  [{t.category:14}] {t.date[:10]}  {fmt(t.amount):>10}  "
-                  f"{t.counterparty[:25]:25}  {desc}")
+            print(f"  [{t.category:14}] {t.date[:10]}  {fmt(t.amount):>10}  {t.counterparty[:25]:25}  {desc}")
 
     print_section("ДОХОД (для декларации Individuali veikla)")
     print("  Сумма всех зачислений от внешних плательщиков по 4 счетам:")
@@ -403,6 +415,7 @@ def main() -> None:
 
     # JSON-экспорт для canvas/визуализации
     import json
+
     out = {
         "accounts": [],
         "categories": defaultdict(lambda: {"count": 0, "amount": "0"}),
@@ -451,23 +464,21 @@ def main() -> None:
         # «спорные» (ambiguous): пока — пополнения наличными (cash_deposit)
         for t in a.excluded:
             if t.category == "cash_deposit":
-                acc_data["ambiguous"].append({
-                    "date": t.date[:10],
-                    "amount": str(t.amount),
-                    "counterparty": t.counterparty,
-                    "description": t.description,
-                    "reason": "наличное пополнение через банкомат — может быть бизнес-доход",
-                })
+                acc_data["ambiguous"].append(
+                    {
+                        "date": t.date[:10],
+                        "amount": str(t.amount),
+                        "counterparty": t.counterparty,
+                        "description": t.description,
+                        "reason": "наличное пополнение через банкомат — может быть бизнес-доход",
+                    }
+                )
         out["accounts"].append(acc_data)
 
-    out["category_totals"] = {
-        cat: {"count": cat_counts[cat], "amount": str(cat_totals[cat])}
-        for cat in cat_totals
-    }
+    out["category_totals"] = {cat: {"count": cat_counts[cat], "amount": str(cat_totals[cat])} for cat in cat_totals}
 
     json_path = Path(__file__).parent / "income_data.json"
-    json_path.write_text(json.dumps(out, ensure_ascii=False, indent=2,
-                                    default=str), encoding="utf-8")
+    json_path.write_text(json.dumps(out, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     print(f"\nJSON сохранён: {json_path}")
 
 

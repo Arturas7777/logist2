@@ -9,6 +9,7 @@
     python manage.py validate_invoice_service_mapping
     python manage.py validate_invoice_service_mapping --strict  # exit 1 при любых ошибках
 """
+
 from __future__ import annotations
 
 import json
@@ -18,10 +19,10 @@ import sys
 from django.core.management.base import BaseCommand, CommandError
 
 PROVIDER_MODEL_MAP = {
-    'WAREHOUSE': ('core', 'Warehouse', 'WarehouseService'),
-    'LINE':      ('core', 'Line',      'LineService'),
-    'CARRIER':   ('core', 'Carrier',   'CarrierService'),
-    'COMPANY':   ('core', 'Company',   'CompanyService'),
+    "WAREHOUSE": ("core", "Warehouse", "WarehouseService"),
+    "LINE": ("core", "Line", "LineService"),
+    "CARRIER": ("core", "Carrier", "CarrierService"),
+    "COMPANY": ("core", "Company", "CompanyService"),
 }
 
 
@@ -29,34 +30,33 @@ class Command(BaseCommand):
     help = "Проверяет целостность core/invoice_service_mapping.json"
 
     def add_arguments(self, parser):
-        parser.add_argument('--strict', action='store_true',
-                            help='Выйти с кодом 1 при любой ошибке (для CI).')
+        parser.add_argument("--strict", action="store_true", help="Выйти с кодом 1 при любой ошибке (для CI).")
 
     def handle(self, *args, **options):
         from django.apps import apps
 
         path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-            'invoice_service_mapping.json',
+            "invoice_service_mapping.json",
         )
         if not os.path.exists(path):
             raise CommandError(f"Файл не найден: {path}")
 
-        with open(path, encoding='utf-8') as f:
+        with open(path, encoding="utf-8") as f:
             try:
                 data = json.load(f)
             except json.JSONDecodeError as e:
                 raise CommandError(f"Невалидный JSON: {e}")
 
-        data.pop('_comment', None)
+        data.pop("_comment", None)
 
         errors: list[str] = []
         warnings: list[str] = []
 
         for key, conf in data.items():
-            provider_type = conf.get('provider_type')
-            entity_id = conf.get('entity_id')
-            services = conf.get('services', {})
+            provider_type = conf.get("provider_type")
+            entity_id = conf.get("entity_id")
+            services = conf.get("services", {})
 
             if provider_type not in PROVIDER_MODEL_MAP:
                 errors.append(f"[{key}] Неизвестный provider_type: {provider_type!r}")
@@ -71,16 +71,12 @@ class Command(BaseCommand):
                 continue
 
             if not OwnerModel.objects.filter(pk=entity_id).exists():
-                errors.append(
-                    f"[{key}] entity_id={entity_id} отсутствует в {owner_model_name}"
-                )
+                errors.append(f"[{key}] entity_id={entity_id} отсутствует в {owner_model_name}")
 
             seen_ids: dict[int, str] = {}
             for ai_type, sid in services.items():
                 if not ServiceModel.objects.filter(pk=sid).exists():
-                    errors.append(
-                        f"[{key}] services.{ai_type}={sid} — такой {service_model_name} не найден"
-                    )
+                    errors.append(f"[{key}] services.{ai_type}={sid} — такой {service_model_name} не найден")
                 if sid in seen_ids:
                     warnings.append(
                         f"[{key}] services: AI-типы {seen_ids[sid]!r} и {ai_type!r} "
@@ -98,10 +94,8 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR(f"Ошибки ({len(errors)}):"))
             for e in errors:
                 self.stdout.write(f"  - {e}")
-            if options.get('strict'):
+            if options.get("strict"):
                 sys.exit(1)
             raise CommandError(f"Обнаружено ошибок: {len(errors)}")
 
-        self.stdout.write(self.style.SUCCESS(
-            f"OK: {len(data)} контрагентов, все service_id валидны."
-        ))
+        self.stdout.write(self.style.SUCCESS(f"OK: {len(data)} контрагентов, все service_id валидны."))

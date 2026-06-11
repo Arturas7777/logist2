@@ -32,51 +32,38 @@ User = get_user_model()
 # КАТЕГОРИИ РАСХОДОВ/ДОХОДОВ
 # ============================================================================
 
+
 class ExpenseCategory(models.Model):
     """Категория расхода/дохода для классификации инвойсов и транзакций"""
 
     CATEGORY_TYPE_CHOICES = [
-        ('OPERATIONAL', 'Операционные'),
-        ('ADMINISTRATIVE', 'Административные'),
-        ('SALARY', 'Зарплаты'),
-        ('MARKETING', 'Маркетинг'),
-        ('TAX', 'Налоги и сборы'),
-        ('PERSONAL', 'Личные расходы'),
-        ('OTHER', 'Прочие'),
+        ("OPERATIONAL", "Операционные"),
+        ("ADMINISTRATIVE", "Административные"),
+        ("SALARY", "Зарплаты"),
+        ("MARKETING", "Маркетинг"),
+        ("TAX", "Налоги и сборы"),
+        ("PERSONAL", "Личные расходы"),
+        ("OTHER", "Прочие"),
     ]
 
     name = models.CharField(
-        max_length=100,
-        unique=True,
-        verbose_name="Название",
-        help_text="Название категории (напр. Аренда, Логистика)"
+        max_length=100, unique=True, verbose_name="Название", help_text="Название категории (напр. Аренда, Логистика)"
     )
     short_name = models.CharField(
-        max_length=20,
-        blank=True,
-        verbose_name="Сокращение",
-        help_text="Короткое название для отчётов"
+        max_length=20, blank=True, verbose_name="Сокращение", help_text="Короткое название для отчётов"
     )
     category_type = models.CharField(
-        max_length=20,
-        choices=CATEGORY_TYPE_CHOICES,
-        default='OTHER',
-        verbose_name="Тип категории"
+        max_length=20, choices=CATEGORY_TYPE_CHOICES, default="OTHER", verbose_name="Тип категории"
     )
-    is_active = models.BooleanField(
-        default=True,
-        verbose_name="Активна"
-    )
+    is_active = models.BooleanField(default=True, verbose_name="Активна")
     order = models.PositiveIntegerField(
-        default=0,
-        verbose_name="Порядок",
-        help_text="Порядок отображения в списке (меньше = выше)"
+        default=0, verbose_name="Порядок", help_text="Порядок отображения в списке (меньше = выше)"
     )
 
     class Meta:
         verbose_name = "Категория расходов"
         verbose_name_plural = "Категории расходов"
-        ordering = ['order', 'name']
+        ordering = ["order", "name"]
 
     def __str__(self):
         return self.name
@@ -85,6 +72,7 @@ class ExpenseCategory(models.Model):
 # ============================================================================
 # НОВАЯ МОДЕЛЬ ИНВОЙСА
 # ============================================================================
+
 
 class NewInvoice(models.Model):
     """
@@ -99,38 +87,38 @@ class NewInvoice(models.Model):
 
     # Статусы инвойса
     STATUS_CHOICES = [
-        ('DRAFT', 'Черновик'),
-        ('ISSUED', 'Выставлен'),
-        ('PARTIALLY_PAID', 'Частично оплачен'),
-        ('PAID', 'Оплачен'),
-        ('LINKED_PAID', 'Оплачен косвенно (связанный)'),
-        ('OVERDUE', 'Просрочен'),
-        ('CANCELLED', 'Отменен'),
+        ("DRAFT", "Черновик"),
+        ("ISSUED", "Выставлен"),
+        ("PARTIALLY_PAID", "Частично оплачен"),
+        ("PAID", "Оплачен"),
+        ("LINKED_PAID", "Оплачен косвенно (связанный)"),
+        ("OVERDUE", "Просрочен"),
+        ("CANCELLED", "Отменен"),
     ]
 
     # Тип документа
     DOCUMENT_TYPE_CHOICES = [
-        ('INVOICE', 'Счёт-фактура (PARDP)'),
-        ('PROFORMA', 'Коммерческое предложение (AV)'),
-        ('INVOICE_BLC', 'Неофициальный счёт (PARBLC)'),
-        ('PROFORMA_BLC', 'Неофициальное предложение (AVBLC)'),
-        ('INVOICE_FACT', 'Входящий счёт от контрагента (FACT)'),
-        ('INVOICE_INCBLC', 'Входящий неофициальный счёт (INCBLC)'),
-        ('CREDIT_NOTE', 'Кредитная нота — возврат продажи (KRE)'),
+        ("INVOICE", "Счёт-фактура (PARDP)"),
+        ("PROFORMA", "Коммерческое предложение (AV)"),
+        ("INVOICE_BLC", "Неофициальный счёт (PARBLC)"),
+        ("PROFORMA_BLC", "Неофициальное предложение (AVBLC)"),
+        ("INVOICE_FACT", "Входящий счёт от контрагента (FACT)"),
+        ("INVOICE_INCBLC", "Входящий неофициальный счёт (INCBLC)"),
+        ("CREDIT_NOTE", "Кредитная нота — возврат продажи (KRE)"),
     ]
 
     DOCTYPE_PREFIX_MAP = {
-        'INVOICE': 'PARDP',
-        'PROFORMA': 'AV',
-        'INVOICE_BLC': 'PARBLC',
-        'PROFORMA_BLC': 'AVBLC',
-        'INVOICE_FACT': 'FACT',
-        'INVOICE_INCBLC': 'INCBLC',
-        'CREDIT_NOTE': 'KRE',
+        "INVOICE": "PARDP",
+        "PROFORMA": "AV",
+        "INVOICE_BLC": "PARBLC",
+        "PROFORMA_BLC": "AVBLC",
+        "INVOICE_FACT": "FACT",
+        "INVOICE_INCBLC": "INCBLC",
+        "CREDIT_NOTE": "KRE",
     }
 
     # Серии, которые всегда оплачиваются наличными и не пушатся в site.pro
-    CASH_DOCUMENT_TYPES = frozenset({'INVOICE_BLC', 'INVOICE_INCBLC'})
+    CASH_DOCUMENT_TYPES = frozenset({"INVOICE_BLC", "INVOICE_INCBLC"})
 
     # ========================================================================
     # ИДЕНТИФИКАЦИЯ
@@ -139,40 +127,37 @@ class NewInvoice(models.Model):
     document_type = models.CharField(
         max_length=15,
         choices=DOCUMENT_TYPE_CHOICES,
-        default='PROFORMA',
+        default="PROFORMA",
         verbose_name="Тип документа",
         help_text="PARDP — официальный счёт (site.pro). AV — коммерческое предложение. "
-                  "PARBLC — исходящий неофициальный счёт (нал). AVBLC — неофиц. предложение. "
-                  "FACT — входящий официальный счёт от контрагента. "
-                  "INCBLC — входящий неофициальный счёт (нал, не в site.pro)."
+        "PARBLC — исходящий неофициальный счёт (нал). AVBLC — неофиц. предложение. "
+        "FACT — входящий официальный счёт от контрагента. "
+        "INCBLC — входящий неофициальный счёт (нал, не в site.pro).",
     )
 
     number = models.CharField(
         max_length=50,
         unique=True,
         verbose_name="Номер документа",
-        help_text="Уникальный номер (генерируется автоматически по серии)"
+        help_text="Уникальный номер (генерируется автоматически по серии)",
     )
 
     external_number = models.CharField(
         max_length=100,
         blank=True,
-        default='',
+        default="",
         db_index=True,  # search_fields в админке + поиск в API инвойсов
         verbose_name="Номер счёта контрагента",
-        help_text="Номер с бумажного/PDF счёта от поставщика (для входящих инвойсов)"
+        help_text="Номер с бумажного/PDF счёта от поставщика (для входящих инвойсов)",
     )
 
-    date = models.DateField(
-        default=timezone.now,
-        verbose_name="Дата выставления"
-    )
+    date = models.DateField(default=timezone.now, verbose_name="Дата выставления")
 
     due_date = models.DateField(
         null=True,
         blank=True,
         verbose_name="Срок оплаты",
-        help_text="Дата, до которой должен быть оплачен инвойс (автоматически +14 дней)"
+        help_text="Дата, до которой должен быть оплачен инвойс (автоматически +14 дней)",
     )
 
     # ========================================================================
@@ -180,39 +165,39 @@ class NewInvoice(models.Model):
     # ========================================================================
 
     issuer_company = models.ForeignKey(
-        'Company',
+        "Company",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='issued_invoices_new',
-        verbose_name="Компания-выставитель"
+        related_name="issued_invoices_new",
+        verbose_name="Компания-выставитель",
     )
 
     issuer_warehouse = models.ForeignKey(
-        'Warehouse',
+        "Warehouse",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='issued_invoices_new',
-        verbose_name="Склад-выставитель"
+        related_name="issued_invoices_new",
+        verbose_name="Склад-выставитель",
     )
 
     issuer_line = models.ForeignKey(
-        'Line',
+        "Line",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='issued_invoices_new',
-        verbose_name="Линия-выставитель"
+        related_name="issued_invoices_new",
+        verbose_name="Линия-выставитель",
     )
 
     issuer_carrier = models.ForeignKey(
-        'Carrier',
+        "Carrier",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='issued_invoices_new',
-        verbose_name="Перевозчик-выставитель"
+        related_name="issued_invoices_new",
+        verbose_name="Перевозчик-выставитель",
     )
 
     # ========================================================================
@@ -220,48 +205,48 @@ class NewInvoice(models.Model):
     # ========================================================================
 
     recipient_client = models.ForeignKey(
-        'Client',
+        "Client",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='received_invoices_new',
-        verbose_name="Клиент-получатель"
+        related_name="received_invoices_new",
+        verbose_name="Клиент-получатель",
     )
 
     recipient_warehouse = models.ForeignKey(
-        'Warehouse',
+        "Warehouse",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='received_invoices_new',
-        verbose_name="Склад-получатель"
+        related_name="received_invoices_new",
+        verbose_name="Склад-получатель",
     )
 
     recipient_line = models.ForeignKey(
-        'Line',
+        "Line",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='received_invoices_new',
-        verbose_name="Линия-получатель"
+        related_name="received_invoices_new",
+        verbose_name="Линия-получатель",
     )
 
     recipient_carrier = models.ForeignKey(
-        'Carrier',
+        "Carrier",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='received_invoices_new',
-        verbose_name="Перевозчик-получатель"
+        related_name="received_invoices_new",
+        verbose_name="Перевозчик-получатель",
     )
 
     recipient_company = models.ForeignKey(
-        'Company',
+        "Company",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='received_invoices_new',
-        verbose_name="Компания-получатель"
+        related_name="received_invoices_new",
+        verbose_name="Компания-получатель",
     )
 
     # ========================================================================
@@ -269,17 +254,12 @@ class NewInvoice(models.Model):
     # ========================================================================
 
     CURRENCY_CHOICES = [
-        ('EUR', 'EUR'),
-        ('USD', 'USD'),
-        ('GBP', 'GBP'),
+        ("EUR", "EUR"),
+        ("USD", "USD"),
+        ("GBP", "GBP"),
     ]
 
-    currency = models.CharField(
-        max_length=3,
-        choices=CURRENCY_CHOICES,
-        default='EUR',
-        verbose_name="Валюта"
-    )
+    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default="EUR", verbose_name="Валюта")
 
     # ========================================================================
     # ФИНАНСЫ
@@ -291,23 +271,15 @@ class NewInvoice(models.Model):
         default=0,
         validators=[MinValueValidator(0)],
         verbose_name="Подытог",
-        help_text="Сумма всех позиций без дополнительных сборов"
+        help_text="Сумма всех позиций без дополнительных сборов",
     )
 
     discount = models.DecimalField(
-        max_digits=15,
-        decimal_places=2,
-        default=0,
-        validators=[MinValueValidator(0)],
-        verbose_name="Скидка"
+        max_digits=15, decimal_places=2, default=0, validators=[MinValueValidator(0)], verbose_name="Скидка"
     )
 
     tax = models.DecimalField(
-        max_digits=15,
-        decimal_places=2,
-        default=0,
-        validators=[MinValueValidator(0)],
-        verbose_name="Налог"
+        max_digits=15, decimal_places=2, default=0, validators=[MinValueValidator(0)], verbose_name="Налог"
     )
 
     total = models.DecimalField(
@@ -316,7 +288,7 @@ class NewInvoice(models.Model):
         default=0,
         validators=[MinValueValidator(0)],
         verbose_name="Итого к оплате",
-        help_text="Итоговая сумма инвойса"
+        help_text="Итоговая сумма инвойса",
     )
 
     paid_amount = models.DecimalField(
@@ -325,44 +297,35 @@ class NewInvoice(models.Model):
         default=0,
         validators=[MinValueValidator(0)],
         verbose_name="Оплачено",
-        help_text="Сумма, которая уже оплачена"
+        help_text="Сумма, которая уже оплачена",
     )
 
     # ========================================================================
     # СТАТУС И МЕТАДАННЫЕ
     # ========================================================================
 
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default='DRAFT',
-        verbose_name="Статус"
-    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="DRAFT", verbose_name="Статус")
 
-    notes = models.TextField(
-        blank=True,
-        verbose_name="Примечания",
-        help_text="Дополнительная информация об инвойсе"
-    )
+    notes = models.TextField(blank=True, verbose_name="Примечания", help_text="Дополнительная информация об инвойсе")
 
     # Связь с автомобилями для автоматического формирования позиций
     cars = models.ManyToManyField(
-        'Car',
+        "Car",
         blank=True,
-        related_name='invoices_new',
+        related_name="invoices_new",
         verbose_name="Выбранные автомобили",
-        help_text="Выберите автомобили - позиции создадутся автоматически из их услуг"
+        help_text="Выберите автомобили - позиции создадутся автоматически из их услуг",
     )
 
     # Связь с автовозом (если инвойс создан для автовоза)
     auto_transport = models.ForeignKey(
-        'AutoTransport',
+        "AutoTransport",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='invoices',
+        related_name="invoices",
         verbose_name="Автовоз",
-        help_text="Автовоз, для которого создан этот инвойс"
+        help_text="Автовоз, для которого создан этот инвойс",
     )
 
     # ========================================================================
@@ -370,13 +333,13 @@ class NewInvoice(models.Model):
     # ========================================================================
 
     linked_invoice = models.OneToOneField(
-        'self',
+        "self",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='linked_from',
+        related_name="linked_from",
         verbose_name="Связанный счёт",
-        help_text="Пара: реальный BLC-счёт ↔ официальный счёт на ту же сумму"
+        help_text="Пара: реальный BLC-счёт ↔ официальный счёт на ту же сумму",
     )
 
     # ========================================================================
@@ -388,34 +351,30 @@ class NewInvoice(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='invoices',
+        related_name="invoices",
         verbose_name="Категория",
-        help_text="Категория для учёта доходов/расходов (напр. Логистика, Аренда)"
+        help_text="Категория для учёта доходов/расходов (напр. Логистика, Аренда)",
     )
 
     skip_ai_comparison = models.BooleanField(
         default=False,
         verbose_name="Без сверки с базой",
-        help_text="AI извлечёт данные из PDF, но не будет сверять с расходами в системе"
+        help_text="AI извлечёт данные из PDF, но не будет сверять с расходами в системе",
     )
 
     attachment = models.FileField(
-        upload_to='invoices/attachments/%Y/%m/',
+        upload_to="invoices/attachments/%Y/%m/",
         null=True,
         blank=True,
         verbose_name="Вложение",
-        help_text="PDF или фото счёта/инвойса"
+        help_text="PDF или фото счёта/инвойса",
     )
 
     # Аудит
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
     created_by = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name='created_invoices_new',
-        verbose_name="Создал"
+        User, on_delete=models.SET_NULL, null=True, related_name="created_invoices_new", verbose_name="Создал"
     )
 
     # Служебное поле для отслеживания обновления баланса
@@ -424,79 +383,129 @@ class NewInvoice(models.Model):
     class Meta:
         verbose_name = "Инвойс"
         verbose_name_plural = "Инвойсы"
-        ordering = ['-date', '-created_at']
+        ordering = ["-date", "-created_at"]
         indexes = [
-            models.Index(fields=['number']),
-            models.Index(fields=['status', 'date']),
-            models.Index(fields=['due_date', 'status']),
-            models.Index(fields=['recipient_client', 'status']),
-            models.Index(fields=['recipient_warehouse', 'status']),
-            models.Index(fields=['recipient_line', 'status']),
-            models.Index(fields=['recipient_carrier', 'status']),
-            models.Index(fields=['recipient_company', 'status']),
-            models.Index(fields=['issuer_company', 'status']),
-            models.Index(fields=['issuer_warehouse', 'status']),
-            models.Index(fields=['issuer_line', 'status']),
-            models.Index(fields=['issuer_carrier', 'status']),
+            models.Index(fields=["number"]),
+            models.Index(fields=["status", "date"]),
+            models.Index(fields=["due_date", "status"]),
+            models.Index(fields=["recipient_client", "status"]),
+            models.Index(fields=["recipient_warehouse", "status"]),
+            models.Index(fields=["recipient_line", "status"]),
+            models.Index(fields=["recipient_carrier", "status"]),
+            models.Index(fields=["recipient_company", "status"]),
+            models.Index(fields=["issuer_company", "status"]),
+            models.Index(fields=["issuer_warehouse", "status"]),
+            models.Index(fields=["issuer_line", "status"]),
+            models.Index(fields=["issuer_carrier", "status"]),
             # Часто фильтруем по серии + дате в админке/отчётах.
-            models.Index(fields=['document_type', 'date']),
-            models.Index(fields=['document_type', 'status']),
+            models.Index(fields=["document_type", "date"]),
+            models.Index(fields=["document_type", "status"]),
             # Связанные инвойсы — запросы вида WHERE linked_invoice_id = ...
-            models.Index(fields=['linked_invoice']),
+            models.Index(fields=["linked_invoice"]),
         ]
         constraints = [
             models.CheckConstraint(
                 check=(
-                    models.Q(issuer_company__isnull=False, issuer_warehouse__isnull=True, issuer_line__isnull=True, issuer_carrier__isnull=True) |
-                    models.Q(issuer_company__isnull=True, issuer_warehouse__isnull=False, issuer_line__isnull=True, issuer_carrier__isnull=True) |
-                    models.Q(issuer_company__isnull=True, issuer_warehouse__isnull=True, issuer_line__isnull=False, issuer_carrier__isnull=True) |
-                    models.Q(issuer_company__isnull=True, issuer_warehouse__isnull=True, issuer_line__isnull=True, issuer_carrier__isnull=False)
+                    models.Q(
+                        issuer_company__isnull=False,
+                        issuer_warehouse__isnull=True,
+                        issuer_line__isnull=True,
+                        issuer_carrier__isnull=True,
+                    )
+                    | models.Q(
+                        issuer_company__isnull=True,
+                        issuer_warehouse__isnull=False,
+                        issuer_line__isnull=True,
+                        issuer_carrier__isnull=True,
+                    )
+                    | models.Q(
+                        issuer_company__isnull=True,
+                        issuer_warehouse__isnull=True,
+                        issuer_line__isnull=False,
+                        issuer_carrier__isnull=True,
+                    )
+                    | models.Q(
+                        issuer_company__isnull=True,
+                        issuer_warehouse__isnull=True,
+                        issuer_line__isnull=True,
+                        issuer_carrier__isnull=False,
+                    )
                 ),
-                name='invoice_exactly_one_issuer',
+                name="invoice_exactly_one_issuer",
             ),
             models.CheckConstraint(
                 check=(
-                    models.Q(recipient_client__isnull=False, recipient_warehouse__isnull=True, recipient_line__isnull=True, recipient_carrier__isnull=True, recipient_company__isnull=True) |
-                    models.Q(recipient_client__isnull=True, recipient_warehouse__isnull=False, recipient_line__isnull=True, recipient_carrier__isnull=True, recipient_company__isnull=True) |
-                    models.Q(recipient_client__isnull=True, recipient_warehouse__isnull=True, recipient_line__isnull=False, recipient_carrier__isnull=True, recipient_company__isnull=True) |
-                    models.Q(recipient_client__isnull=True, recipient_warehouse__isnull=True, recipient_line__isnull=True, recipient_carrier__isnull=False, recipient_company__isnull=True) |
-                    models.Q(recipient_client__isnull=True, recipient_warehouse__isnull=True, recipient_line__isnull=True, recipient_carrier__isnull=True, recipient_company__isnull=False)
+                    models.Q(
+                        recipient_client__isnull=False,
+                        recipient_warehouse__isnull=True,
+                        recipient_line__isnull=True,
+                        recipient_carrier__isnull=True,
+                        recipient_company__isnull=True,
+                    )
+                    | models.Q(
+                        recipient_client__isnull=True,
+                        recipient_warehouse__isnull=False,
+                        recipient_line__isnull=True,
+                        recipient_carrier__isnull=True,
+                        recipient_company__isnull=True,
+                    )
+                    | models.Q(
+                        recipient_client__isnull=True,
+                        recipient_warehouse__isnull=True,
+                        recipient_line__isnull=False,
+                        recipient_carrier__isnull=True,
+                        recipient_company__isnull=True,
+                    )
+                    | models.Q(
+                        recipient_client__isnull=True,
+                        recipient_warehouse__isnull=True,
+                        recipient_line__isnull=True,
+                        recipient_carrier__isnull=False,
+                        recipient_company__isnull=True,
+                    )
+                    | models.Q(
+                        recipient_client__isnull=True,
+                        recipient_warehouse__isnull=True,
+                        recipient_line__isnull=True,
+                        recipient_carrier__isnull=True,
+                        recipient_company__isnull=False,
+                    )
                 ),
-                name='invoice_exactly_one_recipient',
+                name="invoice_exactly_one_recipient",
             ),
             models.UniqueConstraint(
-                fields=['auto_transport', 'recipient_client'],
-                condition=~models.Q(status='CANCELLED'),
-                name='unique_autotransport_invoice_per_client',
+                fields=["auto_transport", "recipient_client"],
+                condition=~models.Q(status="CANCELLED"),
+                name="unique_autotransport_invoice_per_client",
             ),
             # Денежные инварианты на уровне БД: Python-валидация (clean/
             # validators) обходится bulk_update/raw SQL, констрейнт — нет.
             models.CheckConstraint(
                 check=models.Q(subtotal__gte=0),
-                name='invoice_subtotal_non_negative',
+                name="invoice_subtotal_non_negative",
             ),
             models.CheckConstraint(
                 check=models.Q(total__gte=0),
-                name='invoice_total_non_negative',
+                name="invoice_total_non_negative",
             ),
             models.CheckConstraint(
                 check=models.Q(paid_amount__gte=0),
-                name='invoice_paid_amount_non_negative',
+                name="invoice_paid_amount_non_negative",
             ),
             models.CheckConstraint(
                 check=models.Q(discount__gte=0),
-                name='invoice_discount_non_negative',
+                name="invoice_discount_non_negative",
             ),
             models.CheckConstraint(
-                check=models.Q(due_date__isnull=True) | models.Q(due_date__gte=models.F('date')),
-                name='invoice_due_date_gte_date',
+                check=models.Q(due_date__isnull=True) | models.Q(due_date__gte=models.F("date")),
+                name="invoice_due_date_gte_date",
             ),
             # B2 (AUDIT_ROUND3): балансы суммируют amount без разреза валюты,
             # поэтому в системе допустим только EUR. Исторические USD-инвойсы
             # (импорт site.pro) исключены через NOT VALID в миграции 0185.
             models.CheckConstraint(
-                check=models.Q(currency='EUR'),
-                name='invoice_currency_eur',
+                check=models.Q(currency="EUR"),
+                name="invoice_currency_eur",
             ),
         ]
 
@@ -526,9 +535,9 @@ class NewInvoice(models.Model):
         issuer = self.issuer
         return str(issuer) if issuer else "Не указан"
 
-    DIRECTION_OUTGOING = 'OUTGOING'
-    DIRECTION_INCOMING = 'INCOMING'
-    DIRECTION_INTERNAL = 'INTERNAL'
+    DIRECTION_OUTGOING = "OUTGOING"
+    DIRECTION_INCOMING = "INCOMING"
+    DIRECTION_INTERNAL = "INTERNAL"
 
     @property
     def direction(self):
@@ -539,6 +548,7 @@ class NewInvoice(models.Model):
         - INTERNAL: прочие комбинации
         """
         from .company import Company
+
         default_id = Company.get_default_id()
         if self.issuer_company_id == default_id:
             return self.DIRECTION_OUTGOING
@@ -550,11 +560,11 @@ class NewInvoice(models.Model):
     def direction_display(self):
         """Отображение направления для админки"""
         labels = {
-            self.DIRECTION_OUTGOING: 'Исходящий',
-            self.DIRECTION_INCOMING: 'Входящий',
-            self.DIRECTION_INTERNAL: 'Внутренний',
+            self.DIRECTION_OUTGOING: "Исходящий",
+            self.DIRECTION_INCOMING: "Входящий",
+            self.DIRECTION_INTERNAL: "Внутренний",
         }
-        return labels.get(self.direction, 'Неизвестно')
+        return labels.get(self.direction, "Неизвестно")
 
     @property
     def recipient(self):
@@ -580,12 +590,12 @@ class NewInvoice(models.Model):
     @property
     def remaining_amount(self):
         """Остаток к оплате"""
-        return max(Decimal('0.00'), self.total - self.paid_amount)
+        return max(Decimal("0.00"), self.total - self.paid_amount)
 
     @property
     def is_overdue(self):
         """Просрочен ли инвойс"""
-        if self.status in ['PAID', 'CANCELLED']:
+        if self.status in ["PAID", "CANCELLED"]:
             return False
         if not self.due_date:
             return False
@@ -625,9 +635,9 @@ class NewInvoice(models.Model):
         Transaction.post_save могут прочитать одно и то же paid_amount и
         затереть друг друга (lost update).
         """
-        if self.status == 'LINKED_PAID':
+        if self.status == "LINKED_PAID":
             return
-        if self.document_type == 'CREDIT_NOTE':
+        if self.document_type == "CREDIT_NOTE":
             return
         from django.db import connection
         from django.db import transaction as db_transaction
@@ -635,34 +645,31 @@ class NewInvoice(models.Model):
 
         with db_transaction.atomic():
             if connection.features.has_select_for_update:
-                locked = (
-                    NewInvoice.objects
-                    .select_for_update()
-                    .filter(pk=self.pk)
-                    .first()
-                )
+                locked = NewInvoice.objects.select_for_update().filter(pk=self.pk).first()
             else:
                 locked = NewInvoice.objects.filter(pk=self.pk).first()
             if locked is None:
                 return
-            if locked.status == 'LINKED_PAID' or locked.document_type == 'CREDIT_NOTE':
+            if locked.status == "LINKED_PAID" or locked.document_type == "CREDIT_NOTE":
                 return
-            payments = locked.transactions.filter(
-                type='PAYMENT', status='COMPLETED'
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-            refunds = locked.transactions.filter(
-                type='REFUND', status='COMPLETED'
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            payments = locked.transactions.filter(type="PAYMENT", status="COMPLETED").aggregate(total=Sum("amount"))[
+                "total"
+            ] or Decimal("0.00")
+            refunds = locked.transactions.filter(type="REFUND", status="COMPLETED").aggregate(total=Sum("amount"))[
+                "total"
+            ] or Decimal("0.00")
             calculated = payments - refunds
-            if calculated < Decimal('0.00'):
+            if calculated < Decimal("0.00"):
                 logger.warning(
-                    "Invoice %s: paid_amount would be negative (%s). "
-                    "Payments=%s, Refunds=%s. Clamping to 0.",
-                    locked.number, calculated, payments, refunds,
+                    "Invoice %s: paid_amount would be negative (%s). Payments=%s, Refunds=%s. Clamping to 0.",
+                    locked.number,
+                    calculated,
+                    payments,
+                    refunds,
                 )
-            locked.paid_amount = max(Decimal('0.00'), calculated)
+            locked.paid_amount = max(Decimal("0.00"), calculated)
             locked.update_status()
-            locked.save(update_fields=['paid_amount', 'status', 'updated_at'])
+            locked.save(update_fields=["paid_amount", "status", "updated_at"])
             self.paid_amount = locked.paid_amount
             self.status = locked.status
             self.updated_at = locked.updated_at
@@ -682,15 +689,15 @@ class NewInvoice(models.Model):
     #   * LINKED_PAID → OVERDUE / CANCELLED (закрыт парным документом).
     # ------------------------------------------------------------------
     ALLOWED_STATUS_TRANSITIONS = {
-        'DRAFT': {'ISSUED', 'PARTIALLY_PAID', 'PAID', 'LINKED_PAID', 'OVERDUE', 'CANCELLED'},
-        'ISSUED': {'DRAFT', 'PARTIALLY_PAID', 'PAID', 'LINKED_PAID', 'OVERDUE', 'CANCELLED'},
-        'PARTIALLY_PAID': {'ISSUED', 'PAID', 'LINKED_PAID', 'OVERDUE', 'CANCELLED'},
+        "DRAFT": {"ISSUED", "PARTIALLY_PAID", "PAID", "LINKED_PAID", "OVERDUE", "CANCELLED"},
+        "ISSUED": {"DRAFT", "PARTIALLY_PAID", "PAID", "LINKED_PAID", "OVERDUE", "CANCELLED"},
+        "PARTIALLY_PAID": {"ISSUED", "PAID", "LINKED_PAID", "OVERDUE", "CANCELLED"},
         # PAID → ISSUED / PARTIALLY_PAID — только следствие REFUND-пересчёта
         # или отмены кассовых платежей при смене серии (см. _reverse_cash_payments).
-        'PAID': {'ISSUED', 'PARTIALLY_PAID'},
-        'OVERDUE': {'ISSUED', 'PARTIALLY_PAID', 'PAID', 'LINKED_PAID', 'CANCELLED'},
-        'LINKED_PAID': {'ISSUED', 'PAID'},
-        'CANCELLED': {'DRAFT', 'ISSUED'},
+        "PAID": {"ISSUED", "PARTIALLY_PAID"},
+        "OVERDUE": {"ISSUED", "PARTIALLY_PAID", "PAID", "LINKED_PAID", "CANCELLED"},
+        "LINKED_PAID": {"ISSUED", "PAID"},
+        "CANCELLED": {"DRAFT", "ISSUED"},
     }
 
     def _validate_status_transition(self, update_fields=None):
@@ -701,13 +708,9 @@ class NewInvoice(models.Model):
         """
         if not self.pk:
             return
-        if update_fields is not None and 'status' not in update_fields:
+        if update_fields is not None and "status" not in update_fields:
             return
-        old_status = (
-            NewInvoice.objects.filter(pk=self.pk)
-            .values_list('status', flat=True)
-            .first()
-        )
+        old_status = NewInvoice.objects.filter(pk=self.pk).values_list("status", flat=True).first()
         if not old_status or old_status == self.status:
             return
         allowed = self.ALLOWED_STATUS_TRANSITIONS.get(old_status, set())
@@ -720,25 +723,25 @@ class NewInvoice(models.Model):
 
     def update_status(self):
         """Обновить статус на основе оплаты"""
-        if self.status in ('CANCELLED', 'LINKED_PAID'):
+        if self.status in ("CANCELLED", "LINKED_PAID"):
             # LINKED_PAID — косвенная оплата через связанный документ,
             # своих COMPLETED-транзакций нет, не пересчитываем.
             return
-        if self.document_type == 'CREDIT_NOTE':
+        if self.document_type == "CREDIT_NOTE":
             # Кредитная нота — списание долга, статус ведётся вручную.
             return
         if self.total > 0 and self.paid_amount >= self.total:
-            self.status = 'PAID'
+            self.status = "PAID"
         elif self.total == 0 and self.paid_amount >= 0:
-            if self.status not in ('DRAFT', 'ISSUED'):
-                self.status = 'ISSUED'
+            if self.status not in ("DRAFT", "ISSUED"):
+                self.status = "ISSUED"
         elif self.paid_amount > 0 and self.total > 0:
-            self.status = 'PARTIALLY_PAID'
+            self.status = "PARTIALLY_PAID"
         elif self.total > 0 and self.paid_amount == 0:
             if self.is_overdue:
-                self.status = 'OVERDUE'
-            elif self.status not in ('DRAFT', 'ISSUED'):
-                self.status = 'ISSUED'
+                self.status = "OVERDUE"
+            elif self.status not in ("DRAFT", "ISSUED"):
+                self.status = "ISSUED"
 
     def generate_number(self):
         """Сгенерировать уникальный номер документа.
@@ -749,7 +752,7 @@ class NewInvoice(models.Model):
         """
         from core.models.series import next_document_number
 
-        prefix = self.DOCTYPE_PREFIX_MAP.get(self.document_type, 'AV')
+        prefix = self.DOCTYPE_PREFIX_MAP.get(self.document_type, "AV")
         return next_document_number(NewInvoice, prefix, pad=6)
 
     # Команды с побочными эффектами — смена серии (change_series) и
@@ -802,22 +805,22 @@ class NewInvoice(models.Model):
             return
 
         issuer_type = issuer.__class__.__name__
-        is_company = (issuer_type == 'Company')
+        is_company = issuer_type == "Company"
 
         order = 0
-        for car in self.cars.prefetch_related('car_services').select_related('warehouse').all():
+        for car in self.cars.prefetch_related("car_services").select_related("warehouse").all():
             # Пересчитываем хранение и стоимость перед генерацией позиций
             car.update_days_and_storage()
             car.calculate_total_price()
 
             # Определяем набор услуг в зависимости от типа выставителя
-            if issuer_type == 'Warehouse':
+            if issuer_type == "Warehouse":
                 services = car.get_warehouse_services()
-            elif issuer_type == 'Line':
+            elif issuer_type == "Line":
                 services = car.get_line_services()
-            elif issuer_type == 'Carrier':
+            elif issuer_type == "Carrier":
                 services = car.get_carrier_services()
-            elif issuer_type == 'Company':
+            elif issuer_type == "Company":
                 services = car.car_services.all()
             else:
                 continue
@@ -840,7 +843,9 @@ class NewInvoice(models.Model):
 
                 # Рассчитываем цену
                 if is_company:
-                    price = (service.custom_price if service.custom_price is not None else service.get_default_price()) + (service.markup_amount if service.markup_amount is not None else Decimal('0'))
+                    price = (
+                        service.custom_price if service.custom_price is not None else service.get_default_price()
+                    ) + (service.markup_amount if service.markup_amount is not None else Decimal("0"))
                 else:
                     price = service.custom_price if service.custom_price is not None else service.get_default_price()
 
@@ -852,78 +857,77 @@ class NewInvoice(models.Model):
                     groups[short] = amount
 
             # === Добавляем хранение как отдельную группу ===
-            if (is_company or issuer_type == 'Warehouse'):
+            if is_company or issuer_type == "Warehouse":
                 if car.storage_cost and car.storage_cost > 0 and car.days and car.days > 0:
-                    daily_rate = car._get_storage_daily_rate() if car.warehouse else Decimal('0')
+                    daily_rate = car._get_storage_daily_rate() if car.warehouse else Decimal("0")
                     storage_total = daily_rate * car.days
-                    groups['Хран'] = storage_total
+                    groups["Хран"] = storage_total
 
             # === Создаём InvoiceItem для каждой группы ===
             for short_name, amount in groups.items():
                 InvoiceItem.objects.create(
-                    invoice=self,
-                    description=short_name,
-                    car=car,
-                    quantity=1,
-                    unit_price=amount,
-                    order=order
+                    invoice=self, description=short_name, car=car, quantity=1, unit_price=amount, order=order
                 )
                 order += 1
 
         # Пересчитываем итоги
         self.calculate_totals()
-        self.save(update_fields=['subtotal', 'total'])
+        self.save(update_fields=["subtotal", "total"])
 
     def clean(self):
         """Валидация инвойса перед сохранением."""
         from django.core.exceptions import ValidationError
+
         errors = {}
 
         issuers = [
-            self.issuer_company_id, self.issuer_warehouse_id,
-            self.issuer_line_id, self.issuer_carrier_id,
+            self.issuer_company_id,
+            self.issuer_warehouse_id,
+            self.issuer_line_id,
+            self.issuer_carrier_id,
         ]
         issuer_count = sum(1 for f in issuers if f)
         if issuer_count == 0:
-            errors['__all__'] = "Необходимо указать ровно одного выставителя инвойса."
+            errors["__all__"] = "Необходимо указать ровно одного выставителя инвойса."
         elif issuer_count > 1:
-            errors['__all__'] = "Можно указать только одного выставителя инвойса."
+            errors["__all__"] = "Можно указать только одного выставителя инвойса."
 
         recipients = [
-            self.recipient_company_id, self.recipient_client_id,
-            self.recipient_warehouse_id, self.recipient_line_id,
+            self.recipient_company_id,
+            self.recipient_client_id,
+            self.recipient_warehouse_id,
+            self.recipient_line_id,
             self.recipient_carrier_id,
         ]
         recipient_count = sum(1 for f in recipients if f)
         if recipient_count == 0:
-            errors.setdefault('__all__', '')
-            errors['__all__'] = (errors['__all__'] + " Необходимо указать ровно одного получателя инвойса.").strip()
+            errors.setdefault("__all__", "")
+            errors["__all__"] = (errors["__all__"] + " Необходимо указать ровно одного получателя инвойса.").strip()
         elif recipient_count > 1:
-            errors.setdefault('__all__', '')
-            errors['__all__'] = (errors['__all__'] + " Можно указать только одного получателя инвойса.").strip()
+            errors.setdefault("__all__", "")
+            errors["__all__"] = (errors["__all__"] + " Можно указать только одного получателя инвойса.").strip()
 
         if self.issuer_company_id and self.recipient_company_id:
             if self.issuer_company_id == self.recipient_company_id:
-                errors['recipient_company'] = "Выставитель и получатель не могут быть одной компанией."
+                errors["recipient_company"] = "Выставитель и получатель не могут быть одной компанией."
 
         if self.issuer_warehouse_id and self.recipient_warehouse_id:
             if self.issuer_warehouse_id == self.recipient_warehouse_id:
-                errors['recipient_warehouse'] = "Выставитель и получатель не могут быть одним складом."
+                errors["recipient_warehouse"] = "Выставитель и получатель не могут быть одним складом."
 
         if self.due_date and self.date and self.due_date < self.date:
-            errors['due_date'] = "Срок оплаты не может быть раньше даты выставления."
+            errors["due_date"] = "Срок оплаты не может быть раньше даты выставления."
 
         if errors:
             raise ValidationError(errors)
 
     def delete(self, *args, force=False, **kwargs):
         if not force:
-            if self.status == 'PAID':
+            if self.status == "PAID":
                 raise ValidationError("Нельзя удалить оплаченный инвойс. Используйте отмену.")
             if self.paid_amount > 0:
                 raise ValidationError(
-                    "Нельзя удалить инвойс с зарегистрированными платежами. "
-                    "Сначала оформите возврат."
+                    "Нельзя удалить инвойс с зарегистрированными платежами. Сначала оформите возврат."
                 )
         return super().delete(*args, **kwargs)
 
@@ -939,15 +943,15 @@ class NewInvoice(models.Model):
             self.due_date = timezone.now().date() + timezone.timedelta(days=14)
 
         self.update_status()
-        self._validate_status_transition(kwargs.get('update_fields'))
+        self._validate_status_transition(kwargs.get("update_fields"))
 
         # Полная валидация (ровно один issuer/recipient, due_date >= date)
         # для всех путей сохранения, а не только для admin-форм. Точечные
         # обновления через update_fields (пересчёт paid_amount, сигналы)
         # не валидируем: они меняют только служебные поля. created_by —
         # опциональное служебное поле, исключаем из blank-валидации.
-        if kwargs.get('update_fields') is None:
-            self.full_clean(exclude=['created_by'])
+        if kwargs.get("update_fields") is None:
+            self.full_clean(exclude=["created_by"])
 
         super().save(*args, **kwargs)
 
@@ -955,6 +959,7 @@ class NewInvoice(models.Model):
 # ============================================================================
 # ПОЗИЦИЯ В ИНВОЙСЕ
 # ============================================================================
+
 
 class InvoiceItem(models.Model):
     """
@@ -964,85 +969,69 @@ class InvoiceItem(models.Model):
     """
 
     # Связь с инвойсом
-    invoice = models.ForeignKey(
-        NewInvoice,
-        on_delete=models.CASCADE,
-        related_name='items',
-        verbose_name="Инвойс"
-    )
+    invoice = models.ForeignKey(NewInvoice, on_delete=models.CASCADE, related_name="items", verbose_name="Инвойс")
 
     # Связь с автомобилем (опционально)
     car = models.ForeignKey(
-        'Car',
+        "Car",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='invoice_items_new',
-        verbose_name="Автомобиль"
+        related_name="invoice_items_new",
+        verbose_name="Автомобиль",
     )
 
     # Описание услуги/товара
     description = models.CharField(
-        max_length=500,
-        verbose_name="Описание",
-        help_text="Например: 'Хранение авто VIN12345 (10 дней)'"
+        max_length=500, verbose_name="Описание", help_text="Например: 'Хранение авто VIN12345 (10 дней)'"
     )
 
     # Количество и цена
     quantity = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=1,
-        validators=[MinValueValidator(0)],
-        verbose_name="Количество"
+        max_digits=10, decimal_places=2, default=1, validators=[MinValueValidator(0)], verbose_name="Количество"
     )
 
-    unit_price = models.DecimalField(
-        max_digits=15,
-        decimal_places=2,
-        verbose_name="Цена за единицу"
-    )
+    unit_price = models.DecimalField(max_digits=15, decimal_places=2, verbose_name="Цена за единицу")
 
     total_price = models.DecimalField(
         max_digits=15,
         decimal_places=2,
         verbose_name="Сумма",
-        help_text="Автоматически рассчитывается: количество × цена"
+        help_text="Автоматически рассчитывается: количество × цена",
     )
 
     client_price = models.DecimalField(
-        max_digits=15, decimal_places=2,
-        null=True, blank=True,
+        max_digits=15,
+        decimal_places=2,
+        null=True,
+        blank=True,
         verbose_name="Цена для клиента",
-        help_text="Цена из CarService (для сравнения во входящих инвойсах)"
+        help_text="Цена из CarService (для сравнения во входящих инвойсах)",
     )
 
     # Порядок отображения
-    order = models.PositiveIntegerField(
-        default=0,
-        verbose_name="Порядок"
-    )
+    order = models.PositiveIntegerField(default=0, verbose_name="Порядок")
 
     class Meta:
         verbose_name = "Позиция инвойса"
         verbose_name_plural = "Позиции инвойса"
-        ordering = ['order', 'id']
+        ordering = ["order", "id"]
         indexes = [
-            models.Index(fields=['invoice', 'order']),
-            models.Index(fields=['car']),
+            models.Index(fields=["invoice", "order"]),
+            models.Index(fields=["car"]),
         ]
         constraints = [
             models.CheckConstraint(
                 check=models.Q(quantity__gt=0),
-                name='invoiceitem_quantity_positive',
+                name="invoiceitem_quantity_positive",
             ),
             models.CheckConstraint(
                 check=models.Q(unit_price__gte=0),
-                name='invoiceitem_unit_price_non_negative',
+                name="invoiceitem_unit_price_non_negative",
             ),
             models.CheckConstraint(
                 check=models.Q(total_price__gte=0),
-                name='invoiceitem_total_price_non_negative',
+                name="invoiceitem_total_price_non_negative",
             ),
         ]
 
@@ -1062,12 +1051,13 @@ class InvoiceItem(models.Model):
         # Обновляем итоги инвойса
         if self.invoice_id:
             self.invoice.calculate_totals()
-            self.invoice.save(update_fields=['subtotal', 'total', 'updated_at'])
+            self.invoice.save(update_fields=["subtotal", "total", "updated_at"])
 
 
 # ============================================================================
 # ТРАНЗАКЦИЯ (ПЛАТЕЖ/ВОЗВРАТ/ПЕРЕВОД)
 # ============================================================================
+
 
 class Transaction(models.Model):
     """
@@ -1083,28 +1073,28 @@ class Transaction(models.Model):
 
     # Типы транзакций
     TYPE_CHOICES = [
-        ('PAYMENT', 'Платеж'),
-        ('REFUND', 'Возврат'),
-        ('ADJUSTMENT', 'Корректировка'),
-        ('TRANSFER', 'Перевод'),
-        ('BALANCE_TOPUP', 'Пополнение баланса'),
+        ("PAYMENT", "Платеж"),
+        ("REFUND", "Возврат"),
+        ("ADJUSTMENT", "Корректировка"),
+        ("TRANSFER", "Перевод"),
+        ("BALANCE_TOPUP", "Пополнение баланса"),
     ]
 
     # Способы оплаты
     METHOD_CHOICES = [
-        ('CASH', 'Наличные'),
-        ('CARD', 'Банковская карта'),
-        ('TRANSFER', 'Банковский перевод'),
-        ('BALANCE', 'Списание с баланса'),
-        ('OTHER', 'Другое'),
+        ("CASH", "Наличные"),
+        ("CARD", "Банковская карта"),
+        ("TRANSFER", "Банковский перевод"),
+        ("BALANCE", "Списание с баланса"),
+        ("OTHER", "Другое"),
     ]
 
     # Статусы транзакции
     STATUS_CHOICES = [
-        ('PENDING', 'В ожидании'),
-        ('COMPLETED', 'Завершена'),
-        ('FAILED', 'Ошибка'),
-        ('CANCELLED', 'Отменена'),
+        ("PENDING", "В ожидании"),
+        ("COMPLETED", "Завершена"),
+        ("FAILED", "Ошибка"),
+        ("CANCELLED", "Отменена"),
     ]
 
     # FSM статусов: проведённую (COMPLETED) транзакцию можно только
@@ -1112,10 +1102,10 @@ class Transaction(models.Model):
     # вместо этого создаётся новая транзакция). Частичный возврат денег —
     # через сторно (BillingService.refund → REFUND-транзакция).
     ALLOWED_STATUS_TRANSITIONS = {
-        'PENDING': {'COMPLETED', 'FAILED', 'CANCELLED'},
-        'COMPLETED': {'CANCELLED'},
-        'FAILED': {'PENDING', 'CANCELLED'},
-        'CANCELLED': set(),
+        "PENDING": {"COMPLETED", "FAILED", "CANCELLED"},
+        "COMPLETED": {"CANCELLED"},
+        "FAILED": {"PENDING", "CANCELLED"},
+        "CANCELLED": set(),
     }
 
     # Поля, фиксирующие движение денег. После проведения (COMPLETED в БД)
@@ -1124,98 +1114,89 @@ class Transaction(models.Model):
     # Иначе балансы и paid_amount, пересчитанные по старым значениям,
     # молча расходятся с историей.
     LEDGER_FROZEN_FIELDS = (
-        'amount', 'currency', 'type', 'method', 'date', 'invoice_id',
-        'from_client_id', 'from_warehouse_id', 'from_line_id',
-        'from_carrier_id', 'from_company_id',
-        'to_client_id', 'to_warehouse_id', 'to_line_id',
-        'to_carrier_id', 'to_company_id',
+        "amount",
+        "currency",
+        "type",
+        "method",
+        "date",
+        "invoice_id",
+        "from_client_id",
+        "from_warehouse_id",
+        "from_line_id",
+        "from_carrier_id",
+        "from_company_id",
+        "to_client_id",
+        "to_warehouse_id",
+        "to_line_id",
+        "to_carrier_id",
+        "to_company_id",
     )
 
     # ========================================================================
     # ИДЕНТИФИКАЦИЯ
     # ========================================================================
 
-    number = models.CharField(
-        max_length=50,
-        unique=True,
-        verbose_name="Номер транзакции"
-    )
+    number = models.CharField(max_length=50, unique=True, verbose_name="Номер транзакции")
 
-    date = models.DateTimeField(
-        default=timezone.now,
-        verbose_name="Дата и время"
-    )
+    date = models.DateTimeField(default=timezone.now, verbose_name="Дата и время")
 
     # ========================================================================
     # ТИП И СПОСОБ
     # ========================================================================
 
-    type = models.CharField(
-        max_length=20,
-        choices=TYPE_CHOICES,
-        verbose_name="Тип операции"
-    )
+    type = models.CharField(max_length=20, choices=TYPE_CHOICES, verbose_name="Тип операции")
 
-    method = models.CharField(
-        max_length=20,
-        choices=METHOD_CHOICES,
-        verbose_name="Способ оплаты"
-    )
+    method = models.CharField(max_length=20, choices=METHOD_CHOICES, verbose_name="Способ оплаты")
 
-    status = models.CharField(
-        max_length=20,
-        choices=STATUS_CHOICES,
-        default='COMPLETED',
-        verbose_name="Статус"
-    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="COMPLETED", verbose_name="Статус")
 
     # ========================================================================
     # ОТКУДА (отправитель) - ТОЛЬКО ОДНО поле заполнено!
     # ========================================================================
 
     from_client = models.ForeignKey(
-        'Client',
+        "Client",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='transactions_sent_new',
-        verbose_name="От клиента"
+        related_name="transactions_sent_new",
+        verbose_name="От клиента",
     )
 
     from_warehouse = models.ForeignKey(
-        'Warehouse',
+        "Warehouse",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='transactions_sent_new',
-        verbose_name="От склада"
+        related_name="transactions_sent_new",
+        verbose_name="От склада",
     )
 
     from_line = models.ForeignKey(
-        'Line',
+        "Line",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='transactions_sent_new',
-        verbose_name="От линии"
+        related_name="transactions_sent_new",
+        verbose_name="От линии",
     )
 
     from_carrier = models.ForeignKey(
-        'Carrier',
+        "Carrier",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='transactions_sent_new',
-        verbose_name="От перевозчика"
+        related_name="transactions_sent_new",
+        verbose_name="От перевозчика",
     )
 
     from_company = models.ForeignKey(
-        'Company',
+        "Company",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='transactions_sent_new',
-        verbose_name="От компании"
+        related_name="transactions_sent_new",
+        verbose_name="От компании",
     )
 
     # ========================================================================
@@ -1223,48 +1204,48 @@ class Transaction(models.Model):
     # ========================================================================
 
     to_client = models.ForeignKey(
-        'Client',
+        "Client",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='transactions_received_new',
-        verbose_name="Клиенту"
+        related_name="transactions_received_new",
+        verbose_name="Клиенту",
     )
 
     to_warehouse = models.ForeignKey(
-        'Warehouse',
+        "Warehouse",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='transactions_received_new',
-        verbose_name="Складу"
+        related_name="transactions_received_new",
+        verbose_name="Складу",
     )
 
     to_line = models.ForeignKey(
-        'Line',
+        "Line",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='transactions_received_new',
-        verbose_name="Линии"
+        related_name="transactions_received_new",
+        verbose_name="Линии",
     )
 
     to_carrier = models.ForeignKey(
-        'Carrier',
+        "Carrier",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='transactions_received_new',
-        verbose_name="Перевозчику"
+        related_name="transactions_received_new",
+        verbose_name="Перевозчику",
     )
 
     to_company = models.ForeignKey(
-        'Company',
+        "Company",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='transactions_received_new',
-        verbose_name="Компании"
+        related_name="transactions_received_new",
+        verbose_name="Компании",
     )
 
     # ========================================================================
@@ -1276,9 +1257,9 @@ class Transaction(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='transactions',
+        related_name="transactions",
         verbose_name="Инвойс",
-        help_text="Если это оплата инвойса, указываем его здесь"
+        help_text="Если это оплата инвойса, указываем его здесь",
     )
 
     # ========================================================================
@@ -1286,11 +1267,11 @@ class Transaction(models.Model):
     # ========================================================================
 
     related_client = models.ForeignKey(
-        'Client',
+        "Client",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='related_transactions',
+        related_name="related_transactions",
         verbose_name="Связанный клиент",
         help_text=(
             "Оптовик или посредник, от имени которого фактически шёл платеж "
@@ -1303,33 +1284,22 @@ class Transaction(models.Model):
     # ========================================================================
 
     CURRENCY_CHOICES = [
-        ('EUR', 'EUR'),
-        ('USD', 'USD'),
-        ('GBP', 'GBP'),
+        ("EUR", "EUR"),
+        ("USD", "USD"),
+        ("GBP", "GBP"),
     ]
 
-    currency = models.CharField(
-        max_length=3,
-        choices=CURRENCY_CHOICES,
-        default='EUR',
-        verbose_name="Валюта"
-    )
+    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default="EUR", verbose_name="Валюта")
 
     # ========================================================================
     # СУММА И ОПИСАНИЕ
     # ========================================================================
 
     amount = models.DecimalField(
-        max_digits=15,
-        decimal_places=2,
-        validators=[MinValueValidator(0)],
-        verbose_name="Сумма"
+        max_digits=15, decimal_places=2, validators=[MinValueValidator(0)], verbose_name="Сумма"
     )
 
-    description = models.TextField(
-        verbose_name="Описание",
-        help_text="Подробное описание операции"
-    )
+    description = models.TextField(verbose_name="Описание", help_text="Подробное описание операции")
 
     # ========================================================================
     # КАТЕГОРИЗАЦИЯ И ВЛОЖЕНИЯ
@@ -1340,24 +1310,24 @@ class Transaction(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='transactions',
+        related_name="transactions",
         verbose_name="Категория",
-        help_text="Категория расхода/дохода. При привязке к инвойсу берётся автоматически."
+        help_text="Категория расхода/дохода. При привязке к инвойсу берётся автоматически.",
     )
 
     attachment = models.FileField(
-        upload_to='transactions/attachments/%Y/%m/',
+        upload_to="transactions/attachments/%Y/%m/",
         null=True,
         blank=True,
         verbose_name="Вложение",
-        help_text="Чек, квитанция или подтверждение оплаты"
+        help_text="Чек, квитанция или подтверждение оплаты",
     )
 
     receipt_data = models.JSONField(
         null=True,
         blank=True,
         verbose_name="Данные чека",
-        help_text="AI-распарсенные данные из фото чека (магазин, товары, суммы)"
+        help_text="AI-распарсенные данные из фото чека (магазин, товары, суммы)",
     )
 
     # ========================================================================
@@ -1366,119 +1336,139 @@ class Transaction(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создана")
     created_by = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name='created_transactions_new',
-        verbose_name="Создал"
+        User, on_delete=models.SET_NULL, null=True, related_name="created_transactions_new", verbose_name="Создал"
     )
 
     class Meta:
         verbose_name = "Транзакция"
         verbose_name_plural = "Транзакции"
-        ordering = ['-date']
+        ordering = ["-date"]
         indexes = [
-            models.Index(fields=['number']),
-            models.Index(fields=['date', 'type']),
-            models.Index(fields=['invoice']),
-            models.Index(fields=['from_client', 'date']),
-            models.Index(fields=['to_client', 'date']),
-            models.Index(fields=['from_warehouse', 'date']),
-            models.Index(fields=['to_warehouse', 'date']),
-            models.Index(fields=['from_line', 'date']),
-            models.Index(fields=['to_line', 'date']),
-            models.Index(fields=['from_carrier', 'date']),
-            models.Index(fields=['to_carrier', 'date']),
-            models.Index(fields=['from_company', 'date']),
-            models.Index(fields=['to_company', 'date']),
-            models.Index(fields=['status', 'date']),
+            models.Index(fields=["number"]),
+            models.Index(fields=["date", "type"]),
+            models.Index(fields=["invoice"]),
+            models.Index(fields=["from_client", "date"]),
+            models.Index(fields=["to_client", "date"]),
+            models.Index(fields=["from_warehouse", "date"]),
+            models.Index(fields=["to_warehouse", "date"]),
+            models.Index(fields=["from_line", "date"]),
+            models.Index(fields=["to_line", "date"]),
+            models.Index(fields=["from_carrier", "date"]),
+            models.Index(fields=["to_carrier", "date"]),
+            models.Index(fields=["from_company", "date"]),
+            models.Index(fields=["to_company", "date"]),
+            models.Index(fields=["status", "date"]),
             # method активно используется в фильтрах админки и в аналитике
             # (Cash flow, expense_analytics) — без индекса даёт seq scan.
-            models.Index(fields=['method', 'date']),
-            models.Index(fields=['type', 'method', 'status']),
+            models.Index(fields=["method", "date"]),
+            models.Index(fields=["type", "method", "status"]),
         ]
         constraints = [
             models.CheckConstraint(
                 check=(
                     models.Q(
-                        from_client__isnull=True, from_warehouse__isnull=True,
-                        from_line__isnull=True, from_carrier__isnull=True,
+                        from_client__isnull=True,
+                        from_warehouse__isnull=True,
+                        from_line__isnull=True,
+                        from_carrier__isnull=True,
                         from_company__isnull=True,
-                    ) |
-                    models.Q(
-                        from_client__isnull=False, from_warehouse__isnull=True,
-                        from_line__isnull=True, from_carrier__isnull=True,
+                    )
+                    | models.Q(
+                        from_client__isnull=False,
+                        from_warehouse__isnull=True,
+                        from_line__isnull=True,
+                        from_carrier__isnull=True,
                         from_company__isnull=True,
-                    ) |
-                    models.Q(
-                        from_client__isnull=True, from_warehouse__isnull=False,
-                        from_line__isnull=True, from_carrier__isnull=True,
+                    )
+                    | models.Q(
+                        from_client__isnull=True,
+                        from_warehouse__isnull=False,
+                        from_line__isnull=True,
+                        from_carrier__isnull=True,
                         from_company__isnull=True,
-                    ) |
-                    models.Q(
-                        from_client__isnull=True, from_warehouse__isnull=True,
-                        from_line__isnull=False, from_carrier__isnull=True,
+                    )
+                    | models.Q(
+                        from_client__isnull=True,
+                        from_warehouse__isnull=True,
+                        from_line__isnull=False,
+                        from_carrier__isnull=True,
                         from_company__isnull=True,
-                    ) |
-                    models.Q(
-                        from_client__isnull=True, from_warehouse__isnull=True,
-                        from_line__isnull=True, from_carrier__isnull=False,
+                    )
+                    | models.Q(
+                        from_client__isnull=True,
+                        from_warehouse__isnull=True,
+                        from_line__isnull=True,
+                        from_carrier__isnull=False,
                         from_company__isnull=True,
-                    ) |
-                    models.Q(
-                        from_client__isnull=True, from_warehouse__isnull=True,
-                        from_line__isnull=True, from_carrier__isnull=True,
+                    )
+                    | models.Q(
+                        from_client__isnull=True,
+                        from_warehouse__isnull=True,
+                        from_line__isnull=True,
+                        from_carrier__isnull=True,
                         from_company__isnull=False,
                     )
                 ),
-                name='transaction_at_most_one_sender',
+                name="transaction_at_most_one_sender",
             ),
             models.CheckConstraint(
                 check=(
                     models.Q(
-                        to_client__isnull=True, to_warehouse__isnull=True,
-                        to_line__isnull=True, to_carrier__isnull=True,
+                        to_client__isnull=True,
+                        to_warehouse__isnull=True,
+                        to_line__isnull=True,
+                        to_carrier__isnull=True,
                         to_company__isnull=True,
-                    ) |
-                    models.Q(
-                        to_client__isnull=False, to_warehouse__isnull=True,
-                        to_line__isnull=True, to_carrier__isnull=True,
+                    )
+                    | models.Q(
+                        to_client__isnull=False,
+                        to_warehouse__isnull=True,
+                        to_line__isnull=True,
+                        to_carrier__isnull=True,
                         to_company__isnull=True,
-                    ) |
-                    models.Q(
-                        to_client__isnull=True, to_warehouse__isnull=False,
-                        to_line__isnull=True, to_carrier__isnull=True,
+                    )
+                    | models.Q(
+                        to_client__isnull=True,
+                        to_warehouse__isnull=False,
+                        to_line__isnull=True,
+                        to_carrier__isnull=True,
                         to_company__isnull=True,
-                    ) |
-                    models.Q(
-                        to_client__isnull=True, to_warehouse__isnull=True,
-                        to_line__isnull=False, to_carrier__isnull=True,
+                    )
+                    | models.Q(
+                        to_client__isnull=True,
+                        to_warehouse__isnull=True,
+                        to_line__isnull=False,
+                        to_carrier__isnull=True,
                         to_company__isnull=True,
-                    ) |
-                    models.Q(
-                        to_client__isnull=True, to_warehouse__isnull=True,
-                        to_line__isnull=True, to_carrier__isnull=False,
+                    )
+                    | models.Q(
+                        to_client__isnull=True,
+                        to_warehouse__isnull=True,
+                        to_line__isnull=True,
+                        to_carrier__isnull=False,
                         to_company__isnull=True,
-                    ) |
-                    models.Q(
-                        to_client__isnull=True, to_warehouse__isnull=True,
-                        to_line__isnull=True, to_carrier__isnull=True,
+                    )
+                    | models.Q(
+                        to_client__isnull=True,
+                        to_warehouse__isnull=True,
+                        to_line__isnull=True,
+                        to_carrier__isnull=True,
                         to_company__isnull=False,
                     )
                 ),
-                name='transaction_at_most_one_recipient',
+                name="transaction_at_most_one_recipient",
             ),
             # MinValueValidator(0) работает только через full_clean();
             # констрейнт закрывает bulk_create/update/raw SQL.
             models.CheckConstraint(
                 check=models.Q(amount__gte=0),
-                name='transaction_amount_non_negative',
+                name="transaction_amount_non_negative",
             ),
             # B2 (AUDIT_ROUND3): см. invoice_currency_eur — балансы считаются
             # без разреза валюты, не-EUR транзакции запрещены на уровне БД.
             models.CheckConstraint(
-                check=models.Q(currency='EUR'),
-                name='transaction_currency_eur',
+                check=models.Q(currency="EUR"),
+                name="transaction_currency_eur",
             ),
         ]
 
@@ -1543,39 +1533,44 @@ class Transaction(models.Model):
         """Валидация: ровно один отправитель и ровно один получатель, совпадение валют."""
         errors = {}
         from_fields = [
-            self.from_client_id, self.from_warehouse_id,
-            self.from_line_id, self.from_carrier_id, self.from_company_id,
+            self.from_client_id,
+            self.from_warehouse_id,
+            self.from_line_id,
+            self.from_carrier_id,
+            self.from_company_id,
         ]
         to_fields = [
-            self.to_client_id, self.to_warehouse_id,
-            self.to_line_id, self.to_carrier_id, self.to_company_id,
+            self.to_client_id,
+            self.to_warehouse_id,
+            self.to_line_id,
+            self.to_carrier_id,
+            self.to_company_id,
         ]
         from_count = sum(1 for f in from_fields if f)
         to_count = sum(1 for f in to_fields if f)
 
-        if self.type == 'BALANCE_TOPUP':
+        if self.type == "BALANCE_TOPUP":
             if to_count != 1:
-                errors['__all__'] = "Пополнение баланса: укажите ровно одного получателя."
+                errors["__all__"] = "Пополнение баланса: укажите ровно одного получателя."
             if from_count > 0:
-                errors['__all__'] = (
+                errors["__all__"] = (
                     "Пополнение баланса: поле 'Отправитель' должно быть пустым. "
                     "Эта операция только зачисляет средства на баланс получателя."
                 )
-        elif self.type == 'ADJUSTMENT':
+        elif self.type == "ADJUSTMENT":
             if (from_count + to_count) != 1:
-                errors['__all__'] = "Корректировка: укажите ровно одну сторону (отправитель ИЛИ получатель)."
+                errors["__all__"] = "Корректировка: укажите ровно одну сторону (отправитель ИЛИ получатель)."
         else:
             if from_count > 1:
-                errors['__all__'] = "Укажите не более одного отправителя."
+                errors["__all__"] = "Укажите не более одного отправителя."
             if to_count > 1:
-                errors.setdefault('__all__', '')
-                errors['__all__'] += " Укажите не более одного получателя."
-                errors['__all__'] = errors['__all__'].strip()
+                errors.setdefault("__all__", "")
+                errors["__all__"] += " Укажите не более одного получателя."
+                errors["__all__"] = errors["__all__"].strip()
 
         if self.invoice_id and self.invoice and self.currency != self.invoice.currency:
-            errors['currency'] = (
-                f"Валюта транзакции ({self.currency}) не совпадает "
-                f"с валютой инвойса ({self.invoice.currency})."
+            errors["currency"] = (
+                f"Валюта транзакции ({self.currency}) не совпадает с валютой инвойса ({self.invoice.currency})."
             )
 
         # Защита от переплаты по инвойсу: суммарные COMPLETED PAYMENT минус REFUND
@@ -1583,33 +1578,34 @@ class Transaction(models.Model):
         if (
             self.invoice_id
             and self.invoice
-            and self.type in ('PAYMENT', 'REFUND')
-            and self.status == 'COMPLETED'
-            and (self.amount or Decimal('0')) > 0
+            and self.type in ("PAYMENT", "REFUND")
+            and self.status == "COMPLETED"
+            and (self.amount or Decimal("0")) > 0
         ):
             inv = self.invoice
             # Сумма всех уже существующих COMPLETED платежей/возвратов по инвойсу (без self)
-            qs = inv.transactions.filter(status='COMPLETED').exclude(pk=self.pk) if self.pk \
-                else inv.transactions.filter(status='COMPLETED')
-            paid_now = qs.filter(type='PAYMENT').aggregate(s=models.Sum('amount'))['s'] or Decimal('0')
-            refunded_now = qs.filter(type='REFUND').aggregate(s=models.Sum('amount'))['s'] or Decimal('0')
-            if self.type == 'PAYMENT':
+            qs = (
+                inv.transactions.filter(status="COMPLETED").exclude(pk=self.pk)
+                if self.pk
+                else inv.transactions.filter(status="COMPLETED")
+            )
+            paid_now = qs.filter(type="PAYMENT").aggregate(s=models.Sum("amount"))["s"] or Decimal("0")
+            refunded_now = qs.filter(type="REFUND").aggregate(s=models.Sum("amount"))["s"] or Decimal("0")
+            if self.type == "PAYMENT":
                 projected = paid_now + Decimal(self.amount) - refunded_now
             else:  # REFUND
                 projected = paid_now - (refunded_now + Decimal(self.amount))
             # Небольшой допуск на округление (1 цент)
-            tolerance = Decimal('0.01')
-            if self.type == 'PAYMENT' and projected > (inv.total + tolerance):
-                overpay = (projected - inv.total).quantize(Decimal('0.01'))
-                errors['amount'] = (
+            tolerance = Decimal("0.01")
+            if self.type == "PAYMENT" and projected > (inv.total + tolerance):
+                overpay = (projected - inv.total).quantize(Decimal("0.01"))
+                errors["amount"] = (
                     f"Переплата по инвойсу {inv.number}: сумма платежей превысит total "
                     f"({inv.total} {inv.currency}) на {overpay} {inv.currency}. "
                     f"Разбейте платёж, уменьшите сумму или используйте BALANCE_TOPUP."
                 )
-            if self.type == 'REFUND' and projected < -tolerance:
-                errors['amount'] = (
-                    f"Возврат по инвойсу {inv.number} больше, чем сумма уже полученных платежей."
-                )
+            if self.type == "REFUND" and projected < -tolerance:
+                errors["amount"] = f"Возврат по инвойсу {inv.number} больше, чем сумма уже полученных платежей."
 
         if errors:
             raise ValidationError(errors)
@@ -1624,7 +1620,7 @@ class Transaction(models.Model):
     # open_fact_debt / open_pardp_receivable в BalanceMethodsMixin, и
     # дублировать их в balance нельзя — иначе баланс поставщика растёт на
     # сумму каждого уплаченного нами FACT.
-    _NON_INVOICE_BALANCE_ENTITIES = ('company', 'warehouse', 'line', 'carrier')
+    _NON_INVOICE_BALANCE_ENTITIES = ("company", "warehouse", "line", "carrier")
 
     @classmethod
     def _balance_queryset_for(cls, model_name):
@@ -1638,7 +1634,7 @@ class Transaction(models.Model):
         именно его, иначе для контрагентов с инвойсными платежами появятся
         ложные расхождения.
         """
-        qs = Transaction.objects.filter(status='COMPLETED')
+        qs = Transaction.objects.filter(status="COMPLETED")
         if model_name in cls._NON_INVOICE_BALANCE_ENTITIES:
             qs = qs.filter(invoice__isnull=True)
         return qs
@@ -1652,12 +1648,12 @@ class Transaction(models.Model):
         сверки (`verify_balances`, `check_data_integrity`, Celery-ревизор)
         и пересчёт пользовались одной формулой.
         """
-        if entity is None or not hasattr(entity, 'balance'):
-            return Decimal('0.00')
+        if entity is None or not hasattr(entity, "balance"):
+            return Decimal("0.00")
         model_name = entity.__class__.__name__.lower()
         qs = cls._balance_queryset_for(model_name)
-        incoming = qs.filter(**{f'to_{model_name}': entity}).aggregate(s=models.Sum('amount'))['s'] or Decimal('0.00')
-        outgoing = qs.filter(**{f'from_{model_name}': entity}).aggregate(s=models.Sum('amount'))['s'] or Decimal('0.00')
+        incoming = qs.filter(**{f"to_{model_name}": entity}).aggregate(s=models.Sum("amount"))["s"] or Decimal("0.00")
+        outgoing = qs.filter(**{f"from_{model_name}": entity}).aggregate(s=models.Sum("amount"))["s"] or Decimal("0.00")
         return incoming - outgoing
 
     @staticmethod
@@ -1676,7 +1672,7 @@ class Transaction(models.Model):
         Transaction.post_save могут прочитать одинаковый baseline и
         затереть друг друга (lost update).
         """
-        if entity is None or not hasattr(entity, 'balance'):
+        if entity is None or not hasattr(entity, "balance"):
             return
         from django.db import connection
         from django.db import transaction as db_transaction
@@ -1686,12 +1682,7 @@ class Transaction(models.Model):
 
         with db_transaction.atomic():
             if connection.features.has_select_for_update:
-                locked = (
-                    entity_model.objects
-                    .select_for_update()
-                    .filter(pk=entity.pk)
-                    .first()
-                )
+                locked = entity_model.objects.select_for_update().filter(pk=entity.pk).first()
                 if locked is None:
                     return
             else:
@@ -1700,19 +1691,19 @@ class Transaction(models.Model):
                     return
 
             qs = Transaction._balance_queryset_for(model_name)
-            incoming = qs.filter(
-                **{f'to_{model_name}': locked}
-            ).aggregate(s=models.Sum('amount'))['s'] or Decimal('0.00')
-            outgoing = qs.filter(
-                **{f'from_{model_name}': locked}
-            ).aggregate(s=models.Sum('amount'))['s'] or Decimal('0.00')
+            incoming = qs.filter(**{f"to_{model_name}": locked}).aggregate(s=models.Sum("amount"))["s"] or Decimal(
+                "0.00"
+            )
+            outgoing = qs.filter(**{f"from_{model_name}": locked}).aggregate(s=models.Sum("amount"))["s"] or Decimal(
+                "0.00"
+            )
             new_balance = incoming - outgoing
             if locked.balance != new_balance:
                 locked.balance = new_balance
-                locked.save(update_fields=['balance', 'balance_updated_at'])
+                locked.save(update_fields=["balance", "balance_updated_at"])
                 if entity is not locked:
                     entity.balance = new_balance
-                    if hasattr(entity, 'balance_updated_at'):
+                    if hasattr(entity, "balance_updated_at"):
                         entity.balance_updated_at = locked.balance_updated_at
 
     def generate_number(self):
@@ -1729,7 +1720,7 @@ class Transaction(models.Model):
         return next_document_number(Transaction, prefix, pad=5)
 
     def delete(self, *args, force=False, **kwargs):
-        if not force and self.status in ('COMPLETED', 'CANCELLED'):
+        if not force and self.status in ("COMPLETED", "CANCELLED"):
             raise ValidationError(
                 "Нельзя удалить проведённую или отменённую транзакцию — "
                 "это часть финансовой истории. Для корректировки создайте "
@@ -1747,16 +1738,12 @@ class Transaction(models.Model):
         """
         if not self.pk:
             return
-        old = (
-            Transaction.objects.filter(pk=self.pk)
-            .values('status', *self.LEDGER_FROZEN_FIELDS)
-            .first()
-        )
+        old = Transaction.objects.filter(pk=self.pk).values("status", *self.LEDGER_FROZEN_FIELDS).first()
         if old is None:
             return
 
-        if old['status'] != self.status:
-            allowed = self.ALLOWED_STATUS_TRANSITIONS.get(old['status'], set())
+        if old["status"] != self.status:
+            allowed = self.ALLOWED_STATUS_TRANSITIONS.get(old["status"], set())
             if self.status not in allowed:
                 raise ValidationError(
                     f"Недопустимый переход статуса транзакции {self.number or self.pk}: "
@@ -1764,11 +1751,8 @@ class Transaction(models.Model):
                     f"Допустимые: {', '.join(sorted(allowed)) or 'нет (терминальный статус)'}"
                 )
 
-        if old['status'] == 'COMPLETED':
-            changed = [
-                f for f in self.LEDGER_FROZEN_FIELDS
-                if getattr(self, f) != old[f]
-            ]
+        if old["status"] == "COMPLETED":
+            changed = [f for f in self.LEDGER_FROZEN_FIELDS if getattr(self, f) != old[f]]
             if changed:
                 raise ValidationError(
                     f"Транзакция {self.number or self.pk} проведена (COMPLETED), "
@@ -1792,12 +1776,12 @@ class Transaction(models.Model):
 
         self._validate_ledger_rules()
 
-        if kwargs.get('update_fields') is None:
+        if kwargs.get("update_fields") is None:
             # description/created_by — де-факто опциональные служебные поля
             # (большинство Tx создаётся кодом без них), исключаем их из
             # blank-валидации, чтобы не менять схему. Бизнес-валидация
             # (clean(): стороны, валюта, переплата) выполняется всегда.
-            self.full_clean(exclude=['description', 'created_by'])
+            self.full_clean(exclude=["description", "created_by"])
 
         super().save(*args, **kwargs)
 
@@ -1806,18 +1790,15 @@ class Transaction(models.Model):
 # ЛИЧНЫЕ КАРТЫ
 # ============================================================================
 
+
 class PersonalCard(models.Model):
     """Личная банковская карта для учёта личных финансов"""
 
-    name = models.CharField(
-        max_length=100,
-        verbose_name="Название",
-        help_text="Например: Revolut, SEB, Swedbank"
-    )
+    name = models.CharField(max_length=100, verbose_name="Название", help_text="Например: Revolut, SEB, Swedbank")
     last_four = models.CharField(
         max_length=4,
         blank=True,
-        default='',
+        default="",
         verbose_name="Последние 4 цифры",
     )
     balance = models.DecimalField(
@@ -1827,10 +1808,7 @@ class PersonalCard(models.Model):
         verbose_name="Баланс",
     )
     color = models.CharField(
-        max_length=7,
-        default='#6366f1',
-        verbose_name="Цвет",
-        help_text="HEX-цвет для отображения на дашборде"
+        max_length=7, default="#6366f1", verbose_name="Цвет", help_text="HEX-цвет для отображения на дашборде"
     )
     is_active = models.BooleanField(
         default=True,
@@ -1848,7 +1826,7 @@ class PersonalCard(models.Model):
     class Meta:
         verbose_name = "Личная карта"
         verbose_name_plural = "Личные карты"
-        ordering = ['order', 'name']
+        ordering = ["order", "name"]
 
     def __str__(self):
         label = self.name
@@ -1865,15 +1843,16 @@ class PersonalCard(models.Model):
 # ПЕРЕВОДЫ МЕЖДУ КАРТАМИ / НАЛИЧНЫМИ
 # ============================================================================
 
+
 class PersonalTransfer(models.Model):
     """Перевод средств между наличными и личными картами"""
 
     TRANSFER_TYPE_CHOICES = [
-        ('CASH_TO_CARD', 'Наличные → Карта'),
-        ('CARD_TO_CASH', 'Карта → Наличные'),
-        ('CARD_TO_CARD', 'Карта → Карта'),
-        ('CARD_INCOME', 'Поступление на карту'),
-        ('CARD_EXPENSE', 'Расход с карты'),
+        ("CASH_TO_CARD", "Наличные → Карта"),
+        ("CARD_TO_CASH", "Карта → Наличные"),
+        ("CARD_TO_CARD", "Карта → Карта"),
+        ("CARD_INCOME", "Поступление на карту"),
+        ("CARD_EXPENSE", "Расход с карты"),
     ]
 
     transfer_type = models.CharField(
@@ -1886,7 +1865,7 @@ class PersonalTransfer(models.Model):
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='transfers_out',
+        related_name="transfers_out",
         verbose_name="Карта-источник",
     )
     to_card = models.ForeignKey(
@@ -1894,18 +1873,18 @@ class PersonalTransfer(models.Model):
         on_delete=models.PROTECT,
         null=True,
         blank=True,
-        related_name='transfers_in',
+        related_name="transfers_in",
         verbose_name="Карта-получатель",
     )
     amount = models.DecimalField(
         max_digits=15,
         decimal_places=2,
-        validators=[MinValueValidator(Decimal('0.01'))],
+        validators=[MinValueValidator(Decimal("0.01"))],
         verbose_name="Сумма",
     )
     description = models.TextField(
         blank=True,
-        default='',
+        default="",
         verbose_name="Описание",
     )
     category = models.ForeignKey(
@@ -1913,9 +1892,9 @@ class PersonalTransfer(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='personal_transfers',
+        related_name="personal_transfers",
         verbose_name="Категория",
-        help_text="Для расходов с карты"
+        help_text="Для расходов с карты",
     )
     date = models.DateTimeField(
         default=timezone.now,
@@ -1926,16 +1905,16 @@ class PersonalTransfer(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='personal_transfers',
+        related_name="personal_transfers",
         verbose_name="Связанная транзакция",
-        help_text="Транзакция в кассе (для переводов нал↔карта)"
+        help_text="Транзакция в кассе (для переводов нал↔карта)",
     )
     created_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='personal_transfers',
+        related_name="personal_transfers",
         verbose_name="Создал",
     )
     created_at = models.DateTimeField(
@@ -1946,7 +1925,7 @@ class PersonalTransfer(models.Model):
     class Meta:
         verbose_name = "Личный перевод"
         verbose_name_plural = "Личные переводы"
-        ordering = ['-date']
+        ordering = ["-date"]
 
     def __str__(self):
         return f"{self.get_transfer_type_display()} — {self.amount}"
@@ -1955,21 +1934,21 @@ class PersonalTransfer(models.Model):
         errors = {}
         tt = self.transfer_type
 
-        if tt == 'CASH_TO_CARD' and not self.to_card_id:
-            errors['to_card'] = "Укажите карту-получатель"
-        if tt == 'CARD_TO_CASH' and not self.from_card_id:
-            errors['from_card'] = "Укажите карту-источник"
-        if tt == 'CARD_TO_CARD':
+        if tt == "CASH_TO_CARD" and not self.to_card_id:
+            errors["to_card"] = "Укажите карту-получатель"
+        if tt == "CARD_TO_CASH" and not self.from_card_id:
+            errors["from_card"] = "Укажите карту-источник"
+        if tt == "CARD_TO_CARD":
             if not self.from_card_id:
-                errors['from_card'] = "Укажите карту-источник"
+                errors["from_card"] = "Укажите карту-источник"
             if not self.to_card_id:
-                errors['to_card'] = "Укажите карту-получатель"
+                errors["to_card"] = "Укажите карту-получатель"
             if self.from_card_id and self.to_card_id and self.from_card_id == self.to_card_id:
-                errors['to_card'] = "Карта-источник и карта-получатель должны быть разными"
-        if tt == 'CARD_INCOME' and not self.to_card_id:
-            errors['to_card'] = "Укажите карту-получатель"
-        if tt == 'CARD_EXPENSE' and not self.from_card_id:
-            errors['from_card'] = "Укажите карту-источник"
+                errors["to_card"] = "Карта-источник и карта-получатель должны быть разными"
+        if tt == "CARD_INCOME" and not self.to_card_id:
+            errors["to_card"] = "Укажите карту-получатель"
+        if tt == "CARD_EXPENSE" and not self.from_card_id:
+            errors["from_card"] = "Укажите карту-источник"
 
         if errors:
             raise ValidationError(errors)
@@ -1984,50 +1963,50 @@ class PersonalTransfer(models.Model):
         tt = self.transfer_type
 
         with db_transaction.atomic():
-            if tt in ('CASH_TO_CARD', 'CARD_INCOME'):
+            if tt in ("CASH_TO_CARD", "CARD_INCOME"):
                 card = PersonalCard.objects.select_for_update().get(pk=self.to_card_id)
                 card.balance += self.amount
-                card.save(update_fields=['balance'])
+                card.save(update_fields=["balance"])
 
-            if tt in ('CARD_TO_CASH', 'CARD_EXPENSE'):
+            if tt in ("CARD_TO_CASH", "CARD_EXPENSE"):
                 card = PersonalCard.objects.select_for_update().get(pk=self.from_card_id)
                 card.balance -= self.amount
-                card.save(update_fields=['balance'])
+                card.save(update_fields=["balance"])
 
-            if tt == 'CARD_TO_CARD':
+            if tt == "CARD_TO_CARD":
                 src = PersonalCard.objects.select_for_update().get(pk=self.from_card_id)
                 dst = PersonalCard.objects.select_for_update().get(pk=self.to_card_id)
                 src.balance -= self.amount
                 dst.balance += self.amount
-                src.save(update_fields=['balance'])
-                dst.save(update_fields=['balance'])
+                src.save(update_fields=["balance"])
+                dst.save(update_fields=["balance"])
 
-            if tt == 'CASH_TO_CARD' and company:
+            if tt == "CASH_TO_CARD" and company:
                 tx = Transaction.objects.create(
-                    type='ADJUSTMENT',
-                    method='CASH',
+                    type="ADJUSTMENT",
+                    method="CASH",
                     amount=self.amount,
-                    currency='EUR',
+                    currency="EUR",
                     from_company=company,
-                    description=self.description or f'Перевод на карту {self.to_card}',
-                    status='COMPLETED',
+                    description=self.description or f"Перевод на карту {self.to_card}",
+                    status="COMPLETED",
                     date=self.date,
                     created_by=self.created_by,
                 )
                 self.linked_transaction = tx
-                self.save(update_fields=['linked_transaction'])
+                self.save(update_fields=["linked_transaction"])
 
-            if tt == 'CARD_TO_CASH' and company:
+            if tt == "CARD_TO_CASH" and company:
                 tx = Transaction.objects.create(
-                    type='ADJUSTMENT',
-                    method='CASH',
+                    type="ADJUSTMENT",
+                    method="CASH",
                     amount=self.amount,
-                    currency='EUR',
+                    currency="EUR",
                     to_company=company,
-                    description=self.description or f'Снятие с карты {self.from_card}',
-                    status='COMPLETED',
+                    description=self.description or f"Снятие с карты {self.from_card}",
+                    status="COMPLETED",
                     date=self.date,
                     created_by=self.created_by,
                 )
                 self.linked_transaction = tx
-                self.save(update_fields=['linked_transaction'])
+                self.save(update_fields=["linked_transaction"])

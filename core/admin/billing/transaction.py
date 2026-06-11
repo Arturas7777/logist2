@@ -117,9 +117,21 @@ class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
     # а не ValidationError-ом после сабмита. Статус остаётся редактируемым
     # (COMPLETED → CANCELLED — легальный путь отмены).
     _LEDGER_FROZEN_FORM_FIELDS = (
-        "amount", "currency", "type", "method", "invoice",
-        "from_client", "from_warehouse", "from_line", "from_carrier", "from_company",
-        "to_client", "to_warehouse", "to_line", "to_carrier", "to_company",
+        "amount",
+        "currency",
+        "type",
+        "method",
+        "invoice",
+        "from_client",
+        "from_warehouse",
+        "from_line",
+        "from_carrier",
+        "from_company",
+        "to_client",
+        "to_warehouse",
+        "to_line",
+        "to_carrier",
+        "to_company",
     )
 
     def get_readonly_fields(self, request, obj=None):

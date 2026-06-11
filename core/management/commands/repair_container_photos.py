@@ -39,9 +39,7 @@ class Command(BaseCommand):
             self.stderr.write(self.style.ERROR("MEDIA_ROOT is not configured. Aborting."))
             return
 
-        qs = ContainerPhoto.objects.select_related("container").only(
-            "id", "photo", "thumbnail", "container_id"
-        )
+        qs = ContainerPhoto.objects.select_related("container").only("id", "photo", "thumbnail", "container_id")
         if limit > 0:
             qs = qs[:limit]
 
@@ -59,9 +57,7 @@ class Command(BaseCommand):
                 skipped += 1
 
         self.stdout.write(
-            self.style.SUCCESS(
-                f"Done. moved={moved}, deleted={deleted}, skipped={skipped}, dry_run={dry_run}"
-            )
+            self.style.SUCCESS(f"Done. moved={moved}, deleted={deleted}, skipped={skipped}, dry_run={dry_run}")
         )
 
     def _process_photo(

@@ -59,15 +59,22 @@ def container(db):
 @pytest.fixture
 def car(db, container, warehouse):
     return Car.objects.create(
-        year=2023, brand="Toyota", vin="CASCADE1234567890",
-        status="FLOATING", container=container, warehouse=warehouse,
+        year=2023,
+        brand="Toyota",
+        vin="CASCADE1234567890",
+        status="FLOATING",
+        container=container,
+        warehouse=warehouse,
     )
 
 
 def _wh_service(warehouse, name, price, *, code="", add_by_default=False):
     return WarehouseService.objects.create(
-        warehouse=warehouse, name=name, code=code,
-        default_price=Decimal(str(price)), is_active=True,
+        warehouse=warehouse,
+        name=name,
+        code=code,
+        default_price=Decimal(str(price)),
+        is_active=True,
         add_by_default=add_by_default,
     )
 
@@ -144,8 +151,12 @@ class TestStorageCascade:
         wh = Warehouse.objects.create(name="WH-Free", free_days=3)
         _wh_service(wh, "Хранение", 10, code="STORAGE")
         car = Car.objects.create(
-            year=2023, brand="Honda", vin="STORAGE123456789A",
-            status="FLOATING", container=container, warehouse=wh,
+            year=2023,
+            brand="Honda",
+            vin="STORAGE123456789A",
+            status="FLOATING",
+            container=container,
+            warehouse=wh,
         )
         car.unload_date = timezone.now().date() - timezone.timedelta(days=4)
         # (4 + 1) - 3 free = 2 платных дня; 2 * 10 = 20
@@ -176,8 +187,12 @@ class TestSignalCascade:
         svc = _wh_service(wh, "Разгрузка", 50)
         container = Container.objects.create(number="SIG-CASCADE-1", status="FLOATING")
         car = Car.objects.create(
-            year=2023, brand="Toyota", vin="SIGCASCADE0000001",
-            status="FLOATING", container=container, warehouse=wh,
+            year=2023,
+            brand="Toyota",
+            vin="SIGCASCADE0000001",
+            status="FLOATING",
+            container=container,
+            warehouse=wh,
         )
         _add_car_service(car, svc, custom_price=50)
         # После commit сигнал должен пересчитать и записать total_price в БД.
@@ -190,8 +205,12 @@ class TestSignalCascade:
         svc2 = _wh_service(wh, "Погрузка", 30)
         container = Container.objects.create(number="SIG-CASCADE-2", status="FLOATING")
         car = Car.objects.create(
-            year=2023, brand="Toyota", vin="SIGCASCADE0000002",
-            status="FLOATING", container=container, warehouse=wh,
+            year=2023,
+            brand="Toyota",
+            vin="SIGCASCADE0000002",
+            status="FLOATING",
+            container=container,
+            warehouse=wh,
         )
         _add_car_service(car, svc1, custom_price=50)
         cs2 = _add_car_service(car, svc2, custom_price=30)

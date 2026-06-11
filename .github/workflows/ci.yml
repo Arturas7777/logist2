@@ -25,6 +25,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install ruff
+        # Версию держим в синхроне с локом requirements-dev.txt (R6).
         run: pip install ruff==0.9.10
       - name: ruff check
         run: ruff check .

@@ -40,7 +40,7 @@ def check_overdue_invoices(self):
         status__in=OVERDUE_CANDIDATE_STATUSES,
         due_date__lt=today,
     )
-    updated = overdue_qs.update(status='OVERDUE')
+    updated = overdue_qs.update(status="OVERDUE")
     if updated:
         logger.info(f"[check_overdue_invoices] Marked {updated} invoices as OVERDUE")
     return updated
@@ -51,6 +51,7 @@ def sync_container_photos_gdrive_task(self, container_id, folder_url=None):
     """Синхронизирует фотографии контейнера с Google Drive в фоне через Celery."""
     from core.google_drive_sync import GoogleDriveSync
     from core.models import Container
+
     try:
         container = Container.objects.get(id=container_id)
     except Container.DoesNotExist:
@@ -88,31 +89,38 @@ def resend_container_notifications_task(self, container_id, kind, channel, user_
         container = Container.objects.get(id=container_id)
     except Container.DoesNotExist:
         logger.warning("Container %s not found, skipping forced %s/%s resend", container_id, kind, channel)
-        return {'sent': 0, 'failed': 0}
+        return {"sent": 0, "failed": 0}
 
     user = None
     if user_id:
         user = get_user_model().objects.filter(pk=user_id).first()
 
-    if channel == 'telegram':
+    if channel == "telegram":
         from core.services.telegram_service import TelegramNotificationService as svc
     else:
         from core.services.email_service import ContainerNotificationService as svc
 
     try:
-        if kind == 'planned':
+        if kind == "planned":
             sent, failed = svc.send_planned_to_all_clients(container, user=user)
         else:
             sent, failed = svc.send_unload_to_all_clients(container, user=user)
         logger.info(
             "Forced %s/%s resend for %s: %d sent, %d failed",
-            kind, channel, container.number, sent, failed,
+            kind,
+            channel,
+            container.number,
+            sent,
+            failed,
         )
-        return {'sent': sent, 'failed': failed}
+        return {"sent": sent, "failed": failed}
     except Exception as exc:
         logger.error(
             "Forced %s/%s resend failed for container %s: %s",
-            kind, channel, container_id, exc,
+            kind,
+            channel,
+            container_id,
+            exc,
         )
         raise self.retry(exc=exc)
 
@@ -122,6 +130,7 @@ def send_planned_notifications_task(self, container_id):
     from core.models import Container
     from core.services.email_service import ContainerNotificationService
     from core.services.telegram_service import TelegramNotificationService
+
     try:
         container = Container.objects.get(id=container_id)
     except Container.DoesNotExist:
@@ -152,6 +161,7 @@ def send_unload_notifications_task(self, container_id):
     from core.models import Container
     from core.services.email_service import ContainerNotificationService
     from core.services.telegram_service import TelegramNotificationService
+
     try:
         container = Container.objects.get(id=container_id)
     except Container.DoesNotExist:
@@ -179,6 +189,7 @@ def send_unload_notifications_task(self, container_id):
 def create_container_photo_thumbnail_task(self, photo_pk):
     """Creates thumbnail for a ContainerPhoto in background."""
     from core.models_website import ContainerPhoto
+
     try:
         photo = ContainerPhoto.objects.get(pk=photo_pk)
         if photo.photo and not photo.thumbnail:
@@ -207,71 +218,64 @@ def _collect_balance_mismatches():
     from core.models_billing import NewInvoice, Transaction
 
     balance_mismatches = []
-    ZERO = Decimal('0.00')
+    ZERO = Decimal("0.00")
 
     ENTITY_MODELS = [
-        ('client',    Client),
-        ('warehouse', Warehouse),
-        ('line',      Line),
-        ('company',   Company),
-        ('carrier',   Carrier),
+        ("client", Client),
+        ("warehouse", Warehouse),
+        ("line", Line),
+        ("company", Company),
+        ("carrier", Carrier),
     ]
 
     for key, model in ENTITY_MODELS:
-        to_field = f'to_{key}'
-        from_field = f'from_{key}'
+        to_field = f"to_{key}"
+        from_field = f"from_{key}"
 
         # Для контрагентов (company/warehouse/line/carrier) balance считается
         # ТОЛЬКО по транзакциям без инвойса — та же логика, что в
         # Transaction.recalculate_entity_balance. Без этого фильтра проверка
         # давала ложные расхождения, а repair --fix мог затереть верный
         # баланс инвойсными платежами.
-        base_qs = Transaction.objects.filter(status='COMPLETED')
+        base_qs = Transaction.objects.filter(status="COMPLETED")
         if key in Transaction._NON_INVOICE_BALANCE_ENTITIES:
             base_qs = base_qs.filter(invoice__isnull=True)
 
         incoming_by_id = dict(
-            base_qs
-            .filter(**{f'{to_field}__isnull': False})
-            .values_list(to_field)
-            .annotate(s=Sum('amount'))
+            base_qs.filter(**{f"{to_field}__isnull": False}).values_list(to_field).annotate(s=Sum("amount"))
         )
         outgoing_by_id = dict(
-            base_qs
-            .filter(**{f'{from_field}__isnull': False})
-            .values_list(from_field)
-            .annotate(s=Sum('amount'))
+            base_qs.filter(**{f"{from_field}__isnull": False}).values_list(from_field).annotate(s=Sum("amount"))
         )
 
         all_ids = set(incoming_by_id) | set(outgoing_by_id)
-        stored = model.objects.filter(
-            Q(pk__in=all_ids) | ~Q(balance=0)
-        ).only('pk', 'balance')
+        stored = model.objects.filter(Q(pk__in=all_ids) | ~Q(balance=0)).only("pk", "balance")
 
         for entity in stored:
             incoming = incoming_by_id.get(entity.pk) or ZERO
             outgoing = outgoing_by_id.get(entity.pk) or ZERO
             expected = incoming - outgoing
             if entity.balance != expected:
-                balance_mismatches.append({
-                    'model': model,
-                    'pk': entity.pk,
-                    'stored': entity.balance,
-                    'expected': expected,
-                    'label': f'{model.__name__} id={entity.pk}: stored={entity.balance}, expected={expected}',
-                })
+                balance_mismatches.append(
+                    {
+                        "model": model,
+                        "pk": entity.pk,
+                        "stored": entity.balance,
+                        "expected": expected,
+                        "label": f"{model.__name__} id={entity.pk}: stored={entity.balance}, expected={expected}",
+                    }
+                )
 
     invoice_mismatches = []
     qs = (
-        NewInvoice.objects
-        .exclude(status__in=['CANCELLED', 'LINKED_PAID'])
+        NewInvoice.objects.exclude(status__in=["CANCELLED", "LINKED_PAID"])
         .annotate(
             _paid=Coalesce(
                 Sum(
-                    'transactions__amount',
+                    "transactions__amount",
                     filter=Q(
-                        transactions__status='COMPLETED',
-                        transactions__type='PAYMENT',
+                        transactions__status="COMPLETED",
+                        transactions__type="PAYMENT",
                     ),
                 ),
                 Value(ZERO),
@@ -279,28 +283,30 @@ def _collect_balance_mismatches():
             ),
             _refund=Coalesce(
                 Sum(
-                    'transactions__amount',
+                    "transactions__amount",
                     filter=Q(
-                        transactions__status='COMPLETED',
-                        transactions__type='REFUND',
+                        transactions__status="COMPLETED",
+                        transactions__type="REFUND",
                     ),
                 ),
                 Value(ZERO),
                 output_field=DecimalField(max_digits=15, decimal_places=2),
             ),
         )
-        .only('id', 'number', 'status', 'paid_amount', 'total', 'updated_at', 'due_date')
+        .only("id", "number", "status", "paid_amount", "total", "updated_at", "due_date")
     )
 
     for inv in qs.iterator():
         expected_paid = max(ZERO, (inv._paid or ZERO) - (inv._refund or ZERO))
         if inv.paid_amount != expected_paid:
-            invoice_mismatches.append({
-                'pk': inv.pk,
-                'number': inv.number,
-                'stored': inv.paid_amount,
-                'expected': expected_paid,
-            })
+            invoice_mismatches.append(
+                {
+                    "pk": inv.pk,
+                    "number": inv.number,
+                    "stored": inv.paid_amount,
+                    "expected": expected_paid,
+                }
+            )
 
     return balance_mismatches, invoice_mismatches
 
@@ -314,20 +320,21 @@ def check_balance_consistency(self):
     balance_mismatches, invoice_mismatches = _collect_balance_mismatches()
 
     if balance_mismatches:
-        labels = [m['label'] for m in balance_mismatches]
+        labels = [m["label"] for m in balance_mismatches]
         logger.warning(
-            '[check_balance_consistency] Found %d balance mismatches:\n%s',
-            len(balance_mismatches), '\n'.join(labels[:50]),
+            "[check_balance_consistency] Found %d balance mismatches:\n%s",
+            len(balance_mismatches),
+            "\n".join(labels[:50]),
         )
     if invoice_mismatches:
         logger.warning(
-            '[check_balance_consistency] Found %d invoice paid_amount mismatches',
+            "[check_balance_consistency] Found %d invoice paid_amount mismatches",
             len(invoice_mismatches),
         )
     total = len(balance_mismatches) + len(invoice_mismatches)
     if total == 0:
-        logger.info('[check_balance_consistency] All balances and paid_amounts are consistent')
-    return {'balance_mismatches': len(balance_mismatches), 'invoice_mismatches': len(invoice_mismatches)}
+        logger.info("[check_balance_consistency] All balances and paid_amounts are consistent")
+    return {"balance_mismatches": len(balance_mismatches), "invoice_mismatches": len(invoice_mismatches)}
 
 
 @shared_task(bind=True, max_retries=0, time_limit=600)
@@ -343,30 +350,32 @@ def repair_balance_consistency(self):
 
     for m in balance_mismatches:
         with db_transaction.atomic():
-            entity = m['model'].objects.select_for_update().get(pk=m['pk'])
-            entity.balance = m['expected']
-            entity.save(update_fields=['balance', 'balance_updated_at'])
+            entity = m["model"].objects.select_for_update().get(pk=m["pk"])
+            entity.balance = m["expected"]
+            entity.save(update_fields=["balance", "balance_updated_at"])
             balance_fixes += 1
 
     for m in invoice_mismatches:
         with db_transaction.atomic():
-            inv = NewInvoice.objects.select_for_update().get(pk=m['pk'])
-            inv.paid_amount = m['expected']
+            inv = NewInvoice.objects.select_for_update().get(pk=m["pk"])
+            inv.paid_amount = m["expected"]
             inv.update_status()
-            inv.save(update_fields=['paid_amount', 'status', 'updated_at'])
+            inv.save(update_fields=["paid_amount", "status", "updated_at"])
             invoice_fixes += 1
 
     if balance_fixes:
         logger.warning(
-            '[repair_balance_consistency] Fixed %d balance mismatches', balance_fixes,
+            "[repair_balance_consistency] Fixed %d balance mismatches",
+            balance_fixes,
         )
     if invoice_fixes:
         logger.warning(
-            '[repair_balance_consistency] Fixed %d invoice paid_amount mismatches', invoice_fixes,
+            "[repair_balance_consistency] Fixed %d invoice paid_amount mismatches",
+            invoice_fixes,
         )
     if balance_fixes == 0 and invoice_fixes == 0:
-        logger.info('[repair_balance_consistency] Nothing to repair')
-    return {'balance_fixes': balance_fixes, 'invoice_fixes': invoice_fixes}
+        logger.info("[repair_balance_consistency] Nothing to repair")
+    return {"balance_fixes": balance_fixes, "invoice_fixes": invoice_fixes}
 
 
 @shared_task(bind=True, max_retries=1, default_retry_delay=300, time_limit=300)
@@ -375,10 +384,10 @@ def sync_sitepro_invoices(self):
     Periodic task: sync new invoices to site.pro and pull updated payment status.
     Runs daily via celery beat.
     """
-    with task_lock('lock:sync_sitepro', ttl=600) as acquired:
+    with task_lock("lock:sync_sitepro", ttl=600) as acquired:
         if not acquired:
-            logger.warning('[sync_sitepro] Другой прогон ещё выполняется — skip')
-            return {'status': 'locked'}
+            logger.warning("[sync_sitepro] Другой прогон ещё выполняется — skip")
+            return {"status": "locked"}
         return _sync_sitepro_invoices_inner()
 
 
@@ -391,44 +400,45 @@ def _sync_sitepro_invoices_inner():
 
     conn = SiteProConnection.objects.filter(is_active=True).first()
     if not conn:
-        logger.info('[sync_sitepro] No active SiteProConnection, skipping')
-        return {'status': 'no_connection'}
+        logger.info("[sync_sitepro] No active SiteProConnection, skipping")
+        return {"status": "no_connection"}
 
     svc = SiteProService(conn)
-    result = {'pushed': 0, 'updated_payments': 0, 'errors': []}
+    result = {"pushed": 0, "updated_payments": 0, "errors": []}
 
     if conn.auto_push_on_issue:
         unsent = NewInvoice.objects.filter(
-            status='ISSUED',
-            document_type='INVOICE',
+            status="ISSUED",
+            document_type="INVOICE",
         ).exclude(
             sitepro_syncs__connection=conn,
-            sitepro_syncs__sync_status='SENT',
+            sitepro_syncs__sync_status="SENT",
         )
         for inv in unsent[:50]:
             try:
                 svc.push_invoice(inv)
-                result['pushed'] += 1
+                result["pushed"] += 1
             except Exception as e:
-                result['errors'].append(f'push {inv.number}: {str(e)[:100]}')
+                result["errors"].append(f"push {inv.number}: {str(e)[:100]}")
 
     try:
         from django.db import transaction as db_transaction
 
         sp_sales = svc.list_all_sales()
-        sp_real_by_id = {str(s['id']): s for s in sp_sales if s.get('isSale')}
+        sp_real_by_id = {str(s["id"]): s for s in sp_sales if s.get("isSale")}
 
         syncs = SiteProInvoiceSync.objects.filter(
-            connection=conn, sync_status='SENT',
-        ).select_related('invoice')
+            connection=conn,
+            sync_status="SENT",
+        ).select_related("invoice")
 
         for sync_obj in syncs:
             sp_sale = sp_real_by_id.get(sync_obj.external_id)
             if not sp_sale:
                 continue
-            sp_amount = Decimal(str(sp_sale.get('sumWithVat', 0) or 0))
-            sp_balance = Decimal(str(sp_sale.get('currencyBalance', 0) or 0))
-            sp_paid = max(sp_amount - sp_balance, Decimal('0'))
+            sp_amount = Decimal(str(sp_sale.get("sumWithVat", 0) or 0))
+            sp_balance = Decimal(str(sp_sale.get("currencyBalance", 0) or 0))
+            sp_paid = max(sp_amount - sp_balance, Decimal("0"))
 
             # Перечитываем инвойс с row-level lock внутри короткой транзакции:
             # между чтением paid_amount и сохранением могут проскочить сигналы
@@ -436,22 +446,24 @@ def _sync_sitepro_invoices_inner():
             # момент кто-то регистрирует платёж параллельно).
             with db_transaction.atomic():
                 inv = NewInvoice.objects.select_for_update().get(pk=sync_obj.invoice_id)
-                if abs(inv.paid_amount - sp_paid) > Decimal('0.01'):
+                if abs(inv.paid_amount - sp_paid) > Decimal("0.01"):
                     inv.paid_amount = sp_paid
                     inv.update_status()
-                    inv.save(update_fields=['paid_amount', 'status', 'updated_at'])
-                    result['updated_payments'] += 1
+                    inv.save(update_fields=["paid_amount", "status", "updated_at"])
+                    result["updated_payments"] += 1
 
     except Exception as e:
-        result['errors'].append(f'pull: {str(e)[:200]}')
+        result["errors"].append(f"pull: {str(e)[:200]}")
 
     conn.last_synced_at = timezone.now()
-    conn.last_error = '; '.join(result['errors']) if result['errors'] else ''
-    conn.save(update_fields=['last_synced_at', 'last_error', 'updated_at'])
+    conn.last_error = "; ".join(result["errors"]) if result["errors"] else ""
+    conn.save(update_fields=["last_synced_at", "last_error", "updated_at"])
 
     logger.info(
-        '[sync_sitepro] pushed=%d, updated_payments=%d, errors=%d',
-        result['pushed'], result['updated_payments'], len(result['errors']),
+        "[sync_sitepro] pushed=%d, updated_payments=%d, errors=%d",
+        result["pushed"],
+        result["updated_payments"],
+        len(result["errors"]),
     )
     return result
 
@@ -475,42 +487,43 @@ def check_revolut_jwt_expiry(self):
     from core.models_banking import BankConnection
 
     THRESHOLD_DAYS = 14
-    summary = {'expired': [], 'warning': [], 'ok': []}
+    summary = {"expired": [], "warning": [], "ok": []}
 
-    for conn in BankConnection.objects.filter(bank_type='REVOLUT', is_active=True):
+    for conn in BankConnection.objects.filter(bank_type="REVOLUT", is_active=True):
         days = conn.jwt_days_until_expiry
         if days is None:
             continue
 
-        item = {'id': conn.pk, 'name': str(conn), 'days': days}
+        item = {"id": conn.pk, "name": str(conn), "days": days}
 
         if days < 0:
-            summary['expired'].append(item)
+            summary["expired"].append(item)
             msg = (
-                f'JWT-assertion истёк {-days} дн. назад. Синхронизация Revolut '
-                f'не работает. Перегенерируйте: python manage.py '
-                f'regenerate_revolut_jwt --private-key certs/privatecert.pem'
+                f"JWT-assertion истёк {-days} дн. назад. Синхронизация Revolut "
+                f"не работает. Перегенерируйте: python manage.py "
+                f"regenerate_revolut_jwt --private-key certs/privatecert.pem"
             )
-            logger.error('[check_revolut_jwt_expiry] %s: %s', conn, msg)
+            logger.error("[check_revolut_jwt_expiry] %s: %s", conn, msg)
             # Перетираем last_error только если там нет уже более свежей ошибки
             # о просроченном JWT (чтобы не плодить save'ы).
-            if 'JWT' not in (conn.last_error or ''):
+            if "JWT" not in (conn.last_error or ""):
                 conn.last_error = msg[:500]
-                conn.save(update_fields=['last_error', 'updated_at'])
+                conn.save(update_fields=["last_error", "updated_at"])
         elif days <= THRESHOLD_DAYS:
-            summary['warning'].append(item)
+            summary["warning"].append(item)
             logger.warning(
-                '[check_revolut_jwt_expiry] %s: JWT истекает через %d дн. — '
-                'пересоздайте заранее командой regenerate_revolut_jwt',
-                conn, days,
+                "[check_revolut_jwt_expiry] %s: JWT истекает через %d дн. — "
+                "пересоздайте заранее командой regenerate_revolut_jwt",
+                conn,
+                days,
             )
         else:
-            summary['ok'].append(item)
+            summary["ok"].append(item)
 
-    if not summary['expired'] and not summary['warning']:
+    if not summary["expired"] and not summary["warning"]:
         logger.info(
-            '[check_revolut_jwt_expiry] OK — у всех %d подключений JWT валиден',
-            len(summary['ok']),
+            "[check_revolut_jwt_expiry] OK — у всех %d подключений JWT валиден",
+            len(summary["ok"]),
         )
 
     return summary
@@ -528,10 +541,10 @@ def sync_bank_and_reconcile(self):
     выполняться параллельно (иначе возможен осиротевший TOPUP — пара
     TOPUP+PAYMENT создаётся не атомарно относительно конкурента).
     """
-    with task_lock('lock:sync_bank', ttl=900) as acquired:
+    with task_lock("lock:sync_bank", ttl=900) as acquired:
         if not acquired:
-            logger.warning('[sync_bank] Другой прогон ещё выполняется — skip')
-            return {'status': 'locked'}
+            logger.warning("[sync_bank] Другой прогон ещё выполняется — skip")
+            return {"status": "locked"}
         return _sync_bank_and_reconcile_inner()
 
 
@@ -545,48 +558,60 @@ def _sync_bank_and_reconcile_inner():
     errors = 0
 
     for conn in BankConnection.objects.filter(is_active=True):
-        if conn.bank_type != 'REVOLUT':
+        if conn.bank_type != "REVOLUT":
             continue
         try:
             service = RevolutService(conn)
             result = service.sync_all()
-            if result['error']:
+            if result["error"]:
                 errors += 1
-                logger.error('[sync_bank] %s error: %s', conn, result['error'])
+                logger.error("[sync_bank] %s error: %s", conn, result["error"])
             else:
-                n_tx = len(result['transactions'])
+                n_tx = len(result["transactions"])
                 total_transactions += n_tx
-                logger.info('[sync_bank] %s: %d accounts, %d transactions, %d expenses',
-                            conn, len(result['accounts']), n_tx,
-                            result.get('expenses_updated', 0))
+                logger.info(
+                    "[sync_bank] %s: %d accounts, %d transactions, %d expenses",
+                    conn,
+                    len(result["accounts"]),
+                    n_tx,
+                    result.get("expenses_updated", 0),
+                )
         except Exception as exc:
             errors += 1
-            logger.error('[sync_bank] %s failed: %s', conn, exc, exc_info=True)
+            logger.error("[sync_bank] %s failed: %s", conn, exc, exc_info=True)
 
-    outgoing = {'auto_paid': [], 'linked_only': [], 'errors': []}
-    incoming = {'total': 0}
+    outgoing = {"auto_paid": [], "linked_only": [], "errors": []}
+    incoming = {"total": 0}
 
     if errors == 0:
         try:
             outgoing = BillingService.auto_reconcile_bank_transactions()
-            logger.info('[sync_bank] outgoing reconcile: %d paid, %d linked',
-                        len(outgoing['auto_paid']), len(outgoing['linked_only']))
+            logger.info(
+                "[sync_bank] outgoing reconcile: %d paid, %d linked",
+                len(outgoing["auto_paid"]),
+                len(outgoing["linked_only"]),
+            )
         except Exception as exc:
-            logger.error('[sync_bank] outgoing reconcile failed: %s', exc, exc_info=True)
+            logger.error("[sync_bank] outgoing reconcile failed: %s", exc, exc_info=True)
 
         try:
             incoming = reconcile_incoming_payments()
-            logger.info('[sync_bank] incoming reconcile: %d matched (R1=%d R2=%d R3=%d)',
-                        incoming['total'], incoming['rule1'], incoming['rule2'], incoming['rule3'])
+            logger.info(
+                "[sync_bank] incoming reconcile: %d matched (R1=%d R2=%d R3=%d)",
+                incoming["total"],
+                incoming["rule1"],
+                incoming["rule2"],
+                incoming["rule3"],
+            )
         except Exception as exc:
-            logger.error('[sync_bank] incoming reconcile failed: %s', exc, exc_info=True)
+            logger.error("[sync_bank] incoming reconcile failed: %s", exc, exc_info=True)
 
     return {
-        'transactions_synced': total_transactions,
-        'sync_errors': errors,
-        'outgoing_paid': len(outgoing['auto_paid']),
-        'outgoing_linked': len(outgoing['linked_only']),
-        'incoming_matched': incoming.get('total', 0),
+        "transactions_synced": total_transactions,
+        "sync_errors": errors,
+        "outgoing_paid": len(outgoing["auto_paid"]),
+        "outgoing_linked": len(outgoing["linked_only"]),
+        "incoming_matched": incoming.get("total", 0),
     }
 
 
@@ -594,15 +619,14 @@ def _sync_bank_and_reconcile_inner():
 def parse_receipt_task(self, transaction_id):
     """Parse receipt image attached to a personal expense transaction via Claude Vision."""
     from core.services.receipt_parser_service import parse_transaction_receipt
+
     try:
         result = parse_transaction_receipt(transaction_id)
         if result:
-            logger.info("[parse_receipt] Transaction %d parsed: %s",
-                        transaction_id, result.get('ai_summary', ''))
+            logger.info("[parse_receipt] Transaction %d parsed: %s", transaction_id, result.get("ai_summary", ""))
         return result
     except Exception as exc:
-        logger.error("[parse_receipt] Failed for transaction %d: %s",
-                     transaction_id, exc, exc_info=True)
+        logger.error("[parse_receipt] Failed for transaction %d: %s", transaction_id, exc, exc_info=True)
         raise self.retry(exc=exc)
 
 
@@ -611,18 +635,20 @@ def parse_pending_receipts(self):
     """Fallback: parse receipts that were missed (have attachment but no receipt_data)."""
     from core.models_billing import ExpenseCategory, Transaction
 
-    personal_cats = list(ExpenseCategory.objects.filter(
-        category_type='PERSONAL'
-    ).values_list('id', flat=True))
+    personal_cats = list(ExpenseCategory.objects.filter(category_type="PERSONAL").values_list("id", flat=True))
 
     if not personal_cats:
-        return {'parsed': 0}
+        return {"parsed": 0}
 
-    pending = Transaction.objects.filter(
-        category_id__in=personal_cats,
-        status='COMPLETED',
-        receipt_data__isnull=True,
-    ).exclude(attachment='').exclude(attachment__isnull=True)[:20]
+    pending = (
+        Transaction.objects.filter(
+            category_id__in=personal_cats,
+            status="COMPLETED",
+            receipt_data__isnull=True,
+        )
+        .exclude(attachment="")
+        .exclude(attachment__isnull=True)[:20]
+    )
 
     parsed = 0
     for tx in pending:
@@ -633,13 +659,14 @@ def parse_pending_receipts(self):
             logger.error("[parse_pending_receipts] Failed to queue tx %d: %s", tx.id, e)
 
     logger.info("[parse_pending_receipts] Queued %d receipts for parsing", parsed)
-    return {'queued': parsed}
+    return {"queued": parsed}
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
 def process_telegram_starts_task(self):
     """Привязывает chat_id к клиентам по персональным ссылкам ?start=<token>."""
     from core.services.telegram_service import process_telegram_starts
+
     try:
         linked = process_telegram_starts()
         if linked:
@@ -654,8 +681,9 @@ def send_car_unload_notification_task(self, car_id):
     from core.models import Car
     from core.services.email_service import CarNotificationService
     from core.services.telegram_service import TelegramNotificationService
+
     try:
-        car = Car.objects.select_related('client', 'warehouse').get(id=car_id)
+        car = Car.objects.select_related("client", "warehouse").get(id=car_id)
     except Car.DoesNotExist:
         logger.warning("Car %s not found, skipping unload notification", car_id)
         return
@@ -686,29 +714,32 @@ def generate_autotransport_invoices_task(self, autotransport_id):
     может занимать секунды).
     """
     from core.models import AutoTransport
+
     try:
         at = AutoTransport.objects.get(pk=autotransport_id)
     except AutoTransport.DoesNotExist:
-        logger.warning("generate_autotransport_invoices_task: AutoTransport %s not found",
-                       autotransport_id)
-        return {'created': 0, 'missing': True}
+        logger.warning("generate_autotransport_invoices_task: AutoTransport %s not found", autotransport_id)
+        return {"created": 0, "missing": True}
 
-    if at.status != 'FORMED':
+    if at.status != "FORMED":
         logger.info(
             "generate_autotransport_invoices_task: AT %s not FORMED (%s), skip",
-            at.number, at.status,
+            at.number,
+            at.status,
         )
-        return {'created': 0, 'skipped': True}
+        return {"created": 0, "skipped": True}
 
     try:
         invoices = at.generate_invoices()
         count = len(invoices) if invoices else 0
         logger.info("AutoTransport %s: %d invoices generated (async)", at.number, count)
-        return {'created': count}
+        return {"created": count}
     except Exception as exc:
         logger.error(
             "AutoTransport %s invoice error (async): %s",
-            at.number, exc, exc_info=True,
+            at.number,
+            exc,
+            exc_info=True,
         )
         raise self.retry(exc=exc)
 
@@ -728,15 +759,15 @@ def process_invoice_audit_task(self, audit_id):
         audit = InvoiceAudit.objects.get(pk=audit_id)
     except InvoiceAudit.DoesNotExist:
         logger.warning("process_invoice_audit_task: audit %s not found", audit_id)
-        return {'ok': False, 'missing': True}
+        return {"ok": False, "missing": True}
 
-    if audit.status in ('OK', 'HAS_ISSUES'):
-        return {'ok': True, 'skipped': f'already {audit.status}'}
+    if audit.status in ("OK", "HAS_ISSUES"):
+        return {"ok": True, "skipped": f"already {audit.status}"}
 
     try:
         process_invoice_audit(audit_id)
         audit.refresh_from_db()
-        return {'ok': True, 'status': audit.status}
+        return {"ok": True, "status": audit.status}
     except Exception as exc:
         logger.exception("process_invoice_audit_task failed for audit %s", audit_id)
         raise self.retry(exc=exc)
@@ -757,21 +788,21 @@ def push_invoice_to_sitepro_task(self, invoice_id):
         invoice = NewInvoice.objects.get(pk=invoice_id)
     except NewInvoice.DoesNotExist:
         logger.warning("push_invoice_to_sitepro_task: invoice %s not found", invoice_id)
-        return {'ok': False, 'missing': True}
+        return {"ok": False, "missing": True}
 
-    if invoice.document_type != 'INVOICE':
-        return {'ok': False, 'skipped': 'not PARDP'}
-    if invoice.status != 'ISSUED':
-        return {'ok': False, 'skipped': f'status={invoice.status}'}
+    if invoice.document_type != "INVOICE":
+        return {"ok": False, "skipped": "not PARDP"}
+    if invoice.status != "ISSUED":
+        return {"ok": False, "skipped": f"status={invoice.status}"}
 
     try:
         conn = SiteProConnection.objects.filter(is_active=True).first()
-        if not conn or not getattr(conn, 'auto_push_on_issue', False):
-            return {'ok': False, 'skipped': 'auto_push disabled'}
+        if not conn or not getattr(conn, "auto_push_on_issue", False):
+            return {"ok": False, "skipped": "auto_push disabled"}
         service = SiteProService(conn)
         result = service.push_invoice(invoice)
         logger.info("site.pro push for %s: %s", invoice.number, result)
-        return {'ok': True, 'result': str(result)[:200]}
+        return {"ok": True, "result": str(result)[:200]}
     except Exception as exc:
         logger.error("site.pro push failed for invoice %s: %s", invoice_id, exc, exc_info=True)
         raise self.retry(exc=exc)
@@ -801,21 +832,21 @@ def process_scan_job(self, job_id):
         job = ScanProcessingJob.objects.get(pk=job_id)
     except ScanProcessingJob.DoesNotExist:
         logger.warning("process_scan_job: ScanProcessingJob #%s не найден", job_id)
-        return {'ok': False, 'reason': 'not_found'}
+        return {"ok": False, "reason": "not_found"}
 
     if job.status not in (ScanProcessingJob.STATUS_PENDING, ScanProcessingJob.STATUS_ERROR):
         logger.info("process_scan_job: skipping job #%s in status=%s", job_id, job.status)
-        return {'ok': False, 'reason': f'status_{job.status}'}
+        return {"ok": False, "reason": f"status_{job.status}"}
 
     if not job.original_file:
         job.status = ScanProcessingJob.STATUS_ERROR
         job.error_message = "Нет исходного PDF"
-        job.save(update_fields=['status', 'error_message'])
-        return {'ok': False, 'reason': 'no_file'}
+        job.save(update_fields=["status", "error_message"])
+        return {"ok": False, "reason": "no_file"}
 
     job.status = ScanProcessingJob.STATUS_PROCESSING
-    job.error_message = ''
-    job.save(update_fields=['status', 'error_message'])
+    job.error_message = ""
+    job.save(update_fields=["status", "error_message"])
 
     try:
         # FileField даёт нам путь, только если используется FileSystemStorage.
@@ -832,12 +863,12 @@ def process_scan_job(self, job_id):
         logger.exception("process_scan_job #%s failed", job_id)
         job.status = ScanProcessingJob.STATUS_ERROR
         job.error_message = f"{type(exc).__name__}: {exc}"[:500]
-        job.save(update_fields=['status', 'error_message'])
+        job.save(update_fields=["status", "error_message"])
         # retry только для сетевых/транзиентных, чтобы не зацикливаться на
         # повреждённых PDF.
-        if 'rate limit' in str(exc).lower() or 'timeout' in str(exc).lower():
+        if "rate limit" in str(exc).lower() or "timeout" in str(exc).lower():
             raise self.retry(exc=exc)
-        return {'ok': False, 'error': str(exc)[:200]}
+        return {"ok": False, "error": str(exc)[:200]}
 
     job.extracted_data = extracted
     job.processed_at = timezone.now()
@@ -846,8 +877,8 @@ def process_scan_job(self, job_id):
         job.error_message = "AI вернул пустой ответ — попробуйте улучшить качество скана"
     else:
         job.status = ScanProcessingJob.STATUS_NEEDS_REVIEW
-    job.save(update_fields=['extracted_data', 'processed_at', 'status', 'error_message'])
-    return {'ok': True, 'job_id': job.id, 'status': job.status}
+    job.save(update_fields=["extracted_data", "processed_at", "status", "error_message"])
+    return {"ok": True, "job_id": job.id, "status": job.status}
 
 
 @shared_task(bind=True, max_retries=1, default_retry_delay=600, time_limit=180)
@@ -878,12 +909,12 @@ def check_business_rules(self):
     BASELINE = {
         # baseline = «известные нарушения, оставленные сознательно» на
         # 2026-04-21. Сверх этого — повод алертить.
-        'fact_no_tx': 1,
-        'fact_no_file': 41,
-        'av_with_tx': 1,
-        'pardp_no_tx': 6,
-        'pardp_tx_mismatch': 2,
-        'pardp_no_file': 0,
+        "fact_no_tx": 1,
+        "fact_no_file": 41,
+        "av_with_tx": 1,
+        "pardp_no_tx": 6,
+        "pardp_tx_mismatch": 2,
+        "pardp_no_file": 0,
     }
 
     def _has_file(inv):
@@ -891,6 +922,7 @@ def check_business_rules(self):
             return False
         try:
             from pathlib import Path
+
             p = Path(inv.attachment.path)
             return p.exists() and p.stat().st_size > 0
         except (ValueError, NotImplementedError):
@@ -898,70 +930,58 @@ def check_business_rules(self):
 
     violations: dict[str, list[int]] = {k: [] for k in BASELINE}
 
-    fact_qs = (
-        NewInvoice.objects.filter(document_type='INVOICE_FACT')
-        .prefetch_related('transactions')
-    )
+    fact_qs = NewInvoice.objects.filter(document_type="INVOICE_FACT").prefetch_related("transactions")
     for inv in fact_qs:
-        if inv.direction != 'INCOMING':
+        if inv.direction != "INCOMING":
             continue
-        txs = [t for t in inv.transactions.all() if t.type == 'PAYMENT' and t.status == 'COMPLETED']
+        txs = [t for t in inv.transactions.all() if t.type == "PAYMENT" and t.status == "COMPLETED"]
         if not txs:
-            violations['fact_no_tx'].append(inv.id)
+            violations["fact_no_tx"].append(inv.id)
         if not _has_file(inv):
-            violations['fact_no_file'].append(inv.id)
+            violations["fact_no_file"].append(inv.id)
 
-    av_qs = (
-        NewInvoice.objects.filter(document_type='PROFORMA')
-        .prefetch_related('transactions')
-    )
+    av_qs = NewInvoice.objects.filter(document_type="PROFORMA").prefetch_related("transactions")
     for inv in av_qs:
-        if inv.direction != 'OUTGOING':
+        if inv.direction != "OUTGOING":
             continue
         if inv.transactions.exists():
-            violations['av_with_tx'].append(inv.id)
+            violations["av_with_tx"].append(inv.id)
 
-    pardp_qs = (
-        NewInvoice.objects.filter(document_type='INVOICE')
-        .prefetch_related('transactions')
-    )
+    pardp_qs = NewInvoice.objects.filter(document_type="INVOICE").prefetch_related("transactions")
     for inv in pardp_qs:
-        if inv.direction != 'OUTGOING':
+        if inv.direction != "OUTGOING":
             continue
-        txs_completed = [
-            t for t in inv.transactions.all()
-            if t.type == 'PAYMENT' and t.status == 'COMPLETED'
-        ]
+        txs_completed = [t for t in inv.transactions.all() if t.type == "PAYMENT" and t.status == "COMPLETED"]
         if not txs_completed:
-            violations['pardp_no_tx'].append(inv.id)
+            violations["pardp_no_tx"].append(inv.id)
         else:
-            paid = sum((t.amount for t in txs_completed), Decimal('0'))
-            if abs(paid - inv.total) > Decimal('0.01') and inv.status != 'PAID':
-                violations['pardp_tx_mismatch'].append(inv.id)
+            paid = sum((t.amount for t in txs_completed), Decimal("0"))
+            if abs(paid - inv.total) > Decimal("0.01") and inv.status != "PAID":
+                violations["pardp_tx_mismatch"].append(inv.id)
         if not _has_file(inv):
-            violations['pardp_no_file'].append(inv.id)
+            violations["pardp_no_file"].append(inv.id)
 
     counts = {k: len(v) for k, v in violations.items()}
     overflow = {k: counts[k] for k in BASELINE if counts[k] > BASELINE[k]}
 
     msg = (
-        '[check_business_rules] fact_no_tx=%(fact_no_tx)d '
-        'fact_no_file=%(fact_no_file)d av_with_tx=%(av_with_tx)d '
-        'pardp_no_tx=%(pardp_no_tx)d pardp_tx_mismatch=%(pardp_tx_mismatch)d '
-        'pardp_no_file=%(pardp_no_file)d' % counts
+        "[check_business_rules] fact_no_tx=%(fact_no_tx)d "
+        "fact_no_file=%(fact_no_file)d av_with_tx=%(av_with_tx)d "
+        "pardp_no_tx=%(pardp_no_tx)d pardp_tx_mismatch=%(pardp_tx_mismatch)d "
+        "pardp_no_file=%(pardp_no_file)d" % counts
     )
     if overflow:
-        logger.warning('%s — над baseline: %s', msg, overflow)
+        logger.warning("%s — над baseline: %s", msg, overflow)
     else:
-        logger.info('%s — без новых нарушений', msg)
+        logger.info("%s — без новых нарушений", msg)
 
     return {
-        'counts': counts,
-        'baseline': BASELINE,
-        'overflow': overflow,
+        "counts": counts,
+        "baseline": BASELINE,
+        "overflow": overflow,
         # сохраняем первые 30 id, чтобы dashboards / Sentry могли
         # показывать конкретные инвойсы.
-        'sample_ids': {k: v[:30] for k, v in violations.items()},
+        "sample_ids": {k: v[:30] for k, v in violations.items()},
     }
 
 
@@ -969,9 +989,14 @@ def check_business_rules(self):
 # DEFERRED RECALCULATIONS (CarService → Invoice, Catalog → Cars)
 # ============================================================================
 
+
 @shared_task(
-    bind=True, max_retries=2, default_retry_delay=30, time_limit=120,
-    autoretry_for=(Exception,), retry_backoff=True,
+    bind=True,
+    max_retries=2,
+    default_retry_delay=30,
+    time_limit=120,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
 )
 def regenerate_invoices_for_car_task(self, car_id):
     """Пересоздать позиции всех открытых инвойсов, связанных с указанной машиной.
@@ -986,21 +1011,21 @@ def regenerate_invoices_for_car_task(self, car_id):
 
     from core.mixins import REGENERATABLE_INVOICE_STATUSES
     from core.models_billing import NewInvoice
+
     invoice_ids = list(
         NewInvoice.objects.filter(
-            cars__id=car_id, status__in=REGENERATABLE_INVOICE_STATUSES,
-        ).values_list('id', flat=True).distinct()
+            cars__id=car_id,
+            status__in=REGENERATABLE_INVOICE_STATUSES,
+        )
+        .values_list("id", flat=True)
+        .distinct()
     )
     skipped = 0
     regenerated = 0
     for invoice_id in invoice_ids:
         try:
             with db_transaction.atomic():
-                invoice = (
-                    NewInvoice.objects
-                    .select_for_update(nowait=True)
-                    .get(id=invoice_id)
-                )
+                invoice = NewInvoice.objects.select_for_update(nowait=True).get(id=invoice_id)
                 invoice.regenerate_items_from_cars()
                 regenerated += 1
         except OperationalError:
@@ -1014,14 +1039,20 @@ def regenerate_invoices_for_car_task(self, car_id):
     if regenerated or skipped:
         logger.info(
             "[regenerate_invoices_for_car] car=%s regenerated=%s skipped=%s",
-            car_id, regenerated, skipped,
+            car_id,
+            regenerated,
+            skipped,
         )
-    return {'car_id': car_id, 'regenerated': regenerated, 'skipped': skipped}
+    return {"car_id": car_id, "regenerated": regenerated, "skipped": skipped}
 
 
 @shared_task(
-    bind=True, max_retries=2, default_retry_delay=30, time_limit=180,
-    autoretry_for=(Exception,), retry_backoff=True,
+    bind=True,
+    max_retries=2,
+    default_retry_delay=30,
+    time_limit=180,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
 )
 def recalculate_cars_total_price_task(self, car_ids):
     """Пересчитать Car.total_price / days / storage_cost для пачки машин.
@@ -1039,15 +1070,13 @@ def recalculate_cars_total_price_task(self, car_ids):
     from core.models.services import prefetch_service_objects
 
     if not car_ids:
-        return {'updated': 0}
+        return {"updated": 0}
 
-    cars = list(Car.objects.filter(pk__in=car_ids).prefetch_related('car_services', 'warehouse'))
+    cars = list(Car.objects.filter(pk__in=car_ids).prefetch_related("car_services", "warehouse"))
 
     # P2 (AUDIT_ROUND3): батч-резолвинг каталога услуг — максимум 4 запроса
     # in_bulk + set_many вместо cache/DB-lookup'а на каждую услугу в цикле.
-    prefetch_service_objects(
-        svc for car in cars for svc in car.car_services.all()
-    )
+    prefetch_service_objects(svc for car in cars for svc in car.car_services.all())
 
     cars_to_update = []
     for car in cars:
@@ -1056,20 +1085,23 @@ def recalculate_cars_total_price_task(self, car_ids):
             cars_to_update.append(car)
         except Exception as exc:
             logger.error(
-                "[recalculate_cars_total_price] car=%s failed: %s", car.pk, exc,
+                "[recalculate_cars_total_price] car=%s failed: %s",
+                car.pk,
+                exc,
                 exc_info=True,
             )
     if cars_to_update:
         Car.objects.bulk_update(
             cars_to_update,
-            ['total_price', 'days', 'storage_cost'],
+            ["total_price", "days", "storage_cost"],
             batch_size=200,
         )
     logger.info(
         "[recalculate_cars_total_price] requested=%s updated=%s",
-        len(car_ids), len(cars_to_update),
+        len(car_ids),
+        len(cars_to_update),
     )
-    return {'requested': len(car_ids), 'updated': len(cars_to_update)}
+    return {"requested": len(car_ids), "updated": len(cars_to_update)}
 
 
 @shared_task(time_limit=600)
@@ -1086,9 +1118,9 @@ def refresh_unloaded_storage_daily():
     """
     from core.models import Car
 
-    ids = list(Car.objects.filter(status='UNLOADED').values_list('pk', flat=True))
+    ids = list(Car.objects.filter(status="UNLOADED").values_list("pk", flat=True))
     batch_size = 500
     for i in range(0, len(ids), batch_size):
-        recalculate_cars_total_price_task.delay(ids[i:i + batch_size])
+        recalculate_cars_total_price_task.delay(ids[i : i + batch_size])
     logger.info("[refresh_unloaded_storage_daily] enqueued %s cars", len(ids))
-    return {'enqueued': len(ids)}
+    return {"enqueued": len(ids)}

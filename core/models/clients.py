@@ -27,7 +27,11 @@ class Client(BalanceMethodsMixin, models.Model):
     telegram_chat_id4 = models.CharField(max_length=64, blank=True, null=True, verbose_name="Telegram Chat ID 4")
     telegram_enabled = models.BooleanField(default=True, verbose_name="Telegram уведомления")
     telegram_link_token = models.CharField(
-        max_length=32, blank=True, null=True, unique=True, editable=False,
+        max_length=32,
+        blank=True,
+        null=True,
+        unique=True,
+        editable=False,
         verbose_name="Токен Telegram-привязки",
     )
     tariff_type = models.CharField(

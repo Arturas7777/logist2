@@ -43,45 +43,45 @@ class SiteProService:
 
     # ─── Эндпоинты ───────────────────────────────────────────────────────
     # Продажи (инвойсы) — через warehouse module
-    SALES_CREATE = '/warehouse/sales/create'
-    SALES_UPDATE = '/warehouse/sales/update'
-    SALES_LIST = '/warehouse/sales/list'
-    SALES_DELETE = '/warehouse/sales/delete'
-    SALE_ITEMS_CREATE = '/warehouse/sale-items/create'
-    SALE_ITEMS_CREATE_SIMPLE = '/warehouse/sale-items/create-simple'
-    SALE_ITEMS_LIST = '/warehouse/sale-items/list'
-    SALE_ITEMS_UPDATE = '/warehouse/sale-items/update'
-    SALE_ITEMS_DELETE = '/warehouse/sale-items/delete'
-    SALE_INVOICE_GET = '/warehouse/invoices/get-sale'
-    SALE_REPORT_GENERATE = '/warehouse/sale-reports/generate'
+    SALES_CREATE = "/warehouse/sales/create"
+    SALES_UPDATE = "/warehouse/sales/update"
+    SALES_LIST = "/warehouse/sales/list"
+    SALES_DELETE = "/warehouse/sales/delete"
+    SALE_ITEMS_CREATE = "/warehouse/sale-items/create"
+    SALE_ITEMS_CREATE_SIMPLE = "/warehouse/sale-items/create-simple"
+    SALE_ITEMS_LIST = "/warehouse/sale-items/list"
+    SALE_ITEMS_UPDATE = "/warehouse/sale-items/update"
+    SALE_ITEMS_DELETE = "/warehouse/sale-items/delete"
+    SALE_INVOICE_GET = "/warehouse/invoices/get-sale"
+    SALE_REPORT_GENERATE = "/warehouse/sale-reports/generate"
 
     # Клиенты
-    CLIENTS_CREATE = '/clients/create'
-    CLIENTS_UPDATE = '/clients/update'
-    CLIENTS_LIST = '/clients/list'
-    CLIENTS_DELETE = '/clients/delete'
-    CLIENT_BALANCE = '/client/sales/balance'
+    CLIENTS_CREATE = "/clients/create"
+    CLIENTS_UPDATE = "/clients/update"
+    CLIENTS_LIST = "/clients/list"
+    CLIENTS_DELETE = "/clients/delete"
+    CLIENT_BALANCE = "/client/sales/balance"
 
     # Банковские операции
-    BANK_SALE_PAYMENT = '/bank/sale-invoice/payment'
+    BANK_SALE_PAYMENT = "/bank/sale-invoice/payment"
 
     # Товары/услуги (справочник)
-    ITEMS_CREATE = '/reference-book/items/create'
-    ITEMS_LIST = '/reference-book/items/list'
+    ITEMS_CREATE = "/reference-book/items/create"
+    ITEMS_LIST = "/reference-book/items/list"
 
     # Файлы
-    FILE_UPLOAD = '/account/file-storage/upload'
+    FILE_UPLOAD = "/account/file-storage/upload"
 
     # Справочники
-    VAT_RATES_LIST = '/reference-book/vat-rates/list'
-    CURRENCIES_LIST = '/reference-book/currencies/list'
-    SERIES_LIST = '/reference-book/series/list'
-    WAREHOUSES_LIST = '/reference-book/warehouses/list'
-    OPERATION_TYPES_LIST = '/reference-book/operation-types/list'
-    COUNTRIES_LIST = '/reference-book/countries/list'
+    VAT_RATES_LIST = "/reference-book/vat-rates/list"
+    CURRENCIES_LIST = "/reference-book/currencies/list"
+    SERIES_LIST = "/reference-book/series/list"
+    WAREHOUSES_LIST = "/reference-book/warehouses/list"
+    OPERATION_TYPES_LIST = "/reference-book/operation-types/list"
+    COUNTRIES_LIST = "/reference-book/countries/list"
 
     # E-commerce (альтернативный путь создания)
-    ECOMMERCE_ORDERS_CREATE_SALE = '/e-commerce/orders/create-sale'
+    ECOMMERCE_ORDERS_CREATE_SALE = "/e-commerce/orders/create-sale"
 
     def __init__(self, connection):
         """
@@ -100,16 +100,14 @@ class SiteProService:
         """Возвращает API ключ для заголовка B1-Api-Key."""
         api_key = self.connection.api_key
         if not api_key:
-            raise SiteProAPIError(
-                'API ключ не задан. Введите API raktas в настройках подключения site.pro.'
-            )
+            raise SiteProAPIError("API ключ не задан. Введите API raktas в настройках подключения site.pro.")
         return api_key
 
     def _get_headers(self) -> dict:
         """Формирует стандартные заголовки для API запроса."""
         return {
-            'B1-Api-Key': self._get_api_key(),
-            'Content-Type': 'application/json',
+            "B1-Api-Key": self._get_api_key(),
+            "Content-Type": "application/json",
         }
 
     # ========================================================================
@@ -127,7 +125,7 @@ class SiteProService:
         Returns:
             dict с ответом API
         """
-        url = f'{self.base_url}{endpoint}'
+        url = f"{self.base_url}{endpoint}"
         payload = json.dumps(json_data or {})
 
         try:
@@ -135,7 +133,7 @@ class SiteProService:
                 url,
                 headers={
                     **self._get_headers(),
-                    'Content-Length': str(len(payload)),
+                    "Content-Length": str(len(payload)),
                 },
                 data=payload,
                 timeout=30,
@@ -147,17 +145,17 @@ class SiteProService:
             return {}
 
         except requests.RequestException as e:
-            status = getattr(e.response, 'status_code', None) if hasattr(e, 'response') else None
+            status = getattr(e.response, "status_code", None) if hasattr(e, "response") else None
             body = None
-            if hasattr(e, 'response') and e.response is not None:
+            if hasattr(e, "response") and e.response is not None:
                 try:
                     body = e.response.json()
                 except Exception:
                     body = e.response.text[:500] if e.response.text else None
-            error_msg = f'API POST {endpoint} ошибка: {e}'
+            error_msg = f"API POST {endpoint} ошибка: {e}"
             if body:
-                error_msg += f' | Response: {body}'
-            logger.error(f'[SitePro] {error_msg}')
+                error_msg += f" | Response: {body}"
+            logger.error(f"[SitePro] {error_msg}")
             raise SiteProAPIError(error_msg, status, body)
 
     # ========================================================================
@@ -173,41 +171,44 @@ class SiteProService:
             dict с результатом: success, error, details
         """
         result = {
-            'success': False,
-            'auth_method': 'B1-Api-Key',
-            'error': None,
-            'details': {},
+            "success": False,
+            "auth_method": "B1-Api-Key",
+            "error": None,
+            "details": {},
         }
 
         api_key = self.connection.api_key
         if not api_key:
-            result['error'] = 'API ключ не задан'
+            result["error"] = "API ключ не задан"
             return result
 
         try:
             # Попробуем получить список ставок НДС — простой запрос
-            data = self._api_post(self.VAT_RATES_LIST, {
-                'page': 1,
-                'rows': 10,
-            })
+            data = self._api_post(
+                self.VAT_RATES_LIST,
+                {
+                    "page": 1,
+                    "rows": 10,
+                },
+            )
 
-            result['success'] = True
-            result['details'] = {
-                'vat_rates_count': len(data.get('data', [])) if isinstance(data, dict) else 0,
-                'response_keys': list(data.keys()) if isinstance(data, dict) else [],
+            result["success"] = True
+            result["details"] = {
+                "vat_rates_count": len(data.get("data", [])) if isinstance(data, dict) else 0,
+                "response_keys": list(data.keys()) if isinstance(data, dict) else [],
             }
 
             # Обновляем статус подключения
-            self.connection.last_error = ''
+            self.connection.last_error = ""
             self.connection.last_synced_at = timezone.now()
-            self.connection.save(update_fields=['last_error', 'last_synced_at', 'updated_at'])
+            self.connection.save(update_fields=["last_error", "last_synced_at", "updated_at"])
 
-            logger.info(f'[SitePro] Подключение успешно. Ответ: {data}')
+            logger.info(f"[SitePro] Подключение успешно. Ответ: {data}")
 
         except SiteProAPIError as e:
-            result['error'] = str(e)
+            result["error"] = str(e)
             self.connection.last_error = str(e)[:500]
-            self.connection.save(update_fields=['last_error', 'updated_at'])
+            self.connection.save(update_fields=["last_error", "updated_at"])
 
         return result
 
@@ -228,21 +229,21 @@ class SiteProService:
         """
         rules = []
         if name:
-            rules.append({'field': 'name', 'op': 'cn', 'data': name})
+            rules.append({"field": "name", "op": "cn", "data": name})
         if code:
-            rules.append({'field': 'code', 'op': 'eq', 'data': code})
+            rules.append({"field": "code", "op": "eq", "data": code})
 
         data = {
-            'page': 1,
-            'rows': 50,
-            'filters': {
-                'groupOp': 'AND',
-                'rules': rules,
+            "page": 1,
+            "rows": 50,
+            "filters": {
+                "groupOp": "AND",
+                "rules": rules,
             },
         }
 
         result = self._api_post(self.CLIENTS_LIST, data)
-        return result.get('data', []) if isinstance(result, dict) else []
+        return result.get("data", []) if isinstance(result, dict) else []
 
     def create_client(self, client) -> dict:
         """
@@ -260,25 +261,25 @@ class SiteProService:
         location_id = self.connection.default_location_id or 1
 
         data = {
-            'name': client.name or '',
-            'code': getattr(client, 'company_code', '') or '',
-            'vatCode': getattr(client, 'vat_code', '') or '',
-            'address': getattr(client, 'address', '') or '',
-            'email': getattr(client, 'email', '') or '',
-            'phone': getattr(client, 'phone', '') or '',
-            'locationId': location_id,
+            "name": client.name or "",
+            "code": getattr(client, "company_code", "") or "",
+            "vatCode": getattr(client, "vat_code", "") or "",
+            "address": getattr(client, "address", "") or "",
+            "email": getattr(client, "email", "") or "",
+            "phone": getattr(client, "phone", "") or "",
+            "locationId": location_id,
         }
 
-        data = {k: v for k, v in data.items() if v not in (None, '')}
+        data = {k: v for k, v in data.items() if v not in (None, "")}
 
-        logger.info(f'[SitePro] Создание клиента: {client.name} (locationId={location_id})')
+        logger.info(f"[SitePro] Создание клиента: {client.name} (locationId={location_id})")
         result = self._api_post(self.CLIENTS_CREATE, data)
         # Новый API: {'message': 'Data saved...', 'data': {'id': X}, 'code': 200}.
         # Нормализуем — если id нет на верхнем уровне, поднимем его из data.
-        if not result.get('id') and isinstance(result.get('data'), dict):
-            nested = result['data']
+        if not result.get("id") and isinstance(result.get("data"), dict):
+            nested = result["data"]
             result = {**result, **{k: v for k, v in nested.items() if k not in result}}
-        logger.info(f'[SitePro] Клиент создан: id={result.get("id")}')
+        logger.info(f"[SitePro] Клиент создан: id={result.get('id')}")
         return result
 
     def get_or_create_client(self, client) -> int:
@@ -296,36 +297,37 @@ class SiteProService:
         Returns:
             ID клиента в site.pro (int)
         """
-        company_code = (getattr(client, 'company_code', '') or '').strip()
+        company_code = (getattr(client, "company_code", "") or "").strip()
         if company_code:
             existing = self.search_clients(code=company_code)
             if existing:
-                logger.debug(f'[SitePro] Клиент найден по code={company_code}: id={existing[0].get("id")}')
-                return existing[0].get('id')
+                logger.debug(f"[SitePro] Клиент найден по code={company_code}: id={existing[0].get('id')}")
+                return existing[0].get("id")
 
-        name = (client.name or '').strip()
+        name = (client.name or "").strip()
         if name:
             existing = self.search_clients(name=name)
             if existing:
-                logger.debug(f'[SitePro] Клиент найден по полному имени: id={existing[0].get("id")}')
-                return existing[0].get('id')
+                logger.debug(f"[SitePro] Клиент найден по полному имени: id={existing[0].get('id')}")
+                return existing[0].get("id")
 
             # Fallback: ищем по первому значимому слову имени (до пробела или скобки).
             # Это закрывает случай когда в Logist2 имя расширено доп. инфой
             # ("S-LINE Sergii Cherksasov (71544)"), а в site.pro компактное "S-LINE".
             import re
-            first_token = re.split(r'[\s(]', name, maxsplit=1)[0].strip()
+
+            first_token = re.split(r"[\s(]", name, maxsplit=1)[0].strip()
             if first_token and first_token != name and len(first_token) >= 2:
                 existing = self.search_clients(name=first_token)
                 if existing:
                     logger.info(
-                        f'[SitePro] Клиент найден по первому слову {first_token!r}: '
-                        f'id={existing[0].get("id")} (полное имя в site.pro: {existing[0].get("name")!r})'
+                        f"[SitePro] Клиент найден по первому слову {first_token!r}: "
+                        f"id={existing[0].get('id')} (полное имя в site.pro: {existing[0].get('name')!r})"
                     )
-                    return existing[0].get('id')
+                    return existing[0].get("id")
 
         result = self.create_client(client)
-        return result.get('id')
+        return result.get("id")
 
     # ========================================================================
     # INVOICE / SALE OPERATIONS
@@ -352,25 +354,22 @@ class SiteProService:
         existing_sync = SiteProInvoiceSync.objects.filter(
             connection=self.connection,
             invoice=invoice,
-            sync_status='SENT',
+            sync_status="SENT",
         ).first()
 
         if existing_sync and existing_sync.external_id:
-            logger.info(
-                f'[SitePro] Инвойс {invoice.number} уже отправлен '
-                f'(external_id={existing_sync.external_id})'
-            )
+            logger.info(f"[SitePro] Инвойс {invoice.number} уже отправлен (external_id={existing_sync.external_id})")
             return {
-                'already_synced': True,
-                'external_id': existing_sync.external_id,
-                'external_number': existing_sync.external_number,
+                "already_synced": True,
+                "external_id": existing_sync.external_id,
+                "external_number": existing_sync.external_number,
             }
 
         # Создаем или получаем запись синхронизации
         sync, _ = SiteProInvoiceSync.objects.get_or_create(
             connection=self.connection,
             invoice=invoice,
-            defaults={'sync_status': 'PENDING'},
+            defaults={"sync_status": "PENDING"},
         )
 
         try:
@@ -381,20 +380,20 @@ class SiteProService:
 
             if not client_id:
                 raise SiteProAPIError(
-                    f'Не удалось получить clientId для инвойса {invoice.number}. '
-                    f'Проверьте связанного клиента (recipient_client={invoice.recipient_client_id}) '
-                    f'и default_location_id в настройках подключения.'
+                    f"Не удалось получить clientId для инвойса {invoice.number}. "
+                    f"Проверьте связанного клиента (recipient_client={invoice.recipient_client_id}) "
+                    f"и default_location_id в настройках подключения."
                 )
 
             # Шаг 2: Создаём продажу (sale) — или линкуем существующую если дубликат.
             sale_data = self._build_sale_data(invoice, client_id)
             logger.info(
-                f'[SitePro] Отправка инвойса {invoice.number} '
-                f'(получатель: {invoice.recipient_name}, сумма: {invoice.total})'
+                f"[SitePro] Отправка инвойса {invoice.number} "
+                f"(получатель: {invoice.recipient_name}, сумма: {invoice.total})"
             )
 
             sale_id = None
-            sale_number = ''
+            sale_number = ""
             sale_result = None
             linked_existing = False
 
@@ -407,22 +406,22 @@ class SiteProService:
                 # которые накопились во время breaking change API.
                 err_text = str(create_err).lower()
                 if create_err.status_code == 400 and (
-                    'already exists' in err_text
-                    or 'already registered' in err_text
-                    or 'sales document already' in err_text
+                    "already exists" in err_text
+                    or "already registered" in err_text
+                    or "sales document already" in err_text
                 ):
                     existing_id = self._find_existing_sale_id(
-                        series=sale_data.get('series'),
-                        number=sale_data.get('number'),
+                        series=sale_data.get("series"),
+                        number=sale_data.get("number"),
                     )
                     if existing_id:
                         logger.warning(
-                            f'[SitePro] Sale {sale_data.get("series")}-{sale_data.get("number")} '
-                            f'уже существует в site.pro (id={existing_id}) — линкую SiteProInvoiceSync '
-                            f'к существующей записи вместо создания новой.'
+                            f"[SitePro] Sale {sale_data.get('series')}-{sale_data.get('number')} "
+                            f"уже существует в site.pro (id={existing_id}) — линкую SiteProInvoiceSync "
+                            f"к существующей записи вместо создания новой."
                         )
                         sale_id = existing_id
-                        sale_number = sale_data.get('number') or ''
+                        sale_number = sale_data.get("number") or ""
                         linked_existing = True
                     else:
                         raise
@@ -432,19 +431,19 @@ class SiteProService:
             # Новый API возвращает: {'message': 'Data saved...', 'data': {'id': 197}, 'code': 200}
             # Старый API возвращал id/saleId на верхнем уровне — поддерживаем оба формата.
             if not sale_id and isinstance(sale_result, dict):
-                sale_id = sale_result.get('id') or sale_result.get('saleId')
-                sale_number = sale_result.get('number') or sale_result.get('invoiceNumber') or ''
-                if not sale_id and isinstance(sale_result.get('data'), dict):
-                    sale_id = sale_result['data'].get('id') or sale_result['data'].get('saleId')
-                    sale_number = (sale_number
-                                   or sale_result['data'].get('number')
-                                   or sale_result['data'].get('invoiceNumber')
-                                   or '')
+                sale_id = sale_result.get("id") or sale_result.get("saleId")
+                sale_number = sale_result.get("number") or sale_result.get("invoiceNumber") or ""
+                if not sale_id and isinstance(sale_result.get("data"), dict):
+                    sale_id = sale_result["data"].get("id") or sale_result["data"].get("saleId")
+                    sale_number = (
+                        sale_number
+                        or sale_result["data"].get("number")
+                        or sale_result["data"].get("invoiceNumber")
+                        or ""
+                    )
 
             if not sale_id:
-                raise SiteProAPIError(
-                    f'API не вернул ID продажи. Ответ: {sale_result}'
-                )
+                raise SiteProAPIError(f"API не вернул ID продажи. Ответ: {sale_result}")
 
             # Шаг 3: Добавляем позиции. Если прилинковались к существующей sale,
             # проверяем есть ли там уже items — если да, не добавляем (иначе задублируем).
@@ -456,11 +455,11 @@ class SiteProService:
                     if existing_items:
                         should_add_items = False
                         logger.info(
-                            f'[SitePro] Связанная sale {sale_id} уже содержит {len(existing_items)} '
-                            f'позиций — пропускаю добавление items.'
+                            f"[SitePro] Связанная sale {sale_id} уже содержит {len(existing_items)} "
+                            f"позиций — пропускаю добавление items."
                         )
                 except SiteProAPIError as e:
-                    logger.warning(f'[SitePro] Не удалось проверить items существующей sale: {e}')
+                    logger.warning(f"[SitePro] Не удалось проверить items существующей sale: {e}")
 
             if should_add_items:
                 for item_data in self._build_sale_items(invoice, sale_id):
@@ -468,47 +467,47 @@ class SiteProService:
                         self._api_post(self.SALE_ITEMS_CREATE, item_data)
                     except SiteProAPIError as e:
                         items_errors.append(str(e)[:200])
-                        logger.error(f'[SitePro] Ошибка создания позиции: {e}')
+                        logger.error(f"[SitePro] Ошибка создания позиции: {e}")
 
             sync.external_id = str(sale_id)
             sync.external_number = str(sale_number)
             if linked_existing:
-                sync.sync_status = 'SENT'
-                sync.error_message = f'Linked to existing sale id={sale_id} (series+number already existed in site.pro)'
+                sync.sync_status = "SENT"
+                sync.error_message = f"Linked to existing sale id={sale_id} (series+number already existed in site.pro)"
             else:
-                sync.sync_status = 'PARTIAL' if items_errors else 'SENT'
-                sync.error_message = '; '.join(items_errors) if items_errors else ''
+                sync.sync_status = "PARTIAL" if items_errors else "SENT"
+                sync.error_message = "; ".join(items_errors) if items_errors else ""
             sync.last_synced_at = timezone.now()
             sync.save()
 
             # Обновляем подключение
             self.connection.last_synced_at = timezone.now()
-            self.connection.last_error = ''
-            self.connection.save(update_fields=['last_synced_at', 'last_error', 'updated_at'])
+            self.connection.last_error = ""
+            self.connection.save(update_fields=["last_synced_at", "last_error", "updated_at"])
 
             logger.info(
-                f'[SitePro] Инвойс {invoice.number} успешно отправлен '
-                f'(sale_id={sale_id}, items_errors={len(items_errors)})'
+                f"[SitePro] Инвойс {invoice.number} успешно отправлен "
+                f"(sale_id={sale_id}, items_errors={len(items_errors)})"
             )
 
             return {
-                'success': True,
-                'external_id': str(sale_id),
-                'external_number': str(sale_number),
-                'items_errors': items_errors,
-                'response': sale_result,
+                "success": True,
+                "external_id": str(sale_id),
+                "external_number": str(sale_number),
+                "items_errors": items_errors,
+                "response": sale_result,
             }
 
         except SiteProAPIError as e:
-            sync.sync_status = 'FAILED'
+            sync.sync_status = "FAILED"
             sync.error_message = str(e)[:500]
             sync.last_synced_at = timezone.now()
             sync.save()
 
             self.connection.last_error = str(e)[:500]
-            self.connection.save(update_fields=['last_error', 'updated_at'])
+            self.connection.save(update_fields=["last_error", "updated_at"])
 
-            logger.error(f'[SitePro] Ошибка отправки инвойса {invoice.number}: {e}')
+            logger.error(f"[SitePro] Ошибка отправки инвойса {invoice.number}: {e}")
             raise
 
     def _build_sale_data(self, invoice, client_id: int) -> dict:
@@ -528,24 +527,21 @@ class SiteProService:
         """
         if not self.connection.default_warehouse_id:
             raise SiteProAPIError(
-                'default_warehouse_id не задан в настройках подключения site.pro. '
+                "default_warehouse_id не задан в настройках подключения site.pro. "
                 'Используйте action "Загрузить справочники" в админке.'
             )
         if not self.connection.default_operation_type_id:
             raise SiteProAPIError(
-                'default_operation_type_id не задан в настройках подключения site.pro. '
+                "default_operation_type_id не задан в настройках подключения site.pro. "
                 'Используйте action "Загрузить справочники" в админке.'
             )
 
         sale_data = {
-            'saleDate': (
-                invoice.date.strftime('%Y-%m-%d')
-                if invoice.date else timezone.now().strftime('%Y-%m-%d')
-            ),
-            'currencyCode': self.connection.default_currency,
-            'warehouseId': self.connection.default_warehouse_id,
-            'operationTypeId': self.connection.default_operation_type_id,
-            'clientId': client_id,
+            "saleDate": (invoice.date.strftime("%Y-%m-%d") if invoice.date else timezone.now().strftime("%Y-%m-%d")),
+            "currencyCode": self.connection.default_currency,
+            "warehouseId": self.connection.default_warehouse_id,
+            "operationTypeId": self.connection.default_operation_type_id,
+            "clientId": client_id,
         }
 
         # В site.pro серия и номер хранятся РАЗДЕЛЬНО: series='PARDP', number='000103'.
@@ -554,22 +550,22 @@ class SiteProService:
         # появляется дубль вида "PARDP-000103" вместо "000103".
         if invoice.number:
             num = invoice.number
-            series = (self.connection.invoice_series or '').strip()
-            if series and num.upper().startswith(series.upper() + '-'):
-                num = num[len(series) + 1:]
-            sale_data['number'] = num
+            series = (self.connection.invoice_series or "").strip()
+            if series and num.upper().startswith(series.upper() + "-"):
+                num = num[len(series) + 1 :]
+            sale_data["number"] = num
 
         # Серия: шлём seriesId если настроен, иначе текстом через series.
         # site.pro принимает оба формата.
         if self.connection.default_series_id:
-            sale_data['seriesId'] = self.connection.default_series_id
+            sale_data["seriesId"] = self.connection.default_series_id
         if self.connection.invoice_series:
-            sale_data['series'] = self.connection.invoice_series
+            sale_data["series"] = self.connection.invoice_series
 
         # Имя получателя дополнительно (site.pro подставит clientName из clientId,
         # но мы шлём расширенную версию из Logist2, если она длиннее).
         if invoice.recipient_name:
-            sale_data['clientName'] = invoice.recipient_name
+            sale_data["clientName"] = invoice.recipient_name
 
         return sale_data
 
@@ -595,36 +591,36 @@ class SiteProService:
         """
         if not self.connection.default_item_id:
             raise SiteProAPIError(
-                'default_item_id не задан в настройках подключения site.pro. '
-                'Укажите ID справочного товара (обычно 24 = Paslauga vnt.) или '
+                "default_item_id не задан в настройках подключения site.pro. "
+                "Укажите ID справочного товара (обычно 24 = Paslauga vnt.) или "
                 'используйте action "Загрузить справочники".'
             )
         if not self.connection.default_warehouse_id:
-            raise SiteProAPIError(
-                'default_warehouse_id не задан в настройках подключения site.pro.'
-            )
+            raise SiteProAPIError("default_warehouse_id не задан в настройках подключения site.pro.")
 
         items = []
         item_id = self.connection.default_item_id
         warehouse_id = self.connection.default_warehouse_id
         calc_mode = self.connection.default_calculation_mode or 1
 
-        for item in invoice.items.all().select_related('car').order_by('order'):
-            item_name = item.description or ''
+        for item in invoice.items.all().select_related("car").order_by("order"):
+            item_name = item.description or ""
             if item.car:
-                item_name = f'{item.description} ({item.car.vin})'
+                item_name = f"{item.description} ({item.car.vin})"
 
             # API использует `addition` как описание позиции (наш текст с услугой+VIN);
             # `name` не отображается в интерфейсе — его перекрывает itemName из справочника.
-            items.append({
-                'saleId': sale_id,
-                'itemId': item_id,
-                'warehouseId': warehouse_id,
-                'calculationMode': calc_mode,
-                'addition': item_name,
-                'quantity': float(item.quantity),
-                'priceWithoutVat': float(item.unit_price),
-            })
+            items.append(
+                {
+                    "saleId": sale_id,
+                    "itemId": item_id,
+                    "warehouseId": warehouse_id,
+                    "calculationMode": calc_mode,
+                    "addition": item_name,
+                    "quantity": float(item.quantity),
+                    "priceWithoutVat": float(item.unit_price),
+                }
+            )
 
         return items
 
@@ -643,23 +639,23 @@ class SiteProService:
         """
         rules = []
         if number:
-            rules.append({'field': 'number', 'op': 'eq', 'data': number})
+            rules.append({"field": "number", "op": "eq", "data": number})
         if date_from:
-            rules.append({'field': 'date', 'op': 'ge', 'data': date_from})
+            rules.append({"field": "date", "op": "ge", "data": date_from})
         if date_to:
-            rules.append({'field': 'date', 'op': 'le', 'data': date_to})
+            rules.append({"field": "date", "op": "le", "data": date_to})
 
         data = {
-            'page': 1,
-            'rows': 50,
-            'filters': {
-                'groupOp': 'AND',
-                'rules': rules,
+            "page": 1,
+            "rows": 50,
+            "filters": {
+                "groupOp": "AND",
+                "rules": rules,
             },
         }
 
         result = self._api_post(self.SALES_LIST, data)
-        return result.get('data', []) if isinstance(result, dict) else []
+        return result.get("data", []) if isinstance(result, dict) else []
 
     def _find_existing_sale_id(self, series: str, number: str) -> int | None:
         """Поиск существующей sale по точному совпадению series + number.
@@ -679,9 +675,9 @@ class SiteProService:
         # Фильтруем по series тоже, т.к. number без series не уникален
         # (разные серии могут иметь одинаковые номера).
         for s in found:
-            if str(s.get('number')) == str(number):
-                if not series or s.get('series') == series:
-                    return s.get('id')
+            if str(s.get("number")) == str(number):
+                if not series or s.get("series") == series:
+                    return s.get("id")
         return None
 
     # ========================================================================
@@ -708,44 +704,42 @@ class SiteProService:
         ).first()
 
         if not sync or not sync.external_id:
-            logger.warning(f'[SitePro] Инвойс {invoice.number} не найден в site.pro (нет SiteProInvoiceSync)')
-            return b''
+            logger.warning(f"[SitePro] Инвойс {invoice.number} не найден в site.pro (нет SiteProInvoiceSync)")
+            return b""
 
-        url = f'{self.base_url}{self.SALE_INVOICE_GET}'
-        payload = json.dumps({'id': int(sync.external_id)})
+        url = f"{self.base_url}{self.SALE_INVOICE_GET}"
+        payload = json.dumps({"id": int(sync.external_id)})
 
         try:
             resp = self._session.post(
                 url,
                 headers={
                     **self._get_headers(),
-                    'Content-Length': str(len(payload)),
+                    "Content-Length": str(len(payload)),
                 },
                 data=payload,
                 timeout=30,
             )
         except requests.RequestException as e:
-            logger.error(f'[SitePro] Ошибка запроса PDF инвойса {invoice.number}: {e}')
-            return b''
+            logger.error(f"[SitePro] Ошибка запроса PDF инвойса {invoice.number}: {e}")
+            return b""
 
         if resp.status_code != 200:
-            logger.error(
-                f'[SitePro] PDF инвойса {invoice.number}: HTTP {resp.status_code} — {resp.text[:200]}'
-            )
-            return b''
+            logger.error(f"[SitePro] PDF инвойса {invoice.number}: HTTP {resp.status_code} — {resp.text[:200]}")
+            return b""
 
-        if not resp.content.startswith(b'%PDF'):
-            ctype = resp.headers.get('Content-Type', '')
+        if not resp.content.startswith(b"%PDF"):
+            ctype = resp.headers.get("Content-Type", "")
             logger.warning(
-                f'[SitePro] Ответ для PDF инвойса {invoice.number} не является PDF '
-                f'(ct={ctype}, size={len(resp.content)})'
+                f"[SitePro] Ответ для PDF инвойса {invoice.number} не является PDF "
+                f"(ct={ctype}, size={len(resp.content)})"
             )
-            return b''
+            return b""
 
         # Обновим статус синхронизации
-        sync.sync_status = 'PDF_READY'
-        sync.save(update_fields=['sync_status', 'updated_at'])
-        logger.info(f'[SitePro] PDF для инвойса {invoice.number} скачан ({len(resp.content)} байт)')
+        sync.sync_status = "PDF_READY"
+        sync.save(update_fields=["sync_status", "updated_at"])
+        logger.info(f"[SitePro] PDF для инвойса {invoice.number} скачан ({len(resp.content)} байт)")
 
         return resp.content
 
@@ -763,14 +757,14 @@ class SiteProService:
         from django.core.files.base import ContentFile
 
         if invoice.attachment and not overwrite:
-            logger.info(f'[SitePro] Инвойс {invoice.number} уже имеет attachment — пропуск')
+            logger.info(f"[SitePro] Инвойс {invoice.number} уже имеет attachment — пропуск")
             return False
 
         pdf_bytes = self.download_invoice_pdf(invoice)
         if not pdf_bytes:
             return False
 
-        filename = f'{invoice.number}_sitepro.pdf'
+        filename = f"{invoice.number}_sitepro.pdf"
         invoice.attachment.save(filename, ContentFile(pdf_bytes), save=True)
         return True
 
@@ -783,8 +777,8 @@ class SiteProService:
 
         pdf = self.download_invoice_pdf(invoice)
         if not pdf:
-            return ''
-        return f'data:application/pdf;base64,{base64.b64encode(pdf).decode()}'
+            return ""
+        return f"data:application/pdf;base64,{base64.b64encode(pdf).decode()}"
 
     # ========================================================================
     # REFERENCE DATA
@@ -792,28 +786,28 @@ class SiteProService:
 
     def get_vat_rates(self) -> list:
         """Получает список ставок НДС из site.pro."""
-        result = self._api_post(self.VAT_RATES_LIST, {'page': 1, 'rows': 100})
-        return result.get('data', []) if isinstance(result, dict) else []
+        result = self._api_post(self.VAT_RATES_LIST, {"page": 1, "rows": 100})
+        return result.get("data", []) if isinstance(result, dict) else []
 
     def get_currencies(self) -> list:
         """Получает список валют из site.pro."""
-        result = self._api_post(self.CURRENCIES_LIST, {'page': 1, 'rows': 100})
-        return result.get('data', []) if isinstance(result, dict) else []
+        result = self._api_post(self.CURRENCIES_LIST, {"page": 1, "rows": 100})
+        return result.get("data", []) if isinstance(result, dict) else []
 
     def get_series(self) -> list:
         """Получает список серий нумерации из site.pro."""
-        result = self._api_post(self.SERIES_LIST, {'page': 1, 'rows': 100})
-        return result.get('data', []) if isinstance(result, dict) else []
+        result = self._api_post(self.SERIES_LIST, {"page": 1, "rows": 100})
+        return result.get("data", []) if isinstance(result, dict) else []
 
     def get_warehouses(self) -> list:
         """Получает список складов из site.pro."""
-        result = self._api_post(self.WAREHOUSES_LIST, {'page': 1, 'rows': 100})
-        return result.get('data', []) if isinstance(result, dict) else []
+        result = self._api_post(self.WAREHOUSES_LIST, {"page": 1, "rows": 100})
+        return result.get("data", []) if isinstance(result, dict) else []
 
     def get_operation_types(self) -> list:
         """Получает список типов операций (isSale=True → подходит для инвойсов)."""
-        result = self._api_post(self.OPERATION_TYPES_LIST, {'page': 1, 'rows': 100})
-        return result.get('data', []) if isinstance(result, dict) else []
+        result = self._api_post(self.OPERATION_TYPES_LIST, {"page": 1, "rows": 100})
+        return result.get("data", []) if isinstance(result, dict) else []
 
     def get_countries(self) -> list:
         """Получает список стран (для locationId клиентов).
@@ -822,8 +816,8 @@ class SiteProService:
         страница обычно содержит основные EU-страны. Для полного списка
         используйте list_all_countries().
         """
-        result = self._api_post(self.COUNTRIES_LIST, {'page': 1, 'rows': 100})
-        return result.get('data', []) if isinstance(result, dict) else []
+        result = self._api_post(self.COUNTRIES_LIST, {"page": 1, "rows": 100})
+        return result.get("data", []) if isinstance(result, dict) else []
 
     def list_all_countries(self) -> list:
         """Paginate through all countries (254+ записей в base справочнике)."""
@@ -837,8 +831,7 @@ class SiteProService:
     # Только эти значения допустимы для list-эндпоинтов.
     _VALID_ROWS = (10, 20, 25, 50, 100)
 
-    def _paginate_list(self, endpoint: str, filters: dict | None = None, max_pages: int = 100,
-                       rows: int = 50) -> list:
+    def _paginate_list(self, endpoint: str, filters: dict | None = None, max_pages: int = 100, rows: int = 50) -> list:
         """Paginate through a list endpoint collecting all records.
 
         Args:
@@ -854,15 +847,15 @@ class SiteProService:
         all_data = []
         page = 1
         while page <= max_pages:
-            payload = {'page': page, 'rows': rows}
+            payload = {"page": page, "rows": rows}
             if filters:
-                payload['filters'] = filters
+                payload["filters"] = filters
             result = self._api_post(endpoint, payload)
             if not isinstance(result, dict):
                 break
-            data = result.get('data', [])
+            data = result.get("data", [])
             all_data.extend(data)
-            total_pages = result.get('pages', 1)
+            total_pages = result.get("pages", 1)
             if page >= total_pages:
                 break
             page += 1
@@ -876,10 +869,10 @@ class SiteProService:
         """Fetch all sales/invoices from site.pro, optionally filtered by date range."""
         rules = []
         if date_from:
-            rules.append({'field': 'date', 'op': 'ge', 'data': date_from})
+            rules.append({"field": "date", "op": "ge", "data": date_from})
         if date_to:
-            rules.append({'field': 'date', 'op': 'le', 'data': date_to})
-        filters = {'groupOp': 'AND', 'rules': rules} if rules else None
+            rules.append({"field": "date", "op": "le", "data": date_to})
+        filters = {"groupOp": "AND", "rules": rules} if rules else None
         return self._paginate_list(self.SALES_LIST, filters)
 
     def list_sale_items(self, sale_id: int) -> list:
@@ -891,32 +884,36 @@ class SiteProService:
         return self._paginate_list(
             self.SALE_ITEMS_LIST,
             filters={
-                'groupOp': 'AND',
-                'rules': [{'field': 'saleId', 'op': 'eq', 'data': str(sale_id)}],
+                "groupOp": "AND",
+                "rules": [{"field": "saleId", "op": "eq", "data": str(sale_id)}],
             },
             rows=100,
         )
 
     def get_client_balance(self, client_id: int) -> dict:
         """Fetch balance for a specific client in site.pro."""
-        result = self._api_post(self.CLIENT_BALANCE, {'clientId': client_id})
+        result = self._api_post(self.CLIENT_BALANCE, {"clientId": client_id})
         return result if isinstance(result, dict) else {}
 
-    BANK_TRANSACTIONS_LIST = '/bank/transactions/list'
+    BANK_TRANSACTIONS_LIST = "/bank/transactions/list"
 
     def list_bank_transactions(self) -> list:
         """Fetch all bank transactions from site.pro (uses pageSize=10, fixed by API)."""
         all_data = []
         page = 1
         while page <= 200:
-            result = self._api_post(self.BANK_TRANSACTIONS_LIST, {
-                'page': page, 'pageSize': 10,
-            })
+            result = self._api_post(
+                self.BANK_TRANSACTIONS_LIST,
+                {
+                    "page": page,
+                    "pageSize": 10,
+                },
+            )
             if not isinstance(result, dict):
                 break
-            data = result.get('data', [])
+            data = result.get("data", [])
             all_data.extend(data)
-            if page >= result.get('pages', 1):
+            if page >= result.get("pages", 1):
                 break
             page += 1
         return all_data
@@ -936,26 +933,26 @@ class SiteProService:
             dict с результатами: {'sent': int, 'skipped': int, 'failed': int, 'errors': list}
         """
         result = {
-            'sent': 0,
-            'skipped': 0,
-            'failed': 0,
-            'errors': [],
+            "sent": 0,
+            "skipped": 0,
+            "failed": 0,
+            "errors": [],
         }
 
         for invoice in invoices:
             try:
                 push_result = self.push_invoice(invoice)
-                if push_result.get('already_synced'):
-                    result['skipped'] += 1
+                if push_result.get("already_synced"):
+                    result["skipped"] += 1
                 else:
-                    result['sent'] += 1
+                    result["sent"] += 1
             except SiteProAPIError as e:
-                result['failed'] += 1
-                result['errors'].append(f'{invoice.number}: {str(e)[:200]}')
+                result["failed"] += 1
+                result["errors"].append(f"{invoice.number}: {str(e)[:200]}")
 
         logger.info(
-            f'[SitePro] Bulk push: отправлено {result["sent"]}, '
-            f'пропущено {result["skipped"]}, ошибок {result["failed"]}'
+            f"[SitePro] Bulk push: отправлено {result['sent']}, "
+            f"пропущено {result['skipped']}, ошибок {result['failed']}"
         )
 
         return result

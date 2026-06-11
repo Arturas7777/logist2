@@ -34,14 +34,14 @@ logger = logging.getLogger(__name__)
 
 
 # MIME тип подпапки в Google Drive (используется в запросе ``q=...``).
-_MIME_FOLDER = 'application/vnd.google-apps.folder'
+_MIME_FOLDER = "application/vnd.google-apps.folder"
 
 # Поля, которые запрашиваем у files.list — минимальный набор, чтобы не
 # платить квотой за ненужное.
-_LIST_FIELDS = 'nextPageToken, files(id, name, mimeType, size)'
+_LIST_FIELDS = "nextPageToken, files(id, name, mimeType, size)"
 
 # Расширения, которые считаем картинками (совпадает с HTML-веткой).
-_IMAGE_EXTS = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')
+_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp")
 
 
 class DriveApiNotConfigured(RuntimeError):
@@ -56,11 +56,11 @@ class GoogleDriveApiClient:
     """
 
     def __init__(self, *, api_key: str | None = None) -> None:
-        self._api_key = (api_key or getattr(settings, 'GOOGLE_DRIVE_API_KEY', '') or '').strip()
+        self._api_key = (api_key or getattr(settings, "GOOGLE_DRIVE_API_KEY", "") or "").strip()
         if not self._api_key:
             raise DriveApiNotConfigured(
-                'GOOGLE_DRIVE_API_KEY не задан. Включите Drive API в Google '
-                'Cloud Console, создайте API key и положите его в .env.'
+                "GOOGLE_DRIVE_API_KEY не задан. Включите Drive API в Google "
+                "Cloud Console, создайте API key и положите его в .env."
             )
         self._service = None
 
@@ -72,7 +72,8 @@ class GoogleDriveApiClient:
         from googleapiclient.discovery import build
 
         return build(
-            'drive', 'v3',
+            "drive",
+            "v3",
             developerKey=self._api_key,
             cache_discovery=False,
         )
@@ -105,18 +106,20 @@ class GoogleDriveApiClient:
         for raw in self._iter_files(
             query=f"'{folder_id}' in parents and trashed = false",
         ):
-            fid = raw.get('id')
+            fid = raw.get("id")
             if not fid or fid in seen:
                 continue
             seen.add(fid)
-            mime = raw.get('mimeType') or ''
-            results.append({
-                'id': fid,
-                'name': raw.get('name') or '',
-                'mimeType': mime,
-                'is_folder': mime == _MIME_FOLDER,
-                'size': raw.get('size'),
-            })
+            mime = raw.get("mimeType") or ""
+            results.append(
+                {
+                    "id": fid,
+                    "name": raw.get("name") or "",
+                    "mimeType": mime,
+                    "is_folder": mime == _MIME_FOLDER,
+                    "size": raw.get("size"),
+                }
+            )
         return results
 
     def list_images(self, folder_id: str) -> list[dict[str, Any]]:
@@ -129,16 +132,19 @@ class GoogleDriveApiClient:
         items = self.list_children(folder_id)
         out: list[dict[str, Any]] = []
         for f in items:
-            if f['is_folder']:
+            if f["is_folder"]:
                 continue
-            mime = (f.get('mimeType') or '').lower()
-            name = (f.get('name') or '').lower()
-            if mime.startswith('image/') or name.endswith(_IMAGE_EXTS):
+            mime = (f.get("mimeType") or "").lower()
+            name = (f.get("name") or "").lower()
+            if mime.startswith("image/") or name.endswith(_IMAGE_EXTS):
                 out.append(f)
         return out
 
     def find_subfolder(
-        self, parent_id: str, *, name_contains: str,
+        self,
+        parent_id: str,
+        *,
+        name_contains: str,
     ) -> dict[str, Any] | None:
         """Ищет первую подпапку, чьё имя содержит ``name_contains``.
 
@@ -151,25 +157,25 @@ class GoogleDriveApiClient:
 
         safe = name_contains.replace("'", "\\'")
         query = (
-            f"'{parent_id}' in parents "
-            f"and trashed = false "
-            f"and mimeType = '{_MIME_FOLDER}' "
-            f"and name contains '{safe}'"
+            f"'{parent_id}' in parents and trashed = false and mimeType = '{_MIME_FOLDER}' and name contains '{safe}'"
         )
         for raw in self._iter_files(query=query, page_size=50):
-            fid = raw.get('id')
+            fid = raw.get("id")
             if not fid:
                 continue
             return {
-                'id': fid,
-                'name': raw.get('name') or '',
-                'mimeType': _MIME_FOLDER,
-                'is_folder': True,
+                "id": fid,
+                "name": raw.get("name") or "",
+                "mimeType": _MIME_FOLDER,
+                "is_folder": True,
             }
         return None
 
     def _iter_files(
-        self, *, query: str, page_size: int = 1000,
+        self,
+        *,
+        query: str,
+        page_size: int = 1000,
     ) -> Iterator[dict[str, Any]]:
         """Итератор по ``files.list`` с автоматической пагинацией."""
         from googleapiclient.errors import HttpError
@@ -177,23 +183,28 @@ class GoogleDriveApiClient:
         page_token: str | None = None
         while True:
             try:
-                resp = self.service.files().list(
-                    q=query,
-                    pageSize=page_size,
-                    pageToken=page_token,
-                    fields=_LIST_FIELDS,
-                    # supportsAllDrives / includeItemsFromAllDrives не ставим:
-                    # наши папки живут в My Drive владельца, не в shared drive.
-                    orderBy='name',
-                ).execute()
+                resp = (
+                    self.service.files()
+                    .list(
+                        q=query,
+                        pageSize=page_size,
+                        pageToken=page_token,
+                        fields=_LIST_FIELDS,
+                        # supportsAllDrives / includeItemsFromAllDrives не ставим:
+                        # наши папки живут в My Drive владельца, не в shared drive.
+                        orderBy="name",
+                    )
+                    .execute()
+                )
             except HttpError as err:
                 logger.error(
-                    '[gdrive_api] files.list failed (q=%r): %s',
-                    query, err,
+                    "[gdrive_api] files.list failed (q=%r): %s",
+                    query,
+                    err,
                 )
                 return
-            yield from resp.get('files', []) or []
-            page_token = resp.get('nextPageToken')
+            yield from resp.get("files", []) or []
+            page_token = resp.get("nextPageToken")
             if not page_token:
                 return
 
@@ -221,8 +232,9 @@ class GoogleDriveApiClient:
             request = self.service.files().get_media(fileId=file_id)
         except HttpError as err:
             logger.warning(
-                '[gdrive_api] get_media request build failed (id=%s): %s',
-                file_id, err,
+                "[gdrive_api] get_media request build failed (id=%s): %s",
+                file_id,
+                err,
             )
             return None
 
@@ -234,19 +246,22 @@ class GoogleDriveApiClient:
                 _status, done = downloader.next_chunk(num_retries=2)
         except HttpError as err:
             logger.warning(
-                '[gdrive_api] download failed (id=%s): %s', file_id, err,
+                "[gdrive_api] download failed (id=%s): %s",
+                file_id,
+                err,
             )
             return None
         except Exception as exc:  # pragma: no cover — сеть/io
             logger.warning(
-                '[gdrive_api] download unexpected error (id=%s): %s',
-                file_id, exc,
+                "[gdrive_api] download unexpected error (id=%s): %s",
+                file_id,
+                exc,
             )
             return None
 
         data = buf.getvalue()
         if not data:
-            logger.warning('[gdrive_api] empty payload for file_id=%s', file_id)
+            logger.warning("[gdrive_api] empty payload for file_id=%s", file_id)
             return None
         return data
 
@@ -263,7 +278,7 @@ def is_drive_api_configured() -> bool:
     Используется в ``google_drive_sync`` как быстрый feature-flag: если
     API не настроен — откатываемся на HTML-парсинг.
     """
-    if not getattr(settings, 'GOOGLE_DRIVE_API_KEY', '').strip():
+    if not getattr(settings, "GOOGLE_DRIVE_API_KEY", "").strip():
         return False
     try:
         import googleapiclient  # noqa: F401

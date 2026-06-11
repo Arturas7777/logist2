@@ -23,18 +23,20 @@ from django.core.cache import cache
 from django.http import JsonResponse
 
 
-def ratelimit_staff(rate: int = 120, per: int = 60, scope: str = 'default'):
+def ratelimit_staff(rate: int = 120, per: int = 60, scope: str = "default"):
     """Разрешает максимум `rate` запросов за `per` секунд на пользователя/scope."""
+
     def decorator(view_func):
         @wraps(view_func)
         def wrapper(request, *args, **kwargs):
-            user = getattr(request, 'user', None)
-            uid = getattr(user, 'pk', None) or request.META.get('REMOTE_ADDR', 'anon')
+            user = getattr(request, "user", None)
+            uid = getattr(user, "pk", None) or request.META.get("REMOTE_ADDR", "anon")
 
             # Фиксированное окно: ключ включает целочисленный бакет по времени.
             import time
+
             bucket = int(time.time()) // per
-            key = f'rl:{scope}:{uid}:{bucket}'
+            key = f"rl:{scope}:{uid}:{bucket}"
 
             try:
                 count = cache.incr(key)
@@ -44,10 +46,11 @@ def ratelimit_staff(rate: int = 120, per: int = 60, scope: str = 'default'):
 
             if count > rate:
                 return JsonResponse(
-                    {'error': 'rate limited', 'retry_after_sec': per},
+                    {"error": "rate limited", "retry_after_sec": per},
                     status=429,
                 )
             return view_func(request, *args, **kwargs)
 
         return wrapper
+
     return decorator

@@ -47,16 +47,8 @@ def _build_client_context(client) -> str:
     if not client:
         return ""
 
-    cars = (
-        Car.objects.filter(client=client)
-        .select_related("container", "warehouse")
-        .order_by("-id")[:5]
-    )
-    containers = (
-        Container.objects.filter(client=client)
-        .select_related("line", "warehouse")
-        .order_by("-id")[:5]
-    )
+    cars = Car.objects.filter(client=client).select_related("container", "warehouse").order_by("-id")[:5]
+    containers = Container.objects.filter(client=client).select_related("line", "warehouse").order_by("-id")[:5]
 
     cars_info = []
     for car in cars:
@@ -86,11 +78,7 @@ def _build_system_prompt(language_code: str) -> str:
         "lt": "Lietuvių",
     }
     language_name = language_map.get(language_code, "Русский")
-    return (
-        "Отвечай кратко и по делу. "
-        "Не придумывай данные, которых нет в контексте. "
-        f"Язык ответа: {language_name}."
-    )
+    return f"Отвечай кратко и по делу. Не придумывай данные, которых нет в контексте. Язык ответа: {language_name}."
 
 
 def _find_identifiers(message: str) -> dict:
@@ -212,7 +200,8 @@ def _build_tracking_context(message: str, user=None, client=None) -> str:
         last_photo = photos_qs.order_by("-uploaded_at").first()
         photos_text = (
             f"Фото: {photos_count} шт., последняя загрузка: {last_photo.uploaded_at.strftime('%Y-%m-%d %H:%M')}"
-            if last_photo else f"Фото: {photos_count} шт."
+            if last_photo
+            else f"Фото: {photos_count} шт."
         )
 
         parts.append(
@@ -278,8 +267,9 @@ def _call_ai_api(messages: list[dict]) -> str:
         raise AIServiceError("AI API response parsing error") from exc
 
 
-def generate_ai_response(message: str, user=None, client=None, session_id: str | None = None,
-                         language_code: str = "ru") -> str:
+def generate_ai_response(
+    message: str, user=None, client=None, session_id: str | None = None, language_code: str = "ru"
+) -> str:
     system_prompt = _build_system_prompt(language_code)
     company_context = _build_company_context()
     client_context = _build_client_context(client)

@@ -395,10 +395,7 @@ LOG_DIR = os.getenv("LOG_DIR", "").strip()
 _logging_formatters = {
     "verbose": {
         # Текстовый формат с request_id для удобства tail -f в dev.
-        "format": (
-            "{asctime} {levelname} [{request_id}] {name} {message} "
-            "(user={user_id} {method} {path})"
-        ),
+        "format": ("{asctime} {levelname} [{request_id}] {name} {message} (user={user_id} {method} {path})"),
         "style": "{",
     },
     "json": {
@@ -407,10 +404,7 @@ _logging_formatters = {
         # RequestContextFilter). Конкретные поля из record указываем
         # в format-строке для гарантированного включения.
         "()": "pythonjsonlogger.json.JsonFormatter",
-        "format": (
-            "%(asctime)s %(levelname)s %(name)s %(message)s "
-            "%(request_id)s %(user_id)s %(path)s %(method)s"
-        ),
+        "format": ("%(asctime)s %(levelname)s %(name)s %(message)s %(request_id)s %(user_id)s %(path)s %(method)s"),
         "rename_fields": {"levelname": "level", "asctime": "ts", "name": "logger"},
     },
 }
@@ -536,8 +530,8 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "CaromotoLT_bot").strip().lstrip("@")
 # Глобальный флаг (по умолчанию включён, если задан токен). Позволяет
 # выключить рассылку, не удаляя токен.
-TELEGRAM_NOTIFICATIONS_ENABLED = (
-    str(os.getenv("TELEGRAM_NOTIFICATIONS_ENABLED", "True")).lower() == "true" and bool(TELEGRAM_BOT_TOKEN)
+TELEGRAM_NOTIFICATIONS_ENABLED = str(os.getenv("TELEGRAM_NOTIFICATIONS_ENABLED", "True")).lower() == "true" and bool(
+    TELEGRAM_BOT_TOKEN
 )
 # Таймаут HTTP-запросов к Telegram Bot API, сек.
 TELEGRAM_API_TIMEOUT = int(os.getenv("TELEGRAM_API_TIMEOUT", "10"))

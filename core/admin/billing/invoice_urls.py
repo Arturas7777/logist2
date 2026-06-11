@@ -70,11 +70,7 @@ class NewInvoiceUrlsMixin:
             .only("id", "vin", "brand", "year", "status", "client__name")
         )
         if term:
-            qs = qs.filter(
-                Q(vin__icontains=term)
-                | Q(brand__icontains=term)
-                | Q(client__name__icontains=term)
-            )
+            qs = qs.filter(Q(vin__icontains=term) | Q(brand__icontains=term) | Q(client__name__icontains=term))
         qs = qs.order_by("-id")[:20]
 
         def _text(car):
@@ -85,9 +81,7 @@ class NewInvoiceUrlsMixin:
 
         return JsonResponse(
             {
-                "results": [
-                    {"id": c.pk, "text": _text(c), "status": c.status} for c in qs
-                ],
+                "results": [{"id": c.pk, "text": _text(c), "status": c.status} for c in qs],
             }
         )
 

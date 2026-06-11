@@ -13,27 +13,26 @@ def vin_diff(vin: str, reference: str):
     именно строки расходятся, чтобы юзер сразу видел спорные позиции.
     Если длины не совпадают — рисуем без подсветки (запасной вариант).
     """
-    vin = (vin or '').strip()
-    reference = (reference or '').strip()
+    vin = (vin or "").strip()
+    reference = (reference or "").strip()
     if not vin:
-        return ''
+        return ""
     if not reference or len(vin) != len(reference):
-        return format_html(
-            '<span style="font-family:monospace;">{}</span>', vin
-        )
+        return format_html('<span style="font-family:monospace;">{}</span>', vin)
     return format_html_join(
-        '', '<span style="font-family:monospace;{}">{}</span>',
+        "",
+        '<span style="font-family:monospace;{}">{}</span>',
         (
             (
-                '' if ch_vin == ch_ref else (
-                    'background:#ffc107;color:#212529;padding:0 2px;'
-                    'border-radius:2px;font-weight:bold;'
-                ),
+                ""
+                if ch_vin == ch_ref
+                else ("background:#ffc107;color:#212529;padding:0 2px;border-radius:2px;font-weight:bold;"),
                 ch_vin,
             )
             for ch_vin, ch_ref in zip(vin, reference, strict=False)
         ),
     )
+
 
 @register.filter
 def content_type_id(obj):
@@ -42,10 +41,10 @@ def content_type_id(obj):
         return ContentType.objects.get_for_model(obj).id
     return None
 
+
 @register.filter
 def content_type_name(obj):
     """Возвращает имя content type для объекта"""
     if obj:
         return ContentType.objects.get_for_model(obj).name
     return None
-

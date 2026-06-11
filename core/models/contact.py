@@ -30,60 +30,65 @@ class Contact(models.Model):
     content_type = models.ForeignKey(
         ContentType,
         on_delete=models.CASCADE,
-        null=True, blank=True,
-        verbose_name='Тип контрагента',
-        help_text='Модель контрагента (Линия / Перевозчик / Клиент / Склад / Компания).',
+        null=True,
+        blank=True,
+        verbose_name="Тип контрагента",
+        help_text="Модель контрагента (Линия / Перевозчик / Клиент / Склад / Компания).",
     )
     object_id = models.PositiveIntegerField(
-        null=True, blank=True,
-        verbose_name='ID контрагента',
+        null=True,
+        blank=True,
+        verbose_name="ID контрагента",
     )
-    counterparty = GenericForeignKey('content_type', 'object_id')
+    counterparty = GenericForeignKey("content_type", "object_id")
 
     name = models.CharField(
         max_length=200,
-        verbose_name='Имя',
-        help_text='ФИО или имя контактного лица.',
+        verbose_name="Имя",
+        help_text="ФИО или имя контактного лица.",
     )
     position = models.CharField(
-        max_length=200, blank=True, default='',
-        verbose_name='Должность',
+        max_length=200,
+        blank=True,
+        default="",
+        verbose_name="Должность",
         help_text='Например "Import Manager", "Таможенный брокер", "Водитель".',
     )
     comment = models.TextField(
-        blank=True, default='',
-        verbose_name='Комментарий',
+        blank=True,
+        default="",
+        verbose_name="Комментарий",
     )
 
     is_primary = models.BooleanField(
         default=False,
-        verbose_name='Основной',
-        help_text='Если у контрагента несколько контактов — используйте для главного.',
+        verbose_name="Основной",
+        help_text="Если у контрагента несколько контактов — используйте для главного.",
     )
     is_orphan = models.BooleanField(
         default=False,
-        verbose_name='Осиротевший',
-        help_text='Создан автоматически при отправке email — не привязан к контрагенту. '
-                  'Привяжите вручную через админку.',
+        verbose_name="Осиротевший",
+        help_text="Создан автоматически при отправке email — не привязан к контрагенту. "
+        "Привяжите вручную через админку.",
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = 'Контакт'
-        verbose_name_plural = 'Контакты'
-        ordering = ['name']
+        verbose_name = "Контакт"
+        verbose_name_plural = "Контакты"
+        ordering = ["name"]
         indexes = [
-            models.Index(fields=['content_type', 'object_id']),
-            models.Index(fields=['is_orphan']),
+            models.Index(fields=["content_type", "object_id"]),
+            models.Index(fields=["is_orphan"]),
         ]
 
     def __str__(self) -> str:
         parts = [self.name]
         if self.position:
-            parts.append(f'({self.position})')
-        return ' '.join(parts)
+            parts.append(f"({self.position})")
+        return " ".join(parts)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -92,35 +97,35 @@ class Contact(models.Model):
     @property
     def primary_email(self) -> str:
         """Первый email (is_primary → position → id)."""
-        em = self.emails.order_by('-is_primary', 'position', 'id').first()
-        return em.email if em else ''
+        em = self.emails.order_by("-is_primary", "position", "id").first()
+        return em.email if em else ""
 
     @property
     def primary_phone(self) -> str:
-        ph = self.phones.order_by('-is_primary', 'position', 'id').first()
-        return ph.phone if ph else ''
+        ph = self.phones.order_by("-is_primary", "position", "id").first()
+        return ph.phone if ph else ""
 
     @property
     def emails_preview(self) -> str:
-        return ', '.join(e.email for e in self.emails.all()[:5])
+        return ", ".join(e.email for e in self.emails.all()[:5])
 
     @property
     def phones_preview(self) -> str:
-        return ', '.join(p.phone for p in self.phones.all()[:5])
+        return ", ".join(p.phone for p in self.phones.all()[:5])
 
     @property
     def counterparty_name(self) -> str:
         """Человекочитаемое имя контрагента или '(Осиротевший)'."""
         cp = self.counterparty
         if cp is None:
-            return '(Осиротевший)'
+            return "(Осиротевший)"
         return str(cp)
 
     @property
     def counterparty_type(self) -> str:
         """Verbose name модели контрагента (для группировки)."""
         if self.content_type_id is None:
-            return 'Осиротевшие'
+            return "Осиротевшие"
         return str(self.content_type.model_class()._meta.verbose_name_plural).capitalize()
 
     @property
@@ -128,13 +133,13 @@ class Contact(models.Model):
         """RFC 5322-формат для composer ("Имя <email>")."""
         email = self.primary_email
         if not email:
-            return ''
-        name = (self.name or '').strip()
+            return ""
+        name = (self.name or "").strip()
         if not name:
             return email
         if any(ch in name for ch in ',;<>"'):
             name = '"' + name.replace('"', '\\"') + '"'
-        return f'{name} <{email}>'
+        return f"{name} <{email}>"
 
 
 class ContactEmail(models.Model):
@@ -143,31 +148,31 @@ class ContactEmail(models.Model):
     contact = models.ForeignKey(
         Contact,
         on_delete=models.CASCADE,
-        related_name='emails',
-        verbose_name='Контакт',
+        related_name="emails",
+        verbose_name="Контакт",
     )
     email = models.EmailField(
         max_length=254,
         db_index=True,
-        verbose_name='Email',
+        verbose_name="Email",
     )
     is_primary = models.BooleanField(
         default=False,
-        verbose_name='Основной',
+        verbose_name="Основной",
     )
     position = models.PositiveIntegerField(
         default=0,
-        verbose_name='Порядок',
+        verbose_name="Порядок",
     )
 
     class Meta:
-        verbose_name = 'Email контакта'
-        verbose_name_plural = 'Emails контактов'
-        ordering = ['contact', '-is_primary', 'position', 'email']
+        verbose_name = "Email контакта"
+        verbose_name_plural = "Emails контактов"
+        ordering = ["contact", "-is_primary", "position", "email"]
         constraints = [
             models.UniqueConstraint(
-                fields=['contact', 'email'],
-                name='contactemail_unique_email_per_contact',
+                fields=["contact", "email"],
+                name="contactemail_unique_email_per_contact",
             ),
         ]
 
@@ -181,26 +186,26 @@ class ContactPhone(models.Model):
     contact = models.ForeignKey(
         Contact,
         on_delete=models.CASCADE,
-        related_name='phones',
-        verbose_name='Контакт',
+        related_name="phones",
+        verbose_name="Контакт",
     )
     phone = models.CharField(
         max_length=50,
-        verbose_name='Телефон',
+        verbose_name="Телефон",
     )
     is_primary = models.BooleanField(
         default=False,
-        verbose_name='Основной',
+        verbose_name="Основной",
     )
     position = models.PositiveIntegerField(
         default=0,
-        verbose_name='Порядок',
+        verbose_name="Порядок",
     )
 
     class Meta:
-        verbose_name = 'Телефон контакта'
-        verbose_name_plural = 'Телефоны контактов'
-        ordering = ['contact', '-is_primary', 'position', 'phone']
+        verbose_name = "Телефон контакта"
+        verbose_name_plural = "Телефоны контактов"
+        ordering = ["contact", "-is_primary", "position", "phone"]
 
     def __str__(self) -> str:
         return self.phone

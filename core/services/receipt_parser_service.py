@@ -45,10 +45,10 @@ SYSTEM_PROMPT = f"""Ты — система распознавания касс�
 def _parse_json_response(text: str) -> dict:
     """Strip markdown fences and parse JSON."""
     text = text.strip()
-    if text.startswith('```'):
-        lines = text.split('\n')
-        lines = [l for l in lines if not l.strip().startswith('```')]
-        text = '\n'.join(lines)
+    if text.startswith("```"):
+        lines = text.split("\n")
+        lines = [l for l in lines if not l.strip().startswith("```")]
+        text = "\n".join(lines)
     return json.loads(text)
 
 
@@ -56,16 +56,16 @@ def _read_image_as_base64(file_path: str) -> tuple[str, str]:
     """Read image file and return (base64_data, media_type)."""
     ext = os.path.splitext(file_path)[1].lower()
     media_types = {
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
-        '.png': 'image/png',
-        '.gif': 'image/gif',
-        '.webp': 'image/webp',
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
     }
-    media_type = media_types.get(ext, 'image/jpeg')
+    media_type = media_types.get(ext, "image/jpeg")
 
-    with open(file_path, 'rb') as f:
-        data = base64.b64encode(f.read()).decode('utf-8')
+    with open(file_path, "rb") as f:
+        data = base64.b64encode(f.read()).decode("utf-8")
     return data, media_type
 
 
@@ -80,7 +80,7 @@ def parse_receipt_image(image_path: str) -> dict:
         logger.error("anthropic not installed")
         raise
 
-    api_key = os.getenv('ANTHROPIC_API_KEY', '')
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
     if not api_key:
         raise ValueError("ANTHROPIC_API_KEY not configured")
 
@@ -93,23 +93,25 @@ def parse_receipt_image(image_path: str) -> dict:
         max_tokens=2000,
         temperature=0,
         system=SYSTEM_PROMPT,
-        messages=[{
-            "role": "user",
-            "content": [
-                {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": media_type,
-                        "data": image_data,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": image_data,
+                        },
                     },
-                },
-                {
-                    "type": "text",
-                    "text": "Распознай этот кассовый чек. Верни ТОЛЬКО JSON.",
-                },
-            ],
-        }],
+                    {
+                        "type": "text",
+                        "text": "Распознай этот кассовый чек. Верни ТОЛЬКО JSON.",
+                    },
+                ],
+            }
+        ],
     )
 
     return _parse_json_response(response.content[0].text)
@@ -136,13 +138,11 @@ def parse_transaction_receipt(transaction_id: int) -> dict | None:
         file_path = tx.attachment.path
         result = parse_receipt_image(file_path)
         tx.receipt_data = result
-        tx.save(update_fields=['receipt_data'])
-        logger.info("Receipt parsed for transaction %d: %s", transaction_id,
-                     result.get('ai_summary', ''))
+        tx.save(update_fields=["receipt_data"])
+        logger.info("Receipt parsed for transaction %d: %s", transaction_id, result.get("ai_summary", ""))
         return result
     except Exception as e:
-        logger.error("Failed to parse receipt for transaction %d: %s",
-                     transaction_id, e, exc_info=True)
+        logger.error("Failed to parse receipt for transaction %d: %s", transaction_id, e, exc_info=True)
         tx.receipt_data = {"error": str(e), "items": [], "total": None}
-        tx.save(update_fields=['receipt_data'])
+        tx.save(update_fields=["receipt_data"])
         return None

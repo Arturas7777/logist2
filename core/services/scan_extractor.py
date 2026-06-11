@@ -12,6 +12,7 @@ AI-извлечение данных из отсканированных PDF.
 auto-downgrade качества/DPI, чтобы каждая страница точно проходила лимит,
 без потери читаемости текста.
 """
+
 from __future__ import annotations
 
 import base64
@@ -72,7 +73,9 @@ def _render_pdf_pages_for_vision(pdf_path: str) -> list[tuple[str, str]]:
             out.append(payload)
             logger.info(
                 "scan_extractor: rendered page %d of %s (%d bytes raw)",
-                page_idx, os.path.basename(pdf_path), len(payload[1]) * 3 // 4,
+                page_idx,
+                os.path.basename(pdf_path),
+                len(payload[1]) * 3 // 4,
             )
     finally:
         doc.close()
@@ -92,16 +95,17 @@ def _render_single_page(page, Image) -> tuple[str, str]:
         img.save(buf, format="JPEG", quality=quality, optimize=True)
         last_buf, last_quality = buf, quality
         if buf.tell() <= _MAX_RAW_IMAGE_BYTES:
-            data = base64.b64encode(buf.getvalue()).decode('utf-8')
+            data = base64.b64encode(buf.getvalue()).decode("utf-8")
             return ("image/jpeg", data)
     # Все пресеты не уложились — отдаём последний (минимальный); если и он
     # больше лимита, лучше пусть API вернёт ошибку, чем мы потеряем картинку.
     logger.warning(
         "scan_extractor: page didn't fit any preset (last=%d bytes @ q=%d)",
-        last_buf.tell() if last_buf else -1, last_quality,
+        last_buf.tell() if last_buf else -1,
+        last_quality,
     )
     assert last_buf is not None
-    return ("image/jpeg", base64.b64encode(last_buf.getvalue()).decode('utf-8'))
+    return ("image/jpeg", base64.b64encode(last_buf.getvalue()).decode("utf-8"))
 
 
 # ── Промпты ────────────────────────────────────────────────────────────────
@@ -230,7 +234,7 @@ def _call_claude_vision(
         logger.error("anthropic не установлен. Запустите: pip install anthropic")
         raise
 
-    api_key = os.getenv('ANTHROPIC_API_KEY', '')
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
     if not api_key:
         raise ValueError("ANTHROPIC_API_KEY не настроен в .env")
 
@@ -238,14 +242,16 @@ def _call_claude_vision(
 
     content_blocks: list[dict[str, Any]] = []
     for media_type, b64 in images:
-        content_blocks.append({
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": media_type,
-                "data": b64,
-            },
-        })
+        content_blocks.append(
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": b64,
+                },
+            }
+        )
     content_blocks.append({"type": "text", "text": user_text})
 
     response = client.messages.create(
@@ -258,10 +264,10 @@ def _call_claude_vision(
 
     raw = response.content[0].text.strip()
     # Стрипаем markdown-обёртку, если Claude её всё-таки добавил.
-    if raw.startswith('```'):
-        lines = raw.split('\n')
-        lines = [l for l in lines if not l.strip().startswith('```')]
-        raw = '\n'.join(lines)
+    if raw.startswith("```"):
+        lines = raw.split("\n")
+        lines = [l for l in lines if not l.strip().startswith("```")]
+        raw = "\n".join(lines)
 
     try:
         return json.loads(raw)
@@ -324,12 +330,12 @@ def _attach_vin_validations_for_title(data: dict[str, Any]) -> None:
         from core.services.vin_validator import cross_check_with_ai_data
     except ImportError:
         return
-    vins = data.get('vins') or []
+    vins = data.get("vins") or []
     if not isinstance(vins, list):
         return
-    ai_make = data.get('make') or ''
-    ai_model = data.get('model') or ''
-    ai_year = data.get('year')
+    ai_make = data.get("make") or ""
+    ai_model = data.get("model") or ""
+    ai_year = data.get("year")
     out = []
     for vin in vins:
         if not vin or not isinstance(vin, str):
@@ -344,7 +350,7 @@ def _attach_vin_validations_for_title(data: dict[str, Any]) -> None:
             out.append(res)
         except Exception as e:
             logger.warning("VIN validation failed for %s: %s", vin, e)
-    data['vin_validations'] = out
+    data["vin_validations"] = out
 
 
 def _attach_vin_validations_for_dock_receipt(data: dict[str, Any]) -> None:
@@ -353,21 +359,21 @@ def _attach_vin_validations_for_dock_receipt(data: dict[str, Any]) -> None:
         from core.services.vin_validator import cross_check_with_ai_data
     except ImportError:
         return
-    vehicles = data.get('vehicles') or []
+    vehicles = data.get("vehicles") or []
     if not isinstance(vehicles, list):
         return
     for veh in vehicles:
         if not isinstance(veh, dict):
             continue
-        vin = veh.get('vin')
+        vin = veh.get("vin")
         if not vin:
             continue
         try:
-            veh['vin_validation'] = cross_check_with_ai_data(
+            veh["vin_validation"] = cross_check_with_ai_data(
                 vin,
-                ai_make=veh.get('make') or '',
-                ai_model=veh.get('model') or '',
-                ai_year=veh.get('year'),
+                ai_make=veh.get("make") or "",
+                ai_model=veh.get("model") or "",
+                ai_year=veh.get("year"),
             )
         except Exception as e:
             logger.warning("VIN validation failed for %s: %s", vin, e)
@@ -379,7 +385,7 @@ LBS_TO_KG = 0.45359237
 
 
 def lbs_to_kg(value) -> float | None:
-    if value is None or value == '':
+    if value is None or value == "":
         return None
     try:
         return round(float(value) * LBS_TO_KG, 2)

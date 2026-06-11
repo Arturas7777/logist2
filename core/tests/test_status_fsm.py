@@ -35,8 +35,11 @@ def _container(number, status, warehouse=None):
 
 def _car(status, **extra):
     return Car.objects.create(
-        year=2023, brand="Toyota", vin=f"FSMCAR{status[:5]:>05}000000"[:17].replace(" ", "0"),
-        status=status, **extra,
+        year=2023,
+        brand="Toyota",
+        vin=f"FSMCAR{status[:5]:>05}000000"[:17].replace(" ", "0"),
+        status=status,
+        **extra,
     )
 
 

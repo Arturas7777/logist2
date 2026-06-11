@@ -24,8 +24,7 @@ def load_fixture(name: str):
 class FakeResponse:
     """Минимальный аналог requests.Response для контрактных тестов."""
 
-    def __init__(self, json_data=None, status_code: int = 200,
-                 content: bytes = b"", headers: dict | None = None):
+    def __init__(self, json_data=None, status_code: int = 200, content: bytes = b"", headers: dict | None = None):
         self._json = json_data
         self.status_code = status_code
         self.headers = headers or {}
@@ -48,7 +47,8 @@ class FakeResponse:
     def raise_for_status(self):
         if self.status_code >= 400:
             raise requests.HTTPError(
-                f"{self.status_code} Error", response=self,
+                f"{self.status_code} Error",
+                response=self,
             )
 
 

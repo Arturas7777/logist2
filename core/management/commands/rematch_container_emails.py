@@ -30,26 +30,24 @@ from core.models_email import ContainerEmail, ContainerEmailLink
 
 
 class Command(BaseCommand):
-    help = 'Повторно сматчить письма ContainerEmail к активным контейнерам.'
+    help = "Повторно сматчить письма ContainerEmail к активным контейнерам."
 
     def add_arguments(self, parser):
         parser.add_argument(
-            '--statuses',
-            nargs='+',
-            default=['FLOATING', 'IN_PORT', 'UNLOADED'],
-            help='Коды статусов контейнеров, которые считаем активными '
-                 '(по умолчанию: FLOATING IN_PORT UNLOADED).',
+            "--statuses",
+            nargs="+",
+            default=["FLOATING", "IN_PORT", "UNLOADED"],
+            help="Коды статусов контейнеров, которые считаем активными (по умолчанию: FLOATING IN_PORT UNLOADED).",
         )
         parser.add_argument(
-            '--include-matched',
-            action='store_true',
-            help='Переопроверить также уже сматченные письма '
-                 '(по умолчанию трогаем только UNMATCHED).',
+            "--include-matched",
+            action="store_true",
+            help="Переопроверить также уже сматченные письма (по умолчанию трогаем только UNMATCHED).",
         )
         parser.add_argument(
-            '--dry-run',
-            action='store_true',
-            help='Ничего не менять, только показать план изменений.',
+            "--dry-run",
+            action="store_true",
+            help="Ничего не менять, только показать план изменений.",
         )
 
     def handle(self, *args, **opts):
@@ -58,17 +56,17 @@ class Command(BaseCommand):
             match_email_to_containers,
         )
 
-        statuses: list[str] = opts['statuses']
-        include_matched: bool = opts['include_matched']
-        dry_run: bool = opts['dry_run']
+        statuses: list[str] = opts["statuses"]
+        include_matched: bool = opts["include_matched"]
+        dry_run: bool = opts["dry_run"]
 
         containers = Container.objects.filter(status__in=statuses)
         booking_index = build_booking_index(containers)
 
         self.stdout.write(
-            f'Активных контейнеров: {containers.count()} '
-            f'(с booking-номерами: {len(booking_index)}). '
-            f'Статусы: {", ".join(statuses)}.'
+            f"Активных контейнеров: {containers.count()} "
+            f"(с booking-номерами: {len(booking_index)}). "
+            f"Статусы: {', '.join(statuses)}."
         )
 
         emails_qs = ContainerEmail.objects.all()
@@ -78,7 +76,7 @@ class Command(BaseCommand):
                 matched_by=ContainerEmail.MATCHED_BY_UNMATCHED,
             )
         total = emails_qs.count()
-        self.stdout.write(f'Писем-кандидатов к проверке: {total}')
+        self.stdout.write(f"Писем-кандидатов к проверке: {total}")
 
         new_links_created = 0
         emails_touched = 0
@@ -90,35 +88,34 @@ class Command(BaseCommand):
         # shim, чтобы не тянуть ParsedMessage.
         class _Shim:
             __slots__ = (
-                'body_html',
-                'body_text',
-                'cc_addrs',
-                'from_addr',
-                'subject',
-                'thread_id',
-                'to_addrs',
+                "body_html",
+                "body_text",
+                "cc_addrs",
+                "from_addr",
+                "subject",
+                "thread_id",
+                "to_addrs",
             )
 
             def __init__(self, e: ContainerEmail) -> None:
-                self.subject = e.subject or ''
-                self.body_text = e.body_text or ''
-                self.body_html = e.body_html or ''
-                self.from_addr = e.from_addr or ''
-                self.to_addrs = e.to_addrs or ''
-                self.cc_addrs = e.cc_addrs or ''
-                self.thread_id = e.thread_id or ''
+                self.subject = e.subject or ""
+                self.body_text = e.body_text or ""
+                self.body_html = e.body_html or ""
+                self.from_addr = e.from_addr or ""
+                self.to_addrs = e.to_addrs or ""
+                self.cc_addrs = e.cc_addrs or ""
+                self.thread_id = e.thread_id or ""
 
         for email in emails_qs.iterator(chunk_size=200):
             shim = _Shim(email)
             result = match_email_to_containers(
-                shim, booking_index=booking_index,
+                shim,
+                booking_index=booking_index,
             )
             if not result.is_matched:
                 continue
 
-            existing_ids = set(
-                email.container_links.values_list('container_id', flat=True)
-            )
+            existing_ids = set(email.container_links.values_list("container_id", flat=True))
             to_create = [
                 ContainerEmailLink(
                     email=email,
@@ -138,23 +135,18 @@ class Command(BaseCommand):
             if not dry_run:
                 if to_create:
                     ContainerEmailLink.objects.bulk_create(
-                        to_create, ignore_conflicts=True,
+                        to_create,
+                        ignore_conflicts=True,
                     )
                 if email.matched_by == ContainerEmail.MATCHED_BY_UNMATCHED:
                     email.matched_by = result.primary_matched_by
-                    email.save(update_fields=['matched_by'])
+                    email.save(update_fields=["matched_by"])
                     emails_primary_updated += 1
             elif email.matched_by == ContainerEmail.MATCHED_BY_UNMATCHED:
                 emails_primary_updated += 1
 
-        prefix = '[DRY RUN] ' if dry_run else ''
-        self.stdout.write('')
-        self.stdout.write(self.style.SUCCESS(
-            f'{prefix}Писем затронуто:              {emails_touched}'
-        ))
-        self.stdout.write(self.style.SUCCESS(
-            f'{prefix}Новых ContainerEmailLink:     {new_links_created}'
-        ))
-        self.stdout.write(self.style.SUCCESS(
-            f'{prefix}У писем обновлено matched_by: {emails_primary_updated}'
-        ))
+        prefix = "[DRY RUN] " if dry_run else ""
+        self.stdout.write("")
+        self.stdout.write(self.style.SUCCESS(f"{prefix}Писем затронуто:              {emails_touched}"))
+        self.stdout.write(self.style.SUCCESS(f"{prefix}Новых ContainerEmailLink:     {new_links_created}"))
+        self.stdout.write(self.style.SUCCESS(f"{prefix}У писем обновлено matched_by: {emails_primary_updated}"))

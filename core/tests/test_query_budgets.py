@@ -49,8 +49,12 @@ def _seed_cars(n, *, warehouse, container):
     for _ in range(n):
         _vin_counter[0] += 1
         Car.objects.create(
-            year=2023, brand="Toyota", vin=f"QBUDGETCAR{_vin_counter[0]:07d}",
-            status="UNLOADED", container=container, warehouse=warehouse,
+            year=2023,
+            brand="Toyota",
+            vin=f"QBUDGETCAR{_vin_counter[0]:07d}",
+            status="UNLOADED",
+            container=container,
+            warehouse=warehouse,
             unload_date=unload,
         )
 
@@ -64,8 +68,11 @@ class TestCarAdminStorageBudget:
 
         wh = Warehouse.objects.create(name=f"WH-QB-{n}", free_days=0)
         WarehouseService.objects.create(
-            warehouse=wh, name="Хранение", code="STORAGE",
-            default_price=Decimal("5"), is_active=True,
+            warehouse=wh,
+            name="Хранение",
+            code="STORAGE",
+            default_price=Decimal("5"),
+            is_active=True,
         )
         container = Container.objects.create(number=f"QB-{n}", status="FLOATING")
         _seed_cars(n, warehouse=wh, container=container)
@@ -85,8 +92,7 @@ class TestCarAdminStorageBudget:
         q2 = self._count_for(2)
         q5 = self._count_for(5)
         assert q2 == q5, (
-            f"Число запросов растёт с числом машин ({q2} → {q5}); "
-            f"вероятно вернулся N+1 в storage_cost_display"
+            f"Число запросов растёт с числом машин ({q2} → {q5}); вероятно вернулся N+1 в storage_cost_display"
         )
 
     def test_storage_value_still_correct(self):
@@ -94,8 +100,11 @@ class TestCarAdminStorageBudget:
 
         wh = Warehouse.objects.create(name="WH-QB-val", free_days=0)
         WarehouseService.objects.create(
-            warehouse=wh, name="Хранение", code="STORAGE",
-            default_price=Decimal("5"), is_active=True,
+            warehouse=wh,
+            name="Хранение",
+            code="STORAGE",
+            default_price=Decimal("5"),
+            is_active=True,
         )
         container = Container.objects.create(number="QB-val", status="FLOATING")
         _seed_cars(1, warehouse=wh, container=container)
@@ -117,9 +126,7 @@ class TestContainerCarsCountBudget:
         _seed_cars(n, warehouse=wh, container=container)
 
         with CaptureQueriesContext(connection) as ctx:
-            containers = list(
-                Container.objects.filter(pk=container.pk).prefetch_related("container_cars")
-            )
+            containers = list(Container.objects.filter(pk=container.pk).prefetch_related("container_cars"))
             for c in containers:
                 # len() по префетченному related — без доп. запроса на контейнер
                 _ = len(c.container_cars.all())
@@ -139,7 +146,8 @@ class TestContainerStorageAggregatesBudget:
         pks = []
         for i in range(n_containers):
             container = Container.objects.create(
-                number=f"SA-{n_containers}-{i}", status="FLOATING",
+                number=f"SA-{n_containers}-{i}",
+                status="FLOATING",
             )
             _seed_cars(cars_per_container, warehouse=wh, container=container)
             pks.append(container.pk)
@@ -148,9 +156,7 @@ class TestContainerStorageAggregatesBudget:
     def _count_for(self, n):
         pks = self._seed(n)
         with CaptureQueriesContext(connection) as ctx:
-            containers = list(
-                Container.objects.with_storage_aggregates().filter(pk__in=pks)
-            )
+            containers = list(Container.objects.with_storage_aggregates().filter(pk__in=pks))
             for c in containers:
                 _ = c.storage_cost
                 _ = c.days
@@ -160,8 +166,7 @@ class TestContainerStorageAggregatesBudget:
         q1 = self._count_for(1)
         q4 = self._count_for(4)
         assert q1 == q4 == 1, (
-            f"with_storage_aggregates должен давать ровно 1 запрос "
-            f"независимо от числа контейнеров ({q1} → {q4})"
+            f"with_storage_aggregates должен давать ровно 1 запрос независимо от числа контейнеров ({q1} → {q4})"
         )
 
     def test_storage_aggregates_values_match_properties(self):
@@ -169,15 +174,14 @@ class TestContainerStorageAggregatesBudget:
 
         pks = self._seed(1)
         Car.objects.filter(container_id__in=pks).update(
-            storage_cost=Decimal("12.50"), days=3,
+            storage_cost=Decimal("12.50"),
+            days=3,
         )
 
         annotated = Container.objects.with_storage_aggregates().get(pk__in=pks)
         plain = Container.objects.get(pk=pks[0])
 
-        expected_sum = Car.objects.filter(container_id=pks[0]).aggregate(
-            s=Sum("storage_cost")
-        )["s"]
+        expected_sum = Car.objects.filter(container_id=pks[0]).aggregate(s=Sum("storage_cost"))["s"]
         assert annotated.storage_cost == plain.storage_cost == expected_sum
         assert annotated.days == plain.days == 3
 
@@ -192,10 +196,16 @@ class TestServiceCatalogBatchResolve:
 
         wh = Warehouse.objects.create(name="WH-P2", free_days=0)
         svc_a = WarehouseService.objects.create(
-            warehouse=wh, name="Разгрузка", default_price=Decimal("100"), is_active=True,
+            warehouse=wh,
+            name="Разгрузка",
+            default_price=Decimal("100"),
+            is_active=True,
         )
         svc_b = WarehouseService.objects.create(
-            warehouse=wh, name="Погрузка", default_price=Decimal("50"), is_active=True,
+            warehouse=wh,
+            name="Погрузка",
+            default_price=Decimal("50"),
+            is_active=True,
         )
         container = Container.objects.create(number="P2-1", status="FLOATING")
         _seed_cars(1, warehouse=wh, container=container)
@@ -234,7 +244,9 @@ class TestServiceCatalogBatchResolve:
 
         css = self._seed()
         ghost = CarService.objects.create(
-            car=css[0].car, service_type="WAREHOUSE", service_id=999999,
+            car=css[0].car,
+            service_type="WAREHOUSE",
+            service_id=999999,
         )
         cache.clear()
         prefetch_service_objects([ghost])

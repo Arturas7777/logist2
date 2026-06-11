@@ -4,6 +4,7 @@
 Проверяет thread-safe хранение старых значений на экземплярах (а не в глобальных dict).
 Запуск: python manage.py test core.tests.test_signals
 """
+
 from django.test import TestCase
 from django.utils import timezone
 
@@ -29,7 +30,7 @@ class ContainerPreSaveSignalTest(TestCase):
         container.save()
 
         # После save, _pre_save_values должен быть очищен
-        self.assertIsNone(getattr(container, '_pre_save_values', None))
+        self.assertIsNone(getattr(container, "_pre_save_values", None))
 
     def test_unloaded_status_at_set_on_transition(self):
         """unloaded_status_at устанавливается при переходе в UNLOADED"""
@@ -73,4 +74,4 @@ class CarPreSaveContractorSignalTest(TestCase):
         car.save()
 
         # _pre_save_contractors должен быть очищен после save
-        self.assertIsNone(getattr(car, '_pre_save_contractors', None))
+        self.assertIsNone(getattr(car, "_pre_save_contractors", None))

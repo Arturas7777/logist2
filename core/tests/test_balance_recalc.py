@@ -65,12 +65,19 @@ class TestClientBalance:
     def test_incoming_minus_outgoing(self, client_a, company):
         # Деньги пришли клиенту (incoming) и ушли от него (outgoing).
         Transaction.objects.create(
-            type="BALANCE_TOPUP", method="CASH", status="COMPLETED",
-            amount=Decimal("300"), to_client=client_a,
+            type="BALANCE_TOPUP",
+            method="CASH",
+            status="COMPLETED",
+            amount=Decimal("300"),
+            to_client=client_a,
         )
         Transaction.objects.create(
-            type="PAYMENT", method="BALANCE", status="COMPLETED",
-            amount=Decimal("100"), from_client=client_a, to_company=company,
+            type="PAYMENT",
+            method="BALANCE",
+            status="COMPLETED",
+            amount=Decimal("100"),
+            from_client=client_a,
+            to_company=company,
         )
         client_a.refresh_from_db()
         assert client_a.balance == Decimal("200.00")
@@ -79,8 +86,12 @@ class TestClientBalance:
         # Для клиента инвойсный PAYMENT учитывается в balance (в отличие от Company).
         inv = _issued_invoice(company, client_a, total="150.00")
         Transaction.objects.create(
-            type="PAYMENT", method="CASH", status="COMPLETED",
-            amount=Decimal("150"), from_client=client_a, to_company=company,
+            type="PAYMENT",
+            method="CASH",
+            status="COMPLETED",
+            amount=Decimal("150"),
+            from_client=client_a,
+            to_company=company,
             invoice=inv,
         )
         client_a.refresh_from_db()
@@ -88,8 +99,11 @@ class TestClientBalance:
 
     def test_pending_excluded(self, client_a):
         Transaction.objects.create(
-            type="BALANCE_TOPUP", method="CASH", status="PENDING",
-            amount=Decimal("500"), to_client=client_a,
+            type="BALANCE_TOPUP",
+            method="CASH",
+            status="PENDING",
+            amount=Decimal("500"),
+            to_client=client_a,
         )
         client_a.refresh_from_db()
         assert client_a.balance == Decimal("0.00")
@@ -107,8 +121,12 @@ class TestNonInvoiceEntityBalance:
         # (учитывается через open_pardp_receivable, не дублируется).
         inv = _issued_invoice(company, client_a, total="100.00")
         Transaction.objects.create(
-            type="PAYMENT", method="CASH", status="COMPLETED",
-            amount=Decimal("100"), from_client=client_a, to_company=company,
+            type="PAYMENT",
+            method="CASH",
+            status="COMPLETED",
+            amount=Decimal("100"),
+            from_client=client_a,
+            to_company=company,
             invoice=inv,
         )
         company.refresh_from_db()
@@ -117,8 +135,11 @@ class TestNonInvoiceEntityBalance:
     def test_company_non_invoice_topup_changes_balance(self, company):
         # А вот TOPUP без инвойса (наличная касса) — учитывается.
         Transaction.objects.create(
-            type="BALANCE_TOPUP", method="CASH", status="COMPLETED",
-            amount=Decimal("250"), to_company=company,
+            type="BALANCE_TOPUP",
+            method="CASH",
+            status="COMPLETED",
+            amount=Decimal("250"),
+            to_company=company,
         )
         company.refresh_from_db()
         assert company.balance == Decimal("250.00")
@@ -126,12 +147,18 @@ class TestNonInvoiceEntityBalance:
     def test_warehouse_non_invoice_balance(self):
         wh = Warehouse.objects.create(name="WH-Bal")
         Transaction.objects.create(
-            type="BALANCE_TOPUP", method="CASH", status="COMPLETED",
-            amount=Decimal("80"), to_warehouse=wh,
+            type="BALANCE_TOPUP",
+            method="CASH",
+            status="COMPLETED",
+            amount=Decimal("80"),
+            to_warehouse=wh,
         )
         Transaction.objects.create(
-            type="PAYMENT", method="CASH", status="COMPLETED",
-            amount=Decimal("30"), from_warehouse=wh,
+            type="PAYMENT",
+            method="CASH",
+            status="COMPLETED",
+            amount=Decimal("30"),
+            from_warehouse=wh,
         )
         wh.refresh_from_db()
         assert wh.balance == Decimal("50.00")
@@ -139,8 +166,11 @@ class TestNonInvoiceEntityBalance:
     def test_line_non_invoice_balance(self):
         line = Line.objects.create(name="Line-Bal")
         Transaction.objects.create(
-            type="BALANCE_TOPUP", method="CASH", status="COMPLETED",
-            amount=Decimal("40"), to_line=line,
+            type="BALANCE_TOPUP",
+            method="CASH",
+            status="COMPLETED",
+            amount=Decimal("40"),
+            to_line=line,
         )
         line.refresh_from_db()
         assert line.balance == Decimal("40.00")
@@ -148,12 +178,18 @@ class TestNonInvoiceEntityBalance:
     def test_carrier_non_invoice_balance(self):
         carrier = Carrier.objects.create(name="Carrier-Bal")
         Transaction.objects.create(
-            type="BALANCE_TOPUP", method="CASH", status="COMPLETED",
-            amount=Decimal("60"), to_carrier=carrier,
+            type="BALANCE_TOPUP",
+            method="CASH",
+            status="COMPLETED",
+            amount=Decimal("60"),
+            to_carrier=carrier,
         )
         Transaction.objects.create(
-            type="PAYMENT", method="CASH", status="COMPLETED",
-            amount=Decimal("100"), from_carrier=carrier,
+            type="PAYMENT",
+            method="CASH",
+            status="COMPLETED",
+            amount=Decimal("100"),
+            from_carrier=carrier,
         )
         carrier.refresh_from_db()
         assert carrier.balance == Decimal("-40.00")

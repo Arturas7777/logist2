@@ -6,6 +6,7 @@
 Retention настраивается через MONITORING_RETENTION_DAYS в settings (default 30).
 Очистка делается task'ом `core.tasks_monitoring.cleanup_old_metrics`.
 """
+
 from __future__ import annotations
 
 from django.db import models
@@ -24,8 +25,8 @@ class SystemMetric(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
-    cpu_percent = models.FloatField(help_text='Загрузка CPU в %, 0-100')
-    load_avg_1 = models.FloatField(null=True, blank=True, help_text='Linux loadavg 1m')
+    cpu_percent = models.FloatField(help_text="Загрузка CPU в %, 0-100")
+    load_avg_1 = models.FloatField(null=True, blank=True, help_text="Linux loadavg 1m")
 
     mem_total_mb = models.IntegerField()
     mem_used_mb = models.IntegerField()
@@ -40,7 +41,7 @@ class SystemMetric(models.Model):
     disk_used_gb = models.FloatField()
     disk_percent = models.FloatField()
 
-    gunicorn_rss_mb = models.IntegerField(default=0, help_text='Sum RSS gunicorn workers')
+    gunicorn_rss_mb = models.IntegerField(default=0, help_text="Sum RSS gunicorn workers")
     celery_rss_mb = models.IntegerField(default=0)
     daphne_rss_mb = models.IntegerField(default=0)
     postgres_rss_mb = models.IntegerField(default=0)
@@ -49,22 +50,22 @@ class SystemMetric(models.Model):
 
     postgres_connections = models.IntegerField(default=0)
     postgres_db_size_mb = models.FloatField(default=0.0)
-    postgres_cache_hit_ratio = models.FloatField(default=0.0, help_text='0-1')
+    postgres_cache_hit_ratio = models.FloatField(default=0.0, help_text="0-1")
 
     redis_memory_mb = models.FloatField(default=0.0)
     redis_clients = models.IntegerField(default=0)
 
-    data = models.JSONField(default=dict, blank=True, help_text='Сырой расширенный снимок')
+    data = models.JSONField(default=dict, blank=True, help_text="Сырой расширенный снимок")
 
     class Meta:
-        db_table = 'core_system_metric'
-        ordering = ['-created_at']
+        db_table = "core_system_metric"
+        ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=['-created_at'], name='sm_created_at_desc_idx'),
+            models.Index(fields=["-created_at"], name="sm_created_at_desc_idx"),
         ]
 
     def __str__(self) -> str:
-        return f'SystemMetric@{self.created_at:%Y-%m-%d %H:%M}'
+        return f"SystemMetric@{self.created_at:%Y-%m-%d %H:%M}"
 
 
 class UptimeCheck(models.Model):
@@ -82,13 +83,13 @@ class UptimeCheck(models.Model):
     error = models.CharField(max_length=255, blank=True)
 
     class Meta:
-        db_table = 'core_uptime_check'
-        ordering = ['-created_at']
+        db_table = "core_uptime_check"
+        ordering = ["-created_at"]
         indexes = [
-            models.Index(fields=['-created_at'], name='uc_created_at_desc_idx'),
-            models.Index(fields=['ok', '-created_at'], name='uc_ok_created_idx'),
+            models.Index(fields=["-created_at"], name="uc_created_at_desc_idx"),
+            models.Index(fields=["ok", "-created_at"], name="uc_ok_created_idx"),
         ]
 
     def __str__(self) -> str:
-        status = 'OK' if self.ok else f'FAIL ({self.error or self.status_code})'
-        return f'UptimeCheck@{self.created_at:%Y-%m-%d %H:%M} {status}'
+        status = "OK" if self.ok else f"FAIL ({self.error or self.status_code})"
+        return f"UptimeCheck@{self.created_at:%Y-%m-%d %H:%M} {status}"

@@ -1,4 +1,5 @@
 """WebSocket consumers for real-time admin updates."""
+
 import json
 import logging
 

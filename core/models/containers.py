@@ -229,9 +229,7 @@ class Container(models.Model):
         # классическом ``container.save()`` со всеми полями.
         update_fields = kwargs.get("update_fields")
         if self.pk and (update_fields is None or "status" in update_fields):
-            old_status = (
-                Container.objects.filter(pk=self.pk).values_list("status", flat=True).first()
-            )
+            old_status = Container.objects.filter(pk=self.pk).values_list("status", flat=True).first()
             validate_status_transition(self, old_status)
         if update_fields is None:
             self.clean()
