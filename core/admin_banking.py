@@ -404,6 +404,9 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
     autocomplete_fields = ['matched_invoice', 'matched_transaction']
     date_hierarchy = 'created_at'
     list_per_page = 50
+    # Отключаем второй COUNT(*) по всей таблице на каждом changelist
+    # (как уже сделано в Car/Container/Client/NewInvoice/Transaction).
+    show_full_result_count = False
     ordering = ('-created_at',)
     actions = [
         'mark_skip_reconciliation', 'unmark_skip_reconciliation',

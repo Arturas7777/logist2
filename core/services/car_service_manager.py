@@ -14,49 +14,6 @@ from core.service_codes import ServiceCode, is_storage_service
 logger = logging.getLogger(__name__)
 
 
-def find_line_service_by_container_count(line, container, vehicle_type):
-    """
-    Legacy THS selection based on car count in container and vehicle type.
-
-    For new proportional THS logic use calculate_ths_for_container().
-    """
-    from core.models import LineService
-
-    if not line or not container:
-        return None
-
-    line_name_upper = line.name.upper()
-
-    moto_types = ['MOTO', 'BIG_MOTO', 'ATV']
-    car_count = container.container_cars.exclude(vehicle_type__in=moto_types).count()
-
-    services = LineService.objects.filter(line=line, is_active=True)
-
-    if vehicle_type in moto_types:
-        for service in services:
-            service_name_upper = service.name.upper()
-            if 'MOTO' in service_name_upper:
-                if line_name_upper in service_name_upper or 'THS' in service_name_upper:
-                    return service
-        for service in services:
-            if 'MOTO' in service.name.upper():
-                return service
-    else:
-        search_patterns = [
-            f'{car_count} АВТО',
-            f'{car_count} AUTO',
-            f'{car_count}АВТО',
-            f'{car_count}AUTO',
-        ]
-        for service in services:
-            service_name_upper = service.name.upper()
-            for pattern in search_patterns:
-                if pattern in service_name_upper:
-                    return service
-
-    return None
-
-
 def calculate_ths_for_container(container):
     """
     Proportional THS distribution across cars in container based on vehicle-type coefficients.

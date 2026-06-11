@@ -4,6 +4,9 @@
             {{ car.brand }} {{ car.vin }} ({{ car.status }}{% if car.status == 'TRANSFERRED' and car.transfer_date %}, {{ car.transfer_date|date:"Y-m-d" }}{% endif %})
         </option>
     {% endfor %}
+    {% if truncated %}
+        <option class="no-results" disabled>Показаны первые {{ limit }} — уточните поиск (VIN/марка/год)</option>
+    {% endif %}
 {% else %}
     <option class="no-results">No available cars</option>
 {% endif %}

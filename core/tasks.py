@@ -47,6 +47,56 @@ def sync_container_photos_gdrive_task(self, container_id, folder_url=None):
         raise self.retry(exc=exc)
 
 
+@shared_task(bind=True, max_retries=2, default_retry_delay=60, time_limit=300)
+def resend_container_notifications_task(self, container_id, kind, channel, user_id=None):
+    """Принудительная повторная отправка уведомлений по контейнеру.
+
+    Используется admin actions «Повторить уведомление...» — в отличие от
+    send_planned/unload_notifications_task здесь НЕТ проверки
+    was_*_notification_sent (отправка форсируется оператором).
+
+    Args:
+        kind: 'planned' | 'unload'
+        channel: 'email' | 'telegram'
+        user_id: id пользователя для NotificationLog
+    """
+    from django.contrib.auth import get_user_model
+
+    from core.models import Container
+
+    try:
+        container = Container.objects.get(id=container_id)
+    except Container.DoesNotExist:
+        logger.warning("Container %s not found, skipping forced %s/%s resend", container_id, kind, channel)
+        return {'sent': 0, 'failed': 0}
+
+    user = None
+    if user_id:
+        user = get_user_model().objects.filter(pk=user_id).first()
+
+    if channel == 'telegram':
+        from core.services.telegram_service import TelegramNotificationService as svc
+    else:
+        from core.services.email_service import ContainerNotificationService as svc
+
+    try:
+        if kind == 'planned':
+            sent, failed = svc.send_planned_to_all_clients(container, user=user)
+        else:
+            sent, failed = svc.send_unload_to_all_clients(container, user=user)
+        logger.info(
+            "Forced %s/%s resend for %s: %d sent, %d failed",
+            kind, channel, container.number, sent, failed,
+        )
+        return {'sent': sent, 'failed': failed}
+    except Exception as exc:
+        logger.error(
+            "Forced %s/%s resend failed for container %s: %s",
+            kind, channel, container_id, exc,
+        )
+        raise self.retry(exc=exc)
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def send_planned_notifications_task(self, container_id):
     from core.models import Container

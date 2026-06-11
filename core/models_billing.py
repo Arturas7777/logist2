@@ -83,113 +83,6 @@ class ExpenseCategory(models.Model):
 
 
 # ============================================================================
-# БАЗОВЫЙ МИКСИН ДЛЯ БАЛАНСОВ
-# ============================================================================
-
-class SimpleBalanceMixin(models.Model):
-    """
-    Простой миксин для балансов - ОДИН баланс вместо трех!
-
-    Разделение по способам оплаты происходит через историю транзакций,
-    а не через отдельные поля баланса.
-    """
-
-    balance = models.DecimalField(
-        max_digits=15,
-        decimal_places=2,
-        default=0,
-        verbose_name="Баланс",
-        help_text="Текущий баланс (положительный = переплата, отрицательный = долг)"
-    )
-
-    balance_updated_at = models.DateTimeField(
-        auto_now=True,
-        verbose_name="Дата обновления баланса"
-    )
-
-    class Meta:
-        abstract = True
-
-    def get_balance_breakdown(self):
-        """Разбивка баланса по способам оплаты из истории транзакций.
-
-        Returns:
-            dict: {'cash': Decimal, 'card': Decimal, 'transfer': Decimal, 'total': Decimal}
-
-        Раньше делалось 6 SELECT-ов (3 method × incoming/outgoing). Теперь
-        один SELECT с CASE WHEN — аналогично BalanceMethodsMixin. Учитываем
-        только COMPLETED-транзакции, как в `recalculate_entity_balance`,
-        иначе breakdown не совпадал с фактическим `self.balance`.
-        """
-        from django.db.models import Case, DecimalField, Q, Sum, Value, When
-        from django.db.models.functions import Coalesce
-
-        model_name = self.__class__.__name__.lower()
-        from .models_billing import Transaction
-
-        incoming_filter = Q(**{f'to_{model_name}': self})
-        outgoing_filter = Q(**{f'from_{model_name}': self})
-        zero = Value(Decimal('0.00'), output_field=DecimalField(max_digits=15, decimal_places=2))
-
-        rows = (
-            Transaction.objects
-            .filter((incoming_filter | outgoing_filter), status='COMPLETED')
-            .values('method')
-            .annotate(
-                incoming=Coalesce(
-                    Sum(Case(When(incoming_filter, then='amount'))),
-                    zero,
-                    output_field=DecimalField(max_digits=15, decimal_places=2),
-                ),
-                outgoing=Coalesce(
-                    Sum(Case(When(outgoing_filter, then='amount'))),
-                    zero,
-                    output_field=DecimalField(max_digits=15, decimal_places=2),
-                ),
-            )
-        )
-
-        breakdown = {m.lower(): Decimal('0.00') for m in ('CASH', 'CARD', 'TRANSFER')}
-        for row in rows:
-            key = (row['method'] or '').lower()
-            if key in breakdown:
-                breakdown[key] = row['incoming'] - row['outgoing']
-
-        breakdown['total'] = self.balance
-        return breakdown
-
-    def get_balance_info(self):
-        """
-        Получить информацию о балансе в понятном виде
-
-        Returns:
-            dict: Информация о балансе с статусом и цветом
-        """
-        balance = self.balance
-
-        if balance > 0:
-            status = "ПЕРЕПЛАТА"
-            color = "#28a745"  # зеленый
-            description = f"Переплата {balance:.2f}"
-        elif balance < 0:
-            status = "ДОЛГ"
-            color = "#dc3545"  # красный
-            description = f"Долг {abs(balance):.2f}"
-        else:
-            status = "БАЛАНС"
-            color = "#6c757d"  # серый
-            description = "Баланс нулевой"
-
-        return {
-            'balance': balance,
-            'status': status,
-            'color': color,
-            'description': description,
-            'breakdown': self.get_balance_breakdown()
-        }
-
-
-# ============================================================================
 # НОВАЯ МОДЕЛЬ ИНВОЙСА
 # ============================================================================
 
@@ -876,6 +769,53 @@ class NewInvoice(models.Model):
             'has_client_prices': has_client_prices,
         }
 
+    # ------------------------------------------------------------------
+    # Конечный автомат статусов (по образцу AutoTransport.ALLOWED_TRANSITIONS).
+    #
+    # Разрешены только осмысленные переходы. Главное, что запрещается:
+    #   * PAID → DRAFT / CANCELLED / OVERDUE (оплаченный инвойс нельзя молча
+    #     «разоплатить» — только через REFUND, который ведёт в
+    #     PARTIALLY_PAID / ISSUED при пересчёте paid_amount);
+    #   * CANCELLED → PAID / PARTIALLY_PAID (отменённый нельзя оплатить);
+    #   * LINKED_PAID → OVERDUE / CANCELLED (закрыт парным документом).
+    # ------------------------------------------------------------------
+    ALLOWED_STATUS_TRANSITIONS = {
+        'DRAFT': {'ISSUED', 'PARTIALLY_PAID', 'PAID', 'LINKED_PAID', 'OVERDUE', 'CANCELLED'},
+        'ISSUED': {'DRAFT', 'PARTIALLY_PAID', 'PAID', 'LINKED_PAID', 'OVERDUE', 'CANCELLED'},
+        'PARTIALLY_PAID': {'ISSUED', 'PAID', 'LINKED_PAID', 'OVERDUE', 'CANCELLED'},
+        # PAID → ISSUED / PARTIALLY_PAID — только следствие REFUND-пересчёта
+        # или отмены кассовых платежей при смене серии (см. _reverse_cash_payments).
+        'PAID': {'ISSUED', 'PARTIALLY_PAID'},
+        'OVERDUE': {'ISSUED', 'PARTIALLY_PAID', 'PAID', 'LINKED_PAID', 'CANCELLED'},
+        'LINKED_PAID': {'ISSUED', 'PAID'},
+        'CANCELLED': {'DRAFT', 'ISSUED'},
+    }
+
+    def _validate_status_transition(self, update_fields=None):
+        """Проверить допустимость смены статуса относительно состояния в БД.
+
+        Вызывается из ``save()``. Создание (нет pk) и сохранения, не
+        затрагивающие ``status``, не проверяются.
+        """
+        if not self.pk:
+            return
+        if update_fields is not None and 'status' not in update_fields:
+            return
+        old_status = (
+            NewInvoice.objects.filter(pk=self.pk)
+            .values_list('status', flat=True)
+            .first()
+        )
+        if not old_status or old_status == self.status:
+            return
+        allowed = self.ALLOWED_STATUS_TRANSITIONS.get(old_status, set())
+        if self.status not in allowed:
+            raise ValidationError(
+                f"Недопустимый переход статуса инвойса {self.number or self.pk}: "
+                f"{old_status} → {self.status}. "
+                f"Допустимые: {', '.join(sorted(allowed)) or 'нет'}"
+            )
+
     def update_status(self):
         """Обновить статус на основе оплаты"""
         if self.status in ('CANCELLED', 'LINKED_PAID'):
@@ -1184,6 +1124,15 @@ class NewInvoice(models.Model):
             self.due_date = timezone.now().date() + timezone.timedelta(days=14)
 
         self.update_status()
+        self._validate_status_transition(kwargs.get('update_fields'))
+
+        # Полная валидация (ровно один issuer/recipient, due_date >= date)
+        # для всех путей сохранения, а не только для admin-форм. Точечные
+        # обновления через update_fields (пересчёт paid_amount, сигналы)
+        # не валидируем: они меняют только служебные поля. created_by —
+        # опциональное служебное поле, исключаем из blank-валидации.
+        if kwargs.get('update_fields') is None:
+            self.full_clean(exclude=['created_by'])
 
         super().save(*args, **kwargs)
 
@@ -1938,12 +1887,25 @@ class Transaction(models.Model):
         return super().delete(*args, **kwargs)
 
     def save(self, *args, **kwargs):
-        """Переопределяем save для автоматической генерации номера"""
+        """Переопределяем save для автоматической генерации номера.
+
+        Полные сохранения (без ``update_fields``) проходят ``full_clean()``,
+        чтобы валидация (стороны транзакции, валюта, защита от переплаты)
+        срабатывала и при создании из кода/shell/Celery, а не только из
+        admin-форм. Точечные обновления служебных полей не валидируем.
+        """
         from django.db import transaction as db_transaction
 
         if not self.number:
             with db_transaction.atomic():
                 self.number = self.generate_number()
+
+        if kwargs.get('update_fields') is None:
+            # description/created_by — де-факто опциональные служебные поля
+            # (большинство Tx создаётся кодом без них), исключаем их из
+            # blank-валидации, чтобы не менять схему. Бизнес-валидация
+            # (clean(): стороны, валюта, переплата) выполняется всегда.
+            self.full_clean(exclude=['description', 'created_by'])
 
         super().save(*args, **kwargs)
 

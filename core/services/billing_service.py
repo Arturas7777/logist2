@@ -133,49 +133,16 @@ class BillingService:
         # считаем один раз в конце. total_price выставляем вручную, т.к.
         # bulk_create обходит InvoiceItem.save() (где он считается).
         items_to_create = []
-        order = 0
 
         if cars:
-            # Автоматически создаем позиции из услуг автомобилей
-            recipient_type = recipient.__class__.__name__
-
-            for car in cars:
-                # Получаем услуги автомобиля по типу получателя
-                if recipient_type == 'Warehouse':
-                    services = car.get_warehouse_services()
-                    service_prefix = 'Склад'
-                elif recipient_type == 'Line':
-                    services = car.get_line_services()
-                    service_prefix = 'Линия'
-                elif recipient_type == 'Carrier':
-                    services = car.get_carrier_services()
-                    service_prefix = 'Перевозчик'
-                else:
-                    # Для клиента - все услуги
-                    services = car.car_services.all()
-                    service_prefix = 'Услуги'
-
-                # Создаем позиции из услуг
-                for service in services:
-                    service_name = service.get_service_name()
-                    description = f"{service_prefix}: {service_name} для {car.vin}"
-
-                    unit_price = (
-                        service.custom_price
-                        if service.custom_price is not None
-                        else service.get_default_price()
-                    )
-                    invoice_item = InvoiceItem(
-                        invoice=invoice,
-                        description=description,
-                        quantity=service.quantity,
-                        unit_price=unit_price,
-                        car=car,
-                        order=order
-                    )
-                    invoice_item.calculate_total()
-                    items_to_create.append(invoice_item)
-                    order += 1
+            # Позиции из услуг автомобилей формирует ЕДИНСТВЕННЫЙ
+            # канонический механизм — NewInvoice.regenerate_items_from_cars()
+            # (группировка по short_name, отдельная строка «Хран», услуги по
+            # типу ВЫСТАВИТЕЛЯ). Раньше здесь был собственный цикл с другим
+            # форматом позиций («Склад: ... для VIN», подбор по получателю) —
+            # два механизма со временем расходились по суммам и формату.
+            invoice.cars.set(cars)
+            invoice.regenerate_items_from_cars()
 
         elif items:
             # Создаем позиции вручную
@@ -414,6 +381,101 @@ class BillingService:
             'remaining': remaining,
             'overpayment': overpayment
         }
+
+    @classmethod
+    @transaction.atomic
+    def register_incoming_bank_payment(
+        cls,
+        invoice,
+        amount: Decimal,
+        *,
+        date=None,
+        description: str = "",
+        created_by=None,
+    ):
+        """
+        Единая регистрация входящего банковского платежа по исходящему инвойсу.
+
+        Используется и ручной привязкой BankTransaction → invoice (сигнал
+        ``auto_create_payment_on_bt_match``), и автосопоставителем
+        (``auto_reconcile``). До унификации сигнал создавал одиночный
+        PAYMENT(TRANSFER) от клиента — это уводило ``Client.balance`` в минус
+        и показывало ложный долг в ``total_balance`` (тот же баг, что чинили
+        в auto_reconcile в апреле 2026).
+
+        Правило учёта денег от клиента — всегда ДВЕ транзакции:
+            1. BALANCE_TOPUP(TRANSFER, to_client) — деньги зашли на счёт клиента;
+            2. PAYMENT(BALANCE, from_client → to_company, invoice) — оплата
+               инвойса с баланса клиента.
+
+        Для не-клиентов (Warehouse/Line/Carrier/Company) — одиночный
+        PAYMENT(TRANSFER): их ``balance`` считается только по Tx без инвойса.
+
+        Returns:
+            Transaction | None: PAYMENT-транзакция (None, если сумма <= 0).
+        """
+        from core.models import Company
+        from core.models_billing import Transaction
+
+        amount = cls.quantize(amount)
+        if amount <= 0:
+            return None
+
+        payer = invoice.recipient
+        if payer is None:
+            raise ValueError(f"У инвойса {invoice.number} не указан получатель (плательщик)")
+
+        company = Company.get_default()
+        currency = invoice.currency or 'EUR'
+        is_client = payer.__class__.__name__ == 'Client'
+
+        tx_date = date or timezone.now()
+
+        if is_client:
+            topup = Transaction(
+                type='BALANCE_TOPUP',
+                method='TRANSFER',
+                status='COMPLETED',
+                amount=amount,
+                currency=currency,
+                to_client=payer,
+                description=(description and f"Пополнение: {description}") or f"Пополнение с банковского платежа ({invoice.number})",
+                date=tx_date,
+                created_by=created_by,
+            )
+            topup.save()
+
+            payment = Transaction(
+                type='PAYMENT',
+                method='BALANCE',
+                status='COMPLETED',
+                amount=amount,
+                currency=currency,
+                invoice=invoice,
+                from_client=payer,
+                to_company=company,
+                description=description or f"Оплата инвойса {invoice.number} с баланса",
+                date=tx_date,
+                created_by=created_by,
+            )
+            payment.save()
+            return payment
+
+        payment = Transaction(
+            type='PAYMENT',
+            method='TRANSFER',
+            status='COMPLETED',
+            amount=amount,
+            currency=currency,
+            invoice=invoice,
+            to_company=company,
+            description=description or f"Оплата инвойса {invoice.number}",
+            date=tx_date,
+            created_by=created_by,
+        )
+        setattr(payment, f'from_{payer.__class__.__name__.lower()}', payer)
+        payment.save()
+        return payment
 
     @classmethod
     @transaction.atomic

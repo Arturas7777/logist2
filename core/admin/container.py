@@ -506,184 +506,131 @@ class ContainerAdmin(admin.ModelAdmin):
     bulk_update_container_statuses.short_description = "Массовое обновление статусов контейнеров"
 
     def sync_photos_from_gdrive(self, request, queryset):
-        """Syncs photos from Google Drive for selected containers"""
-        from core.google_drive_sync import GoogleDriveSync
+        """Ставит синхронизацию фото с Google Drive в очередь Celery.
 
-        total_photos = 0
-        success_count = 0
-        error_count = 0
+        Раньше скачивание шло синхронно в HTTP-запросе — при выборе
+        нескольких контейнеров с сотнями фото это упиралось в таймаут
+        gunicorn (120 с). Одиночная синхронизация из карточки контейнера
+        уже работала через Celery — admin action переведён на ту же задачу.
+        """
+        from core.tasks import sync_container_photos_gdrive_task
 
+        queued = 0
+        errors = 0
         for container in queryset:
             try:
-                photos_added = GoogleDriveSync.sync_container_by_number(
-                    container.number, verbose=True
-                )
-
-                if photos_added > 0:
-                    success_count += 1
-                    total_photos += photos_added
-                    logger.info(f"Container {container.number}: added {photos_added} photos")
-                else:
-                    logger.warning(f"Container {container.number}: no new photos found on Google Drive")
-
+                sync_container_photos_gdrive_task.delay(container.id)
+                queued += 1
             except Exception as e:
-                error_count += 1
-                logger.error(f"Error syncing container {container.number}: {e}")
+                errors += 1
+                logger.error(f"Failed to queue GDrive sync for container {container.number}: {e}")
 
-        if total_photos > 0:
+        if queued:
             self.message_user(
                 request,
-                f"Синхронизация завершена! Добавлено {total_photos} фото для {success_count} контейнеров. Ошибок: {error_count}",
+                f"Запущена фоновая синхронизация фото для {queued} контейнеров. "
+                f"Результат появится в галереях через несколько минут.",
                 level='SUCCESS'
             )
-        else:
+        if errors:
             self.message_user(
                 request,
-                f"Фотографии не найдены. Проверьте наличие папок контейнеров на Google Drive. Ошибок: {error_count}",
-                level='WARNING'
+                f"Не удалось поставить в очередь: {errors} (проверьте доступность Celery/Redis)",
+                level='ERROR'
             )
 
     sync_photos_from_gdrive.short_description = "📥 Загрузить фото с Google Drive"
 
-    def resend_planned_notifications(self, request, queryset):
-        """Resends planned unload date notifications to clients"""
-        from core.services.email_service import ContainerNotificationService
+    def _queue_forced_notifications(self, request, queryset, *, kind, channel, date_field, date_label):
+        """Общий код admin actions повторной отправки уведомлений.
 
-        total_sent = 0
-        total_failed = 0
-        containers_processed = 0
+        Ставит per-container Celery-задачи вместо синхронной рассылки в
+        HTTP-запросе (SMTP/Telegram на десятках клиентов = таймаут).
+        """
+        from core.tasks import resend_container_notifications_task
 
+        queued = 0
+        skipped = 0
+        errors = 0
         for container in queryset:
-            if not container.planned_unload_date:
+            if not getattr(container, date_field):
+                skipped += 1
                 self.message_user(
                     request,
-                    f"Контейнер {container.number}: не указана планируемая дата разгрузки",
+                    f"Контейнер {container.number}: не указана {date_label}",
                     level='WARNING'
                 )
                 continue
+            try:
+                resend_container_notifications_task.delay(
+                    container.id, kind, channel, user_id=request.user.pk,
+                )
+                queued += 1
+            except Exception as e:
+                errors += 1
+                logger.error(
+                    "Failed to queue %s/%s notifications for container %s: %s",
+                    kind, channel, container.number, e,
+                )
 
-            sent, failed = ContainerNotificationService.send_planned_to_all_clients(container, user=request.user)
-            total_sent += sent
-            total_failed += failed
-            if sent > 0:
-                containers_processed += 1
-
-        if total_sent > 0:
+        if queued:
             self.message_user(
                 request,
-                f"Отправлено {total_sent} уведомлений о планируемой разгрузке для {containers_processed} контейнеров. Ошибок: {total_failed}",
+                f"Поставлено в очередь уведомлений: {queued} контейнеров "
+                f"({'Telegram' if channel == 'telegram' else 'Email'}). "
+                f"Результаты — в журнале уведомлений.",
                 level='SUCCESS'
             )
-        elif total_failed > 0:
+        if errors:
             self.message_user(
                 request,
-                f"Не удалось отправить уведомления. Ошибок: {total_failed}. Проверьте email клиентов.",
+                f"Не удалось поставить в очередь: {errors} (проверьте доступность Celery/Redis)",
                 level='ERROR'
             )
-        else:
+        if not queued and not errors and skipped:
             self.message_user(
                 request,
-                "Нет клиентов с email для отправки уведомлений (или уведомления уже были отправлены)",
+                "Нет контейнеров с заполненной датой для отправки.",
                 level='WARNING'
             )
+
+    def resend_planned_notifications(self, request, queryset):
+        """Повторная отправка email-уведомлений о планируемой разгрузке (фоном)."""
+        self._queue_forced_notifications(
+            request, queryset,
+            kind='planned', channel='email',
+            date_field='planned_unload_date', date_label='планируемая дата разгрузки',
+        )
 
     resend_planned_notifications.short_description = "📧 Повторить уведомление о планируемой разгрузке"
 
     def resend_unload_notifications(self, request, queryset):
-        """Resends unload notifications to clients"""
-        from core.services.email_service import ContainerNotificationService
-
-        total_sent = 0
-        total_failed = 0
-        containers_processed = 0
-
-        for container in queryset:
-            if not container.unload_date:
-                self.message_user(
-                    request,
-                    f"Контейнер {container.number}: не указана дата разгрузки",
-                    level='WARNING'
-                )
-                continue
-
-            sent, failed = ContainerNotificationService.send_unload_to_all_clients(container, user=request.user)
-            total_sent += sent
-            total_failed += failed
-            if sent > 0:
-                containers_processed += 1
-
-        if total_sent > 0:
-            self.message_user(
-                request,
-                f"Отправлено {total_sent} уведомлений о разгрузке для {containers_processed} контейнеров. Ошибок: {total_failed}",
-                level='SUCCESS'
-            )
-        elif total_failed > 0:
-            self.message_user(
-                request,
-                f"Не удалось отправить уведомления. Ошибок: {total_failed}. Проверьте email клиентов.",
-                level='ERROR'
-            )
-        else:
-            self.message_user(
-                request,
-                "Нет клиентов с email для отправки уведомлений (или уведомления уже были отправлены)",
-                level='WARNING'
-            )
+        """Повторная отправка email-уведомлений о разгрузке (фоном)."""
+        self._queue_forced_notifications(
+            request, queryset,
+            kind='unload', channel='email',
+            date_field='unload_date', date_label='дата разгрузки',
+        )
 
     resend_unload_notifications.short_description = "📧 Повторить уведомление о разгрузке"
 
     def resend_planned_telegram(self, request, queryset):
-        """Повторная отправка уведомления о планируемой разгрузке в Telegram"""
-        from core.services.telegram_service import TelegramNotificationService
-
-        total_sent = 0
-        total_failed = 0
-        for container in queryset:
-            if not container.planned_unload_date:
-                self.message_user(
-                    request,
-                    f"Контейнер {container.number}: не указана планируемая дата разгрузки",
-                    level='WARNING'
-                )
-                continue
-            sent, failed = TelegramNotificationService.send_planned_to_all_clients(container, user=request.user)
-            total_sent += sent
-            total_failed += failed
-
-        if total_sent > 0:
-            self.message_user(request, f"Telegram: отправлено {total_sent} уведомлений. Ошибок: {total_failed}", level='SUCCESS')
-        elif total_failed > 0:
-            self.message_user(request, f"Telegram: не удалось отправить. Ошибок: {total_failed}.", level='ERROR')
-        else:
-            self.message_user(request, "Нет клиентов с Telegram (или уведомления уже отправлены). Проверьте, включён ли TELEGRAM_BOT_TOKEN.", level='WARNING')
+        """Повторная отправка Telegram-уведомлений о планируемой разгрузке (фоном)."""
+        self._queue_forced_notifications(
+            request, queryset,
+            kind='planned', channel='telegram',
+            date_field='planned_unload_date', date_label='планируемая дата разгрузки',
+        )
 
     resend_planned_telegram.short_description = "📨 Telegram: уведомить о планируемой разгрузке"
 
     def resend_unload_telegram(self, request, queryset):
-        """Повторная отправка уведомления о разгрузке в Telegram"""
-        from core.services.telegram_service import TelegramNotificationService
-
-        total_sent = 0
-        total_failed = 0
-        for container in queryset:
-            if not container.unload_date:
-                self.message_user(
-                    request,
-                    f"Контейнер {container.number}: не указана дата разгрузки",
-                    level='WARNING'
-                )
-                continue
-            sent, failed = TelegramNotificationService.send_unload_to_all_clients(container, user=request.user)
-            total_sent += sent
-            total_failed += failed
-
-        if total_sent > 0:
-            self.message_user(request, f"Telegram: отправлено {total_sent} уведомлений. Ошибок: {total_failed}", level='SUCCESS')
-        elif total_failed > 0:
-            self.message_user(request, f"Telegram: не удалось отправить. Ошибок: {total_failed}.", level='ERROR')
-        else:
-            self.message_user(request, "Нет клиентов с Telegram (или уведомления уже отправлены). Проверьте, включён ли TELEGRAM_BOT_TOKEN.", level='WARNING')
+        """Повторная отправка Telegram-уведомлений о разгрузке (фоном)."""
+        self._queue_forced_notifications(
+            request, queryset,
+            kind='unload', channel='telegram',
+            date_field='unload_date', date_label='дата разгрузки',
+        )
 
     resend_unload_telegram.short_description = "📨 Telegram: уведомить о разгрузке"
 

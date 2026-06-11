@@ -328,6 +328,26 @@ def invalidate_cache(pattern):
     except Exception as e:
         logger.debug(f"Error invalidating cache for pattern {pattern}: {e}")
 
+def invalidate_dashboard_cache():
+    """Удаляет все ключи дашборда (`dashboard:*`) явным списком.
+
+    Явный `delete_many` вместо pattern-инвалидации: работает на любом
+    cache backend (LocMem/File/Redis) и не требует SCAN. Список ключей —
+    единый источник правды `DashboardService._DASHBOARD_CACHE_KEYS`.
+    """
+    try:
+        from .services.dashboard_service import DashboardService
+
+        keys = [
+            get_cache_key('dashboard', name, *args)
+            for name, args in DashboardService._DASHBOARD_CACHE_KEYS
+        ]
+        cache.delete_many(keys)
+        logger.debug("Dashboard cache invalidated (%d keys)", len(keys))
+    except Exception as e:
+        logger.debug("Error invalidating dashboard cache: %s", e)
+
+
 def invalidate_related_cache(model_name, instance_id):
     """Точечно инвалидирует связанный кэш при изменении объекта.
 
@@ -368,7 +388,13 @@ def invalidate_related_cache(model_name, instance_id):
     if model_lower in ('newinvoice', 'transaction', 'car', 'client', 'warehouse'):
         invalidate_cache("comparison_data:*")
 
-    # 5. Маленькие справочные ключи.
+    # 5. Дашборд компании: KPI, aging, recent-списки, cash wallet. Все эти
+    #    ключи зависят от транзакций/инвойсов/машин/контейнеров — без явной
+    #    инвалидации пользователь видел устаревшие цифры до конца TTL (5 мин).
+    if model_lower in ('newinvoice', 'transaction', 'car', 'container', 'company'):
+        invalidate_dashboard_cache()
+
+    # 6. Маленькие справочные ключи.
     if model_lower in ('client', 'warehouse', 'line', 'carrier', 'company'):
         cache.delete(f'payment_objects:{model_lower}')
     if model_lower == 'warehouse':

@@ -99,29 +99,28 @@ def auto_create_payment_on_bt_match(sender, instance, **kwargs):
 
                 company = Company.get_default()
                 direction = invoice.direction
-                tx_kwargs = {
-                    "type": "PAYMENT",
-                    "method": "TRANSFER",
-                    "status": "COMPLETED",
-                    "amount": payment_amount,
-                    "currency": invoice.currency or "EUR",
-                    "invoice": invoice,
-                    "description": (f"Авто-привязка банковского платежа {bt.counterparty_name} -> {invoice.number}"),
-                    "date": bt.created_at,
-                }
 
                 if bt.amount > 0 and direction == "OUTGOING":
-                    recipient = invoice.recipient
-                    if not recipient:
+                    # Входящий платёж по нашему инвойсу. Для клиентов
+                    # BillingService создаёт пару BALANCE_TOPUP + PAYMENT(BALANCE),
+                    # чтобы авансовый счёт клиента не уходил в минус.
+                    from core.services.billing_service import BillingService
+
+                    if not invoice.recipient:
                         logger.info(
                             "[BT auto-pay] Skipping BT %s: invoice %s has no recipient",
                             bt.pk,
                             invoice.number,
                         )
                         return
-                    tx_kwargs["to_company"] = company
-                    from_field = f"from_{recipient.__class__.__name__.lower()}"
-                    tx_kwargs[from_field] = recipient
+                    tx = BillingService.register_incoming_bank_payment(
+                        invoice,
+                        payment_amount,
+                        date=bt.created_at,
+                        description=(f"Авто-привязка банковского платежа {bt.counterparty_name} -> {invoice.number}"),
+                    )
+                    if tx is None:
+                        return
 
                 elif bt.amount < 0 and direction == "INCOMING":
                     issuer = invoice.issuer
@@ -132,9 +131,19 @@ def auto_create_payment_on_bt_match(sender, instance, **kwargs):
                             invoice.number,
                         )
                         return
-                    tx_kwargs["from_company"] = company
-                    to_field = f"to_{issuer.__class__.__name__.lower()}"
-                    tx_kwargs[to_field] = issuer
+                    tx = Transaction(
+                        type="PAYMENT",
+                        method="TRANSFER",
+                        status="COMPLETED",
+                        amount=payment_amount,
+                        currency=invoice.currency or "EUR",
+                        invoice=invoice,
+                        from_company=company,
+                        description=(f"Авто-привязка банковского платежа {bt.counterparty_name} -> {invoice.number}"),
+                        date=bt.created_at,
+                    )
+                    setattr(tx, f"to_{issuer.__class__.__name__.lower()}", issuer)
+                    tx.save()
 
                 else:
                     logger.info(
@@ -144,9 +153,6 @@ def auto_create_payment_on_bt_match(sender, instance, **kwargs):
                         direction,
                     )
                     return
-
-                tx = Transaction(**tx_kwargs)
-                tx.save()
 
                 bt._creating_payment = True
                 try:

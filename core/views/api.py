@@ -47,6 +47,11 @@ def car_list_api(request):
     except (TypeError, ValueError):
         client_id_int = None
 
+    # Жёсткий потолок размера выдачи: у оптовых клиентов тысячи машин,
+    # рендер полного списка в HTML блокировал request-цикл. Дальше — через
+    # поле поиска (параметр search сужает выборку на стороне сервера).
+    limit = 200
+
     if client_id_int:
         allowed_statuses = ['UNLOADED', 'IN_PORT', 'FLOATING', 'TRANSFERRED']
         all_cars = Car.objects.by_client(client_id_int).filter(
@@ -66,7 +71,15 @@ def car_list_api(request):
                 year_q
             )
 
-        html = render_to_string('admin/car_options.html', context={'cars': all_cars}, request=request)
+        cars_page = list(all_cars[:limit + 1])
+        truncated = len(cars_page) > limit
+        cars_page = cars_page[:limit]
+
+        html = render_to_string(
+            'admin/car_options.html',
+            context={'cars': cars_page, 'truncated': truncated, 'limit': limit},
+            request=request,
+        )
         return HttpResponse(html, content_type='text/html')
     return HttpResponse('<option class="no-results">Клиент не выбран</option>', content_type='text/html')
 

@@ -7,7 +7,71 @@
 
 ## [Unreleased]
 
+### Added
+
+- **FSM статусов инвойса** (`NewInvoice.ALLOWED_STATUS_TRANSITIONS` +
+  проверка в `save()`, по образцу `AutoTransport`): запрещены бессмысленные
+  переходы — `PAID → DRAFT/CANCELLED/OVERDUE`, `CANCELLED → PAID`,
+  `LINKED_PAID → OVERDUE/CANCELLED`. Легитимные пути (REFUND-пересчёт
+  `PAID → PARTIALLY_PAID/ISSUED`, смена серии, отмена) разрешены.
+- **`BillingService.register_incoming_bank_payment()`** — единая точка
+  регистрации входящих банковских платежей по исходящим инвойсам: для
+  клиентов всегда пара `BALANCE_TOPUP + PAYMENT(BALANCE)` (авансовый счёт
+  не уходит в минус), для контрагентов — одиночный `PAYMENT(TRANSFER)`.
+  Используется и сигналом `auto_create_payment_on_bt_match`, и командой
+  `auto_reconcile`.
+
+### Changed
+
+- **Единый механизм формирования позиций инвойса**:
+  `BillingService.create_invoice(cars=...)` теперь делегирует
+  `NewInvoice.regenerate_items_from_cars()` (группировка по `short_name`,
+  отдельная строка «Хран», услуги по типу выставителя) вместо собственного
+  построчного цикла — два расходившихся механизма сведены к одному.
+- **Обязательная валидация при сохранении**: `Transaction.save()` и
+  `NewInvoice.save()` вызывают `full_clean()` при полных сохранениях
+  (без `update_fields`) — проверка сторон транзакции, валюты и защита от
+  переплаты работают из кода/shell/Celery, а не только из admin-форм.
+- **Admin actions контейнеров переведены на Celery**: массовая загрузка
+  фото с Google Drive (`sync_container_photos_gdrive_task`) и повторная
+  отправка уведомлений email/Telegram (новая задача
+  `resend_container_notifications_task` с принудительной отправкой) больше
+  не выполняются синхронно в HTTP-запросе (риск таймаута gunicorn).
+
+### Fixed
+
+- **BT auto-pay без парного TOPUP**: ручная привязка банковской транзакции
+  к клиентскому инвойсу создавала одиночный `PAYMENT(TRANSFER)` от клиента,
+  уводя `Client.balance` в минус и показывая ложный долг в `total_balance`
+  (тот же баг, что чинили в `auto_reconcile` в апреле 2026). Теперь —
+  через `register_incoming_bank_payment()`.
+- **Устаревший кэш дашборда**: ключи `dashboard:*` теперь инвалидируются
+  при изменении `Transaction`/`NewInvoice`/`Car`/`Container`/`Company`
+  (`invalidate_dashboard_cache()` в `cache_utils.py`) — раньше после
+  платежа дашборд показывал старые цифры до конца TTL (5 мин).
+
+### Removed
+
+- Мёртвый код: `SimpleBalanceMixin` (`models_billing.py`, не использовался
+  ни одной моделью) и legacy `find_line_service_by_container_count()`
+  (`car_service_manager.py`).
+- **503 файла `media/` сняты с git-трекинга** (`git rm --cached`) —
+  медиа не должны храниться в репозитории (каталог в `.gitignore`).
+  Полная чистка истории (`git filter-repo`) — отдельная операция.
+- Локальный мусор из корня: `runserver.log` (2.5 MB), 4 дампа/SQL-бэкапа
+  (~25 MB), `renumber_out.txt`, `test_db.sqlite3`.
+
 ### Performance
+
+- **Дашборд компании**:
+  - aged receivables/payables считаются одним SQL с `CASE WHEN` +
+    `GROUP BY` вместо Python-цикла по всем неоплаченным инвойсам;
+  - кэшируются ранее некэшированные `get_cash_wallet()`,
+    `get_recent_transactions()`, `get_recent_invoices()`.
+- **`car_list_api`**: лимит 200 машин в выдаче + подсказка «уточните
+  поиск» — у оптовых клиентов рендер полного списка блокировал request.
+- **`BankTransactionAdmin`**: `show_full_result_count = False` — убран
+  второй `COUNT(*)` по всей таблице на каждом changelist.
 
 - **Аудит производительности и устранение узких мест (этапы A–E).**
   - **Админка контейнера**: смена `unload_date` больше не регенерирует

@@ -21,73 +21,75 @@ class DashboardService:
 
     def __init__(self):
         from ..models import Company
-        self.company = Company.objects.filter(name__icontains='Caromoto').first()
+
+        self.company = Company.objects.filter(name__icontains="Caromoto").first()
 
     # ========================================================================
     # OPERATIONAL KPIs
     # ========================================================================
 
     def get_cars_by_status(self):
-        cache_key = get_cache_key('dashboard', 'cars_by_status')
+        cache_key = get_cache_key("dashboard", "cars_by_status")
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
         from ..models import Car
-        qs = Car.objects.values('status').annotate(count=Count('id'))
-        result = {row['status']: row['count'] for row in qs}
-        # Ensure all statuses present
-        for s in ('FLOATING', 'IN_PORT', 'UNLOADED', 'TRANSFERRED'):
-            result.setdefault(s, 0)
-        result['total'] = sum(result.values())
 
-        cache.set(cache_key, result, CACHE_TIMEOUTS['short'])
+        qs = Car.objects.values("status").annotate(count=Count("id"))
+        result = {row["status"]: row["count"] for row in qs}
+        # Ensure all statuses present
+        for s in ("FLOATING", "IN_PORT", "UNLOADED", "TRANSFERRED"):
+            result.setdefault(s, 0)
+        result["total"] = sum(result.values())
+
+        cache.set(cache_key, result, CACHE_TIMEOUTS["short"])
         return result
 
     def get_containers_by_status(self):
-        cache_key = get_cache_key('dashboard', 'containers_by_status')
+        cache_key = get_cache_key("dashboard", "containers_by_status")
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
         from ..models import Container
-        qs = Container.objects.values('status').annotate(count=Count('id'))
-        result = {row['status']: row['count'] for row in qs}
-        for s in ('FLOATING', 'IN_PORT', 'UNLOADED', 'TRANSFERRED'):
-            result.setdefault(s, 0)
-        result['total'] = sum(result.values())
 
-        cache.set(cache_key, result, CACHE_TIMEOUTS['short'])
+        qs = Container.objects.values("status").annotate(count=Count("id"))
+        result = {row["status"]: row["count"] for row in qs}
+        for s in ("FLOATING", "IN_PORT", "UNLOADED", "TRANSFERRED"):
+            result.setdefault(s, 0)
+        result["total"] = sum(result.values())
+
+        cache.set(cache_key, result, CACHE_TIMEOUTS["short"])
         return result
 
     def get_cars_on_storage(self):
-        cache_key = get_cache_key('dashboard', 'cars_on_storage')
+        cache_key = get_cache_key("dashboard", "cars_on_storage")
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
         from ..models import Car
-        result = Car.objects.filter(status='UNLOADED').aggregate(
-            count=Count('id'),
-            total_storage_cost=Sum('storage_cost')
-        )
-        result['total_storage_cost'] = float(result['total_storage_cost'] or 0)
 
-        cache.set(cache_key, result, CACHE_TIMEOUTS['short'])
+        result = Car.objects.filter(status="UNLOADED").aggregate(
+            count=Count("id"), total_storage_cost=Sum("storage_cost")
+        )
+        result["total_storage_cost"] = float(result["total_storage_cost"] or 0)
+
+        cache.set(cache_key, result, CACHE_TIMEOUTS["short"])
         return result
 
     def get_active_auto_transports(self):
-        cache_key = get_cache_key('dashboard', 'active_auto_transports')
+        cache_key = get_cache_key("dashboard", "active_auto_transports")
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
         from ..models import AutoTransport
-        count = AutoTransport.objects.exclude(
-            status__in=['DELIVERED', 'CANCELLED']
-        ).count()
 
-        cache.set(cache_key, count, CACHE_TIMEOUTS['short'])
+        count = AutoTransport.objects.exclude(status__in=["DELIVERED", "CANCELLED"]).count()
+
+        cache.set(cache_key, count, CACHE_TIMEOUTS["short"])
         return count
 
     # ========================================================================
@@ -97,87 +99,83 @@ class DashboardService:
     def get_company_balance(self):
         """Баланс компании — всегда свежий, без кэша"""
         if not self.company:
-            return Decimal('0.00')
+            return Decimal("0.00")
         self.company.refresh_from_db()
         return self.company.balance
 
     def get_outstanding_invoices_total(self):
-        cache_key = get_cache_key('dashboard', 'outstanding_invoices')
+        cache_key = get_cache_key("dashboard", "outstanding_invoices")
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
         from ..mixins import OVERDUE_CANDIDATE_STATUSES
         from ..models_billing import NewInvoice
-        result = NewInvoice.objects.filter(
-            status__in=OVERDUE_CANDIDATE_STATUSES
-        ).aggregate(
-            total=Sum(F('total') - F('paid_amount')),
-            count=Count('id')
+
+        result = NewInvoice.objects.filter(status__in=OVERDUE_CANDIDATE_STATUSES).aggregate(
+            total=Sum(F("total") - F("paid_amount")), count=Count("id")
         )
         data = {
-            'total': float(result['total'] or 0),
-            'count': result['count'] or 0,
+            "total": float(result["total"] or 0),
+            "count": result["count"] or 0,
         }
 
-        cache.set(cache_key, data, CACHE_TIMEOUTS['short'])
+        cache.set(cache_key, data, CACHE_TIMEOUTS["short"])
         return data
 
     def get_monthly_revenue(self):
-        cache_key = get_cache_key('dashboard', 'monthly_revenue')
+        cache_key = get_cache_key("dashboard", "monthly_revenue")
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
         from ..models_billing import Transaction
+
         now = timezone.now()
         start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
         result = Transaction.objects.filter(
-            to_company=self.company,
-            status='COMPLETED',
-            date__gte=start_of_month
-        ).aggregate(total=Sum('amount'))
-        total = float(result['total'] or 0)
+            to_company=self.company, status="COMPLETED", date__gte=start_of_month
+        ).aggregate(total=Sum("amount"))
+        total = float(result["total"] or 0)
 
-        cache.set(cache_key, total, CACHE_TIMEOUTS['short'])
+        cache.set(cache_key, total, CACHE_TIMEOUTS["short"])
         return total
 
     def get_monthly_expenses(self):
-        cache_key = get_cache_key('dashboard', 'monthly_expenses')
+        cache_key = get_cache_key("dashboard", "monthly_expenses")
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
         from ..models_billing import Transaction
+
         now = timezone.now()
         start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
         result = Transaction.objects.filter(
-            from_company=self.company,
-            status='COMPLETED',
-            date__gte=start_of_month
-        ).aggregate(total=Sum('amount'))
-        total = float(result['total'] or 0)
+            from_company=self.company, status="COMPLETED", date__gte=start_of_month
+        ).aggregate(total=Sum("amount"))
+        total = float(result["total"] or 0)
 
-        cache.set(cache_key, total, CACHE_TIMEOUTS['short'])
+        cache.set(cache_key, total, CACHE_TIMEOUTS["short"])
         return total
 
     def get_overdue_invoices_count(self):
-        cache_key = get_cache_key('dashboard', 'overdue_invoices')
+        cache_key = get_cache_key("dashboard", "overdue_invoices")
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
         from ..mixins import OVERDUE_CANDIDATE_STATUSES
         from ..models_billing import NewInvoice
+
         today = timezone.now().date()
         count = NewInvoice.objects.filter(
-            Q(status='OVERDUE') |
-            Q(status__in=OVERDUE_CANDIDATE_STATUSES, due_date__lt=today)
+            Q(status="OVERDUE") | Q(status__in=OVERDUE_CANDIDATE_STATUSES, due_date__lt=today)
         ).count()
 
-        cache.set(cache_key, count, CACHE_TIMEOUTS['short'])
+        cache.set(cache_key, count, CACHE_TIMEOUTS["short"])
         return count
 
     # ========================================================================
@@ -188,124 +186,140 @@ class DashboardService:
         """Наличные на руках + личные расходы + личные карты."""
         if not self.company:
             return {
-                'total_cash': Decimal('0'), 'personal_month': Decimal('0'),
-                'personal_total': Decimal('0'), 'recent_personal': [],
-                'personal_cards': [],
+                "total_cash": Decimal("0"),
+                "personal_month": Decimal("0"),
+                "personal_total": Decimal("0"),
+                "recent_personal": [],
+                "personal_cards": [],
             }
 
+        cache_key = get_cache_key("dashboard", "cash_wallet")
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         from ..models_billing import ExpenseCategory, PersonalCard, Transaction
+
         breakdown = self.company.get_balance_breakdown()
-        total_cash = breakdown.get('cash', Decimal('0'))
+        total_cash = breakdown.get("cash", Decimal("0"))
 
         now = timezone.now()
         start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-        personal_cats = list(ExpenseCategory.objects.filter(
-            category_type='PERSONAL'
-        ).values_list('id', flat=True))
+        personal_cats = list(ExpenseCategory.objects.filter(category_type="PERSONAL").values_list("id", flat=True))
 
-        personal_month = Decimal('0')
-        personal_total = Decimal('0')
+        personal_month = Decimal("0")
+        personal_total = Decimal("0")
         if personal_cats:
             personal_month = Transaction.objects.filter(
-                from_company=self.company, status='COMPLETED',
-                method='CASH', category_id__in=personal_cats,
+                from_company=self.company,
+                status="COMPLETED",
+                method="CASH",
+                category_id__in=personal_cats,
                 date__gte=start_of_month,
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
 
             personal_total = Transaction.objects.filter(
-                from_company=self.company, status='COMPLETED',
-                method='CASH', category_id__in=personal_cats,
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+                from_company=self.company,
+                status="COMPLETED",
+                method="CASH",
+                category_id__in=personal_cats,
+            ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
 
-        recent_personal = list(
-            Transaction.objects.filter(
-                from_company=self.company, status='COMPLETED',
-                method='CASH', category_id__in=personal_cats,
-            ).select_related('category').order_by('-date')[:10]
-        ) if personal_cats else []
+        recent_personal = (
+            list(
+                Transaction.objects.filter(
+                    from_company=self.company,
+                    status="COMPLETED",
+                    method="CASH",
+                    category_id__in=personal_cats,
+                )
+                .select_related("category")
+                .order_by("-date")[:10]
+            )
+            if personal_cats
+            else []
+        )
 
         category_breakdown = []
         if personal_cats:
-            cat_data = Transaction.objects.filter(
-                from_company=self.company, status='COMPLETED',
-                method='CASH', category_id__in=personal_cats,
-                date__gte=start_of_month,
-            ).values('category__name').annotate(
-                total=Sum('amount')
-            ).order_by('-total')
-            category_breakdown = [
-                {'category': d['category__name'], 'total': float(d['total'])}
-                for d in cat_data
-            ]
+            cat_data = (
+                Transaction.objects.filter(
+                    from_company=self.company,
+                    status="COMPLETED",
+                    method="CASH",
+                    category_id__in=personal_cats,
+                    date__gte=start_of_month,
+                )
+                .values("category__name")
+                .annotate(total=Sum("amount"))
+                .order_by("-total")
+            )
+            category_breakdown = [{"category": d["category__name"], "total": float(d["total"])} for d in cat_data]
 
-        personal_cards = list(
-            PersonalCard.objects.filter(is_active=True).order_by('order', 'name')
-        )
+        personal_cards = list(PersonalCard.objects.filter(is_active=True).order_by("order", "name"))
         total_cards = sum(c.balance for c in personal_cards)
 
-        return {
-            'total_cash': total_cash,
-            'personal_month': personal_month,
-            'personal_total': personal_total,
-            'recent_personal': recent_personal,
-            'category_breakdown': category_breakdown,
-            'personal_cards': personal_cards,
-            'total_cards': total_cards,
+        result = {
+            "total_cash": total_cash,
+            "personal_month": personal_month,
+            "personal_total": personal_total,
+            "recent_personal": recent_personal,
+            "category_breakdown": category_breakdown,
+            "personal_cards": personal_cards,
+            "total_cards": total_cards,
         }
+        cache.set(cache_key, result, CACHE_TIMEOUTS["short"])
+        return result
 
     def get_total_assets(self):
         """Всего активов = наличные + личные карты + EUR-банковские счета."""
         wallet = self.get_cash_wallet()
         bank_accounts = self.get_bank_balances()
-        bank_eur = sum(
-            Decimal(str(acc['balance'] or 0))
-            for acc in bank_accounts if acc['currency'] == 'EUR'
-        )
-        return wallet['total_cash'] + wallet.get('total_cards', Decimal('0')) + bank_eur
+        bank_eur = sum(Decimal(str(acc["balance"] or 0)) for acc in bank_accounts if acc["currency"] == "EUR")
+        return wallet["total_cash"] + wallet.get("total_cards", Decimal("0")) + bank_eur
 
     # ========================================================================
     # CHARTS
     # ========================================================================
 
     def get_revenue_expenses_by_month(self, months=6):
-        cache_key = get_cache_key('dashboard', 'revenue_expenses_chart', months)
+        cache_key = get_cache_key("dashboard", "revenue_expenses_chart", months)
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
         from ..models_billing import Transaction
+
         now = timezone.now()
 
-        start_dt = (now - relativedelta(months=months - 1)).replace(
-            day=1, hour=0, minute=0, second=0, microsecond=0
-        )
+        start_dt = (now - relativedelta(months=months - 1)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
         rev_qs = (
             Transaction.objects.filter(
                 to_company=self.company,
-                status='COMPLETED',
+                status="COMPLETED",
                 date__gte=start_dt,
             )
-            .annotate(month=TruncMonth('date'))
-            .values('month')
-            .annotate(total=Sum('amount'))
-            .order_by('month')
+            .annotate(month=TruncMonth("date"))
+            .values("month")
+            .annotate(total=Sum("amount"))
+            .order_by("month")
         )
-        rev_map = {row['month'].strftime('%m/%Y'): float(row['total']) for row in rev_qs}
+        rev_map = {row["month"].strftime("%m/%Y"): float(row["total"]) for row in rev_qs}
 
         exp_qs = (
             Transaction.objects.filter(
                 from_company=self.company,
-                status='COMPLETED',
+                status="COMPLETED",
                 date__gte=start_dt,
             )
-            .annotate(month=TruncMonth('date'))
-            .values('month')
-            .annotate(total=Sum('amount'))
-            .order_by('month')
+            .annotate(month=TruncMonth("date"))
+            .values("month")
+            .annotate(total=Sum("amount"))
+            .order_by("month")
         )
-        exp_map = {row['month'].strftime('%m/%Y'): float(row['total']) for row in exp_qs}
+        exp_map = {row["month"].strftime("%m/%Y"): float(row["total"]) for row in exp_qs}
 
         labels = []
         revenue = []
@@ -313,26 +327,27 @@ class DashboardService:
         for i in range(months - 1, -1, -1):
             dt = now - relativedelta(months=i)
             month_start = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-            label = month_start.strftime('%m/%Y')
+            label = month_start.strftime("%m/%Y")
             labels.append(label)
             revenue.append(rev_map.get(label, 0))
             expenses.append(exp_map.get(label, 0))
 
-        data = {'labels': labels, 'revenue': revenue, 'expenses': expenses}
-        cache.set(cache_key, data, CACHE_TIMEOUTS['medium'])
+        data = {"labels": labels, "revenue": revenue, "expenses": expenses}
+        cache.set(cache_key, data, CACHE_TIMEOUTS["medium"])
         return data
 
     def get_invoices_by_status(self):
-        cache_key = get_cache_key('dashboard', 'invoices_by_status')
+        cache_key = get_cache_key("dashboard", "invoices_by_status")
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
         from ..models_billing import NewInvoice
-        qs = NewInvoice.objects.values('status').annotate(count=Count('id'))
-        result = {row['status']: row['count'] for row in qs}
 
-        cache.set(cache_key, result, CACHE_TIMEOUTS['short'])
+        qs = NewInvoice.objects.values("status").annotate(count=Count("id"))
+        result = {row["status"]: row["count"] for row in qs}
+
+        cache.set(cache_key, result, CACHE_TIMEOUTS["short"])
         return result
 
     # ========================================================================
@@ -341,74 +356,80 @@ class DashboardService:
 
     def get_expenses_by_category(self):
         """Расходы текущего месяца по категориям"""
-        cache_key = get_cache_key('dashboard', 'expenses_by_category')
+        cache_key = get_cache_key("dashboard", "expenses_by_category")
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
         from ..models_billing import Transaction
+
         now = timezone.now()
         start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
         qs = (
             Transaction.objects.filter(
                 from_company=self.company,
-                status='COMPLETED',
+                status="COMPLETED",
                 date__gte=start_of_month,
             )
-            .values('category__name', 'category__short_name')
-            .annotate(total=Sum('amount'))
-            .order_by('-total')
+            .values("category__name", "category__short_name")
+            .annotate(total=Sum("amount"))
+            .order_by("-total")
         )
 
-        grand_total = sum(float(row['total'] or 0) for row in qs)
+        grand_total = sum(float(row["total"] or 0) for row in qs)
         result = []
         for row in qs:
-            amount = float(row['total'] or 0)
-            result.append({
-                'category_name': row['category__name'] or 'Без категории',
-                'short_name': row['category__short_name'] or '—',
-                'amount': amount,
-                'percent': round(amount / grand_total * 100, 1) if grand_total else 0,
-            })
+            amount = float(row["total"] or 0)
+            result.append(
+                {
+                    "category_name": row["category__name"] or "Без категории",
+                    "short_name": row["category__short_name"] or "—",
+                    "amount": amount,
+                    "percent": round(amount / grand_total * 100, 1) if grand_total else 0,
+                }
+            )
 
-        cache.set(cache_key, result, CACHE_TIMEOUTS['short'])
+        cache.set(cache_key, result, CACHE_TIMEOUTS["short"])
         return result
 
     def get_income_by_category(self):
         """Доходы текущего месяца по категориям"""
-        cache_key = get_cache_key('dashboard', 'income_by_category')
+        cache_key = get_cache_key("dashboard", "income_by_category")
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
         from ..models_billing import Transaction
+
         now = timezone.now()
         start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
         qs = (
             Transaction.objects.filter(
                 to_company=self.company,
-                status='COMPLETED',
+                status="COMPLETED",
                 date__gte=start_of_month,
             )
-            .values('category__name', 'category__short_name')
-            .annotate(total=Sum('amount'))
-            .order_by('-total')
+            .values("category__name", "category__short_name")
+            .annotate(total=Sum("amount"))
+            .order_by("-total")
         )
 
-        grand_total = sum(float(row['total'] or 0) for row in qs)
+        grand_total = sum(float(row["total"] or 0) for row in qs)
         result = []
         for row in qs:
-            amount = float(row['total'] or 0)
-            result.append({
-                'category_name': row['category__name'] or 'Без категории',
-                'short_name': row['category__short_name'] or '—',
-                'amount': amount,
-                'percent': round(amount / grand_total * 100, 1) if grand_total else 0,
-            })
+            amount = float(row["total"] or 0)
+            result.append(
+                {
+                    "category_name": row["category__name"] or "Без категории",
+                    "short_name": row["category__short_name"] or "—",
+                    "amount": amount,
+                    "percent": round(amount / grand_total * 100, 1) if grand_total else 0,
+                }
+            )
 
-        cache.set(cache_key, result, CACHE_TIMEOUTS['short'])
+        cache.set(cache_key, result, CACHE_TIMEOUTS["short"])
         return result
 
     # ========================================================================
@@ -417,104 +438,140 @@ class DashboardService:
 
     def get_bank_balances(self):
         """Возвращает список активных банковских счетов с балансами."""
-        cache_key = get_cache_key('dashboard', 'bank_balances')
+        cache_key = get_cache_key("dashboard", "bank_balances")
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
         from ..models_banking import BankAccount
+
         accounts = list(
             BankAccount.objects.filter(
                 connection__is_active=True,
-                state='active',
-            ).select_related('connection').order_by('currency', 'name')
+                state="active",
+            )
+            .select_related("connection")
+            .order_by("currency", "name")
             .values(
-                'id', 'name', 'currency', 'balance', 'last_updated_at',
-                'connection__name', 'connection__bank_type',
-                'connection__last_synced_at',
+                "id",
+                "name",
+                "currency",
+                "balance",
+                "last_updated_at",
+                "connection__name",
+                "connection__bank_type",
+                "connection__last_synced_at",
             )
         )
 
-        cache.set(cache_key, accounts, CACHE_TIMEOUTS['short'])
+        cache.set(cache_key, accounts, CACHE_TIMEOUTS["short"])
         return accounts
 
     def get_recent_bank_transactions(self, limit=10):
         """Возвращает последние банковские транзакции."""
-        cache_key = get_cache_key('dashboard', 'bank_transactions', limit)
+        cache_key = get_cache_key("dashboard", "bank_transactions", limit)
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
         from ..models_banking import BankTransaction
+
         txs = list(
             BankTransaction.objects.filter(
                 connection__is_active=True,
-            ).select_related('connection').order_by('-created_at')[:limit]
+            )
+            .select_related("connection")
+            .order_by("-created_at")[:limit]
         )
 
-        cache.set(cache_key, txs, CACHE_TIMEOUTS['short'])
+        cache.set(cache_key, txs, CACHE_TIMEOUTS["short"])
         return txs
 
     # ========================================================================
     # AGED RECEIVABLES (ДЕБИТОРСКАЯ ЗАДОЛЖЕННОСТЬ ПО СРОКАМ)
     # ========================================================================
 
+    def _aged_invoice_buckets(self, **invoice_filter):
+        """Aging-разбивка открытых инвойсов одним SQL-запросом.
+
+        Раньше это был Python-цикл по всем неоплаченным инвойсам
+        (``for inv in unpaid.only(...)``) — на больших объёмах это сотни
+        строк в память на каждый cache miss. Теперь — один запрос с
+        CASE WHEN + GROUP BY на стороне PostgreSQL.
+        """
+        from datetime import timedelta
+
+        from django.db.models import (
+            Case,
+            CharField,
+            DecimalField,
+            ExpressionWrapper,
+            F,
+            Value,
+            When,
+        )
+
+        from ..mixins import OPEN_INVOICE_STATUSES
+        from ..models_billing import NewInvoice
+
+        today = timezone.now().date()
+
+        remaining_expr = ExpressionWrapper(
+            F("total") - F("paid_amount"),
+            output_field=DecimalField(max_digits=15, decimal_places=2),
+        )
+        bucket_expr = Case(
+            When(Q(due_date__isnull=True) | Q(due_date__gte=today), then=Value("current")),
+            When(due_date__gte=today - timedelta(days=30), then=Value("1_30")),
+            When(due_date__gte=today - timedelta(days=60), then=Value("31_60")),
+            When(due_date__gte=today - timedelta(days=90), then=Value("61_90")),
+            default=Value("90_plus"),
+            output_field=CharField(),
+        )
+
+        rows = (
+            NewInvoice.objects.filter(status__in=OPEN_INVOICE_STATUSES, **invoice_filter)
+            .filter(total__gt=F("paid_amount"))
+            .annotate(bucket=bucket_expr)
+            .values("bucket")
+            .annotate(total=Sum(remaining_expr), count=Count("id"))
+        )
+
+        buckets = {
+            "current": {"label": "Не просрочен", "total": Decimal("0"), "count": 0},
+            "1_30": {"label": "1-30 дней", "total": Decimal("0"), "count": 0},
+            "31_60": {"label": "31-60 дней", "total": Decimal("0"), "count": 0},
+            "61_90": {"label": "61-90 дней", "total": Decimal("0"), "count": 0},
+            "90_plus": {"label": "90+ дней", "total": Decimal("0"), "count": 0},
+        }
+        for row in rows:
+            bucket = buckets.get(row["bucket"])
+            if bucket is not None:
+                bucket["total"] = row["total"] or Decimal("0")
+                bucket["count"] = row["count"] or 0
+
+        return {
+            "buckets": buckets,
+            "grand_total": sum(b["total"] for b in buckets.values()),
+        }
+
     def get_aged_receivables(self):
         """
         Возвращает дебиторскую задолженность, сгруппированную по срокам просрочки.
         Считает только OUTGOING инвойсы (issuer_company = default) с остатком > 0.
         """
-        cache_key = get_cache_key('dashboard', 'aged_receivables')
+        cache_key = get_cache_key("dashboard", "aged_receivables")
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
-        from django.db.models import F
-
-        from ..mixins import OPEN_INVOICE_STATUSES
         from ..models import Company
-        from ..models_billing import NewInvoice
-        default_company_id = Company.get_default_id()
-        today = timezone.now().date()
-        unpaid = NewInvoice.objects.filter(
-            issuer_company_id=default_company_id,
-            status__in=OPEN_INVOICE_STATUSES,
-        ).exclude(total__lte=F('paid_amount'))
 
-        buckets = {
-            'current': {'label': 'Не просрочен', 'total': Decimal('0'), 'count': 0},
-            '1_30': {'label': '1-30 дней', 'total': Decimal('0'), 'count': 0},
-            '31_60': {'label': '31-60 дней', 'total': Decimal('0'), 'count': 0},
-            '61_90': {'label': '61-90 дней', 'total': Decimal('0'), 'count': 0},
-            '90_plus': {'label': '90+ дней', 'total': Decimal('0'), 'count': 0},
-        }
+        result = self._aged_invoice_buckets(
+            issuer_company_id=Company.get_default_id(),
+        )
 
-        for inv in unpaid.only('total', 'paid_amount', 'due_date'):
-            remaining = inv.total - inv.paid_amount
-            if remaining <= 0:
-                continue
-            if not inv.due_date or inv.due_date >= today:
-                bucket = 'current'
-            else:
-                overdue_days = (today - inv.due_date).days
-                if overdue_days <= 30:
-                    bucket = '1_30'
-                elif overdue_days <= 60:
-                    bucket = '31_60'
-                elif overdue_days <= 90:
-                    bucket = '61_90'
-                else:
-                    bucket = '90_plus'
-            buckets[bucket]['total'] += remaining
-            buckets[bucket]['count'] += 1
-
-        grand_total = sum(b['total'] for b in buckets.values())
-        result = {
-            'buckets': buckets,
-            'grand_total': grand_total,
-        }
-
-        cache.set(cache_key, result, CACHE_TIMEOUTS['short'])
+        cache.set(cache_key, result, CACHE_TIMEOUTS["short"])
         return result
 
     # ========================================================================
@@ -526,57 +583,18 @@ class DashboardService:
         Возвращает кредиторскую задолженность, сгруппированную по срокам просрочки.
         Считает только INCOMING инвойсы (recipient_company = default) с остатком > 0.
         """
-        cache_key = get_cache_key('dashboard', 'aged_payables')
+        cache_key = get_cache_key("dashboard", "aged_payables")
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
-        from django.db.models import F
-
-        from ..mixins import OPEN_INVOICE_STATUSES
         from ..models import Company
-        from ..models_billing import NewInvoice
-        default_company_id = Company.get_default_id()
-        today = timezone.now().date()
-        unpaid = NewInvoice.objects.filter(
-            recipient_company_id=default_company_id,
-            status__in=OPEN_INVOICE_STATUSES,
-        ).exclude(total__lte=F('paid_amount'))
 
-        buckets = {
-            'current': {'label': 'Не просрочен', 'total': Decimal('0'), 'count': 0},
-            '1_30': {'label': '1-30 дней', 'total': Decimal('0'), 'count': 0},
-            '31_60': {'label': '31-60 дней', 'total': Decimal('0'), 'count': 0},
-            '61_90': {'label': '61-90 дней', 'total': Decimal('0'), 'count': 0},
-            '90_plus': {'label': '90+ дней', 'total': Decimal('0'), 'count': 0},
-        }
+        result = self._aged_invoice_buckets(
+            recipient_company_id=Company.get_default_id(),
+        )
 
-        for inv in unpaid.only('total', 'paid_amount', 'due_date'):
-            remaining = inv.total - inv.paid_amount
-            if remaining <= 0:
-                continue
-            if not inv.due_date or inv.due_date >= today:
-                bucket = 'current'
-            else:
-                overdue_days = (today - inv.due_date).days
-                if overdue_days <= 30:
-                    bucket = '1_30'
-                elif overdue_days <= 60:
-                    bucket = '31_60'
-                elif overdue_days <= 90:
-                    bucket = '61_90'
-                else:
-                    bucket = '90_plus'
-            buckets[bucket]['total'] += remaining
-            buckets[bucket]['count'] += 1
-
-        grand_total = sum(b['total'] for b in buckets.values())
-        result = {
-            'buckets': buckets,
-            'grand_total': grand_total,
-        }
-
-        cache.set(cache_key, result, CACHE_TIMEOUTS['short'])
+        cache.set(cache_key, result, CACHE_TIMEOUTS["short"])
         return result
 
     # ========================================================================
@@ -584,20 +602,56 @@ class DashboardService:
     # ========================================================================
 
     def get_recent_transactions(self, limit=15):
+        cache_key = get_cache_key("dashboard", "recent_transactions", limit)
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         from ..models_billing import Transaction
-        return Transaction.objects.select_related(
-            'from_client', 'from_warehouse', 'from_line', 'from_carrier', 'from_company',
-            'to_client', 'to_warehouse', 'to_line', 'to_carrier', 'to_company',
-            'invoice',
-        ).order_by('-date')[:limit]
+
+        result = list(
+            Transaction.objects.select_related(
+                "from_client",
+                "from_warehouse",
+                "from_line",
+                "from_carrier",
+                "from_company",
+                "to_client",
+                "to_warehouse",
+                "to_line",
+                "to_carrier",
+                "to_company",
+                "invoice",
+            ).order_by("-date")[:limit]
+        )
+
+        cache.set(cache_key, result, CACHE_TIMEOUTS["short"])
+        return result
 
     def get_recent_invoices(self, limit=15):
+        cache_key = get_cache_key("dashboard", "recent_invoices", limit)
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         from ..models_billing import NewInvoice
-        return NewInvoice.objects.select_related(
-            'issuer_company', 'issuer_warehouse', 'issuer_line', 'issuer_carrier',
-            'recipient_client', 'recipient_warehouse', 'recipient_line',
-            'recipient_carrier', 'recipient_company',
-        ).order_by('-date')[:limit]
+
+        result = list(
+            NewInvoice.objects.select_related(
+                "issuer_company",
+                "issuer_warehouse",
+                "issuer_line",
+                "issuer_carrier",
+                "recipient_client",
+                "recipient_warehouse",
+                "recipient_line",
+                "recipient_carrier",
+                "recipient_company",
+            ).order_by("-date")[:limit]
+        )
+
+        cache.set(cache_key, result, CACHE_TIMEOUTS["short"])
+        return result
 
     # ========================================================================
     # AGGREGATE
@@ -615,7 +669,7 @@ class DashboardService:
             - overdue_invoices_count: просроченные
             - unmatched_incoming_bank_amount: сумма непривязанных входящих
         """
-        cache_key = get_cache_key('dashboard', 'operational_day')
+        cache_key = get_cache_key("dashboard", "operational_day")
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
@@ -631,24 +685,28 @@ class DashboardService:
 
         try:
             tx_today = Transaction.objects.filter(
-                status='COMPLETED', date__date=today,
+                status="COMPLETED",
+                date__date=today,
             )
         except Exception:
             tx_today = Transaction.objects.filter(
-                status='COMPLETED', date=today,
+                status="COMPLETED",
+                date=today,
             )
 
         today_in = tx_today.filter(
-            type__in=['PAYMENT', 'BALANCE_TOPUP'], to_company=self.company,
-        ).aggregate(s=Sum('amount'))['s'] or Decimal('0')
+            type__in=["PAYMENT", "BALANCE_TOPUP"],
+            to_company=self.company,
+        ).aggregate(s=Sum("amount"))["s"] or Decimal("0")
         today_out = tx_today.filter(
-            type__in=['PAYMENT', 'ADJUSTMENT'], from_company=self.company,
-        ).aggregate(s=Sum('amount'))['s'] or Decimal('0')
+            type__in=["PAYMENT", "ADJUSTMENT"],
+            from_company=self.company,
+        ).aggregate(s=Sum("amount"))["s"] or Decimal("0")
 
-        today_invoices = NewInvoice.objects.filter(date=today).exclude(status='CANCELLED')
+        today_invoices = NewInvoice.objects.filter(date=today).exclude(status="CANCELLED")
         today_invoices_stats = today_invoices.aggregate(
-            cnt=Count('id'),
-            total=Sum('total'),
+            cnt=Count("id"),
+            total=Sum("total"),
         )
 
         pending_rec = BankTransaction.objects.filter(
@@ -657,49 +715,50 @@ class DashboardService:
             reconciliation_skipped=False,
         )
         pending_rec_count = pending_rec.count()
-        unmatched_incoming_amount = pending_rec.filter(amount__gt=0).aggregate(
-            s=Sum('amount')
-        )['s'] or Decimal('0')
+        unmatched_incoming_amount = pending_rec.filter(amount__gt=0).aggregate(s=Sum("amount"))["s"] or Decimal("0")
 
         overdue_count = self.get_overdue_invoices_count()
 
         data = {
-            'today': today,
-            'today_cars_unloaded': today_cars_unloaded,
-            'today_containers_unloaded': today_containers_unloaded,
-            'today_payments_in': today_in,
-            'today_payments_out': today_out,
-            'today_net': today_in - today_out,
-            'today_invoices_count': today_invoices_stats['cnt'] or 0,
-            'today_invoices_total': today_invoices_stats['total'] or Decimal('0'),
-            'pending_reconciliation_count': pending_rec_count,
-            'unmatched_incoming_amount': unmatched_incoming_amount,
-            'overdue_invoices_count': overdue_count,
+            "today": today,
+            "today_cars_unloaded": today_cars_unloaded,
+            "today_containers_unloaded": today_containers_unloaded,
+            "today_payments_in": today_in,
+            "today_payments_out": today_out,
+            "today_net": today_in - today_out,
+            "today_invoices_count": today_invoices_stats["cnt"] or 0,
+            "today_invoices_total": today_invoices_stats["total"] or Decimal("0"),
+            "pending_reconciliation_count": pending_rec_count,
+            "unmatched_incoming_amount": unmatched_incoming_amount,
+            "overdue_invoices_count": overdue_count,
         }
-        cache.set(cache_key, data, CACHE_TIMEOUTS['short'])
+        cache.set(cache_key, data, CACHE_TIMEOUTS["short"])
         return data
 
     # Ключи, которые будут читаться в get_full_dashboard_context.
     # Вынесены, чтобы делать один Redis round-trip через get_many()
     # вместо ~15 отдельных cache.get().
     _DASHBOARD_CACHE_KEYS = (
-        ('cars_by_status', ()),
-        ('containers_by_status', ()),
-        ('cars_on_storage', ()),
-        ('active_auto_transports', ()),
-        ('outstanding_invoices', ()),
-        ('monthly_revenue', ()),
-        ('monthly_expenses', ()),
-        ('overdue_invoices', ()),
-        ('revenue_expenses_chart', (6,)),
-        ('invoices_by_status', ()),
-        ('expenses_by_category', ()),
-        ('income_by_category', ()),
-        ('aged_receivables', ()),
-        ('aged_payables', ()),
-        ('bank_balances', ()),
-        ('bank_transactions', (10,)),
-        ('operational_day', ()),
+        ("cars_by_status", ()),
+        ("containers_by_status", ()),
+        ("cars_on_storage", ()),
+        ("active_auto_transports", ()),
+        ("outstanding_invoices", ()),
+        ("monthly_revenue", ()),
+        ("monthly_expenses", ()),
+        ("overdue_invoices", ()),
+        ("revenue_expenses_chart", (6,)),
+        ("invoices_by_status", ()),
+        ("expenses_by_category", ()),
+        ("income_by_category", ()),
+        ("aged_receivables", ()),
+        ("aged_payables", ()),
+        ("bank_balances", ()),
+        ("bank_transactions", (10,)),
+        ("operational_day", ()),
+        ("cash_wallet", ()),
+        ("recent_transactions", (15,)),
+        ("recent_invoices", (15,)),
     )
 
     def _prime_dashboard_cache(self):
@@ -711,11 +770,10 @@ class DashboardService:
         возможность в будущем использовать `cache.set_many` на вычисленные.
         """
         try:
-            keys = [get_cache_key('dashboard', name, *args)
-                    for name, args in self._DASHBOARD_CACHE_KEYS]
+            keys = [get_cache_key("dashboard", name, *args) for name, args in self._DASHBOARD_CACHE_KEYS]
             cache.get_many(keys)
         except Exception:
-            logger.debug('dashboard cache prime failed', exc_info=True)
+            logger.debug("dashboard cache prime failed", exc_info=True)
 
     def get_full_dashboard_context(self):
         self._prime_dashboard_cache()
@@ -727,36 +785,36 @@ class DashboardService:
         cash_wallet = self.get_cash_wallet()
 
         return {
-            'company': self.company,
-            'operational_day': self.get_operational_day(),
+            "company": self.company,
+            "operational_day": self.get_operational_day(),
             # Operational KPIs
-            'cars_by_status': cars_by_status,
-            'containers_by_status': containers_by_status,
-            'cars_on_storage': self.get_cars_on_storage(),
-            'active_auto_transports': self.get_active_auto_transports(),
+            "cars_by_status": cars_by_status,
+            "containers_by_status": containers_by_status,
+            "cars_on_storage": self.get_cars_on_storage(),
+            "active_auto_transports": self.get_active_auto_transports(),
             # Cash wallet
-            'cash_wallet': cash_wallet,
-            'total_assets': self.get_total_assets(),
+            "cash_wallet": cash_wallet,
+            "total_assets": self.get_total_assets(),
             # Financial KPIs
-            'company_balance': self.get_company_balance(),
-            'outstanding_invoices': self.get_outstanding_invoices_total(),
-            'monthly_revenue': monthly_revenue,
-            'monthly_expenses': monthly_expenses,
-            'monthly_profit': monthly_revenue - monthly_expenses,
-            'overdue_invoices_count': self.get_overdue_invoices_count(),
+            "company_balance": self.get_company_balance(),
+            "outstanding_invoices": self.get_outstanding_invoices_total(),
+            "monthly_revenue": monthly_revenue,
+            "monthly_expenses": monthly_expenses,
+            "monthly_profit": monthly_revenue - monthly_expenses,
+            "overdue_invoices_count": self.get_overdue_invoices_count(),
             # Charts
-            'revenue_expenses_chart': self.get_revenue_expenses_by_month(),
-            'invoices_by_status': self.get_invoices_by_status(),
+            "revenue_expenses_chart": self.get_revenue_expenses_by_month(),
+            "invoices_by_status": self.get_invoices_by_status(),
             # P&L по категориям
-            'expenses_by_category': self.get_expenses_by_category(),
-            'income_by_category': self.get_income_by_category(),
+            "expenses_by_category": self.get_expenses_by_category(),
+            "income_by_category": self.get_income_by_category(),
             # Aged receivables / payables
-            'aged_receivables': self.get_aged_receivables(),
-            'aged_payables': self.get_aged_payables(),
+            "aged_receivables": self.get_aged_receivables(),
+            "aged_payables": self.get_aged_payables(),
             # Bank accounts (Revolut и др.)
-            'bank_accounts': self.get_bank_balances(),
-            'recent_bank_transactions': self.get_recent_bank_transactions(),
+            "bank_accounts": self.get_bank_balances(),
+            "recent_bank_transactions": self.get_recent_bank_transactions(),
             # Recent operations
-            'recent_transactions': self.get_recent_transactions(),
-            'recent_invoices': self.get_recent_invoices(),
+            "recent_transactions": self.get_recent_transactions(),
+            "recent_invoices": self.get_recent_invoices(),
         }

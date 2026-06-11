@@ -19,9 +19,9 @@ from decimal import Decimal
 from django.core.management.base import BaseCommand
 from django.db import transaction as db_transaction
 
-from core.models import Client, Company
+from core.models import Client
 from core.models_banking import BankTransaction
-from core.models_billing import NewInvoice, Transaction
+from core.models_billing import NewInvoice
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,6 @@ def reconcile_incoming_payments(dry_run=False):
         )
     }
 
-    company = Company.get_default()
     caromoto_bel = Client.objects.filter(name__icontains="Caromoto-Bel").first()
 
     client_invoice_map = {}
@@ -186,43 +185,22 @@ def reconcile_incoming_payments(dry_run=False):
 
             payment_amount = min(bt.amount, invoice.total - invoice.paid_amount)
             if payment_amount > 0:
-                client = invoice.recipient_client
-                #
-                # Банковский платёж отражаем ДВУМЯ транзакциями, чтобы баланс
-                # клиента был сведён к нулю (иначе авансовый счёт клиента
-                # уходит в минус, и total_balance показывает ложный долг):
-                #   1) BALANCE_TOPUP — деньги «зашли» на счёт клиента в системе
-                #   2) PAYMENT/BALANCE — оплата инвойса с баланса клиента
-                #
-                if client:
-                    topup = Transaction(
-                        type="BALANCE_TOPUP",
-                        method="TRANSFER",
-                        status="COMPLETED",
-                        amount=payment_amount,
-                        currency=invoice.currency or "EUR",
-                        to_client=client,
-                        description=(f"Авто-пополнение с банковского платежа {bt.counterparty_name or ''}".strip()),
-                        date=bt.created_at,
-                    )
-                    topup.save()
+                # Единая точка регистрации входящего банковского платежа:
+                # для клиентов — пара BALANCE_TOPUP + PAYMENT(BALANCE), чтобы
+                # авансовый счёт клиента не уходил в минус; для остальных —
+                # одиночный PAYMENT(TRANSFER). См. BillingService.
+                from core.services.billing_service import BillingService
 
-                tx = Transaction(
-                    type="PAYMENT",
-                    method="BALANCE" if client else "TRANSFER",
-                    status="COMPLETED",
-                    amount=payment_amount,
-                    currency=invoice.currency or "EUR",
-                    invoice=invoice,
-                    from_client=client,
-                    to_company=company,
-                    description=(f"Авто-сопоставление банковского платежа {bt.counterparty_name} -> {invoice.number}"),
+                tx = BillingService.register_incoming_bank_payment(
+                    invoice,
+                    payment_amount,
                     date=bt.created_at,
+                    description=(f"Авто-сопоставление банковского платежа {bt.counterparty_name} -> {invoice.number}"),
                 )
-                tx.save()
 
-                bt.matched_transaction = tx
-                bt.save(update_fields=["matched_transaction", "fetched_at"])
+                if tx is not None:
+                    bt.matched_transaction = tx
+                    bt.save(update_fields=["matched_transaction", "fetched_at"])
 
     stats["total"] = stats["rule1"] + stats["rule2"] + stats["rule3"]
     return stats
