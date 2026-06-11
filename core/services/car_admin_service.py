@@ -81,7 +81,10 @@ def process_removed_services(car, post) -> set[str]:
                     car=car, service_type=svc_type, service_id=service_id,
                 )
             except Exception:
+                # B4 (AUDIT_ROUND3): ценообразующая операция — не глотаем,
+                # пусть сохранение карточки упадёт и откатится.
                 logger.exception("Error deleting %s service %s", prefix, service_id)
+                raise
             break
     return removed
 
@@ -229,8 +232,10 @@ def apply_car_service_edits(car, *, post, changed_data, is_change) -> None:
             car.update_days_and_storage()
             car.calculate_total_price()
             car.save(update_fields=["storage_cost", "days", "total_price"])
-        except Exception as e:
-            logger.error("Ошибка при пересчете стоимости хранения: %s", e)
+        except Exception:
+            # B4: сбой пересчёта хранения = неверные суммы — пробрасываем.
+            logger.exception("Ошибка при пересчете стоимости хранения car=%s", car.pk)
+            raise
 
     # Тариф клиента (FIXED / FLEXIBLE) — только когда реально изменилось что-то,
     # влияющее на распределение, или правились сами услуги.
@@ -250,7 +255,9 @@ def apply_car_service_edits(car, *, post, changed_data, is_change) -> None:
                 car.calculate_total_price()
                 Car.objects.filter(pk=car.pk).update(total_price=car.total_price)
         except Exception:
+            # B4: сбой применения тарифа = неверные клиентские цены — пробрасываем.
             logger.exception("Ошибка при пересчете тарифа клиента для car=%s", car.pk)
+            raise
 
     # Финальный пересчёт цены авто после всех манипуляций с CarService.
     car._bulk_updating = False
@@ -262,4 +269,7 @@ def apply_car_service_edits(car, *, post, changed_data, is_change) -> None:
             storage_cost=car.storage_cost,
         )
     except Exception:
+        # B4: финальная цена авто — деньги; молча неверный total_price хуже
+        # отказа сохранения.
         logger.exception("Ошибка финального пересчёта цены авто %s", car.pk)
+        raise

@@ -39,17 +39,21 @@ class BalanceManager:
         from core.models_billing import Transaction
 
         updated = 0
+        failed = 0
         with transaction.atomic():
             for model in [Client, Warehouse, Line, Company, Carrier]:
                 for entity in model.objects.all():
                     try:
                         Transaction.recalculate_entity_balance(entity)
                         updated += 1
-                    except Exception as e:
-                        logger.error(f"Failed to recalculate balance for {entity}: {e}")
+                    except Exception:
+                        # Bulk-repair: продолжаем по остальным, но сбой не
+                        # прячем — счётчик failed уходит вызывающему (B4).
+                        failed += 1
+                        logger.exception(f"Failed to recalculate balance for {entity}")
 
-        logger.info(f"Recalculated balances for {updated} entities")
-        return {'success': True, 'entities_updated': updated}
+        logger.info(f"Recalculated balances for {updated} entities ({failed} failed)")
+        return {'success': failed == 0, 'entities_updated': updated, 'failed': failed}
 
     @classmethod
     def recalculate_all_invoice_paid_amounts(cls):
@@ -57,16 +61,18 @@ class BalanceManager:
         from core.models_billing import NewInvoice
 
         updated = 0
+        failed = 0
         invoices = NewInvoice.objects.exclude(status__in=['CANCELLED'])
         for inv in invoices:
             try:
                 inv.recalculate_paid_amount()
                 updated += 1
-            except Exception as e:
-                logger.error(f"Failed to recalculate paid_amount for invoice {inv.number}: {e}")
+            except Exception:
+                failed += 1
+                logger.exception(f"Failed to recalculate paid_amount for invoice {inv.number}")
 
-        logger.info(f"Recalculated paid_amount for {updated} invoices")
-        return {'success': True, 'invoices_updated': updated}
+        logger.info(f"Recalculated paid_amount for {updated} invoices ({failed} failed)")
+        return {'success': failed == 0, 'invoices_updated': updated, 'failed': failed}
 
     @classmethod
     def validate_balance_consistency(cls, entity) -> dict:

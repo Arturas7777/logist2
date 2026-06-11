@@ -606,10 +606,20 @@ class Car(models.Model):
         # должен оставаться неизменным (см. core.models.Task / signal
         # _car_important_post_save). Сама галочка снимается из карточки авто.
         old_status = None
+        old_contractors = None
         if self.pk:
-            old = Car.objects.filter(pk=self.pk).values("status", "is_important").first()
+            old = (
+                Car.objects.filter(pk=self.pk)
+                .values("status", "is_important", "warehouse_id", "line_id", "carrier_id")
+                .first()
+            )
             if old:
                 old_status = old.get("status")
+                old_contractors = {
+                    "warehouse_id": old["warehouse_id"],
+                    "line_id": old["line_id"],
+                    "carrier_id": old["carrier_id"],
+                }
                 old_is_important = old.get("is_important")
                 # Условие блокировки берём из АКТУАЛЬНОГО (старого) состояния:
                 # если в БД галочка стояла, статус трогать нельзя, даже если в
@@ -660,6 +670,30 @@ class Car(models.Model):
         # commands (recalculate_*), где обычно нужен синхронный пересчёт.
         self._is_new_on_save = is_new  # сигнал может посмотреть, если нужно
         super().save(*args, **kwargs)
+
+        # A4 (AUDIT_ROUND3): пересоздание ценообразующих CarService — явная
+        # команда из save-пути (а не post_save-сигнал с глотанием
+        # исключений). Сбой пробрасывается: транзакция откатывается, ошибка
+        # уходит в Sentry, оператор видит её сразу — вместо «тихо неверных»
+        # сумм в будущих инвойсах.
+        from core.services.car_service_manager import sync_car_services_for_car
+
+        if is_new:
+            sync_car_services_for_car(
+                self, created=True,
+                warehouse_changed=True, line_changed=True, carrier_changed=True,
+            )
+        elif old_contractors is not None:
+            warehouse_changed = old_contractors["warehouse_id"] != self.warehouse_id
+            line_changed = old_contractors["line_id"] != self.line_id
+            carrier_changed = old_contractors["carrier_id"] != self.carrier_id
+            if warehouse_changed or line_changed or carrier_changed:
+                sync_car_services_for_car(
+                    self, created=False,
+                    warehouse_changed=warehouse_changed,
+                    line_changed=line_changed,
+                    carrier_changed=carrier_changed,
+                )
 
     def get_profit_report(self):
         """

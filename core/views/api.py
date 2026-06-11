@@ -605,8 +605,20 @@ def add_services(request, car_id):
                     apply_client_tariff_for_car(car)
                     car.calculate_total_price()
                     Car.objects.filter(pk=car.pk).update(total_price=car.total_price)
-            except Exception as e:
-                logger.error("Error re-applying client tariff after add_services: %s", e)
+            except Exception:
+                # B4 (AUDIT_ROUND3): деньги — пользователь должен видеть сбой,
+                # а не ложный успех с неверными ценами.
+                logger.exception("Error re-applying client tariff after add_services (car %s)", car.pk)
+                return JsonResponse({
+                    'success': False,
+                    'message': (
+                        f'Услуги добавлены ({added_count}), но пересчёт клиентского тарифа '
+                        'не удался — цены могут быть неверными. Откройте карточку авто '
+                        'и сохраните её повторно, либо обратитесь к администратору.'
+                    ),
+                    'added_count': added_count,
+                    'skipped_count': skipped_count,
+                }, status=500)
 
         if added_count > 0:
             return JsonResponse({

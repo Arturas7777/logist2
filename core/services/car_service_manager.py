@@ -396,3 +396,118 @@ def find_company_services_for_car(company):
     return list(CompanyService.objects.filter(
         company=company, is_active=True, add_by_default=True
     ))
+
+
+# ---------------------------------------------------------------------------
+# Пересоздание ценообразующих CarService при смене контрактников
+# ---------------------------------------------------------------------------
+
+def sync_car_services_for_car(
+    car,
+    *,
+    created: bool,
+    warehouse_changed: bool,
+    line_changed: bool,
+    carrier_changed: bool,
+):
+    """Пересоздать ``CarService`` для изменившихся типов контрактников.
+
+    A4 (AUDIT_ROUND3): раньше эта логика жила в post_save-сигнале
+    ``car_post_save`` → ``_create_car_services_if_needed`` и глотала
+    исключения (``except Exception: logger.error`` без reraise) — сбой
+    означал неправильные суммы в будущих инвойсах, молча. Теперь это
+    явная команда, вызываемая из save-пути (``Car.save``); исключения
+    пробрасываются (Sentry-алерт, транзакция откатывается).
+
+    Пересоздаются только услуги изменившегося типа — ручные правки
+    остальных типов сохраняются. Услуги, удалённые пользователем
+    (``DeletedCarService``), не восстанавливаются.
+    """
+    from core.models import CarService, DeletedCarService, LineService
+
+    if not car.pk:
+        return
+    if getattr(car, "_creating_services", False):
+        return
+
+    if not (created or warehouse_changed or line_changed or carrier_changed):
+        return
+
+    car._creating_services = True
+    try:
+        deleted_by_type = {}
+        for stype in ("WAREHOUSE", "LINE", "CARRIER", "COMPANY"):
+            deleted_by_type[stype] = set(
+                DeletedCarService.objects.filter(car=car, service_type=stype).values_list("service_id", flat=True)
+            )
+
+        # WAREHOUSE — только если склад действительно сменился
+        if warehouse_changed:
+            car.car_services.filter(service_type="WAREHOUSE").delete()
+            if car.warehouse:
+                for service in find_warehouse_services_for_car(car.warehouse):
+                    if service.id in deleted_by_type["WAREHOUSE"]:
+                        continue
+                    if is_storage_service(service):
+                        days = Decimal(str(car.days or 0))
+                        custom_price = days * Decimal(str(service.default_price or 0))
+                        default_markup = days * Decimal(str(getattr(service, "default_markup", 0) or 0))
+                    else:
+                        custom_price = service.default_price
+                        default_markup = getattr(service, "default_markup", None) or Decimal("0")
+                    CarService.objects.get_or_create(
+                        car=car,
+                        service_type="WAREHOUSE",
+                        service_id=service.id,
+                        defaults={"custom_price": custom_price, "markup_amount": default_markup},
+                    )
+
+        # LINE (без THS: THS управляется create_ths_services_for_container)
+        if line_changed:
+            ths_line_ids = LineService.objects.filter(
+                Q(code=ServiceCode.THS) | Q(name__icontains="THS")
+            ).values_list("id", flat=True)
+            car.car_services.filter(service_type="LINE").exclude(service_id__in=ths_line_ids).delete()
+            if car.line:
+                for service in find_line_services_for_car(car.line):
+                    if service.id in deleted_by_type["LINE"]:
+                        continue
+                    default_markup = getattr(service, "default_markup", None) or Decimal("0")
+                    CarService.objects.get_or_create(
+                        car=car,
+                        service_type="LINE",
+                        service_id=service.id,
+                        defaults={"custom_price": service.default_price, "markup_amount": default_markup},
+                    )
+
+        # CARRIER — только если перевозчик действительно сменился
+        if carrier_changed:
+            car.car_services.filter(service_type="CARRIER").delete()
+            if car.carrier:
+                for service in find_carrier_services_for_car(car.carrier):
+                    if service.id in deleted_by_type["CARRIER"]:
+                        continue
+                    default_markup = getattr(service, "default_markup", None) or Decimal("0")
+                    CarService.objects.get_or_create(
+                        car=car,
+                        service_type="CARRIER",
+                        service_id=service.id,
+                        defaults={"custom_price": service.default_price, "markup_amount": default_markup},
+                    )
+
+        # COMPANY (только для новых машин)
+        if created:
+            main_company = get_main_company()
+            if main_company:
+                for service in find_company_services_for_car(main_company):
+                    if service.id in deleted_by_type["COMPANY"]:
+                        continue
+                    default_markup = getattr(service, "default_markup", None) or Decimal("0")
+                    CarService.objects.get_or_create(
+                        car=car,
+                        service_type="COMPANY",
+                        service_id=service.id,
+                        defaults={"custom_price": service.default_price, "markup_amount": default_markup},
+                    )
+    finally:
+        car._creating_services = False

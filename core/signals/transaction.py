@@ -16,18 +16,24 @@ logger = logging.getLogger(__name__)
 
 
 def _recalc_transaction_effects(instance):
+    # B4 (AUDIT_ROUND3): деньги — исключения НЕ глотаем. Сбой пересчёта
+    # баланса/paid_amount означает рассинхрон финансового состояния;
+    # пробрасываем, чтобы вся транзакция сохранения откатилась и ошибка
+    # ушла в Sentry, а не осталась «тихо неверным» балансом.
     if instance.status != "COMPLETED":
         return
     for entity in (instance.sender, instance.recipient):
         try:
             Transaction.recalculate_entity_balance(entity)
-        except Exception as e:
-            logger.error("Error recalculating balance for %s: %s", entity, e)
+        except Exception:
+            logger.exception("Error recalculating balance for %s", entity)
+            raise
     if instance.invoice_id:
         try:
             instance.invoice.recalculate_paid_amount()
-        except Exception as e:
-            logger.error("Error recalculating paid_amount for invoice %s: %s", instance.invoice_id, e)
+        except Exception:
+            logger.exception("Error recalculating paid_amount for invoice %s", instance.invoice_id)
+            raise
 
 
 @receiver(post_save, sender=Transaction)

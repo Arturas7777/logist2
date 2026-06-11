@@ -54,7 +54,7 @@
 
 **Решение:** `BillingService.create_expense_from_bank_transaction(bt, ...)` + тонкая вьюха; reset/topup довести до полного делегирования сервису; покрыть сервисные методы тестами.
 
-### [ ] A4. Вынести `_create_car_services_if_needed` из сигнала
+### [x] A4. Вынести `_create_car_services_if_needed` из сигнала
 `core/signals/car.py` (строки 274–396): пересоздание ценообразующих CarService в `post_save` с глотанием исключений (`except Exception: logger.error` без reraise). Сбой = неправильные суммы в будущих инвойсах, молча.
 
 **Решение:** явный вызов сервиса из save-путей (admin, API, lifecycle service), исключения пробрасывать (Sentry-алерт). Сигналы — только для дешёвых event-нотификаций (WS, email enqueue). См. `docs/signals_classification.md` (COMMAND/EVENT). Учесть `threading.local` дедупликацию (`_pricing_local`/`_regen_local` в `car_service.py`) — мина при async.
@@ -79,7 +79,7 @@
 
 **Решение:** распределённый лок `cache.add('lock:sync_bank', ttl=900)` в начале задачи; вторая инстанция — skip с логом. То же для `sync_sitepro_invoices`.
 
-### [ ] B4. Ревизия `except Exception` в денежных путях
+### [x] B4. Ревизия `except Exception` в денежных путях
 ~70 `except Exception` в `core/services/` и сигналах. Классифицировать: «graceful degrade допустим» (email/TG/WS) vs «деньги — reraise или явное сообщение пользователю + Sentry». Пример проблемы: `views/api.py:608–609` — сбой применения клиентского тарифа после `add_services` логируется, пользователь видит успех, цены неверные.
 
 ## 3. Производительность

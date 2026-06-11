@@ -372,8 +372,12 @@ class BillingService:
                 logger.info(f"Linked bank transaction {bank_trx.external_id} to payment {trx.number}")
             except BankTrx.DoesNotExist:
                 logger.warning(f"Bank transaction {bank_transaction_id} not found for linking")
-            except Exception as e:
-                logger.error(f"Error linking bank transaction: {e}")
+            except Exception:
+                # B4 (AUDIT_ROUND3): не глотаем — иначе платёж создан, а BT
+                # остаётся «несопоставленной» и может быть оплачена повторно
+                # (double payment). Reraise откатывает всю оплату.
+                logger.exception("Error linking bank transaction %s", bank_transaction_id)
+                raise
 
         return {
             'transaction': trx,
