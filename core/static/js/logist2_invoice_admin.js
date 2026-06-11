@@ -171,7 +171,7 @@ class InvoiceBuilder {
         // Устанавливаем задержку в 300мс
         this.searchTimer = setTimeout(async () => {
             try {
-                const response = await fetch(`/api/search-partners/?entity_type=${entityType}&search=${encodeURIComponent(searchQuery)}`);
+                const response = await fetch(`/api/v1/search-partners/?entity_type=${entityType}&search=${encodeURIComponent(searchQuery)}`);
                 const data = await response.json();
                 
                 if (data.objects && data.objects.length > 0) {
@@ -319,7 +319,7 @@ class InvoiceBuilder {
         }
         
         try {
-            let url = `/api/invoice-cars/?from_entity_type=${this.fromEntity.type}&from_entity_id=${this.fromEntity.id}`;
+            let url = `/api/v1/invoice-cars/?from_entity_type=${this.fromEntity.type}&from_entity_id=${this.fromEntity.id}`;
             
             // Добавляем получателя, если он выбран
             if (this.toEntity) {
@@ -461,7 +461,7 @@ class InvoiceBuilder {
         }
         
         try {
-            let url = `/api/invoice-cars/?from_entity_type=${this.fromEntity.type}&from_entity_id=${this.fromEntity.id}&search=${encodeURIComponent(searchQuery)}`;
+            let url = `/api/v1/invoice-cars/?from_entity_type=${this.fromEntity.type}&from_entity_id=${this.fromEntity.id}&search=${encodeURIComponent(searchQuery)}`;
             
             // Добавляем получателя, если он выбран
             if (this.toEntity) {

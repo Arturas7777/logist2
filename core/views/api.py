@@ -230,8 +230,18 @@ def search_partners_api(request):
         return JsonResponse({'error': 'Внутренняя ошибка сервера'}, status=500)
 
 
+def _clamp_limit(request, default: int = 200, maximum: int = 500) -> int:
+    """limit из GET с защитой от мусора и верхней границей (P4, AUDIT_ROUND3)."""
+    try:
+        limit = int(request.GET.get('limit', default))
+    except (TypeError, ValueError):
+        limit = default
+    return min(max(limit, 1), maximum)
+
+
 @staff_member_required
 @require_GET
+@ratelimit_staff(rate=240, per=60, scope='invoice_cars')
 def get_invoice_cars_api(request):
     from_entity_type = request.GET.get('from_entity_type')
     from_entity_id = request.GET.get('from_entity_id')
@@ -289,7 +299,7 @@ def get_invoice_cars_api(request):
                 year_q
             )
 
-        limit = int(request.GET.get('limit', 200))
+        limit = _clamp_limit(request)
         cars = list(cars[:limit])
 
         # Суммы услуг берём из CarService (единый источник цены), а не из
@@ -347,6 +357,7 @@ def get_invoice_cars_api(request):
 
 @staff_member_required
 @require_GET
+@ratelimit_staff(rate=240, per=60, scope='warehouse_cars')
 def get_warehouse_cars_api(request):
     warehouse_id = request.GET.get('warehouse_id')
     search_query = request.GET.get('search', '').strip()
@@ -375,7 +386,7 @@ def get_warehouse_cars_api(request):
                 year_q
             )
 
-        limit = int(request.GET.get('limit', 200))
+        limit = _clamp_limit(request)
         cars = list(cars[:limit])
 
         # Один агрегированный запрос к CarService для всех отобранных авто.
@@ -770,3 +781,22 @@ def search_invoices(request):
         })
 
     return JsonResponse({'results': results})
+
+
+def legacy_api_gone(request, rest=''):
+    """410 Gone для legacy-зеркала ``/api/`` (R4, AUDIT_ROUND3).
+
+    Все внутренние потребители переведены на ``/api/v1/``. Логируем
+    обращения, чтобы заметить отставших внешних клиентов.
+    """
+    logger.warning(
+        "[legacy /api/] 410 Gone: %s %s (UA=%s, IP=%s)",
+        request.method,
+        request.get_full_path(),
+        request.META.get('HTTP_USER_AGENT', '')[:200],
+        request.META.get('REMOTE_ADDR', ''),
+    )
+    return JsonResponse(
+        {'error': 'Этот эндпоинт перенесён на /api/v1/. Legacy /api/ отключён.'},
+        status=410,
+    )

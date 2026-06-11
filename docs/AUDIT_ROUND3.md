@@ -95,7 +95,7 @@
 ### [ ] P3. pg_trgm + GIN-индексы для поиска
 `search_invoices` (`views/api.py:718–735`) — OR по 8 `icontains` через 6 JOIN; `search_counterparties`, поиск VIN — то же. Миграция: расширение `pg_trgm` + GIN-индексы на `NewInvoice.number/external_number`, `Client.name`, `Car.vin/brand`.
 
-### [ ] P4. Clamp `limit` в API
+### [x] P4. Clamp `limit` в API
 `get_invoice_cars_api` (`views/api.py:292`) и `get_warehouse_cars_api` (`:378`): `limit` из GET без верхней границы. Решение: `limit = min(max(limit, 1), 500)` + `@ratelimit_staff` на оба.
 
 ## 4. Надёжность и безопасность
@@ -109,7 +109,7 @@
 ### [x] R3. Завершить ротацию ENCRYPTION_KEY
 `ENCRYPTION_KEY_REQUIRED` по умолчанию False (`base.py:29`) — токены могут шифроваться fallback-ом на SECRET_KEY. Прогнать ротацию на проде (`rotate_encryption_key`, инструкция `docs/ENCRYPTION_KEY.md`) и включить `ENCRYPTION_KEY_REQUIRED=true`.
 
-### [ ] R4. Убрать legacy-зеркало `/api/`
+### [x] R4. Убрать legacy-зеркало `/api/`
 `logist2/urls.py:50–65`: `/api/` дублирует `/api/v1/`. Включить логирование обращений к `/api/` → удалить (или 410 Gone).
 
 ### [ ] R5. Squash миграций до baseline

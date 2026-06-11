@@ -673,7 +673,7 @@
   }
   
   function loadWarehouses() {
-    fetch('/api/warehouses/')
+    fetch('/api/v1/warehouses/')
       .then(response => response.json())
       .then(data => {
         var warehouseSelect = document.getElementById('warehouseSelect');
@@ -699,7 +699,7 @@
     }
     
     var carId = {{ original.id }};
-    var url = '/api/car/' + carId + '/get_available_services/?type=warehouse&warehouse_id=' + warehouseId;
+    var url = '/api/v1/car/' + carId + '/get_available_services/?type=warehouse&warehouse_id=' + warehouseId;
     
     fetch(url)
       .then(function(response) { return response.json(); })
@@ -713,7 +713,7 @@
   }
 
   function loadCompanies() {
-    fetch('/api/companies/')
+    fetch('/api/v1/companies/')
       .then(function(response) { return response.json(); })
       .then(function(data) {
         var companySelect = document.getElementById('companySelect');
@@ -739,7 +739,7 @@
     }
     
     var carId = {{ original.id }};
-    var url = '/api/car/' + carId + '/get_available_services/?type=company&company_id=' + companyId;
+    var url = '/api/v1/car/' + carId + '/get_available_services/?type=company&company_id=' + companyId;
     
     fetch(url)
       .then(function(response) { return response.json(); })
@@ -759,7 +759,7 @@
   function loadAvailableServices(serviceType) {
     var carId = {{ original.id }};
     var listId = serviceType + 'ServicesList';
-    var url = '/api/car/' + carId + '/get_available_services/?type=' + serviceType;
+    var url = '/api/v1/car/' + carId + '/get_available_services/?type=' + serviceType;
     
     fetch(url)
       .then(function(response) {
@@ -804,7 +804,7 @@
       return;
     }
 
-    fetch('/api/car/' + carId + '/add_services/', {
+    fetch('/api/v1/car/' + carId + '/add_services/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

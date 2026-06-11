@@ -174,7 +174,7 @@
             payerSelect.addEventListener('change', function() {
                 const clientId = this.value;
                 if (clientId) {
-                    fetch(`/api/client-balance/?client_id=${clientId}`)
+                    fetch(`/api/v1/client-balance/?client_id=${clientId}`)
                         .then(response => response.json())
                         .then(data => {
                             if (data.error) {

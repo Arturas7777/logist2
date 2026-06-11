@@ -4,6 +4,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 from core.views import car_list_api, get_invoice_total, get_container_data, register_payment, get_client_balance, company_dashboard, get_payment_objects, search_partners_api, get_warehouse_cars_api, get_invoice_cars_api, comparison_dashboard, compare_car_costs_api, compare_client_costs_api, compare_warehouse_costs_api, get_discrepancies_api, get_available_services, add_services, get_warehouses, get_companies, add_cash_expense, add_cash_income, cash_wallet_reset, expense_analytics, upload_expense_receipt, personal_cards_page, personal_card_add, personal_transfer, personal_card_expense, personal_card_income, personal_card_deactivate, personal_card_delete, personal_card_balance_reset, health, ready, system_monitor_page, system_monitor_snapshot, system_monitor_history
+from core.views.api import legacy_api_gone
 from core.routing import websocket_urlpatterns
 from core.api import CarViewSet, InvoiceViewSet
 from core.views_admin_autocomplete import clients_autocomplete
@@ -47,9 +48,6 @@ api_v1_patterns = [
     path('companies/', get_companies, name='get_companies'),
 ]
 
-# Legacy /api/ -> forwards to same views (deprecated, remove when all clients migrate)
-api_legacy_patterns = api_v1_patterns
-
 urlpatterns = [
     # ========== HEALTH / READINESS PROBES ==========
     path('health/', health, name='health'),
@@ -60,9 +58,6 @@ urlpatterns = [
 
     # ========== API v1 (основной) ==========
     path('api/v1/', include(api_v1_patterns)),
-
-    # ========== API legacy (обратная совместимость, deprecated) ==========
-    path('api/', include(api_legacy_patterns)),
 
     # ========== АДМИН-СПЕЦИФИЧНЫЕ ЭНДПОИНТЫ ==========
     path('admin/register-payment/', register_payment, name='register_payment'),
@@ -129,6 +124,11 @@ urlpatterns += [
     # (или попытается найти model admin с slug'ом 'clients-autocomplete').
     path('admin/clients-autocomplete/', clients_autocomplete, name='admin-clients-autocomplete'),
     path('admin/', admin.site.urls),
+
+    # ========== LEGACY /api/ — 410 Gone (R4, AUDIT_ROUND3) ==========
+    # Должен стоять ПОСЛЕ urls_website (там живут публичные /api/track/,
+    # /api/contact/ и т.п.): сюда долетают только бывшие зеркала /api/v1/.
+    path('api/<path:rest>', legacy_api_gone, name='legacy_api_gone'),
 ]
 
 # Медиа-файлы обслуживаются Django только в DEBUG-режиме.
