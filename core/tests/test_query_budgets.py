@@ -180,3 +180,65 @@ class TestContainerStorageAggregatesBudget:
         )["s"]
         assert annotated.storage_cost == plain.storage_cost == expected_sum
         assert annotated.days == plain.days == 3
+
+
+@pytest.mark.django_db
+class TestServiceCatalogBatchResolve:
+    """P2 (AUDIT_ROUND3): prefetch_service_objects прогревает каталог батчем —
+    invoice_price дальше считается без запросов к БД."""
+
+    def _seed(self):
+        from core.models import CarService
+
+        wh = Warehouse.objects.create(name="WH-P2", free_days=0)
+        svc_a = WarehouseService.objects.create(
+            warehouse=wh, name="Разгрузка", default_price=Decimal("100"), is_active=True,
+        )
+        svc_b = WarehouseService.objects.create(
+            warehouse=wh, name="Погрузка", default_price=Decimal("50"), is_active=True,
+        )
+        container = Container.objects.create(number="P2-1", status="FLOATING")
+        _seed_cars(1, warehouse=wh, container=container)
+        car = Car.objects.get(container=container)
+        # Без custom_price — invoice_price вынужден резолвить каталог.
+        css = [
+            CarService.objects.create(car=car, service_type="WAREHOUSE", service_id=svc_a.pk),
+            CarService.objects.create(car=car, service_type="WAREHOUSE", service_id=svc_b.pk),
+        ]
+        return css
+
+    def test_invoice_price_after_prefetch_makes_no_queries(self):
+        from django.core.cache import cache
+
+        from core.models.services import prefetch_service_objects
+
+        css = self._seed()
+        cache.clear()
+
+        warmed = prefetch_service_objects(css)
+        assert warmed == 2
+
+        with CaptureQueriesContext(connection) as ctx:
+            total = sum(svc.invoice_price for svc in css)
+        assert total == Decimal("150")
+        assert len(ctx.captured_queries) == 0, (
+            f"После prefetch_service_objects резолвинг каталога не должен "
+            f"ходить в БД, выполнено запросов: {len(ctx.captured_queries)}"
+        )
+
+    def test_missing_catalog_entry_cached_as_none(self):
+        from django.core.cache import cache
+
+        from core.models import CarService
+        from core.models.services import prefetch_service_objects
+
+        css = self._seed()
+        ghost = CarService.objects.create(
+            car=css[0].car, service_type="WAREHOUSE", service_id=999999,
+        )
+        cache.clear()
+        prefetch_service_objects([ghost])
+
+        with CaptureQueriesContext(connection) as ctx:
+            assert ghost.get_default_price() == 0
+        assert len(ctx.captured_queries) == 0

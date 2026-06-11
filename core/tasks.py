@@ -1036,11 +1036,21 @@ def recalculate_cars_total_price_task(self, car_ids):
     `update_days_and_storage()`, поэтому bulk_update тянет все три поля.
     """
     from core.models import Car
+    from core.models.services import prefetch_service_objects
 
     if not car_ids:
         return {'updated': 0}
+
+    cars = list(Car.objects.filter(pk__in=car_ids).prefetch_related('car_services', 'warehouse'))
+
+    # P2 (AUDIT_ROUND3): батч-резолвинг каталога услуг — максимум 4 запроса
+    # in_bulk + set_many вместо cache/DB-lookup'а на каждую услугу в цикле.
+    prefetch_service_objects(
+        svc for car in cars for svc in car.car_services.all()
+    )
+
     cars_to_update = []
-    for car in Car.objects.filter(pk__in=car_ids).prefetch_related('car_services', 'warehouse'):
+    for car in cars:
         try:
             car.calculate_total_price()
             cars_to_update.append(car)

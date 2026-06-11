@@ -87,7 +87,7 @@
 ### [x] P1. Аннотации для `Container.storage_cost`/`days`
 После унификации это properties с SQL-запросом на обращение (`core/models/containers.py:176–195`). Добавить в менеджер `with_storage_aggregates()` (annotate Sum/Max), в properties — fallback на аннотацию (паттерн `_storage_daily_rate_ann` у Car). Закрепить в `test_query_budgets.py`.
 
-### [ ] P2. Батч-резолвинг каталога в `Car.calculate_total_price`
+### [x] P2. Батч-резолвинг каталога в `Car.calculate_total_price`
 `models/cars.py:308–336`: цикл по `car_services.all()`, `svc.invoice_price` резолвит каталог псевдо-generic FK (`service_type`+`service_id`) отдельным запросом → тысячи запросов в `recalculate_cars_total_price_task`.
 
 **Решение:** собрать `(service_type, service_id)`, выбрать каталоги 4 запросами `in_bulk`, посчитать в памяти.

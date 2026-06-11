@@ -281,3 +281,41 @@ class CarService(models.Model):
             models.Index(fields=["service_type", "service_id"]),
             models.Index(fields=["car"]),
         ]
+
+
+def prefetch_service_objects(car_services, timeout: int = 300) -> int:
+    """Батч-резолвинг каталога услуг (P2, AUDIT_ROUND3).
+
+    ``CarService.invoice_price`` резолвит каталог псевдо-generic FK
+    (``service_type`` + ``service_id``) через ``_get_service_obj`` —
+    по одному cache-lookup'у (и DB-запросу на промахе) на услугу. При
+    массовом пересчёте (``recalculate_cars_total_price_task``) это даёт
+    тысячи запросов.
+
+    Здесь собираем все (service_type, service_id), выбираем каталоги
+    максимум 4 запросами ``in_bulk`` и прогреваем cache-ключи
+    ``svc:<type>:<id>`` одним ``set_many`` — последующие
+    ``_get_service_obj()`` в БД уже не ходят.
+
+    Returns:
+        число прогретых ключей.
+    """
+    from collections import defaultdict
+
+    from django.core.cache import cache
+
+    by_type: dict = defaultdict(set)
+    for svc in car_services:
+        if svc.service_type in CarService.SERVICE_MODEL_MAP:
+            by_type[svc.service_type].add(svc.service_id)
+
+    to_cache: dict = {}
+    for stype, ids in by_type.items():
+        model_class = CarService.SERVICE_MODEL_MAP[stype]
+        found = model_class.objects.in_bulk(ids)
+        for sid in ids:
+            to_cache[f"svc:{stype}:{sid}"] = found.get(sid) or "_none_"
+
+    if to_cache:
+        cache.set_many(to_cache, timeout)
+    return len(to_cache)
