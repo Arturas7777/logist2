@@ -675,7 +675,7 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
         он автоматически прикрепляется к новому инвойсу при создании FACT.
         """
         from core.models import Carrier, Company, Line, Warehouse
-        from core.models_billing import ExpenseCategory, InvoiceItem, NewInvoice
+        from core.models_billing import ExpenseCategory, NewInvoice
 
         bank_trx = get_object_or_404(BankTransaction, pk=pk)
         expense_amount = abs(bank_trx.amount)
@@ -788,59 +788,15 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
             return render(request, 'admin/core/banktransaction/create_expense.html', context)
 
         try:
-            with transaction.atomic():
-                caromoto = Company.get_default()
-                if not caromoto:
-                    raise Company.DoesNotExist('Компания по умолчанию не найдена')
-
-                invoice = NewInvoice(
-                    document_type='INVOICE_FACT',
-                    date=bank_trx.created_at.date(),
-                    status='ISSUED',
-                    category=category,
-                    recipient_company=caromoto,
-                    currency=bank_trx.currency or 'EUR',
-                    notes=f'Авто-создано из банковской операции {bank_trx.external_id}',
-                )
-                setattr(invoice, f'issuer_{issuer_type}', issuer)
-                if attachment:
-                    invoice.attachment = attachment
-                elif bank_trx.receipt_file:
-                    # Автоматически прикрепляем чек, подгруженный из Revolut
-                    import os
-
-                    from django.core.files.base import ContentFile
-                    bank_trx.receipt_file.open('rb')
-                    try:
-                        content = bank_trx.receipt_file.read()
-                    finally:
-                        bank_trx.receipt_file.close()
-                    fname = os.path.basename(bank_trx.receipt_file.name)
-                    invoice.attachment.save(fname, ContentFile(content), save=False)
-                invoice.save()  # генерирует номер серии FACT
-
-                item_desc = description or bank_trx.counterparty_name or f'Расход ({category.name})'
-                InvoiceItem.objects.create(
-                    invoice=invoice,
-                    description=item_desc,
-                    quantity=Decimal('1'),
-                    unit_price=expense_amount,
-                    total_price=expense_amount,
-                    order=0,
-                )
-                invoice.calculate_totals()
-                invoice.save(update_fields=['subtotal', 'total', 'updated_at'])
-
-                bank_trx.matched_invoice = invoice
-                bank_trx.reconciliation_note = f'FACT-расход создан: {category.name}'
-                bank_trx.save(update_fields=['matched_invoice', 'reconciliation_note', 'fetched_at'])
-                BillingService.create_payment_for_bank_match(bank_trx.pk)
-
-                logger.info(
-                    '[create_expense] BT %s → FACT %s (%s %s, issuer=%s:%s, attachment=%s)',
-                    bank_trx.pk, invoice.number, expense_amount, bank_trx.currency,
-                    issuer_type, issuer_id, bool(attachment),
-                )
+            # A3 (AUDIT_ROUND3): создание инвойса/позиции/платежа — в сервисе,
+            # вьюха только парсит форму и показывает сообщения.
+            invoice = BillingService.create_expense_from_bank_transaction(
+                bank_trx,
+                category=category,
+                issuer=issuer,
+                description=description,
+                attachment=attachment,
+            )
 
             messages.success(
                 request,

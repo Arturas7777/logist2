@@ -332,3 +332,80 @@ class TestTransactionSignals:
         wh.refresh_from_db()
         # У Warehouse balance считается только по Tx без invoice → TOPUP без invoice учитывается.
         assert wh.balance == Decimal("250.00")
+
+
+# ---------------------------------------------------------------------------
+# create_expense_from_bank_transaction (A3, AUDIT_ROUND3)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestCreateExpenseFromBankTransaction:
+    """FACT-расход из исходящей банковской операции — атомарно:
+    инвойс + позиция + matched_invoice + платёж → PAID."""
+
+    @pytest.fixture
+    def warehouse(self, db):
+        return Warehouse.objects.create(name="Logispace")
+
+    @pytest.fixture
+    def category(self, db):
+        from core.models_billing import ExpenseCategory
+        return ExpenseCategory.objects.create(name="Логистика", category_type="OPERATIONAL")
+
+    @pytest.fixture
+    def bank_trx(self, db, company):
+        from core.models_banking import BankConnection, BankTransaction
+        conn = BankConnection.objects.create(bank_type="REVOLUT", company=company, name="Test Revolut")
+        return BankTransaction.objects.create(
+            connection=conn,
+            external_id="ext-expense-1",
+            amount=Decimal("-150.00"),  # исходящая
+            currency="EUR",
+            description="Storage services",
+            counterparty_name="Logispace",
+            created_at=timezone.now(),
+        )
+
+    def test_creates_fact_invoice_and_payment(self, company, warehouse, category, bank_trx):
+        invoice = BillingService.create_expense_from_bank_transaction(
+            bank_trx, category=category, issuer=warehouse, description="Хранение",
+        )
+
+        invoice.refresh_from_db()
+        bank_trx.refresh_from_db()
+
+        assert invoice.document_type == "INVOICE_FACT"
+        assert invoice.number.startswith("FACT-")
+        assert invoice.issuer_warehouse_id == warehouse.pk
+        assert invoice.recipient_company_id == company.pk
+        assert invoice.total == Decimal("150.00")
+        assert invoice.items.count() == 1
+        assert invoice.items.first().description == "Хранение"
+
+        # Платёж создан и привязан, инвойс закрыт.
+        assert bank_trx.matched_invoice_id == invoice.pk
+        assert bank_trx.matched_transaction_id is not None
+        payment = bank_trx.matched_transaction
+        assert payment.type == "PAYMENT"
+        assert payment.status == "COMPLETED"
+        assert payment.amount == Decimal("150.00")
+        assert payment.from_company_id == company.pk
+        assert payment.to_warehouse_id == warehouse.pk
+        assert invoice.status == "PAID"
+        assert invoice.paid_amount == Decimal("150.00")
+
+    def test_description_fallback_to_counterparty(self, company, warehouse, category, bank_trx):
+        invoice = BillingService.create_expense_from_bank_transaction(
+            bank_trx, category=category, issuer=warehouse,
+        )
+        assert invoice.items.first().description == "Logispace"
+
+    def test_no_default_company_raises(self, warehouse, category, bank_trx, company):
+        # Ломаем резолв дефолтной компании (get_default ищет по имени).
+        company.name = "Other Company"
+        company.save()
+        with pytest.raises(Company.DoesNotExist):
+            BillingService.create_expense_from_bank_transaction(
+                bank_trx, category=category, issuer=warehouse,
+            )

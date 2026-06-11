@@ -599,15 +599,32 @@ class ClientAdmin(admin.ModelAdmin):
     reset_balances.short_description = "Обнулить балансы клиентов"
 
     def reset_client_balance(self, request, queryset):
-        """Resets balances for selected clients"""
+        """Обнуляет балансы выбранных клиентов корректирующими транзакциями.
+
+        A3 (AUDIT_ROUND3): раньше action писал ``client.balance = 0`` напрямую
+        — мутация финансового состояния в обход леджера (следующий пересчёт
+        по транзакциям вернул бы старое значение). Теперь — через
+        ``BillingService.adjust_balance`` (ADJUSTMENT-транзакция).
+        """
+        from decimal import Decimal as D
+
         from django.contrib import messages
 
-        try:
-            for client in queryset:
-                client.balance = 0
-                client.save()
+        from core.services.billing_service import BillingService
 
-            messages.success(request, f'Балансы {queryset.count()} клиентов успешно обнулены')
+        try:
+            reset_count = 0
+            for client in queryset:
+                if client.balance != D('0.00'):
+                    BillingService.adjust_balance(
+                        entity=client,
+                        amount=-client.balance,
+                        reason=f'Обнуление баланса (был: {client.balance}EUR)',
+                        created_by=request.user if request.user.is_authenticated else None,
+                    )
+                    reset_count += 1
+
+            messages.success(request, f'Балансы обнулены: {reset_count} из {queryset.count()} клиентов (остальные уже были нулевыми)')
         except Exception as e:
             messages.error(request, f'Ошибка при обнулении балансов: {e}')
 

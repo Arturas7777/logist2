@@ -49,7 +49,7 @@
 ### [ ] A2. Разгрузить «жирную» модель NewInvoice
 `get_items_pivot_table()` (~150 строк presentation-кода, строки 663–817 `models_billing.py`) → `core/admin/billing/invoice_display.py`. Зафиксировать правило: модель = инварианты/валидация/FSM; команды с побочными эффектами (платежи, смена серий `change_series`/`_register_cash_payment`/`_reverse_cash_payments`) — только через `BillingService`.
 
-### [ ] A3. Бизнес-логика из админки → сервисы
+### [x] A3. Бизнес-логика из админки → сервисы
 `admin_banking.py::create_expense_view` (строки 665–860) создаёт NewInvoice + InvoiceItem + платёж прямо во вьюхе. В `core/admin/partners.py` — `reset_balances`, `reset_client_balance`, `topup_balance_view` мутируют финансовое состояние напрямую. В `core/admin/car.py::_save_model_inner` — оркестрация bulk-сохранения услуг.
 
 **Решение:** `BillingService.create_expense_from_bank_transaction(bt, ...)` + тонкая вьюха; reset/topup довести до полного делегирования сервису; покрыть сервисные методы тестами.
