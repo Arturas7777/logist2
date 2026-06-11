@@ -491,6 +491,13 @@ class NewInvoice(models.Model):
                 check=models.Q(due_date__isnull=True) | models.Q(due_date__gte=models.F('date')),
                 name='invoice_due_date_gte_date',
             ),
+            # B2 (AUDIT_ROUND3): балансы суммируют amount без разреза валюты,
+            # поэтому в системе допустим только EUR. Исторические USD-инвойсы
+            # (импорт site.pro) исключены через NOT VALID в миграции 0185.
+            models.CheckConstraint(
+                check=models.Q(currency='EUR'),
+                name='invoice_currency_eur',
+            ),
         ]
 
     def __str__(self):
@@ -866,28 +873,12 @@ class NewInvoice(models.Model):
 
         Серия определяется по document_type через DOCTYPE_PREFIX_MAP:
         PARDP-NNNNNN, AV-NNNNNN, PARBLC-NNNNNN, AVBLC-NNNNNN, FACT-NNNNNN, INCBLC-NNNNNN.
+        Номер выдаётся атомарным счётчиком серии (SeriesCounter) — без гонок.
         """
+        from core.models.series import next_document_number
+
         prefix = self.DOCTYPE_PREFIX_MAP.get(self.document_type, 'AV')
-        pad = 6
-
-        last_invoice = (
-            NewInvoice.objects
-            .filter(number__startswith=f'{prefix}-')
-            .select_for_update()
-            .order_by('-number')
-            .first()
-        )
-
-        if last_invoice:
-            try:
-                last_num = int(last_invoice.number.split('-', 1)[1])
-                next_num = last_num + 1
-            except (ValueError, IndexError):
-                next_num = 1
-        else:
-            next_num = 1
-
-        return f"{prefix}-{next_num:0{pad}d}"
+        return next_document_number(NewInvoice, prefix, pad=6)
 
     def change_series(self, new_document_type, created_by=None):
         """Перевести инвойс в другую серию с автоматическим перенумерованием.
@@ -1682,6 +1673,12 @@ class Transaction(models.Model):
                 check=models.Q(amount__gte=0),
                 name='transaction_amount_non_negative',
             ),
+            # B2 (AUDIT_ROUND3): см. invoice_currency_eur — балансы считаются
+            # без разреза валюты, не-EUR транзакции запрещены на уровне БД.
+            models.CheckConstraint(
+                check=models.Q(currency='EUR'),
+                name='transaction_currency_eur',
+            ),
         ]
 
     def __str__(self):
@@ -1919,31 +1916,16 @@ class Transaction(models.Model):
 
     def generate_number(self):
         """Сгенерировать уникальный номер транзакции.
-        Использует select_for_update для предотвращения дублирования.
+
+        Номер выдаётся атомарным счётчиком серии (SeriesCounter) — без гонок.
         """
         from django.utils.timezone import now
 
+        from core.models.series import next_document_number
+
         date = now()
         prefix = f"TRX-{date.year}{date.month:02d}{date.day:02d}"
-
-        last_transaction = (
-            Transaction.objects
-            .filter(number__startswith=prefix)
-            .select_for_update()
-            .order_by('-number')
-            .first()
-        )
-
-        if last_transaction:
-            try:
-                last_num = int(last_transaction.number.split('-')[-1])
-                next_num = last_num + 1
-            except (ValueError, IndexError):
-                next_num = 1
-        else:
-            next_num = 1
-
-        return f"{prefix}-{next_num:05d}"
+        return next_document_number(Transaction, prefix, pad=5)
 
     def delete(self, *args, force=False, **kwargs):
         if not force and self.status in ('COMPLETED', 'CANCELLED'):

@@ -1,9 +1,29 @@
 import logging
+from contextlib import contextmanager
 
 from celery import shared_task
+from django.core.cache import cache
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def task_lock(key: str, ttl: int):
+    """Распределённый лок на Redis-кэше (B3, AUDIT_ROUND3).
+
+    Защищает periodic-задачи от наложения запусков (retry + следующий
+    beat-тик = два параллельных прогона). ``cache.add`` атомарен; TTL
+    страхует от вечного лока при падении воркера. Yields True, если лок
+    захвачен (и тогда снимается на выходе), иначе False — задача должна
+    пропустить прогон.
+    """
+    acquired = cache.add(key, timezone.now().isoformat(), ttl)
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            cache.delete(key)
 
 
 @shared_task(bind=True, max_retries=1, default_retry_delay=300, time_limit=120)
@@ -355,6 +375,14 @@ def sync_sitepro_invoices(self):
     Periodic task: sync new invoices to site.pro and pull updated payment status.
     Runs daily via celery beat.
     """
+    with task_lock('lock:sync_sitepro', ttl=600) as acquired:
+        if not acquired:
+            logger.warning('[sync_sitepro] Другой прогон ещё выполняется — skip')
+            return {'status': 'locked'}
+        return _sync_sitepro_invoices_inner()
+
+
+def _sync_sitepro_invoices_inner():
     from decimal import Decimal
 
     from core.models_accounting import SiteProConnection, SiteProInvoiceSync
@@ -495,7 +523,19 @@ def sync_bank_and_reconcile(self):
     1. Revolut sync (fetch accounts + transactions)
     2. Outgoing reconciliation (we pay suppliers — match by external_number)
     3. Incoming reconciliation (clients pay us — match by invoice number/name+amount)
+
+    Защищена распределённым локом: retry + следующий beat-тик не должны
+    выполняться параллельно (иначе возможен осиротевший TOPUP — пара
+    TOPUP+PAYMENT создаётся не атомарно относительно конкурента).
     """
+    with task_lock('lock:sync_bank', ttl=900) as acquired:
+        if not acquired:
+            logger.warning('[sync_bank] Другой прогон ещё выполняется — skip')
+            return {'status': 'locked'}
+        return _sync_bank_and_reconcile_inner()
+
+
+def _sync_bank_and_reconcile_inner():
     from core.management.commands.auto_reconcile import reconcile_incoming_payments
     from core.models_banking import BankConnection
     from core.services.billing_service import BillingService

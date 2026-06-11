@@ -11,8 +11,7 @@ from django import forms
 from django.contrib import admin, messages
 from django.shortcuts import redirect, render
 from django.urls import path, reverse
-from django.utils.html import format_html
-from django.utils.safestring import mark_safe
+from django.utils.html import format_html, format_html_join
 
 from core.models import Container
 from core.models_email import (
@@ -183,17 +182,17 @@ class ContainerEmailAdmin(admin.ModelAdmin):
         if not containers:
             return format_html('<span style="color:#b91c1c;">—</span>')
         origin_id = obj.sent_from_container_id
-        parts: list[str] = []
-        for c in containers:
-            url = reverse('admin:core_container_change', args=[c.id])
-            label = c.number or str(c.id)
-            if origin_id and c.id == origin_id:
-                parts.append(format_html(
-                    '<a href="{}" style="font-weight:700;">{}</a>', url, label,
-                ))
-            else:
-                parts.append(format_html('<a href="{}">{}</a>', url, label))
-        return mark_safe(', '.join(parts))
+        return format_html_join(
+            ', ', '<a href="{}" style="{}">{}</a>',
+            (
+                (
+                    reverse('admin:core_container_change', args=[c.id]),
+                    'font-weight:700;' if (origin_id and c.id == origin_id) else '',
+                    c.number or str(c.id),
+                )
+                for c in containers
+            ),
+        )
 
     @admin.display(description='Прочитано')
     def read_status(self, obj: ContainerEmail) -> str:

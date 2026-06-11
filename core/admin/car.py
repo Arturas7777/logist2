@@ -9,7 +9,6 @@ from django.db import transaction
 from django.templatetags.static import static
 from django.utils import timezone
 from django.utils.html import format_html
-from django.utils.safestring import mark_safe
 
 from core.admin_export import CSVExportMixin
 from core.admin_filters import ClientAutocompleteFilter, MultiStatusFilter, MultiWarehouseFilter
@@ -83,8 +82,32 @@ def _load_supplier_costs_map(car_service_pks):
     return result
 
 
+def _confirmed_cost_badge(total, sources):
+    icon = '📎' if 'INVOICE' in sources else '✍️'
+    return format_html(
+        '<div style="font-size:10px; margin-top:4px; padding:2px 6px; border-radius:6px; '
+        'background:#dcfce7; color:#166534; display:inline-flex; align-items:center; gap:3px;">'
+        '{} {}\u20ac</div>',
+        icon, f'{total:.2f}',
+    )
+
+
+def _confirm_cost_button(car_service_pk, current_price):
+    prefill = current_price if current_price is not None else 0
+    return format_html(
+        '<div style="margin-top:4px;">'
+        '<button type="button" class="confirm-cost-btn" '
+        'style="font-size:10px; padding:1px 6px; border:1px solid #d97706; border-radius:6px; '
+        'background:#fffbeb; color:#92400e; cursor:pointer;" '
+        'onclick="openConfirmCostModal({}, {})">'
+        '&#10003; Confirm cost</button>'
+        '</div>',
+        int(car_service_pk), prefill,
+    )
+
+
 def _cost_badge_html(car_service_pk, current_price=None, costs_map=None):
-    """Генерирует HTML-бейдж подтверждённости затрат для CarService.
+    """Генерирует HTML-бейдж подтверждённости затрат для CarService (SafeString).
 
     Если передан `costs_map` (dict от `_load_supplier_costs_map`) —
     берёт данные оттуда без доп. SQL. Иначе (обратная совместимость)
@@ -93,47 +116,71 @@ def _cost_badge_html(car_service_pk, current_price=None, costs_map=None):
     if costs_map is not None:
         entry = costs_map.get(car_service_pk)
         if entry:
-            total = entry['total']
-            sources = entry['sources']
-            icon = '📎' if 'INVOICE' in sources else '✍️'
-            return (
-                f'<div style="font-size:10px; margin-top:4px; padding:2px 6px; border-radius:6px; '
-                f'background:#dcfce7; color:#166534; display:inline-flex; align-items:center; gap:3px;">'
-                f'{icon} {total:.2f}\u20ac</div>'
-            )
-        prefill = current_price if current_price is not None else 0
-        return (
-            '<div style="margin-top:4px;">'
-            '<button type="button" class="confirm-cost-btn" '
-            'style="font-size:10px; padding:1px 6px; border:1px solid #d97706; border-radius:6px; '
-            'background:#fffbeb; color:#92400e; cursor:pointer;" '
-            f'onclick="openConfirmCostModal({car_service_pk}, {prefill})">'
-            '&#10003; Confirm cost</button>'
-            '</div>'
-        )
+            return _confirmed_cost_badge(entry['total'], entry['sources'])
+        return _confirm_cost_button(car_service_pk, current_price)
 
     from core.models_invoice_audit import SupplierCost
     costs = SupplierCost.objects.filter(car_service_id=car_service_pk)
     if costs.exists():
         total = sum(float(c.amount) for c in costs)
         sources = {c.source for c in costs}
-        icon = '📎' if 'INVOICE' in sources else '✍️'
-        return (
-            f'<div style="font-size:10px; margin-top:4px; padding:2px 6px; border-radius:6px; '
-            f'background:#dcfce7; color:#166534; display:inline-flex; align-items:center; gap:3px;">'
-            f'{icon} {total:.2f}\u20ac</div>'
+        return _confirmed_cost_badge(total, sources)
+    return _confirm_cost_button(car_service_pk, current_price)
+
+
+def _service_card_html(kind, service, car_service, *, provider=None, variant='', costs_map=None):
+    """Карточка одной услуги в карточке авто (SafeString, значения экранированы).
+
+    R2 (AUDIT_ROUND3): раньше HTML собирался f-строками + mark_safe — имена
+    услуг/складов попадали в разметку без экранирования (XSS-вектор).
+    """
+    current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
+    markup_value = car_service.markup_amount or 0
+    cost_badge = _cost_badge_html(car_service.pk, current_value, costs_map=costs_map)
+    provider_html = (
+        format_html('<div class="cm-svc-provider">{}</div>', provider) if provider else ''
+    )
+    return format_html(
+        '<div class="cm-svc-card {variant}">'
+        '<button type="button" onclick="removeService({sid}, \'{kind}\')" class="cm-svc-remove">×</button>'
+        '{provider}'
+        '<div class="cm-svc-name">{name}</div>'
+        '<div class="cm-svc-inputs">'
+        '<input type="number" name="{kind}_service_{sid}" value="{value}" step="0.01" title="Цена услуги">'
+        '<span>+</span>'
+        '<input type="number" name="markup_{kind}_service_{sid}" value="{markup}" step="0.01" '
+        'class="cm-svc-markup" title="Скрытая наценка" placeholder="0">'
+        '</div>'
+        '{badge}'
+        '<input type="hidden" name="remove_{kind}_service_{sid}" id="remove_{kind}_service_{sid}" value="">'
+        '</div>',
+        variant=variant, sid=service.id, kind=kind, provider=provider_html,
+        name=service.name, value=current_value, markup=markup_value, badge=cost_badge,
+    )
+
+
+def _services_panel_html(kind, cards, *, modal_id, add_title, add_label, empty_note=False):
+    """Панель услуг (грид карточек + кнопка добавления) без mark_safe."""
+    from django.utils.html import format_html_join
+
+    cards_html = format_html_join('', '{}', ((c,) for c in cards))
+    note = ''
+    if empty_note and not cards:
+        note = format_html(
+            '<div style="margin-top: 8px; color: #6c757d;">{}</div>',
+            'Услуги еще не добавлены. Используйте кнопку "+".',
         )
-    else:
-        prefill = current_price if current_price is not None else 0
-        return (
-            '<div style="margin-top:4px;">'
-            '<button type="button" class="confirm-cost-btn" '
-            'style="font-size:10px; padding:1px 6px; border:1px solid #d97706; border-radius:6px; '
-            'background:#fffbeb; color:#92400e; cursor:pointer;" '
-            f'onclick="openConfirmCostModal({car_service_pk}, {prefill})">'
-            '&#10003; Confirm cost</button>'
-            '</div>'
-        )
+    return format_html(
+        '<div class="cm-svc-grid">{cards}</div>'
+        '<div style="margin-top: 10px;">'
+        '<button type="button" class="add-service-btn" onclick="openModal(\'{modal}\', \'{kind}\')" '
+        'title="{title}">+</button>'
+        '<span style="margin-left: 5px; color: #666;">{label}</span>'
+        '</div>'
+        '{note}',
+        cards=cards_html, modal=modal_id, kind=kind,
+        title=add_title, label=add_label, note=note,
+    )
 
 
 def find_car_image(year, brand):
@@ -1195,65 +1242,32 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             }
             costs_map = _load_supplier_costs_map([cs.pk for cs in car_services])
 
-            html = '<div class="cm-svc-grid">'
+            cards = []
+            for car_service in car_services:
+                service = services_by_id.get(car_service.service_id)
+                if service is None:
+                    continue
+                try:
+                    variant = (
+                        "cm-svc-card--warehouse"
+                        if (obj.warehouse and service.warehouse.id == obj.warehouse.id)
+                        else "cm-svc-card--warehouse-other"
+                    )
+                    cards.append(_service_card_html(
+                        'warehouse', service, car_service,
+                        provider=f'📦 {service.warehouse.name}',
+                        variant=variant, costs_map=costs_map,
+                    ))
+                except Exception:
+                    logger.exception("Skipping warehouse service in display rendering")
+                    continue
 
-            if car_services:
-                for car_service in car_services:
-                    service = services_by_id.get(car_service.service_id)
-                    if service is None:
-                        continue
-                    try:
-                        current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
-                        markup_value = car_service.markup_amount or 0
-                        warehouse_name = service.warehouse.name
-
-                        variant = "cm-svc-card--warehouse" if (obj.warehouse and service.warehouse.id == obj.warehouse.id) else "cm-svc-card--warehouse-other"
-
-                        cost_badge = _cost_badge_html(car_service.pk, current_value, costs_map=costs_map)
-                        html += f'''
-                        <div class="cm-svc-card {variant}">
-                            <button type="button" onclick="removeService({service.id}, 'warehouse')" class="cm-svc-remove">×</button>
-                            <div class="cm-svc-provider">📦 {warehouse_name}</div>
-                            <div class="cm-svc-name">{service.name}</div>
-                            <div class="cm-svc-inputs">
-                                <input type="number" name="warehouse_service_{service.id}" value="{current_value}" step="0.01" title="Цена услуги">
-                                <span>+</span>
-                                <input type="number" name="markup_warehouse_service_{service.id}" value="{markup_value}" step="0.01" class="cm-svc-markup" title="Скрытая наценка" placeholder="0">
-                            </div>
-                            {cost_badge}
-                            <input type="hidden" name="remove_warehouse_service_{service.id}" id="remove_warehouse_service_{service.id}" value="">
-                        </div>
-                        '''
-                    except Exception:
-                        logger.exception("Skipping warehouse service in display rendering")
-                        continue
-
-            html += '</div>'
-
-            # Button to add services - always available
-            html += '''
-            <div style="margin-top: 10px;">
-                <button type="button" class="add-service-btn" onclick="openModal('warehouseServicesModal', 'warehouse')" title="Добавить услуги любого склада">
-                    +
-                </button>
-                <span style="margin-left: 5px; color: #666;">Добавить услуги склада</span>
-            </div>
-            '''
-
-            # JavaScript for removing services
-            html += '''
-            <script>
-            function removeService(serviceId, serviceType) {
-                const serviceDiv = event.target.closest('div');
-                serviceDiv.style.display = 'none';
-                const hiddenField = document.getElementById('remove_' + serviceType + '_service_' + serviceId);
-                hiddenField.value = '1';
-                console.log('Removed service:', serviceType, serviceId, 'Field value:', hiddenField.value);
-            }
-            </script>
-            '''
-
-            return mark_safe(html)
+            return _services_panel_html(
+                'warehouse', cards,
+                modal_id='warehouseServicesModal',
+                add_title='Добавить услуги любого склада',
+                add_label='Добавить услуги склада',
+            )
         except Exception as e:
             return f"Ошибка загрузки услуг: {e}"
     warehouse_services_display.short_description = "Услуги склада"
@@ -1275,51 +1289,27 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             }
             costs_map = _load_supplier_costs_map([cs.pk for cs in car_services])
 
-            html = '<div class="cm-svc-grid">'
-
+            cards = []
             for car_service in car_services:
                 service = services_by_id.get(car_service.service_id)
                 if service is None:
                     continue
                 try:
-                    current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
-                    markup_value = car_service.markup_amount or 0
-
-                    cost_badge = _cost_badge_html(car_service.pk, current_value, costs_map=costs_map)
-                    html += f'''
-                    <div class="cm-svc-card cm-svc-card--line">
-                        <button type="button" onclick="removeService({service.id}, 'line')" class="cm-svc-remove">×</button>
-                        <div class="cm-svc-name">{service.name}</div>
-                        <div class="cm-svc-inputs">
-                            <input type="number" name="line_service_{service.id}" value="{current_value}" step="0.01" title="Цена услуги">
-                            <span>+</span>
-                            <input type="number" name="markup_line_service_{service.id}" value="{markup_value}" step="0.01" class="cm-svc-markup" title="Скрытая наценка" placeholder="0">
-                        </div>
-                        {cost_badge}
-                        <input type="hidden" name="remove_line_service_{service.id}" id="remove_line_service_{service.id}" value="">
-                    </div>
-                    '''
+                    cards.append(_service_card_html(
+                        'line', service, car_service,
+                        variant='cm-svc-card--line', costs_map=costs_map,
+                    ))
                 except Exception:
                     logger.exception("Skipping line service in display rendering")
                     continue
 
-            html += '</div>'
-
-            # Button to add new services
-            if obj.line:
-                html += '''
-                <div style="margin-top: 10px;">
-                    <button type="button" class="add-service-btn" onclick="openModal('lineServicesModal', 'line')" title="Добавить услуги линии">
-                        +
-                    </button>
-                    <span style="margin-left: 5px; color: #666;">Добавить услуги линии</span>
-                </div>
-                '''
-
-            if not car_services:
-                html += '<div style="margin-top: 8px; color: #6c757d;">Услуги еще не добавлены. Используйте кнопку "+".</div>'
-
-            return mark_safe(html)
+            return _services_panel_html(
+                'line', cards,
+                modal_id='lineServicesModal',
+                add_title='Добавить услуги линии',
+                add_label='Добавить услуги линии',
+                empty_note=True,
+            )
         except Exception as e:
             return f"Ошибка загрузки услуг: {e}"
     line_services_display.short_description = "Услуги линии"
@@ -1341,51 +1331,27 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             }
             costs_map = _load_supplier_costs_map([cs.pk for cs in car_services])
 
-            html = '<div class="cm-svc-grid">'
-
+            cards = []
             for car_service in car_services:
                 service = services_by_id.get(car_service.service_id)
                 if service is None:
                     continue
                 try:
-                    current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
-                    markup_value = car_service.markup_amount or 0
-
-                    cost_badge = _cost_badge_html(car_service.pk, current_value, costs_map=costs_map)
-                    html += f'''
-                    <div class="cm-svc-card cm-svc-card--carrier">
-                        <button type="button" onclick="removeService({service.id}, 'carrier')" class="cm-svc-remove">×</button>
-                        <div class="cm-svc-name">{service.name}</div>
-                        <div class="cm-svc-inputs">
-                            <input type="number" name="carrier_service_{service.id}" value="{current_value}" step="0.01" title="Цена услуги">
-                            <span>+</span>
-                            <input type="number" name="markup_carrier_service_{service.id}" value="{markup_value}" step="0.01" class="cm-svc-markup" title="Скрытая наценка" placeholder="0">
-                        </div>
-                        {cost_badge}
-                        <input type="hidden" name="remove_carrier_service_{service.id}" id="remove_carrier_service_{service.id}" value="">
-                    </div>
-                    '''
+                    cards.append(_service_card_html(
+                        'carrier', service, car_service,
+                        variant='cm-svc-card--carrier', costs_map=costs_map,
+                    ))
                 except Exception:
                     logger.exception("Skipping carrier service in display rendering")
                     continue
 
-            html += '</div>'
-
-            # Button to add new services
-            if obj.carrier:
-                html += '''
-                <div style="margin-top: 10px;">
-                    <button type="button" class="add-service-btn" onclick="openModal('carrierServicesModal', 'carrier')" title="Добавить услуги перевозчика">
-                        +
-                    </button>
-                    <span style="margin-left: 5px; color: #666;">Добавить услуги перевозчика</span>
-                </div>
-                '''
-
-            if not car_services:
-                html += '<div style="margin-top: 8px; color: #6c757d;">Услуги еще не добавлены. Используйте кнопку "+".</div>'
-
-            return mark_safe(html)
+            return _services_panel_html(
+                'carrier', cards,
+                modal_id='carrierServicesModal',
+                add_title='Добавить услуги перевозчика',
+                add_label='Добавить услуги перевозчика',
+                empty_note=True,
+            )
         except Exception as e:
             return f"Ошибка загрузки услуг: {e}"
     carrier_services_display.short_description = "Услуги перевозчика"
@@ -1407,48 +1373,27 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             }
             costs_map = _load_supplier_costs_map([cs.pk for cs in car_services])
 
-            html = '<div class="cm-svc-grid">'
+            cards = []
+            for car_service in car_services:
+                service = services_by_id.get(car_service.service_id)
+                if service is None:
+                    continue
+                try:
+                    cards.append(_service_card_html(
+                        'company', service, car_service,
+                        provider=f'🏢 {service.company.name}',
+                        variant='cm-svc-card--company', costs_map=costs_map,
+                    ))
+                except Exception:
+                    logger.exception("Skipping company service in display rendering")
+                    continue
 
-            if car_services:
-                for car_service in car_services:
-                    service = services_by_id.get(car_service.service_id)
-                    if service is None:
-                        continue
-                    try:
-                        current_value = car_service.custom_price if car_service.custom_price is not None else service.default_price
-                        markup_value = car_service.markup_amount or 0
-
-                        cost_badge = _cost_badge_html(car_service.pk, current_value, costs_map=costs_map)
-                        html += f'''
-                        <div class="cm-svc-card cm-svc-card--company">
-                            <button type="button" onclick="removeService({service.id}, 'company')" class="cm-svc-remove">×</button>
-                            <div class="cm-svc-provider">🏢 {service.company.name}</div>
-                            <div class="cm-svc-name">{service.name}</div>
-                            <div class="cm-svc-inputs">
-                                <input type="number" name="company_service_{service.id}" value="{current_value}" step="0.01" title="Цена услуги">
-                                <span>+</span>
-                                <input type="number" name="markup_company_service_{service.id}" value="{markup_value}" step="0.01" class="cm-svc-markup" title="Скрытая наценка" placeholder="0">
-                            </div>
-                            {cost_badge}
-                            <input type="hidden" name="remove_company_service_{service.id}" id="remove_company_service_{service.id}" value="">
-                        </div>
-                        '''
-                    except Exception:
-                        logger.exception("Skipping company service in display rendering")
-                        continue
-
-            html += '</div>'
-
-            html += '''
-            <div style="margin-top: 10px;">
-                <button type="button" class="add-service-btn" onclick="openModal('companyServicesModal', 'company')" title="Добавить услуги компании">
-                    +
-                </button>
-                <span style="margin-left: 5px; color: #666;">Добавить услуги компании</span>
-            </div>
-            '''
-
-            return mark_safe(html)
+            return _services_panel_html(
+                'company', cards,
+                modal_id='companyServicesModal',
+                add_title='Добавить услуги компании',
+                add_label='Добавить услуги компании',
+            )
         except Exception as e:
             return f"Ошибка загрузки услуг: {e}"
     company_services_display.short_description = "Услуги компаний"

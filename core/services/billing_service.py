@@ -518,6 +518,20 @@ class BillingService:
             if invoice.status == 'CANCELLED':
                 return None
 
+            # B2 (AUDIT_ROUND3): валюты должны совпадать — иначе сумма BT
+            # попала бы в EUR-баланс без конверсии. Не-EUR банковские
+            # операции сопоставляются вручную после конверсии суммы.
+            bt_currency = (bt.currency or 'EUR').upper()
+            invoice_currency = (invoice.currency or 'EUR').upper()
+            if bt_currency != invoice_currency:
+                logger.warning(
+                    "[BT match] Пропуск BT %s: валюта банковской операции (%s) "
+                    "не совпадает с валютой инвойса %s (%s) — требуется ручная "
+                    "конверсия суммы",
+                    bt.pk, bt_currency, invoice.number, invoice_currency,
+                )
+                return None
+
             remaining = invoice.total - invoice.paid_amount
             payment_amount = min(abs(bt.amount), remaining)
             if payment_amount <= 0:

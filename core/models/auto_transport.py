@@ -145,19 +145,12 @@ class AutoTransport(models.Model):
 
     @staticmethod
     def _generate_number():
-        """Generate unique number using select_for_update to prevent duplicates."""
+        """Сгенерировать уникальный номер через атомарный счётчик серии."""
+        from core.models.series import next_document_number
+
         date_str = timezone.now().strftime("%Y%m%d")
         prefix = f"AT-{date_str}"
-        last = AutoTransport.objects.filter(number__startswith=prefix).select_for_update().order_by("-number").first()
-        if last:
-            try:
-                last_num = int(last.number.split("-")[-1])
-                next_num = last_num + 1
-            except (ValueError, IndexError):
-                next_num = 1
-        else:
-            next_num = 1
-        return f"{prefix}-{next_num:03d}"
+        return next_document_number(AutoTransport, prefix, pad=3)
 
     @property
     def truck_full_number(self):

@@ -1,6 +1,6 @@
 from django import template
 from django.contrib.contenttypes.models import ContentType
-from django.utils.html import format_html, mark_safe
+from django.utils.html import format_html, format_html_join
 
 register = template.Library()
 
@@ -21,20 +21,19 @@ def vin_diff(vin: str, reference: str):
         return format_html(
             '<span style="font-family:monospace;">{}</span>', vin
         )
-    parts = []
-    for ch_vin, ch_ref in zip(vin, reference, strict=False):
-        if ch_vin == ch_ref:
-            parts.append(format_html(
-                '<span style="font-family:monospace;">{}</span>', ch_vin
-            ))
-        else:
-            parts.append(format_html(
-                '<span style="font-family:monospace;background:#ffc107;'
-                'color:#212529;padding:0 2px;border-radius:2px;'
-                'font-weight:bold;">{}</span>',
+    return format_html_join(
+        '', '<span style="font-family:monospace;{}">{}</span>',
+        (
+            (
+                '' if ch_vin == ch_ref else (
+                    'background:#ffc107;color:#212529;padding:0 2px;'
+                    'border-radius:2px;font-weight:bold;'
+                ),
                 ch_vin,
-            ))
-    return mark_safe(''.join(parts))
+            )
+            for ch_vin, ch_ref in zip(vin, reference, strict=False)
+        ),
+    )
 
 @register.filter
 def content_type_id(obj):

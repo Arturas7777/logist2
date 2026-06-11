@@ -243,8 +243,7 @@ jobs:
       - name: bandit HIGH severity — блокирующий
         run: bandit -r core logist2 --severity-level high --confidence-level high -x core/tests,core/migrations
 
-      - name: bandit MEDIUM severity — advisory
-        # Medium-находки (mark_safe в admin-дисплеях) информативны: не валят
-        # сборку. Закрыть переводом на format_html отдельной задачей.
-        continue-on-error: true
+      - name: bandit MEDIUM severity — блокирующий
+        # R2 (AUDIT_ROUND3): mark_safe в admin-дисплеях переведён на
+        # format_html/format_html_join, baseline чист — MEDIUM блокирует.
         run: bandit -r core logist2 -ll -x core/tests,core/migrations

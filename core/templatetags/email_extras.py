@@ -9,7 +9,6 @@ import hashlib
 import re
 
 from django import template
-from django.utils.safestring import mark_safe
 
 from core.services.email_reply_parser import (
     _fix_mojibake,
@@ -201,5 +200,6 @@ def linkify_urls_filter(text: str) -> str:
     Используем встроенный urlize — он уже умеет distinguish между ссылкой и
     обычным текстом, а HTML-escape делает перед тем как вставить <a>.
     """
+    # defaultfilters.urlize уже возвращает SafeString — mark_safe не нужен.
     from django.template.defaultfilters import urlize
-    return mark_safe(urlize(text or '', autoescape=True))
+    return urlize(text or '', autoescape=True)

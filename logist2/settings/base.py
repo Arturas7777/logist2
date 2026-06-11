@@ -362,7 +362,11 @@ SESSION_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_AGE = 1209600
 SESSION_COOKIE_DOMAIN = None
-SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+# R1 (AUDIT_ROUND3): cached_db вместо cache — рестарт/флаш Redis больше
+# не разлогинивает всех пользователей (сессии персистятся в БД, кэш
+# остаётся быстрым слоем чтения). Таблица django_session уже есть
+# (django.contrib.sessions в INSTALLED_APPS с первой миграции).
+SESSION_ENGINE = "django.contrib.sessions.backends.cached_db"
 SESSION_CACHE_ALIAS = "default"
 SESSION_SAVE_EVERY_REQUEST = False
 

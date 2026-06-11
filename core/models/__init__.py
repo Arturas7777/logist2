@@ -52,6 +52,7 @@ from .clients import Client, ClientEmail, ClientTariffRate
 from .company import Company
 from .containers import Container
 from .lines import Line, LineTHSCoefficient
+from .series import SeriesCounter, next_document_number
 from .services import (
     BaseService,
     CarrierService,
@@ -111,6 +112,8 @@ __all__ = [
     'DeletedCarService', 'CarService',
     # автовоз
     'AutoTransport',
+    # счётчики серий документов
+    'SeriesCounter', 'next_document_number',
     # дела
     'Task',
     # реэкспорт из соседних файлов

@@ -64,17 +64,17 @@
 
 ## 2. Бизнес-логика
 
-### [ ] B1. Гонка в `generate_number`
+### [x] B1. Гонка в `generate_number`
 `NewInvoice.generate_number` (строки 873–879 `models_billing.py`), `Transaction.generate_number` (1920–1946), `AutoTransport` (`models/auto_transport.py:148`): `SELECT FOR UPDATE` лочит только существующую последнюю строку — при пустой серии лока нет, при параллельной вставке коллизия → `IntegrityError` без retry → 500.
 
 **Решение:** таблица счётчиков серий `SeriesCounter(prefix, last_value)` + `UPDATE … RETURNING` (полная сериализация). Альтернатива-минимум: retry-цикл на IntegrityError (3 попытки). Предпочесть счётчик.
 
-### [ ] B2. Валютный инвариант балансов
+### [x] B2. Валютный инвариант балансов
 `expected_entity_balance`/`recalculate_entity_balance` (`models_billing.py:1861–1863`) суммируют `amount` без разреза валюты — транзакция в USD тихо смешается с EUR в `Client.balance`, `verify_balances` не поймает.
 
 **Решение:** `CheckConstraint(currency='EUR')` на Transaction и NewInvoice (перед миграцией проверить данные одним запросом); конверсия на границе при матчинге не-EUR BankTransaction.
 
-### [ ] B3. Лок от наложения запусков синхронизации банка
+### [x] B3. Лок от наложения запусков синхронизации банка
 `sync_bank_and_reconcile` (`tasks.py:491–550`, beat каждые 30 мин, retry 300с): сценарий «retry + следующий тик» = два параллельных прогона → возможен осиротевший TOPUP (пара TOPUP+PAYMENT создаётся не атомарно относительно конкурента).
 
 **Решение:** распределённый лок `cache.add('lock:sync_bank', ttl=900)` в начале задачи; вторая инстанция — skip с логом. То же для `sync_sitepro_invoices`.
@@ -100,13 +100,13 @@
 
 ## 4. Надёжность и безопасность
 
-### [ ] R1. Сессии: `cache` → `cached_db`
+### [x] R1. Сессии: `cache` → `cached_db`
 `SESSION_ENGINE = "django.contrib.sessions.backends.cache"` (`base.py:365`) — рестарт Redis = разлогин всех. Сменить на `cached_db` + миграция сессионной таблицы.
 
-### [ ] R2. `mark_safe` → `format_html` в админке
+### [x] R2. `mark_safe` → `format_html` в админке
 `BankTransaction.counterparty_name`/`description` приходят из Revolut API (контрагент сам задаёт имя!), темы писем из Gmail. Пройти display-методы `admin_banking.py`, `core/admin/email.py`, `core/admin/car.py`, заменить mark_safe/f-string на `format_html`/`format_html_join`. После зачистки — bandit-MEDIUM сделать блокирующим в CI (`ci.yml:246–250`).
 
-### [ ] R3. Завершить ротацию ENCRYPTION_KEY
+### [x] R3. Завершить ротацию ENCRYPTION_KEY
 `ENCRYPTION_KEY_REQUIRED` по умолчанию False (`base.py:29`) — токены могут шифроваться fallback-ом на SECRET_KEY. Прогнать ротацию на проде (`rotate_encryption_key`, инструкция `docs/ENCRYPTION_KEY.md`) и включить `ENCRYPTION_KEY_REQUIRED=true`.
 
 ### [ ] R4. Убрать legacy-зеркало `/api/`

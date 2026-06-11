@@ -650,6 +650,14 @@
   }
 
   {% if original %}
+  /* Перенесено из inline-скрипта warehouse_services_display (R2, AUDIT_ROUND3) */
+  function removeService(serviceId, serviceType) {
+    const serviceDiv = event.target.closest('div');
+    serviceDiv.style.display = 'none';
+    const hiddenField = document.getElementById('remove_' + serviceType + '_service_' + serviceId);
+    hiddenField.value = '1';
+  }
+
   /* ── Modal functions ── */
   function openModal(modalId, serviceType) {
     var modal = document.getElementById(modalId);
