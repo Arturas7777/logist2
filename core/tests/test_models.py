@@ -98,10 +98,14 @@ class ContainerModelTest(TestCase):
             container.clean()
         self.assertIn('unload_date', ctx.exception.message_dict)
 
-    def test_update_days_and_storage_floating(self):
-        """Для плавающего контейнера дни и хранение = 0"""
+    def test_storage_is_aggregate_of_cars(self):
+        """Хранение контейнера — агрегат хранения его машин (read-only)."""
         container = Container(number="TEST-005", status="FLOATING")
-        container.update_days_and_storage()
+        # Несохранённый контейнер — нули.
+        self.assertEqual(container.days, 0)
+        self.assertEqual(container.storage_cost, 0)
+
+        container.save()
         self.assertEqual(container.days, 0)
         self.assertEqual(container.storage_cost, 0)
 

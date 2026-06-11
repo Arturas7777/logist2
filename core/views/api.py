@@ -109,9 +109,12 @@ def get_invoice_total(request):
 @require_GET
 def get_container_data(request, container_id: int):
     try:
-        container = Container.objects.get(id=container_id)
+        container = Container.objects.select_related('warehouse').get(id=container_id)
         data = {
-            'free_days': container.free_days,
+            # Собственных free_days у контейнера больше нет — единственный
+            # источник: бесплатные дни склада.
+            'free_days': container.warehouse.free_days if container.warehouse else 0,
+            # storage_cost — агрегат хранения машин контейнера (property).
             'storage_cost': str(container.storage_cost),
             'status': container.status,
         }

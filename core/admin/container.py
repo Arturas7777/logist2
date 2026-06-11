@@ -96,7 +96,6 @@ class ContainerAdmin(admin.ModelAdmin):
             )
         }),
     )
-    readonly_fields = ('days', 'storage_cost')
     actions = ['print_labels_action', 'reset_labels_printed_action', 'set_status_floating', 'set_status_in_port', 'set_status_unloaded', 'set_status_transferred', 'check_container_status', 'bulk_update_container_statuses', 'sync_photos_from_gdrive', 'resend_planned_notifications', 'resend_unload_notifications', 'resend_planned_telegram', 'resend_unload_telegram']
 
     class Media:
@@ -397,10 +396,9 @@ class ContainerAdmin(admin.ModelAdmin):
         pks = list(queryset.values_list('pk', flat=True))
         updated = queryset.update(status='FLOATING')
         for obj in Container.objects.filter(pk__in=pks):
-            obj.update_days_and_storage()
+            # sync_cars (bulk) обновляет статус/склад/даты/days/storage_cost
+            # машин; собственного хранения у контейнера больше нет.
             obj.sync_cars()
-            obj.save(update_fields=['days', 'storage_cost'])
-            obj.container_cars.update(status='FLOATING')
         self.message_user(request, f"Статус изменён на 'В пути' для {updated} контейнеров и их авто.")
     set_status_floating.short_description = "Изменить статус на В пути"
 
@@ -408,10 +406,7 @@ class ContainerAdmin(admin.ModelAdmin):
         pks = list(queryset.values_list('pk', flat=True))
         updated = queryset.update(status='IN_PORT')
         for obj in Container.objects.filter(pk__in=pks):
-            obj.update_days_and_storage()
             obj.sync_cars()
-            obj.save(update_fields=['days', 'storage_cost'])
-            obj.container_cars.update(status='IN_PORT')
         self.message_user(request, f"Статус изменён на 'В порту' для {updated} контейнеров и их авто.")
     set_status_in_port.short_description = "Изменить статус на В порту"
 
@@ -420,10 +415,8 @@ class ContainerAdmin(admin.ModelAdmin):
         for obj in queryset:
             if obj.warehouse and obj.unload_date:
                 obj.status = 'UNLOADED'
-                obj.update_days_and_storage()
+                obj.save(update_fields=['status'])
                 obj.sync_cars()
-                obj.save(update_fields=['status', 'days', 'storage_cost'])
-                obj.container_cars.update(status='UNLOADED')
                 updated += 1
             else:
                 self.message_user(request, f"Контейнер {obj.number} не обновлён: требуются поля 'Склад' и 'Дата разгрузки'.", level='warning')
@@ -434,10 +427,7 @@ class ContainerAdmin(admin.ModelAdmin):
         pks = list(queryset.values_list('pk', flat=True))
         updated = queryset.update(status='TRANSFERRED')
         for obj in Container.objects.filter(pk__in=pks):
-            obj.update_days_and_storage()
             obj.sync_cars()
-            obj.save(update_fields=['days', 'storage_cost'])
-            obj.container_cars.update(status='TRANSFERRED')
         self.message_user(request, f"Статус изменён на 'Передан' для {updated} контейнеров и их авто.")
     set_status_transferred.short_description = "Изменить статус на Передан"
 

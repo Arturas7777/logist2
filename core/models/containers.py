@@ -4,7 +4,6 @@ import logging
 
 from django.core.validators import MinValueValidator
 from django.db import models, transaction
-from django.utils import timezone
 
 from core.constants import STATUS_COLORS
 from core.managers import OptimizedContainerManager
@@ -135,12 +134,14 @@ class Container(models.Model):
         verbose_name="Статус 'Разгружен' с",
         help_text="Когда контейнер получил статус 'Разгружен' (для задержки синхронизации фото)",
     )
-    free_days = models.PositiveIntegerField(default=0, verbose_name="Бесплатные дни")
-    days = models.PositiveIntegerField(default=0, verbose_name="Платные дни")
-    rate = models.DecimalField(
-        max_digits=10, decimal_places=2, default=5, verbose_name="Ставка", validators=[MinValueValidator(0)]
-    )
-    storage_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Складирование")
+    # NOTE: раньше у контейнера были СОБСТВЕННЫЕ free_days/days/rate/
+    # storage_cost — параллельная система учёта хранения с ручной ставкой
+    # (дефолт 5 €), не связанная с каталогом услуг склада и обнулявшаяся
+    # при выходе из UNLOADED. Хранение контейнера отдельно не биллингуется
+    # (подтверждено владельцем), поэтому поля удалены: «Складирование»
+    # контейнера теперь read-only агрегат хранения его машин (см. свойства
+    # ``storage_cost`` / ``days`` ниже). Единственный источник ставок —
+    # услуга «Хранение» склада + Warehouse.free_days.
     notes = models.CharField(max_length=200, blank=True, verbose_name="Примечания")
 
     # Google Drive integration
@@ -172,17 +173,28 @@ class Container(models.Model):
 
     objects = OptimizedContainerManager()
 
-    def update_days_and_storage(self):
-        if self.status == "UNLOADED" and self.unload_date:
-            total_days = (timezone.now().date() - self.unload_date).days + 1
-            self.days = max(0, total_days - self.free_days)
-            self.storage_cost = self.days * (self.rate or 0)
-        else:
-            self.days = 0
-            self.storage_cost = 0
+    @property
+    def storage_cost(self):
+        """Хранение контейнера = сумма хранения его машин (read-only).
+
+        У машин при передаче сумма фиксируется на transfer_date — агрегат
+        наследует это поведение (раньше собственный storage_cost контейнера
+        обнулялся при выходе из UNLOADED, теряя накопленную стоимость).
+        """
+        from decimal import Decimal
+
+        if not self.pk:
+            return Decimal("0.00")
+        return self.container_cars.aggregate(s=models.Sum("storage_cost"))["s"] or Decimal("0.00")
+
+    @property
+    def days(self):
+        """Платные дни хранения = максимум по машинам контейнера."""
+        if not self.pk:
+            return 0
+        return self.container_cars.aggregate(m=models.Max("days"))["m"] or 0
 
     def sync_cars(self):
-        self.update_days_and_storage()
         Container.objects.update_related(self)
 
     def clean(self):
