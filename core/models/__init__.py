@@ -65,17 +65,16 @@ from .services import (
 from .tasks import Task
 from .warehouses import Warehouse, WarehouseSite
 
-# Модели из соседних файлов ``core/models_*.py``. Их обязательно нужно
-# проимпортировать здесь — иначе Django может их «не увидеть» в
-# некоторых сценариях (management-команды, тесты без полного
-# autodiscover). Идентично хвостовым ``from core.models_… import …``
-# в legacy-``core/models.py``.
-from core.models_contact import (  # noqa: E402, F401
+# Доменные модули, перенесённые из топ-левел монолитов ``core/models_*.py``
+# (A1, AUDIT_ROUND3). Старые пути сохранены как реэкспорт-шимы.
+# Импорт здесь гарантирует регистрацию моделей во всех сценариях
+# (management-команды, тесты без полного autodiscover).
+from .contact import (  # noqa: E402, F401
     Contact,
     ContactEmail,
     ContactPhone,
 )
-from core.models_email import (  # noqa: E402, F401
+from .email import (  # noqa: E402, F401
     ContainerEmail,
     ContainerEmailLink,
     EmailGroup,
@@ -83,15 +82,15 @@ from core.models_email import (  # noqa: E402, F401
     EmailIngestFilter,
     GmailSyncState,
 )
-from core.models_invoice_audit import (  # noqa: E402, F401
+from .invoice_audit import (  # noqa: E402, F401
     InvoiceAudit,
     SupplierCost,
 )
-from core.models_monitoring import (  # noqa: E402, F401
+from .monitoring import (  # noqa: E402, F401
     SystemMetric,
     UptimeCheck,
 )
-from core.models_scans import ScanProcessingJob  # noqa: E402, F401
+from .scans import ScanProcessingJob  # noqa: E402, F401
 
 __all__ = [
     # constants

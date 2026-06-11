@@ -41,7 +41,7 @@
 
 ## 1. Архитектура
 
-### [ ] A1. Завершить распил `models_*` и `admin_*`
+### [x] A1. Завершить распил `models_*` и `admin_*`
 Пакет `core/models/` сосуществует с топ-левел монолитами: `models_billing.py` (2250 строк), `models_banking.py`, `models_email.py` (551), `models_website.py` (475), `models_accounting.py`, `models_contact.py`, `models_scans.py`, `models_monitoring.py`, `models_invoice_audit.py`. В админке: пакет `core/admin/` + `admin_banking.py` (1136), `admin_website.py`, `admin_accounting.py`, `admin_scans.py`, `admin_filters.py`, `admin_export.py`.
 
 **Решение:** перенести `models_billing.py` → `core/models/billing.py`, `admin_banking.py` → `core/admin/banking.py` и т.д. с реэкспортом из старых путей (python-only, без миграций БД — паттерн `0131_rename_fields_python_only`). На отдельные Django-приложения НЕ дробить.

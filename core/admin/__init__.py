@@ -8,7 +8,7 @@ from core.admin.contacts import *  # noqa
 from core.admin.tasks import *  # noqa
 
 # Import website admin
-from core.admin_website import (
+from core.admin.website import (
     ClientUserAdmin, AIChatAdmin, NewsPostAdmin, ContactMessageAdmin, TrackingRequestAdmin
 )
 
@@ -29,7 +29,7 @@ except ImportError as e:
 
 # Import banking admin (Revolut и др.)
 try:
-    from core.admin_banking import BankConnectionAdmin, BankAccountAdmin, BankTransactionAdmin
+    from core.admin.banking import BankConnectionAdmin, BankAccountAdmin, BankTransactionAdmin
 except ImportError as e:
     import logging
     logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ except ImportError as e:
 
 # Import accounting admin (site.pro / b1.lt)
 try:
-    from core.admin_accounting import SiteProConnectionAdmin, SiteProInvoiceSyncAdmin
+    from core.admin.accounting import SiteProConnectionAdmin, SiteProInvoiceSyncAdmin
 except ImportError as e:
     import logging
     logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ except ImportError as e:
 
 # Scan processing (titles / dock receipts) — AI-обработка
 try:
-    from core.admin_scans import ScanProcessingJobAdmin  # noqa: F401
+    from core.admin.scans import ScanProcessingJobAdmin  # noqa: F401
 except ImportError as e:
     import logging
     logger = logging.getLogger(__name__)
