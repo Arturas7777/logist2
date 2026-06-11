@@ -165,6 +165,19 @@ sudo -u postgres psql -c "DROP DATABASE logist2_db_verify;"
 
 Стоит делать раз в квартал.
 
+## Журнал restore-учений
+
+Восстановление прод-дампа в отдельную локальную БД + `manage.py check`.
+Проводить не реже раза в квартал, результат фиксировать здесь.
+
+| Дата | Дамп | Результат |
+|---|---|---|
+| 2026-06-11 | `logist2_db_2026-06-11.dump` (5.3M, 851 объект) | OK: восстановлен в `logist2_restore_drill`; 754 car / 375 invoice / 474 transaction / 467 bank transaction; `manage.py check` чист; единственная ошибка restore — `COMMENT ON EXTENSION pg_stat_statements` (безвредно, расширения нет на dev-машине). |
+
+> Замечание: при restore на машину без `pg_stat_statements` pg_restore
+> печатает 1–2 игнорируемые ошибки про это расширение — это норма
+> (`--no-owner --no-acl` не переносит расширения).
+
 ## Healthcheck в Sentry
 
 Celery-задача `core.tasks_monitoring.check_backup_freshness` ежедневно

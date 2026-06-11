@@ -120,7 +120,7 @@
 ### [x] R6. Лок зависимостей
 `requirements.txt` смешивает пины и открытые диапазоны (`pillow>=12.1.0`, `openai>=1.40.0`, `anthropic>=0.40.0`…). Перейти на pip-tools (`requirements.in` + скомпилированный лок) или `uv lock`.
 
-### [ ] R7. Post-deploy smoke + restore-учения
+### [x] R7. Post-deploy smoke + restore-учения
 (а) В конец `deploy.ps1` — curl `/health/` + страница админки, ожидание 200/302; (б) задокументировать и провести восстановление дампа в локальную БД по `docs/BACKUPS.md`.
 
 ## 5. Тесты

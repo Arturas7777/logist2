@@ -101,7 +101,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # ── Step 4: restart services ──
-Write-Host "[4/4] Restarting services..." -ForegroundColor Yellow
+Write-Host "[4/5] Restarting services..." -ForegroundColor Yellow
 ssh $SERVER "cd $PROJECT_DIR && chown -R www-root:www-root core/ templates/ staticfiles/ logist2/ media/ 2>/dev/null; systemctl restart gunicorn daphne celery celerybeat" 2>$null
 
 $gunicorn = ssh $SERVER "systemctl is-active gunicorn" 2>$null
@@ -109,14 +109,57 @@ $daphne = ssh $SERVER "systemctl is-active daphne" 2>$null
 $celery = ssh $SERVER "systemctl is-active celery" 2>$null
 $beat = ssh $SERVER "systemctl is-active celerybeat" 2>$null
 
-if ($gunicorn -eq "active" -and $daphne -eq "active" -and $celery -eq "active" -and $beat -eq "active") {
+$servicesOk = ($gunicorn -eq "active" -and $daphne -eq "active" -and $celery -eq "active" -and $beat -eq "active")
+if ($servicesOk) {
     Write-Host "      gunicorn/daphne/celery/celerybeat: all active" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "=== DEPLOY COMPLETE ===" -ForegroundColor Green
 } else {
     Write-Host "      gunicorn:$gunicorn  daphne:$daphne  celery:$celery  celerybeat:$beat" -ForegroundColor Red
-    Write-Host ""
+}
+
+# ── Step 5: post-deploy smoke (R7) ──
+# Проверяем, что сайт реально отвечает: /health/ должен вернуть 200,
+# страница логина админки — 200/302. Gunicorn может стартовать несколько
+# секунд, поэтому до 6 попыток с паузой 5с.
+Write-Host "[5/5] Post-deploy smoke..." -ForegroundColor Yellow
+$BASE_URL = "https://caromoto-lt.com"
+$smokeOk = $false
+for ($i = 1; $i -le 6; $i++) {
+    try {
+        $health = Invoke-WebRequest -Uri "$BASE_URL/health/" -Method GET -TimeoutSec 10 -UseBasicParsing
+        if ($health.StatusCode -eq 200) {
+            $smokeOk = $true
+            break
+        }
+    } catch {
+        # сервис ещё поднимается — ждём и пробуем снова
+    }
+    Start-Sleep -Seconds 5
+}
+$adminOk = $false
+if ($smokeOk) {
+    try {
+        # MaximumRedirection 0: для /admin/ корректен и 200, и 302 на логин
+        $admin = Invoke-WebRequest -Uri "$BASE_URL/admin/login/" -Method GET -TimeoutSec 10 -UseBasicParsing -MaximumRedirection 0 -ErrorAction SilentlyContinue
+        if ($admin.StatusCode -in 200, 302) { $adminOk = $true }
+    } catch {
+        if ($_.Exception.Response -and ([int]$_.Exception.Response.StatusCode -in 200, 302)) { $adminOk = $true }
+    }
+}
+
+if ($smokeOk -and $adminOk) {
+    Write-Host "      /health/ 200, /admin/login/ OK" -ForegroundColor Green
+} elseif ($smokeOk) {
+    Write-Host "      /health/ 200, но /admin/login/ не отвечает 200/302!" -ForegroundColor Red
+} else {
+    Write-Host "      SMOKE FAILED: /health/ не вернул 200 за 30 секунд!" -ForegroundColor Red
+}
+
+Write-Host ""
+if ($servicesOk -and $smokeOk -and $adminOk) {
+    Write-Host "=== DEPLOY COMPLETE ===" -ForegroundColor Green
+} else {
     Write-Host "=== DEPLOY COMPLETE (with warnings) ===" -ForegroundColor Yellow
 }
 Write-Host "Site: https://caromoto-lt.com" -ForegroundColor Gray
 Write-Host ""
+if (-not ($smokeOk -and $adminOk)) { exit 1 }
