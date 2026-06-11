@@ -84,7 +84,7 @@
 
 ## 3. Производительность
 
-### [ ] P1. Аннотации для `Container.storage_cost`/`days`
+### [x] P1. Аннотации для `Container.storage_cost`/`days`
 После унификации это properties с SQL-запросом на обращение (`core/models/containers.py:176–195`). Добавить в менеджер `with_storage_aggregates()` (annotate Sum/Max), в properties — fallback на аннотацию (паттерн `_storage_daily_rate_ann` у Car). Закрепить в `test_query_budgets.py`.
 
 ### [ ] P2. Батч-резолвинг каталога в `Car.calculate_total_price`

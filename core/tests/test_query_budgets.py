@@ -127,3 +127,56 @@ class TestContainerCarsCountBudget:
 
     def test_container_cars_count_constant_budget(self):
         assert self._count_for(2) == self._count_for(5)
+
+
+@pytest.mark.django_db
+class TestContainerStorageAggregatesBudget:
+    """Container.storage_cost / days в списках — через with_storage_aggregates
+    (P1, AUDIT_ROUND3): один annotate-запрос вместо aggregate на контейнер."""
+
+    def _seed(self, n_containers, cars_per_container=2):
+        wh = Warehouse.objects.create(name=f"WH-SA-{n_containers}", free_days=0)
+        pks = []
+        for i in range(n_containers):
+            container = Container.objects.create(
+                number=f"SA-{n_containers}-{i}", status="FLOATING",
+            )
+            _seed_cars(cars_per_container, warehouse=wh, container=container)
+            pks.append(container.pk)
+        return pks
+
+    def _count_for(self, n):
+        pks = self._seed(n)
+        with CaptureQueriesContext(connection) as ctx:
+            containers = list(
+                Container.objects.with_storage_aggregates().filter(pk__in=pks)
+            )
+            for c in containers:
+                _ = c.storage_cost
+                _ = c.days
+        return len(ctx.captured_queries)
+
+    def test_storage_aggregates_constant_budget(self):
+        q1 = self._count_for(1)
+        q4 = self._count_for(4)
+        assert q1 == q4 == 1, (
+            f"with_storage_aggregates должен давать ровно 1 запрос "
+            f"независимо от числа контейнеров ({q1} → {q4})"
+        )
+
+    def test_storage_aggregates_values_match_properties(self):
+        from django.db.models import Sum
+
+        pks = self._seed(1)
+        Car.objects.filter(container_id__in=pks).update(
+            storage_cost=Decimal("12.50"), days=3,
+        )
+
+        annotated = Container.objects.with_storage_aggregates().get(pk__in=pks)
+        plain = Container.objects.get(pk=pks[0])
+
+        expected_sum = Car.objects.filter(container_id=pks[0]).aggregate(
+            s=Sum("storage_cost")
+        )["s"]
+        assert annotated.storage_cost == plain.storage_cost == expected_sum
+        assert annotated.days == plain.days == 3

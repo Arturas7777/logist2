@@ -5,7 +5,7 @@
 from datetime import timedelta
 
 from django.db import models
-from django.db.models import Avg, Count, Q, Sum
+from django.db.models import Avg, Count, Max, Q, Sum
 from django.utils import timezone
 
 from core.mixins import OPEN_INVOICE_STATUSES
@@ -90,6 +90,18 @@ class OptimizedContainerManager(models.Manager):
             cars_count=Count('container_cars'),
             total_car_value=Sum('container_cars__total_price'),
             avg_car_value=Avg('container_cars__total_price')
+        )
+
+    def with_storage_aggregates(self):
+        """Аннотации для properties ``storage_cost`` / ``days`` (P1, AUDIT_ROUND3).
+
+        Без них обращение к property выполняет отдельный aggregate-запрос
+        на каждый контейнер (N+1 в списках). Properties видят аннотации
+        ``_storage_cost_ann`` / ``_days_ann`` и используют их как кэш.
+        """
+        return self.annotate(
+            _storage_cost_ann=Sum('container_cars__storage_cost'),
+            _days_ann=Max('container_cars__days'),
         )
 
     def update_related(self, instance):

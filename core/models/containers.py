@@ -180,11 +180,18 @@ class Container(models.Model):
         У машин при передаче сумма фиксируется на transfer_date — агрегат
         наследует это поведение (раньше собственный storage_cost контейнера
         обнулялся при выходе из UNLOADED, теряя накопленную стоимость).
+
+        В списках используйте ``Container.objects.with_storage_aggregates()``
+        (P1, AUDIT_ROUND3) — property подхватит аннотацию вместо SQL-запроса
+        на каждый объект.
         """
         from decimal import Decimal
 
         if not self.pk:
             return Decimal("0.00")
+        ann = getattr(self, "_storage_cost_ann", None)
+        if ann is not None:
+            return ann
         return self.container_cars.aggregate(s=models.Sum("storage_cost"))["s"] or Decimal("0.00")
 
     @property
@@ -192,6 +199,9 @@ class Container(models.Model):
         """Платные дни хранения = максимум по машинам контейнера."""
         if not self.pk:
             return 0
+        ann = getattr(self, "_days_ann", None)
+        if ann is not None:
+            return ann
         return self.container_cars.aggregate(m=models.Max("days"))["m"] or 0
 
     def sync_cars(self):
