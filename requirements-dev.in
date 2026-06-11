@@ -1,0 +1,22 @@
+# Dev/CI зависимости (тесты, линтер). Лок: requirements-dev.txt (pip-tools).
+#
+#   pip-compile requirements-dev.in -o requirements-dev.txt
+#
+# Прод-зависимости подключаются как constraint, чтобы версии совпадали.
+
+-c requirements.txt
+
+pytest>=8.0
+pytest-django>=4.8
+pytest-cov>=5.0
+pytest-env>=1.1
+freezegun>=1.5
+
+ruff>=0.9.10
+
+# Используются в CI (security-джоба)
+bandit>=1.8
+pip-audit>=2.7
+
+# Компиляция локов
+pip-tools>=7.4

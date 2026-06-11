@@ -115,7 +115,7 @@
 ### [ ] R5. Squash миграций до baseline
 183 миграции, полная цепочка в CI на каждый PR. Squash до `0001_squashed_*`: на чистой схеме `makemigrations` заново + `replaces`. Прод не трогается (таблицы есть — пометится applied). Аккуратно с `RunPython`-данными.
 
-### [ ] R6. Лок зависимостей
+### [x] R6. Лок зависимостей
 `requirements.txt` смешивает пины и открытые диапазоны (`pillow>=12.1.0`, `openai>=1.40.0`, `anthropic>=0.40.0`…). Перейти на pip-tools (`requirements.in` + скомпилированный лок) или `uv lock`.
 
 ### [ ] R7. Post-deploy smoke + restore-учения

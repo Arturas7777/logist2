@@ -55,9 +55,15 @@ pip install --upgrade pip
 pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-`requirements-dev.txt` подтягивает основной `requirements.txt` плюс
-тестовые/линтер-зависимости (`pytest`, `pytest-django`, `pytest-cov`,
-`freezegun`, `ruff`).
+Зависимости залочены через pip-tools: прямые зависимости описаны в
+`requirements.in` / `requirements-dev.in`, а `requirements.txt` /
+`requirements-dev.txt` — скомпилированные лок-файлы (не редактируйте их
+руками). Обновление лока:
+
+```powershell
+pip-compile requirements.in -o requirements.txt
+pip-compile requirements-dev.in -o requirements-dev.txt
+```
 
 ### 3. Переменные окружения
 
@@ -233,7 +239,9 @@ logist2/
 ├── CHANGELOG.md               # История релизов (Keep a Changelog)
 ├── pyproject.toml             # pytest + ruff конфиги
 ├── requirements.txt           # Prod-зависимости
-├── requirements-dev.txt       # + тесты и линтер (pytest, pytest-env, freezegun, ruff)
+├── requirements.in            # Прямые prod-зависимости (источник для pip-compile)
+├── requirements-dev.in        # Прямые dev-зависимости (pytest, ruff, bandit…)
+├── requirements-dev.txt       # Лок dev-зависимостей (генерируется pip-compile)
 ├── env.example                # Шаблон .env
 └── START_ME.bat               # Локальный запуск (Windows)
 ```
