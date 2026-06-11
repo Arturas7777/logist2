@@ -1,25 +1,31 @@
 ---
 description: Контекст бухгалтерии, банковских интеграций и сверки платежей проекта Caromoto Lithuania
 globs:
-  - core/models.py
-  - core/models_billing.py
-  - core/models_banking.py
-  - core/models_accounting.py
-  - core/admin_banking.py
-  - core/admin_billing.py
+  - core/models/billing.py
+  - core/models/banking.py
+  - core/models/accounting.py
+  - core/models/series.py
+  - core/admin/billing/**
+  - core/admin/banking.py
+  - core/admin/accounting.py
   - core/admin/partners.py
   - core/services/billing_service.py
   - core/services/revolut_service.py
   - core/services/sitepro_service.py
   - core/services/reconciliation_service.py
   - core/services/invoice_audit_service.py
-  - core/signals.py
+  - core/signals/transaction.py
+  - core/signals/invoice.py
   - core/management/commands/auto_reconcile.py
   - core/management/commands/skip_outgoing.py
+  - core/management/commands/verify_balances.py
   - core/management/commands/import_sitepro_history.py
   - core/management/commands/import_paysera_from_sitepro.py
   - core/management/commands/load_all_revolut.py
   - core/management/commands/pull_sitepro_data.py
+  - core/tests/test_billing_service.py
+  - core/tests/test_reconciliation.py
+  - core/tests/test_concurrency.py
   - templates/admin/core/newinvoice/change_form.html
   - templates/admin/core/newinvoice/change_series.html
 ---
