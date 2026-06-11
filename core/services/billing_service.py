@@ -396,9 +396,9 @@ class BillingService:
         """
         Единая регистрация входящего банковского платежа по исходящему инвойсу.
 
-        Используется и ручной привязкой BankTransaction → invoice (сигнал
-        ``auto_create_payment_on_bt_match``), и автосопоставителем
-        (``auto_reconcile``). До унификации сигнал создавал одиночный
+        Используется и ручной привязкой BankTransaction → invoice
+        (``create_payment_for_bank_match``), и автосопоставителем
+        (``auto_reconcile``). До унификации привязка создавала одиночный
         PAYMENT(TRANSFER) от клиента — это уводило ``Client.balance`` в минус
         и показывало ложный долг в ``total_balance`` (тот же баг, что чинили
         в auto_reconcile в апреле 2026).
@@ -476,6 +476,108 @@ class BillingService:
         setattr(payment, f'from_{payer.__class__.__name__.lower()}', payer)
         payment.save()
         return payment
+
+    @classmethod
+    def create_payment_for_bank_match(cls, bank_transaction_id):
+        """Создать платёж по банковской операции, привязанной к инвойсу.
+
+        ЕДИНСТВЕННАЯ точка создания платежа при ручной привязке
+        ``BankTransaction.matched_invoice`` (admin-форма, «Создать расход»,
+        массовые actions). Раньше это делал post_save-сигнал
+        ``auto_create_payment_on_bt_match`` — команда, замаскированная под
+        событие: платёж возникал «сам» при любом save() с matched_invoice,
+        в т.ч. там, где привязка сознательно делалась БЕЗ оплаты
+        (auto_reconcile «linked_only»). Теперь вызов явный.
+
+        Идемпотентно: если ``matched_transaction`` уже установлен, инвойс
+        отменён или остаток к оплате <= 0 — ничего не делает.
+
+        Направления:
+        * входящий банк (amount > 0) + наш исходящий инвойс — через
+          ``register_incoming_bank_payment`` (пара TOPUP+PAYMENT для клиентов);
+        * исходящий банк (amount < 0) + входящий инвойс (FACT) — одиночный
+          PAYMENT(TRANSFER) от Caromoto выставителю.
+
+        Returns:
+            Transaction | None
+        """
+        from core.models import Company
+        from core.models_banking import BankTransaction
+        from core.models_billing import NewInvoice, Transaction
+
+        with transaction.atomic():
+            bt = BankTransaction.objects.select_for_update().get(pk=bank_transaction_id)
+            if bt.matched_transaction_id or not bt.matched_invoice_id:
+                return None
+            if bt.reconciliation_skipped:
+                return None
+            try:
+                invoice = NewInvoice.objects.select_for_update().get(pk=bt.matched_invoice_id)
+            except NewInvoice.DoesNotExist:
+                return None
+            if invoice.status == 'CANCELLED':
+                return None
+
+            remaining = invoice.total - invoice.paid_amount
+            payment_amount = min(abs(bt.amount), remaining)
+            if payment_amount <= 0:
+                return None
+
+            direction = invoice.direction
+
+            if bt.amount > 0 and direction == 'OUTGOING':
+                if not invoice.recipient:
+                    logger.info(
+                        "[BT match] Пропуск BT %s: у инвойса %s нет получателя",
+                        bt.pk, invoice.number,
+                    )
+                    return None
+                tx = cls.register_incoming_bank_payment(
+                    invoice,
+                    payment_amount,
+                    date=bt.created_at,
+                    description=f"Привязка банковского платежа {bt.counterparty_name} -> {invoice.number}",
+                )
+                if tx is None:
+                    return None
+            elif bt.amount < 0 and direction == 'INCOMING':
+                issuer = invoice.issuer
+                if not issuer:
+                    logger.info(
+                        "[BT match] Пропуск BT %s: у инвойса %s нет выставителя",
+                        bt.pk, invoice.number,
+                    )
+                    return None
+                tx = Transaction(
+                    type='PAYMENT',
+                    method='TRANSFER',
+                    status='COMPLETED',
+                    amount=payment_amount,
+                    currency=invoice.currency or 'EUR',
+                    invoice=invoice,
+                    from_company=Company.get_default(),
+                    description=f"Оплата входящего счёта {invoice.number} ({bt.counterparty_name})",
+                    date=bt.created_at,
+                )
+                setattr(tx, f"to_{issuer.__class__.__name__.lower()}", issuer)
+                tx.save()
+            else:
+                logger.info(
+                    "[BT match] Пропуск BT %s: направление не совпадает (amount=%s, invoice=%s)",
+                    bt.pk, bt.amount, direction,
+                )
+                return None
+
+            bt.matched_transaction = tx
+            if not bt.reconciliation_note:
+                bt.reconciliation_note = f"Привязано к {invoice.number}"
+            bt.save(update_fields=["matched_transaction", "reconciliation_note", "fetched_at"])
+
+            logger.info(
+                "[BT match] Создан платёж %s по инвойсу %s (%.2f %s) из BT %s",
+                tx.number, invoice.number, float(payment_amount), tx.currency, bt.pk,
+            )
+            return tx
 
     @classmethod
     @transaction.atomic

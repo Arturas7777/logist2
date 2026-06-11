@@ -13,6 +13,43 @@ from .warehouses import Warehouse
 
 logger = logging.getLogger(__name__)
 
+# FSM статусов контейнера/авто (статусы общие — Car.status использует
+# Container.STATUS_CHOICES). Вперёд — свободно, включая пропуск шагов
+# (авто без порта, прямая передача). Назад — тоже свободно (исправление
+# ошибок оператора), КРОМЕ выхода из TRANSFERRED: передача — финансово
+# значимое событие (останавливается хранение, выставлены инвойсы),
+# откат только осознанный и только на шаг назад — в UNLOADED.
+# Массовые admin-actions через queryset.update() сознательно обходят
+# проверку (escape hatch для массовых исправлений).
+ALLOWED_STATUS_TRANSITIONS = {
+    "FLOATING": {"IN_PORT", "UNLOADED", "TRANSFERRED"},
+    "IN_PORT": {"FLOATING", "UNLOADED", "TRANSFERRED"},
+    "UNLOADED": {"FLOATING", "IN_PORT", "TRANSFERRED"},
+    "TRANSFERRED": {"UNLOADED"},
+}
+
+
+def validate_status_transition(instance, old_status):
+    """Проверить допустимость перехода статуса Car/Container.
+
+    ``old_status`` — статус из БД (None для новых объектов — не проверяем).
+    """
+    if not old_status or old_status == instance.status:
+        return
+    allowed = ALLOWED_STATUS_TRANSITIONS.get(old_status, set())
+    if instance.status not in allowed:
+        from django.core.exceptions import ValidationError
+
+        raise ValidationError(
+            {
+                "status": (
+                    f"Недопустимый переход статуса {instance.__class__.__name__} "
+                    f"{instance}: {old_status} → {instance.status}. "
+                    f"Допустимые: {', '.join(sorted(allowed)) or 'нет'}"
+                )
+            }
+        )
+
 
 class Container(models.Model):
     STATUS_CHOICES = [
@@ -169,6 +206,11 @@ class Container(models.Model):
         # (с проверкой склада/даты разгрузки) уместна только при
         # классическом ``container.save()`` со всеми полями.
         update_fields = kwargs.get("update_fields")
+        if self.pk and (update_fields is None or "status" in update_fields):
+            old_status = (
+                Container.objects.filter(pk=self.pk).values_list("status", flat=True).first()
+            )
+            validate_status_transition(self, old_status)
         if update_fields is None:
             self.clean()
         super().save(*args, **kwargs)

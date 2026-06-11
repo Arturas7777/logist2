@@ -11,6 +11,7 @@ from django.urls import path, reverse
 from django.utils.html import format_html
 
 from .models_banking import BankAccount, BankConnection, BankTransaction
+from .services.billing_service import BillingService
 
 logger = logging.getLogger(__name__)
 
@@ -464,6 +465,19 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         return False
 
+    def save_model(self, request, obj, form, change):
+        """Ручная привязка matched_invoice в форме → явное создание платежа.
+
+        Раньше платёж создавал post_save-сигнал; теперь команда вызывается
+        явно (см. BillingService.create_payment_for_bank_match — идемпотентно,
+        ничего не делает, если matched_transaction уже установлен).
+        """
+        super().save_model(request, obj, form, change)
+        if change and 'matched_invoice' in form.changed_data and obj.matched_invoice_id:
+            tx = BillingService.create_payment_for_bank_match(obj.pk)
+            if tx is not None:
+                messages.success(request, f'Создан платёж {tx.number} по инвойсу {obj.matched_invoice.number}.')
+
     def get_queryset(self, request):
         """select_related для matched_invoice/matched_transaction/connection.
         Без этого на каждую строку списка — до 3 доп. запросов.
@@ -653,7 +667,7 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
 
         Два режима:
         1. Привязать к существующему входящему инвойсу (FACT/INCBLC/AV). После привязки
-           сигнал auto_create_payment_on_bt_match создаёт Transaction и инвойс становится PAID.
+           BillingService.create_payment_for_bank_match создаёт Transaction и инвойс становится PAID.
         2. Создать новый FACT-инвойс (входящий от контрагента) с прикреплённым чеком/PDF,
            затем Transaction(PAYMENT, TRANSFER, COMPLETED) → статус PAID.
 
@@ -733,11 +747,12 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
             bank_trx.matched_invoice = invoice
             bank_trx.reconciliation_note = f'Привязано вручную к {invoice.number}'
             bank_trx.save(update_fields=['matched_invoice', 'reconciliation_note', 'fetched_at'])
+            BillingService.create_payment_for_bank_match(bank_trx.pk)
 
             messages.success(
                 request,
                 f'Транзакция привязана к инвойсу {invoice.number}. '
-                f'Платёж будет создан автоматически, инвойс станет «Оплачен».',
+                f'Платёж создан, инвойс пересчитан.',
             )
             return redirect('admin:core_banktransaction_changelist')
 
@@ -819,6 +834,7 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
                 bank_trx.matched_invoice = invoice
                 bank_trx.reconciliation_note = f'FACT-расход создан: {category.name}'
                 bank_trx.save(update_fields=['matched_invoice', 'reconciliation_note', 'fetched_at'])
+                BillingService.create_payment_for_bank_match(bank_trx.pk)
 
                 logger.info(
                     '[create_expense] BT %s → FACT %s (%s %s, issuer=%s:%s, attachment=%s)',
@@ -907,9 +923,7 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
     @admin.action(description='Привязать к инвойсу')
     def link_to_invoice(self, request, queryset):
         """Привязка выбранных транзакций к конкретному инвойсу через промежуточную страницу"""
-        from core.models import Company
         from core.models_billing import NewInvoice
-        from core.models_billing import Transaction as BillingTransaction
 
         eligible = queryset.filter(
             matched_invoice__isnull=True,
@@ -931,35 +945,16 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
                 messages.error(request, 'Инвойс не найден.')
                 return None
 
-            company = Company.get_default()
             linked = 0
             for bt in eligible:
                 with transaction.atomic():
                     bt.matched_invoice = invoice
                     bt.reconciliation_note = f'Привязано вручную к {invoice.number}'
                     bt.save(update_fields=['matched_invoice', 'reconciliation_note', 'fetched_at'])
-
-                    payment_amount = min(abs(bt.amount), invoice.total - invoice.paid_amount)
-                    if payment_amount > 0 and bt.amount > 0:
-                        tx = BillingTransaction(
-                            type='PAYMENT',
-                            method='TRANSFER',
-                            status='COMPLETED',
-                            amount=payment_amount,
-                            currency=invoice.currency or 'EUR',
-                            invoice=invoice,
-                            from_client=invoice.recipient_client,
-                            to_company=company,
-                            description=(
-                                f'Ручная привязка банковского платежа '
-                                f'{bt.counterparty_name} -> {invoice.number}'
-                            ),
-                            date=bt.created_at,
-                        )
-                        tx.save()
-                        bt.matched_transaction = tx
-                        bt.save(update_fields=['matched_transaction', 'fetched_at'])
-
+                    # Единая точка создания платежа (TOPUP+PAYMENT для
+                    # клиентов). Раньше тут был свой PAYMENT(TRANSFER) от
+                    # клиента — уводил Client.balance в минус.
+                    BillingService.create_payment_for_bank_match(bt.pk)
                     linked += 1
 
             messages.success(request, f'{linked} транзакций привязано к {invoice.number}.')
@@ -1117,6 +1112,7 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
                         bank_trx.matched_invoice = invoice
                         bank_trx.reconciliation_note = f'FACT-расход (массово): {category.name}'
                         bank_trx.save(update_fields=['matched_invoice', 'reconciliation_note', 'fetched_at'])
+                        BillingService.create_payment_for_bank_match(bank_trx.pk)
                         created_count += 1
                 except Exception as e:
                     logger.error(f'[create_expenses_bulk] BankTrx {bank_trx.pk}: {e}')

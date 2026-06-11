@@ -611,6 +611,7 @@ class Car(models.Model):
         # связанное с ним «Дело», поэтому пока галочка стоит, статус
         # должен оставаться неизменным (см. core.models.Task / signal
         # _car_important_post_save). Сама галочка снимается из карточки авто.
+        old_status = None
         if self.pk:
             old = Car.objects.filter(pk=self.pk).values("status", "is_important").first()
             if old:
@@ -637,6 +638,15 @@ class Car(models.Model):
 
         self._inherit_from_container()
         self._sync_status_and_dates()
+
+        # FSM статусов (см. ALLOWED_STATUS_TRANSITIONS в containers.py):
+        # проверяем ПОСЛЕ _sync_status_and_dates, т.к. синхронизация сама
+        # может выставить TRANSFERRED по transfer_date.
+        update_fields = kwargs.get("update_fields")
+        if old_status and (update_fields is None or "status" in update_fields):
+            from .containers import validate_status_transition
+
+            validate_status_transition(self, old_status)
 
         is_new = self.pk is None
         # NOTE (Фаза 2): ранее тут вызывался ``set_initial_warehouse_values()``,

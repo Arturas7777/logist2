@@ -468,6 +468,28 @@ class NewInvoice(models.Model):
                 condition=~models.Q(status='CANCELLED'),
                 name='unique_autotransport_invoice_per_client',
             ),
+            # Денежные инварианты на уровне БД: Python-валидация (clean/
+            # validators) обходится bulk_update/raw SQL, констрейнт — нет.
+            models.CheckConstraint(
+                check=models.Q(subtotal__gte=0),
+                name='invoice_subtotal_non_negative',
+            ),
+            models.CheckConstraint(
+                check=models.Q(total__gte=0),
+                name='invoice_total_non_negative',
+            ),
+            models.CheckConstraint(
+                check=models.Q(paid_amount__gte=0),
+                name='invoice_paid_amount_non_negative',
+            ),
+            models.CheckConstraint(
+                check=models.Q(discount__gte=0),
+                name='invoice_discount_non_negative',
+            ),
+            models.CheckConstraint(
+                check=models.Q(due_date__isnull=True) | models.Q(due_date__gte=models.F('date')),
+                name='invoice_due_date_gte_date',
+            ),
         ]
 
     def __str__(self):
@@ -1216,6 +1238,20 @@ class InvoiceItem(models.Model):
             models.Index(fields=['invoice', 'order']),
             models.Index(fields=['car']),
         ]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(quantity__gt=0),
+                name='invoiceitem_quantity_positive',
+            ),
+            models.CheckConstraint(
+                check=models.Q(unit_price__gte=0),
+                name='invoiceitem_unit_price_non_negative',
+            ),
+            models.CheckConstraint(
+                check=models.Q(total_price__gte=0),
+                name='invoiceitem_total_price_non_negative',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.description} - {self.total_price}"
@@ -1277,6 +1313,30 @@ class Transaction(models.Model):
         ('FAILED', 'Ошибка'),
         ('CANCELLED', 'Отменена'),
     ]
+
+    # FSM статусов: проведённую (COMPLETED) транзакцию можно только
+    # отменить; CANCELLED — терминальный статус («раз-отменить» нельзя,
+    # вместо этого создаётся новая транзакция). Частичный возврат денег —
+    # через сторно (BillingService.refund → REFUND-транзакция).
+    ALLOWED_STATUS_TRANSITIONS = {
+        'PENDING': {'COMPLETED', 'FAILED', 'CANCELLED'},
+        'COMPLETED': {'CANCELLED'},
+        'FAILED': {'PENDING', 'CANCELLED'},
+        'CANCELLED': set(),
+    }
+
+    # Поля, фиксирующие движение денег. После проведения (COMPLETED в БД)
+    # они заморожены: исправление ошибки — это ОТМЕНА (CANCELLED) +
+    # новая транзакция, либо сторно через BillingService.refund().
+    # Иначе балансы и paid_amount, пересчитанные по старым значениям,
+    # молча расходятся с историей.
+    LEDGER_FROZEN_FIELDS = (
+        'amount', 'currency', 'type', 'method', 'date', 'invoice_id',
+        'from_client_id', 'from_warehouse_id', 'from_line_id',
+        'from_carrier_id', 'from_company_id',
+        'to_client_id', 'to_warehouse_id', 'to_line_id',
+        'to_carrier_id', 'to_company_id',
+    )
 
     # ========================================================================
     # ИДЕНТИФИКАЦИЯ
@@ -1615,6 +1675,12 @@ class Transaction(models.Model):
                 ),
                 name='transaction_at_most_one_recipient',
             ),
+            # MinValueValidator(0) работает только через full_clean();
+            # констрейнт закрывает bulk_create/update/raw SQL.
+            models.CheckConstraint(
+                check=models.Q(amount__gte=0),
+                name='transaction_amount_non_negative',
+            ),
         ]
 
     def __str__(self):
@@ -1879,12 +1945,52 @@ class Transaction(models.Model):
         return f"{prefix}-{next_num:05d}"
 
     def delete(self, *args, force=False, **kwargs):
-        if not force and self.status == 'COMPLETED':
+        if not force and self.status in ('COMPLETED', 'CANCELLED'):
             raise ValidationError(
-                "Нельзя удалить завершённую транзакцию. "
-                "Для корректировки создайте возврат или корректировку."
+                "Нельзя удалить проведённую или отменённую транзакцию — "
+                "это часть финансовой истории. Для корректировки создайте "
+                "возврат (сторно) или отмените транзакцию."
             )
         return super().delete(*args, **kwargs)
+
+    def _validate_ledger_rules(self):
+        """Иммутабельность леджера: FSM статуса + заморозка денежных полей.
+
+        Сравниваем с состоянием в БД, поэтому правила работают для любого
+        пути сохранения (админка, код, shell, Celery), кроме bulk
+        ``queryset.update()`` — это сознательный escape hatch для
+        миграций/массовых исправлений.
+        """
+        if not self.pk:
+            return
+        old = (
+            Transaction.objects.filter(pk=self.pk)
+            .values('status', *self.LEDGER_FROZEN_FIELDS)
+            .first()
+        )
+        if old is None:
+            return
+
+        if old['status'] != self.status:
+            allowed = self.ALLOWED_STATUS_TRANSITIONS.get(old['status'], set())
+            if self.status not in allowed:
+                raise ValidationError(
+                    f"Недопустимый переход статуса транзакции {self.number or self.pk}: "
+                    f"{old['status']} → {self.status}. "
+                    f"Допустимые: {', '.join(sorted(allowed)) or 'нет (терминальный статус)'}"
+                )
+
+        if old['status'] == 'COMPLETED':
+            changed = [
+                f for f in self.LEDGER_FROZEN_FIELDS
+                if getattr(self, f) != old[f]
+            ]
+            if changed:
+                raise ValidationError(
+                    f"Транзакция {self.number or self.pk} проведена (COMPLETED), "
+                    f"её денежные поля заморожены: {', '.join(changed)}. "
+                    "Исправление — отмена транзакции + новая, либо возврат (сторно)."
+                )
 
     def save(self, *args, **kwargs):
         """Переопределяем save для автоматической генерации номера.
@@ -1899,6 +2005,8 @@ class Transaction(models.Model):
         if not self.number:
             with db_transaction.atomic():
                 self.number = self.generate_number()
+
+        self._validate_ledger_rules()
 
         if kwargs.get('update_fields') is None:
             # description/created_by — де-факто опциональные служебные поля

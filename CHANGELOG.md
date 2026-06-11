@@ -9,6 +9,30 @@
 
 ### Added
 
+- **Иммутабельный леджер транзакций** (`Transaction._validate_ledger_rules`):
+  денежные поля проведённой (COMPLETED) транзакции заморожены
+  (`LEDGER_FROZEN_FIELDS`: сумма, тип, стороны, инвойс, дата);
+  FSM статусов Tx (`COMPLETED → только CANCELLED`, `CANCELLED` —
+  терминальный); удаление COMPLETED/CANCELLED запрещено и в модели, и в
+  админке (включая bulk delete). Исправление ошибки — отмена + новая
+  транзакция либо сторно (`BillingService.refund`).
+- **FSM статусов Car/Container** (`ALLOWED_STATUS_TRANSITIONS` в
+  `core/models/containers.py`): вперёд и назад — свободно (исправление
+  ошибок), но выход из `TRANSFERRED` — только осознанный откат в
+  `UNLOADED` (передача финансово значима: останавливается хранение).
+  Массовые admin-actions через `queryset.update()` — escape hatch.
+- **DB-констрейнты на финансах (миграция 0181)**: `amount >= 0`
+  (Transaction), `subtotal/total/paid_amount/discount >= 0` и
+  `due_date >= date` (NewInvoice), `quantity > 0`,
+  `unit_price/total_price >= 0` (InvoiceItem), уникальность
+  `BankTransaction.matched_transaction` (один платёж не может закрывать
+  две банковские операции). Python-валидация обходится bulk/raw SQL —
+  констрейнты в БД нет.
+- **`BillingService.create_payment_for_bank_match()`** — единственная
+  точка создания платежа при ручной привязке
+  `BankTransaction.matched_invoice` (admin-форма, «Создать расход»,
+  массовые actions). Идемпотентна.
+
 - **FSM статусов инвойса** (`NewInvoice.ALLOWED_STATUS_TRANSITIONS` +
   проверка в `save()`, по образцу `AutoTransport`): запрещены бессмысленные
   переходы — `PAID → DRAFT/CANCELLED/OVERDUE`, `CANCELLED → PAID`,
@@ -18,11 +42,22 @@
   регистрации входящих банковских платежей по исходящим инвойсам: для
   клиентов всегда пара `BALANCE_TOPUP + PAYMENT(BALANCE)` (авансовый счёт
   не уходит в минус), для контрагентов — одиночный `PAYMENT(TRANSFER)`.
-  Используется и сигналом `auto_create_payment_on_bt_match`, и командой
-  `auto_reconcile`.
+  Используется привязкой BT → invoice и командой `auto_reconcile`.
 
 ### Changed
 
+- **Сигнал-команда `auto_create_payment_on_bt_match` удалён**
+  (`core/signals/bank.py`): платёж при привязке банковской операции к
+  инвойсу больше не возникает «сам» из post_save — все точки привязки
+  вызывают `create_payment_for_bank_match()` явно. Побочный фикс:
+  ветка auto_reconcile «linked_only» (суммы не совпали, требуется ручная
+  обработка) больше не получает неожиданный частичный платёж от сигнала;
+  массовая привязка в админке перестала создавать одиночный
+  PAYMENT(TRANSFER) от клиента (минусовой Client.balance).
+- **Сверка балансов на тестовых данных**: `verify_balances --fix` —
+  устранено 37 исторических расхождений (`stored != expected` по
+  каноническому расчёту из COMPLETED-транзакций) у
+  Warehouse/Line/Company.
 - **Единый механизм формирования позиций инвойса**:
   `BillingService.create_invoice(cars=...)` теперь делегирует
   `NewInvoice.regenerate_items_from_cars()` (группировка по `short_name`,
@@ -57,7 +92,9 @@
   (`car_service_manager.py`).
 - **503 файла `media/` сняты с git-трекинга** (`git rm --cached`) —
   медиа не должны храниться в репозитории (каталог в `.gitignore`).
-  Полная чистка истории (`git filter-repo`) — отдельная операция.
+- **История git переписана** (`git filter-repo --path media/ --invert-paths`):
+  медиа-файлы и дампы удалены из всех прошлых коммитов, force-push в
+  `master`, клон на сервере сброшен на новую историю.
 - Локальный мусор из корня: `runserver.log` (2.5 MB), 4 дампа/SQL-бэкапа
   (~25 MB), `renumber_out.txt`, `test_db.sqlite3`.
 

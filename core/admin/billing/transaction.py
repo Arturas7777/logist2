@@ -112,6 +112,34 @@ class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
         "recipient_info_display",
     )
 
+    # Денежные поля проведённой транзакции заморожены (леджер,
+    # Transaction.LEDGER_FROZEN_FIELDS) — показываем это в форме сразу,
+    # а не ValidationError-ом после сабмита. Статус остаётся редактируемым
+    # (COMPLETED → CANCELLED — легальный путь отмены).
+    _LEDGER_FROZEN_FORM_FIELDS = (
+        "amount", "currency", "type", "method", "invoice",
+        "from_client", "from_warehouse", "from_line", "from_carrier", "from_company",
+        "to_client", "to_warehouse", "to_line", "to_carrier", "to_company",
+    )
+
+    def get_readonly_fields(self, request, obj=None):
+        ro = super().get_readonly_fields(request, obj)
+        if obj is not None and obj.status in ("COMPLETED", "CANCELLED"):
+            ro = tuple(ro) + self._LEDGER_FROZEN_FORM_FIELDS
+        return ro
+
+    def has_delete_permission(self, request, obj=None):
+        # Проведённые/отменённые транзакции — иммутабельная история.
+        if obj is not None and obj.status in ("COMPLETED", "CANCELLED"):
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        # Дефолтный bulk delete (queryset.delete()) обходит Transaction.delete()
+        # и его защиту леджера — удаляем поштучно через модельный delete().
+        for obj in queryset:
+            obj.delete()
+
     fieldsets = (
         (
             "Основная информация",

@@ -359,6 +359,13 @@ class BankTransaction(models.Model):
         verbose_name_plural = "Банковские транзакции"
         constraints = [
             models.UniqueConstraint(fields=["connection", "external_id"], name="unique_bank_transaction"),
+            # Один внутренний платёж (Transaction) не может «закрывать» две
+            # разные банковские операции — иначе двойной учёт одних денег.
+            models.UniqueConstraint(
+                fields=["matched_transaction"],
+                condition=models.Q(matched_transaction__isnull=False),
+                name="unique_bt_per_matched_transaction",
+            ),
         ]
         ordering = ["-created_at"]
         indexes = [
