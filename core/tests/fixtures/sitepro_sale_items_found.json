@@ -1,0 +1,16 @@
+{
+    "data": [
+        {
+            "id": 1001,
+            "saleId": 314,
+            "itemId": 24,
+            "addition": "Услуга (VIN123)",
+            "quantity": 1,
+            "priceWithoutVat": 100.0
+        }
+    ],
+    "page": 1,
+    "pages": 1,
+    "records": 1,
+    "code": 200
+}

@@ -1,0 +1,22 @@
+[
+    {
+        "id": "acc-eur-001",
+        "name": "Main EUR",
+        "balance": 12345.67,
+        "currency": "EUR",
+        "state": "active",
+        "public": false,
+        "created_at": "2024-01-15T09:00:00Z",
+        "updated_at": "2026-06-01T10:00:00Z"
+    },
+    {
+        "id": "acc-usd-001",
+        "name": "USD Account",
+        "balance": 500.0,
+        "currency": "USD",
+        "state": "active",
+        "public": false,
+        "created_at": "2024-01-15T09:00:00Z",
+        "updated_at": "2026-06-01T10:00:00Z"
+    }
+]

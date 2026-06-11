@@ -1,0 +1,60 @@
+[
+    {
+        "id": "tx-transfer-in-001",
+        "type": "transfer",
+        "state": "completed",
+        "created_at": "2026-06-01T10:15:30.000Z",
+        "completed_at": "2026-06-01T10:15:35.000Z",
+        "reference": "Invoice CL-000123",
+        "legs": [
+            {
+                "leg_id": "leg-001",
+                "account_id": "acc-eur-001",
+                "amount": 250.0,
+                "currency": "EUR",
+                "description": "Payment from Acme Corp",
+                "counterparty": {
+                    "account_type": "external"
+                }
+            }
+        ]
+    },
+    {
+        "id": "tx-fee-001",
+        "type": "fee",
+        "state": "completed",
+        "created_at": "2026-06-02T00:05:00.000Z",
+        "legs": [
+            {
+                "leg_id": "leg-002",
+                "account_id": "acc-eur-001",
+                "amount": -5.0,
+                "currency": "EUR",
+                "description": "Payments fee"
+            }
+        ]
+    },
+    {
+        "id": "tx-card-001",
+        "type": "card_payment",
+        "state": "completed",
+        "created_at": "2026-06-03T12:00:00.000Z",
+        "merchant": {
+            "name": "AWS EMEA SARL",
+            "city": "Luxembourg",
+            "category_code": "7399",
+            "country": "LUX"
+        },
+        "card": {
+            "card_number": "431887******7716"
+        },
+        "legs": [
+            {
+                "leg_id": "leg-003",
+                "account_id": "acc-eur-001",
+                "amount": -42.1,
+                "currency": "EUR"
+            }
+        ]
+    }
+]

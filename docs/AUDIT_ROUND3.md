@@ -123,7 +123,7 @@
 
 ## 5. Тесты
 
-### [ ] T1. Контрактные тесты интеграций
+### [x] T1. Контрактные тесты интеграций
 Без тестов: `invoice_audit_service.py` (1271 строка), `sitepro_service.py` (961), `revolut_service.py` (553), `dashboard_service.py` (820), `google_drive_sync.py` (981). Контрактные тесты с замоканным HTTP (записанные JSON-ответы как фикстуры). Начать с `revolut_service.sync_all` и `sitepro_service.push_invoice`.
 
 ### [ ] T2. Конкурентные тесты + ratchet покрытия

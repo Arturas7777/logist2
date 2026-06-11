@@ -1,0 +1,16 @@
+{
+    "data": [
+        {
+            "id": 77,
+            "name": "Test Client A",
+            "code": "LT123456",
+            "vatCode": "",
+            "address": "Vilnius",
+            "isActive": true
+        }
+    ],
+    "page": 1,
+    "pages": 1,
+    "records": 1,
+    "code": 200
+}

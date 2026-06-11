@@ -1,0 +1,16 @@
+{
+    "data": [
+        {
+            "id": 314,
+            "series": "PARDP",
+            "number": "000103",
+            "date": "2026-06-01",
+            "clientName": "Test Client A",
+            "total": 100.0
+        }
+    ],
+    "page": 1,
+    "pages": 1,
+    "records": 1,
+    "code": 200
+}
