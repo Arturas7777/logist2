@@ -92,7 +92,7 @@
 
 **Решение:** собрать `(service_type, service_id)`, выбрать каталоги 4 запросами `in_bulk`, посчитать в памяти.
 
-### [ ] P3. pg_trgm + GIN-индексы для поиска
+### [x] P3. pg_trgm + GIN-индексы для поиска
 `search_invoices` (`views/api.py:718–735`) — OR по 8 `icontains` через 6 JOIN; `search_counterparties`, поиск VIN — то же. Миграция: расширение `pg_trgm` + GIN-индексы на `NewInvoice.number/external_number`, `Client.name`, `Car.vin/brand`.
 
 ### [x] P4. Clamp `limit` в API
