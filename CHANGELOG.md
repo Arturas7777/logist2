@@ -7,6 +7,67 @@
 
 ## [Unreleased]
 
+### Added — аудит раунд 3 (AUDIT_ROUND3, 2026-06-11)
+
+- **Счётчик серий документов** (`SeriesCounter`, миграция 0184): номера
+  NewInvoice/Transaction/AutoTransport выдаются атомарным upsert —
+  без гонок и `IntegrityError` при параллельном создании (B1).
+- **Валютный инвариант** (миграция 0185): `CheckConstraint(currency='EUR')`
+  на Transaction/NewInvoice (`NOT VALID` — исторические USD-строки не
+  трогаются); проверка совпадения валют при привязке банковской
+  операции к инвойсу (B2).
+- **Redis-лок** на `sync_bank_and_reconcile` и `sync_sitepro_invoices` —
+  параллельные запуски синхронизации больше не накладываются (B3).
+- **Контрактные тесты интеграций** Revolut и site.pro
+  (`test_revolut_contract.py`, `test_sitepro_contract.py` + мок-фикстуры
+  HTTP) (T1).
+- **Конкурентные тесты** (`test_concurrency.py`): гонка нумерации,
+  параллельные платежи по одному инвойсу (PG-профиль) (T2).
+- **pg_trgm + GIN-индексы** (миграция 0186) на `NewInvoice.number/
+  external_number`, `Client.name`, `Car.vin/brand` — поиск по `icontains`
+  через индекс (P3).
+- **Post-deploy smoke** в `deploy.ps1`: после рестарта сервисов
+  проверяются `/health/` и `/admin/login/`; проведены restore-учения
+  (журнал в `docs/BACKUPS.md`) (R7).
+
+### Changed — аудит раунд 3
+
+- **Распил монолитов**: `models_*.py` → пакет `core/models/`,
+  `admin_*.py` → пакет `core/admin/` (старые пути — реэкспорт-шимы) (A1).
+- **NewInvoice разгружен**: пивот-таблица позиций → admin-хелпер,
+  смена серии и кассовые платежи → `BillingService` (A2);
+  `create_expense_view` → `BillingService.create_expense_from_bank_transaction`
+  + тесты (A3); `_create_car_services_if_needed` вынесен из сигнала в
+  `CarLifecycleService` (A4); резолвинг email-групп и санитизация HTML —
+  в `core/services/email_compose.py` (A5).
+- **Производительность**: `Container.storage_cost/days` — аннотации
+  `with_storage_aggregates()` вместо N+1 (P1); батч-резолвинг каталога
+  услуг в `recalculate_cars_total_price_task` (P2); clamp `limit` +
+  рейт-лимиты в API (P4).
+- **Squash миграций**: вся история (178 файлов) свёрнута в
+  `0001_squashed_baseline` с сохранением данных (сид категорий расходов,
+  pg_trgm-индексы); старые файлы будут удалены после прохождения прода (R5).
+- **Лок зависимостей (pip-tools)**: `requirements.in`/`requirements-dev.in`
+  — прямые зависимости, `requirements*.txt` — скомпилированные локи (R6).
+- **CI**: bandit-MEDIUM блокирующий (R2); ratchet покрытия core 32 → 38,
+  критичные модули 55 → 60 + `core.models.billing` (T2); ruff format
+  по всему репозиторию (одноразовый reformat).
+- **Сессии**: `SESSION_ENGINE=cached_db` — логины переживают рестарт
+  Redis (R1). Включён `ENCRYPTION_KEY_REQUIRED` после ротации ключа (R3).
+- **Безопасность**: `mark_safe` → `format_html` в admin-дисплеях (R2);
+  legacy-зеркало `/api/` удалено — отвечает 410 Gone, клиенты переведены
+  на `/api/v1/` (R4); ревизия `except Exception` в денежных путях (B4).
+
+### Fixed — аудит раунд 3
+
+- **`logist2.settings.test_migrations`**: из-за подмены БД в `base.py`
+  под pytest CI-джоба «tests with migrations» молча гоняла тесты на
+  SQLite вместо PostgreSQL. Теперь профиль явно возвращает PostgreSQL.
+- **Кросс-тестовое загрязнение кэша**: `company:default_id` утаскивал pk
+  из предыдущего теста (флаки на PG) — кэш чистится перед каждым тестом.
+- **`recalculate_storage`**: удалена ветка пересчёта контейнеров,
+  обращавшаяся к несуществующим полям.
+
 ### Changed
 
 - **Единая система учёта хранения** (миграция 0183): у `Container` удалены
