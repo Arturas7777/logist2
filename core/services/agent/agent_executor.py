@@ -78,6 +78,7 @@ def execute_action(action, *, auto: bool = False, by: str = "") -> dict:
         AgentAction.TYPE_CREATE_TASK: _execute_create_task,
         AgentAction.TYPE_DRAFT_EMAIL_REPLY: _execute_email_reply,
         AgentAction.TYPE_COMPLETE_TASK: _execute_complete_task,
+        AgentAction.TYPE_CREATE_CONTAINER: _execute_create_container,
     }
     handler = handlers.get(action.action_type)
     if handler is None:
@@ -150,6 +151,73 @@ def _execute_email_reply(action, by: str = "") -> dict:
     return {"sent_email_id": sent.pk, "to": to_addr}
 
 
+def _execute_create_container(action, by: str = "") -> dict:
+    """Создаёт контейнер и заносит в него автомобили из payload.
+
+    VIN, уже существующие в базе, не дублируются — такие авто
+    привязываются к новому контейнеру (если ещё не привязаны к другому).
+    """
+    from datetime import date
+
+    from core.models import Car, Container
+
+    payload = action.payload or {}
+    number = (payload.get("number") or "").strip().upper()
+    if not number:
+        raise ValueError("В payload нет номера контейнера")
+    if Container.objects.filter(number__iexact=number).exists():
+        raise ValueError(f"Контейнер {number} уже существует")
+
+    eta = None
+    if payload.get("eta"):
+        try:
+            eta = date.fromisoformat(payload["eta"])
+        except ValueError:
+            eta = None
+
+    container = Container.objects.create(
+        number=number,
+        booking_number=(payload.get("booking_number") or "").strip(),
+        eta=eta,
+        status="FLOATING",
+    )
+
+    created_vins, attached_vins, skipped = [], [], []
+    for item in payload.get("cars") or []:
+        vin = (item.get("vin") or "").strip().upper()
+        if not vin:
+            continue
+        existing = Car.objects.filter(vin__iexact=vin).first()
+        if existing:
+            if existing.container_id:
+                skipped.append(f"{vin} (уже в контейнере {existing.container.number})")
+            else:
+                existing.container = container
+                existing.save(update_fields=["container"])
+                attached_vins.append(vin)
+            continue
+        try:
+            year = int(item.get("year") or 0)
+        except (TypeError, ValueError):
+            year = 0
+        Car.objects.create(
+            vin=vin,
+            brand=(item.get("brand") or "")[:50],
+            year=year,
+            status="FLOATING",
+            container=container,
+        )
+        created_vins.append(vin)
+
+    return {
+        "container_id": container.pk,
+        "number": container.number,
+        "cars_created": created_vins,
+        "cars_attached": attached_vins,
+        "cars_skipped": skipped,
+    }
+
+
 def _execute_complete_task(action, by: str = "") -> dict:
     from core.models import Task
 
@@ -175,8 +243,10 @@ EXECUTOR_SYSTEM_TEMPLATE = """Ты — AI-исполнитель в логист
 Порядок работы:
 1. Изучи дело и связанные данные (поиск, тред письма) read-инструментами.
 2. Если для выполнения хватает инструментов — действуй: предложи ответ на
-   письмо (propose_email_reply), и если после этого дело можно считать
-   закрытым — предложи закрытие (propose_complete_task).
+   письмо (propose_email_reply), создание контейнера с автомобилями
+   (propose_create_container — сначала проверь дубликаты через
+   search_containers), и если после этого дело можно считать закрытым —
+   предложи закрытие (propose_complete_task).
 3. Если непонятно, как действовать — задай вопрос владельцу (ask_owner)
    и НЕ предлагай сомнительных действий.
 4. Узнал полезный переиспользуемый факт — сохрани его (save_memory).

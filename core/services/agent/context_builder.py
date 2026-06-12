@@ -67,6 +67,7 @@ def describe_email(email) -> str:
     client_info = describe_sender_client(email.from_addr)
 
     lines = [
+        f"ID письма в системе: {email.pk} (используй его для get_email_thread / propose_email_reply)",
         f"От: {email.from_addr}",
         f"Кому: {email.to_addrs[:300]}",
         f"Тема: {email.subject[:300]}",

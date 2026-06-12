@@ -94,6 +94,37 @@ TOOL_SPECS: list[dict] = [
         },
     },
     {
+        "name": "propose_create_container",
+        "description": (
+            "Предложить создать новый контейнер в системе (с автомобилями, которые в нём едут). "
+            "Перед вызовом ОБЯЗАТЕЛЬНО проверь через search_containers, что контейнера/букинга "
+            "ещё нет. Контейнер будет создан после подтверждения владельцем."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "number": {"type": "string", "description": "Номер контейнера (например MRSU6031875)"},
+                "booking_number": {"type": "string", "description": "Номер букинга, если известен"},
+                "eta": {"type": "string", "description": "Дата прибытия в формате YYYY-MM-DD, если известна"},
+                "cars": {
+                    "type": "array",
+                    "description": "Автомобили в контейнере (из текста письма)",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "vin": {"type": "string", "description": "VIN (17 символов)"},
+                            "brand": {"type": "string", "description": "Марка и модель, например Toyota Camry"},
+                            "year": {"type": "integer", "description": "Год выпуска"},
+                        },
+                        "required": ["vin"],
+                    },
+                },
+                "summary": {"type": "string", "description": "Краткое описание для владельца, по-русски"},
+            },
+            "required": ["number", "summary"],
+        },
+    },
+    {
         "name": "ask_owner",
         "description": (
             "Задать вопрос владельцу, когда непонятно, как действовать. Ответ попадёт в постоянную память."
@@ -138,7 +169,7 @@ def _tool_search_containers(args: dict) -> list[dict]:
             "booking": c.booking_number or "",
             "status": str(getattr(c, "status", "") or ""),
             "eta": str(getattr(c, "eta", "") or ""),
-            "cars": [car.vin for car in c.cars.all()[:10]],
+            "cars": [car.vin for car in c.container_cars.all()[:10]],
         }
         for c in rows
     ]
@@ -190,7 +221,9 @@ def _tool_get_email_thread(args: dict) -> list[dict]:
             "from": e.from_addr[:200],
             "received_at": str(e.received_at),
             "subject": e.subject[:200],
-            "body": (e.body_text or e.snippet or "")[:2000],
+            # 4000, а не 2000: в нотисах о прибытии списки авто идут в конце
+            # письма и при жёсткой обрезке агент их не видит.
+            "body": (e.body_text or e.snippet or "")[:4000],
         }
         for e in thread
     ]
@@ -257,6 +290,50 @@ def _tool_propose_complete_task(args: dict, context: dict) -> dict:
     return {"status": action.status, "action_id": action.pk}
 
 
+def _tool_propose_create_container(args: dict, context: dict) -> dict:
+    from django.db.models import Q
+
+    from core.models import AgentAction, Container
+    from core.services.agent.agent_executor import propose_action
+
+    number = (args.get("number") or "").strip().upper()
+    if not number:
+        return {"error": "Не указан номер контейнера"}
+    booking = (args.get("booking_number") or "").strip()
+
+    dup_q = Q(number__iexact=number)
+    if booking:
+        dup_q |= Q(booking_number__iexact=booking)
+    existing = Container.objects.filter(dup_q).first()
+    if existing:
+        return {
+            "error": (
+                f"Контейнер уже есть в системе: id={existing.pk}, номер {existing.number}, "
+                f"букинг {existing.booking_number or 'нет'} — создавать дубликат нельзя"
+            )
+        }
+
+    cars = [c for c in (args.get("cars") or []) if (c.get("vin") or "").strip()]
+    action = propose_action(
+        action_type=AgentAction.TYPE_CREATE_CONTAINER,
+        title=(args.get("summary") or f"Создать контейнер {number}")[:300],
+        payload={
+            "number": number,
+            "booking_number": booking,
+            "eta": (args.get("eta") or "").strip(),
+            "cars": cars,
+        },
+        risk_level=AgentAction.RISK_MEDIUM,
+        run=context.get("run"),
+        source_email=context.get("source_email"),
+        task=context.get("task"),
+        reasoning=args.get("summary", ""),
+    )
+    if action is None:
+        return {"status": "disabled", "detail": "Тип действия запрещён политикой"}
+    return {"status": action.status, "action_id": action.pk, "cars_count": len(cars)}
+
+
 def _tool_ask_owner(args: dict, context: dict) -> dict:
     from core.models import AgentQuestion
 
@@ -292,6 +369,7 @@ _READ_TOOLS = {
 _WRITE_TOOLS = {
     "propose_email_reply": _tool_propose_email_reply,
     "propose_complete_task": _tool_propose_complete_task,
+    "propose_create_container": _tool_propose_create_container,
     "ask_owner": _tool_ask_owner,
     "save_memory": _tool_save_memory,
 }

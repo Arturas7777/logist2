@@ -122,6 +122,7 @@ class AgentAction(models.Model):
     TYPE_CREATE_TASK = "CREATE_TASK"
     TYPE_DRAFT_EMAIL_REPLY = "DRAFT_EMAIL_REPLY"
     TYPE_COMPLETE_TASK = "COMPLETE_TASK"
+    TYPE_CREATE_CONTAINER = "CREATE_CONTAINER"
     TYPE_UPDATE_OBJECT = "UPDATE_OBJECT"
     TYPE_SEND_EMAIL = "SEND_EMAIL"
     TYPE_OTHER = "OTHER"
@@ -129,6 +130,7 @@ class AgentAction(models.Model):
         (TYPE_CREATE_TASK, "Создать дело"),
         (TYPE_DRAFT_EMAIL_REPLY, "Черновик ответа на письмо"),
         (TYPE_COMPLETE_TASK, "Закрыть дело"),
+        (TYPE_CREATE_CONTAINER, "Создать контейнер"),
         (TYPE_UPDATE_OBJECT, "Изменить объект"),
         (TYPE_SEND_EMAIL, "Отправить письмо"),
         (TYPE_OTHER, "Другое"),

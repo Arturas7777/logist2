@@ -199,6 +199,98 @@ def test_execute_complete_task():
     assert "[ИИ] Сделано агентом" in task.description
 
 
+def test_execute_create_container_with_cars():
+    from core.models import Car, Container
+
+    existing = Car.objects.create(vin="EXIST000000000001", brand="BMW", year=2020, status="FLOATING")
+    action = AgentAction.objects.create(
+        action_type=AgentAction.TYPE_CREATE_CONTAINER,
+        title="Создать контейнер MRSU6031875",
+        payload={
+            "number": "MRSU6031875",
+            "booking_number": "265037432",
+            "eta": "2026-06-20",
+            "cars": [
+                {"vin": "NEWVIN00000000001", "brand": "Toyota Camry", "year": 2021},
+                {"vin": "EXIST000000000001"},
+            ],
+        },
+    )
+    result = execute_action(action, by="boss")
+    container = Container.objects.get(pk=result["container_id"])
+    assert container.number == "MRSU6031875"
+    assert container.booking_number == "265037432"
+    assert str(container.eta) == "2026-06-20"
+    assert result["cars_created"] == ["NEWVIN00000000001"]
+    assert result["cars_attached"] == ["EXIST000000000001"]
+    new_car = Car.objects.get(vin="NEWVIN00000000001")
+    assert new_car.container_id == container.pk
+    assert new_car.year == 2021
+    existing.refresh_from_db()
+    assert existing.container_id == container.pk
+
+
+def test_execute_create_container_duplicate_fails():
+    from core.models import Container
+
+    Container.objects.create(number="MRSU6031875", status="FLOATING")
+    action = AgentAction.objects.create(
+        action_type=AgentAction.TYPE_CREATE_CONTAINER,
+        title="Дубликат",
+        payload={"number": "MRSU6031875"},
+    )
+    with pytest.raises(ValueError):
+        execute_action(action, by="boss")
+    action.refresh_from_db()
+    assert action.status == AgentAction.STATUS_FAILED
+
+
+def test_tool_propose_create_container_checks_duplicates():
+    from core.models import Container
+    from core.services.agent.agent_tools import execute_tool
+
+    Container.objects.create(number="TXGU5260499", status="FLOATING")
+    result = execute_tool(
+        "propose_create_container",
+        {"number": "TXGU5260499", "summary": "Создать"},
+        context={},
+    )
+    assert "error" in result
+    assert AgentAction.objects.count() == 0
+
+    result = execute_tool(
+        "propose_create_container",
+        {
+            "number": "MEDU0000001",
+            "summary": "Создать контейнер из нотиса",
+            "cars": [{"vin": "VIN00000000000001", "brand": "Audi"}],
+        },
+        context={},
+    )
+    assert result["status"] == AgentAction.STATUS_PROPOSED
+    action = AgentAction.objects.get(pk=result["action_id"])
+    assert action.action_type == AgentAction.TYPE_CREATE_CONTAINER
+    assert action.payload["cars"][0]["vin"] == "VIN00000000000001"
+
+
+def test_tool_search_containers_returns_cars():
+    from core.models import Car, Container
+    from core.services.agent.agent_tools import execute_tool
+
+    container = Container.objects.create(number="MSKU7777777", status="FLOATING")
+    Car.objects.create(vin="CARVIN00000000001", brand="Kia", year=2022, status="FLOATING", container=container)
+    rows = execute_tool("search_containers", {"query": "MSKU7777"})
+    assert rows[0]["number"] == "MSKU7777777"
+    assert rows[0]["cars"] == ["CARVIN00000000001"]
+
+
+def test_describe_email_includes_id():
+    from core.services.agent.context_builder import describe_email
+
+    email = make_email()
+    assert f"ID письма в системе: {email.pk}" in describe_email(email)
+
+
 def test_execute_unknown_action_type_raises():
     action = AgentAction.objects.create(action_type="OTHER", title="x", payload={})
     with pytest.raises(ValueError):
