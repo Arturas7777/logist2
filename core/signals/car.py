@@ -230,6 +230,7 @@ def _handle_car_important_transition(car, *, created: bool):
             title=title[:200],
             description=description,
             auto_created=True,
+            origin=Task.ORIGIN_AUTO_CAR,
             priority="HIGH",
         )
         logger.info("Task auto-created for car %s (is_important set)", car.vin)

@@ -553,6 +553,25 @@ AI_RAG_TOP_K = int(os.getenv("AI_RAG_TOP_K", "4"))
 AI_RAG_MAX_AGE_HOURS = int(os.getenv("AI_RAG_MAX_AGE_HOURS", "24"))
 
 # ---------------------------------------------------------------------------
+# AI-агент (планировщик дел) — см. docs/AI_AGENT_PLAN.md
+# ---------------------------------------------------------------------------
+
+# Главный рубильник: пока False — beat-задачи агента ничего не делают.
+AGENT_ENABLED = str(os.getenv("AGENT_ENABLED", "False")).lower() == "true"
+# Anthropic API. Ключ общий с invoice audit (ANTHROPIC_API_KEY).
+AGENT_MODEL = os.getenv("AGENT_MODEL", "claude-sonnet-4-20250514")
+AGENT_MAX_TOKENS = int(os.getenv("AGENT_MAX_TOKENS", "2000"))
+AGENT_REQUEST_TIMEOUT = int(os.getenv("AGENT_REQUEST_TIMEOUT", "60"))
+# Сколько новых писем разбирать за один запуск (защита от лавины при
+# первом включении на ящике с историей).
+AGENT_MAX_EMAILS_PER_RUN = int(os.getenv("AGENT_MAX_EMAILS_PER_RUN", "20"))
+# Лимит расходов на LLM в день, $. При превышении агент приостанавливается
+# до следующего дня (см. core/services/agent/llm_client.py).
+AGENT_DAILY_BUDGET_USD = float(os.getenv("AGENT_DAILY_BUDGET_USD", "5.0"))
+# Сколько релевантных записей памяти подтягивать в промпт.
+AGENT_MEMORY_TOP_K = int(os.getenv("AGENT_MEMORY_TOP_K", "6"))
+
+# ---------------------------------------------------------------------------
 # Gmail OAuth — переписка по контейнерам (Phase 1: read-only)
 # ---------------------------------------------------------------------------
 

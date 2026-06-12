@@ -45,6 +45,7 @@
 """
 
 from ._vehicle_types import VEHICLE_TYPE_CHOICES
+from .agent import AgentAction, AgentMemory, AgentPolicy, AgentQuestion, AgentRun
 from .auto_transport import AutoTransport
 from .cars import Car, CarModelImage
 from .carriers import Carrier, CarrierDriver, CarrierTruck
@@ -115,6 +116,8 @@ __all__ = [
     'SeriesCounter', 'next_document_number',
     # дела
     'Task',
+    # AI-агент
+    'AgentRun', 'AgentAction', 'AgentQuestion', 'AgentMemory', 'AgentPolicy',
     # реэкспорт из соседних файлов
     'Contact', 'ContactEmail', 'ContactPhone',
     'ContainerEmail', 'ContainerEmailLink',

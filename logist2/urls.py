@@ -65,6 +65,15 @@ from core.views_invoice_audit import (
     supplier_cost_car_services,
 )
 from core.views.labels import print_labels_settings, print_labels_sheet
+from core.views.agent_board import (
+    tasks_board_page,
+    agent_action_approve,
+    agent_action_reject,
+    agent_question_answer,
+    agent_question_dismiss,
+    task_delegate_to_agent,
+    task_complete_from_board,
+)
 
 router = DefaultRouter()
 router.register(r"cars", CarViewSet, basename="car")
@@ -152,6 +161,18 @@ urlpatterns = [
     # ── Печать наклеек (Forpus self-adhesive labels) ─────────────────────────
     path("admin/labels/print/", print_labels_settings, name="labels_print_settings"),
     path("admin/labels/sheet/", print_labels_sheet, name="labels_print_sheet"),
+    # ── Дела + AI-агент (docs/AI_AGENT_PLAN.md) ──────────────────────────────
+    path("admin/tasks-board/", tasks_board_page, name="tasks_board"),
+    path("admin/tasks-board/action/<int:action_id>/approve/", agent_action_approve, name="agent_action_approve"),
+    path("admin/tasks-board/action/<int:action_id>/reject/", agent_action_reject, name="agent_action_reject"),
+    path("admin/tasks-board/question/<int:question_id>/answer/", agent_question_answer, name="agent_question_answer"),
+    path(
+        "admin/tasks-board/question/<int:question_id>/dismiss/",
+        agent_question_dismiss,
+        name="agent_question_dismiss",
+    ),
+    path("admin/tasks-board/task/<int:task_id>/delegate/", task_delegate_to_agent, name="task_delegate_to_agent"),
+    path("admin/tasks-board/task/<int:task_id>/complete/", task_complete_from_board, name="task_complete_from_board"),
     # ── Мониторинг системы (CPU/RAM/Disk/Services/Postgres/Redis) ────────────
     path("admin/system-monitor/", system_monitor_page, name="system_monitor"),
     path("admin/system-monitor/snapshot/", system_monitor_snapshot, name="system_monitor_snapshot"),

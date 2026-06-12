@@ -27,6 +27,15 @@ class Task(models.Model):
         ("HIGH", "Высокий"),
     ]
 
+    ORIGIN_MANUAL = "MANUAL"
+    ORIGIN_AUTO_CAR = "AUTO_CAR"
+    ORIGIN_AI = "AI"
+    ORIGIN_CHOICES = [
+        (ORIGIN_MANUAL, "Вручную"),
+        (ORIGIN_AUTO_CAR, "Из чекбокса «Важное»"),
+        (ORIGIN_AI, "Создано ИИ"),
+    ]
+
     title = models.CharField(max_length=200, verbose_name="Название")
     description = models.TextField(blank=True, verbose_name="Описание")
     deadline = models.DateTimeField(
@@ -54,6 +63,29 @@ class Task(models.Model):
         default=False,
         verbose_name="Создано автоматически",
         help_text="True — дело создано из чекбокса «Важное» в карточке авто.",
+    )
+    origin = models.CharField(
+        max_length=10,
+        choices=ORIGIN_CHOICES,
+        default=ORIGIN_MANUAL,
+        db_index=True,
+        verbose_name="Происхождение",
+        help_text="Кто создал дело: пользователь, сигнал «Важное» или AI-агент.",
+    )
+    source_email = models.ForeignKey(
+        "ContainerEmail",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="tasks",
+        verbose_name="Письмо-источник",
+        help_text="Письмо, из которого AI-агент создал это дело.",
+    )
+    ai_summary = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Резюме ИИ",
+        help_text="Краткое объяснение агента: кто пишет, зачем, что нужно сделать.",
     )
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")

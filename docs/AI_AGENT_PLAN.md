@@ -1,0 +1,118 @@
+# AI-планировщик дел — план и статус реализации
+
+Агент на Anthropic, встроенный в страницу «Дела»: анализирует почту,
+предлагает дела, задаёт вопросы владельцу и навсегда запоминает ответы.
+Архитектурный фундамент рассчитан на постепенное расширение автономии
+вплоть до выполнения всех операций проекта.
+
+**Как пользоваться этим файлом:** при работе над агентом в новом диалоге
+Cursor сначала читается этот файл (через правило `.cursor/rules/ai-agent.mdc`).
+Выполненные пункты отмечаются `[x]` прямо здесь, в конце каждой фазы —
+заметки о реализации.
+
+## Архитектура (кратко)
+
+- **Модели** (`core/models/agent.py`): `AgentRun` (запуски + токены/стоимость),
+  `AgentAction` (журнал намерений со статусной машиной PROPOSED → APPROVED →
+  EXECUTED — единственный путь любых изменений от агента), `AgentQuestion`
+  (вопросы владельцу), `AgentMemory` (вечная память), `AgentPolicy`
+  (автономия по типам действий: ASK/AUTO/DISABLED).
+- **Сервисы** (`core/services/agent/`): `llm_client.py` (Anthropic, бюджет),
+  `context_builder.py` (бизнес-контекст + память), `email_analyzer.py`,
+  `memory.py`, `task_planner.py`, `agent_tools.py`, `agent_executor.py`.
+- **UI**: страница `/admin/tasks-board/` («Дела»): активные дела,
+  предложения ИИ, вопросы ИИ, дайджест.
+- **Настройки**: `AGENT_ENABLED`, `AGENT_MODEL`, `AGENT_DAILY_BUDGET_USD`,
+  `AGENT_MAX_EMAILS_PER_RUN`, `AGENT_MEMORY_TOP_K` (env → `settings/base.py`).
+  Ключ — `ANTHROPIC_API_KEY` (общий с invoice audit).
+- **Бизнес-контекст**: `docs/AI_BUSINESS_CONTEXT.md` — курируется владельцем,
+  попадает в системный промпт.
+
+## Фаза 0 — Фундамент
+
+- [x] Модели `AgentRun`, `AgentAction`, `AgentQuestion`, `AgentMemory`,
+      `AgentPolicy` + миграция `0002_agentmemory_agentpolicy_and_more`
+- [x] Расширение `Task`: `origin` (MANUAL/AUTO_CAR/AI), `source_email`,
+      `ai_summary`; backfill origin для авто-дел
+- [x] `ContainerEmail.agent_analyzed_at` — трекинг разбора писем
+- [x] `core/services/agent/llm_client.py` — единый Anthropic-клиент
+      (retry, tool-use цикл, учёт токенов, дневной бюджет)
+- [x] Настройки агента в `logist2/settings/base.py` + `env.example`
+- [x] `docs/AI_BUSINESS_CONTEXT.md`
+- [x] Правило `.cursor/rules/ai-agent.mdc`
+
+## Фаза 1 — Агент-аналитик почты
+
+- [x] `core/services/agent/context_builder.py` — системный промпт:
+      бизнес-контекст + релевантная память + данные письма
+- [x] `core/services/agent/email_analyzer.py` — анализ письма: кто пишет,
+      зачем, к каким контейнерам/авто относится, что делать
+      (CREATE_TASK / ASK_QUESTION / NOTHING)
+- [x] `core/tasks_agent.py` — Celery-задача `analyze_new_emails_task`
+      + beat каждые 10 минут + autodiscover в `logist2/celery.py`
+- [x] Страница `/admin/tasks-board/` (view `core/views/agent_board.py`,
+      шаблон `templates/admin/tasks_board.html`): активные дела,
+      предложения ИИ (принять/отклонить), вопросы ИИ
+- [x] Пункт «Дела + ИИ» в сайдбаре админки (`logist2/admin_site.py`)
+- [x] Отклонение предложения с причиной → правило в память (SOURCE_REJECTION)
+
+## Фаза 2 — Вопросы и вечная память
+
+- [x] `core/services/agent/memory.py` — дистилляция ответа владельца в
+      правило (LLM) + embedding + retrieval по схожести (cosine, fallback
+      на keyword)
+- [x] Ответ на вопрос прямо на странице Дел → `AgentMemory` (SOURCE_QUESTION)
+- [x] Подключение памяти в `context_builder.py` (top-K релевантных записей
+      в каждый промпт)
+- [x] Админки агентских моделей (`core/admin/agent.py`): память
+      редактируема, действия/запуски/вопросы — журнал
+
+## Фаза 3 — Планировщик
+
+- [x] `core/services/agent/task_planner.py` — утренний разбор: просроченные
+      дела, письма с `needs_reply`, открытые вопросы, дедлайны → дайджест
+      с приоритетами
+- [x] Beat-задача `morning_digest_task` (07:00 по будням)
+- [x] Дайджест на странице Дел (последний `AgentRun` kind=PLANNER)
+
+## Фаза 4 — Исполнение дел агентом
+
+- [x] `core/services/agent/agent_tools.py` — реестр инструментов с уровнями
+      риска: read-инструменты (поиск контейнера/авто/клиента, чтение треда,
+      состояние дел) + write-инструменты через AgentAction (черновик ответа,
+      закрытие дела, вопрос, запись в память)
+- [x] `core/services/agent/agent_executor.py` — tool-use цикл «выполни дело»;
+      результат: выполненные read-шаги + PROPOSED-действия на подтверждение
+- [x] Кнопка «Поручить ИИ» у дела на странице Дел + Celery-задача
+      `execute_task_by_agent_task`
+- [x] Исполнение одобренных действий (`execute_action`): DRAFT_EMAIL_REPLY
+      (создание черновика ответа через gmail_sender), COMPLETE_TASK
+
+## Фаза 5 — Расширение автономии
+
+- [x] Учёт `AgentPolicy` при создании действий: режим AUTO → действие
+      выполняется сразу (status=AUTO_EXECUTED), ASK → ждёт подтверждения,
+      DISABLED → действие не создаётся
+- [x] Управление политиками в админке + сводка режимов на странице Дел
+- [ ] (будущее) Новые инструменты по мере доверия: изменение статусов
+      контейнеров/авто, отправка писем без черновика, операции с инвойсами.
+      Деньги и удаление данных — только с подтверждением, навсегда.
+
+## Включение в прод
+
+1. В `.env` на сервере: `AGENT_ENABLED=True`, `ANTHROPIC_API_KEY=...`
+   (уже есть для invoice audit), при желании `AGENT_DAILY_BUDGET_USD`.
+2. Перезапустить gunicorn + celery + celerybeat (deploy.ps1 делает сам).
+3. Страница: `/admin/tasks-board/` («Дела + ИИ» в сайдбаре).
+4. Первый запуск разберёт до `AGENT_MAX_EMAILS_PER_RUN` последних
+   непрочитанных писем за раз — лавины не будет.
+
+## Заметки по реализации
+
+- Анализ письма — один LLM-вызов со структурированным JSON-ответом
+  (см. `email_analyzer.SYSTEM_PROMPT_TEMPLATE`), без tool-use — дёшево
+  (~1-2 цента/письмо). Tool-use цикл используется только в фазе 4.
+- Деньги агенту не доступны ни одним инструментом (см. agent_tools.py) —
+  это осознанное ограничение, а не недоделка.
+- Embedding памяти — через существующий OpenAI-эндпоинт (`ai_rag.py`);
+  если `AI_API_KEY` пуст, работает keyword-fallback.

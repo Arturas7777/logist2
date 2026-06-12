@@ -148,7 +148,23 @@ class LogistAdminSite(BaseAdminSite):
             or current_path.startswith("/admin/reconciliation/")
             or current_path.startswith("/admin/system-monitor/")
         )
+        board_active = current_path.startswith("/admin/tasks-board/")
         return [
+            {
+                "name": "Дела",
+                "icon": "bi-check2-square",
+                "items": [
+                    {
+                        "name": "Дела + ИИ",
+                        "url": "/admin/tasks-board/",
+                        "icon": "bi-robot",
+                        "active": board_active,
+                        "add_url": "",
+                        "view_only": True,
+                    },
+                ],
+                "is_open": board_active,
+            },
             {
                 "name": "Инструменты",
                 "icon": "bi-tools",
@@ -179,7 +195,7 @@ class LogistAdminSite(BaseAdminSite):
                     },
                 ],
                 "is_open": tools_active,
-            }
+            },
         ]
 
     # ────────────────────────────────────────────────────────────────────────

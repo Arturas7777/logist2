@@ -1,0 +1,46 @@
+---
+description: AI-планировщик дел (агент на Anthropic) — архитектура, статус, правила доработки
+globs:
+  - "core/services/agent/**"
+  - "core/models/agent.py"
+  - "core/tasks_agent.py"
+  - "core/views/agent_board.py"
+  - "core/admin/agent.py"
+  - "templates/admin/tasks_board.html"
+---
+
+# AI-агент (планировщик дел)
+
+## Перед работой
+
+Прочитай `docs/AI_AGENT_PLAN.md` — там архитектура, статус по фазам
+(чекбоксы) и заметки по реализации. После значимых изменений агента —
+обнови чекбоксы/заметки в этом файле.
+
+## Карта кода
+
+- Модели: `core/models/agent.py` (`AgentRun`, `AgentAction`, `AgentQuestion`,
+  `AgentMemory`, `AgentPolicy`) + расширения `Task.origin/source_email/ai_summary`
+  и `ContainerEmail.agent_analyzed_at`.
+- Сервисы: `core/services/agent/` — `llm_client` (Anthropic + бюджет),
+  `context_builder`, `email_analyzer`, `memory`, `task_planner`,
+  `agent_tools`, `agent_executor`.
+- Celery: `core/tasks_agent.py`; beat в `logist2/celery.py`.
+- UI: `core/views/agent_board.py` + `templates/admin/tasks_board.html`
+  (страница `/admin/tasks-board/`); админки в `core/admin/agent.py`.
+- Бизнес-контекст промпта: `docs/AI_BUSINESS_CONTEXT.md` (курирует владелец).
+
+## Железные правила
+
+1. Любое изменение системы агентом — ТОЛЬКО через `AgentAction`
+   (статусная машина PROPOSED → APPROVED/AUTO_EXECUTED → EXECUTED).
+   Никаких прямых записей в БД из LLM-логики в обход журнала.
+2. Автономия регулируется `AgentPolicy` (ASK/AUTO/DISABLED per action_type),
+   дефолт — ASK. Новые типы действий по умолчанию требуют подтверждения.
+3. Деньги (платежи, балансы, инвойсы) и удаление данных агенту запрещены —
+   не добавляй такие инструменты в `agent_tools.py` без явного запроса
+   владельца и обязательного ASK-режима.
+4. Каждый LLM-вызов учитывается в `AgentRun` (токены, cost_usd); дневной
+   бюджет `AGENT_DAILY_BUDGET_USD` проверяется в `llm_client.check_budget()`.
+5. Все знания агента — в `AgentMemory` (НЕ хардкодить бизнес-правила
+   в промптах; курируемые факты — в `docs/AI_BUSINESS_CONTEXT.md`).

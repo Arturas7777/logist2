@@ -98,7 +98,7 @@ class TaskAdmin(admin.ModelAdmin):
         "completed_display",
     )
     list_display_links = ("title_display",)
-    list_filter = (TaskActiveFilter, TaskOverdueFilter, "priority", "auto_created")
+    list_filter = (TaskActiveFilter, TaskOverdueFilter, "priority", "origin", "auto_created")
     search_fields = ("title", "description", "car__vin", "car__brand", "container__number")
     list_select_related = ("car", "container")
     list_per_page = 50
@@ -129,11 +129,27 @@ class TaskAdmin(admin.ModelAdmin):
             "Системное",
             {
                 "classes": ("collapse",),
-                "fields": ("auto_created", "created_at", "created_by", "updated_at"),
+                "fields": (
+                    "auto_created",
+                    "origin",
+                    "source_email",
+                    "ai_summary",
+                    "created_at",
+                    "created_by",
+                    "updated_at",
+                ),
             },
         ),
     )
-    readonly_fields = ("auto_created", "created_at", "updated_at", "completed_at")
+    readonly_fields = (
+        "auto_created",
+        "origin",
+        "source_email",
+        "ai_summary",
+        "created_at",
+        "updated_at",
+        "completed_at",
+    )
 
     def get_changelist_instance(self, request):
         # Ставим параметр state=active в queryset по умолчанию, если фильтр

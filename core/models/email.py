@@ -216,6 +216,15 @@ class ContainerEmail(models.Model):
         verbose_name="Установил флаг",
     )
 
+    # ── AI-агент: отметка «письмо разобрано агентом» (см. core/services/
+    # agent/email_analyzer.py). NULL = ещё не анализировалось.
+    agent_analyzed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="Разобрано агентом",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

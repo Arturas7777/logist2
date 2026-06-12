@@ -6,6 +6,7 @@ from core.admin.partners import *  # noqa
 from core.admin.email import *  # noqa
 from core.admin.contacts import *  # noqa
 from core.admin.tasks import *  # noqa
+from core.admin.agent import *  # noqa
 
 # Import website admin
 from core.admin.website import (

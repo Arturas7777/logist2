@@ -14,6 +14,7 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks(related_name="tasks")
 app.autodiscover_tasks(related_name="tasks_email")
 app.autodiscover_tasks(related_name="tasks_monitoring")
+app.autodiscover_tasks(related_name="tasks_agent")
 
 app.conf.beat_schedule = {
     "check-overdue-invoices-daily": {
@@ -93,5 +94,18 @@ app.conf.beat_schedule = {
     "check-backup-freshness-daily": {
         "task": "core.tasks_monitoring.check_backup_freshness",
         "schedule": crontab(hour=4, minute=15),
+    },
+    # ── AI-агент (docs/AI_AGENT_PLAN.md). No-op пока AGENT_ENABLED=False. ──
+    # Разбор новых входящих писем: предложения дел / вопросы владельцу.
+    # */10 (а не */2 как gmail-sync): анализ не время-критичен, а LLM-вызовы
+    # стоят денег — батчим.
+    "agent-analyze-new-emails": {
+        "task": "core.tasks_agent.analyze_new_emails_task",
+        "schedule": crontab(minute="*/10"),
+    },
+    # Утренний план дня (будни 07:00 по серверному времени).
+    "agent-morning-digest": {
+        "task": "core.tasks_agent.morning_digest_task",
+        "schedule": crontab(hour=7, minute=0, day_of_week="1-5"),
     },
 }

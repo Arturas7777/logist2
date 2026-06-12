@@ -1,0 +1,293 @@
+{% extends "admin/base_site.html" %}
+{% load static i18n %}
+
+{% block title %}Дела — Caromoto Lithuania{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    main#content-start, main.content { padding: 0 !important; }
+    #content {
+        background: #f4f2ff;
+        min-height: 100vh;
+        max-width: 100% !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    #content-main { padding: 0; }
+
+    .tb { padding: 28px 32px; max-width: 1500px; margin: 0 auto; }
+
+    .tb-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 22px; }
+    .tb-header h1 { font-size: 1.6em; font-weight: 800; color: #1a1a2e; margin: 0; letter-spacing: -0.03em; }
+    .tb-header .tb-sub { color: #7c7c9a; font-size: .92em; margin-top: 4px; }
+    .tb-header-right { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .tb-badge {
+        background: #fff; padding: 8px 14px; border-radius: 10px; font-size: .82em;
+        font-weight: 600; color: #4a4a68; border: 1px solid rgba(108,92,231,.1);
+        box-shadow: 0 1px 4px rgba(108,92,231,.07);
+    }
+    .tb-badge.on { color: #065f46; background: #d1fae5; border-color: #10b98133; }
+    .tb-badge.off { color: #92400e; background: #fef3c7; border-color: #f59e0b33; }
+
+    .tb-section { margin-bottom: 26px; }
+    .tb-section-title {
+        font-size: 1.02em; font-weight: 700; color: #1a1a2e; margin: 0 0 12px;
+        display: flex; align-items: center; gap: 8px;
+    }
+    .tb-section-title .count {
+        background: #6c5ce7; color: #fff; border-radius: 10px; padding: 1px 9px;
+        font-size: .78em; font-weight: 700;
+    }
+    .tb-section-title .count.amber { background: #f59e0b; }
+    .tb-section-title .count.gray { background: #9ca3af; }
+
+    .tb-card {
+        background: #fff; border-radius: 14px; padding: 16px 18px; margin-bottom: 10px;
+        box-shadow: 0 1px 5px rgba(108,92,231,.08); border: 1px solid rgba(108,92,231,.07);
+    }
+    .tb-card.ai { border-left: 4px solid #6c5ce7; }
+    .tb-card.question { border-left: 4px solid #f59e0b; }
+    .tb-card.overdue { border-left: 4px solid #dc2626; }
+
+    .tb-card-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+    .tb-card-title { font-weight: 700; color: #1a1a2e; font-size: .95em; }
+    .tb-card-meta { color: #7c7c9a; font-size: .8em; margin-top: 4px; line-height: 1.5; }
+    .tb-card-body { color: #4a4a68; font-size: .87em; margin-top: 8px; white-space: pre-wrap; line-height: 1.55; }
+    .tb-reasoning {
+        margin-top: 8px; padding: 8px 12px; background: #f6f4ff; border-radius: 8px;
+        font-size: .82em; color: #5b5b7a; font-style: italic;
+    }
+
+    .tb-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; align-items: center; }
+    .tb-btn {
+        display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px;
+        border: none; border-radius: 8px; cursor: pointer; font-weight: 600;
+        font-size: .82em; transition: filter .15s; text-decoration: none;
+    }
+    .tb-btn:hover { filter: brightness(.92); }
+    .tb-btn.approve { background: #10b981; color: #fff; }
+    .tb-btn.reject { background: #fee2e2; color: #b91c1c; }
+    .tb-btn.ai { background: #6c5ce7; color: #fff; }
+    .tb-btn.neutral { background: #eef0f4; color: #4a4a68; }
+    .tb-input {
+        flex: 1; min-width: 220px; padding: 8px 12px; border: 1px solid #ddd9f3;
+        border-radius: 8px; font-size: .85em; font-family: inherit;
+    }
+    textarea.tb-input { resize: vertical; min-height: 38px; }
+
+    .tb-pill {
+        display: inline-block; padding: 2px 9px; border-radius: 10px;
+        font-size: .73em; font-weight: 700;
+    }
+    .tb-pill.high { background: #fee2e2; color: #b91c1c; }
+    .tb-pill.medium { background: #e0f2fe; color: #0369a1; }
+    .tb-pill.low { background: #f3f4f6; color: #6b7280; }
+    .tb-pill.ai-origin { background: #ede9fe; color: #6d28d9; }
+    .tb-pill.status { background: #f3f4f6; color: #4a4a68; }
+
+    .tb-digest {
+        background: linear-gradient(135deg, #6c5ce7 0%, #8b7cf0 100%);
+        color: #fff; border-radius: 14px; padding: 18px 22px; margin-bottom: 26px;
+        box-shadow: 0 4px 14px rgba(108,92,231,.25);
+    }
+    .tb-digest h3 { margin: 0 0 10px; font-size: 1em; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .tb-digest-body { font-size: .9em; line-height: 1.65; white-space: pre-wrap; }
+    .tb-digest-warn {
+        margin-top: 10px; background: rgba(255,255,255,.16); padding: 8px 12px;
+        border-radius: 8px; font-size: .84em;
+    }
+    .tb-digest-date { font-size: .76em; opacity: .75; margin-top: 8px; }
+
+    .tb-empty { color: #9ca3af; font-size: .88em; padding: 14px 4px; }
+    .tb-two-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+    @media (max-width: 1100px) { .tb-two-cols { grid-template-columns: 1fr; } }
+
+    .tb-log { font-size: .8em; color: #7c7c9a; }
+    .tb-log td { padding: 5px 10px 5px 0; vertical-align: top; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="tb">
+    <div class="tb-header">
+        <div>
+            <h1><i class="bi bi-check2-square"></i> Дела</h1>
+            <div class="tb-sub">Задачи, предложения и вопросы AI-агента</div>
+        </div>
+        <div class="tb-header-right">
+            {% if agent_stats.enabled %}
+                <span class="tb-badge on"><i class="bi bi-robot"></i> Агент включён</span>
+            {% else %}
+                <span class="tb-badge off"><i class="bi bi-robot"></i> Агент выключен (AGENT_ENABLED)</span>
+            {% endif %}
+            <span class="tb-badge">Запусков сегодня: {{ agent_stats.runs_today }}{% if agent_stats.errors_today %} (ошибок: {{ agent_stats.errors_today }}){% endif %}</span>
+            <span class="tb-badge">LLM сегодня: ${{ agent_stats.spent_today|floatformat:2 }} / ${{ agent_stats.budget|floatformat:0 }}</span>
+            <a class="tb-btn neutral" href="/admin/core/task/"><i class="bi bi-table"></i> Классический список</a>
+        </div>
+    </div>
+
+    {% if digest %}
+    <div class="tb-digest">
+        <h3><i class="bi bi-sunrise"></i> План дня от агента</h3>
+        <div class="tb-digest-body">{{ digest.digest }}</div>
+        {% if digest.warnings %}<div class="tb-digest-warn"><i class="bi bi-exclamation-triangle"></i> {{ digest.warnings }}</div>{% endif %}
+        <div class="tb-digest-date">Сформирован {{ digest.generated_at|date:"d.m.Y H:i" }}</div>
+    </div>
+    {% endif %}
+
+    {% if questions %}
+    <div class="tb-section">
+        <div class="tb-section-title"><i class="bi bi-question-circle"></i> Вопросы агента <span class="count amber">{{ questions|length }}</span></div>
+        {% for q in questions %}
+        <div class="tb-card question">
+            <div class="tb-card-title">{{ q.question }}</div>
+            <div class="tb-card-meta">
+                {{ q.created_at|date:"d.m.Y H:i" }}
+                {% if q.context_json.summary %} · {{ q.context_json.summary }}{% endif %}
+                {% if q.source_email_id %} · <a href="/admin/core/containeremail/{{ q.source_email_id }}/change/" target="_blank">письмо-источник</a>{% endif %}
+            </div>
+            <form method="post" action="{% url 'agent_question_answer' q.pk %}" class="tb-actions">
+                {% csrf_token %}
+                <textarea class="tb-input" name="answer" rows="1"
+                          placeholder="Ваш ответ — агент запомнит его как правило навсегда"></textarea>
+                <button type="submit" class="tb-btn approve"><i class="bi bi-send"></i> Ответить</button>
+            </form>
+            <form method="post" action="{% url 'agent_question_dismiss' q.pk %}" class="tb-actions" style="margin-top:6px;">
+                {% csrf_token %}
+                <button type="submit" class="tb-btn neutral">Закрыть без ответа</button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if proposals %}
+    <div class="tb-section">
+        <div class="tb-section-title"><i class="bi bi-stars"></i> Предложения агента <span class="count">{{ proposals|length }}</span></div>
+        {% for p in proposals %}
+        <div class="tb-card ai">
+            <div class="tb-card-head">
+                <div>
+                    <div class="tb-card-title">{{ p.title }}</div>
+                    <div class="tb-card-meta">
+                        <span class="tb-pill status">{{ p.get_action_type_display }}</span>
+                        {% if p.confidence %} · уверенность {{ p.confidence|floatformat:0 }}0%{% endif %}
+                        · {{ p.created_at|date:"d.m.Y H:i" }}
+                        {% if p.source_email_id %} · <a href="/admin/core/containeremail/{{ p.source_email_id }}/change/" target="_blank">письмо</a>{% endif %}
+                    </div>
+                </div>
+            </div>
+            {% if p.action_type == "CREATE_TASK" and p.payload.description %}
+                <div class="tb-card-body">{{ p.payload.description }}</div>
+            {% elif p.action_type == "DRAFT_EMAIL_REPLY" and p.payload.reply_text %}
+                <div class="tb-card-body">{{ p.payload.reply_text }}</div>
+            {% endif %}
+            {% if p.reasoning %}<div class="tb-reasoning"><i class="bi bi-lightbulb"></i> {{ p.reasoning }}</div>{% endif %}
+            <div class="tb-actions">
+                <form method="post" action="{% url 'agent_action_approve' p.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="tb-btn approve"><i class="bi bi-check-lg"></i>
+                        {% if p.action_type == "CREATE_TASK" %}Принять — создать дело{% elif p.action_type == "DRAFT_EMAIL_REPLY" %}Одобрить — отправить ответ{% else %}Одобрить{% endif %}
+                    </button>
+                </form>
+                <form method="post" action="{% url 'agent_action_reject' p.pk %}" class="tb-actions" style="flex:1; margin-top:0;">
+                    {% csrf_token %}
+                    <input class="tb-input" type="text" name="reason"
+                           placeholder="Почему отклоняете? (агент запомнит и не повторит)">
+                    <button type="submit" class="tb-btn reject"><i class="bi bi-x-lg"></i> Отклонить</button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="tb-section">
+        <div class="tb-section-title"><i class="bi bi-list-task"></i> Активные дела <span class="count gray">{{ open_tasks|length }}</span></div>
+        {% for t in open_tasks %}
+        <div class="tb-card {% if t.is_overdue %}overdue{% endif %}">
+            <div class="tb-card-head">
+                <div>
+                    <div class="tb-card-title">
+                        {{ t.title }}
+                        <span class="tb-pill {{ t.priority|lower }}">{{ t.get_priority_display }}</span>
+                        {% if t.origin == "AI" %}<span class="tb-pill ai-origin"><i class="bi bi-robot"></i> ИИ</span>{% endif %}
+                        {% if t.is_overdue %}<span class="tb-pill high">Просрочено</span>{% endif %}
+                    </div>
+                    <div class="tb-card-meta">
+                        {% if t.deadline %}Дедлайн: {{ t.deadline|date:"d.m.Y H:i" }} · {% endif %}
+                        Создано: {{ t.created_at|date:"d.m.Y" }}{% if t.created_by %} ({{ t.created_by }}){% endif %}
+                        {% if t.car_id %} · <a href="/admin/core/car/{{ t.car_id }}/change/" target="_blank">🚗 {{ t.car.vin }}</a>{% endif %}
+                        {% if t.container_id %} · <a href="/admin/core/container/{{ t.container_id }}/change/" target="_blank">📦 {{ t.container.number }}</a>{% endif %}
+                        {% if t.source_email_id %} · <a href="/admin/core/containeremail/{{ t.source_email_id }}/change/" target="_blank">✉ письмо</a>{% endif %}
+                    </div>
+                    {% if t.description %}<div class="tb-card-body">{{ t.description|truncatechars:400 }}</div>{% endif %}
+                </div>
+            </div>
+            <div class="tb-actions">
+                <form method="post" action="{% url 'task_complete_from_board' t.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="tb-btn approve"><i class="bi bi-check-lg"></i> Выполнено</button>
+                </form>
+                {% if agent_stats.enabled %}
+                <form method="post" action="{% url 'task_delegate_to_agent' t.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="tb-btn ai"><i class="bi bi-robot"></i> Поручить ИИ</button>
+                </form>
+                {% endif %}
+                <a class="tb-btn neutral" href="/admin/core/task/{{ t.pk }}/change/">Открыть</a>
+            </div>
+        </div>
+        {% empty %}
+        <div class="tb-empty">Открытых дел нет. <a href="/admin/core/task/add/">Создать дело</a></div>
+        {% endfor %}
+    </div>
+
+    <div class="tb-two-cols">
+        <div class="tb-section">
+            <div class="tb-section-title"><i class="bi bi-clock-history"></i> Журнал действий агента</div>
+            <div class="tb-card">
+                {% if recent_actions %}
+                <table class="tb-log">
+                    {% for a in recent_actions %}
+                    <tr>
+                        <td>{{ a.created_at|date:"d.m H:i" }}</td>
+                        <td><span class="tb-pill status">{{ a.get_status_display }}</span></td>
+                        <td>{{ a.title|truncatechars:80 }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+                {% else %}
+                <div class="tb-empty">Агент ещё ничего не делал.</div>
+                {% endif %}
+                <div style="margin-top:10px;">
+                    <a class="tb-btn neutral" href="/admin/core/agentaction/">Весь журнал</a>
+                    <a class="tb-btn neutral" href="/admin/core/agentmemory/">Память агента</a>
+                    <a class="tb-btn neutral" href="/admin/core/agentrun/">Запуски и расходы</a>
+                </div>
+            </div>
+        </div>
+        <div class="tb-section">
+            <div class="tb-section-title"><i class="bi bi-sliders"></i> Автономия агента</div>
+            <div class="tb-card">
+                <div class="tb-card-meta" style="margin-top:0;">
+                    Что агент делает сам, а что — после вашего подтверждения.
+                    Типы действий без явной политики требуют подтверждения.
+                </div>
+                {% if policies %}
+                <table class="tb-log" style="margin-top:8px;">
+                    {% for type, mode in policies.items %}
+                    <tr><td>{{ type }}</td><td><span class="tb-pill status">{{ mode }}</span></td></tr>
+                    {% endfor %}
+                </table>
+                {% else %}
+                <div class="tb-empty">Политики не настроены — агент всё спрашивает (безопасный режим).</div>
+                {% endif %}
+                <div style="margin-top:10px;">
+                    <a class="tb-btn neutral" href="/admin/core/agentpolicy/">Настроить автономию</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
