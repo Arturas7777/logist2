@@ -47,6 +47,29 @@ def build_system_context(retrieval_query: str = "") -> str:
     return "\n\n".join(parts)
 
 
+def email_body_as_text(email, limit: int = 6000) -> str:
+    """Текст письма для промпта: body_text, иначе текст из body_html.
+
+    Автоматические уведомления часто кладут содержимое (например, список
+    автомобилей) только в HTML-таблицу — plain-text части у них нет или
+    она обрезана. Поэтому HTML не игнорируем, а конвертируем в текст.
+    """
+    import re
+
+    from django.utils.html import strip_tags
+
+    body = (email.body_text or "").strip()
+    if not body and email.body_html:
+        html = re.sub(r"(?i)<(br|/p|/div|/tr|/li|/h[1-6])[^>]*>", "\n", email.body_html)
+        html = re.sub(r"(?i)<(/td|/th)[^>]*>", " | ", html)
+        body = strip_tags(html)
+        body = re.sub(r"[ \t]+", " ", body)
+        body = re.sub(r"\n\s*\n+", "\n", body).strip()
+    if not body:
+        body = (email.snippet or "").strip()
+    return body[:limit]
+
+
 def describe_email(email) -> str:
     """Текстовое описание письма для промпта (без HTML, с привязками)."""
     containers = list(email.containers.all()[:10])
@@ -59,10 +82,7 @@ def describe_email(email) -> str:
     for car in cars:
         related.append(f"авто {car.brand or ''} VIN {car.vin} (клиент: {car.client or 'н/д'})")
 
-    body = (email.body_text or email.snippet or "").strip()
-    if not body and email.body_html:
-        body = "(только HTML-версия, текст не извлечён)"
-    body = body[:6000]
+    body = email_body_as_text(email, limit=6000)
 
     client_info = describe_sender_client(email.from_addr)
 

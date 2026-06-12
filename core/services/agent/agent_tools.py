@@ -209,6 +209,7 @@ def _tool_search_clients(args: dict) -> list[dict]:
 
 def _tool_get_email_thread(args: dict) -> list[dict]:
     from core.models import ContainerEmail
+    from core.services.agent.context_builder import email_body_as_text
 
     email = ContainerEmail.objects.filter(pk=args.get("email_id")).first()
     if not email:
@@ -223,7 +224,7 @@ def _tool_get_email_thread(args: dict) -> list[dict]:
             "subject": e.subject[:200],
             # 4000, а не 2000: в нотисах о прибытии списки авто идут в конце
             # письма и при жёсткой обрезке агент их не видит.
-            "body": (e.body_text or e.snippet or "")[:4000],
+            "body": email_body_as_text(e, limit=4000),
         }
         for e in thread
     ]

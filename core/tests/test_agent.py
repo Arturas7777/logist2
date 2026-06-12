@@ -291,6 +291,34 @@ def test_describe_email_includes_id():
     assert f"ID письма в системе: {email.pk}" in describe_email(email)
 
 
+def test_email_body_falls_back_to_html():
+    from core.services.agent.context_builder import email_body_as_text
+
+    email = make_email(
+        body_text="",
+        snippet="Container arrival notice...",
+        body_html=(
+            "<html><body><p>Container MRSU6031875 arriving.</p>"
+            "<table><tr><th>VIN</th><th>Model</th></tr>"
+            "<tr><td>VIN11111111111111</td><td>Toyota Camry 2021</td></tr>"
+            "<tr><td>VIN22222222222222</td><td>Honda CRV 2022</td></tr>"
+            "</table></body></html>"
+        ),
+    )
+    text = email_body_as_text(email)
+    assert "VIN11111111111111" in text
+    assert "Honda CRV 2022" in text
+    # HTML-теги вычищены
+    assert "<table>" not in text
+
+
+def test_email_body_prefers_plain_text():
+    from core.services.agent.context_builder import email_body_as_text
+
+    email = make_email(body_text="Plain version", body_html="<p>HTML version</p>")
+    assert email_body_as_text(email) == "Plain version"
+
+
 def test_execute_unknown_action_type_raises():
     action = AgentAction.objects.create(action_type="OTHER", title="x", payload={})
     with pytest.raises(ValueError):
