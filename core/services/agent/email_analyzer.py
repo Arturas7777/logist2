@@ -72,6 +72,8 @@ def analyze_email(email) -> dict:
     Возвращает словарь-итог для журнала. Письмо помечается
     ``agent_analyzed_at`` в любом случае (включая ошибку LLM — чтобы
     битое письмо не зацикливало очередь; ошибка видна в AgentRun).
+    Исключение — исчерпание дневного бюджета: такое письмо не помечается
+    и будет разобрано, когда бюджет восстановится.
     """
     from core.models import AgentAction, AgentRun
     from core.services.agent.agent_executor import propose_action
@@ -80,10 +82,11 @@ def analyze_email(email) -> dict:
         describe_email,
         describe_thread_context,
     )
-    from core.services.agent.llm_client import AgentLLMClient
+    from core.services.agent.llm_client import AgentBudgetExceeded, AgentLLMClient
 
     run = AgentRun.objects.create(kind=AgentRun.KIND_EMAIL_ANALYSIS, input_ref=f"email:{email.pk}")
     outcome: dict = {"email_id": email.pk, "action": "ERROR"}
+    mark_analyzed = True
 
     try:
         email_text = describe_email(email)
@@ -151,13 +154,20 @@ def analyze_email(email) -> dict:
             outcome["question_id"] = question.pk
 
         run.finish_ok(outcome)
+    except AgentBudgetExceeded as exc:
+        # Не помечаем письмо — оно будет разобрано после восстановления бюджета.
+        mark_analyzed = False
+        run.finish_error(str(exc))
+        outcome["error"] = str(exc)[:300]
+        outcome["budget_exceeded"] = True
     except Exception as exc:
         logger.exception("Анализ письма #%s упал", email.pk)
         run.finish_error(str(exc))
         outcome["error"] = str(exc)[:300]
     finally:
-        email.agent_analyzed_at = timezone.now()
-        email.save(update_fields=["agent_analyzed_at"])
+        if mark_analyzed:
+            email.agent_analyzed_at = timezone.now()
+            email.save(update_fields=["agent_analyzed_at"])
 
     return outcome
 
@@ -207,6 +217,11 @@ def analyze_new_emails(limit: int | None = None) -> dict:
     results = {"processed": 0, "tasks_proposed": 0, "questions": 0, "nothing": 0, "errors": 0}
     for email in emails:
         outcome = analyze_email(email)
+        if outcome.get("budget_exceeded"):
+            # Бюджет кончился — остальные письма дёргать бессмысленно,
+            # они останутся в очереди до восстановления бюджета.
+            results["budget_exceeded"] = True
+            break
         results["processed"] += 1
         action = outcome.get("action")
         if action == "CREATE_TASK":

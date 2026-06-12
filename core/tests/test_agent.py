@@ -352,6 +352,29 @@ def test_thread_context_empty_for_single_email():
     assert describe_thread_context(email) == ""
 
 
+def test_budget_exceeded_does_not_mark_email_analyzed():
+    from core.services.agent import email_analyzer
+    from core.services.agent.llm_client import AgentBudgetExceeded
+
+    first = make_email(subject="first", thread_id="tb1")
+    second = make_email(subject="second", thread_id="tb2")
+
+    def boom(*args, **kwargs):
+        raise AgentBudgetExceeded("Дневной бюджет агента исчерпан")
+
+    with patch("core.services.agent.llm_client.AgentLLMClient") as mock_client:
+        mock_client.side_effect = boom
+        result = email_analyzer.analyze_new_emails()
+
+    assert result.get("budget_exceeded") is True
+    # Партия остановилась на первом письме, оба остались в очереди
+    assert result["processed"] == 0
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert first.agent_analyzed_at is None
+    assert second.agent_analyzed_at is None
+
+
 def test_analyze_new_emails_skips_hidden():
     from core.services.agent import email_analyzer
 
