@@ -248,6 +248,9 @@ def _ingest_one(
         "labels_json": list(msg.labels),
         "attachments_json": attachments_meta,
         "matched_by": match.primary_matched_by,
+        "hidden_reason": (
+            ContainerEmail.HIDDEN_DUPLICATE if is_duplicate else (ContainerEmail.HIDDEN_FILTERED if filter_hit else "")
+        ),
     }
 
     # Для обратной синхронизации UNREAD (см. ниже).

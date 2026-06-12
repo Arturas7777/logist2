@@ -101,6 +101,36 @@ def describe_email(email) -> str:
     return "\n".join(lines)
 
 
+def describe_thread_context(email, *, max_messages: int = 5, per_message_chars: int = 600) -> str:
+    """Сжатая переписка треда ДО анализируемого письма (для промпта).
+
+    Возвращает '' для одиночных писем. Включает оба направления — агенту
+    важно видеть, отвечали ли мы уже, чтобы решить, требуется ли реакция
+    владельца на новое письмо.
+    """
+    from core.models import ContainerEmail
+
+    if not email.thread_id:
+        return ""
+    previous = list(
+        ContainerEmail.objects.filter(thread_id=email.thread_id, received_at__lt=email.received_at)
+        .exclude(pk=email.pk)
+        .order_by("-received_at")[:max_messages]
+    )
+    if not previous:
+        return ""
+
+    lines = []
+    for msg in reversed(previous):  # от старых к новым
+        who = "МЫ (исходящее)" if msg.direction == ContainerEmail.DIRECTION_OUTGOING else f"ОНИ ({msg.from_addr[:80]})"
+        body = email_body_as_text(msg, limit=per_message_chars)
+        lines.append(f"[{msg.received_at:%d.%m %H:%M}] {who}:\n{body or '(пусто)'}")
+    return (
+        f"ПРЕДЫДУЩАЯ ПЕРЕПИСКА В ЭТОМ ТРЕДЕ (последние {len(previous)} сообщ., от старых к новым):\n"
+        + "\n---\n".join(lines)
+    )
+
+
 def describe_sender_client(from_addr: str) -> str:
     """Ищет отправителя среди клиентов по email-адресу."""
     from email.utils import parseaddr

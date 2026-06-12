@@ -319,6 +319,54 @@ def test_email_body_prefers_plain_text():
     assert email_body_as_text(email) == "Plain version"
 
 
+def test_thread_context_includes_both_directions():
+    from core.services.agent.context_builder import describe_thread_context
+
+    now = timezone.now()
+    make_email(
+        thread_id="thr-9",
+        body_text="Когда прибудет контейнер?",
+        received_at=now - timezone.timedelta(hours=3),
+    )
+    make_email(
+        thread_id="thr-9",
+        direction=ContainerEmail.DIRECTION_OUTGOING,
+        from_addr="office@caromoto.com",
+        body_text="Прибытие 20 июня, пришлём нотис.",
+        received_at=now - timezone.timedelta(hours=2),
+    )
+    latest = make_email(thread_id="thr-9", body_text="Спасибо, ждём!", received_at=now)
+
+    block = describe_thread_context(latest)
+    assert "ПРЕДЫДУЩАЯ ПЕРЕПИСКА" in block
+    assert "Когда прибудет контейнер?" in block
+    assert "МЫ (исходящее)" in block
+    # Само анализируемое письмо в блок не входит
+    assert "Спасибо, ждём!" not in block
+
+
+def test_thread_context_empty_for_single_email():
+    from core.services.agent.context_builder import describe_thread_context
+
+    email = make_email(thread_id="thr-single")
+    assert describe_thread_context(email) == ""
+
+
+def test_analyze_new_emails_skips_hidden():
+    from core.services.agent import email_analyzer
+
+    make_email(subject="visible", thread_id="t1")
+    make_email(subject="dup", thread_id="t2", hidden_reason=ContainerEmail.HIDDEN_DUPLICATE)
+    make_email(subject="filtered", thread_id="t3", hidden_reason=ContainerEmail.HIDDEN_FILTERED)
+
+    analyzed = []
+    with patch.object(
+        email_analyzer, "analyze_email", side_effect=lambda e: analyzed.append(e.subject) or {"action": "NOTHING"}
+    ):
+        email_analyzer.analyze_new_emails()
+    assert analyzed == ["visible"]
+
+
 def test_execute_unknown_action_type_raises():
     action = AgentAction.objects.create(action_type="OTHER", title="x", payload={})
     with pytest.raises(ValueError):

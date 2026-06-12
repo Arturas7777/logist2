@@ -48,6 +48,11 @@ ANALYSIS_SYSTEM_TEMPLATE = """Ты — AI-ассистент владельца 
 Правила выбора action:
 - CREATE_TASK — письмо требует конкретного действия от сотрудников
   (см. бизнес-контекст: что обычно требует дела).
+- Если приложена предыдущая переписка треда — используй её, чтобы понять,
+  что уже обсуждено и сделано. Если последнее слово за нами (клиент ждёт
+  ответа или подтверждения) — предложи дело «Ответить ...» с кратким
+  планом ответа в description. Если мы уже ответили и новых вопросов
+  в письме нет — NOTHING.
 - NOTHING — автоматические уведомления, рассылки, спам, письма без
   требуемых действий, письма, на которые уже ответили.
 - ASK_QUESTION — нестандартная ситуация: непонятно, нужно ли действие
@@ -70,7 +75,11 @@ def analyze_email(email) -> dict:
     """
     from core.models import AgentAction, AgentRun
     from core.services.agent.agent_executor import propose_action
-    from core.services.agent.context_builder import build_system_context, describe_email
+    from core.services.agent.context_builder import (
+        build_system_context,
+        describe_email,
+        describe_thread_context,
+    )
     from core.services.agent.llm_client import AgentLLMClient
 
     run = AgentRun.objects.create(kind=AgentRun.KIND_EMAIL_ANALYSIS, input_ref=f"email:{email.pk}")
@@ -78,6 +87,9 @@ def analyze_email(email) -> dict:
 
     try:
         email_text = describe_email(email)
+        thread_block = describe_thread_context(email)
+        if thread_block:
+            email_text = f"{thread_block}\n\n=== НОВОЕ ПИСЬМО (анализируй его) ===\n{email_text}"
         retrieval_query = f"{email.from_addr} {email.subject} {(email.body_text or email.snippet or '')[:500]}"
         system = ANALYSIS_SYSTEM_TEMPLATE.format(context=build_system_context(retrieval_query))
 
@@ -186,6 +198,9 @@ def analyze_new_emails(limit: int | None = None) -> dict:
             direction=ContainerEmail.DIRECTION_INCOMING,
             agent_analyzed_at__isnull=True,
             received_at__gte=since,
+            # Контентные дубли рассылок и отфильтрованные письма не анализируем —
+            # они скрыты и из карточек (см. email_ingest._ingest_one).
+            hidden_reason="",
         ).order_by("received_at")[:limit]
     )
 

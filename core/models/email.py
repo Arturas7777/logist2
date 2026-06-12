@@ -225,6 +225,25 @@ class ContainerEmail(models.Model):
         verbose_name="Разобрано агентом",
     )
 
+    # ── Письма, скрытые при ингесте: контентные дубли автоматических
+    # рассылок и письма, отсечённые фильтрами Gmail-ингеста. Хранятся для
+    # идемпотентности sync по gmail_id, но не показываются в карточках
+    # (линки не создаются) и не анализируются AI-агентом.
+    HIDDEN_DUPLICATE = "DUPLICATE"
+    HIDDEN_FILTERED = "FILTERED"
+    HIDDEN_CHOICES = [
+        ("", "Не скрыто"),
+        (HIDDEN_DUPLICATE, "Контентный дубль"),
+        (HIDDEN_FILTERED, "Отсечено фильтром ингеста"),
+    ]
+    hidden_reason = models.CharField(
+        max_length=10,
+        choices=HIDDEN_CHOICES,
+        blank=True,
+        default="",
+        verbose_name="Скрыто при ингесте",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
