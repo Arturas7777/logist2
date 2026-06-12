@@ -31,6 +31,16 @@ ALLOWED_HOSTS = ["*"]
 # и тестовый клиент ловит 301 на http-запросах. В тестах редирект не нужен.
 SECURE_SSL_REDIRECT = False
 
+# На CI collectstatic не запускается, поэтому manifest-storage WhiteNoise
+# падает на {% static %} при рендеринге шаблонов («Missing staticfiles
+# manifest entry»). В тестах хеширование статики не нужно.
+STORAGES = {
+    **STORAGES,
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
