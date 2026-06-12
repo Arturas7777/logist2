@@ -27,6 +27,10 @@ class DisableMigrations:
 DEBUG = False
 ALLOWED_HOSTS = ["*"]
 
+# base.py вычисляет SECURE_SSL_REDIRECT из env DEBUG; на CI env DEBUG=False,
+# и тестовый клиент ловит 301 на http-запросах. В тестах редирект не нужен.
+SECURE_SSL_REDIRECT = False
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",

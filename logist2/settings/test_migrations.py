@@ -25,6 +25,10 @@ from .base import *
 DEBUG = False
 ALLOWED_HOSTS = ["*"]
 
+# base.py вычисляет SECURE_SSL_REDIRECT из env DEBUG; на CI env DEBUG=False,
+# и тестовый клиент ловит 301 на http-запросах. В тестах редирект не нужен.
+SECURE_SSL_REDIRECT = False
+
 # БД — PostgreSQL из env-переменных DB_* (как prod / CI). На CI:
 #   DB_NAME=test_logist2 DB_USER=test_user DB_PASSWORD=test_pass
 #   DB_HOST=localhost DB_PORT=5432
