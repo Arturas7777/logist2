@@ -570,6 +570,10 @@ AGENT_MAX_EMAILS_PER_RUN = int(os.getenv("AGENT_MAX_EMAILS_PER_RUN", "20"))
 AGENT_DAILY_BUDGET_USD = float(os.getenv("AGENT_DAILY_BUDGET_USD", "5.0"))
 # Сколько релевантных записей памяти подтягивать в промпт.
 AGENT_MEMORY_TOP_K = int(os.getenv("AGENT_MEMORY_TOP_K", "6"))
+# Нижняя граница анализа почты (ISO-дата, например 2026-06-01): письма,
+# полученные раньше, агент не анализирует — в историю не углубляемся.
+# Пусто = только скользящее окно 14 дней.
+AGENT_ANALYZE_SINCE = os.getenv("AGENT_ANALYZE_SINCE", "")
 
 # ---------------------------------------------------------------------------
 # Gmail OAuth — переписка по контейнерам (Phase 1: read-only)

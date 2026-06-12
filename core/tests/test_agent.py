@@ -375,6 +375,29 @@ def test_budget_exceeded_does_not_mark_email_analyzed():
     assert second.agent_analyzed_at is None
 
 
+def test_analyze_since_floor(settings):
+    from core.services.agent import email_analyzer
+
+    settings.AGENT_ANALYZE_SINCE = "2026-06-01"
+    old = make_email(
+        subject="old-may",
+        thread_id="tf1",
+        received_at=timezone.make_aware(timezone.datetime(2026, 5, 30, 12, 0)),
+    )
+    fresh = make_email(subject="fresh-june", thread_id="tf2")
+
+    analyzed = []
+    with patch.object(
+        email_analyzer, "analyze_email", side_effect=lambda e: analyzed.append(e.subject) or {"action": "NOTHING"}
+    ):
+        email_analyzer.analyze_new_emails()
+    assert analyzed == ["fresh-june"]
+    # Старое письмо осталось нетронутым (не помечено, просто вне выборки)
+    old.refresh_from_db()
+    assert old.agent_analyzed_at is None
+    assert fresh.subject == "fresh-june"
+
+
 def test_analyze_new_emails_skips_hidden():
     from core.services.agent import email_analyzer
 

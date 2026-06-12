@@ -196,12 +196,22 @@ def analyze_new_emails(limit: int | None = None) -> dict:
 
     Берёт INCOMING-письма без ``agent_analyzed_at`` за последние 14 дней
     (хвост истории не трогаем) — не больше ``AGENT_MAX_EMAILS_PER_RUN``
-    за один запуск.
+    за один запуск. Настройка ``AGENT_ANALYZE_SINCE`` задаёт жёсткую
+    нижнюю границу: письма старше неё не анализируются никогда.
     """
+    from datetime import date, datetime, time
+
     from core.models import ContainerEmail
 
     limit = limit or int(getattr(settings, "AGENT_MAX_EMAILS_PER_RUN", 20))
     since = timezone.now() - timezone.timedelta(days=14)
+    floor_raw = getattr(settings, "AGENT_ANALYZE_SINCE", "")
+    if floor_raw:
+        try:
+            floor = timezone.make_aware(datetime.combine(date.fromisoformat(floor_raw), time.min))
+            since = max(since, floor)
+        except ValueError:
+            logger.warning("AGENT_ANALYZE_SINCE=%r не похоже на ISO-дату — игнорирую", floor_raw)
 
     emails = list(
         ContainerEmail.objects.filter(
