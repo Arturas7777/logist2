@@ -315,7 +315,7 @@ class CarInline(admin.TabularInline):
     can_delete = True
     show_change_link = True
     classes = ("collapse",)
-    fields = ("year", "brand", "vehicle_type", "vin", "client", "total_price", "has_title")
+    fields = ("year", "brand", "vehicle_type", "vin", "weight_kg", "client", "total_price", "has_title")
     readonly_fields = ("total_price",)
     autocomplete_fields = ["client"]
 

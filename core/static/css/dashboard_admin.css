@@ -3399,6 +3399,7 @@ body.popup .cm-form-grid .submit-row {
 #container_cars-group .tabular tbody tr td.field-vehicle_type { flex: 1 1 120px; }
 #container_cars-group .tabular tbody tr td.field-vin          { flex: 2 1 170px; }
 #container_cars-group .tabular tbody tr td.field-client       { flex: 2 1 170px; }
+#container_cars-group .tabular tbody tr td.field-weight_kg    { flex: 0 0 90px; }
 #container_cars-group .tabular tbody tr td.field-total_price  { flex: 0 0 90px; }
 #container_cars-group .tabular tbody tr td.field-has_title    { flex: 0 0 60px; }
 #container_cars-group .tabular tbody tr td.delete             { flex: 0 0 70px; }
@@ -3422,6 +3423,7 @@ body.popup .cm-form-grid .submit-row {
 #container_cars-group .tabular tbody tr td.field-vehicle_type::before { content: "Тип ТС"; }
 #container_cars-group .tabular tbody tr td.field-vin::before          { content: "VIN"; }
 #container_cars-group .tabular tbody tr td.field-client::before       { content: "Клиент"; }
+#container_cars-group .tabular tbody tr td.field-weight_kg::before    { content: "Масса (кг)"; }
 #container_cars-group .tabular tbody tr td.field-total_price::before  { content: "Цена"; }
 #container_cars-group .tabular tbody tr td.field-has_title::before    { content: "T"; }
 #container_cars-group .tabular tbody tr td.delete::before             { content: "Уд"; }
@@ -3682,6 +3684,7 @@ body.popup .cm-form-grid .submit-row {
     #container_cars-group .tabular tbody tr td.field-vehicle_type,
     #container_cars-group .tabular tbody tr td.field-vin,
     #container_cars-group .tabular tbody tr td.field-client,
+    #container_cars-group .tabular tbody tr td.field-weight_kg,
     #container_cars-group .tabular tbody tr td.field-total_price {
         flex: 1 1 100% !important;
     }
