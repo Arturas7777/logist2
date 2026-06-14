@@ -376,6 +376,25 @@ document.addEventListener('DOMContentLoaded', function() {
 
     {# Dynamic navigation from sidebar_nav #}
     {% for group in sidebar_nav %}
+    {% if group.collapsible %}
+    {# Сворачиваемое меню (напр. «Дела + ИИ») #}
+    <ul class="cm-sidebar-nav">
+        <li class="has-subnav{% if group.is_open %} open{% endif %}">
+            <a href="#" class="cm-subnav-toggle">
+                <i class="bi {{ group.icon }}"></i> {{ group.name }}
+            </a>
+            <ul class="cm-sidebar-subnav{% if group.is_open %} open{% endif %}">
+                {% for item in group.items %}
+                <li>
+                    <a href="{{ item.url }}" class="{% if item.active %}active{% endif %}">
+                        <i class="bi {{ item.icon }}"></i> {{ item.name }}
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+        </li>
+    </ul>
+    {% else %}
     <div class="cm-sidebar-section">{{ group.name }}</div>
     <ul class="cm-sidebar-nav">
         {% for item in group.items %}
@@ -386,6 +405,7 @@ document.addEventListener('DOMContentLoaded', function() {
         </li>
         {% endfor %}
     </ul>
+    {% endif %}
     {% endfor %}
 
 </aside>
@@ -498,6 +518,18 @@ document.addEventListener('DOMContentLoaded', function() {
             overlay.classList.remove('active');
         });
     }
+
+    // Сворачиваемые подменю сайдбара (напр. «Дела + ИИ»)
+    document.querySelectorAll('.cm-subnav-toggle').forEach(function(t) {
+        t.addEventListener('click', function(e) {
+            e.preventDefault();
+            var li = t.closest('.has-subnav');
+            if (!li) return;
+            li.classList.toggle('open');
+            var sub = li.querySelector('.cm-sidebar-subnav');
+            if (sub) sub.classList.toggle('open');
+        });
+    });
 
     // Mark body as loaded (enable transitions)
     document.body.classList.add('loaded');

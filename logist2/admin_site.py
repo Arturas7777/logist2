@@ -42,6 +42,14 @@ MODEL_ICONS = {
     "contactmessage": "bi-envelope-fill",
     "trackingrequest": "bi-search",
     "notificationlog": "bi-bell-fill",
+    # AI / агент (выпадающее меню «Дела + ИИ»)
+    "task": "bi-check2-square",
+    "agentquestion": "bi-question-circle",
+    "agentaction": "bi-lightning-charge",
+    "agentrun": "bi-play-circle",
+    "agentmemory": "bi-bookmark-star",
+    "agentpolicy": "bi-sliders",
+    "scanprocessingjob": "bi-file-earmark-image",
     # auth models
     "user": "bi-person-fill",
     "group": "bi-people",
@@ -139,6 +147,51 @@ class LogistAdminSite(BaseAdminSite):
         context["current_path"] = request.path
         return context
 
+    # object_name (в нижнем регистре) AI-моделей, которые переезжают
+    # из «⚙️ Прочее» в выпадающее меню «Дела + ИИ». Порядок задаёт
+    # порядок пунктов в выпадающем списке.
+    AI_BOARD_URL = "/admin/tasks-board/"
+    AI_MODEL_ORDER = (
+        "task",
+        "agentquestion",
+        "agentaction",
+        "agentrun",
+        "agentmemory",
+        "agentpolicy",
+        "scanprocessingjob",
+    )
+
+    # ────────────────────────────────────────────────────────────────────────
+    def _build_ai_group(self, request, ai_items):
+        """Выпадающее меню «Дела + ИИ» (вверху, под Dashboard).
+
+        Первый пункт — доска дел, далее AI-модели, вынесенные из «Прочее».
+        ``ai_items`` — список кортежей (order_index, item_dict).
+        """
+        current_path = request.path
+        board_active = current_path.startswith(self.AI_BOARD_URL)
+
+        ai_items.sort(key=lambda pair: pair[0])
+        sub_items = [
+            {
+                "name": "Доска дел",
+                "url": self.AI_BOARD_URL,
+                "icon": "bi-kanban",
+                "active": board_active,
+                "add_url": "",
+                "view_only": True,
+            },
+            *[item for _, item in ai_items],
+        ]
+        is_open = any(i["active"] for i in sub_items)
+        return {
+            "name": "Дела + ИИ",
+            "icon": "bi-robot",
+            "items": sub_items,
+            "is_open": is_open,
+            "collapsible": True,
+        }
+
     # ────────────────────────────────────────────────────────────────────────
     def _build_extra_sidebar_items(self, request):
         """Дополнительные пункты меню вне стандартных моделей."""
@@ -148,23 +201,7 @@ class LogistAdminSite(BaseAdminSite):
             or current_path.startswith("/admin/reconciliation/")
             or current_path.startswith("/admin/system-monitor/")
         )
-        board_active = current_path.startswith("/admin/tasks-board/")
         return [
-            {
-                "name": "Дела",
-                "icon": "bi-check2-square",
-                "items": [
-                    {
-                        "name": "Дела + ИИ",
-                        "url": "/admin/tasks-board/",
-                        "icon": "bi-robot",
-                        "active": board_active,
-                        "add_url": "",
-                        "view_only": True,
-                    },
-                ],
-                "is_open": board_active,
-            },
             {
                 "name": "Инструменты",
                 "icon": "bi-tools",
@@ -195,6 +232,7 @@ class LogistAdminSite(BaseAdminSite):
                     },
                 ],
                 "is_open": tools_active,
+                "collapsible": False,
             },
         ]
 
@@ -219,6 +257,7 @@ class LogistAdminSite(BaseAdminSite):
         app_list = self.get_app_list(request)
         current_path = request.path
         nav = []
+        ai_items = []  # (order_index, item) — AI-модели для меню «Дела + ИИ»
 
         for app in app_list:
             app_name = app.get("name", "")
@@ -242,19 +281,25 @@ class LogistAdminSite(BaseAdminSite):
                 model_url = model.get("admin_url", "")
                 is_active = current_path.startswith(model_url) if model_url else False
 
+                item = {
+                    "name": model.get("name", ""),
+                    "url": model_url,
+                    "icon": model_icon,
+                    "active": is_active,
+                    "add_url": model.get("add_url", ""),
+                    "view_only": not model.get("add_url"),
+                }
+
+                # AI-модели не показываем в их группе («Прочее») —
+                # они переезжают в выпадающее меню «Дела + ИИ» вверху.
+                if model_name in self.AI_MODEL_ORDER:
+                    ai_items.append((self.AI_MODEL_ORDER.index(model_name), item))
+                    continue
+
                 if is_active:
                     is_open = True
 
-                items.append(
-                    {
-                        "name": model.get("name", ""),
-                        "url": model_url,
-                        "icon": model_icon,
-                        "active": is_active,
-                        "add_url": model.get("add_url", ""),
-                        "view_only": not model.get("add_url"),
-                    }
-                )
+                items.append(item)
 
             if items:
                 nav.append(
@@ -263,8 +308,12 @@ class LogistAdminSite(BaseAdminSite):
                         "icon": group_icon,
                         "items": items,
                         "is_open": is_open,
+                        "collapsible": False,
                     }
                 )
+
+        # «Дела + ИИ» — выпадающее меню сразу под Dashboard.
+        nav.insert(0, self._build_ai_group(request, ai_items))
 
         nav.extend(self._build_extra_sidebar_items(request))
         return nav
