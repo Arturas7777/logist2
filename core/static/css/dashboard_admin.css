@@ -3378,6 +3378,31 @@ body.popup .cm-form-grid .submit-row {
 }
 /* Никаких hover-эффектов у карточки — ни смещения, ни смены тени. */
 
+/* Подсветка фона карточки авто по его статусу. Маркер статуса —
+ * невидимый <span data-status="..."> в скрытой колонке (CarInline.
+ * status_tint); CSS :has() читает его и слегка тонирует фон. Оттенки
+ * согласованы со STATUS_COLORS (FLOATING синий, IN_PORT красный,
+ * UNLOADED зелёный, TRANSFERRED фиолетовый). */
+#container_cars-group .tabular tbody tr td.field-status_tint {
+    display: none !important;
+}
+#container_cars-group .tabular tbody tr.form-row:has([data-status="FLOATING"]) {
+    background: #eef5fb !important;
+    border-color: #c7ddec !important;
+}
+#container_cars-group .tabular tbody tr.form-row:has([data-status="IN_PORT"]) {
+    background: #fbeeee !important;
+    border-color: #ecccc7 !important;
+}
+#container_cars-group .tabular tbody tr.form-row:has([data-status="UNLOADED"]) {
+    background: #eef8f1 !important;
+    border-color: #c7e7d3 !important;
+}
+#container_cars-group .tabular tbody tr.form-row:has([data-status="TRANSFERRED"]) {
+    background: #f5eefb !important;
+    border-color: #ddc9ec !important;
+}
+
 /* Сброс табличной отрисовки ячеек; каждая ячейка = flex-column
  * (лейбл сверху + поле снизу). */
 #container_cars-group .tabular tbody tr td {

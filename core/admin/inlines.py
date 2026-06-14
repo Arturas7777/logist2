@@ -315,9 +315,22 @@ class CarInline(admin.TabularInline):
     can_delete = True
     show_change_link = True
     classes = ("collapse",)
-    fields = ("year", "brand", "vehicle_type", "vin", "weight_kg", "client", "total_price", "has_title")
-    readonly_fields = ("total_price",)
+    fields = ("year", "brand", "vehicle_type", "vin", "weight_kg", "client", "total_price", "has_title", "status_tint")
+    readonly_fields = ("total_price", "status_tint")
     autocomplete_fields = ["client"]
+
+    def status_tint(self, obj):
+        """Невидимый маркер статуса авто для подсветки фона карточки.
+
+        Сам по себе ничего не показывает: колонка скрыта в CSS. Несёт
+        ``data-status`` с кодом статуса, по которому CSS-селектор
+        ``tr:has([data-status="..."])`` слегка подкрашивает фон карточки
+        авто в инлайне (цвета согласованы со STATUS_COLORS).
+        """
+        status = getattr(obj, "status", "") or ""
+        return format_html('<span class="cm-car-status-flag" data-status="{}"></span>', status)
+
+    status_tint.short_description = ""
 
     def get_queryset(self, request):
         # На странице контейнера может быть 20+ машин; без select_related
