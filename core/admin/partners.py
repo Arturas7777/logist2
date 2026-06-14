@@ -1034,10 +1034,18 @@ class LineAdmin(admin.ModelAdmin):
     search_fields = ("name",)
     readonly_fields = ("balance",)
     actions = ["reset_line_balance"]
-    exclude = ("ocean_freight_rate", "documentation_fee", "handling_fee", "ths_fee", "additional_fees")
+    exclude = ("ocean_freight_rate", "documentation_fee", "handling_fee", "additional_fees")
     inlines = [LineTHSCoefficientInline, LineServiceInline]
     fieldsets = (
         ("Основные данные", {"fields": ("name",)}),
+        (
+            "THS по умолчанию",
+            {
+                "fields": ("ths_fee",),
+                "description": "Значение по умолчанию для поля «Оплата линиям» при создании "
+                "контейнера с этой линией. В карточке контейнера его можно изменить.",
+            },
+        ),
         ("Баланс", {"fields": ("balance",), "description": "Баланс линии"}),
     )
 
@@ -1076,8 +1084,21 @@ class LineAdmin(admin.ModelAdmin):
                 self.admin_site.admin_view(self.recalculate_ths_view),
                 name="core_line_recalculate_ths",
             ),
+            path(
+                "<int:line_id>/ths/",
+                self.admin_site.admin_view(self.ths_api),
+                name="core_line_ths",
+            ),
         ]
         return custom_urls + urls
+
+    def ths_api(self, request, line_id):
+        """Возвращает THS по умолчанию для линии (для автоподстановки в форме контейнера)."""
+        try:
+            line = Line.objects.only("id", "ths_fee").get(pk=line_id)
+            return JsonResponse({"ths_fee": str(line.ths_fee or "")})
+        except Line.DoesNotExist:
+            return JsonResponse({"ths_fee": ""})
 
     def recalculate_ths_view(self, request, object_id):
         """Recalculates THS for all line cars with UNLOADED and IN_PORT status"""

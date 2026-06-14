@@ -134,7 +134,28 @@ class ContainerAdmin(admin.ModelAdmin):
 
     class Media:
         css = {"all": ("css/dashboard_admin.css",)}
-        js = ("js/htmx.min.js", "js/warehouse_address.js")
+        js = ("js/htmx.min.js", "js/warehouse_address.js", "js/line_ths.js")
+
+    def get_changeform_initial_data(self, request):
+        """Дефолты для формы добавления контейнера.
+
+        «Оплата THS через» по умолчанию — «Через склад» (WAREHOUSE).
+        Дефолт модели остаётся LINE (чтобы не трогать программное создание
+        контейнеров), а на форме оператор при необходимости меняет значение.
+
+        Склад по умолчанию — «NETO» (адрес подставится автоматически через
+        warehouse_address.js). Ищем по имени, чтобы не зависеть от id в
+        разных окружениях.
+        """
+        from core.models import Warehouse
+
+        initial = super().get_changeform_initial_data(request)
+        initial.setdefault("ths_payer", "WAREHOUSE")
+
+        neto = Warehouse.objects.filter(name__iexact="NETO").values_list("pk", flat=True).first()
+        if neto:
+            initial.setdefault("warehouse", neto)
+        return initial
 
     def get_queryset(self, request):
         from django.db.models import Count, Q
