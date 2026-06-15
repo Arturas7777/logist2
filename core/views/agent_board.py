@@ -73,20 +73,20 @@ def tasks_board_page(request: HttpRequest):
 
     policies = {p.action_type: p.get_mode_display() for p in AgentPolicy.objects.all()}
 
-    return render(
-        request,
-        "admin/tasks_board.html",
-        {
-            "title": "Дела",
-            "open_tasks": open_tasks,
-            "proposals": proposals,
-            "questions": questions,
-            "recent_actions": recent_actions,
-            "digest": get_latest_digest(),
-            "agent_stats": agent_stats,
-            "policies": policies,
-        },
-    )
+    from logist2.admin_site import admin_site
+
+    context = {
+        **admin_site.each_context(request),
+        "title": "Дела",
+        "open_tasks": open_tasks,
+        "proposals": proposals,
+        "questions": questions,
+        "recent_actions": recent_actions,
+        "digest": get_latest_digest(),
+        "agent_stats": agent_stats,
+        "policies": policies,
+    }
+    return render(request, "admin/tasks_board.html", context)
 
 
 @staff_member_required
