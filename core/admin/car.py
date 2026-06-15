@@ -1199,16 +1199,17 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
     set_title_with_us.short_description = "Тайтл у нас"
 
     def resend_car_unload_notification(self, request, queryset):
-        """Повторная отправка уведомления о разгрузке для ТС без контейнера"""
+        """Повторная отправка email-уведомления о разгрузке для выбранных ТС.
+
+        Работает и для ТС, привязанных к контейнеру: отправляется
+        индивидуальное уведомление именно по выбранным авто (а не по всем
+        машинам контейнера).
+        """
         from core.services.email_service import CarNotificationService
 
         sent = 0
-        skipped = 0
 
         for car in queryset.select_related("client", "warehouse"):
-            if car.container_id:
-                skipped += 1
-                continue
             if not car.unload_date:
                 self.message_user(request, f"ТС {car.vin}: не указана дата разгрузки", level="WARNING")
                 continue
@@ -1223,22 +1224,21 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
 
         if sent:
             self.message_user(request, f"Уведомления отправлены для {sent} ТС.")
-        if skipped:
-            self.message_user(request, f"Пропущено {skipped} ТС (привязаны к контейнеру).", level="WARNING")
 
     resend_car_unload_notification.short_description = "📧 Повторить уведомление о разгрузке ТС"
 
     def resend_car_unload_telegram(self, request, queryset):
-        """Повторная отправка уведомления о разгрузке ТС (без контейнера) в Telegram"""
+        """Повторная отправка Telegram-уведомления о разгрузке для выбранных ТС.
+
+        Работает и для ТС, привязанных к контейнеру: отправляется
+        индивидуальное уведомление именно по выбранным авто (а не по всем
+        машинам контейнера).
+        """
         from core.services.telegram_service import TelegramNotificationService
 
         sent = 0
-        skipped = 0
 
         for car in queryset.select_related("client", "warehouse"):
-            if car.container_id:
-                skipped += 1
-                continue
             if not car.unload_date:
                 self.message_user(request, f"ТС {car.vin}: не указана дата разгрузки", level="WARNING")
                 continue
@@ -1255,8 +1255,6 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
 
         if sent:
             self.message_user(request, f"Telegram-уведомления отправлены для {sent} ТС.")
-        if skipped:
-            self.message_user(request, f"Пропущено {skipped} ТС (привязаны к контейнеру).", level="WARNING")
 
     resend_car_unload_telegram.short_description = "📨 Telegram: уведомить о разгрузке ТС"
 
