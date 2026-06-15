@@ -16,6 +16,7 @@
 import html
 import json
 import logging
+import re
 
 import requests
 from django.conf import settings
@@ -24,6 +25,13 @@ logger = logging.getLogger(__name__)
 
 TELEGRAM_API_URL = "https://api.telegram.org/bot{token}/sendMessage"
 TELEGRAM_GET_UPDATES_URL = "https://api.telegram.org/bot{token}/getUpdates"
+
+# Извлечение токена привязки из пересланной персональной ссылки (…?start=<token>)
+# и из «голого» токена (secrets.token_urlsafe(16) → [A-Za-z0-9_-], ~22 символа).
+_TELEGRAM_START_LINK_RE = re.compile(r"[?&]start=([A-Za-z0-9_\-]+)")
+_TELEGRAM_TOKEN_RE = re.compile(r"^[A-Za-z0-9_\-]{10,64}$")
+# High-water mark обработанных апдейтов в кэше (анти-спам для авто-ответов).
+_TELEGRAM_LAST_REPLY_KEY = "telegram_starts_last_reply_update_id"
 
 
 def _telegram_enabled():
@@ -74,20 +82,78 @@ def send_telegram_message(chat_id, text):
         return False, str(e)
 
 
-def process_telegram_starts():
-    """Привязывает chat_id к клиентам по персональным ссылкам ?start=<token>.
+def _extract_start_token(text):
+    """Достаёт токен привязки из текста сообщения.
 
-    Опрашивает getUpdates и для каждого сообщения вида ``/start <token>``
-    находит клиента по ``telegram_link_token`` и добавляет chat_id в первый
-    свободный слот. Бот отвечает подтверждением. Идемпотентно: если chat_id
-    уже привязан, повторного сообщения не будет (поэтому безопасно вызывать
-    периодически без отслеживания offset — Telegram хранит апдейты ~24ч).
+    Поддерживает три формата (по убыванию приоритета), чтобы клиент мог
+    привязаться, даже если кнопка «Запустить» не появилась (бот уже был
+    запущен ранее → Telegram не отправляет payload автоматически):
+
+      1. ``/start <token>`` — стандартный deep-link payload.
+      2. Пересланная персональная ссылка ``…?start=<token>``.
+      3. «Голый» токен, если клиент скопировал только его.
+
+    Возвращает строку-кандидат или None. Совпадение с реальным клиентом
+    проверяется вызывающим кодом.
+    """
+    text = (text or "").strip()
+    if not text:
+        return None
+    if text.startswith("/start"):
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2:
+            return None  # просто /start без токена
+        candidate = parts[1].strip()
+        m = _TELEGRAM_START_LINK_RE.search(candidate)
+        return m.group(1) if m else (candidate or None)
+    m = _TELEGRAM_START_LINK_RE.search(text)
+    if m:
+        return m.group(1)
+    if _TELEGRAM_TOKEN_RE.match(text):
+        return text
+    return None
+
+
+def _find_client_by_chat_id(chat_id):
+    """Возвращает клиента, к которому уже привязан данный chat_id (или None)."""
+    from django.db.models import Q
+
+    from core.models import Client
+
+    cid = str(chat_id).strip()
+    return Client.objects.filter(
+        Q(telegram_chat_id=cid)
+        | Q(telegram_chat_id2=cid)
+        | Q(telegram_chat_id3=cid)
+        | Q(telegram_chat_id4=cid)
+    ).first()
+
+
+def process_telegram_starts():
+    """Привязывает chat_id к клиентам по персональным ссылкам и помогает клиентам.
+
+    Опрашивает getUpdates и для каждого личного сообщения:
+
+      * извлекает токен привязки (``/start <token>``, пересланная ссылка
+        ``…?start=<token>`` или голый токен — см. ``_extract_start_token``) и,
+        если токен соответствует клиенту, добавляет chat_id в первый свободный
+        слот + шлёт подтверждение;
+      * если валидного токена нет и чат ещё не привязан — отвечает подсказкой,
+        как подписаться (один раз на сообщение);
+      * на явный ``/start`` от уже привязанного чата отвечает «вы уже подписаны».
+
+    Привязка идемпотентна (повторно не дублируется). getUpdates вызывается без
+    offset и возвращает одни и те же апдейты ~24ч, поэтому авто-ответы шлём
+    только для апдейтов новее сохранённого в кэше high-water mark update_id —
+    иначе подсказки спамились бы каждую минуту.
 
     Возвращает количество новых привязок.
     """
     token = getattr(settings, "TELEGRAM_BOT_TOKEN", "")
     if not token:
         return 0
+
+    from django.core.cache import cache
 
     from core.models import Client
 
@@ -105,33 +171,65 @@ def process_telegram_starts():
         logger.error("Telegram getUpdates not ok: %s", data.get("description"))
         return 0
 
+    last_replied = cache.get(_TELEGRAM_LAST_REPLY_KEY, 0) or 0
+    max_update_id = last_replied
     linked = 0
+
     for upd in data.get("result", []):
+        update_id = upd.get("update_id", 0) or 0
+        if update_id > max_update_id:
+            max_update_id = update_id
+
         msg = upd.get("message") or upd.get("edited_message") or {}
-        text = (msg.get("text") or "").strip()
-        if not text.startswith("/start"):
-            continue
-        parts = text.split(maxsplit=1)
-        if len(parts) < 2:
-            continue  # просто /start без токена — привязать не к кому
-        start_token = parts[1].strip()
         chat = msg.get("chat") or {}
         chat_id = chat.get("id")
-        if not start_token or chat_id is None:
+        if chat_id is None:
+            continue
+        # Привязываем только личные чаты (не группы/каналы).
+        if chat.get("type") not in (None, "private"):
             continue
 
-        client = Client.objects.filter(telegram_link_token=start_token).first()
-        if not client:
-            logger.warning("Telegram /start с неизвестным токеном: %s (chat %s)", start_token, chat_id)
+        text = (msg.get("text") or "").strip()
+        start_token = _extract_start_token(text)
+
+        client = Client.objects.filter(telegram_link_token=start_token).first() if start_token else None
+        if client:
+            if client.add_telegram_chat_id(chat_id):
+                linked += 1
+                logger.info("Telegram: привязан chat %s к клиенту %s (id=%s)", chat_id, client.name, client.id)
+                send_telegram_message(
+                    chat_id,
+                    f"✅ Вы подписаны на уведомления о разгрузке для клиента <b>{html.escape(client.name)}</b>.",
+                )
+            # Уже привязан к этому клиенту — повторно не отвечаем (идемпотентно).
             continue
 
-        if client.add_telegram_chat_id(chat_id):
-            linked += 1
-            logger.info("Telegram: привязан chat %s к клиенту %s (id=%s)", chat_id, client.name, client.id)
+        # Валидного токена нет. Отвечаем подсказкой, но только на «свежие»
+        # апдейты (анти-спам: иначе каждую минуту слали бы одно и то же).
+        if update_id <= last_replied:
+            continue
+
+        existing = _find_client_by_chat_id(chat_id)
+        if existing:
+            # Уже подписан: реагируем только на явный /start, иначе молчим,
+            # чтобы не отвечать на каждое сообщение клиента.
+            if text == "/start":
+                send_telegram_message(
+                    chat_id,
+                    f"✅ Вы уже подписаны на уведомления для клиента <b>{html.escape(existing.name)}</b>.",
+                )
+        else:
             send_telegram_message(
                 chat_id,
-                f"✅ Вы подписаны на уведомления о разгрузке для клиента <b>{client.name}</b>.",
+                "👋 Здравствуйте! Чтобы получать уведомления о ваших автомобилях, "
+                "отправьте сюда <b>персональную ссылку</b>, которую прислал вам менеджер "
+                "Caromoto (вида <code>https://t.me/...?start=...</code>), или перейдите "
+                "по ней и нажмите «Запустить». Если ссылки нет — напишите менеджеру.",
             )
+
+    if max_update_id and max_update_id != last_replied:
+        # Окно хранения апдейтов в Telegram ~24ч; ставим запас 7 дней.
+        cache.set(_TELEGRAM_LAST_REPLY_KEY, max_update_id, 7 * 24 * 3600)
 
     if linked:
         logger.info("Telegram process_telegram_starts: привязано %d новых чатов", linked)
