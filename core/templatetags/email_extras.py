@@ -13,6 +13,7 @@ from django import template
 from core.services.email_reply_parser import (
     _fix_mojibake,
     extract_display_name,
+    format_inline_markdown_html,
     messenger_body,
     messenger_body_from_email,
     split_reply_and_quote,
@@ -206,3 +207,19 @@ def linkify_urls_filter(text: str) -> str:
     from django.template.defaultfilters import urlize
 
     return urlize(text or "", autoescape=True)
+
+
+@register.filter(name="messenger_format", is_safe=True)
+def messenger_format_filter(text: str):
+    """Linkify ссылок + инлайн-разметка письма (``*жирный*`` → ``<strong>``).
+
+    Почтовые клиенты в plain-text версии письма кодируют жирный/курсив/
+    зачёркнутый Markdown-маркерами. Сначала прогоняем текст через urlize
+    (он экранирует и оборачивает ссылки в ``<a>``), затем по безопасной
+    строке восстанавливаем форматирование, не трогая содержимое ссылок.
+    """
+    from django.template.defaultfilters import urlize
+    from django.utils.safestring import mark_safe
+
+    linked = urlize(text or "", autoescape=True)
+    return mark_safe(format_inline_markdown_html(str(linked)))

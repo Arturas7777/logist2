@@ -84,6 +84,7 @@ __all__ = [
     "clean_message_body",
     "compose_reply_html",
     "extract_display_name",
+    "format_inline_markdown_html",
     "format_quoted_reply",
     "html_to_plain",
     "messenger_body",
@@ -499,6 +500,67 @@ def messenger_body_from_email(body_text: str, body_html: str) -> str:
         return ""
     reply, _ = split_reply_and_quote(plain)
     return clean_message_body(reply)
+
+
+# ---------------------------------------------------------------------------
+# Inline-разметка из plain-text альтернативы письма.
+#
+# Почтовые клиенты (Gmail, Outlook и т.п.), отправляя HTML-письмо с жирным/
+# курсивом, кодируют форматирование в text/plain версии Markdown-подобными
+# маркерами: ``*жирный*``, ``_курсив_``, ``~зачёркнутый~``. Так как messenger-
+# лента показывает именно plain-text, эти маркеры раньше отображались буквально
+# (``*слово*``). Конвертируем их обратно в ``<strong>`` / ``<em>`` / ``<s>``.
+#
+# Работаем уже ПОСЛЕ urlize по безопасной (экранированной) строке, аккуратно
+# пропуская содержимое внутри тегов и, в частности, внутри ``<a>…</a>`` —
+# чтобы не задеть подчёркивания в отображаемых URL.
+# ---------------------------------------------------------------------------
+
+# Двойная звёздка обрабатывается раньше одиночной (``**жирный**`` тоже бывает).
+_MD_BOLD_DOUBLE = re.compile(r"(?<!\*)\*\*(?!\s)([^*\n]+?)(?<!\s)\*\*(?!\*)")
+_MD_BOLD_SINGLE = re.compile(r"(?<!\w)\*(?!\s)([^*\n]+?)(?<!\s)\*(?!\w)")
+_MD_STRIKE = re.compile(r"(?<!\w)~(?!\s)([^~\n]+?)(?<!\s)~(?!\w)")
+_MD_ITALIC = re.compile(r"(?<!\w)_(?!\s)([^_\n]+?)(?<!\s)_(?!\w)")
+
+_TAG_SPLIT_RE = re.compile(r"(<[^>]+>)")
+
+
+def _apply_inline_markdown(segment: str) -> str:
+    segment = _MD_BOLD_DOUBLE.sub(r"<strong>\1</strong>", segment)
+    segment = _MD_BOLD_SINGLE.sub(r"<strong>\1</strong>", segment)
+    segment = _MD_STRIKE.sub(r"<s>\1</s>", segment)
+    segment = _MD_ITALIC.sub(r"<em>\1</em>", segment)
+    return segment
+
+
+def format_inline_markdown_html(safe_html: str) -> str:
+    """Конвертирует ``*жирный*`` / ``_курсив_`` / ``~зачёркнутый~`` в HTML-теги.
+
+    Принимает УЖЕ безопасную строку (после ``urlize`` с экранированием) и
+    возвращает строку с добавленными ``<strong>`` / ``<em>`` / ``<s>``.
+    Содержимое HTML-тегов и ссылок (``<a>…</a>``) не трогается.
+    """
+    if not safe_html:
+        return ""
+
+    tokens = _TAG_SPLIT_RE.split(safe_html)
+    anchor_depth = 0
+    out: list[str] = []
+    for tok in tokens:
+        if not tok:
+            continue
+        if tok.startswith("<") and tok.endswith(">"):
+            low = tok.lower()
+            if low.startswith("<a") and not low.startswith("</a"):
+                anchor_depth += 1
+            elif low.startswith("</a"):
+                anchor_depth = max(0, anchor_depth - 1)
+            out.append(tok)
+        elif anchor_depth > 0:
+            out.append(tok)
+        else:
+            out.append(_apply_inline_markdown(tok))
+    return "".join(out)
 
 
 # ---------------------------------------------------------------------------

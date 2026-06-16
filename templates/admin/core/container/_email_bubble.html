@@ -79,7 +79,7 @@
             {% endif %}
             {% with cleaned=email|messenger_body_auto %}
                 {% if cleaned %}
-                    <div class="cm-body">{{ cleaned|linkify_urls }}</div>
+                    <div class="cm-body">{{ cleaned|messenger_format }}</div>
                 {% elif email.snippet %}
                     <div class="cm-body" style="color:#94a3b8;font-style:italic;">{{ email.snippet }}</div>
                 {% endif %}
