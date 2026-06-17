@@ -285,16 +285,19 @@ def _get_agreed_total(client, vehicle_type, total_cars_in_container):
 
 
 def _distribute_markup_for_car(car, agreed_total, total_cars_in_container):
-    """Обеспечивает, что сумма услуг склада (кроме хранения) не меньше тарифа.
+    """Приводит сумму услуг склада (кроме хранения) к тарифу клиента.
 
-    Тариф клиента = МИНИМАЛЬНАЯ цена за складской пакет.
-    - Если текущая сумма склада (с учётом наценок) < тарифа — наценка
-      равномерно перераспределяется, чтобы итог = тарифу.
-    - Если текущая сумма склада (с учётом наценок) >= тарифа — наценки
-      не трогаются: пользователь намеренно поднял цену выше тарифа.
+    Семантика зависит от типа тарифа:
+    - ``FIXED`` — тариф = ТОЧНАЯ цена складского пакета. Наценки всегда
+      перераспределяются так, чтобы итог был ровно равен тарифу (дефолтные
+      наценки услуг при этом сбрасываются — иначе они задирали бы пакет
+      выше зафиксированной цены).
+    - ``FLEXIBLE`` — тариф = МИНИМАЛЬНАЯ цена пакета. Если пакет с наценками
+      уже >= тарифа, наценки не трогаем (цену намеренно подняли выше);
+      иначе равномерно добавляем наценку до уровня тарифа.
 
-    Услуги перевозчика (CARRIER) и отдельные услуги компаний (COMPANY)
-    в тариф не входят и никогда не затрагиваются этой логикой.
+    Хранение в тариф не входит и добавляется сверху. Услуги перевозчика
+    (CARRIER) и отдельные услуги компаний (COMPANY) тоже не затрагиваются.
     """
     from core.models import CarService
 
@@ -319,36 +322,67 @@ def _distribute_markup_for_car(car, agreed_total, total_cars_in_container):
         )
         return
 
-    current_invoice_total = sum(Decimal(str(svc.invoice_price)) for svc in warehouse_non_storage)
+    is_fixed = bool(car.client and car.client.tariff_type == "FIXED")
 
-    if current_invoice_total >= agreed_total:
-        logger.info(
-            "Tariff for %s (%s): agreed=%s, текущий склад с наценкой=%s — уже >= тарифа, наценки не трогаем",
-            car.vin,
-            car.client.name if car.client else "?",
-            agreed_total,
-            current_invoice_total,
-        )
-        return
+    # Базовая стоимость пакета — БЕЗ скрытой наценки.
+    base_total = sum(Decimal(str(svc.final_price)) for svc in warehouse_non_storage)
 
-    actual_warehouse_total = sum(Decimal(str(svc.final_price)) for svc in warehouse_non_storage)
-    diff = agreed_total - actual_warehouse_total
+    if is_fixed:
+        # FIXED: тариф = точная цена стандартного пакета, достигается скрытой
+        # наценкой. Наценка не должна задирать пакет выше тарифа (баг с
+        # default_markup услуг), поэтому всегда сбрасываем её и добавляем
+        # ровно столько, сколько нужно до тарифа. Если базовые цены услуг уже
+        # покрывают тариф (например, добавлены доп. услуги), скрытую наценку
+        # обнуляем — но реальные цены не дисконтируем (не уходим в минус).
+        diff = agreed_total - base_total
+        if diff <= 0:
+            for svc in warehouse_non_storage:
+                if svc.markup_amount != 0:
+                    svc.markup_amount = Decimal("0")
+                    svc.save(update_fields=["markup_amount"])
+            logger.info(
+                "Tariff(FIXED) for %s (%s): agreed=%s, base=%s — база >= тарифа, скрытая наценка обнулена",
+                car.vin,
+                car.client.name if car.client else "?",
+                agreed_total,
+                base_total,
+            )
+            return
+    else:
+        # FLEXIBLE: тариф — «пол». Если пакет с наценками уже >= тарифа,
+        # наценки не трогаем (цену намеренно подняли выше тарифа).
+        current_invoice_total = sum(Decimal(str(svc.invoice_price)) for svc in warehouse_non_storage)
+        if current_invoice_total >= agreed_total:
+            logger.info(
+                "Tariff(FLEXIBLE) for %s (%s): agreed=%s, текущий склад с наценкой=%s — уже >= тарифа, "
+                "наценки не трогаем",
+                car.vin,
+                car.client.name if car.client else "?",
+                agreed_total,
+                current_invoice_total,
+            )
+            return
+        diff = agreed_total - base_total
 
     share = (diff / len(warehouse_non_storage)).quantize(Decimal("0.01"))
     remainder = diff - share * len(warehouse_non_storage)
 
     for i, svc in enumerate(warehouse_non_storage):
-        svc.markup_amount = share
+        new_markup = share
         if i == len(warehouse_non_storage) - 1:
-            svc.markup_amount = share + remainder
-        svc.save(update_fields=["markup_amount"])
+            new_markup = share + remainder
+        if svc.markup_amount != new_markup:
+            svc.markup_amount = new_markup
+            svc.save(update_fields=["markup_amount"])
 
     logger.info(
-        "Tariff for %s (%s): agreed=%s, warehouse_final=%s, diff=%s, cars_count=%s, распределено по %d услугам склада",
+        "Tariff for %s (%s): type=%s, agreed=%s, base=%s, diff=%s, cars_count=%s, "
+        "распределено по %d услугам склада",
         car.vin,
         car.client.name if car.client else "?",
+        "FIXED" if is_fixed else "FLEXIBLE",
         agreed_total,
-        actual_warehouse_total,
+        base_total,
         diff,
         total_cars_in_container,
         len(warehouse_non_storage),
