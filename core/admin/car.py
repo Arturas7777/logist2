@@ -829,11 +829,24 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         html.append(f'<span style="font-size:18px; color:#6f42c1; font-weight:bold;">Итого: {company_total:.2f}</span>')
         html.append("</div>")
 
-        # Markup - show distributed amount
-        html.append('<div style="background:#fffde7; padding:10px; border-radius:5px; border:1px solid #ffc107;">')
-        html.append('<strong style="color:#ff8f00;">Скрытая наценка:</strong><br>')
-        html.append(f'<span style="font-size:18px; font-weight:bold; color:#ff8f00;">{distributed_markup:.2f}</span>')
-        if distributed_markup > 0:
+        # Markup - show distributed amount (убыток = отрицательная наценка, красным)
+        is_loss = distributed_markup < 0
+        if is_loss:
+            box_bg, box_border, accent = "#fdecea", "#dc3545", "#dc3545"
+            markup_label = "Убыток:"
+        else:
+            box_bg, box_border, accent = "#fffde7", "#ffc107", "#ff8f00"
+            markup_label = "Скрытая наценка:"
+        html.append(
+            f'<div style="background:{box_bg}; padding:10px; border-radius:5px; border:1px solid {box_border};">'
+        )
+        html.append(f'<strong style="color:{accent};">{markup_label}</strong><br>')
+        html.append(f'<span style="font-size:18px; font-weight:bold; color:{accent};">{distributed_markup:.2f}</span>')
+        if is_loss:
+            html.append(
+                '<br><span style="font-size:11px; color:#a71d2a;">(цена ограничена фиксированным тарифом)</span>'
+            )
+        elif distributed_markup > 0:
             html.append('<br><span style="font-size:11px; color:#666;">(распределена по услугам)</span>')
         else:
             html.append('<br><span style="font-size:11px; color:#666;">(введите в жёлтых полях)</span>')
@@ -1032,13 +1045,16 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         """
         # If annotation from get_queryset exists - use it (for list)
         if hasattr(obj, "_total_markup"):
-            return f"{obj._total_markup:.2f}" if obj._total_markup else "0.00"
+            total_markup = obj._total_markup or Decimal("0.00")
+        else:
+            # Fallback for car card or if annotation failed
+            from django.db.models import Sum
 
-        # Fallback for car card or if annotation failed
-        from django.db.models import Sum
+            total_markup = obj.car_services.aggregate(total=Sum("markup_amount"))["total"] or Decimal("0.00")
 
-        total_markup = obj.car_services.aggregate(total=Sum("markup_amount"))["total"] or Decimal("0.00")
-
+        # Убыток (отрицательная наценка) — красным
+        if total_markup < 0:
+            return format_html('<span style="color:#dc3545; font-weight:bold;">{}</span>', f"{total_markup:.2f}")
         return f"{total_markup:.2f}"
 
     markup_display.short_description = "Н"  # Н = Наценка
