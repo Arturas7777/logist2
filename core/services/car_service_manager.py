@@ -196,6 +196,23 @@ def create_ths_services_for_container(container):
     return created_count
 
 
+# Типы ТС, которые считаются мотоциклами. Мотоциклы НЕ участвуют в подсчёте
+# количества легковых (и прочих) авто в контейнере при подборе тарифа — и
+# наоборот. Считаем по категориям, чтобы мотоцикл не влиял на тариф/THS авто.
+MOTORCYCLE_TYPES = {"MOTO", "BIG_MOTO"}
+
+
+def _count_vehicles_for_tariff(cars, vehicle_type):
+    """Кол-во ТС в контейнере, релевантное для подбора тарифа данного ТС.
+
+    Мотоциклы и не-мотоциклы считаются раздельно: для легкового авто
+    мотоциклы не учитываются (и наоборот), поэтому мотоцикл в контейнере не
+    сдвигает гибкий тариф/THS легковых авто в другую ценовую группу.
+    """
+    target_is_moto = vehicle_type in MOTORCYCLE_TYPES
+    return sum(1 for c in cars if (c.vehicle_type in MOTORCYCLE_TYPES) == target_is_moto)
+
+
 def apply_client_tariffs_for_container(container):
     """
     Apply client tariff markups to warehouse services after THS is calculated.
@@ -204,6 +221,9 @@ def apply_client_tariffs_for_container(container):
     (все услуги WAREHOUSE кроме хранения). Услуги перевозчика (CARRIER) и
     отдельные услуги компаний (COMPANY) в тариф НЕ входят — они добавляются
     сверху как есть.
+
+    Количество ТС для подбора тарифа считается по категориям: мотоциклы не
+    учитываются при подсчёте легковых авто (и наоборот).
     """
     if not container:
         return
@@ -212,26 +232,25 @@ def apply_client_tariffs_for_container(container):
     if not cars:
         return
 
-    total_cars_in_container = len(cars)
-
     for car in cars:
         if not car.client or car.client.tariff_type == "NONE":
             continue
 
         client = car.client
-        agreed_total = _get_agreed_total(client, car.vehicle_type, total_cars_in_container)
+        count = _count_vehicles_for_tariff(cars, car.vehicle_type)
+        agreed_total = _get_agreed_total(client, car.vehicle_type, count)
 
         if agreed_total is None:
             logger.debug(
-                "Нет тарифа для %s (%s), тип ТС: %s, кол-во авто: %s",
+                "Нет тарифа для %s (%s), тип ТС: %s, кол-во ТС (без учёта др. категории): %s",
                 client.name,
                 client.tariff_type,
                 car.vehicle_type,
-                total_cars_in_container,
+                count,
             )
             continue
 
-        _distribute_markup_for_car(car, agreed_total, total_cars_in_container)
+        _distribute_markup_for_car(car, agreed_total, count)
 
 
 def apply_client_tariff_for_car(car):
@@ -251,15 +270,16 @@ def apply_client_tariff_for_car(car):
 
     from core.models import Car
 
-    total_cars_in_container = 1
+    count = 1
     if car.container_id:
-        total_cars_in_container = Car.objects.filter(container_id=car.container_id).count()
+        cars = list(Car.objects.filter(container_id=car.container_id).only("id", "vehicle_type"))
+        count = _count_vehicles_for_tariff(cars, car.vehicle_type)
 
-    agreed_total = _get_agreed_total(client, car.vehicle_type, total_cars_in_container)
+    agreed_total = _get_agreed_total(client, car.vehicle_type, count)
     if agreed_total is None:
         return
 
-    _distribute_markup_for_car(car, agreed_total, total_cars_in_container)
+    _distribute_markup_for_car(car, agreed_total, count)
 
 
 def _get_agreed_total(client, vehicle_type, total_cars_in_container):
@@ -285,17 +305,14 @@ def _get_agreed_total(client, vehicle_type, total_cars_in_container):
 
 
 def _distribute_markup_for_car(car, agreed_total, total_cars_in_container):
-    """Приводит сумму услуг склада (кроме хранения) к тарифу клиента.
+    """Приводит сумму услуг склада (кроме хранения) РОВНО к тарифу клиента.
 
-    Семантика зависит от типа тарифа:
-    - ``FIXED`` — тариф = ТОЧНАЯ цена складского пакета, выше которой клиент
-      платить не может. Наценки всегда перераспределяются так, чтобы итог был
-      ровно равен тарифу: если база ниже — наценка положительная (прибыль),
-      если выше — отрицательная (убыток). Дефолтные наценки услуг при этом
-      перезаписываются.
-    - ``FLEXIBLE`` — тариф = МИНИМАЛЬНАЯ цена пакета. Если пакет с наценками
-      уже >= тарифа, наценки не трогаем (цену намеренно подняли выше);
-      иначе равномерно добавляем наценку до уровня тарифа.
+    Тариф (``FIXED`` или подобранная по числу ТС ставка ``FLEXIBLE``) — это
+    точная цена складского пакета, выше которой клиент платить не может.
+    Скрытая наценка всегда перезаписывается так, чтобы итог был равен тарифу:
+      - база ниже тарифа  → наценка положительная (прибыль);
+      - база выше тарифа  → наценка отрицательная (убыток), т.к. с клиента
+        всё равно берётся только фиксированная сумма.
 
     Хранение в тариф не входит и добавляется сверху. Услуги перевозчика
     (CARRIER) и отдельные услуги компаний (COMPANY) тоже не затрагиваются.
@@ -323,34 +340,14 @@ def _distribute_markup_for_car(car, agreed_total, total_cars_in_container):
         )
         return
 
-    is_fixed = bool(car.client and car.client.tariff_type == "FIXED")
+    tariff_type = car.client.tariff_type if car.client else "?"
 
     # Базовая стоимость пакета — БЕЗ скрытой наценки.
     base_total = sum(Decimal(str(svc.final_price)) for svc in warehouse_non_storage)
 
-    if is_fixed:
-        # FIXED: цена складского пакета не может быть выше тарифа. Всегда
-        # приводим пакет РОВНО к тарифу через скрытую наценку:
-        #   - база ниже тарифа  → наценка положительная (прибыль);
-        #   - база выше тарифа   → наценка отрицательная (убыток), т.к. с
-        #     клиента всё равно берём только фиксированную сумму.
-        # Дефолтные наценки услуг при этом перезаписываются.
-        diff = agreed_total - base_total
-    else:
-        # FLEXIBLE: тариф — «пол». Если пакет с наценками уже >= тарифа,
-        # наценки не трогаем (цену намеренно подняли выше тарифа).
-        current_invoice_total = sum(Decimal(str(svc.invoice_price)) for svc in warehouse_non_storage)
-        if current_invoice_total >= agreed_total:
-            logger.info(
-                "Tariff(FLEXIBLE) for %s (%s): agreed=%s, текущий склад с наценкой=%s — уже >= тарифа, "
-                "наценки не трогаем",
-                car.vin,
-                car.client.name if car.client else "?",
-                agreed_total,
-                current_invoice_total,
-            )
-            return
-        diff = agreed_total - base_total
+    # Цена пакета не может быть выше тарифа: приводим ровно к тарифу.
+    # diff > 0 → прибыль, diff < 0 → убыток (отрицательная наценка).
+    diff = agreed_total - base_total
 
     share = (diff / len(warehouse_non_storage)).quantize(Decimal("0.01"))
     remainder = diff - share * len(warehouse_non_storage)
@@ -368,7 +365,7 @@ def _distribute_markup_for_car(car, agreed_total, total_cars_in_container):
         "распределено по %d услугам склада",
         car.vin,
         car.client.name if car.client else "?",
-        "FIXED" if is_fixed else "FLEXIBLE",
+        tariff_type,
         agreed_total,
         base_total,
         diff,

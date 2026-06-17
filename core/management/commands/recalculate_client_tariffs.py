@@ -1,9 +1,9 @@
-"""Пересчёт скрытой наценки для авто FIXED-клиентов под исправленную логику.
+"""Пересчёт скрытой наценки для авто клиентов с тарифом (FIXED/FLEXIBLE).
 
-Контекст: для тарифа FIXED складской пакет должен быть РОВНО равен тарифу.
-Раньше дефолтные наценки услуг склада задирали пакет выше тарифа (см.
-`_distribute_markup_for_car`). После фикса наценка пересчитывается заново.
-Эта команда переприменяет тариф к существующим авто.
+Контекст: складской пакет приводится РОВНО к тарифу клиента (для FLEXIBLE
+ставка подбирается по числу ТС в контейнере, без учёта мотоциклов). Раньше
+дефолтные/ручные наценки могли задирать пакет выше тарифа. Команда переприменяет
+тариф к существующим авто под актуальную логику.
 
 По умолчанию обрабатываются только АКТИВНЫЕ авто (не TRANSFERRED), чтобы не
 трогать историю и уже выставленные инвойсы. `--all` снимает это ограничение
@@ -18,7 +18,7 @@ from core.services.car_service_manager import apply_client_tariff_for_car
 
 
 class Command(BaseCommand):
-    help = "Переприменяет тариф (скрытую наценку) к авто FIXED-клиентов под новую логику"
+    help = "Переприменяет тариф (скрытую наценку) к авто клиентов FIXED/FLEXIBLE под актуальную логику"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -36,13 +36,15 @@ class Command(BaseCommand):
         include_all = options.get("all", False)
         dry_run = options.get("dry_run", False)
 
-        cars_qs = Car.objects.filter(client__tariff_type="FIXED").select_related("client", "warehouse")
+        cars_qs = Car.objects.filter(client__tariff_type__in=["FIXED", "FLEXIBLE"]).select_related(
+            "client", "warehouse"
+        )
         if not include_all:
             cars_qs = cars_qs.exclude(status="TRANSFERRED")
 
         total = cars_qs.count()
         changed = 0
-        self.stdout.write(f"Кандидатов (FIXED, {'все' if include_all else 'активные'}): {total}")
+        self.stdout.write(f"Кандидатов (FIXED/FLEXIBLE, {'все' if include_all else 'активные'}): {total}")
 
         for car in cars_qs.iterator():
             old_total = car.total_price
@@ -65,7 +67,8 @@ class Command(BaseCommand):
                         transaction.savepoint_commit(sid)
                     changed += 1
                     self.stdout.write(
-                        f"  #{car.id} {car.vin} {car.client.name}: {old_total} -> {new_total}"
+                        f"  #{car.id} {car.vin} {car.client.name} [{car.client.tariff_type}]: "
+                        f"{old_total} -> {new_total}"
                     )
                 else:
                     transaction.savepoint_rollback(sid)

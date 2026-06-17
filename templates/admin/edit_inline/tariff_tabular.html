@@ -1,0 +1,50 @@
+{% load i18n %}
+{% comment %}
+Кастомный рендер инлайна тарифов клиента. Над стандартной таблицей выводим
+понятную подсказку (FIXED vs FLEXIBLE + пример заполнения «От/До»), затем
+делегируем отрисовку штатному tabular.html с тем же контекстом.
+{% endcomment %}
+<div class="cm-tariff-help">
+  <div class="cm-tariff-help-title">Как заполнять тарифы</div>
+  <ul class="cm-tariff-help-list">
+    <li>
+      <b>Одна строка</b> = «для такого типа ТС цена за <b>одно</b> авто такая-то».
+      Хранение в тариф не входит — оно всегда добавляется сверху отдельно.
+    </li>
+    <li>
+      <b>Фикс. тариф</b> — поля <b>«Авто от/до» не важны</b>, цена не зависит от
+      количества. Достаточно <b>одной строки на тип ТС</b> (можно оставить «от» = 1, «до» — пусто).
+    </li>
+    <li>
+      <b>Гибкий тариф</b> — цена зависит от <b>количества авто этого типа в контейнере</b>
+      (мотоциклы считаются отдельно и не влияют на счёт авто). Заполняйте
+      <b>непересекающиеся диапазоны</b>, последняя строка — с пустым «до» («и более»).
+    </li>
+  </ul>
+  <div class="cm-tariff-help-example">
+    <span class="cm-tariff-help-example-label">Пример гибкого (Легковой):</span>
+    <span class="cm-tariff-chip">1–2 → 350 €</span>
+    <span class="cm-tariff-chip">3–3 → 290 €</span>
+    <span class="cm-tariff-chip">4–<i>(пусто)</i> → 265 €</span>
+  </div>
+</div>
+
+{% include "admin/edit_inline/tabular.html" %}
+
+<script>
+(function () {
+  // Когда у клиента выбран FIXED — поля «Авто от/до» не важны: визуально гасим их.
+  function syncTariffMode() {
+    var sel = document.getElementById('id_tariff_type');
+    var group = document.getElementById('tariff_rates-group');
+    if (!sel || !group) return;
+    group.classList.toggle('cm-tariff-fixed', sel.value === 'FIXED');
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    var sel = document.getElementById('id_tariff_type');
+    if (sel) sel.addEventListener('change', syncTariffMode);
+    syncTariffMode();
+  });
+})();
+</script>
+

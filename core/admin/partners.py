@@ -323,6 +323,15 @@ class ClientAdmin(admin.ModelAdmin):
     )
     inlines = [ClientTariffRateInline]
 
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        # Пояснение по типам тарифа уже есть в описании секции «Тариф» —
+        # дублирующий help_text под селектом убираем, чтобы не было «каши».
+        field = form.base_fields.get("tariff_type")
+        if field is not None:
+            field.help_text = ""
+        return form
+
     def get_queryset(self, request):
         """OPTIMIZATION: Use with_balance_info for pre-calculated data.
 
@@ -388,7 +397,13 @@ class ClientAdmin(admin.ModelAdmin):
             "📊 Тариф",
             {
                 "fields": ("tariff_type",),
-                "description": "NONE = обычные наценки. FIXED = фикс.общая цена за авто (не зависит от кол-ва). FLEXIBLE = общая цена зависит от кол-ва авто в контейнере. Цена = сумма ВСЕХ услуг кроме хранения. Ставки заполняются в таблице ниже.",
+                "description": (
+                    "<b>Без тарифа</b> — обычные наценки услуг. "
+                    "<b>Фикс. цена</b> — фиксированная цена за авто, не зависит от количества. "
+                    "<b>Гибкая цена</b> — цена зависит от количества авто в контейнере (мотоциклы считаются отдельно). "
+                    "Цена тарифа = сумма всех услуг склада, <u>кроме хранения</u> (хранение добавляется сверху). "
+                    "Сами ставки заполняются в таблице «Тарифы клиента» ниже — там есть подсказка с примером."
+                ),
             },
         ),
         (

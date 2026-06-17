@@ -1466,6 +1466,64 @@ ul.messagelist li.info {
 .inline-group .tabular td.field-short_name {
     width: 10% !important;
 }
+
+/* ===== TARIFF INLINE (client tariffs) — карточная раскладка полей ===== */
+/* Карточный режим задаётся общим классом .cm-card-inline (см. в конце файла).
+   Здесь только ширины конкретных полей тарифа. */
+#tariff_rates-group td.field-vehicle_type      { flex: 2 1 220px !important; }
+#tariff_rates-group td.field-min_cars,
+#tariff_rates-group td.field-max_cars          { flex: 0 0 110px !important; }
+#tariff_rates-group td.field-agreed_total_price { flex: 1 1 160px !important; }
+/* Когда выбран фикс. тариф — гасим «Авто от/до», чтобы не путали. */
+#tariff_rates-group.cm-tariff-fixed td.field-min_cars,
+#tariff_rates-group.cm-tariff-fixed td.field-max_cars {
+    opacity: .35;
+}
+
+/* Подсказка над таблицей тарифов */
+.cm-tariff-help {
+    margin: 0 0 12px;
+    padding: 14px 16px;
+    background: rgba(108,92,231,.06);
+    border: 1px solid rgba(108,92,231,.18);
+    border-radius: 12px;
+    font-size: .82rem;
+    color: var(--cm-text, #1a1a2e);
+    line-height: 1.5;
+}
+.cm-tariff-help-title {
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: #6c5ce7;
+}
+.cm-tariff-help-list {
+    margin: 0;
+    padding-left: 18px;
+}
+.cm-tariff-help-list li { margin: 2px 0; }
+.cm-tariff-help-example {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+.cm-tariff-help-example-label {
+    font-weight: 600;
+    color: var(--cm-text-muted, #6b7280);
+}
+.cm-tariff-chip {
+    display: inline-flex;
+    align-items: center;
+    background: #fff;
+    border: 1px solid rgba(108,92,231,.25);
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-weight: 600;
+    color: #4b3fb8;
+}
+.cm-tariff-chip i { font-style: italic; color: var(--cm-text-muted, #9ca3af); font-weight: 400; }
+
 .inline-related {
     border: none !important;
     margin: 0 !important;
@@ -3721,6 +3779,295 @@ body.popup .cm-form-grid .submit-row {
         padding: 12px !important;
     }
 }
+
+/* ============================================================
+   REUSABLE CARD INLINE — .cm-card-inline
+   Превращает любой TabularInline в список «карточек-строк» (как авто в
+   карточке контейнера): каждая строка = скруглённая карточка с полями
+   во flex-раскладке и подписью колонки над каждым полем. Подписи колонок
+   проставляет JS (см. base_site.html) из заголовков таблицы → атрибут
+   data-label. Класс вешается на <fieldset class="module cm-card-inline">
+   через InlineModelAdmin.classes, поэтому селекторы используют
+   `.cm-card-inline.module ...` для нужной специфичности (перебить общие
+   правила `.inline-group .tabular ...`).
+   ============================================================ */
+.cm-card-inline.module > table,
+.cm-card-inline.module table { width: 100% !important; table-layout: auto !important; display: block !important; }
+.cm-card-inline.module thead { display: none !important; }
+.cm-card-inline.module tbody { display: block !important; }
+
+/* Строка = карточка */
+.cm-card-inline.module tbody tr.form-row {
+    position: relative !important;
+    display: flex !important;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 10px 12px;
+    margin: 0 0 14px 0 !important;
+    padding: 14px !important;
+    background: #faf9ff !important;
+    border: 1px solid var(--cm-border) !important;
+    border-radius: var(--cm-radius-sm, 10px) !important;
+    box-shadow: 0 2px 6px rgba(30,20,60,.08), 0 1px 2px rgba(30,20,60,.05) !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+}
+
+/* Ячейка = колонка (лейбл сверху + поле снизу) */
+.cm-card-inline.module tbody tr td {
+    display: flex !important;
+    flex-direction: column;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    min-width: 0 !important;
+    flex: 1 1 150px;
+    box-sizing: border-box;
+    font-size: .85rem !important;
+}
+.cm-card-inline.module thead th.original,
+.cm-card-inline.module tbody tr td.original { display: none !important; }
+
+/* Подпись колонки вставляет JS (элемент .cm-col-label), поэтому штатный
+   ::before не используем. */
+.cm-card-inline.module tbody tr td::before { content: none !important; }
+.cm-card-inline.module tbody tr td .cm-col-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0 0 4px 2px;
+    font-size: .68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--cm-text-muted);
+    line-height: 1.2;
+    min-height: .82rem;
+    /* Подпись всегда в одну строку — иначе при переносе на 2 строки
+       соседние поля «съезжают» по высоте. */
+    white-space: nowrap;
+}
+/* «?»-бейдж с подсказкой (по наведению — нативный тултип через title) */
+.cm-card-inline.module tbody tr td .cm-col-label .cm-help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--cm-purple-bg, #efeafe);
+    color: var(--cm-purple, #6c5ce7);
+    border: 1px solid rgba(108,92,231,.35);
+    font-size: .62rem;
+    font-weight: 700;
+    line-height: 1;
+    text-transform: none;
+    letter-spacing: 0;
+    cursor: help;
+    flex: 0 0 14px;
+}
+.cm-card-inline.module tbody tr td .cm-col-label .cm-help:hover,
+.cm-card-inline.module tbody tr td .cm-col-label .cm-help:focus {
+    background: var(--cm-purple, #6c5ce7);
+    color: #fff;
+    outline: none;
+}
+
+/* Колонки-чекбоксы: подпись и сам чекбокс по центру друг над другом.
+   Ячейка ужимается по ширине подписи (flex:0 0 auto), поэтому центрирование
+   ставит галочку строго под её названием. */
+.cm-card-inline.module tbody tr td:has(input[type="checkbox"]) {
+    flex: 0 0 auto;
+    /* Ширина ячейки не меньше её подписи — иначе длинная подпись
+       («По умолч.») вылезает за пределы узкой ячейки и налезает на соседнюю. */
+    min-width: max-content !important;
+    align-items: center !important;
+    text-align: center !important;
+}
+.cm-card-inline.module tbody tr td:has(input[type="checkbox"]) .cm-col-label {
+    margin-left: 0;
+    justify-content: center;
+}
+
+/* Текстовые поля услуг: «Услуга»/«Опис.» получают больше места и сильнее
+   растягиваются, чтобы длинное название было видно целиком. */
+.cm-card-inline.module tbody tr td.field-name,
+.cm-card-inline.module tbody tr td.field-description { flex: 3 1 200px; }
+.cm-card-inline.module tbody tr td.field-short_name { flex: 2 1 150px; }
+
+/* Поля на всю ширину ячейки, единая высота/рамка */
+.cm-card-inline.module tbody tr td input[type="text"],
+.cm-card-inline.module tbody tr td input[type="number"],
+.cm-card-inline.module tbody tr td input[type="url"],
+.cm-card-inline.module tbody tr td input[type="email"],
+.cm-card-inline.module tbody tr td select {
+    width: 100% !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    font-size: .85rem !important;
+    padding: 6px 8px !important;
+    border: 1px solid var(--cm-border) !important;
+    border-radius: var(--cm-radius-xs, 8px) !important;
+    box-sizing: border-box !important;
+    background: var(--cm-white, #fff) !important;
+    color: var(--cm-text) !important;
+}
+.cm-card-inline.module tbody tr td textarea {
+    width: 100% !important;
+    min-height: 36px !important;
+    font-size: .85rem !important;
+    padding: 6px 8px !important;
+    border: 1px solid var(--cm-border) !important;
+    border-radius: var(--cm-radius-xs, 8px) !important;
+    box-sizing: border-box !important;
+    background: var(--cm-white, #fff) !important;
+    color: var(--cm-text) !important;
+    resize: vertical;
+}
+.cm-card-inline.module tbody tr td input:focus,
+.cm-card-inline.module tbody tr td select:focus,
+.cm-card-inline.module tbody tr td textarea:focus {
+    border-color: var(--cm-purple) !important;
+    box-shadow: 0 0 0 3px var(--cm-purple-bg) !important;
+    outline: none !important;
+}
+
+/* readonly-значение приводим к виду поля */
+.cm-card-inline.module tbody tr td .readonly,
+.cm-card-inline.module tbody tr td p {
+    margin: 0 !important;
+    padding: 7px 8px !important;
+    font-size: .85rem !important;
+    color: var(--cm-text) !important;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+}
+
+/* select2 (автодополнение FK) — к виду обычного поля */
+.cm-card-inline.module tbody tr td .related-widget-wrapper {
+    display: flex !important; align-items: center; gap: 4px;
+    width: 100% !important; border: none !important; background: transparent !important;
+    padding: 0 !important; min-width: 0 !important;
+}
+.cm-card-inline.module tbody tr td .select2-container { width: 100% !important; height: 36px !important; min-height: 36px !important; padding: 0 !important; border: none !important; background: transparent !important; box-sizing: border-box !important; }
+.cm-card-inline.module tbody tr td .select2-container--default .select2-selection--single {
+    height: 36px !important; min-height: 36px !important; padding: 0 8px !important;
+    border: 1px solid var(--cm-border) !important; border-radius: var(--cm-radius-xs, 8px) !important;
+    background: var(--cm-white, #fff) !important; box-sizing: border-box !important;
+    display: flex !important; align-items: center !important;
+}
+.cm-card-inline.module tbody tr td .select2-container--default .select2-selection--single .select2-selection__rendered { line-height: 1.3 !important; font-size: .85rem !important; padding: 0 !important; color: var(--cm-text) !important; }
+.cm-card-inline.module tbody tr td .select2-container--default .select2-selection--single .select2-selection__arrow { height: 36px !important; top: 0 !important; right: 4px !important; }
+
+/* Чекбоксы (is_active, is_primary и т.п.) — компактные */
+.cm-card-inline.module tbody tr td input[type="checkbox"] {
+    width: 22px !important; height: 22px !important; min-height: 0 !important;
+    padding: 0 !important; margin: 6px auto 0 !important; accent-color: var(--cm-purple); flex: 0 0 22px;
+}
+
+/* Колонка «Удалить»: красный крестик вместо чекбокса, без подписи.
+   Сам DELETE-чекбокс скрыт (но остаётся в форме — отметка применяется при
+   сохранении), штатную ссылку Django заменяем своим крестиком. */
+.cm-card-inline.module tbody tr td.delete {
+    flex: 0 0 auto;
+    align-items: center !important;
+    justify-content: flex-start;
+}
+.cm-card-inline.module tbody tr td.delete .cm-col-label { display: none !important; }
+.cm-card-inline.module tbody tr td.delete input[type="checkbox"] { display: none !important; }
+.cm-card-inline.module .inline-deletelink { display: none !important; }
+.cm-card-inline.module tbody tr td.delete .cm-del-btn {
+    -webkit-appearance: none;
+    appearance: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #fdecec;
+    color: #e03131;
+    transition: background .15s ease, color .15s ease, transform .1s ease;
+    /* Сдвигаем вниз на высоту подписи поля, чтобы крестик встал на уровень инпутов */
+    margin-top: calc(0.82rem + 8px);
+}
+.cm-card-inline.module tbody tr td.delete .cm-del-btn::before {
+    content: '×';
+    font-size: 20px;
+    line-height: 1;
+    font-weight: 700;
+}
+.cm-card-inline.module tbody tr td.delete .cm-del-btn:hover { background: #e03131; color: #fff; }
+.cm-card-inline.module tbody tr td.delete .cm-del-btn:active { transform: scale(.92); }
+
+/* Плавное удаление карточки: строка схлопывается (высота, отступы, рамка и
+   прозрачность → 0), а карточки ниже мягко поднимаются на её место.
+   max-height задаётся из JS перед стартом, чтобы переход анимировался. */
+.cm-card-inline.module tbody tr.form-row.cm-removing {
+    overflow: hidden !important;
+    opacity: 0 !important;
+    transform: translateY(-6px) scale(.98);
+    max-height: 0 !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    border-width: 0 !important;
+    box-shadow: none !important;
+    transition: max-height .3s cubic-bezier(.4, 0, .2, 1),
+                opacity .22s ease,
+                transform .3s cubic-bezier(.4, 0, .2, 1),
+                margin .3s cubic-bezier(.4, 0, .2, 1),
+                padding .3s cubic-bezier(.4, 0, .2, 1) !important;
+}
+
+/* Кнопка «+ Добавить ещё один …» — пунктирная карточка-призыв */
+.cm-card-inline.module tbody tr.add-row {
+    display: block !important;
+    border: 2px dashed var(--cm-border) !important;
+    border-radius: var(--cm-radius-sm, 10px) !important;
+    background: linear-gradient(180deg, rgba(108,92,231,.02), rgba(108,92,231,.04)) !important;
+    padding: 0 !important; margin: 14px 0 4px 0 !important; text-align: center;
+    box-shadow: none !important; cursor: pointer;
+    transition: border-color .15s ease, background .15s ease, transform .15s ease, box-shadow .15s ease !important;
+}
+.cm-card-inline.module tbody tr.add-row:hover {
+    border-color: var(--cm-purple, #6c5ce7) !important;
+    background: linear-gradient(180deg, rgba(108,92,231,.06), rgba(108,92,231,.10)) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(108,92,231,.12), 0 1px 3px rgba(108,92,231,.08) !important;
+}
+.cm-card-inline.module tbody tr.add-row td { display: block !important; padding: 0 !important; margin: 0 !important; border: none !important; background: transparent !important; }
+.cm-card-inline.module tbody tr.add-row td::before { display: none !important; content: none !important; }
+.cm-card-inline.module tbody tr.add-row a {
+    display: flex !important; align-items: center !important; justify-content: center !important;
+    gap: 12px !important; width: 100% !important; padding: 16px 20px !important;
+    font-size: .92rem !important; font-weight: 600 !important; color: var(--cm-purple, #6c5ce7) !important;
+    text-decoration: none !important; background-image: none !important; background: transparent !important;
+}
+.cm-card-inline.module tbody tr.add-row a::before {
+    content: ''; display: inline-block !important; width: 26px; height: 26px; border-radius: 50%;
+    background-color: var(--cm-purple, #6c5ce7);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round'><path d='M12 5v14M5 12h14'/></svg>");
+    background-repeat: no-repeat; background-position: center; background-size: 14px 14px;
+    flex-shrink: 0; box-shadow: 0 2px 6px rgba(108,92,231,.25);
+}
+
+/* Гасим горизонтальный скролл «в пустоту» на уровне таблицы, но НЕ на самой
+   строке-карточке — иначе подпись у правого края («По умолч.») обрезается. */
+.cm-card-inline.module,
+.cm-card-inline.module table,
+.cm-card-inline.module tbody { overflow-x: clip !important; overflow-y: visible !important; }
+.cm-card-inline.module tbody tr.form-row { overflow: visible !important; }
+
+/* Убираем разделительные полосы под каждым полем (наследие table-вёрстки).
+   Нужен #content-main, иначе побеждает ID-правило #content-main table td. */
+#content-main .cm-card-inline.module tbody tr.form-row td { border-bottom: 0 !important; }
 
 /* ===== TRANSITION ===== */
 *, *::before, *::after {

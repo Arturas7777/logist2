@@ -18,7 +18,49 @@ from core.models_website import ContainerPhoto
 # Inline forms for managing services directly in partner cards
 
 
-class WarehouseServiceInline(admin.TabularInline):
+class ServiceInlineLabelsMixin:
+    """Короткие подписи колонок + подсказки «?» для инлайнов услуг.
+
+    Поля у услуг склада / линии / перевозчика / компании одинаковые, поэтому
+    подписи и пояснения задаём в одном месте. Подсказки (``help_text``) Django
+    рендерит в заголовке колонки как иконку «?», а наш общий JS (base_site.html)
+    переносит её в карточку рядом с подписью поля.
+    """
+
+    _SERVICE_LABELS = {
+        "name": "Услуга",
+        "short_name": "Сокр.",
+        "description": "Опис.",
+        "default_price": "€ по умолч.",
+        "default_markup": "Нац. по умолч.",
+        "is_active": "Акт",
+        "add_by_default": "По умолч.",
+    }
+    _SERVICE_HELP = {
+        "is_active": (
+            "Активна ли услуга. Если выключено — услуга не предлагается и не "
+            "добавляется при создании авто/контейнера."
+        ),
+        "add_by_default": (
+            "Добавлять автоматически. Если включено — услуга по умолчанию "
+            "добавляется к каждому новому авто/контейнеру."
+        ),
+    }
+
+    def get_formset(self, request, obj=None, **kwargs):
+        formset = super().get_formset(request, obj, **kwargs)
+        for fname, label in self._SERVICE_LABELS.items():
+            field = formset.form.base_fields.get(fname)
+            if field is not None:
+                field.label = label
+        for fname, help_text in self._SERVICE_HELP.items():
+            field = formset.form.base_fields.get(fname)
+            if field is not None:
+                field.help_text = help_text
+        return formset
+
+
+class WarehouseServiceInline(ServiceInlineLabelsMixin, admin.TabularInline):
     model = WarehouseService
     extra = 1
     fields = (
@@ -33,6 +75,7 @@ class WarehouseServiceInline(admin.TabularInline):
     )
     verbose_name = "Услуга склада"
     verbose_name_plural = "Услуги склада"
+    classes = ("cm-card-inline",)
 
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)
@@ -40,7 +83,7 @@ class WarehouseServiceInline(admin.TabularInline):
         return formset
 
 
-class LineServiceInline(admin.TabularInline):
+class LineServiceInline(ServiceInlineLabelsMixin, admin.TabularInline):
     model = LineService
     extra = 1
     fields = (
@@ -55,6 +98,7 @@ class LineServiceInline(admin.TabularInline):
     )
     verbose_name = "Услуга линии"
     verbose_name_plural = "Услуги линии"
+    classes = ("cm-card-inline",)
 
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)
@@ -78,6 +122,7 @@ class LineTHSCoefficientInline(admin.TabularInline):
     fields = ("vehicle_type", "coefficient")
     verbose_name = "Коэффициент THS для типа ТС"
     verbose_name_plural = "Коэффициенты THS для типов ТС"
+    classes = ("cm-card-inline",)
 
     def get_extra(self, request, obj=None, **kwargs):
         """If no records - show all 11 vehicle types for filling"""
@@ -86,7 +131,7 @@ class LineTHSCoefficientInline(admin.TabularInline):
         return 11  # Number of vehicle types
 
 
-class CarrierServiceInline(admin.TabularInline):
+class CarrierServiceInline(ServiceInlineLabelsMixin, admin.TabularInline):
     model = CarrierService
     extra = 1
     fields = (
@@ -101,6 +146,7 @@ class CarrierServiceInline(admin.TabularInline):
     )
     verbose_name = "Услуга перевозчика"
     verbose_name_plural = "Услуги перевозчика"
+    classes = ("cm-card-inline",)
 
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)
@@ -116,6 +162,7 @@ class CarrierTruckInline(admin.TabularInline):
     fields = ("truck_number", "trailer_number", "is_active", "notes")
     verbose_name = "Автовоз"
     verbose_name_plural = "Автовозы перевозчика"
+    classes = ("cm-card-inline",)
 
 
 class CarrierDriverInline(admin.TabularInline):
@@ -126,9 +173,10 @@ class CarrierDriverInline(admin.TabularInline):
     fields = ("first_name", "last_name", "phone", "is_active", "notes")
     verbose_name = "Водитель"
     verbose_name_plural = "Водители перевозчика"
+    classes = ("cm-card-inline",)
 
 
-class CompanyServiceInline(admin.TabularInline):
+class CompanyServiceInline(ServiceInlineLabelsMixin, admin.TabularInline):
     model = CompanyService
     extra = 1
     fields = (
@@ -143,6 +191,7 @@ class CompanyServiceInline(admin.TabularInline):
     )
     verbose_name = "Услуга компании"
     verbose_name_plural = "Услуги компании"
+    classes = ("cm-card-inline",)
 
     def get_formset(self, request, obj=None, **kwargs):
         formset = super().get_formset(request, obj, **kwargs)
@@ -388,5 +437,25 @@ class ClientTariffRateInline(admin.TabularInline):
     model = ClientTariffRate
     extra = 1
     fields = ("vehicle_type", "min_cars", "max_cars", "agreed_total_price")
-    verbose_name = "Тариф"
-    verbose_name_plural = "Тарифы: тип ТС, кол-во авто в контейнере → общая цена за авто (без хранения)"
+    verbose_name = "Ставка тарифа"
+    verbose_name_plural = "Тарифы клиента"
+    classes = ("cm-tariff-inline", "cm-card-inline")
+    template = "admin/edit_inline/tariff_tabular.html"
+
+    # Более короткие/понятные заголовки колонок и без шумных подсказок в ячейках —
+    # всё пояснение вынесено в баннер над таблицей (см. tariff_tabular.html).
+    _FIELD_LABELS = {
+        "vehicle_type": "Тип ТС",
+        "min_cars": "Авто от",
+        "max_cars": "Авто до",
+        "agreed_total_price": "Цена за авто, €",
+    }
+
+    def get_formset(self, request, obj=None, **kwargs):
+        formset = super().get_formset(request, obj, **kwargs)
+        for name, label in self._FIELD_LABELS.items():
+            field = formset.form.base_fields.get(name)
+            if field is not None:
+                field.label = label
+                field.help_text = ""
+        return formset

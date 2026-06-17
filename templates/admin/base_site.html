@@ -20,7 +20,7 @@
 {# — Icons — #}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
 {# — Design System — #}
-<link rel="stylesheet" type="text/css" href="{% static 'css/dashboard_admin.css' %}?v=48">
+<link rel="stylesheet" type="text/css" href="{% static 'css/dashboard_admin.css' %}?v=59">
 <style>
 /* Sticky first columns for wide changelists so VIN/status don't scroll out of view */
 #result_list.cm-sticky-cols thead th:nth-child(1),
@@ -533,6 +533,127 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Mark body as loaded (enable transitions)
     document.body.classList.add('loaded');
+})();
+</script>
+
+{% comment %}
+Карточные инлайны (.cm-card-inline): проставляем подпись колонки над каждым
+полем. Берём текст из заголовка таблицы (thead th.column-FIELD) и кладём в
+data-label соответствующей ячейки td.field-FIELD. Работает для любого инлайна,
+переведённого на карточный стиль, и для динамически добавленных строк.
+{% endcomment %}
+<script>
+(function () {
+  function fieldName(el) {
+    var m = (el.className || '').match(/(?:field|column)-([\w]+)/);
+    return m ? m[1] : null;
+  }
+  // Плавно схлопывает строку-карточку и по окончании перехода вызывает done().
+  // Фиксируем текущую высоту, форсируем reflow и переключаем класс, чтобы
+  // max-height/отступы анимировались от реального значения к нулю.
+  function collapseRow(row, done) {
+    var finished = false;
+    function finalize() {
+      if (finished) return;
+      finished = true;
+      try { done(); } catch (e) {}
+    }
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) { finalize(); return; }
+    row.style.maxHeight = row.offsetHeight + 'px';
+    row.style.pointerEvents = 'none';
+    void row.offsetHeight; // reflow, чтобы зафиксировать стартовую max-height
+    row.classList.add('cm-removing');
+    row.addEventListener('transitionend', function (ev) {
+      if (ev.propertyName === 'max-height') finalize();
+    });
+    setTimeout(finalize, 450); // подстраховка, если transitionend не придёт
+  }
+  function labelInline(fs) {
+    var table = fs.querySelector('table');
+    if (!table) return;
+    // Карта: имя поля → { label, help } из заголовков таблицы.
+    var heads = {};
+    table.querySelectorAll('thead th').forEach(function (th) {
+      var n = fieldName(th);
+      if (!n) return;
+      var helpEl = th.querySelector('img.help, .help');
+      var help = helpEl ? (helpEl.getAttribute('title') || helpEl.getAttribute('alt') || helpEl.textContent || '').trim() : '';
+      heads[n] = { label: (th.textContent || '').trim(), help: help };
+    });
+    function makeLabel(text, help) {
+      var lab = document.createElement('span');
+      lab.className = 'cm-col-label';
+      lab.appendChild(document.createTextNode(text || ''));
+      if (help) {
+        var q = document.createElement('span');
+        q.className = 'cm-help';
+        q.tabIndex = 0;
+        q.title = help;
+        q.textContent = '?';
+        lab.appendChild(q);
+      }
+      return lab;
+    }
+    function apply() {
+      table.querySelectorAll('tbody tr td').forEach(function (td) {
+        if (td.classList.contains('original')) return;
+        if (td.closest('tr.add-row')) return;
+        // Колонка удаления → красный крестик (без подписи), а не чекбокс.
+        if (td.classList.contains('delete')) {
+          if (td.querySelector(':scope > .cm-del-btn')) return;
+          var oldLbl = td.querySelector(':scope > .cm-col-label');
+          if (oldLbl) oldLbl.remove();
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'cm-del-btn';
+          btn.title = 'Удалить';
+          btn.setAttribute('aria-label', 'Удалить');
+          td.appendChild(btn);
+          return;
+        }
+        if (td.querySelector(':scope > .cm-col-label')) return;
+        var n = fieldName(td);
+        if (!n || !heads[n]) return;
+        td.insertBefore(makeLabel(heads[n].label, heads[n].help), td.firstChild);
+      });
+    }
+    apply();
+    var tbody = table.querySelector('tbody') || table;
+    new MutationObserver(apply).observe(tbody, { childList: true, subtree: true });
+
+    // Удаление по крестику без перезагрузки: для сохранённой записи помечаем
+    // скрытый DELETE и прячем строку (применится при сохранении); для новой
+    // (несохранённой) строки используем штатную ссылку Django или убираем DOM.
+    if (!table.__cmDelBound) {
+      table.__cmDelBound = true;
+      table.addEventListener('click', function (e) {
+        var btn = e.target.closest('.cm-del-btn');
+        if (!btn) return;
+        e.preventDefault();
+        var row = btn.closest('tr');
+        if (!row) return;
+        var cb = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+        // Плавно схлопываем карточку, затем выполняем «настоящее» удаление.
+        // finalize() для сохранённой строки прячет её (display:none !important,
+        // т.к. в карточном инлайне есть display:flex !important), для новой —
+        // убирает из DOM/жмёт штатную ссылку Django.
+        collapseRow(row, function () {
+          if (cb) {
+            cb.checked = true;
+            row.style.setProperty('display', 'none', 'important');
+          } else {
+            var dl = row.querySelector('a.inline-deletelink');
+            if (dl) dl.click();
+            else if (row.parentNode) row.parentNode.removeChild(row);
+          }
+        });
+      });
+    }
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.cm-card-inline').forEach(labelInline);
+  });
 })();
 </script>
 {% endif %}
