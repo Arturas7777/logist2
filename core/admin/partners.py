@@ -8,7 +8,8 @@ from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import render
 from django.urls import path, reverse
 from django.utils import timezone
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
+from django.utils.safestring import mark_safe
 
 from core.admin._balance_display import annotate_partner_balance, render_total_balance
 from core.admin._service_handling import process_service_fields
@@ -131,9 +132,12 @@ class WarehouseAdmin(admin.ModelAdmin):
             </div>
             """
 
-            return format_html(html)
+            # В html подставлены только числа и цвета (не пользовательские
+            # строки), поэтому mark_safe безопасен; format_html поверх
+            # готовой строки падал бы на фигурных скобках.
+            return mark_safe(html)
         except Exception as e:
-            return format_html(f'<p style="color:#dc3545;">Ошибка загрузки баланса: {e}</p>')
+            return format_html('<p style="color:#dc3545;">Ошибка загрузки баланса: {}</p>', e)
 
     balance_summary_display.short_description = "Сводка по балансу"
 
@@ -150,39 +154,47 @@ class WarehouseAdmin(admin.ModelAdmin):
             if not payments.exists():
                 return format_html('<p style="color:#6c757d;">Нет платежей</p>')
 
-            html = ['<div style="margin-top:15px;">']
-            html.append('<h4 style="margin-bottom:10px; color:#495057;">Последние платежи</h4>')
-            html.append('<table style="width:100%; border-collapse:collapse; font-size:12px;">')
-            html.append('<tr style="background-color:#f8f9fa;">')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Дата</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Тип</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Сумма</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Отправитель</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Получатель</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Описание</th>')
-            html.append("</tr>")
-
-            for payment in payments:
-                amount_color = "#28a745" if payment.to_warehouse == obj else "#dc3545"
-                html.append("<tr>")
-                html.append(
-                    f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.date.strftime("%d.%m.%Y")}</td>'
-                )
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.payment_type}</td>')
-                html.append(
-                    f'<td style="border:1px solid #dee2e6; padding:8px; color:{amount_color}; font-weight:bold;">{payment.amount:.2f}</td>'
-                )
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.sender}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.recipient}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.description or "-"}</td>')
-                html.append("</tr>")
-
-            html.append("</table>")
-            html.append("</div>")
-
-            return format_html("".join(html))
+            # sender/recipient/description — пользовательские строки, поэтому
+            # только format_html_join с плейсхолдерами (иначе XSS).
+            rows = format_html_join(
+                "",
+                "<tr>"
+                '<td style="border:1px solid #dee2e6; padding:8px;">{}</td>'
+                '<td style="border:1px solid #dee2e6; padding:8px;">{}</td>'
+                '<td style="border:1px solid #dee2e6; padding:8px; color:{}; font-weight:bold;">{}</td>'
+                '<td style="border:1px solid #dee2e6; padding:8px;">{}</td>'
+                '<td style="border:1px solid #dee2e6; padding:8px;">{}</td>'
+                '<td style="border:1px solid #dee2e6; padding:8px;">{}</td>'
+                "</tr>",
+                (
+                    (
+                        payment.date.strftime("%d.%m.%Y"),
+                        payment.payment_type,
+                        "#28a745" if payment.to_warehouse == obj else "#dc3545",
+                        f"{payment.amount:.2f}",
+                        payment.sender,
+                        payment.recipient,
+                        payment.description or "-",
+                    )
+                    for payment in payments
+                ),
+            )
+            return format_html(
+                '<div style="margin-top:15px;">'
+                '<h4 style="margin-bottom:10px; color:#495057;">Последние платежи</h4>'
+                '<table style="width:100%; border-collapse:collapse; font-size:12px;">'
+                '<tr style="background-color:#f8f9fa;">'
+                '<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Дата</th>'
+                '<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Тип</th>'
+                '<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Сумма</th>'
+                '<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Отправитель</th>'
+                '<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Получатель</th>'
+                '<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Описание</th>'
+                "</tr>{}</table></div>",
+                rows,
+            )
         except Exception as e:
-            return format_html(f'<p style="color:#dc3545;">Ошибка загрузки платежей: {e}</p>')
+            return format_html('<p style="color:#dc3545;">Ошибка загрузки платежей: {}</p>', e)
 
     balance_transactions_display.short_description = "Платежи"
 
@@ -571,21 +583,38 @@ class ClientAdmin(admin.ModelAdmin):
                 '<p style="color:#999;">Инвойсов еще нет. <a href="/admin/core/newinvoice/add/">Создать первый инвойс</a></p>'
             )
 
-        html = '<table style="width:100%; border-collapse:collapse;">'
-        html += '<tr style="background:#f5f5f5;"><th style="padding:8px;">Номер</th><th>Дата</th><th>Сумма</th><th>Оплачено</th><th>Статус</th></tr>'
-
-        for inv in invoices:
-            status_color = {"PAID": "#28a745", "ISSUED": "#007bff", "OVERDUE": "#dc3545"}.get(inv.status, "#6c757d")
-            html += f"""<tr style="border-bottom:1px solid #ddd;">
-                <td style="padding:8px;"><a href="/admin/core/newinvoice/{inv.pk}/change/">{inv.number}</a></td>
-                <td style="padding:8px;">{inv.date.strftime("%d.%m.%Y")}</td>
-                <td style="padding:8px;">{inv.total:.2f}</td>
-                <td style="padding:8px;">{inv.paid_amount:.2f}</td>
-                <td style="padding:8px;"><span style="background:{status_color}; color:white; padding:2px 6px; border-radius:3px;">{inv.get_status_display()}</span></td>
-            </tr>"""
-
-        html += "</table>"
-        return format_html(html)
+        # Строки собираются ТОЛЬКО через format_html_join с плейсхолдерами:
+        # f-string + format_html(готовый html) не экранирует значения (XSS)
+        # и падает на фигурных скобках в данных.
+        rows = format_html_join(
+            "",
+            '<tr style="border-bottom:1px solid #ddd;">'
+            '<td style="padding:8px;"><a href="/admin/core/newinvoice/{}/change/">{}</a></td>'
+            '<td style="padding:8px;">{}</td>'
+            '<td style="padding:8px;">{}</td>'
+            '<td style="padding:8px;">{}</td>'
+            '<td style="padding:8px;"><span style="background:{}; color:white; '
+            'padding:2px 6px; border-radius:3px;">{}</span></td>'
+            "</tr>",
+            (
+                (
+                    inv.pk,
+                    inv.number,
+                    inv.date.strftime("%d.%m.%Y"),
+                    f"{inv.total:.2f}",
+                    f"{inv.paid_amount:.2f}",
+                    {"PAID": "#28a745", "ISSUED": "#007bff", "OVERDUE": "#dc3545"}.get(inv.status, "#6c757d"),
+                    inv.get_status_display(),
+                )
+                for inv in invoices
+            ),
+        )
+        return format_html(
+            '<table style="width:100%; border-collapse:collapse;">'
+            '<tr style="background:#f5f5f5;"><th style="padding:8px;">Номер</th>'
+            "<th>Дата</th><th>Сумма</th><th>Оплачено</th><th>Статус</th></tr>{}</table>",
+            rows,
+        )
 
     new_invoices_display.short_description = "Инвойсы"
 
@@ -600,22 +629,35 @@ class ClientAdmin(admin.ModelAdmin):
         if not transactions:
             return format_html('<p style="color:#999;">Транзакций еще нет</p>')
 
-        html = '<table style="width:100%; border-collapse:collapse;">'
-        html += '<tr style="background:#f5f5f5;"><th style="padding:8px;">Номер</th><th>Дата</th><th>Тип</th><th>Сумма</th><th>Направление</th></tr>'
-
-        for trx in transactions:
-            type_color = {"PAYMENT": "#28a745", "REFUND": "#dc3545"}.get(trx.type, "#007bff")
-            direction = "↑ Получено" if trx.to_client == obj else "↓ Отправлено"
-            html += f"""<tr style="border-bottom:1px solid #ddd;">
-                <td style="padding:8px;"><a href="/admin/core/transaction/{trx.pk}/change/">{trx.number}</a></td>
-                <td style="padding:8px;">{trx.date.strftime("%d.%m.%Y %H:%M")}</td>
-                <td style="padding:8px;"><span style="background:{type_color}; color:white; padding:2px 6px; border-radius:3px;">{trx.get_type_display()}</span></td>
-                <td style="padding:8px; font-weight:bold;">{trx.amount:.2f}</td>
-                <td style="padding:8px;">{direction}</td>
-            </tr>"""
-
-        html += "</table>"
-        return format_html(html)
+        rows = format_html_join(
+            "",
+            '<tr style="border-bottom:1px solid #ddd;">'
+            '<td style="padding:8px;"><a href="/admin/core/transaction/{}/change/">{}</a></td>'
+            '<td style="padding:8px;">{}</td>'
+            '<td style="padding:8px;"><span style="background:{}; color:white; '
+            'padding:2px 6px; border-radius:3px;">{}</span></td>'
+            '<td style="padding:8px; font-weight:bold;">{}</td>'
+            '<td style="padding:8px;">{}</td>'
+            "</tr>",
+            (
+                (
+                    trx.pk,
+                    trx.number,
+                    trx.date.strftime("%d.%m.%Y %H:%M"),
+                    {"PAYMENT": "#28a745", "REFUND": "#dc3545"}.get(trx.type, "#007bff"),
+                    trx.get_type_display(),
+                    f"{trx.amount:.2f}",
+                    "↑ Получено" if trx.to_client == obj else "↓ Отправлено",
+                )
+                for trx in transactions
+            ),
+        )
+        return format_html(
+            '<table style="width:100%; border-collapse:collapse;">'
+            '<tr style="background:#f5f5f5;"><th style="padding:8px;">Номер</th>'
+            "<th>Дата</th><th>Тип</th><th>Сумма</th><th>Направление</th></tr>{}</table>",
+            rows,
+        )
 
     new_transactions_display.short_description = "Транзакции"
 
@@ -933,43 +975,38 @@ class CompanyAdmin(admin.ModelAdmin):
     def balance_summary_display(self, obj):
         """Shows company balance summary"""
         try:
-            cash_balance = obj.cash_balance or 0
-            card_balance = obj.card_balance or 0
-            invoice_balance = obj.invoice_balance or 0
-            total_balance = cash_balance + card_balance + invoice_balance
+            # У Company один агрегированный balance (полей cash/card/invoice
+            # нет) — раньше обращение к obj.cash_balance всегда падало в
+            # AttributeError, и блок показывал только текст ошибки.
+            balance = obj.balance or 0
+
+            color = "#28a745" if balance >= 0 else "#dc3545"
+            dashboard_btn = ""
+            if obj.name == "Caromoto Lithuania":
+                dashboard_btn = (
+                    '<div style="margin-top:20px; text-align:center;">'
+                    '<a href="/company-dashboard/" style="display:inline-block; padding:12px 24px; '
+                    "background:#667eea; color:white; text-decoration:none; border-radius:8px; "
+                    'font-weight:600; font-size:16px;">Открыть дашборд компании</a></div>'
+                )
 
             html = f"""
             <div style="background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #dee2e6;">
-                <h3 style="margin-top:0; color:#495057;">Сводка по балансу компании</h3>
+                <h3 style="margin-top:0; color:#495057;">Баланс компании</h3>
 
-                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:15px; margin-bottom:20px;">
-                    <div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">
-                        <strong>Наличный баланс:</strong><br>
-                        <span style="font-size:18px; color:{"#28a745" if cash_balance >= 0 else "#dc3545"};">{cash_balance:.2f}</span>
-                    </div>
-                    <div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">
-                        <strong>Безналичный баланс:</strong><br>
-                        <span style="font-size:18px; color:{"#28a745" if card_balance >= 0 else "#dc3545"};">{card_balance:.2f}</span>
-                    </div>
-                    <div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">
-                        <strong>Инвойс-баланс:</strong><br>
-                        <span style="font-size:18px; color:{"#28a745" if invoice_balance >= 0 else "#dc3545"};">{invoice_balance:.2f}</span>
-                    </div>
+                <div style="background:white; padding:15px; border-radius:5px; border:2px solid {color};">
+                    <strong style="color:{color};">Баланс:</strong><br>
+                    <span style="font-size:24px; font-weight:bold; color:{color};">{balance:.2f}</span>
                 </div>
-
-                <div style="background:white; padding:15px; border-radius:5px; border:2px solid {"#28a745" if total_balance >= 0 else "#dc3545"};">
-                    <strong style="color:{"#28a745" if total_balance >= 0 else "#dc3545"};">Общий баланс:</strong><br>
-                    <span style="font-size:24px; font-weight:bold; color:{"#28a745" if total_balance >= 0 else "#dc3545"};">{total_balance:.2f}</span>
-                </div>
-
-                <!-- Button to dashboard (only for Caromoto Lithuania) -->
-                {'<div style="margin-top:20px; text-align:center;"><a href="/company-dashboard/" style="display:inline-block; padding:12px 24px; background:#667eea; color:white; text-decoration:none; border-radius:8px; font-weight:600; font-size:16px;">Открыть дашборд компании</a></div>' if obj.name == "Caromoto Lithuania" else ""}
+                {dashboard_btn}
             </div>
             """
 
-            return format_html(html)
+            # Только числа/цвета/константная ссылка — пользовательских строк
+            # нет, mark_safe безопасен.
+            return mark_safe(html)
         except Exception as e:
-            return format_html(f'<p style="color:#dc3545;">Ошибка загрузки баланса: {e}</p>')
+            return format_html('<p style="color:#dc3545;">Ошибка загрузки баланса: {}</p>', e)
 
     balance_summary_display.short_description = "Сводка по балансу"
 
@@ -985,41 +1022,45 @@ class CompanyAdmin(admin.ModelAdmin):
             if not payments.exists():
                 return format_html('<p style="color:#6c757d;">Нет платежей</p>')
 
-            html = ['<div style="margin-top:15px;">']
-            html.append('<h4 style="margin-bottom:10px; color:#495057;">Последние платежи</h4>')
-            html.append('<table style="width:100%; border-collapse:collapse; font-size:12px;">')
-            html.append('<tr style="background-color:#f8f9fa;">')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Дата</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Тип</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Сумма</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Отправитель</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Получатель</th>')
-            html.append('<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Описание</th>')
-            html.append("</tr>")
-
-            for payment in payments:
-                amount_color = "#28a745" if payment.to_company == obj else "#dc3545"
-                html.append("<tr>")
-                html.append(
-                    f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.date.strftime("%d.%m.%Y")}</td>'
-                )
-                html.append(
-                    f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.get_payment_type_display()}</td>'
-                )
-                html.append(
-                    f'<td style="border:1px solid #dee2e6; padding:8px; color:{amount_color}; font-weight:bold;">{payment.amount:.2f}</td>'
-                )
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.sender or "-"}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.recipient or "-"}</td>')
-                html.append(f'<td style="border:1px solid #dee2e6; padding:8px;">{payment.description or "-"}</td>')
-                html.append("</tr>")
-
-            html.append("</table>")
-            html.append("</div>")
-
-            return format_html("".join(html))
+            rows = format_html_join(
+                "",
+                "<tr>"
+                '<td style="border:1px solid #dee2e6; padding:8px;">{}</td>'
+                '<td style="border:1px solid #dee2e6; padding:8px;">{}</td>'
+                '<td style="border:1px solid #dee2e6; padding:8px; color:{}; font-weight:bold;">{}</td>'
+                '<td style="border:1px solid #dee2e6; padding:8px;">{}</td>'
+                '<td style="border:1px solid #dee2e6; padding:8px;">{}</td>'
+                '<td style="border:1px solid #dee2e6; padding:8px;">{}</td>'
+                "</tr>",
+                (
+                    (
+                        payment.date.strftime("%d.%m.%Y"),
+                        payment.get_payment_type_display(),
+                        "#28a745" if payment.to_company == obj else "#dc3545",
+                        f"{payment.amount:.2f}",
+                        payment.sender or "-",
+                        payment.recipient or "-",
+                        payment.description or "-",
+                    )
+                    for payment in payments
+                ),
+            )
+            return format_html(
+                '<div style="margin-top:15px;">'
+                '<h4 style="margin-bottom:10px; color:#495057;">Последние платежи</h4>'
+                '<table style="width:100%; border-collapse:collapse; font-size:12px;">'
+                '<tr style="background-color:#f8f9fa;">'
+                '<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Дата</th>'
+                '<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Тип</th>'
+                '<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Сумма</th>'
+                '<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Отправитель</th>'
+                '<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Получатель</th>'
+                '<th style="border:1px solid #dee2e6; padding:8px; text-align:left;">Описание</th>'
+                "</tr>{}</table></div>",
+                rows,
+            )
         except Exception as e:
-            return format_html(f'<p style="color:#dc3545;">Ошибка загрузки платежей: {e}</p>')
+            return format_html('<p style="color:#dc3545;">Ошибка загрузки платежей: {}</p>', e)
 
     balance_transactions_display.short_description = "Платежи"
 
@@ -1717,7 +1758,10 @@ class AutoTransportAdmin(admin.ModelAdmin):
                         )
                     )
 
-        return format_html("".join(html))
+        # Каждый фрагмент уже экранирован через format_html(...) с
+        # плейсхолдерами; повторный format_html поверх готовой строки
+        # упал бы на фигурных скобках в данных.
+        return mark_safe("".join(html))
 
     actions_display.short_description = "Действия"
 

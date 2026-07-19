@@ -8,7 +8,8 @@ from django.contrib.admin import SimpleListFilter
 from django.db import transaction
 from django.templatetags.static import static
 from django.utils import timezone
-from django.utils.html import format_html
+from django.utils.html import escape, format_html, format_html_join
+from django.utils.safestring import mark_safe
 
 from core.admin_export import CSVExportMixin
 from core.admin_filters import ClientAutocompleteFilter, MultiStatusFilter, MultiWarehouseFilter
@@ -697,12 +698,20 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         details = obj.warehouse_details()
         if "message" in details:
             return details["message"]
-        html = '<table style="width:100%; border:1px solid #ddd; border-collapse:collapse;">'
-        html += '<tr><th style="border:1px solid #ddd; padding:8px;">Поле</th><th style="border:1px solid #ddd; padding:8px;">Цена</th></tr>'
-        for key, value in details.items():
-            html += f'<tr><td style="border:1px solid #ddd; padding:8px;">{key}</td><td style="border:1px solid #ddd; padding:8px;">{value}</td></tr>'
-        html += "</table>"
-        return format_html(html)
+        # format_html_join экранирует key/value (XSS) и не падает на
+        # фигурных скобках в данных — в отличие от format_html(f-string).
+        rows = format_html_join(
+            "",
+            '<tr><td style="border:1px solid #ddd; padding:8px;">{}</td>'
+            '<td style="border:1px solid #ddd; padding:8px;">{}</td></tr>',
+            details.items(),
+        )
+        return format_html(
+            '<table style="width:100%; border:1px solid #ddd; border-collapse:collapse;">'
+            '<tr><th style="border:1px solid #ddd; padding:8px;">Поле</th>'
+            '<th style="border:1px solid #ddd; padding:8px;">Цена</th></tr>{}</table>',
+            rows,
+        )
 
     default_warehouse_prices_display.short_description = "Дефолтные цены на услуги склада"
 
@@ -793,7 +802,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         html.append('<div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">')
         html.append("<strong>Услуги линий:</strong><br>")
         for name, price in line_services_list:
-            html.append(f'<span style="font-size:13px; color:#6c757d;">{name}: {price:.2f}</span><br>')
+            html.append(f'<span style="font-size:13px; color:#6c757d;">{escape(name)}: {price:.2f}</span><br>')
         html.append(f'<span style="font-size:18px; color:#007bff; font-weight:bold;">Итого: {line_total:.2f}</span>')
         html.append("</div>")
 
@@ -801,7 +810,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         html.append('<div style="background:white; padding:10px; border-radius:5px; border:1px solid #dee2e6;">')
         html.append("<strong>Услуги склада:</strong><br>")
         for name, price in warehouse_services_list:
-            html.append(f'<span style="font-size:13px; color:#6c757d;">{name}: {price:.2f}</span><br>')
+            html.append(f'<span style="font-size:13px; color:#6c757d;">{escape(name)}: {price:.2f}</span><br>')
         if obj.warehouse:
             free_days = obj.warehouse.free_days or 0
             html.append(
@@ -824,7 +833,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         for svc_id, svc_name, price in company_services_raw:
             company_name = company_names_by_id.get(svc_id, "?")
             html.append(
-                f'<span style="font-size:13px; color:#6c757d;">{company_name}: {svc_name}: {price:.2f}</span><br>'
+                f'<span style="font-size:13px; color:#6c757d;">{escape(company_name)}: {escape(svc_name)}: {price:.2f}</span><br>'
             )
         html.append(f'<span style="font-size:18px; color:#6f42c1; font-weight:bold;">Итого: {company_total:.2f}</span>')
         html.append("</div>")
@@ -865,7 +874,10 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
 
         html.append("</div>")
 
-        return format_html("".join(html))
+        # Пользовательские строки (имена услуг/компаний) экранированы выше
+        # через escape(); format_html поверх готовой строки падал бы на
+        # фигурных скобках в данных и ничего бы не экранировал.
+        return mark_safe("".join(html))
 
     services_summary_display.short_description = "Сводка по услугам"
 

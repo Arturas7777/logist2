@@ -407,7 +407,12 @@ class Car(models.Model):
             if storage_service:
                 rate = Decimal(str(storage_service.default_price or 0))
         except Exception:
-            pass
+            # Не молчим: сбой здесь означает нулевую ставку хранения →
+            # заниженный storage_cost и инвойс. В Sentry уйдёт event,
+            # а расчёт продолжится с rate=0 (как и раньше).
+            logger.exception(
+                "Failed to resolve storage daily rate for car %s (warehouse %s)", self.pk, self.warehouse_id
+            )
 
         setattr(self, cache_attr, rate)
         setattr(self, cached_wh, self.warehouse_id)
@@ -454,7 +459,11 @@ class Car(models.Model):
                 if hasattr(self, "_prefetched_objects_cache"):
                     self._prefetched_objects_cache.pop("car_services", None)
         except Exception:
-            pass  # Игнорируем ошибки - модель может быть ещё не сохранена
+            # Guard на pk/warehouse стоит выше, так что «модель ещё не
+            # сохранена» сюда не попадает — это реальный сбой БД/данных.
+            # Логируем, но не роняем save(): цена хранения догонится
+            # ежедневной beat-задачей refresh_unloaded_storage_daily.
+            logger.exception("Failed to update storage service price for car %s", self.pk)
 
     def sync_with_container(self, container, ths_per_car=None):
         """Синхронизирует данные автомобиля с контейнером.

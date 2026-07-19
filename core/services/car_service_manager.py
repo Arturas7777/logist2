@@ -8,6 +8,7 @@ import logging
 from decimal import Decimal
 
 from django.db import models as db_models
+from django.db import transaction
 from django.db.models import Q
 
 from core.service_codes import ServiceCode, is_storage_service
@@ -151,8 +152,15 @@ def create_ths_services_for_container(container):
     car_ids = list(ths_distribution.keys())
     cars_by_id = {c.id: c for c in Car.objects.filter(id__in=car_ids)}
 
-    for car_id, ths_amount in ths_distribution.items():
-        try:
+    # Весь пересчёт THS контейнера — одна транзакция. Раньше delete старых
+    # THS и create новых шли по машинам без atomic, а исключение только
+    # логировалось: сбой посередине оставлял часть машин контейнера ВООБЩЕ
+    # без THS-услуги (старая удалена, новая не создана) — тихо неправильные
+    # инвойсы. Теперь при любой ошибке транзакция откатывается целиком и
+    # исключение пробрасывается наверх (админка покажет ошибку, Sentry —
+    # алерт).
+    with transaction.atomic():
+        for car_id, ths_amount in ths_distribution.items():
             car = cars_by_id.get(car_id)
             if not car:
                 logger.warning("Car %s not found when creating THS service", car_id)
@@ -190,8 +198,6 @@ def create_ths_services_for_container(container):
                     notes=f"THS рассчитан пропорционально. Тип ТС: {car.get_vehicle_type_display()}",
                 )
                 created_count += 1
-        except Exception as e:
-            logger.error("Error creating THS service for car %s: %s", car_id, e)
 
     return created_count
 
@@ -361,8 +367,7 @@ def _distribute_markup_for_car(car, agreed_total, total_cars_in_container):
             svc.save(update_fields=["markup_amount"])
 
     logger.info(
-        "Tariff for %s (%s): type=%s, agreed=%s, base=%s, diff=%s, cars_count=%s, "
-        "распределено по %d услугам склада",
+        "Tariff for %s (%s): type=%s, agreed=%s, base=%s, diff=%s, cars_count=%s, распределено по %d услугам склада",
         car.vin,
         car.client.name if car.client else "?",
         tariff_type,

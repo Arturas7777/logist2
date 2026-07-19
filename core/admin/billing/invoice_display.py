@@ -13,7 +13,8 @@ from collections import OrderedDict
 from decimal import Decimal
 
 from django.urls import reverse
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
+from django.utils.safestring import mark_safe
 
 
 def build_items_pivot_table(invoice):
@@ -414,7 +415,9 @@ class NewInvoiceDisplayMixin:
                 )
             )
 
-        return format_html("".join(info)) if info else "Нет предупреждений"
+        # Фрагменты уже экранированы через format_html с плейсхолдерами;
+        # повторный format_html поверх готовой строки лишний и хрупкий.
+        return mark_safe("".join(info)) if info else "Нет предупреждений"
 
     status_info_display.short_description = "Статус и предупреждения"
 
@@ -425,31 +428,39 @@ class NewInvoiceDisplayMixin:
         if not transactions:
             return format_html('<p style="color: #999;">Платежей еще не было</p>')
 
-        html = '<table style="width: 100%; border-collapse: collapse;">'
-        html += (
+        # format_html_join экранирует значения (number — пользовательская
+        # строка) и не падает на фигурных скобках в данных.
+        rows = format_html_join(
+            "",
+            '<tr style="border-bottom: 1px solid #ddd;">'
+            '<td style="padding: 8px;">{}</td>'
+            '<td style="padding: 8px;">{}</td>'
+            '<td style="padding: 8px;">{}</td>'
+            '<td style="padding: 8px;">{}</td>'
+            '<td style="padding: 8px; text-align: right; color: {}; font-weight: bold;">{}</td>'
+            "</tr>",
+            (
+                (
+                    trx.date.strftime("%d.%m.%Y %H:%M"),
+                    trx.number,
+                    trx.get_type_display(),
+                    trx.get_method_display(),
+                    "#28a745" if trx.type == "PAYMENT" else "#dc3545",
+                    f"{trx.amount:.2f}",
+                )
+                for trx in transactions
+            ),
+        )
+        return format_html(
+            '<table style="width: 100%; border-collapse: collapse;">'
             '<tr style="background: #f5f5f5;">'
             '<th style="padding: 8px; text-align: left;">Дата</th>'
             '<th style="padding: 8px; text-align: left;">Номер</th>'
             '<th style="padding: 8px; text-align: left;">Тип</th>'
             '<th style="padding: 8px; text-align: left;">Способ</th>'
-            '<th style="padding: 8px; text-align: right;">Сумма</th></tr>'
+            '<th style="padding: 8px; text-align: right;">Сумма</th></tr>{}</table>',
+            rows,
         )
-
-        for trx in transactions:
-            color = "#28a745" if trx.type == "PAYMENT" else "#dc3545"
-            trx_amount = f"{trx.amount:.2f}"
-            html += f"""
-            <tr style="border-bottom: 1px solid #ddd;">
-                <td style="padding: 8px;">{trx.date.strftime("%d.%m.%Y %H:%M")}</td>
-                <td style="padding: 8px;">{trx.number}</td>
-                <td style="padding: 8px;">{trx.get_type_display()}</td>
-                <td style="padding: 8px;">{trx.get_method_display()}</td>
-                <td style="padding: 8px; text-align: right; color: {color}; font-weight: bold;">{trx_amount}</td>
-            </tr>
-            """
-
-        html += "</table>"
-        return format_html(html)
 
     payment_history_display.short_description = "История платежей"
 

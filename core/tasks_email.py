@@ -53,10 +53,12 @@ def gmail_mark_read_task(self, gmail_ids: list[str]) -> int:
             exc,
         )
         try:
-            self.retry(exc=exc)
+            raise self.retry(exc=exc)
         except self.MaxRetriesExceededError:
-            return 0
-        return 0
+            # Ретраи исчерпаны — пробрасываем исходную ошибку, чтобы задача
+            # была видна как FAILURE (Flower/Sentry), а не тихо «успешна».
+            logger.error("[gmail_mark_read_task] retries exhausted for %d ids", len(gmail_ids))
+            raise exc from None
 
 
 @shared_task(bind=True, max_retries=0, time_limit=600, soft_time_limit=540)
@@ -79,8 +81,12 @@ def sync_emails_from_gmail(self, force_full: bool = False) -> dict:
     try:
         report = sync_mailbox(force_full=force_full)
         return report.as_dict()
-    except Exception as exc:
-        logger.exception("[sync_emails_from_gmail] Unhandled error: %s", exc)
-        return {"status": "error", "error": str(exc)[:500]}
+    except Exception:
+        # Раньше ошибка проглатывалась (return {"status": "error"}) — задача
+        # всегда выглядела успешной, и падения синка были невидимы в
+        # Flower/Sentry. Пробрасываем: beat перезапустит синк через 5 минут,
+        # last_history_id не двигается — письма не теряются.
+        logger.exception("[sync_emails_from_gmail] Unhandled error")
+        raise
     finally:
         cache.delete(_LOCK_KEY)

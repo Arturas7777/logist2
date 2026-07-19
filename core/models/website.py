@@ -250,6 +250,12 @@ class ContainerPhotoArchive(models.Model):
         photos = []
         errors = []
 
+        # Лимиты против zip-bomb: архив в 25 МБ может разжиматься в
+        # гигабайты. file_size — заявленный НЕсжатый размер записи.
+        max_photos = 500
+        max_file_bytes = 30 * 1024 * 1024  # 30 МБ на одно фото
+        max_total_bytes = 2 * 1024**3  # 2 ГБ суммарно на архив
+
         try:
             logger.info(f"ContainerPhotoArchive {self.id}: начало извлечения из {self.archive_file.path}")
 
@@ -265,8 +271,31 @@ class ContainerPhotoArchive(models.Model):
 
                 logger.info(f"ContainerPhotoArchive {self.id}: найдено {len(image_files)} изображений")
 
+                if len(image_files) > max_photos:
+                    errors.append(
+                        f"В архиве {len(image_files)} изображений — обрабатываются только первые {max_photos}"
+                    )
+                    image_files = image_files[:max_photos]
+
+                total_declared = sum(f.file_size for f in image_files)
+                if total_declared > max_total_bytes:
+                    error_msg = (
+                        f"Суммарный несжатый размер изображений {total_declared // 1024**2} МБ "
+                        f"превышает лимит {max_total_bytes // 1024**2} МБ — архив отклонён"
+                    )
+                    logger.error(f"ContainerPhotoArchive {self.id}: {error_msg}")
+                    errors.append(error_msg)
+                    image_files = []
+
                 for file_info in image_files:
                     try:
+                        if file_info.file_size > max_file_bytes:
+                            errors.append(
+                                f"{file_info.filename}: {file_info.file_size // 1024**2} МБ "
+                                f"превышает лимит {max_file_bytes // 1024**2} МБ на файл — пропущен"
+                            )
+                            continue
+
                         # Извлекаем файл
                         file_data = zip_file.read(file_info.filename)
 
