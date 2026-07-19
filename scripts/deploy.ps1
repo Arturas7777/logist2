@@ -1,4 +1,4 @@
-# Deploy via git pull — fast, reliable, no scp overhead
+﻿# Deploy via git pull — fast, reliable, no scp overhead
 # Usage: .\scripts\deploy.ps1
 #   Flags:
 #     -Force  — discard uncommitted server changes and deploy anyway
