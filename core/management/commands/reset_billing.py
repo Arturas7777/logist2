@@ -2,7 +2,10 @@
 Команда для полной очистки данных биллинга и обнуления балансов
 """
 
-from django.core.management.base import BaseCommand
+import os
+
+from django.conf import settings
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 
@@ -17,6 +20,16 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        # Guard от катастрофы на проде: команда сносит ВЕСЬ финансовый леджер.
+        # На боевой базе (DEBUG=False) требуем явный env-флаг, чтобы её нельзя
+        # было выполнить случайно (автодополнение, копипаст из истории, agent).
+        if not settings.DEBUG and os.getenv("ALLOW_DESTRUCTIVE") != "1":
+            raise CommandError(
+                "reset_billing удаляет все Transaction/NewInvoice и обнуляет балансы. "
+                "На проде (DEBUG=False) запуск запрещён. Если это действительно нужно — "
+                "выполните с переменной окружения: ALLOW_DESTRUCTIVE=1 python manage.py reset_billing"
+            )
+
         if not options["yes"]:
             confirm = input("⚠️  Это удалит ВСЕ транзакции, инвойсы и обнулит балансы. Продолжить? [y/N]: ")
             if confirm.lower() != "y":

@@ -47,6 +47,7 @@ class SyncReport:
     filtered_skipped: int = 0  # сколько писем спрятали пользовательскими фильтрами
     attachments_saved: int = 0
     attachments_skipped: int = 0  # слишком большие
+    ingest_errors: int = 0  # сбои get_message/save конкретных писем
     errors: list[str] = field(default_factory=list)
     last_history_id: int | None = None
     started_at: str = ""
@@ -65,6 +66,7 @@ class SyncReport:
             "filtered_skipped": self.filtered_skipped,
             "attachments_saved": self.attachments_saved,
             "attachments_skipped": self.attachments_skipped,
+            "ingest_errors": self.ingest_errors,
             "errors_count": len(self.errors),
             "errors_preview": self.errors[:5],
             "last_history_id": self.last_history_id,
@@ -122,7 +124,21 @@ def sync_mailbox(*, force_full: bool = False) -> SyncReport:
         _process_full(client, booking_index, report, ingest_filters)
 
     # В конце сохраняем max historyId, полученный от API (приоритет — свежий remote).
-    new_hid = remote_history_id or state.last_history_id
+    # НО: если хоть одно письмо не удалось скачать/сохранить — курсор НЕ двигаем.
+    # Иначе следующий инкрементальный прогон начнётся уже ПОСЛЕ пропущенного
+    # письма, и оно потеряется навсегда (до ручного force_full). Повторная
+    # обработка того же диапазона безопасна: _ingest_one идемпотентен по
+    # gmail_id. Если history за это время протухнет (~7 дней) — сработает
+    # штатный fallback на полный re-sync.
+    if report.ingest_errors:
+        new_hid = state.last_history_id
+        logger.warning(
+            "[gmail_sync] %d писем не удалось обработать — last_history_id оставлен %s (retry на следующем прогоне)",
+            report.ingest_errors,
+            state.last_history_id,
+        )
+    else:
+        new_hid = remote_history_id or state.last_history_id
     state.last_history_id = new_hid
     state.last_sync_at = timezone.now()
     state.last_error = "; ".join(report.errors[:5])[:2000]
@@ -187,6 +203,7 @@ def _ingest_one(
     except Exception as exc:
         logger.error("[gmail_sync] Failed to fetch %s: %s", gmail_id, exc, exc_info=True)
         report.errors.append(f"get_message({gmail_id}): {exc}")
+        report.ingest_errors += 1
         return
 
     # Черновики Gmail пропускаем: при наборе письма в web-интерфейсе Gmail
@@ -350,6 +367,7 @@ def _ingest_one(
     except Exception as exc:
         logger.error("[gmail_sync] Failed to save %s: %s", gmail_id, exc, exc_info=True)
         report.errors.append(f"save({gmail_id}): {exc}")
+        report.ingest_errors += 1
         return
 
     if match.is_matched:

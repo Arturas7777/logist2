@@ -455,10 +455,13 @@ def ai_chat(request):
             processing_time=processing_time,
             debug_meta={"used_fallback": used_fallback, "fallback_reason": fallback_reason},
         )
-    except Exception as exc:
+    except Exception:
+        # Текст исключения наружу не отдаём: эндпоинт доступен анонимно,
+        # а str(exc) может содержать внутренние детали (SQL, пути, ключи).
+        # Полный traceback уходит в лог/Sentry через logger.exception.
         logger.exception("AI chat failed")
         return Response(
-            {"error": "AI chat error", "detail": str(exc)},
+            {"error": "Внутренняя ошибка AI-чата. Попробуйте ещё раз позже."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 

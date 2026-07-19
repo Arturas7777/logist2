@@ -93,12 +93,18 @@ Write-Host "      Code updated" -ForegroundColor Green
 # на сервере побежали бы с DEBUG=True. systemd-юниты (gunicorn/daphne/celery)
 # имеют свой Environment=… и не зависят от этой команды.
 Write-Host "[3/4] Migrate & collectstatic..." -ForegroundColor Yellow
-ssh $SERVER "cd $PROJECT_DIR && source .venv/bin/activate && export DJANGO_SETTINGS_MODULE=logist2.settings.prod && pip install -r requirements.txt --quiet 2>/dev/null; python manage.py migrate --noinput && python manage.py collectstatic --noinput --verbosity 0" 2>$null
+$migrateOutput = ssh $SERVER "cd $PROJECT_DIR && source .venv/bin/activate && export DJANGO_SETTINGS_MODULE=logist2.settings.prod && pip install -r requirements.txt --quiet 2>/dev/null; python manage.py migrate --noinput && python manage.py collectstatic --noinput --verbosity 0" 2>&1
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "      Migrate/collectstatic had issues (check server logs)" -ForegroundColor Yellow
-} else {
-    Write-Host "      Done" -ForegroundColor Green
+    # Fail-fast: рестартить сервисы поверх сломанной схемы БД нельзя —
+    # старый код продолжит работать на старой схеме, а мы разберёмся.
+    Write-Host "      Migrate/collectstatic FAILED — deploy aborted, services NOT restarted:" -ForegroundColor Red
+    Write-Host ($migrateOutput -join "`n") -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  Server still runs the previous code. Fix the migration and re-deploy." -ForegroundColor Yellow
+    Write-Host ""
+    exit 1
 }
+Write-Host "      Done" -ForegroundColor Green
 
 # ── Step 4: restart services ──
 Write-Host "[4/5] Restarting services..." -ForegroundColor Yellow
