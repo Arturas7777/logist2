@@ -229,7 +229,8 @@ class TaskAdmin(admin.ModelAdmin):
             url = reverse("admin:core_car_change", args=[obj.car_id])
             parts.append(
                 format_html(
-                    '<a href="{}" style="color:#6c5ce7;text-decoration:none;" title="Авто">🚗 {}</a>',
+                    '<a href="{}" style="color:#6c5ce7;text-decoration:none;" title="Авто">'
+                    '<i class="bi bi-car-front-fill"></i> {}</a>',
                     url,
                     obj.car.vin if obj.car else f"#{obj.car_id}",
                 )
@@ -238,7 +239,8 @@ class TaskAdmin(admin.ModelAdmin):
             url = reverse("admin:core_container_change", args=[obj.container_id])
             parts.append(
                 format_html(
-                    '<a href="{}" style="color:#0ea5e9;text-decoration:none;" title="Контейнер">📦 {}</a>',
+                    '<a href="{}" style="color:#0ea5e9;text-decoration:none;" title="Контейнер">'
+                    '<i class="bi bi-box-seam"></i> {}</a>',
                     url,
                     obj.container.number if obj.container else f"#{obj.container_id}",
                 )

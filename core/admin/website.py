@@ -86,9 +86,6 @@ class NewsPostAdmin(admin.ModelAdmin):
         ("Статистика", {"fields": ("views", "created_at", "updated_at"), "classes": ("collapse",)}),
     )
 
-    class Media:
-        css = {"all": ("admin/css/news_admin.css",)}
-
 
 @admin.register(ContactMessage)
 class ContactMessageAdmin(admin.ModelAdmin):

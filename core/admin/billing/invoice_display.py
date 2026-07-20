@@ -232,7 +232,8 @@ class NewInvoiceDisplayMixin:
         return format_html(
             '<a href="{}" style="text-decoration:none;" title="{}">'
             '<span style="background:#e0e7ff;color:#3730a3;padding:2px 7px;'
-            'border-radius:10px;font-size:11px;font-weight:600;">🔗 {}</span></a>',
+            'border-radius:10px;font-size:11px;font-weight:600;">'
+            '<i class="bi bi-link-45deg"></i> {}</span></a>',
             url,
             linked.number,
             linked.number,
@@ -347,7 +348,8 @@ class NewInvoiceDisplayMixin:
             pay_url = reverse("admin:pay_invoice", args=[obj.pk])
             return format_html(
                 '<a href="{}" class="button" style="background: #28a745; color: white; '
-                'padding: 3px 10px; border-radius: 3px; text-decoration: none;">💳 Оплатить</a>',
+                'padding: 3px 10px; border-radius: 3px; text-decoration: none;">'
+                '<i class="bi bi-credit-card"></i> Оплатить</a>',
                 pay_url,
             )
         elif obj.status == "PAID":

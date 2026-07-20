@@ -2,12 +2,12 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.views.generic import RedirectView
 from rest_framework.routers import DefaultRouter
 from core.views import (
     car_list_api,
     get_invoice_total,
     get_container_data,
-    register_payment,
     get_client_balance,
     company_dashboard,
     get_payment_objects,
@@ -114,7 +114,6 @@ urlpatterns = [
     # ========== API v1 (основной) ==========
     path("api/v1/", include(api_v1_patterns)),
     # ========== АДМИН-СПЕЦИФИЧНЫЕ ЭНДПОИНТЫ ==========
-    path("admin/register-payment/", register_payment, name="register_payment"),
     path("admin/dashboard/", company_dashboard, name="company_dashboard"),
     path("admin/global-search/", global_search, name="global_search"),
     path("admin/cash-expense/", add_cash_expense, name="add_cash_expense"),
@@ -135,7 +134,12 @@ urlpatterns = [
         personal_card_balance_reset,
         name="personal_card_balance_reset",
     ),
-    path("comparison-dashboard/", comparison_dashboard, name="comparison_dashboard"),
+    path("admin/comparison/", comparison_dashboard, name="comparison_dashboard"),
+    # Legacy-адрес: редирект на новый URL под /admin/
+    path(
+        "comparison-dashboard/",
+        RedirectView.as_view(pattern_name="comparison_dashboard", permanent=True),
+    ),
     # ── Проверка счетов ──────────────────────────────────────────────────────
     path("admin/invoice-audit/", invoice_audit_list, name="invoice_audit_list"),
     path("admin/invoice-audit/upload/", invoice_audit_upload, name="invoice_audit_upload"),

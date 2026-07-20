@@ -1154,9 +1154,8 @@ def _get_client_price_for_car_service(car, provider_type: str, service_id: int) 
     cs = _find_car_service(car, provider_type, service_id)
     if not cs:
         return None
-    price = cs.custom_price if cs.custom_price is not None else cs.get_default_price()
-    markup = cs.markup_amount if cs.markup_amount is not None else Decimal("0")
-    return (Decimal(str(price or 0)) + Decimal(str(markup))) * cs.quantity
+    # invoice_price = (base + markup) × quantity — единая формула цены для клиента.
+    return Decimal(str(cs.invoice_price))
 
 
 def _get_client_storage_price(car) -> Decimal | None:

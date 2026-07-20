@@ -10,6 +10,7 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
 from core.models.banking import BankAccount, BankConnection, BankTransaction
 
@@ -670,7 +671,10 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
         if obj.matched_invoice_id:
             url = reverse("admin:core_newinvoice_change", args=[obj.matched_invoice_id])
             return format_html(
-                '<a href="{}" style="color:#2563eb;text-decoration:none;">📄 {}</a>', url, obj.matched_invoice.number
+                '<a href="{}" style="color:#2563eb;text-decoration:none;">'
+                '<i class="bi bi-file-earmark-text"></i> {}</a>',
+                url,
+                obj.matched_invoice.number,
             )
         # Не привязано и не пропущено — кнопки "Создать расход" и "Привязать"
         if not obj.reconciliation_skipped:
@@ -678,9 +682,9 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
             link_url = reverse("admin:core_banktransaction_change", args=[obj.pk])
             return format_html(
                 '<a href="{}" style="color:#16a34a;font-weight:600;text-decoration:none;margin-right:8px;">'
-                "💰 Расход</a>"
+                '<i class="bi bi-cash-coin"></i> Расход</a>'
                 '<a href="{}" style="color:#7c3aed;text-decoration:none;">'
-                "🔗 Привязать</a>",
+                '<i class="bi bi-link-45deg"></i> Привязать</a>',
                 expense_url,
                 link_url,
             )
@@ -693,14 +697,14 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
         if obj.receipt_file:
             return format_html(
                 '<a href="{}" target="_blank" title="Чек из Revolut" '
-                'style="text-decoration:none;font-size:16px;">📎</a>',
+                'style="text-decoration:none;font-size:16px;color:#6c5ce7;"><i class="bi bi-paperclip"></i></a>',
                 obj.receipt_file.url,
             )
         if obj.expense_id:
             return format_html('<span title="Revolut Expense без чека" style="color:#d1d5db;font-size:14px;">—</span>')
         return ""
 
-    display_receipt.short_description = "📎"
+    display_receipt.short_description = mark_safe('<i class="bi bi-paperclip" title="Чек"></i>')
 
     def display_receipt_detail(self, obj):
         """Preview чека на странице редактирования."""
@@ -729,7 +733,7 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
         return format_html(
             '<a href="{}" target="_blank" '
             'style="display:inline-block;padding:8px 14px;background:#4f46e5;color:#fff;'
-            'border-radius:6px;text-decoration:none;font-weight:600;">📎 {}</a>',
+            'border-radius:6px;text-decoration:none;font-weight:600;"><i class="bi bi-paperclip"></i> {}</a>',
             url,
             name,
         )

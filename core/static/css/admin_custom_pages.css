@@ -1,0 +1,484 @@
+/* ============================================================
+   CAROMOTO ADMIN — admin_custom_pages.css
+   Общие компоненты кастомных страниц админки (касса, карты,
+   дашборды, сверки). Построено на токенах --cm-* из
+   dashboard_admin.css. Подключается через
+   templates/admin/custom_page_base.html.
+
+   Не дублируйте эти правила inline-<style> в шаблонах:
+   страница должна extends "admin/custom_page_base.html" и
+   использовать классы отсюда; специфичное — в block page_style.
+   ============================================================ */
+
+/* ---------- Каркас страницы ---------- */
+main#content-start,
+main.content { padding: 0 !important; }
+
+#content {
+    background: var(--cm-bg, #f4f2ff);
+    min-height: 100vh;
+    max-width: 100% !important;
+    font-family: var(--cm-font, 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+}
+#content-main { padding: 0; }
+
+/* Широкая обёртка контента (списки, дашборды) */
+.cm-page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px;
+}
+.cm-page.wide { max-width: 1400px; }
+
+/* ---------- Ссылка «назад» ---------- */
+.cm-back {
+    text-align: center;
+    margin-top: 16px;
+}
+.cm-back a,
+a.cm-back-link {
+    color: var(--cm-purple, #6c5ce7);
+    text-decoration: none;
+    font-size: .9em;
+}
+.cm-back a:hover,
+a.cm-back-link:hover { text-decoration: underline; }
+
+/* ---------- Карточка-форма (касса, карты, сверки) ---------- */
+.wallet-form {
+    max-width: 520px;
+    margin: 32px auto 0;
+    padding: 32px;
+    background: var(--cm-card, #fff);
+    border-radius: 16px;
+    box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+    border: 1px solid rgba(108,92,231,.14);
+}
+.wallet-form .field-group { margin-bottom: 20px; }
+.wallet-form label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: #4a4a68;
+    font-size: .9em;
+}
+.wallet-form input[type="number"],
+.wallet-form input[type="text"],
+.wallet-form input[type="color"],
+.wallet-form select,
+.wallet-form textarea {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1.5px solid var(--cm-border, #e0dcf8);
+    border-radius: 10px;
+    background: #faf9ff;
+    color: var(--cm-text, #1a1a2e);
+    font-size: 16px;
+    box-sizing: border-box;
+    font-family: inherit;
+}
+.wallet-form select {
+    -webkit-appearance: menulist;
+    appearance: menulist;
+}
+.wallet-form textarea {
+    resize: vertical;
+    min-height: 60px;
+}
+.wallet-form input[type="color"] {
+    height: 44px;
+    padding: 4px;
+    cursor: pointer;
+}
+/* Крупный центрированный ввод суммы (сверка балансов) */
+.wallet-form input.big-amount {
+    padding: 14px 18px;
+    font-size: 1.3em;
+    font-weight: 600;
+    text-align: center;
+}
+.wallet-form input:focus,
+.wallet-form select:focus,
+.wallet-form textarea:focus {
+    outline: none;
+    border-color: var(--cm-purple, #6c5ce7);
+    box-shadow: 0 0 0 3px rgba(108,92,231,.12);
+    background: #fff;
+}
+
+/* ---------- Кнопка отправки ---------- */
+.wallet-form .submit-btn {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #6c5ce7, #a78bfa);
+    color: #fff;
+    font-size: 1.05em;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: transform .1s, box-shadow .15s;
+    font-family: inherit;
+}
+.wallet-form .submit-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(108,92,231,.3);
+}
+.wallet-form .submit-btn.green { background: linear-gradient(135deg, #22c55e, #4ade80); }
+.wallet-form .submit-btn.green:hover { box-shadow: 0 4px 16px rgba(34,197,94,.3); }
+.wallet-form .submit-btn.red { background: linear-gradient(135deg, #ef4444, #f87171); }
+.wallet-form .submit-btn.red:hover { box-shadow: 0 4px 16px rgba(239,68,68,.3); }
+
+/* Второстепенные кнопки-формы (активация/удаление карты и т.п.) */
+.wf-btn {
+    width: 100%;
+    padding: 10px;
+    border-radius: 10px;
+    font-size: .9em;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all .15s;
+    border: 1.5px solid var(--cm-border, #e0dcf8);
+    background: #fff;
+    color: var(--cm-text, #1a1a2e);
+}
+.wf-btn.amber { border-color: #f59e0b; background: #fffbeb; color: #b45309; }
+.wf-btn.green { border-color: #22c55e; background: #f0fdf4; color: #15803d; }
+.wf-btn.red-outline { border-color: #ef4444; background: #fff; color: #ef4444; }
+
+/* ---------- Инфо-бейджи над формой ---------- */
+.cash-badge {
+    text-align: center;
+    margin-bottom: 24px;
+    padding: 14px;
+    background: rgba(34,197,94,.06);
+    border: 1px solid rgba(34,197,94,.12);
+    border-radius: 12px;
+}
+.cash-badge .label { font-size: .85em; color: #7c7c9a; }
+.cash-badge .value { font-size: 1.6em; font-weight: 800; color: #22c55e; }
+
+.current-balance,
+.card-badge {
+    text-align: center;
+    margin-bottom: 28px;
+    padding: 20px;
+    background: rgba(108,92,231,.04);
+    border: 1px solid rgba(108,92,231,.1);
+    border-radius: 12px;
+}
+.current-balance .label { font-size: .85em; color: #7c7c9a; margin-bottom: 4px; }
+.current-balance .value,
+.card-badge .value { font-size: 2em; font-weight: 800; color: var(--cm-purple, #6c5ce7); }
+.current-balance .hint,
+.card-badge .hint { font-size: .8em; color: #a29bcc; margin-top: 6px; }
+.card-badge .card-name {
+    font-size: .85em;
+    color: #7c7c9a;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+.card-badge .card-name .dot {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 4px;
+}
+
+.diff-preview {
+    text-align: center;
+    padding: 12px;
+    border-radius: 10px;
+    margin-bottom: 16px;
+    font-weight: 600;
+    display: none;
+}
+
+.field-error-note {
+    padding: 12px;
+    background: rgba(239,68,68,.06);
+    border: 1px solid rgba(239,68,68,.15);
+    border-radius: 10px;
+    color: #ef4444;
+    font-size: .9em;
+}
+.field-error-note a { color: var(--cm-purple, #6c5ce7); }
+
+/* ---------- Загрузка чека (drag&drop) ---------- */
+.receipt-drop {
+    border: 2px dashed var(--cm-border, #e0dcf8);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+    background: #faf9ff;
+}
+.receipt-drop:hover,
+.receipt-drop.dragover {
+    border-color: var(--cm-purple, #6c5ce7);
+    background: var(--cm-bg, #f4f2ff);
+}
+.receipt-drop .drop-icon { font-size: 2em; margin-bottom: 6px; opacity: .5; color: var(--cm-purple, #6c5ce7); }
+.receipt-drop .drop-text { font-size: .85em; color: #7c7c9a; }
+.receipt-drop .drop-hint { font-size: .75em; color: #a29bcc; margin-top: 4px; }
+.receipt-preview { display: none; margin-top: 10px; position: relative; }
+.receipt-preview img {
+    max-width: 100%;
+    max-height: 200px;
+    border-radius: 10px;
+    border: 1px solid var(--cm-border, #e0dcf8);
+}
+.receipt-preview .remove-btn {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #ef4444;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 24px;
+    text-align: center;
+}
+.receipt-preview .file-name {
+    font-size: .8em;
+    color: #7c7c9a;
+    margin-top: 6px;
+    word-break: break-all;
+}
+
+/* ---------- Табы выбора типа (перевод) ---------- */
+.type-tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+.type-tab {
+    padding: 8px 16px;
+    border-radius: 10px;
+    border: 1.5px solid var(--cm-border, #e0dcf8);
+    background: #fff;
+    cursor: pointer;
+    font-size: .85em;
+    font-weight: 600;
+    color: #7c7c9a;
+    transition: all .2s;
+}
+.type-tab:hover { border-color: var(--cm-purple, #6c5ce7); color: var(--cm-purple, #6c5ce7); }
+.type-tab.active {
+    background: var(--cm-purple, #6c5ce7);
+    color: #fff;
+    border-color: var(--cm-purple, #6c5ce7);
+}
+.dynamic-field { display: none; }
+.dynamic-field.visible { display: block; }
+
+/* ---------- Пресеты цвета (форма карты) ---------- */
+.color-presets {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+.color-presets .cp {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: border-color .15s, transform .15s;
+}
+.color-presets .cp:hover { transform: scale(1.15); }
+.color-presets .cp.active { border-color: var(--cm-text, #1a1a2e); }
+
+/* ---------- Панель действий страницы ---------- */
+.pc-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+}
+.pc-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 18px;
+    border-radius: 10px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: .84em;
+    transition: all .2s ease;
+    border: none;
+    cursor: pointer;
+}
+.pc-action.primary { background: var(--cm-purple, #6c5ce7); color: #fff; }
+.pc-action.primary:hover { background: var(--cm-purple-dark, #5a4bd1); box-shadow: 0 4px 14px rgba(108,92,231,.3); transform: translateY(-1px); color: #fff; }
+.pc-action.green { background: #22c55e; color: #fff; }
+.pc-action.green:hover { background: #16a34a; box-shadow: 0 4px 14px rgba(34,197,94,.3); transform: translateY(-1px); color: #fff; }
+.pc-action.amber { background: #f59e0b; color: #fff; }
+.pc-action.amber:hover { background: #d97706; color: #fff; }
+.pc-action.outline { background: #fff; color: var(--cm-purple, #6c5ce7); border: 1.5px solid var(--cm-border, #e0dcf8); }
+.pc-action.outline:hover { background: var(--cm-bg, #f4f2ff); border-color: var(--cm-purple, #6c5ce7); color: var(--cm-purple, #6c5ce7); }
+
+/* ---------- Сетка карточек-показателей ---------- */
+.cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+    margin-bottom: 28px;
+}
+.wallet-card {
+    background: var(--cm-card, #fff);
+    padding: 20px 22px;
+    border-radius: 16px;
+    box-shadow: 0 1px 4px rgba(30,20,60,.06), 0 4px 14px rgba(30,20,60,.05);
+    border: 1px solid rgba(108,92,231,.14);
+    border-top: 4px solid #22c55e;
+    position: relative;
+    transition: all .25s ease;
+}
+.wallet-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 12px rgba(30,20,60,.1), 0 12px 28px rgba(30,20,60,.08);
+}
+.wallet-card .wc-label {
+    font-size: .78em;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+    color: #9898b0;
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+.wallet-card .wc-value {
+    font-size: 1.6em;
+    font-weight: 800;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+}
+.wallet-card .wc-sub {
+    font-size: .8em;
+    color: #b0b0c8;
+    margin-top: 6px;
+    font-weight: 500;
+}
+.wallet-card .wc-actions {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    display: flex;
+    gap: 8px;
+}
+.wallet-card .wc-actions a {
+    color: #b0b0c8;
+    text-decoration: none;
+    font-size: 1.1em;
+    transition: color .2s;
+}
+.wallet-card .wc-actions a:hover { color: var(--cm-purple, #6c5ce7); }
+
+.summary-strip {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+}
+.summary-chip {
+    padding: 12px 20px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: .92em;
+}
+.summary-chip.total {
+    background: linear-gradient(135deg, #6c5ce7, #a78bfa);
+    color: #fff;
+}
+.summary-chip.purple-soft {
+    background: rgba(108,92,231,.08);
+    color: var(--cm-purple, #6c5ce7);
+}
+
+/* ---------- Карточка с таблицей ---------- */
+.tbl-card {
+    background: var(--cm-card, #fff);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 1px 3px rgba(108,92,231,.06), 0 6px 16px rgba(108,92,231,.04);
+    border: 1px solid rgba(108,92,231,.05);
+}
+.tbl-card h3 {
+    margin: 0 0 16px;
+    font-size: .92em;
+    font-weight: 700;
+    color: var(--cm-text, #1a1a2e);
+}
+.tbl-card h3 .bi {
+    vertical-align: middle;
+    margin-right: 6px;
+    color: var(--cm-purple, #6c5ce7);
+}
+.dt {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .84em;
+}
+.dt th, .dt td {
+    padding: 11px 14px;
+    text-align: left;
+    white-space: nowrap;
+}
+.dt th {
+    background: #f8f7fc;
+    font-weight: 700;
+    color: #9898b0;
+    font-size: .78em;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    border-bottom: 2px solid #eeecf6;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+.dt td {
+    color: #4a4a68;
+    border-bottom: 1px solid #f3f1fa;
+}
+.dt tbody tr:hover td { background: #faf9ff; }
+.tbl-scroll { max-height: 500px; overflow-y: auto; }
+.tbl-scroll::-webkit-scrollbar { width: 4px; }
+.tbl-scroll::-webkit-scrollbar-thumb { background: #ddd8f3; border-radius: 4px; }
+
+.amount-in  { color: #16a34a; font-weight: 700; }
+.amount-out { color: #dc2626; font-weight: 700; }
+
+/* ---------- Бейджи типов операций ---------- */
+.badge-type {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: .73em;
+    font-weight: 700;
+}
+.badge-CASH_TO_CARD   { background: #eef2ff; color: #4f46e5; }
+.badge-CARD_TO_CASH   { background: #f0fdf4; color: #15803d; }
+.badge-CARD_TO_CARD   { background: #faf5ff; color: #7c3aed; }
+.badge-CARD_INCOME    { background: #ecfdf5; color: #059669; }
+.badge-CARD_EXPENSE   { background: #fef2f2; color: #b91c1c; }
+
+/* ---------- Адаптив ---------- */
+@media (max-width: 768px) {
+    .cm-page { padding: 10px; }
+    .cards-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .wallet-card { padding: 14px 16px; }
+    .wallet-card .wc-value { font-size: 1.2em; }
+    .pc-actions { flex-direction: column; }
+}

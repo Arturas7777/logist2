@@ -10,7 +10,7 @@ from django.utils import timezone
 
 from core.constants import STATUS_COLORS
 from core.managers import OptimizedCarManager
-from core.service_codes import ServiceCode
+from core.service_codes import is_storage_service, storage_service_q
 
 from ._vehicle_types import VEHICLE_TYPE_CHOICES
 from .containers import Container
@@ -399,9 +399,7 @@ class Car(models.Model):
                     warehouse=self.warehouse,
                     is_active=True,
                 )
-                .filter(
-                    Q(code=ServiceCode.STORAGE) | Q(name="Хранение"),
-                )
+                .filter(storage_service_q())
                 .first()
             )
             if storage_service:
@@ -438,9 +436,7 @@ class Car(models.Model):
                     warehouse=self.warehouse,
                     is_active=True,
                 )
-                .filter(
-                    Q(code=ServiceCode.STORAGE) | Q(name="Хранение"),
-                )
+                .filter(storage_service_q())
                 .first()
             )
 
@@ -556,14 +552,20 @@ class Car(models.Model):
         return total
 
     def get_warehouse_services_total(self):
-        """Получает стоимость только услуг склада (без хранения)"""
+        """Стоимость разовых услуг склада БЕЗ хранения (себестоимость, final_price).
+
+        Хранение исключается: оно динамическое (платные дни × ставка) и
+        учитывается отдельно через ``Car.storage_cost`` / услугу «Хранение».
+        Для суммы ВСЕХ складских услуг (включая хранение) используйте
+        ``get_services_total_by_provider("WAREHOUSE")``.
+        """
         if not self.warehouse:
             return Decimal("0.00")
 
-        services = self.get_warehouse_services()
         total = Decimal("0.00")
-
-        for service in services:
+        for service in self.get_warehouse_services():
+            if is_storage_service(service):
+                continue
             total += Decimal(str(service.final_price))
 
         return total
@@ -721,7 +723,6 @@ class Car(models.Model):
         ИЛИ строка инвойса, чьё описание содержит "хран"/"storage"), то
         отдельно `self.storage_cost` не прибавляем.
         """
-        from django.db.models import Q
 
         from core.mixins import ACTIVE_INVOICE_STATUSES
         from core.models_billing import InvoiceItem

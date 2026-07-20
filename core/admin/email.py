@@ -425,6 +425,7 @@ class EmailGroupMemberInline(admin.TabularInline):
 @admin.register(EmailGroup)
 class EmailGroupAdmin(admin.ModelAdmin):
     list_display = ("name", "members_preview", "members_count_display", "description", "created_by", "updated_at")
+    list_filter = ("created_by", "updated_at")
     search_fields = ("name", "description", "members__email", "members__display_name")
     readonly_fields = ("created_at", "updated_at", "created_by")
     inlines = [EmailGroupMemberInline]

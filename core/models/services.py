@@ -249,14 +249,28 @@ class CarService(models.Model):
 
     @property
     def final_price(self):
-        """Итоговая цена с учетом количества (БЕЗ скрытой наценки - для внутреннего учёта)"""
+        """СЕБЕСТОИМОСТЬ: базовая цена × количество, БЕЗ скрытой наценки.
+
+        Два понятия цены в системе (не путать!):
+
+        * ``final_price`` — внутренний учёт: сколько услуга стоит нам
+          (оплата контрагенту, расчёт наценки FIXED-тарифа, сравнение
+          с фактическими затратами из счетов поставщиков).
+        * ``invoice_price`` — цена для клиента: то, что попадает в
+          позиции инвойса и в ``Car.total_price``.
+        """
         # Используем custom_price если он задан (даже если 0), иначе default_price
         price = self.custom_price if self.custom_price is not None else self.get_default_price()
         return price * self.quantity
 
     @property
     def invoice_price(self):
-        """Цена для инвойса (С учётом скрытой наценки)"""
+        """ЦЕНА ДЛЯ КЛИЕНТА: (базовая цена + скрытая наценка) × количество.
+
+        Используется везде, где сумма показывается/выставляется клиенту:
+        позиции инвойса, ``Car.calculate_total_price``, client_price в
+        сверке. Для внутренней себестоимости см. ``final_price``.
+        """
         # Используем custom_price если он задан (даже если 0), иначе default_price
         base_price = self.custom_price if self.custom_price is not None else self.get_default_price()
         markup = self.markup_amount if self.markup_amount is not None else Decimal("0")

@@ -55,6 +55,19 @@ CODE_TO_SHORT: dict[str, str] = {
 }
 
 
+def storage_service_q():
+    """Q-фильтр каталога для поиска услуги «Хранение».
+
+    ЕДИНСТВЕННОЕ место с условием lookup'а хранения: по коду
+    ``ServiceCode.STORAGE`` с fallback на legacy-имя «Хранение»
+    (у старых записей каталога поле ``code`` может быть пустым).
+    Не дублировать это условие в моделях/админке/сервисах.
+    """
+    from django.db.models import Q
+
+    return Q(code=ServiceCode.STORAGE) | Q(name="Хранение")
+
+
 def is_storage_service(service) -> bool:
     """Check whether a service object represents the Storage service."""
     if hasattr(service, "code") and service.code:

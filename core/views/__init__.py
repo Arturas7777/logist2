@@ -32,7 +32,6 @@ from .admin_views import (  # noqa: F401
     personal_card_income,
     personal_cards_page,
     personal_transfer,
-    register_payment,
     sync_container_photos_from_gdrive,
     upload_expense_receipt,
 )

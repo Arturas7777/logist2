@@ -2,7 +2,8 @@
 
 * ``post_save`` — при переходе в ``FORMED`` ставит генерацию инвойсов в
   Celery; при переходе в ``LOADED/IN_TRANSIT/DELIVERED`` помечает все
-  привязанные машины как ``TRANSFERRED``.
+  привязанные машины как ``TRANSFERRED`` и ставит финализацию передачи
+  (пересчёт хранения по transfer_date + regen открытых инвойсов рейса).
 * ``m2m_changed (cars)`` — блокирует добавление в автовоз авто с пометкой
   «Важное» (см. большой коммент внутри :func:`autotransport_cars_changed_handler`).
 
@@ -98,6 +99,32 @@ def _mark_cars_as_transferred(autotransport, transfer_date=None):
     )
     for cid in container_ids:
         _update_container_status_if_all_transferred(cid)
+    _queue_or_run_finalize_transfer(autotransport, car_ids)
+
+
+def _queue_or_run_finalize_transfer(autotransport, car_ids):
+    """Пересчёт хранения/цен и regen инвойсов после bulk-перевода в TRANSFERRED.
+
+    Bulk ``.update()`` выше не вызывает ``Car.save()``, поэтому
+    days/storage_cost/total_price и цена услуги «Хранение» остаются
+    устаревшими, а позиции инвойса автовоза — на суммах, посчитанных на
+    момент FORMED. Задача фиксирует хранение по transfer_date и
+    пересобирает открытые инвойсы. При недоступном брокере — синхронно.
+    """
+    from core.tasks import finalize_autotransport_transfer_task
+
+    try:
+        transaction.on_commit(lambda: finalize_autotransport_transfer_task.delay(autotransport.pk, car_ids))
+    except Exception as exc:
+        logger.warning(
+            "AutoTransport %s: Celery unavailable, finalizing transfer inline: %s",
+            autotransport.number,
+            exc,
+        )
+        try:
+            finalize_autotransport_transfer_task(autotransport.pk, car_ids)
+        except Exception as e:
+            logger.error("AutoTransport %s transfer finalize error: %s", autotransport.number, e)
 
 
 def _update_container_status_if_all_transferred(container_id):

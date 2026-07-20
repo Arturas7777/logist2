@@ -190,6 +190,13 @@ class Client(BalanceMethodsMixin, models.Model):
         - отрицательное = клиент нам должен (с учётом ещё не оплаченных инвойсов);
         - положительное = у клиента на счету аванс;
         - ноль = всё сведено.
+
+        ВНИМАНИЕ: формула НАМЕРЕННО отличается от партнёрской
+        (``BalanceMethodsMixin.total_balance`` у Company/Warehouse/Line/Carrier:
+        ``balance + open_pardp_receivable − open_fact_debt`` с обратной знаковой
+        конвенцией). У клиента ``balance`` — авансовый счёт (все COMPLETED-Tx),
+        у партнёров — только Tx без инвойса (депозиты/залоги). Не «чинить»
+        одну формулу под другую — см. .cursor/rules/accounting-context.mdc.
         """
         return self.balance - self.open_invoices_debt
 

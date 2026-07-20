@@ -116,11 +116,12 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
     # ── Список ────────────────────────────────────────────────────────────
 
     def scan_type_badge(self, obj):
+        # Цвета из DS-палитры (--cm-* в dashboard_admin.css)
         colors = {
-            ScanProcessingJob.SCAN_TYPE_TITLE: "#0d6efd",
-            ScanProcessingJob.SCAN_TYPE_DOCK_RECEIPT: "#198754",
+            ScanProcessingJob.SCAN_TYPE_TITLE: "#3b82f6",
+            ScanProcessingJob.SCAN_TYPE_DOCK_RECEIPT: "#10b981",
         }
-        color = colors.get(obj.scan_type, "#6c757d")
+        color = colors.get(obj.scan_type, "#9ca3af")
         return format_html(
             '<span style="background:{};color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;">{}</span>',
             color,
@@ -130,15 +131,16 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
     scan_type_badge.short_description = "Тип"
 
     def status_badge(self, obj):
+        # Цвета из DS-палитры (--cm-* в dashboard_admin.css)
         palette = {
-            ScanProcessingJob.STATUS_PENDING: "#6c757d",
-            ScanProcessingJob.STATUS_PROCESSING: "#0dcaf0",
-            ScanProcessingJob.STATUS_NEEDS_REVIEW: "#fd7e14",
-            ScanProcessingJob.STATUS_APPLIED: "#198754",
-            ScanProcessingJob.STATUS_ERROR: "#dc3545",
-            ScanProcessingJob.STATUS_IGNORED: "#adb5bd",
+            ScanProcessingJob.STATUS_PENDING: "#9ca3af",
+            ScanProcessingJob.STATUS_PROCESSING: "#06b6d4",
+            ScanProcessingJob.STATUS_NEEDS_REVIEW: "#f59e0b",
+            ScanProcessingJob.STATUS_APPLIED: "#10b981",
+            ScanProcessingJob.STATUS_ERROR: "#ef4444",
+            ScanProcessingJob.STATUS_IGNORED: "#d1d5db",
         }
-        color = palette.get(obj.status, "#6c757d")
+        color = palette.get(obj.status, "#9ca3af")
         return format_html(
             '<span style="background:{};color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;">{}</span>',
             color,
@@ -194,25 +196,25 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
         if obj.created_new_car:
             flags.append(
                 format_html(
-                    '<span style="background:#0d6efd;color:#fff;padding:2px 6px;'
-                    'border-radius:4px;font-size:11px;">🆕 Car</span>'
+                    '<span style="background:#3b82f6;color:#fff;padding:2px 6px;'
+                    'border-radius:4px;font-size:11px;"><i class="bi bi-plus-circle"></i> Car</span>'
                 )
             )
         if obj.created_new_container:
             flags.append(
                 format_html(
-                    '<span style="background:#198754;color:#fff;padding:2px 6px;'
-                    'border-radius:4px;font-size:11px;">🆕 Container</span>'
+                    '<span style="background:#10b981;color:#fff;padding:2px 6px;'
+                    'border-radius:4px;font-size:11px;"><i class="bi bi-plus-circle"></i> Container</span>'
                 )
             )
         # Подозрение на VIN-mismatch (OCR-ошибка): показываем заметный бейдж.
         if (obj.extracted_data or {}).get("vin_mismatch_review"):
             flags.append(
                 format_html(
-                    '<span style="background:#ffc107;color:#212529;padding:2px 6px;'
+                    '<span style="background:#f59e0b;color:#212529;padding:2px 6px;'
                     'border-radius:4px;font-size:11px;font-weight:bold;" '
                     'title="AI извлёк VIN, но в БД есть очень похожий — '
-                    'возможно ошибка OCR">⚠ VIN ?</span>'
+                    'возможно ошибка OCR"><i class="bi bi-exclamation-triangle"></i> VIN ?</span>'
                 )
             )
         # VIN-валидатор поднял предупреждения (checksum / NHTSA / mismatch
@@ -231,10 +233,10 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
         if has_validation_warning:
             flags.append(
                 format_html(
-                    '<span style="background:#dc3545;color:#fff;padding:2px 6px;'
+                    '<span style="background:#ef4444;color:#fff;padding:2px 6px;'
                     'border-radius:4px;font-size:11px;font-weight:bold;" '
                     'title="NHTSA / check digit поднял предупреждение по VIN">'
-                    "⚠ VIN!</span>"
+                    '<i class="bi bi-exclamation-triangle"></i> VIN!</span>'
                 )
             )
         if not flags:
@@ -250,7 +252,7 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
             return "—"
         url = obj.original_file.url
         return format_html(
-            '<a href="{0}" target="_blank">📄 Открыть PDF</a><br>'
+            '<a href="{0}" target="_blank"><i class="bi bi-file-earmark-text"></i> Открыть PDF</a><br>'
             '<iframe src="{0}" width="100%" height="600" style="border:1px solid #dee2e6;border-radius:4px;margin-top:8px;"></iframe>',
             url,
         )

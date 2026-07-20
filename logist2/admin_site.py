@@ -78,6 +78,7 @@ ADMIN_GROUPS = OrderedDict(
                     "car",
                     "container",
                     "autotransport",
+                    "containeremail",
                     {
                         "name": "Печать наклеек",
                         "url": "/admin/labels/print/",
@@ -100,7 +101,9 @@ ADMIN_GROUPS = OrderedDict(
                     {"name": "Проверка счетов", "url": "/admin/invoice-audit/", "icon": "bi-shield-check"},
                     {"name": "Касса: расход", "url": "/admin/cash-expense/", "icon": "bi-dash-circle"},
                     {"name": "Касса: приход", "url": "/admin/cash-income/", "icon": "bi-plus-circle"},
+                    {"name": "Личные карты", "url": "/admin/personal-cards/", "icon": "bi-credit-card-2-front"},
                     {"name": "Аналитика расходов", "url": "/admin/expense-analytics/", "icon": "bi-pie-chart-fill"},
+                    {"name": "Сравнение сумм", "url": "/admin/comparison/", "icon": "bi-bar-chart-line"},
                 ],
             },
         ),
@@ -109,7 +112,7 @@ ADMIN_GROUPS = OrderedDict(
             {
                 "icon": "bi-people-fill",
                 "collapsed": False,
-                "items": ["client", "company", "warehouse", "line", "carrier"],
+                "items": ["client", "company", "warehouse", "line", "carrier", "contact"],
             },
         ),
         (
@@ -139,8 +142,6 @@ ADMIN_GROUPS = OrderedDict(
                 "collapsed": True,
                 "items": [
                     "expensecategory",
-                    "personalcard",
-                    "personaltransfer",
                     "bankconnection",
                     "bankaccount",
                     "siteproconnection",
@@ -166,8 +167,6 @@ ADMIN_GROUPS = OrderedDict(
                     "agentaction",
                     "agentmemory",
                     "gmailsyncstate",
-                    "contact",
-                    "containeremail",
                 ],
             },
         ),
@@ -176,13 +175,16 @@ ADMIN_GROUPS = OrderedDict(
 
 # Модели, зарегистрированные в админке, но скрытые из меню:
 # работа с ними идёт из карточек (письма — с Container/Car, автовозы и
-# водители — inline на Перевозчике, Дела — через Доску дел).
+# водители — inline на Перевозчике, Дела — через Доску дел, личные карты
+# и переводы — через кастомную страницу /admin/personal-cards/).
 HIDDEN_MODELS = {
     "task",
     "containeremaillink",
     "caremaillink",
     "carriertruck",
     "carrierdriver",
+    "personalcard",
+    "personaltransfer",
 }
 
 

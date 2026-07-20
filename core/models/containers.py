@@ -18,8 +18,9 @@ logger = logging.getLogger(__name__)
 # ошибок оператора), КРОМЕ выхода из TRANSFERRED: передача — финансово
 # значимое событие (останавливается хранение, выставлены инвойсы),
 # откат только осознанный и только на шаг назад — в UNLOADED.
-# Массовые admin-actions через queryset.update() сознательно обходят
-# проверку (escape hatch для массовых исправлений).
+# Массовые admin-actions (Car/Container) тоже проверяют переходы по этой
+# карте перед queryset.update() — см. _bulk_set_status в core/admin/car.py
+# и core/admin/container.py. Недопустимые переходы пропускаются с warning.
 ALLOWED_STATUS_TRANSITIONS = {
     "FLOATING": {"IN_PORT", "UNLOADED", "TRANSFERRED"},
     "IN_PORT": {"FLOATING", "UNLOADED", "TRANSFERRED"},

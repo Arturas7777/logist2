@@ -1,0 +1,24 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% comment %}
+============================================================
+БАЗОВЫЙ ШАБЛОН КАСТОМНЫХ СТРАНИЦ АДМИНКИ
+(касса, личные карты, сверки, дашборды).
+
+Использование:
+    extends "admin/custom_page_base.html"
+    block page_style — специфичный <style> страницы
+    block content    — содержимое
+
+Общие компоненты (карточки, формы, таблицы, бейджи, кнопки)
+живут в static/css/admin_custom_pages.css — НЕ копируйте их
+в inline-<style> шаблонов.
+============================================================
+{% endcomment %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" type="text/css" href="{% static 'css/admin_custom_pages.css' %}?v=1">
+{% block page_style %}{% endblock %}
+{% endblock %}

@@ -1,4 +1,4 @@
-{% extends "admin/base_site.html" %}
+{% extends "admin/custom_page_base.html" %}
 {% load static i18n %}
 
 {% block title %}{{ audit }} — Проверка счёта{% endblock %}
@@ -12,12 +12,8 @@
 </span>
 {% endblock %}
 
-{% block extrastyle %}
-{{ block.super }}
+{% block page_style %}
 <style>
-main#content-start, main.content { padding: 0 !important; }
-#content { background:#f4f2ff; min-height:100vh; max-width:100% !important; font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
-#content-main { padding: 0; }
 .ia-page { max-width:1200px; margin:0 auto; padding:28px 32px; }
 
 /* Top summary bar */

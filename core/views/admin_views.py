@@ -5,107 +5,19 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib import admin, messages
 from django.contrib.admin.views.decorators import staff_member_required
-from django.db import transaction as db_transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
-from core.models import Client, Company, Container
+from core.models import Company, Container
 from core.models_billing import (
     ExpenseCategory,
     PersonalCard,
     PersonalTransfer,
 )
-from core.models_billing import (
-    NewInvoice as Invoice,
-)
-from core.models_billing import (
-    Transaction as Payment,
-)
-from core.services.billing_service import BillingService
 
 logger = logging.getLogger(__name__)
-
-
-@staff_member_required
-def register_payment(request):
-    if request.method != "POST":
-        return JsonResponse({"status": "error", "message": "Invalid request method"}, status=400)
-
-    invoice_id: str | None = request.POST.get("invoice_id")
-    amount_raw = request.POST.get("amount", "0")
-    try:
-        amount = Decimal(amount_raw)
-        if amount <= 0:
-            return JsonResponse({"status": "error", "message": "Сумма должна быть положительной"}, status=400)
-    except (InvalidOperation, Exception):
-        return JsonResponse({"status": "error", "message": "Некорректная сумма"}, status=400)
-
-    payment_method: str | None = request.POST.get("payment_type", "TRANSFER")
-    from_balance: bool = request.POST.get("from_balance") == "on"
-    description: str = request.POST.get("description", "")
-    payer_id: str | None = request.POST.get("payer_id")
-
-    try:
-        with db_transaction.atomic():
-            invoice = Invoice.objects.get(id=invoice_id) if invoice_id else None
-            payer = None
-
-            if payer_id:
-                payer = Client.objects.select_for_update().get(id=payer_id)
-
-            if from_balance and not payer:
-                return JsonResponse(
-                    {"status": "error", "message": "Плательщик обязателен для оплаты с баланса"}, status=400
-                )
-
-            if from_balance and payer and payer.balance < amount:
-                return JsonResponse({"status": "error", "message": "Недостаточно средств на балансе"}, status=400)
-
-            method = "BALANCE" if from_balance else (payment_method or "TRANSFER")
-
-            if invoice:
-                if not payer:
-                    payer = invoice.recipient
-                BillingService.pay_invoice(
-                    invoice=invoice,
-                    amount=amount,
-                    method=method,
-                    payer=payer,
-                    description=description or f"Платёж на сумму {amount}",
-                    created_by=request.user if request.user.is_authenticated else None,
-                )
-            else:
-                payment = Payment(
-                    type="PAYMENT",
-                    method=method,
-                    status="COMPLETED",
-                    amount=amount,
-                    description=description or f"Платёж на сумму {amount}",
-                    from_client=payer,
-                    to_company=Company.get_default(),
-                    created_by=request.user if request.user.is_authenticated else None,
-                )
-                payment.save()
-
-            if payer:
-                payer.refresh_from_db()
-
-        return JsonResponse(
-            {
-                "status": "success",
-                "message": f"Платеж на сумму {amount} зарегистрирован",
-                "client_balance": str(payer.balance) if payer else None,
-            }
-        )
-    except (Invoice.DoesNotExist, Client.DoesNotExist) as e:
-        return JsonResponse({"status": "error", "message": str(e)}, status=404)
-    except ValueError as e:
-        return JsonResponse({"status": "error", "message": str(e)}, status=400)
-    except Exception as e:
-        logger.error("Unexpected error registering payment: %s", e, exc_info=True)
-        return JsonResponse({"status": "error", "message": "Внутренняя ошибка сервера"}, status=500)
 
 
 @staff_member_required

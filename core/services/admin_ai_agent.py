@@ -237,17 +237,13 @@ def _diagnose_car(car: Car) -> list:
         if not car.warehouse:
             issues.append("Есть платные дни, но склад не указан.")
         else:
-            from django.db.models import Q
-
-            from core.service_codes import ServiceCode
+            from core.service_codes import storage_service_q
 
             storage_service = (
                 WarehouseService.objects.filter(
                     warehouse=car.warehouse,
                 )
-                .filter(
-                    Q(code=ServiceCode.STORAGE) | Q(name__iexact="Хранение"),
-                )
+                .filter(storage_service_q())
                 .first()
             )
             if not storage_service:

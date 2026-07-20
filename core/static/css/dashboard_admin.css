@@ -902,9 +902,25 @@ input[name="_save"]:hover, input[name="_continue"]:hover, input[name="_addanothe
     color: var(--cm-white) !important;
     padding: 9px 20px !important;
     border-radius: var(--cm-radius-xs) !important;
+    /* Django forms.css задаёт height: 0.9375rem (15px) — с нашим padding
+       текст обрезается. Возвращаем автоматическую высоту. */
+    height: auto !important;
+    line-height: 1.4 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    white-space: nowrap !important;
+    margin-left: auto !important;
 }
 .submit-row a.deletelink:hover {
     background: #dc2626 !important;
+}
+/* closelink («Закрыть» на readonly-формах) страдает тем же фикс-height */
+.submit-row a.closelink {
+    height: auto !important;
+    line-height: 1.4 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    white-space: nowrap !important;
 }
 
 /* Generic buttons */

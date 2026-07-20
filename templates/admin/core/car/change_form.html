@@ -134,10 +134,28 @@
       color: #dc2626;
     }
 
-    /* ===== Ряд «Тайтл | (📎) | Примечания к тайтлу» ===== */
+    /* ===== Ряд «Тайтл | (📎) | Примечания к тайтлу» =====
+       Унифицирован с рядом «Важно | Примечания»: выравнивание по верхнему
+       краю (flex-start) и фиксированная высота 40px у плашки и поля. */
     body.model-car .cm-form-main .form-row.field-has_title .form-multiline {
       display: flex !important; flex-wrap: wrap !important; gap: 12px !important;
+      align-items: flex-start !important;
+    }
+    .cm-form-main .form-row.field-has_title .checkbox-row {
+      height: 40px !important;
+      box-sizing: border-box !important;
+      margin: 0 !important;
+    }
+    .cm-form-main .form-row.field-has_title .fieldBox.field-title_notes input[type="text"] {
+      height: 40px !important;
+      box-sizing: border-box !important;
+      padding: 9px 12px !important;
+    }
+    /* Ячейка со ссылкой на скан тайтла (📎) — центрируем по той же высоте. */
+    .cm-form-main .form-row.field-has_title .fieldBox.field-title_link_display {
+      display: flex !important;
       align-items: center !important;
+      height: 40px !important;
     }
     body.model-car .cm-form-main .form-row.field-has_title
       .form-multiline > div:has(.field-has_title) {
@@ -161,10 +179,13 @@
       display: none !important;
     }
 
-    /* ===== Ряд «Важно | Примечания» ===== */
+    /* ===== Ряд «Важно | Примечания» =====
+       Выравнивание по ВЕРХНЕМУ краю (flex-start): обёртки чекбокса и textarea
+       имеют разную «служебную» высоту (скрытые help/label), поэтому center
+       даёт вертикальный сдвиг. Сами элементы фиксируем на 40px ниже. */
     body.model-car .cm-form-main .form-row.field-is_important.field-notes .form-multiline {
       display: flex !important; flex-wrap: wrap !important; gap: 12px !important;
-      align-items: center !important;
+      align-items: flex-start !important;
     }
     body.model-car .cm-form-main .form-row.field-is_important.field-notes
       .form-multiline > div:has(.field-is_important) {
@@ -178,10 +199,26 @@
     .cm-form-main .form-row.field-is_important .help {
       display: none !important;
     }
-    /* Textarea «Примечания» — компактная (≈ как input «Примечания к тайтлу»). */
+    /* Пустой лейбл над textarea (label скрыт через form.base_fields, но
+       Django всё равно рендерит <label class="inline">) — убираем, иначе
+       он добавляет ~20px сверху и поле уезжает ниже чекбокса «Важно». */
+    .cm-form-main .form-row.field-is_important.field-notes .fieldBox.field-notes label {
+      display: none !important;
+    }
+    /* Плашка «Важно» — та же фиксированная высота 40px, что и textarea,
+       без внешних отступов, чтобы верхние края совпадали пиксель в пиксель. */
+    .cm-form-main .form-row.field-is_important.field-notes .checkbox-row {
+      height: 40px !important;
+      box-sizing: border-box !important;
+      margin: 0 !important;
+    }
+    /* Textarea «Примечания» — компактная, той же высоты, что плашка «Важно»
+       (≈40px). rows=1 в виджете + фикс высоты; при вводе можно растянуть
+       вручную (resize: vertical). */
     .cm-form-main .form-row.field-is_important.field-notes textarea {
       width: 100% !important;
-      min-height: 42px !important;
+      height: 40px;
+      min-height: 40px !important;
       box-sizing: border-box !important;
       font-family: inherit !important;
       resize: vertical !important;

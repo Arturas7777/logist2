@@ -1104,6 +1104,70 @@ def recalculate_cars_total_price_task(self, car_ids):
     return {"requested": len(car_ids), "updated": len(cars_to_update)}
 
 
+@shared_task(bind=True, max_retries=2, default_retry_delay=60, time_limit=300)
+def finalize_autotransport_transfer_task(self, autotransport_id, car_ids):
+    """Финализация передачи машин автовозом: пересчёт хранения + regen инвойсов.
+
+    При переходе автовоза в LOADED/IN_TRANSIT/DELIVERED машины переводятся в
+    TRANSFERRED bulk-обновлением (без ``Car.save()`` — см.
+    ``core/signals/autotransport.py``), поэтому денормализованные
+    ``days``/``storage_cost``/``total_price`` и цена услуги «Хранение» в
+    CarService остаются на значениях последнего пересчёта. Инвойс же
+    генерируется ещё на FORMED, когда хранение продолжает накапливаться.
+
+    Здесь мы фиксируем хранение по ``transfer_date`` (пересчёт цен) и
+    пересобираем позиции открытых инвойсов автовоза, чтобы суммы в них
+    соответствовали фактическим дням хранения на дату передачи.
+    """
+    from core.models import AutoTransport
+
+    # Синхронный вызов той же логики пересчёта (не .delay: порядок важен —
+    # сначала цены, затем позиции инвойса).
+    recalculate_cars_total_price_task(list(car_ids))
+
+    try:
+        at = AutoTransport.objects.get(pk=autotransport_id)
+    except AutoTransport.DoesNotExist:
+        logger.warning("finalize_autotransport_transfer_task: AutoTransport %s not found", autotransport_id)
+        return {"recalculated": len(car_ids), "invoices": 0, "missing": True}
+
+    try:
+        # generate_invoices() обновляет состав cars и пересобирает позиции
+        # существующих открытых инвойсов (PAID/CANCELLED не трогает).
+        invoices = at.generate_invoices()
+        count = len(invoices) if invoices else 0
+        logger.info(
+            "AutoTransport %s: transfer finalized — %d cars recalculated, %d invoices regenerated",
+            at.number,
+            len(car_ids),
+            count,
+        )
+        return {"recalculated": len(car_ids), "invoices": count}
+    except Exception as exc:
+        logger.error(
+            "finalize_autotransport_transfer_task: AT %s invoice regen failed: %s",
+            autotransport_id,
+            exc,
+            exc_info=True,
+        )
+        raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=60, time_limit=300)
+def finalize_cars_transfer_task(self, car_ids):
+    """Финализация массовой передачи авто из админки (bulk TRANSFERRED).
+
+    Порядок важен: сначала фиксируем хранение/цены по transfer_date,
+    затем пересобираем позиции открытых инвойсов этих машин — иначе
+    regen прочитал бы устаревшие цены CarService.
+    """
+    car_ids = list(car_ids)
+    recalculate_cars_total_price_task(car_ids)
+    for car_id in car_ids:
+        regenerate_invoices_for_car_task(car_id)
+    return {"finalized": len(car_ids)}
+
+
 @shared_task(time_limit=600)
 def refresh_unloaded_storage_daily():
     """Ежедневный пересчёт days/storage_cost/total_price машин на складе.

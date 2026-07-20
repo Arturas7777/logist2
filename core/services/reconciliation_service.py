@@ -58,7 +58,10 @@ def get_cost_confirmation_status(car_id):
                     "service_name": svc.get_service_name(),
                     "service_type": svc.service_type,
                     "actual_cost": float(total_cost),
-                    "client_price": float(svc.final_price),
+                    # Цена для клиента = invoice_price (с наценкой) — то, что
+                    # реально выставляется в инвойсе. final_price — внутренняя
+                    # себестоимость без наценки.
+                    "client_price": float(svc.invoice_price),
                     "sources": sources,
                 }
             )
@@ -69,7 +72,7 @@ def get_cost_confirmation_status(car_id):
                     "service_name": svc.get_service_name(),
                     "service_type": svc.service_type,
                     "service_id": svc.service_id,
-                    "client_price": float(svc.final_price),
+                    "client_price": float(svc.invoice_price),
                 }
             )
 

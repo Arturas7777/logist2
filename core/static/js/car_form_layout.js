@@ -61,9 +61,11 @@
         if (rowTitle) {
             var mlT = rowTitle.querySelector(':scope > .form-multiline');
             if (mlT) {
+                // flex-start — единообразно с рядом «Важно | Примечания»,
+                // см. комментарий там же ниже.
                 setStyle(mlT, {
                     'display':'flex','flex-wrap':'wrap','gap':'12px',
-                    'align-items':'center'
+                    'align-items':'flex-start'
                 });
                 var c = mlT.children;
                 if (c[0]) setStyle(c[0], {'flex':'0 0 200px','min-width':'200px','max-width':'200px'});
@@ -85,9 +87,13 @@
         if (rowImp) {
             var mlI = rowImp.querySelector(':scope > .form-multiline');
             if (mlI) {
+                // flex-start, а не center: обёртки чекбокса и textarea имеют
+                // разную служебную высоту (скрытые help/label), center даёт
+                // вертикальный сдвиг. Высоты самих элементов зафиксированы
+                // в change_form.html (40px).
                 setStyle(mlI, {
                     'display':'flex','flex-wrap':'wrap','gap':'12px',
-                    'align-items':'center'
+                    'align-items':'flex-start'
                 });
                 var ic = mlI.children;
                 if (ic[0]) setStyle(ic[0], {'flex':'0 0 200px','min-width':'200px','max-width':'200px'});

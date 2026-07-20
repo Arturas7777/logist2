@@ -20,7 +20,7 @@
 {# — Icons — #}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
 {# — Design System — #}
-<link rel="stylesheet" type="text/css" href="{% static 'css/dashboard_admin.css' %}?v=61">
+<link rel="stylesheet" type="text/css" href="{% static 'css/dashboard_admin.css' %}?v=62">
 <style>
 /* Sticky first columns for wide changelists so VIN/status don't scroll out of view */
 #result_list.cm-sticky-cols thead th:nth-child(1),
@@ -226,16 +226,12 @@ document.addEventListener('DOMContentLoaded', function() {
     var rl = document.getElementById('result_list');
     if (rl) {
         s(rl, {'box-shadow':'none', 'border-radius':'0'});
-        // Wide table only for pages with many columns (e.g. car list)
+        // Wide table only for pages with many columns; без forced min-width,
+        // чтобы список умещался на обычных экранах.
         var colCount = rl.querySelectorAll('thead th').length;
-        if (colCount > 10) {
-            s(rl, {
-                'min-width':'1600px', 'width':'100%',
-                'table-layout':'auto'
-            });
+        s(rl, {'width':'100%', 'table-layout':'auto'});
+        if (colCount > 12) {
             rl.classList.add('cm-sticky-cols');
-        } else {
-            s(rl, {'width':'100%', 'table-layout':'auto'});
         }
     }
     // Style search input — stretch to fill, match action select padding
@@ -504,6 +500,11 @@ document.addEventListener('DOMContentLoaded', function() {
     };
 </script>
 <script src="{% static 'website/js/ai-chat.js' %}"></script>
+
+{% if user.is_staff and not is_popup %}
+{# — Live-обновления по WebSocket (ws/updates/) — только для staff — #}
+<script src="{% static 'js/live_updates.js' %}?v=1"></script>
+{% endif %}
 
 {% if not is_popup %}
 <script>

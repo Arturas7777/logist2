@@ -52,6 +52,7 @@ logger = logging.getLogger(__name__)
 @admin.register(Warehouse)
 class WarehouseAdmin(admin.ModelAdmin):
     list_display = ("name", "address", "free_days", "balance_display")
+    list_filter = ("free_days",)
     search_fields = ("name", "address")
     readonly_fields = ("balance",)
     exclude = (
@@ -142,12 +143,11 @@ class WarehouseAdmin(admin.ModelAdmin):
     balance_summary_display.short_description = "Сводка по балансу"
 
     def balance_transactions_display(self, obj):
-        """Shows warehouse payments"""
+        """Shows warehouse transactions (модель Payment заменена на Transaction)."""
         try:
-            # Get all payments for warehouse
-            from core.models_billing import Payment
+            from core.models_billing import Transaction
 
-            payments = Payment.objects.filter(models.Q(from_warehouse=obj) | models.Q(to_warehouse=obj)).order_by(
+            payments = Transaction.objects.filter(models.Q(from_warehouse=obj) | models.Q(to_warehouse=obj)).order_by(
                 "-date", "-id"
             )[:20]
 
@@ -169,11 +169,11 @@ class WarehouseAdmin(admin.ModelAdmin):
                 (
                     (
                         payment.date.strftime("%d.%m.%Y"),
-                        payment.payment_type,
-                        "#28a745" if payment.to_warehouse == obj else "#dc3545",
+                        payment.get_type_display(),
+                        "#28a745" if payment.to_warehouse_id == obj.pk else "#dc3545",
                         f"{payment.amount:.2f}",
-                        payment.sender,
-                        payment.recipient,
+                        payment.sender_name,
+                        payment.recipient_name,
                         payment.description or "-",
                     )
                     for payment in payments
@@ -944,6 +944,7 @@ class ClientAdmin(admin.ModelAdmin):
 class CompanyAdmin(admin.ModelAdmin):
     change_form_template = "admin/company_change.html"
     list_display = ("name", "balance_display", "is_main_company", "created_at", "updated_at")
+    list_filter = ("created_at",)
     search_fields = ("name",)
     readonly_fields = ("created_at", "updated_at", "balance")
     actions = ["reset_company_balance"]
@@ -952,7 +953,6 @@ class CompanyAdmin(admin.ModelAdmin):
     fieldsets = (
         ("Основная информация", {"fields": ("name",)}),
         ("Баланс", {"fields": ("balance",), "description": "Баланс компании"}),
-        ("Системная информация", {"classes": ("collapse",), "fields": ("created_at", "updated_at")}),
     )
 
     def get_queryset(self, request):
@@ -1011,11 +1011,11 @@ class CompanyAdmin(admin.ModelAdmin):
     balance_summary_display.short_description = "Сводка по балансу"
 
     def balance_transactions_display(self, obj):
-        """Shows company payments"""
+        """Shows company transactions (модель Payment заменена на Transaction)."""
         try:
-            from core.models_billing import Payment
+            from core.models_billing import Transaction
 
-            payments = Payment.objects.filter(models.Q(from_company=obj) | models.Q(to_company=obj)).order_by(
+            payments = Transaction.objects.filter(models.Q(from_company=obj) | models.Q(to_company=obj)).order_by(
                 "-date", "-id"
             )[:20]
 
@@ -1035,11 +1035,11 @@ class CompanyAdmin(admin.ModelAdmin):
                 (
                     (
                         payment.date.strftime("%d.%m.%Y"),
-                        payment.get_payment_type_display(),
-                        "#28a745" if payment.to_company == obj else "#dc3545",
+                        payment.get_type_display(),
+                        "#28a745" if payment.to_company_id == obj.pk else "#dc3545",
                         f"{payment.amount:.2f}",
-                        payment.sender or "-",
-                        payment.recipient or "-",
+                        payment.sender_name,
+                        payment.recipient_name,
                         payment.description or "-",
                     )
                     for payment in payments
@@ -1089,7 +1089,8 @@ class CompanyAdmin(admin.ModelAdmin):
 class LineAdmin(admin.ModelAdmin):
     change_form_template = "admin/line_change.html"
     form = LineForm
-    list_display = ("name", "balance_display")
+    list_display = ("name", "services_count_display", "ths_fee_display", "open_invoices_display", "balance_display")
+    list_filter = ("balance_updated_at",)
     search_fields = ("name",)
     readonly_fields = ("balance",)
     actions = ["reset_line_balance"]
@@ -1110,6 +1111,14 @@ class LineAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
+        qs = qs.annotate(
+            _services_count=models.Count("services", distinct=True),
+            _open_invoices=models.Count(
+                "received_invoices_new",
+                filter=models.Q(received_invoices_new__status__in=("ISSUED", "PARTIALLY_PAID", "OVERDUE")),
+                distinct=True,
+            ),
+        )
         return annotate_partner_balance(qs, "line")
 
     def balance_display(self, obj):
@@ -1117,6 +1126,34 @@ class LineAdmin(admin.ModelAdmin):
         return render_total_balance(obj)
 
     balance_display.short_description = "Баланс"
+
+    def services_count_display(self, obj):
+        count = getattr(obj, "_services_count", 0)
+        return count or "—"
+
+    services_count_display.short_description = "Услуги"
+    services_count_display.admin_order_field = "_services_count"
+
+    def ths_fee_display(self, obj):
+        if obj.ths_fee:
+            return f"{obj.ths_fee:.2f} €"
+        return "—"
+
+    ths_fee_display.short_description = "THS"
+    ths_fee_display.admin_order_field = "ths_fee"
+
+    def open_invoices_display(self, obj):
+        count = getattr(obj, "_open_invoices", 0)
+        if not count:
+            return "—"
+        return format_html(
+            '<span style="background:#fffbeb;color:#b45309;padding:2px 8px;'
+            'border-radius:10px;font-size:11px;font-weight:600;">{}</span>',
+            count,
+        )
+
+    open_invoices_display.short_description = "Открытые инвойсы"
+    open_invoices_display.admin_order_field = "_open_invoices"
 
     def reset_line_balance(self, request, queryset):
         """Resets balances for selected lines"""
@@ -1257,7 +1294,6 @@ class CarrierAdmin(admin.ModelAdmin):
     fieldsets = (
         ("Основная информация", {"fields": ("name", "short_name", "eori_code", "contact_person", "phone", "email")}),
         ("Баланс", {"fields": ("balance",)}),
-        ("Системная информация", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )
 
     def get_queryset(self, request):
@@ -1414,11 +1450,9 @@ class AutoTransportAdmin(admin.ModelAdmin):
             },
         ),
         ("Дополнительно", {"fields": ("notes",), "classes": ("collapse",)}),
-        ("Системная информация", {"fields": ("created_at", "updated_at", "created_by"), "classes": ("collapse",)}),
     )
 
-    class Media:
-        css = {"all": ("css/dashboard_admin.css",)}
+    # dashboard_admin.css подключается глобально в base_site.html
 
     def get_changelist_instance(self, request):
         """Скрываем доставленные автовозы по умолчанию (только в списке, не в форме)"""
@@ -1607,7 +1641,8 @@ class AutoTransportAdmin(admin.ModelAdmin):
             need_reply_html = format_html(
                 '<span title="{}" style="background:#f97316;color:#fff;padding:1px 7px;'
                 "border-radius:10px;font-size:11px;font-weight:700;min-width:20px;"
-                'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">🚩 {}</span>',
+                'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">'
+                '<i class="bi bi-flag-fill"></i> {}</span>',
                 f"{need_reply} письмо(-а) ждут ответа",
                 need_reply,
             )
@@ -1692,7 +1727,7 @@ class AutoTransportAdmin(admin.ModelAdmin):
                     '<button type="button" class="button at-load-btn" data-at-id="{}" data-url="{}" '
                     '  style="padding:3px 8px;font-size:11px;background:#17a2b8;color:#fff;border:none;'
                     '  border-radius:3px;cursor:pointer;" title="Изменить статус на Загружен">'
-                    "🚛 Загружен</button>"
+                    '<i class="bi bi-truck"></i> Загружен</button>'
                     "</span>",
                     obj.id,
                     obj.id,

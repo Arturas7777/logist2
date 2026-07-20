@@ -220,16 +220,18 @@ class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
     number_display.admin_order_field = "number"
 
     def type_display(self, obj):
-        """Тип с иконкой."""
+        """Тип с иконкой (Bootstrap Icons — единый набор админки)."""
         icons = {
-            "PAYMENT": "💳",
-            "REFUND": "↩",
-            "ADJUSTMENT": "⚙",
-            "TRANSFER": "↔",
-            "BALANCE_TOPUP": "💰",
+            "PAYMENT": "bi-credit-card",
+            "REFUND": "bi-arrow-counterclockwise",
+            "ADJUSTMENT": "bi-gear",
+            "TRANSFER": "bi-arrow-left-right",
+            "BALANCE_TOPUP": "bi-cash-coin",
         }
         icon = icons.get(obj.type, "")
-        return format_html("{} {}", icon, obj.get_type_display())
+        if icon:
+            return format_html('<i class="bi {}" style="color:#6c5ce7;"></i> {}', icon, obj.get_type_display())
+        return obj.get_type_display()
 
     type_display.short_description = "Тип"
     type_display.admin_order_field = "type"

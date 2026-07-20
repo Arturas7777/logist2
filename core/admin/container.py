@@ -133,7 +133,7 @@ class ContainerAdmin(admin.ModelAdmin):
     ]
 
     class Media:
-        css = {"all": ("css/dashboard_admin.css",)}
+        # dashboard_admin.css подключается глобально в base_site.html
         js = ("js/htmx.min.js", "js/warehouse_address.js", "js/line_ths.js")
 
     def get_changeform_initial_data(self, request):
@@ -409,7 +409,8 @@ class ContainerAdmin(admin.ModelAdmin):
             count = obj.photos.count()
         if count > 0:
             return format_html(
-                '<span style="background-color: #4285f4; color: white; padding: 2px 8px; border-radius: 10px;">📷 {}</span>',
+                '<span style="background-color: #4285f4; color: white; padding: 2px 8px; border-radius: 10px;">'
+                '<i class="bi bi-camera"></i> {}</span>',
                 count,
             )
         return "-"
@@ -440,7 +441,8 @@ class ContainerAdmin(admin.ModelAdmin):
             need_reply_html = format_html(
                 '<span title="{}" style="background:#f97316;color:#fff;padding:1px 7px;'
                 "border-radius:10px;font-size:11px;font-weight:700;min-width:20px;"
-                'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">🚩 {}</span>',
+                'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">'
+                '<i class="bi bi-flag-fill"></i> {}</span>',
                 f"{need_reply} письмо(-а) ждут ответа",
                 need_reply,
             )
@@ -463,32 +465,66 @@ class ContainerAdmin(admin.ModelAdmin):
     number_with_unread.short_description = "№"
     number_with_unread.admin_order_field = "number"
 
-    def set_status_floating(self, request, queryset):
-        pks = list(queryset.values_list("pk", flat=True))
-        updated = queryset.update(status="FLOATING")
-        for obj in Container.objects.filter(pk__in=pks):
-            # sync_cars (bulk) обновляет статус/склад/даты/days/storage_cost
-            # машин; собственного хранения у контейнера больше нет.
+    def _bulk_set_status(self, request, queryset, status, status_label):
+        """Массовая смена статуса контейнеров с проверкой FSM.
+
+        Раньше ``queryset.update()`` обходил ``validate_status_transition`` —
+        можно было массово откатить переданный контейнер (и его авто) в
+        FLOATING. Теперь недопустимые переходы пропускаются с предупреждением.
+        ``sync_cars`` (bulk) обновляет статус/склад/даты/days/storage_cost
+        машин; собственного хранения у контейнера больше нет.
+        """
+        from core.models.containers import ALLOWED_STATUS_TRANSITIONS
+
+        allowed_pks = []
+        skipped = []
+        for pk, number, cur_status in queryset.values_list("pk", "number", "status"):
+            if cur_status == status:
+                continue  # уже в целевом статусе — no-op
+            if status not in ALLOWED_STATUS_TRANSITIONS.get(cur_status, set()):
+                skipped.append(number)
+                continue
+            allowed_pks.append(pk)
+
+        updated = Container.objects.filter(pk__in=allowed_pks).update(status=status)
+        for obj in Container.objects.filter(pk__in=allowed_pks):
             obj.sync_cars()
-        self.message_user(request, f"Статус изменён на 'В пути' для {updated} контейнеров и их авто.")
+
+        if skipped:
+            self.message_user(
+                request,
+                f"Пропущены (недопустимый переход статуса → '{status_label}'): " + ", ".join(skipped),
+                level="warning",
+            )
+        self.message_user(request, f"Статус изменён на '{status_label}' для {updated} контейнеров и их авто.")
+
+    def set_status_floating(self, request, queryset):
+        self._bulk_set_status(request, queryset, "FLOATING", "В пути")
 
     set_status_floating.short_description = "Изменить статус на В пути"
 
     def set_status_in_port(self, request, queryset):
-        pks = list(queryset.values_list("pk", flat=True))
-        updated = queryset.update(status="IN_PORT")
-        for obj in Container.objects.filter(pk__in=pks):
-            obj.sync_cars()
-        self.message_user(request, f"Статус изменён на 'В порту' для {updated} контейнеров и их авто.")
+        self._bulk_set_status(request, queryset, "IN_PORT", "В порту")
 
     set_status_in_port.short_description = "Изменить статус на В порту"
 
     def set_status_unloaded(self, request, queryset):
+        from django.core.exceptions import ValidationError
+
         updated = 0
         for obj in queryset:
             if obj.warehouse and obj.unload_date:
                 obj.status = "UNLOADED"
-                obj.save(update_fields=["status"])
+                try:
+                    # save() с update_fields=["status"] прогоняет FSM-валидацию.
+                    obj.save(update_fields=["status"])
+                except ValidationError as e:
+                    self.message_user(
+                        request,
+                        f"Контейнер {obj.number} не обновлён: {'; '.join(e.messages)}",
+                        level="warning",
+                    )
+                    continue
                 obj.sync_cars()
                 updated += 1
             else:
@@ -502,11 +538,7 @@ class ContainerAdmin(admin.ModelAdmin):
     set_status_unloaded.short_description = "Изменить статус на Разгружен"
 
     def set_status_transferred(self, request, queryset):
-        pks = list(queryset.values_list("pk", flat=True))
-        updated = queryset.update(status="TRANSFERRED")
-        for obj in Container.objects.filter(pk__in=pks):
-            obj.sync_cars()
-        self.message_user(request, f"Статус изменён на 'Передан' для {updated} контейнеров и их авто.")
+        self._bulk_set_status(request, queryset, "TRANSFERRED", "Передан")
 
     set_status_transferred.short_description = "Изменить статус на Передан"
 
@@ -733,7 +765,8 @@ class ContainerAdmin(admin.ModelAdmin):
         if obj.labels_printed_at:
             local = timezone.localtime(obj.labels_printed_at)
             return format_html(
-                '<span title="{}" style="background-color: #2e7d32; color: #fff; padding: 2px 8px; border-radius: 10px; white-space: nowrap;">🏷️ {}</span>',
+                '<span title="{}" style="background-color: #2e7d32; color: #fff; padding: 2px 8px; border-radius: 10px; white-space: nowrap;">'
+                '<i class="bi bi-tag-fill"></i> {}</span>',
                 local.strftime("%d.%m.%Y %H:%M"),
                 local.strftime("%d.%m"),
             )

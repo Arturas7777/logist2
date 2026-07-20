@@ -1,24 +1,10 @@
-{% extends "admin/base_site.html" %}
+﻿{% extends "admin/custom_page_base.html" %}
 {% load static i18n %}
 
 {% block title %}Dashboard — Caromoto Lithuania{% endblock %}
 
-{% block extrastyle %}
-{{ block.super }}
-<link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+{% block page_style %}
 <style>
-    /* ── Reset & Base ── */
-    main#content-start, main.content {
-        padding: 0 !important;
-    }
-    #content {
-        background: #f4f2ff;
-        min-height: 100vh;
-        max-width: 100% !important;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    }
-    #content-main { padding: 0; }
-
     .db {
         width: 100%;
         max-width: 100%;
@@ -128,10 +114,10 @@
     }
     .db-section:hover { color: #6c5ce7; }
     .db-section::after {
-        content: '\eb3a';
-        font-family: 'boxicons' !important;
+        content: '\f282'; /* bi-chevron-down */
+        font-family: 'bootstrap-icons' !important;
         margin-left: auto;
-        font-size: 1.6em;
+        font-size: 1.2em;
         transition: transform .3s ease;
         line-height: 1;
     }
@@ -491,7 +477,7 @@
         </div>
         <div class="db-header-right">
             <div class="db-date-badge">
-                <i class="bx bx-calendar" style="vertical-align:middle;margin-right:6px;font-size:1.2em;color:#6c5ce7"></i>{% now "d.m.Y, H:i" %}
+                <i class="bi bi-calendar3" style="vertical-align:middle;margin-right:6px;font-size:1.2em;color:#6c5ce7"></i>{% now "d.m.Y, H:i" %}
             </div>
         </div>
     </div>
@@ -549,8 +535,8 @@
         <a href="{% url 'admin:core_newinvoice_add' %}" class="db-action primary">＋ Инвойс</a>
         <a href="{% url 'admin:core_transaction_add' %}" class="db-action primary">＋ Транзакция</a>
         <a href="{% url 'comparison_dashboard' %}" class="db-action outline">Сравнение сумм</a>
-        <a href="{% url 'personal_cards_page' %}" class="db-action outline">💳 Карты и переводы</a>
-        <a href="{% url 'add_cash_expense' %}" class="db-action outline">💸 Личный расход</a>
+        <a href="{% url 'personal_cards_page' %}" class="db-action outline"><i class="bi bi-credit-card-2-front"></i> Карты и переводы</a>
+        <a href="{% url 'add_cash_expense' %}" class="db-action outline"><i class="bi bi-cash-coin"></i> Личный расход</a>
         {% if company %}
         <a href="{% url 'admin:core_company_change' company.pk %}" class="db-action ghost">Компания →</a>
         {% endif %}
@@ -580,31 +566,31 @@
     <div class="db-section-body">
     <div class="kpi-row five">
         <div class="kpi accent-blue">
-            <div class="kpi-icon blue"><i class="bx bxs-ship"></i></div>
+            <div class="kpi-icon blue"><i class="bi bi-water"></i></div>
             <div class="kpi-label">В пути</div>
             <div class="kpi-value v-blue">{{ cars_by_status.FLOATING }}</div>
             <div class="kpi-sub">Конт: {{ containers_by_status.FLOATING }}</div>
         </div>
         <div class="kpi accent-red">
-            <div class="kpi-icon red"><i class="bx bxs-flag-alt"></i></div>
+            <div class="kpi-icon red"><i class="bi bi-flag-fill"></i></div>
             <div class="kpi-label">В порту</div>
             <div class="kpi-value v-red">{{ cars_by_status.IN_PORT }}</div>
             <div class="kpi-sub">Конт: {{ containers_by_status.IN_PORT }}</div>
         </div>
         <div class="kpi accent-green">
-            <div class="kpi-icon green"><i class="bx bxs-package"></i></div>
+            <div class="kpi-icon green"><i class="bi bi-box-seam"></i></div>
             <div class="kpi-label">Разгружены</div>
             <div class="kpi-value v-green">{{ cars_by_status.UNLOADED }}</div>
             <div class="kpi-sub">Конт: {{ containers_by_status.UNLOADED }}</div>
         </div>
         <div class="kpi accent-purple">
-            <div class="kpi-icon purple"><i class="bx bxs-check-circle"></i></div>
+            <div class="kpi-icon purple"><i class="bi bi-check-circle-fill"></i></div>
             <div class="kpi-label">Переданы</div>
             <div class="kpi-value v-purple">{{ cars_by_status.TRANSFERRED }}</div>
             <div class="kpi-sub">Конт: {{ containers_by_status.TRANSFERRED }}</div>
         </div>
         <div class="kpi accent-amber">
-            <div class="kpi-icon amber"><i class="bx bxs-buildings"></i></div>
+            <div class="kpi-icon amber"><i class="bi bi-buildings-fill"></i></div>
             <div class="kpi-label">На хранении</div>
             <div class="kpi-value">{{ cars_on_storage.count }}</div>
             <div class="kpi-sub">{{ cars_on_storage.total_storage_cost|floatformat:2 }} €</div>
@@ -613,17 +599,17 @@
 
     <div class="kpi-row five" style="margin-bottom:28px">
         <div class="kpi accent-cyan">
-            <div class="kpi-icon cyan"><i class="bx bxs-truck"></i></div>
+            <div class="kpi-icon cyan"><i class="bi bi-truck"></i></div>
             <div class="kpi-label">Активные тралы</div>
             <div class="kpi-value v-cyan">{{ active_auto_transports }}</div>
         </div>
         <div class="kpi accent-indigo">
-            <div class="kpi-icon indigo"><i class="bx bxs-car"></i></div>
+            <div class="kpi-icon indigo"><i class="bi bi-car-front-fill"></i></div>
             <div class="kpi-label">Всего авто</div>
             <div class="kpi-value">{{ cars_by_status.total }}</div>
         </div>
         <div class="kpi accent-indigo">
-            <div class="kpi-icon indigo"><i class="bx bxs-cube"></i></div>
+            <div class="kpi-icon indigo"><i class="bi bi-box"></i></div>
             <div class="kpi-label">Всего контейнеров</div>
             <div class="kpi-value">{{ containers_by_status.total }}</div>
         </div>
@@ -637,7 +623,7 @@
     <div class="db-section-body">
     <div class="kpi-row four" style="margin-bottom:12px">
         <div class="kpi accent-teal">
-            <div class="kpi-icon teal"><i class="bx bxs-coin-stack"></i></div>
+            <div class="kpi-icon teal"><i class="bi bi-coin"></i></div>
             <div class="kpi-label">Всего активов</div>
             <div class="kpi-value {% if total_assets >= 0 %}v-green{% else %}v-red{% endif %}">
                 {{ total_assets|floatformat:2 }} €
@@ -645,20 +631,20 @@
             <div class="kpi-sub">наличные + банк</div>
         </div>
         <div class="kpi accent-indigo">
-            <div class="kpi-icon indigo"><i class="bx bxs-wallet"></i></div>
+            <div class="kpi-icon indigo"><i class="bi bi-wallet-fill"></i></div>
             <div class="kpi-label">Баланс (по книгам)</div>
             <div class="kpi-value {% if company_balance >= 0 %}v-green{% else %}v-red{% endif %}">
                 {{ company_balance|floatformat:2 }} €
             </div>
         </div>
         <div class="kpi accent-amber">
-            <div class="kpi-icon amber"><i class="bx bxs-receipt"></i></div>
+            <div class="kpi-icon amber"><i class="bi bi-receipt"></i></div>
             <div class="kpi-label">К получению</div>
             <div class="kpi-value v-amber">{{ outstanding_invoices.total|floatformat:2 }} €</div>
             <div class="kpi-sub">{{ outstanding_invoices.count }} инвойсов</div>
         </div>
         <div class="kpi accent-rose">
-            <div class="kpi-icon rose"><i class="bx bxs-error-circle"></i></div>
+            <div class="kpi-icon rose"><i class="bi bi-exclamation-circle-fill"></i></div>
             <div class="kpi-label">Просроченные</div>
             <div class="kpi-value {% if overdue_invoices_count > 0 %}v-red{% else %}v-green{% endif %}">
                 {{ overdue_invoices_count }}
@@ -667,17 +653,17 @@
     </div>
     <div class="kpi-row three" style="margin-bottom:28px">
         <div class="kpi accent-green">
-            <div class="kpi-icon green"><i class="bx bx-trending-up"></i></div>
+            <div class="kpi-icon green"><i class="bi bi-graph-up-arrow"></i></div>
             <div class="kpi-label">Доходы (мес.)</div>
             <div class="kpi-value v-green">+{{ monthly_revenue|floatformat:2 }} €</div>
         </div>
         <div class="kpi accent-red">
-            <div class="kpi-icon red"><i class="bx bx-trending-down"></i></div>
+            <div class="kpi-icon red"><i class="bi bi-graph-down-arrow"></i></div>
             <div class="kpi-label">Расходы (мес.)</div>
             <div class="kpi-value v-red">−{{ monthly_expenses|floatformat:2 }} €</div>
         </div>
         <div class="kpi accent-cyan">
-            <div class="kpi-icon cyan"><i class="bx bxs-bar-chart-alt-2"></i></div>
+            <div class="kpi-icon cyan"><i class="bi bi-bar-chart-fill"></i></div>
             <div class="kpi-label">Прибыль (мес.)</div>
             <div class="kpi-value {% if monthly_profit >= 0 %}v-green{% else %}v-red{% endif %}">
                 {{ monthly_profit|floatformat:2 }} €
@@ -687,11 +673,11 @@
     </div>
 
     <!-- ════════════════ CASH WALLET ════════════════ -->
-    <div class="db-section" data-section="wallet"><i class="bx bxs-wallet" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Кошелёк и карты</div>
+    <div class="db-section" data-section="wallet"><i class="bi bi-wallet-fill" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Кошелёк и карты</div>
     <div class="db-section-body">
     <div class="kpi-row five" style="margin-bottom:12px">
         <div class="kpi accent-green">
-            <div class="kpi-icon green"><i class="bx bx-money"></i></div>
+            <div class="kpi-icon green"><i class="bi bi-cash"></i></div>
             <div class="kpi-label">Наличные на руках</div>
             <div class="kpi-value {% if cash_wallet.total_cash >= 0 %}v-green{% else %}v-red{% endif %}">
                 {{ cash_wallet.total_cash|floatformat:2 }} €
@@ -700,7 +686,7 @@
         </div>
         {% for card in cash_wallet.personal_cards %}
         <div class="kpi" style="border-top: 3px solid {{ card.color }}">
-            <div class="kpi-icon" style="background: {{ card.color }}15; color: {{ card.color }}"><i class="bx bxs-credit-card"></i></div>
+            <div class="kpi-icon" style="background: {{ card.color }}15; color: {{ card.color }}"><i class="bi bi-credit-card-fill"></i></div>
             <div class="kpi-label">{{ card.name }}{% if card.last_four %} ·{{ card.last_four }}{% endif %}</div>
             <div class="kpi-value" style="{% if card.balance < 0 %}color:#dc2626{% endif %}">
                 {{ card.balance|floatformat:2 }} €
@@ -708,25 +694,25 @@
         </div>
         {% endfor %}
         <div class="kpi accent-amber">
-            <div class="kpi-icon amber"><i class="bx bxs-purchase-tag"></i></div>
+            <div class="kpi-icon amber"><i class="bi bi-tag-fill"></i></div>
             <div class="kpi-label">Личные расходы (мес.)</div>
             <div class="kpi-value v-amber">{{ cash_wallet.personal_month|floatformat:2 }} €</div>
         </div>
         <div class="kpi accent-red">
-            <div class="kpi-icon red"><i class="bx bxs-purchase-tag-alt"></i></div>
+            <div class="kpi-icon red"><i class="bi bi-tags-fill"></i></div>
             <div class="kpi-label">Личные расходы (всего)</div>
             <div class="kpi-value v-red">{{ cash_wallet.personal_total|floatformat:2 }} €</div>
         </div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
-        <a href="{% url 'personal_cards_page' %}" class="db-action outline">💳 Карты и переводы</a>
-        <a href="{% url 'add_cash_income' %}" class="db-action outline">💰 Пополнить наличные</a>
-        <a href="{% url 'add_cash_expense' %}" class="db-action outline">💸 Расход наличными</a>
-        <a href="{% url 'personal_card_expense' %}" class="db-action outline">💸 Расход с карты</a>
+        <a href="{% url 'personal_cards_page' %}" class="db-action outline"><i class="bi bi-credit-card-2-front"></i> Карты и переводы</a>
+        <a href="{% url 'add_cash_income' %}" class="db-action outline"><i class="bi bi-plus-circle"></i> Пополнить наличные</a>
+        <a href="{% url 'add_cash_expense' %}" class="db-action outline"><i class="bi bi-dash-circle"></i> Расход наличными</a>
+        <a href="{% url 'personal_card_expense' %}" class="db-action outline"><i class="bi bi-credit-card"></i> Расход с карты</a>
     </div>
     {% if cash_wallet.recent_personal %}
     <div style="background:#fff;border-radius:16px;padding:20px 24px;margin-bottom:16px;box-shadow:0 1px 4px rgba(30,20,60,.06),0 4px 14px rgba(30,20,60,.05);border:1px solid rgba(108,92,231,.14)">
-        <h3 style="margin:0 0 12px;font-size:.95em;color:#4a4a68;font-weight:700"><i class="bx bx-history" style="vertical-align:middle;margin-right:6px;color:#6c5ce7"></i>Последние личные расходы</h3>
+        <h3 style="margin:0 0 12px;font-size:.95em;color:#4a4a68;font-weight:700"><i class="bi bi-clock-history" style="vertical-align:middle;margin-right:6px;color:#6c5ce7"></i>Последние личные расходы</h3>
         <div class="tbl-scroll" style="max-height:none">
         <table class="dt" style="margin:0">
             <thead>
@@ -742,7 +728,7 @@
                     <td style="text-align:center">
                         {% if tx.attachment %}
                             <a href="{{ tx.attachment.url }}" target="_blank" title="Просмотреть чек" style="color:#22c55e;font-size:1.2em;text-decoration:none">
-                                <i class="bx bx-check-circle"></i>
+                                <i class="bi bi-check-circle"></i>
                             </a>
                         {% else %}
                             <form method="post" action="{% url 'upload_expense_receipt' tx.id %}" enctype="multipart/form-data" style="display:inline;margin:0">
@@ -750,7 +736,7 @@
                                 <input type="hidden" name="next" value="{% url 'company_dashboard' %}">
                                 <input type="file" name="receipt" accept="image/*,.pdf" style="display:none" id="receipt-{{ tx.id }}" onchange="this.form.submit()">
                                 <label for="receipt-{{ tx.id }}" title="Загрузить чек" style="cursor:pointer;color:#6c5ce7;font-size:1.2em">
-                                    <i class="bx bx-upload"></i>
+                                    <i class="bi bi-upload"></i>
                                 </label>
                             </form>
                         {% endif %}
@@ -766,12 +752,12 @@
     {% if cash_wallet.category_breakdown %}
     <div style="display:flex;gap:16px;margin-bottom:28px;flex-wrap:wrap">
         <div style="flex:1;min-width:260px;background:#fff;border-radius:16px;padding:20px 24px;box-shadow:0 1px 4px rgba(30,20,60,.06),0 4px 14px rgba(30,20,60,.05);border:1px solid rgba(108,92,231,.14)">
-            <h3 style="margin:0 0 12px;font-size:.95em;color:#4a4a68;font-weight:700"><i class="bx bx-pie-chart-alt-2" style="vertical-align:middle;margin-right:6px;color:#6c5ce7"></i>Структура расходов (месяц)</h3>
+            <h3 style="margin:0 0 12px;font-size:.95em;color:#4a4a68;font-weight:700"><i class="bi bi-pie-chart-fill" style="vertical-align:middle;margin-right:6px;color:#6c5ce7"></i>Структура расходов (месяц)</h3>
             <canvas id="personalCatChart" style="max-height:200px"></canvas>
         </div>
         <div style="flex:0 0 auto;display:flex;align-items:center">
             <a href="{% url 'expense_analytics' %}" style="display:inline-flex;align-items:center;gap:8px;padding:14px 24px;border-radius:12px;background:linear-gradient(135deg,#6c5ce7,#a78bfa);color:#fff;text-decoration:none;font-weight:700;font-size:.95em;transition:all .2s">
-                <i class="bx bx-bar-chart-alt-2" style="font-size:1.3em"></i>
+                <i class="bi bi-bar-chart" style="font-size:1.3em"></i>
                 Подробная аналитика
             </a>
         </div>
@@ -779,7 +765,7 @@
     {% else %}
     <div style="text-align:center;margin-bottom:28px">
         <a href="{% url 'expense_analytics' %}" style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:10px;background:rgba(108,92,231,.1);color:#6c5ce7;text-decoration:none;font-weight:600;font-size:.9em">
-            <i class="bx bx-bar-chart-alt-2"></i>
+            <i class="bi bi-bar-chart"></i>
             Аналитика расходов
         </a>
     </div>
@@ -788,12 +774,12 @@
 
     <!-- ════════════════ BANK ACCOUNTS ════════════════ -->
     {% if bank_accounts %}
-    <div class="db-section" data-section="bank-accounts"><i class="bx bxs-bank" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Банковские счета</div>
+    <div class="db-section" data-section="bank-accounts"><i class="bi bi-bank2" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Банковские счета</div>
     <div class="db-section-body">
     <div class="kpi-row {% if bank_accounts|length <= 3 %}three{% elif bank_accounts|length == 4 %}four{% else %}five{% endif %}" style="margin-bottom:28px">
         {% for acc in bank_accounts %}
         <div class="kpi accent-indigo">
-            <div class="kpi-icon indigo"><i class="bx bxs-bank"></i></div>
+            <div class="kpi-icon indigo"><i class="bi bi-bank2"></i></div>
             <div class="kpi-label">{{ acc.connection__name }} — {{ acc.currency }}</div>
             <div class="kpi-value {% if acc.balance >= 0 %}v-green{% else %}v-red{% endif %}">
                 {{ acc.balance|floatformat:2 }} {{ acc.currency }}
@@ -815,13 +801,13 @@
     <div class="db-section-body">
     <div class="charts-bar-row">
         <div class="chart-card">
-            <h3><i class="bx bx-bar-chart" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#6c5ce7"></i>Доходы и расходы (6 мес.)</h3>
+            <h3><i class="bi bi-bar-chart" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#6c5ce7"></i>Доходы и расходы (6 мес.)</h3>
             <div class="chart-wrap-bar"><canvas id="revenueExpensesChart"></canvas></div>
         </div>
     </div>
     <div class="charts-donut-row">
         <div class="chart-card">
-            <h3><i class="bx bxs-car" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#6c5ce7"></i>Авто по статусам</h3>
+            <h3><i class="bi bi-car-front-fill" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#6c5ce7"></i>Авто по статусам</h3>
             <div class="chart-wrap">
                 <canvas id="carsChart"></canvas>
                 <div class="chart-center-label">
@@ -831,7 +817,7 @@
             </div>
         </div>
         <div class="chart-card">
-            <h3><i class="bx bxs-file" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#6c5ce7"></i>Инвойсы по статусам</h3>
+            <h3><i class="bi bi-file-earmark-text-fill" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#6c5ce7"></i>Инвойсы по статусам</h3>
             <div class="chart-wrap">
                 <canvas id="invoicesChart"></canvas>
                 <div class="chart-center-label">
@@ -845,12 +831,12 @@
 
     <!-- ════════════════ P&L ПО КАТЕГОРИЯМ ════════════════ -->
     {% if expenses_by_category or income_by_category %}
-    <div class="db-section" data-section="pl-categories"><i class="bx bxs-pie-chart-alt-2" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> P&L по категориям (текущий месяц)</div>
+    <div class="db-section" data-section="pl-categories"><i class="bi bi-pie-chart-fill" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> P&L по категориям (текущий месяц)</div>
     <div class="db-section-body">
     <div class="charts-donut-row">
         <!-- Doughnut: структура расходов -->
         <div class="chart-card">
-            <h3><i class="bx bx-trending-down" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#ef4444"></i>Структура расходов</h3>
+            <h3><i class="bi bi-graph-down-arrow" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#ef4444"></i>Структура расходов</h3>
             {% if expenses_by_category %}
             <div class="chart-wrap">
                 <canvas id="expensesCategoryChart"></canvas>
@@ -861,7 +847,7 @@
         </div>
         <!-- Таблица: расходы по категориям -->
         <div class="chart-card" style="display:flex;flex-direction:column;">
-            <h3><i class="bx bxs-spreadsheet" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#6c5ce7"></i>Детализация расходов</h3>
+            <h3><i class="bi bi-table" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#6c5ce7"></i>Детализация расходов</h3>
             {% if expenses_by_category %}
             <div class="tbl-scroll" style="flex:1">
                 <table class="dt">
@@ -889,13 +875,13 @@
     {% if income_by_category %}
     <div class="charts-donut-row">
         <div class="chart-card">
-            <h3><i class="bx bx-trending-up" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#22c55e"></i>Структура доходов</h3>
+            <h3><i class="bi bi-graph-up-arrow" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#22c55e"></i>Структура доходов</h3>
             <div class="chart-wrap">
                 <canvas id="incomeCategoryChart"></canvas>
             </div>
         </div>
         <div class="chart-card" style="display:flex;flex-direction:column;">
-            <h3><i class="bx bxs-spreadsheet" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#22c55e"></i>Детализация доходов</h3>
+            <h3><i class="bi bi-table" style="vertical-align:middle;margin-right:8px;font-size:1.3em;color:#22c55e"></i>Детализация доходов</h3>
             <div class="tbl-scroll" style="flex:1">
                 <table class="dt">
                     <thead>
@@ -920,13 +906,13 @@
 
     <!-- ════════════════ AGED RECEIVABLES / PAYABLES ════════════════ -->
     {% if aged_receivables or aged_payables %}
-    <div class="db-section" data-section="aged-debt"><i class="bx bxs-time" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Задолженность по срокам</div>
+    <div class="db-section" data-section="aged-debt"><i class="bi bi-clock-fill" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Задолженность по срокам</div>
     <div class="db-section-body">
     <div class="tables-grid">
         {% if aged_receivables %}
         <div class="tbl-card">
             <h3>
-                <span class="tbl-icon" style="background:#f0fdf4;color:#16a34a"><i class="bx bx-trending-up"></i></span>
+                <span class="tbl-icon" style="background:#f0fdf4;color:#16a34a"><i class="bi bi-graph-up-arrow"></i></span>
                 Дебиторская задолженность (нам должны)
                 <span style="margin-left:auto;font-size:1.1em;font-weight:800;color:#16a34a">{{ aged_receivables.grand_total|floatformat:2 }} €</span>
             </h3>
@@ -954,7 +940,7 @@
         {% if aged_payables %}
         <div class="tbl-card">
             <h3>
-                <span class="tbl-icon" style="background:#fef2f2;color:#ef4444"><i class="bx bx-trending-down"></i></span>
+                <span class="tbl-icon" style="background:#fef2f2;color:#ef4444"><i class="bi bi-graph-down-arrow"></i></span>
                 Кредиторская задолженность (мы должны)
                 <span style="margin-left:auto;font-size:1.1em;font-weight:800;color:#ef4444">{{ aged_payables.grand_total|floatformat:2 }} €</span>
             </h3>
@@ -989,7 +975,7 @@
         <!-- Transactions -->
         <div class="tbl-card">
             <h3>
-                <span class="tbl-icon" style="background:#eef2ff;color:#4f46e5"><i class="bx bxs-credit-card"></i></span>
+                <span class="tbl-icon" style="background:#eef2ff;color:#4f46e5"><i class="bi bi-credit-card-fill"></i></span>
                 Транзакции
             </h3>
             <div class="tbl-scroll">
@@ -1027,7 +1013,7 @@
         <!-- Invoices -->
         <div class="tbl-card">
             <h3>
-                <span class="tbl-icon" style="background:#f0fdf4;color:#16a34a"><i class="bx bxs-file-doc"></i></span>
+                <span class="tbl-icon" style="background:#f0fdf4;color:#16a34a"><i class="bi bi-file-earmark-text"></i></span>
                 Инвойсы
             </h3>
             <div class="tbl-scroll">
@@ -1064,12 +1050,12 @@
 
     <!-- ════════════════ BANK TRANSACTIONS TABLE ════════════════ -->
     {% if recent_bank_transactions %}
-    <div class="db-section" data-section="bank-ops"><i class="bx bxs-bank" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Банковские операции</div>
+    <div class="db-section" data-section="bank-ops"><i class="bi bi-bank2" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Банковские операции</div>
     <div class="db-section-body">
     <div class="tables-grid" style="grid-template-columns:1fr">
         <div class="tbl-card">
             <h3>
-                <span class="tbl-icon" style="background:#eef2ff;color:#4f46e5"><i class="bx bxs-bank"></i></span>
+                <span class="tbl-icon" style="background:#eef2ff;color:#4f46e5"><i class="bi bi-bank2"></i></span>
                 Последние операции из банков
             </h3>
             <div class="tbl-scroll">

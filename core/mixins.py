@@ -147,6 +147,13 @@ class BalanceMethodsMixin:
         + = контрагент «в плюсе» с нашей точки зрения (нам должны / у нас их залог);
         − = мы должны контрагенту (дебет);
         0  = всё сведено.
+
+        ВНИМАНИЕ: формула НАМЕРЕННО отличается от клиентской
+        (``Client.total_balance = balance − open_invoices_debt``): у партнёров
+        ``balance`` учитывает только Tx без инвойса (депозиты/залоги), а
+        открытые FACT/PARDP считаются property. Знаковая конвенция обратная
+        к Client. Не «чинить» одну формулу под другую — см.
+        .cursor/rules/accounting-context.mdc.
         """
         return (self.balance or Decimal("0.00")) + self.open_pardp_receivable - self.open_fact_debt
 

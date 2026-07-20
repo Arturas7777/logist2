@@ -1,21 +1,11 @@
-{% extends "admin/base_site.html" %}
+﻿{% extends "admin/custom_page_base.html" %}
 {% load static i18n %}
 
 {% block title %}Аналитика расходов{% endblock %}
-{% block content_title %}<h1>📊 Аналитика личных расходов</h1>{% endblock %}
+{% block content_title %}<h1><i class="bi bi-bar-chart-fill"></i> Аналитика личных расходов</h1>{% endblock %}
 
-{% block extrastyle %}
-{{ block.super }}
-<link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+{% block page_style %}
 <style>
-    main#content-start, main.content { padding: 0 !important; }
-    #content {
-        background: #f4f2ff;
-        min-height: 100vh;
-        max-width: 100% !important;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    }
-    #content-main { padding: 0; }
     .ea {
         max-width: 1100px;
         margin: 0 auto;
@@ -267,13 +257,13 @@
         <a href="?period=all{% if generate_ai %}&ai=1{% endif %}" class="{% if period == 'all' %}active{% endif %}">Всё время</a>
         <span class="spacer"></span>
         {% if not generate_ai %}
-        <a href="?period={{ period }}&ai=1" class="ea-ai-btn"><i class="bx bx-brain" style="vertical-align:middle;margin-right:4px"></i>AI-анализ</a>
+        <a href="?period={{ period }}&ai=1" class="ea-ai-btn"><i class="bi bi-stars" style="vertical-align:middle;margin-right:4px"></i>AI-анализ</a>
         {% endif %}
     </div>
 
     {% if not breakdown %}
     <div class="ea-empty">
-        <i class="bx bx-receipt"></i>
+        <i class="bi bi-receipt"></i>
         Нет данных о расходах за выбранный период.<br>
         <a href="{% url 'add_cash_expense' %}" style="color:#6c5ce7">Записать расход</a>
     </div>
@@ -298,7 +288,7 @@
     <!-- AI Insights block -->
     {% if ai_insights %}
     <div class="ea-ai-block">
-        <h3><i class="bx bx-brain"></i> AI-анализ расходов</h3>
+        <h3><i class="bi bi-stars"></i> AI-анализ расходов</h3>
         <div class="ea-ai-summary">{{ ai_insights.summary }}</div>
 
         {% if ai_insights.highlights %}
@@ -321,7 +311,7 @@
 
         {% if ai_insights.error %}
         <div style="font-size:.8em;color:#ef4444;margin-top:8px">
-            <i class="bx bx-error-circle"></i> AI-анализ сгенерирован частично: {{ ai_insights.error }}
+            <i class="bi bi-exclamation-circle"></i> AI-анализ сгенерирован частично: {{ ai_insights.error }}
         </div>
         {% endif %}
     </div>
@@ -330,11 +320,11 @@
     <!-- Charts -->
     <div class="ea-charts">
         <div class="ea-chart-card">
-            <h3><i class="bx bx-pie-chart-alt-2" style="vertical-align:middle;margin-right:4px;color:#6c5ce7"></i> По категориям</h3>
+            <h3><i class="bi bi-pie-chart-fill" style="vertical-align:middle;margin-right:4px;color:#6c5ce7"></i> По категориям</h3>
             <canvas id="categoryChart"></canvas>
         </div>
         <div class="ea-chart-card">
-            <h3><i class="bx bx-bar-chart-alt-2" style="vertical-align:middle;margin-right:4px;color:#6c5ce7"></i> Динамика по месяцам</h3>
+            <h3><i class="bi bi-bar-chart-fill" style="vertical-align:middle;margin-right:4px;color:#6c5ce7"></i> Динамика по месяцам</h3>
             {% if trend %}
             <canvas id="trendChart"></canvas>
             {% else %}
@@ -345,7 +335,7 @@
 
     <!-- Category breakdown table -->
     <div class="ea-section">
-        <h3><i class="bx bx-category-alt" style="vertical-align:middle;margin-right:4px;color:#6c5ce7"></i> Расходы по категориям</h3>
+        <h3><i class="bi bi-tags" style="vertical-align:middle;margin-right:4px;color:#6c5ce7"></i> Расходы по категориям</h3>
         <table class="ea-table">
             <thead>
                 <tr>
@@ -379,7 +369,7 @@
     <!-- Top items from receipts -->
     {% if top_items %}
     <div class="ea-section">
-        <h3><i class="bx bx-receipt" style="vertical-align:middle;margin-right:4px;color:#6c5ce7"></i> Топ покупок (из чеков)</h3>
+        <h3><i class="bi bi-receipt" style="vertical-align:middle;margin-right:4px;color:#6c5ce7"></i> Топ покупок (из чеков)</h3>
         <table class="ea-table">
             <thead>
                 <tr>
@@ -409,7 +399,7 @@
 
     {% if no_receipt_expenses %}
     <div class="ea-section">
-        <h3><i class="bx bx-upload" style="vertical-align:middle;margin-right:4px;color:#f59e0b"></i> Расходы без чека</h3>
+        <h3><i class="bi bi-upload" style="vertical-align:middle;margin-right:4px;color:#f59e0b"></i> Расходы без чека</h3>
         <p style="font-size:.88em;color:#7c7c9a;margin:0 0 12px">Загрузите фото чеков — AI извлечёт детали покупок для аналитики.</p>
         <table class="ea-table">
             <thead>
@@ -434,7 +424,7 @@
                             <input type="hidden" name="next" value="{% url 'expense_analytics' %}?period={{ period }}">
                             <input type="file" name="receipt" accept="image/*,.pdf" style="display:none" id="ea-receipt-{{ tx.id }}" onchange="this.form.submit()">
                             <label for="ea-receipt-{{ tx.id }}" title="Загрузить чек" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:8px;background:rgba(108,92,231,.08);color:#6c5ce7;font-size:.82em;font-weight:600;transition:background .15s">
-                                <i class="bx bx-camera" style="font-size:1.1em"></i> Чек
+                                <i class="bi bi-camera" style="font-size:1.1em"></i> Чек
                             </label>
                         </form>
                     </td>
@@ -446,7 +436,7 @@
     {% endif %}
 
     <div class="ea-back">
-        <a href="{% url 'company_dashboard' %}"><i class="bx bx-arrow-back" style="vertical-align:middle"></i> Вернуться на дашборд</a>
+        <a href="{% url 'company_dashboard' %}"><i class="bi bi-arrow-left" style="vertical-align:middle"></i> Вернуться на дашборд</a>
     </div>
 </div>
 

@@ -1,17 +1,8 @@
-{% extends "admin/base_site.html" %}
+{% extends "admin/custom_page_base.html" %}
 {% load i18n static %}
 
-{% block extrastyle %}
-{{ block.super }}
+{% block page_style %}
 <style>
-    main#content-start, main.content { padding: 0 !important; }
-    #content {
-        background: #f4f2ff;
-        min-height: 100vh;
-        max-width: 100% !important;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    }
-    #content-main { padding: 0; }
     .topup-wrap {
         max-width: 560px;
         margin: 0 auto;
@@ -167,8 +158,8 @@
         </form>
     </div>
 
-    <div style="text-align:center;margin-top:16px">
-        <a href="{% url 'company_dashboard' %}" style="color:#6c5ce7;text-decoration:none;font-size:.9em">← Вернуться на дашборд</a>
+    <div class="cm-back">
+        <a href="{% url 'company_dashboard' %}">← Вернуться на дашборд</a>
     </div>
 </div>
 {% endblock %}
