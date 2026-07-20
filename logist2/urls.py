@@ -27,6 +27,7 @@ from core.views import (
     add_cash_income,
     cash_wallet_reset,
     expense_analytics,
+    global_search,
     upload_expense_receipt,
     personal_cards_page,
     personal_card_add,
@@ -115,6 +116,7 @@ urlpatterns = [
     # ========== АДМИН-СПЕЦИФИЧНЫЕ ЭНДПОИНТЫ ==========
     path("admin/register-payment/", register_payment, name="register_payment"),
     path("admin/dashboard/", company_dashboard, name="company_dashboard"),
+    path("admin/global-search/", global_search, name="global_search"),
     path("admin/cash-expense/", add_cash_expense, name="add_cash_expense"),
     path("admin/cash-income/", add_cash_income, name="add_cash_income"),
     path("admin/cash-wallet/reset/", cash_wallet_reset, name="cash_wallet_reset"),

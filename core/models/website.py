@@ -44,8 +44,8 @@ class ClientUser(models.Model):
         return f"{self.user.username} ({self.client.name})"
 
     class Meta:
-        verbose_name = "Клиентский пользователь"
-        verbose_name_plural = "Клиентские пользователи"
+        verbose_name = "Доступ клиента в портал"
+        verbose_name_plural = "Доступы клиентов в портал"
 
 
 class CarPhoto(models.Model):
@@ -432,8 +432,8 @@ class ContactMessage(models.Model):
     replied = models.BooleanField(default=False, verbose_name="Ответили")
 
     class Meta:
-        verbose_name = "Сообщение"
-        verbose_name_plural = "Сообщения"
+        verbose_name = "Сообщение с сайта"
+        verbose_name_plural = "Сообщения с сайта"
         ordering = ["-created_at"]
 
     def __str__(self):

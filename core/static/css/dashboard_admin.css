@@ -365,6 +365,57 @@ body.login .submit-row input[type="submit"]:hover {
     text-align: center;
 }
 
+/* Collapsible nav groups */
+.cm-nav-group {
+    margin-top: 6px;
+}
+.cm-nav-group-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 16px 6px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: .68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--cm-text-muted);
+    text-align: left;
+    transition: color .2s;
+}
+.cm-nav-group-toggle:hover {
+    color: var(--cm-text);
+}
+.cm-nav-group-icon {
+    font-size: .85rem;
+    width: 16px;
+    min-width: 16px;
+    text-align: center;
+}
+.cm-nav-group-chevron {
+    margin-left: auto;
+    font-size: .65rem;
+    transition: transform .2s;
+}
+.cm-nav-group.open .cm-nav-group-chevron {
+    transform: rotate(180deg);
+}
+.cm-nav-group-items {
+    overflow: hidden;
+    max-height: 0;
+    transition: max-height .25s ease;
+}
+.cm-nav-group.open .cm-nav-group-items {
+    max-height: 800px;
+}
+.cm-nav-group.no-anim .cm-nav-group-items {
+    transition: none;
+}
+
 /* Sidebar sub-items */
 .cm-sidebar-subnav {
     list-style: none;
@@ -399,6 +450,143 @@ body.login .submit-row input[type="submit"]:hover {
     color: var(--cm-purple);
     background: transparent;
     font-weight: 600;
+}
+
+/* ── Global search (Ctrl+K) ─────────────────────────────────────────────── */
+.cm-gsearch-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: var(--cm-bg, #f8f9fb);
+    color: var(--cm-text-muted);
+    font-family: inherit;
+    font-size: .82rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .2s;
+}
+.cm-gsearch-trigger:hover {
+    border-color: var(--cm-purple);
+    color: var(--cm-purple);
+}
+.cm-gsearch-trigger kbd {
+    font-family: inherit;
+    font-size: .65rem;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 5px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    color: var(--cm-text-muted);
+}
+@media (max-width: 768px) {
+    .cm-gsearch-trigger-label, .cm-gsearch-trigger kbd { display: none; }
+}
+.cm-gsearch-overlay[hidden] {
+    display: none;
+}
+.cm-gsearch-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    background: rgba(15, 23, 42, .45);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 12vh 16px 16px;
+}
+.cm-gsearch-modal {
+    width: 100%;
+    max-width: 620px;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 24px 64px rgba(0,0,0,.25);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    max-height: 70vh;
+}
+.cm-gsearch-input-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid #eef0f4;
+}
+.cm-gsearch-input-row > i {
+    font-size: 1.05rem;
+    color: var(--cm-text-muted);
+}
+.cm-gsearch-input-row input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-family: inherit;
+    font-size: 1rem;
+    color: var(--cm-text);
+    background: transparent;
+}
+.cm-gsearch-input-row kbd {
+    font-family: inherit;
+    font-size: .68rem;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 5px;
+    background: #f8f9fb;
+    border: 1px solid #e2e8f0;
+    color: var(--cm-text-muted);
+}
+.cm-gsearch-results {
+    overflow-y: auto;
+    padding: 8px;
+}
+.cm-gsearch-hint {
+    padding: 24px;
+    text-align: center;
+    color: var(--cm-text-muted);
+    font-size: .85rem;
+}
+.cm-gsearch-group {
+    padding: 10px 12px 4px;
+    font-size: .68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--cm-text-muted);
+}
+.cm-gsearch-item {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: 10px;
+    text-decoration: none;
+    color: var(--cm-text);
+}
+.cm-gsearch-item:hover,
+.cm-gsearch-item.selected {
+    background: var(--cm-purple-bg, #f0edff);
+    text-decoration: none;
+}
+.cm-gsearch-label {
+    font-size: .9rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cm-gsearch-sub {
+    font-size: .78rem;
+    color: var(--cm-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-left: auto;
+    flex-shrink: 1;
 }
 
 /* Sidebar bottom (user) */

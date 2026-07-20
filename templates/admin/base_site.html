@@ -20,7 +20,7 @@
 {# — Icons — #}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
 {# — Design System — #}
-<link rel="stylesheet" type="text/css" href="{% static 'css/dashboard_admin.css' %}?v=59">
+<link rel="stylesheet" type="text/css" href="{% static 'css/dashboard_admin.css' %}?v=61">
 <style>
 /* Sticky first columns for wide changelists so VIN/status don't scroll out of view */
 #result_list.cm-sticky-cols thead th:nth-child(1),
@@ -374,38 +374,25 @@ document.addEventListener('DOMContentLoaded', function() {
         </li>
     </ul>
 
-    {# Dynamic navigation from sidebar_nav #}
+    {# Dynamic navigation from sidebar_nav — все группы сворачиваемые #}
     {% for group in sidebar_nav %}
-    {% if group.collapsible %}
-    {# Сворачиваемое меню (напр. «Дела + ИИ») #}
-    <ul class="cm-sidebar-nav">
-        <li class="has-subnav{% if group.is_open %} open{% endif %}">
-            <a href="#" class="cm-subnav-toggle">
-                <i class="bi {{ group.icon }}"></i> {{ group.name }}
-            </a>
-            <ul class="cm-sidebar-subnav{% if group.is_open %} open{% endif %}">
-                {% for item in group.items %}
-                <li>
-                    <a href="{{ item.url }}" class="{% if item.active %}active{% endif %}">
-                        <i class="bi {{ item.icon }}"></i> {{ item.name }}
-                    </a>
-                </li>
-                {% endfor %}
-            </ul>
-        </li>
-    </ul>
-    {% else %}
-    <div class="cm-sidebar-section">{{ group.name }}</div>
-    <ul class="cm-sidebar-nav">
-        {% for item in group.items %}
-        <li>
-            <a href="{{ item.url }}" class="{% if item.active %}active{% endif %}">
-                <i class="bi {{ item.icon }}"></i> {{ item.name }}
-            </a>
-        </li>
-        {% endfor %}
-    </ul>
-    {% endif %}
+    <div class="cm-nav-group{% if group.is_open %} open{% endif %}{% if not group.is_open %} no-anim{% endif %}"
+         data-nav-group="{{ group.name }}">
+        <button type="button" class="cm-nav-group-toggle" aria-expanded="{{ group.is_open|yesno:'true,false' }}">
+            <i class="bi {{ group.icon }} cm-nav-group-icon"></i>
+            <span>{{ group.name }}</span>
+            <i class="bi bi-chevron-down cm-nav-group-chevron"></i>
+        </button>
+        <ul class="cm-sidebar-nav cm-nav-group-items">
+            {% for item in group.items %}
+            <li>
+                <a href="{{ item.url }}" class="{% if item.active %}active{% endif %}">
+                    <i class="bi {{ item.icon }}"></i> {{ item.name }}
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
     {% endfor %}
 
 </aside>
@@ -427,6 +414,11 @@ document.addEventListener('DOMContentLoaded', function() {
         {% block topbar_title %}{% endblock %}
     </div>
     <div class="cm-topbar-right">
+        <button type="button" class="cm-gsearch-trigger" id="cm-gsearch-trigger" title="Глобальный поиск (Ctrl+K)">
+            <i class="bi bi-search"></i>
+            <span class="cm-gsearch-trigger-label">Поиск</span>
+            <kbd>Ctrl K</kbd>
+        </button>
         <a href="/" target="_blank" class="icon-btn" title="Открыть сайт">
             <i class="bi bi-globe"></i>
         </a>
@@ -435,6 +427,21 @@ document.addEventListener('DOMContentLoaded', function() {
         </a>
     </div>
 </header>
+
+{# ——— GLOBAL SEARCH PALETTE (Ctrl+K) ——— #}
+<div class="cm-gsearch-overlay" id="cm-gsearch-overlay" hidden>
+    <div class="cm-gsearch-modal" role="dialog" aria-label="Глобальный поиск">
+        <div class="cm-gsearch-input-row">
+            <i class="bi bi-search"></i>
+            <input type="text" id="cm-gsearch-input" placeholder="VIN, контейнер, клиент, номер инвойса…"
+                   autocomplete="off" spellcheck="false">
+            <kbd>Esc</kbd>
+        </div>
+        <div class="cm-gsearch-results" id="cm-gsearch-results">
+            <div class="cm-gsearch-hint">Начните вводить — минимум 2 символа</div>
+        </div>
+    </div>
+</div>
 
 {% elif not is_popup %}
 {# Login/logout page — simple centered header #}
@@ -519,17 +526,139 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Сворачиваемые подменю сайдбара (напр. «Дела + ИИ»)
-    document.querySelectorAll('.cm-subnav-toggle').forEach(function(t) {
-        t.addEventListener('click', function(e) {
-            e.preventDefault();
-            var li = t.closest('.has-subnav');
-            if (!li) return;
-            li.classList.toggle('open');
-            var sub = li.querySelector('.cm-sidebar-subnav');
-            if (sub) sub.classList.toggle('open');
+    // Сворачиваемые группы сайдбара + запоминание состояния в localStorage.
+    // Приоритет: группа с активной страницей всегда развёрнута;
+    // иначе — сохранённое пользователем состояние; иначе — серверный default.
+    var NAV_KEY = 'cm-nav-groups';
+    var navState = {};
+    try { navState = JSON.parse(localStorage.getItem(NAV_KEY) || '{}'); } catch (e) {}
+
+    document.querySelectorAll('.cm-nav-group').forEach(function(g) {
+        var name = g.getAttribute('data-nav-group');
+        var btn = g.querySelector('.cm-nav-group-toggle');
+        var hasActive = !!g.querySelector('.cm-nav-group-items a.active');
+
+        if (!hasActive && (name in navState)) {
+            g.classList.toggle('open', !!navState[name]);
+        }
+        if (btn) btn.setAttribute('aria-expanded', g.classList.contains('open') ? 'true' : 'false');
+        // Включаем анимацию только после применения сохранённого состояния
+        requestAnimationFrame(function() { g.classList.remove('no-anim'); });
+
+        if (!btn) return;
+        btn.addEventListener('click', function() {
+            var open = g.classList.toggle('open');
+            btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+            navState[name] = open;
+            try { localStorage.setItem(NAV_KEY, JSON.stringify(navState)); } catch (e) {}
         });
     });
+
+    // ── Глобальный поиск (Ctrl+K) ────────────────────────────────────────
+    var gsOverlay = document.getElementById('cm-gsearch-overlay');
+    var gsInput = document.getElementById('cm-gsearch-input');
+    var gsResults = document.getElementById('cm-gsearch-results');
+    var gsTrigger = document.getElementById('cm-gsearch-trigger');
+
+    if (gsOverlay && gsInput && gsResults) {
+        var gsTimer = null;
+        var gsController = null;
+        var gsSelected = -1;
+
+        function gsOpen() {
+            gsOverlay.hidden = false;
+            gsInput.value = '';
+            gsResults.innerHTML = '<div class="cm-gsearch-hint">Начните вводить — минимум 2 символа</div>';
+            gsSelected = -1;
+            setTimeout(function() { gsInput.focus(); }, 0);
+        }
+        function gsClose() {
+            gsOverlay.hidden = true;
+            if (gsController) gsController.abort();
+        }
+        function gsItems() {
+            return gsResults.querySelectorAll('.cm-gsearch-item');
+        }
+        function gsHighlight(idx) {
+            var items = gsItems();
+            if (!items.length) return;
+            gsSelected = (idx + items.length) % items.length;
+            items.forEach(function(el, i) {
+                el.classList.toggle('selected', i === gsSelected);
+            });
+            items[gsSelected].scrollIntoView({block: 'nearest'});
+        }
+        function gsRender(data) {
+            gsResults.innerHTML = '';
+            gsSelected = -1;
+            if (!data.groups || !data.groups.length) {
+                gsResults.innerHTML = '<div class="cm-gsearch-hint">Ничего не найдено</div>';
+                return;
+            }
+            data.groups.forEach(function(group) {
+                var head = document.createElement('div');
+                head.className = 'cm-gsearch-group';
+                head.innerHTML = '<i class="bi ' + group.icon + '"></i> ';
+                head.appendChild(document.createTextNode(group.name));
+                gsResults.appendChild(head);
+                group.items.forEach(function(item) {
+                    var a = document.createElement('a');
+                    a.className = 'cm-gsearch-item';
+                    a.href = item.url;
+                    var label = document.createElement('span');
+                    label.className = 'cm-gsearch-label';
+                    label.textContent = item.label;
+                    a.appendChild(label);
+                    if (item.sub) {
+                        var sub = document.createElement('span');
+                        sub.className = 'cm-gsearch-sub';
+                        sub.textContent = item.sub;
+                        a.appendChild(sub);
+                    }
+                    gsResults.appendChild(a);
+                });
+            });
+        }
+        function gsSearch(q) {
+            if (gsController) gsController.abort();
+            gsController = new AbortController();
+            fetch('/admin/global-search/?q=' + encodeURIComponent(q), {signal: gsController.signal})
+                .then(function(r) { return r.json(); })
+                .then(gsRender)
+                .catch(function(e) { if (e.name !== 'AbortError') console.error(e); });
+        }
+
+        if (gsTrigger) gsTrigger.addEventListener('click', gsOpen);
+        gsOverlay.addEventListener('mousedown', function(e) {
+            if (e.target === gsOverlay) gsClose();
+        });
+        document.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                e.preventDefault();
+                if (gsOverlay.hidden) gsOpen(); else gsClose();
+            } else if (!gsOverlay.hidden && e.key === 'Escape') {
+                gsClose();
+            }
+        });
+        gsInput.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowDown') { e.preventDefault(); gsHighlight(gsSelected + 1); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); gsHighlight(gsSelected - 1); }
+            else if (e.key === 'Enter') {
+                var items = gsItems();
+                var target = items[gsSelected] || items[0];
+                if (target) window.location.href = target.href;
+            }
+        });
+        gsInput.addEventListener('input', function() {
+            clearTimeout(gsTimer);
+            var q = gsInput.value.trim();
+            if (q.length < 2) {
+                gsResults.innerHTML = '<div class="cm-gsearch-hint">Начните вводить — минимум 2 символа</div>';
+                return;
+            }
+            gsTimer = setTimeout(function() { gsSearch(q); }, 250);
+        });
+    }
 
     // Mark body as loaded (enable transitions)
     document.body.classList.add('loaded');

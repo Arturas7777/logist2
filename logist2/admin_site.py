@@ -1,20 +1,22 @@
 """
-Кастомный AdminSite с группировкой моделей по категориям + sidebar навигация
-============================================================================
+Кастомный AdminSite: sidebar-навигация по частоте использования
+================================================================
 
-Вместо одного плоского списка "Core" — 6 логических разделов:
-  Логистика       — Car, Container, AutoTransport
-  Партнёры        — Client, Company, Warehouse, Line, Carrier
-  Финансы         — NewInvoice, Transaction, ExpenseCategory
-  Банкинг         — BankConnection, BankAccount, BankTransaction
-  Бухгалтерия     — SiteProConnection, SiteProInvoiceSync
-  Сайт            — ClientUser, AIChat, NewsPost, ContactMessage,
-                    TrackingRequest, NotificationLog
+Меню строится из ADMIN_GROUPS — единого конфига, где группа может содержать
+и модели (строка = object_name в нижнем регистре), и ссылки на кастомные
+страницы (dict с name/url/icon).
+
+Принцип: ежедневная работа — наверху и развёрнута; справочники/настройки
+и служебные разделы — свёрнуты по умолчанию (collapsed=True).
+
+Модели из HIDDEN_MODELS зарегистрированы в админке (доступны по прямым URL
+и из карточек), но в меню не показываются.
 """
 
 from collections import OrderedDict
 
 from django.contrib.admin import AdminSite as BaseAdminSite
+from django.shortcuts import redirect
 
 # ── Иконки моделей (Bootstrap Icons) ────────────────────────────────────────
 MODEL_ICONS = {
@@ -42,7 +44,6 @@ MODEL_ICONS = {
     "contactmessage": "bi-envelope-fill",
     "trackingrequest": "bi-search",
     "notificationlog": "bi-bell-fill",
-    # AI / агент (выпадающее меню «Дела + ИИ»)
     "task": "bi-check2-square",
     "agentquestion": "bi-question-circle",
     "agentaction": "bi-lightning-charge",
@@ -50,80 +51,159 @@ MODEL_ICONS = {
     "agentmemory": "bi-bookmark-star",
     "agentpolicy": "bi-sliders",
     "scanprocessingjob": "bi-file-earmark-image",
-    # auth models
+    "carmodelimage": "bi-image",
+    "emailgroup": "bi-collection",
+    "emailingestfilter": "bi-funnel",
+    "gmailsyncstate": "bi-envelope-arrow-down",
+    "contact": "bi-person-lines-fill",
+    "containeremail": "bi-envelope",
     "user": "bi-person-fill",
     "group": "bi-people",
 }
 
 
-# ── Конфигурация групп ──────────────────────────────────────────────────────
+# ── Конфигурация меню ────────────────────────────────────────────────────────
+# Элемент группы:
+#   • строка  — object_name модели в нижнем регистре;
+#   • dict    — ссылка на кастомную страницу: {"name", "url", "icon"};
+#     опционально "match" — префикс URL для подсветки active (по умолчанию url).
 ADMIN_GROUPS = OrderedDict(
     [
         (
             "Логистика",
             {
-                "models": ["car", "container", "autotransport"],
                 "icon": "bi-truck",
-                "order": 1,
-            },
-        ),
-        (
-            "Партнёры",
-            {
-                "models": ["client", "company", "warehouse", "line", "carrier"],
-                "icon": "bi-people-fill",
-                "order": 2,
+                "collapsed": False,
+                "items": [
+                    "car",
+                    "container",
+                    "autotransport",
+                    {
+                        "name": "Печать наклеек",
+                        "url": "/admin/labels/print/",
+                        "icon": "bi-printer",
+                        "match": "/admin/labels/",
+                    },
+                ],
             },
         ),
         (
             "Финансы",
             {
-                "models": ["newinvoice", "transaction", "expensecategory", "personalcard", "personaltransfer"],
                 "icon": "bi-cash-stack",
-                "order": 3,
+                "collapsed": False,
+                "items": [
+                    "newinvoice",
+                    "transaction",
+                    "banktransaction",
+                    {"name": "Сверка счетов", "url": "/admin/reconciliation/", "icon": "bi-graph-up-arrow"},
+                    {"name": "Проверка счетов", "url": "/admin/invoice-audit/", "icon": "bi-shield-check"},
+                    {"name": "Касса: расход", "url": "/admin/cash-expense/", "icon": "bi-dash-circle"},
+                    {"name": "Касса: приход", "url": "/admin/cash-income/", "icon": "bi-plus-circle"},
+                    {"name": "Аналитика расходов", "url": "/admin/expense-analytics/", "icon": "bi-pie-chart-fill"},
+                ],
             },
         ),
         (
-            "Банкинг",
+            "Партнёры",
             {
-                "models": ["bankconnection", "bankaccount", "banktransaction"],
-                "icon": "bi-bank",
-                "order": 4,
+                "icon": "bi-people-fill",
+                "collapsed": False,
+                "items": ["client", "company", "warehouse", "line", "carrier"],
             },
         ),
         (
-            "Бухгалтерия",
+            "Дела + ИИ",
             {
-                "models": ["siteproconnection", "siteproinvoicesync"],
-                "icon": "bi-journal-text",
-                "order": 5,
+                "icon": "bi-robot",
+                "collapsed": False,
+                "items": [
+                    {"name": "Доска дел", "url": "/admin/tasks-board/", "icon": "bi-kanban"},
+                    "scanprocessingjob",
+                    "agentquestion",
+                ],
             },
         ),
         (
             "Сайт",
             {
-                "models": [
-                    "clientuser",
-                    "aichat",
-                    "newspost",
-                    "contactmessage",
-                    "trackingrequest",
-                    "notificationlog",
-                ],
                 "icon": "bi-globe",
-                "order": 6,
+                "collapsed": True,
+                "items": ["clientuser", "newspost", "contactmessage", "trackingrequest", "aichat"],
+            },
+        ),
+        (
+            "Настройки",
+            {
+                "icon": "bi-gear",
+                "collapsed": True,
+                "items": [
+                    "expensecategory",
+                    "personalcard",
+                    "personaltransfer",
+                    "bankconnection",
+                    "bankaccount",
+                    "siteproconnection",
+                    "siteproinvoicesync",
+                    "emailgroup",
+                    "emailingestfilter",
+                    "carmodelimage",
+                    "agentpolicy",
+                    "user",
+                    "group",
+                ],
+            },
+        ),
+        (
+            "Система",
+            {
+                "icon": "bi-cpu",
+                "collapsed": True,
+                "items": [
+                    {"name": "Мониторинг системы", "url": "/admin/system-monitor/", "icon": "bi-activity"},
+                    "notificationlog",
+                    "agentrun",
+                    "agentaction",
+                    "agentmemory",
+                    "gmailsyncstate",
+                    "contact",
+                    "containeremail",
+                ],
             },
         ),
     ]
 )
 
+# Модели, зарегистрированные в админке, но скрытые из меню:
+# работа с ними идёт из карточек (письма — с Container/Car, автовозы и
+# водители — inline на Перевозчике, Дела — через Доску дел).
+HIDDEN_MODELS = {
+    "task",
+    "containeremaillink",
+    "caremaillink",
+    "carriertruck",
+    "carrierdriver",
+}
+
+
+def _model_names_in_groups():
+    names = set()
+    for conf in ADMIN_GROUPS.values():
+        for entry in conf["items"]:
+            if isinstance(entry, str):
+                names.add(entry)
+    return names
+
+
+_GROUPED_MODEL_NAMES = _model_names_in_groups()
+
 
 def _build_model_to_group():
-    """Строим обратный маппинг: model_name → group_name"""
     mapping = {}
     for group_name, conf in ADMIN_GROUPS.items():
-        for model_name in conf["models"]:
-            mapping[model_name.lower()] = group_name
+        for entry in conf["items"]:
+            if isinstance(entry, str):
+                mapping[entry] = group_name
     return mapping
 
 
@@ -136,260 +216,185 @@ class LogistAdminSite(BaseAdminSite):
     index_title = "Панель управления"
 
     # ────────────────────────────────────────────────────────────────────────
+    def index(self, request, extra_context=None):
+        """Стартовая страница админки — Dashboard.
+
+        Стандартный index (плоский список приложений) дублирует sidebar
+        и не несёт пользы.
+        """
+        return redirect("company_dashboard")
+
+    # ────────────────────────────────────────────────────────────────────────
     def each_context(self, request):
-        """
-        Расширяем контекст каждой страницы:
-        - sidebar_nav: структура навигации для sidebar
-        - current_path: текущий URL для подсветки active
-        """
         context = super().each_context(request)
         context["sidebar_nav"] = self._build_sidebar_nav(request)
         context["current_path"] = request.path
         return context
 
-    # object_name (в нижнем регистре) AI-моделей, которые переезжают
-    # из «⚙️ Прочее» в выпадающее меню «Дела + ИИ». Порядок задаёт
-    # порядок пунктов в выпадающем списке.
-    AI_BOARD_URL = "/admin/tasks-board/"
-    AI_MODEL_ORDER = (
-        "task",
-        "agentquestion",
-        "agentaction",
-        "agentrun",
-        "agentmemory",
-        "agentpolicy",
-        "scanprocessingjob",
-    )
-
     # ────────────────────────────────────────────────────────────────────────
-    def _build_ai_group(self, request, ai_items):
-        """Выпадающее меню «Дела + ИИ» (вверху, под Dashboard).
-
-        Первый пункт — доска дел, далее AI-модели, вынесенные из «Прочее».
-        ``ai_items`` — список кортежей (order_index, item_dict).
-        """
-        current_path = request.path
-        board_active = current_path.startswith(self.AI_BOARD_URL)
-
-        ai_items.sort(key=lambda pair: pair[0])
-        sub_items = [
-            {
-                "name": "Доска дел",
-                "url": self.AI_BOARD_URL,
-                "icon": "bi-kanban",
-                "active": board_active,
-                "add_url": "",
-                "view_only": True,
-            },
-            *[item for _, item in ai_items],
-        ]
-        is_open = any(i["active"] for i in sub_items)
-        return {
-            "name": "Дела + ИИ",
-            "icon": "bi-robot",
-            "items": sub_items,
-            "is_open": is_open,
-            "collapsible": True,
-        }
-
-    # ────────────────────────────────────────────────────────────────────────
-    def _build_extra_sidebar_items(self, request):
-        """Дополнительные пункты меню вне стандартных моделей."""
-        current_path = request.path
-        tools_active = (
-            current_path.startswith("/admin/invoice-audit/")
-            or current_path.startswith("/admin/reconciliation/")
-            or current_path.startswith("/admin/system-monitor/")
-        )
-        return [
-            {
-                "name": "Инструменты",
-                "icon": "bi-tools",
-                "items": [
-                    {
-                        "name": "Проверка счетов",
-                        "url": "/admin/invoice-audit/",
-                        "icon": "bi-shield-check",
-                        "active": current_path.startswith("/admin/invoice-audit/"),
-                        "add_url": "",
-                        "view_only": True,
-                    },
-                    {
-                        "name": "Сверка счетов",
-                        "url": "/admin/reconciliation/",
-                        "icon": "bi-graph-up-arrow",
-                        "active": current_path.startswith("/admin/reconciliation/"),
-                        "add_url": "",
-                        "view_only": True,
-                    },
-                    {
-                        "name": "Мониторинг системы",
-                        "url": "/admin/system-monitor/",
-                        "icon": "bi-activity",
-                        "active": current_path.startswith("/admin/system-monitor/"),
-                        "add_url": "",
-                        "view_only": True,
-                    },
-                ],
-                "is_open": tools_active,
-                "collapsible": False,
-            },
-        ]
+    def _collect_model_index(self, request):
+        """object_name.lower() → запись модели из get_app_list (все приложения)."""
+        index = {}
+        for app in super().get_app_list(request):
+            for model in app.get("models", []):
+                index[model["object_name"].lower()] = model
+        return index
 
     # ────────────────────────────────────────────────────────────────────────
     def _build_sidebar_nav(self, request):
         """
-        Формирует структуру навигации для sidebar.
+        Строит навигацию сайдбара из ADMIN_GROUPS.
         Возвращает список групп:
         [
             {
-                'name': 'Логистика',
-                'icon': 'bi-truck',
-                'items': [
-                    {'name': 'Автомобили', 'url': '/admin/core/car/', 'icon': 'bi-car-front-fill', 'active': True},
-                    ...
-                ],
-                'is_open': True  # если есть активный item
+                'name': 'Логистика', 'icon': 'bi-truck',
+                'items': [{'name', 'url', 'icon', 'active', 'add_url', 'view_only'}, ...],
+                'is_open': bool,       # развёрнута при рендере
+                'collapsed_default': bool,  # свёрнута по умолчанию (для localStorage)
             },
             ...
         ]
         """
-        app_list = self.get_app_list(request)
         current_path = request.path
+        model_index = self._collect_model_index(request)
+        used_models = set()
         nav = []
-        ai_items = []  # (order_index, item) — AI-модели для меню «Дела + ИИ»
 
-        for app in app_list:
-            app_name = app.get("name", "")
-
-            # Определяем иконку группы
-            group_conf = ADMIN_GROUPS.get(app_name)
-            group_icon = group_conf["icon"] if group_conf else "bi-gear"
-
-            # Специальные случаи для стандартных Django app-ов
-            if app.get("app_label") == "auth":
-                group_icon = "bi-shield-lock"
-            elif app_name == "⚙️ Прочее":
-                group_icon = "bi-gear"
-
+        for group_name, conf in ADMIN_GROUPS.items():
             items = []
-            is_open = False
+            has_active = False
 
-            for model in app.get("models", []):
-                model_name = model.get("object_name", "").lower()
-                model_icon = MODEL_ICONS.get(model_name, "bi-circle")
-                model_url = model.get("admin_url", "")
-                is_active = current_path.startswith(model_url) if model_url else False
-
-                item = {
-                    "name": model.get("name", ""),
-                    "url": model_url,
-                    "icon": model_icon,
-                    "active": is_active,
-                    "add_url": model.get("add_url", ""),
-                    "view_only": not model.get("add_url"),
-                }
-
-                # AI-модели не показываем в их группе («Прочее») —
-                # они переезжают в выпадающее меню «Дела + ИИ» вверху.
-                if model_name in self.AI_MODEL_ORDER:
-                    ai_items.append((self.AI_MODEL_ORDER.index(model_name), item))
-                    continue
+            for entry in conf["items"]:
+                if isinstance(entry, str):
+                    model = model_index.get(entry)
+                    if model is None:
+                        continue  # нет прав или модель не зарегистрирована
+                    used_models.add(entry)
+                    model_url = model.get("admin_url", "")
+                    is_active = current_path.startswith(model_url) if model_url else False
+                    items.append(
+                        {
+                            "name": model.get("name", ""),
+                            "url": model_url,
+                            "icon": MODEL_ICONS.get(entry, "bi-circle"),
+                            "active": is_active,
+                            "add_url": model.get("add_url", ""),
+                            "view_only": not model.get("add_url"),
+                        }
+                    )
+                else:
+                    match = entry.get("match", entry["url"])
+                    is_active = current_path.startswith(match)
+                    items.append(
+                        {
+                            "name": entry["name"],
+                            "url": entry["url"],
+                            "icon": entry["icon"],
+                            "active": is_active,
+                            "add_url": "",
+                            "view_only": True,
+                        }
+                    )
 
                 if is_active:
-                    is_open = True
-
-                items.append(item)
+                    has_active = True
 
             if items:
                 nav.append(
                     {
-                        "name": app_name,
-                        "icon": group_icon,
+                        "name": group_name,
+                        "icon": conf["icon"],
                         "items": items,
-                        "is_open": is_open,
-                        "collapsible": False,
+                        "is_open": has_active or not conf.get("collapsed", False),
+                        "collapsed_default": conf.get("collapsed", False),
                     }
                 )
 
-        # «Дела + ИИ» — выпадающее меню сразу под Dashboard.
-        nav.insert(0, self._build_ai_group(request, ai_items))
+        # Страховка: новые модели, не разнесённые по группам и не скрытые,
+        # попадают в «Прочее» — чтобы не потерялись молча.
+        leftover = []
+        for model_name, model in model_index.items():
+            if model_name in used_models or model_name in HIDDEN_MODELS:
+                continue
+            model_url = model.get("admin_url", "")
+            leftover.append(
+                {
+                    "name": model.get("name", ""),
+                    "url": model_url,
+                    "icon": MODEL_ICONS.get(model_name, "bi-circle"),
+                    "active": current_path.startswith(model_url) if model_url else False,
+                    "add_url": model.get("add_url", ""),
+                    "view_only": not model.get("add_url"),
+                }
+            )
+        if leftover:
+            nav.append(
+                {
+                    "name": "Прочее",
+                    "icon": "bi-three-dots",
+                    "items": leftover,
+                    "is_open": any(i["active"] for i in leftover),
+                    "collapsed_default": True,
+                }
+            )
 
-        nav.extend(self._build_extra_sidebar_items(request))
         return nav
 
     # ────────────────────────────────────────────────────────────────────────
     def get_app_list(self, request, app_label=None):
         """
-        Переопределяем стандартный get_app_list:
-        1. Получаем оригинальный список приложений от Django
-        2. Модели из 'core' разбиваем на логические группы
-        3. Всё остальное (auth, и т.д.) оставляем как есть
+        Группирует модели по ADMIN_GROUPS (используется app_index и т.п.;
+        сам index редиректит на Dashboard).
         """
         original = super().get_app_list(request, app_label=app_label)
 
-        # Разделяем: core-модели отдельно, остальные app-ы как есть
-        core_models = []
-        other_apps = []
-
+        all_models = []
         for app in original:
-            if app["app_label"] == "core":
-                core_models.extend(app.get("models", []))
-            else:
-                other_apps.append(app)
+            all_models.extend(app.get("models", []))
 
-        if not core_models:
-            return other_apps
+        if not all_models:
+            return original
 
-        # Раскидываем core-модели по группам
         groups = OrderedDict()
         ungrouped = []
 
-        for model_entry in core_models:
+        for model_entry in all_models:
             model_name = model_entry["object_name"].lower()
             group_name = _MODEL_TO_GROUP.get(model_name)
-
             if group_name:
                 groups.setdefault(group_name, []).append(model_entry)
             else:
+                # В т.ч. скрытые из меню модели: app_index остаётся полным
+                # списком, прячет их только sidebar.
                 ungrouped.append(model_entry)
 
-        # Формируем финальный app_list
         result = []
-
         for group_name, conf in ADMIN_GROUPS.items():
             models_in_group = groups.get(group_name, [])
             if not models_in_group:
                 continue
-
-            # Сортируем модели внутри группы в порядке, указанном в ADMIN_GROUPS
-            model_order = {m.lower(): i for i, m in enumerate(conf["models"])}
-            models_in_group.sort(key=lambda m: model_order.get(m["object_name"].lower(), 999))
-
+            order = {e: i for i, e in enumerate(conf["items"]) if isinstance(e, str)}
+            models_in_group.sort(key=lambda m: order.get(m["object_name"].lower(), 999))
             result.append(
                 {
                     "name": group_name,
-                    "app_label": "core",  # все ссылки ведут к core
+                    "app_label": "core",
                     "app_url": "/admin/core/",
                     "has_module_perms": True,
                     "models": models_in_group,
                 }
             )
 
-        # Если остались модели, не попавшие ни в одну группу
         if ungrouped:
             result.append(
                 {
-                    "name": "⚙️ Прочее",
+                    "name": "Прочее",
                     "app_label": "core",
                     "app_url": "/admin/core/",
                     "has_module_perms": True,
                     "models": ungrouped,
                 }
             )
-
-        # Другие приложения (auth) — в конец
-        result.extend(other_apps)
 
         return result
 

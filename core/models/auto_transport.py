@@ -91,8 +91,8 @@ class AutoTransport(models.Model):
     created_by = models.CharField(max_length=100, blank=True, verbose_name="Создал")
 
     class Meta:
-        verbose_name = "Автовоз на загрузку"
-        verbose_name_plural = "Автовозы на загрузку"
+        verbose_name = "Автовоз"
+        verbose_name_plural = "Автовозы"
         ordering = ["-created_at"]
         indexes = [
             # Фильтрация по статусу — частая операция в сигналах и
