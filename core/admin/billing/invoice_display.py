@@ -14,7 +14,6 @@ from decimal import Decimal
 
 from django.urls import reverse
 from django.utils.html import format_html, format_html_join
-from django.utils.safestring import mark_safe
 
 
 def build_items_pivot_table(invoice):
@@ -418,8 +417,8 @@ class NewInvoiceDisplayMixin:
             )
 
         # Фрагменты уже экранированы через format_html с плейсхолдерами;
-        # повторный format_html поверх готовой строки лишний и хрупкий.
-        return mark_safe("".join(info)) if info else "Нет предупреждений"
+        # format_html_join склеивает SafeString'и без повторного экранирования.
+        return format_html_join("", "{}", ((fragment,) for fragment in info)) if info else "Нет предупреждений"
 
     status_info_display.short_description = "Статус и предупреждения"
 

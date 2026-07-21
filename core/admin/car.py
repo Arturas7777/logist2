@@ -883,7 +883,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         # Пользовательские строки (имена услуг/компаний) экранированы выше
         # через escape(); format_html поверх готовой строки падал бы на
         # фигурных скобках в данных и ничего бы не экранировал.
-        return mark_safe("".join(html))
+        return mark_safe("".join(html))  # nosec B308 B703 - все значения экранированы escape()
 
     services_summary_display.short_description = "Сводка по услугам"
 

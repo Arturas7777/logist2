@@ -222,4 +222,6 @@ def messenger_format_filter(text: str):
     from django.utils.safestring import mark_safe
 
     linked = urlize(text or "", autoescape=True)
-    return mark_safe(format_inline_markdown_html(str(linked)))
+    # urlize(autoescape=True) уже экранировал пользовательский текст;
+    # format_inline_markdown_html добавляет только строго известные теги.
+    return mark_safe(format_inline_markdown_html(str(linked)))  # nosec B308 B703

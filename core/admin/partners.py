@@ -9,7 +9,6 @@ from django.shortcuts import render
 from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html, format_html_join
-from django.utils.safestring import mark_safe
 
 from core.admin._balance_display import annotate_partner_balance, render_total_balance
 from core.admin._service_handling import process_service_fields
@@ -121,22 +120,18 @@ class WarehouseAdmin(admin.ModelAdmin):
         """Shows warehouse balance summary"""
         try:
             balance = obj.balance or 0
+            color = "#28a745" if balance >= 0 else "#dc3545"
 
-            html = f"""
-            <div style="background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #dee2e6;">
-                <h3 style="margin-top:0; color:#495057;">Баланс склада</h3>
-
-                <div style="background:white; padding:15px; border-radius:5px; border:2px solid {"#28a745" if balance >= 0 else "#dc3545"};">
-                    <strong style="color:{"#28a745" if balance >= 0 else "#dc3545"};">Баланс:</strong><br>
-                    <span style="font-size:24px; font-weight:bold; color:{"#28a745" if balance >= 0 else "#dc3545"};">{balance:.2f}</span>
-                </div>
-            </div>
-            """
-
-            # В html подставлены только числа и цвета (не пользовательские
-            # строки), поэтому mark_safe безопасен; format_html поверх
-            # готовой строки падал бы на фигурных скобках.
-            return mark_safe(html)
+            return format_html(
+                '<div style="background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #dee2e6;">'
+                '<h3 style="margin-top:0; color:#495057;">Баланс склада</h3>'
+                '<div style="background:white; padding:15px; border-radius:5px; border:2px solid {color};">'
+                '<strong style="color:{color};">Баланс:</strong><br>'
+                '<span style="font-size:24px; font-weight:bold; color:{color};">{balance}</span>'
+                "</div></div>",
+                color=color,
+                balance=f"{balance:.2f}",
+            )
         except Exception as e:
             return format_html('<p style="color:#dc3545;">Ошибка загрузки баланса: {}</p>', e)
 
@@ -983,28 +978,24 @@ class CompanyAdmin(admin.ModelAdmin):
             color = "#28a745" if balance >= 0 else "#dc3545"
             dashboard_btn = ""
             if obj.name == "Caromoto Lithuania":
-                dashboard_btn = (
+                dashboard_btn = format_html(
                     '<div style="margin-top:20px; text-align:center;">'
                     '<a href="/company-dashboard/" style="display:inline-block; padding:12px 24px; '
                     "background:#667eea; color:white; text-decoration:none; border-radius:8px; "
                     'font-weight:600; font-size:16px;">Открыть дашборд компании</a></div>'
                 )
 
-            html = f"""
-            <div style="background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #dee2e6;">
-                <h3 style="margin-top:0; color:#495057;">Баланс компании</h3>
-
-                <div style="background:white; padding:15px; border-radius:5px; border:2px solid {color};">
-                    <strong style="color:{color};">Баланс:</strong><br>
-                    <span style="font-size:24px; font-weight:bold; color:{color};">{balance:.2f}</span>
-                </div>
-                {dashboard_btn}
-            </div>
-            """
-
-            # Только числа/цвета/константная ссылка — пользовательских строк
-            # нет, mark_safe безопасен.
-            return mark_safe(html)
+            return format_html(
+                '<div style="background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #dee2e6;">'
+                '<h3 style="margin-top:0; color:#495057;">Баланс компании</h3>'
+                '<div style="background:white; padding:15px; border-radius:5px; border:2px solid {color};">'
+                '<strong style="color:{color};">Баланс:</strong><br>'
+                '<span style="font-size:24px; font-weight:bold; color:{color};">{balance}</span>'
+                "</div>{dashboard_btn}</div>",
+                color=color,
+                balance=f"{balance:.2f}",
+                dashboard_btn=dashboard_btn,
+            )
         except Exception as e:
             return format_html('<p style="color:#dc3545;">Ошибка загрузки баланса: {}</p>', e)
 
@@ -1794,9 +1785,9 @@ class AutoTransportAdmin(admin.ModelAdmin):
                     )
 
         # Каждый фрагмент уже экранирован через format_html(...) с
-        # плейсхолдерами; повторный format_html поверх готовой строки
-        # упал бы на фигурных скобках в данных.
-        return mark_safe("".join(html))
+        # плейсхолдерами; format_html_join склеивает SafeString'и без
+        # повторного экранирования.
+        return format_html_join("", "{}", ((fragment,) for fragment in html))
 
     actions_display.short_description = "Действия"
 

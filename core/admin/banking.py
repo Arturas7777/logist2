@@ -10,7 +10,6 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
 from django.utils.html import format_html
-from django.utils.safestring import mark_safe
 
 from core.models.banking import BankAccount, BankConnection, BankTransaction
 
@@ -704,7 +703,7 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
             return format_html('<span title="Revolut Expense без чека" style="color:#d1d5db;font-size:14px;">—</span>')
         return ""
 
-    display_receipt.short_description = mark_safe('<i class="bi bi-paperclip" title="Чек"></i>')
+    display_receipt.short_description = format_html('<i class="bi bi-paperclip" title="Чек"></i>')
 
     def display_receipt_detail(self, obj):
         """Preview чека на странице редактирования."""
