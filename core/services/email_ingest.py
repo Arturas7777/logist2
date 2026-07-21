@@ -45,6 +45,7 @@ class SyncReport:
     drafts_skipped: int = 0  # сколько Gmail-черновиков отфильтровали
     duplicates_skipped: int = 0  # сколько дубликатов по содержимому скрыли
     filtered_skipped: int = 0  # сколько писем спрятали пользовательскими фильтрами
+    not_found_skipped: int = 0  # письма, удалённые из ящика (404 от Gmail)
     attachments_saved: int = 0
     attachments_skipped: int = 0  # слишком большие
     ingest_errors: int = 0  # сбои get_message/save конкретных писем
@@ -64,6 +65,7 @@ class SyncReport:
             "drafts_skipped": self.drafts_skipped,
             "duplicates_skipped": self.duplicates_skipped,
             "filtered_skipped": self.filtered_skipped,
+            "not_found_skipped": self.not_found_skipped,
             "attachments_saved": self.attachments_saved,
             "attachments_skipped": self.attachments_skipped,
             "ingest_errors": self.ingest_errors,
@@ -186,6 +188,19 @@ def _process_full(
 # ---------------------------------------------------------------------------
 
 
+def _is_gmail_not_found(exc: Exception) -> bool:
+    """True, если Gmail API ответил 404 (письмо удалено из ящика навсегда)."""
+    from googleapiclient.errors import HttpError
+
+    if not isinstance(exc, HttpError):
+        return False
+    status = getattr(exc, "status_code", None) or getattr(getattr(exc, "resp", None), "status", None)
+    try:
+        return int(status) == 404
+    except (TypeError, ValueError):
+        return False
+
+
 def _ingest_one(
     client: GmailApiClient,
     gmail_id: str,
@@ -201,6 +216,14 @@ def _ingest_one(
     try:
         msg = client.get_message(gmail_id)
     except Exception as exc:
+        # 404 — письмо удалено из ящика после попадания в history (или
+        # недоступно навсегда). Ретраить бессмысленно: без этой ветки те же
+        # письма фейлились на КАЖДОМ прогоне (курсор не двигался из-за
+        # ingest_errors) и заспамили Sentry ~20K ошибок/день (2026-07-21).
+        if _is_gmail_not_found(exc):
+            logger.info("[gmail_sync] Message %s deleted from mailbox (404) — skip", gmail_id)
+            report.not_found_skipped += 1
+            return
         logger.error("[gmail_sync] Failed to fetch %s: %s", gmail_id, exc, exc_info=True)
         report.errors.append(f"get_message({gmail_id}): {exc}")
         report.ingest_errors += 1

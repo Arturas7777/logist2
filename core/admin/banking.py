@@ -703,7 +703,7 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
             return format_html('<span title="Revolut Expense без чека" style="color:#d1d5db;font-size:14px;">—</span>')
         return ""
 
-    display_receipt.short_description = format_html('<i class="bi bi-paperclip" title="Чек"></i>')
+    display_receipt.short_description = format_html('<i class="bi {}" title="{}"></i>', "bi-paperclip", "Чек")
 
     def display_receipt_detail(self, obj):
         """Preview чека на странице редактирования."""
