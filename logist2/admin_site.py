@@ -78,14 +78,15 @@ ADMIN_GROUPS = OrderedDict(
                     "car",
                     "container",
                     "autotransport",
-                    "containeremail",
-                    {
-                        "name": "Печать наклеек",
-                        "url": "/admin/labels/print/",
-                        "icon": "bi-printer",
-                        "match": "/admin/labels/",
-                    },
                 ],
+            },
+        ),
+        (
+            "Партнёры",
+            {
+                "icon": "bi-people-fill",
+                "collapsed": False,
+                "items": ["client", "company", "warehouse", "line", "carrier", "contact"],
             },
         ),
         (
@@ -105,14 +106,6 @@ ADMIN_GROUPS = OrderedDict(
                     {"name": "Аналитика расходов", "url": "/admin/expense-analytics/", "icon": "bi-pie-chart-fill"},
                     {"name": "Сравнение сумм", "url": "/admin/comparison/", "icon": "bi-bar-chart-line"},
                 ],
-            },
-        ),
-        (
-            "Партнёры",
-            {
-                "icon": "bi-people-fill",
-                "collapsed": False,
-                "items": ["client", "company", "warehouse", "line", "carrier", "contact"],
             },
         ),
         (
@@ -141,6 +134,13 @@ ADMIN_GROUPS = OrderedDict(
                 "icon": "bi-gear",
                 "collapsed": True,
                 "items": [
+                    "containeremail",
+                    {
+                        "name": "Печать наклеек",
+                        "url": "/admin/labels/print/",
+                        "icon": "bi-printer",
+                        "match": "/admin/labels/",
+                    },
                     "expensecategory",
                     "bankconnection",
                     "bankaccount",

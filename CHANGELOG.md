@@ -7,6 +7,25 @@
 
 ## [Unreleased]
 
+### Changed — Зелёный CI + перестановки в меню админки (2026-07-21)
+
+- **CI починен** (падал с 2026-07-19, письма «Run failed» от GitHub):
+  - `ruff format` для 4 файлов, не прошедших lint (`core/admin/inlines.py`,
+    `set_warehouse_service_markup.py`, `telegram_service.py`,
+    `test_transfer_finalize.py`).
+  - **Обновлены уязвимые зависимости** (pip-audit, 28 CVE в 6 пакетах):
+    django 5.2.16, pillow 12.3.0, daphne 4.2.2, cryptography 49.0.0,
+    msgpack 1.2.1, httplib2 0.32.0; `requirements-dev.txt` пересобран
+    под новый лок.
+  - **bandit MEDIUM зачищен**: `mark_safe` в `core/admin/banking.py`,
+    `partners.py`, `billing/invoice_display.py` заменён на
+    `format_html`/`format_html_join`; в `car.py` и
+    `templatetags/email_extras.py` — точечные `# nosec B308 B703`
+    (значения экранируются заранее).
+- **Меню админки** (`logist2/admin_site.py`): «Письма контейнеров» и
+  «Печать наклеек» перенесены в «Настройки»; группа «Партнёры» поднята
+  над «Финансами».
+
 ### Changed — Переделка системы: бизнес-логика денег, единая админка, live-обновления (2026-07-21)
 
 - **Пересчёт хранения при передаче автовозом** (`core/signals/autotransport.py`,
