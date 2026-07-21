@@ -203,9 +203,7 @@ class TestCarAdminBulkFSM:
         frozen = _car("TRFFSM00000000005", "TRANSFERRED", transfer_date=timezone.now().date())
         ma, _ = _make_admin(CarAdmin, Car)
 
-        allowed = ma._bulk_set_status(
-            None, Car.objects.filter(pk__in=[ok_car.pk, frozen.pk]), "IN_PORT", "В порту"
-        )
+        allowed = ma._bulk_set_status(None, Car.objects.filter(pk__in=[ok_car.pk, frozen.pk]), "IN_PORT", "В порту")
 
         assert allowed == [ok_car.pk]
         assert Car.objects.get(pk=ok_car.pk).status == "IN_PORT"

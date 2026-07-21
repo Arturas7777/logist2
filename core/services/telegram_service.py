@@ -122,10 +122,7 @@ def _find_client_by_chat_id(chat_id):
 
     cid = str(chat_id).strip()
     return Client.objects.filter(
-        Q(telegram_chat_id=cid)
-        | Q(telegram_chat_id2=cid)
-        | Q(telegram_chat_id3=cid)
-        | Q(telegram_chat_id4=cid)
+        Q(telegram_chat_id=cid) | Q(telegram_chat_id2=cid) | Q(telegram_chat_id3=cid) | Q(telegram_chat_id4=cid)
     ).first()
 
 

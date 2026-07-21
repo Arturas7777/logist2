@@ -44,9 +44,7 @@ class Command(BaseCommand):
             name_contains = options.get("name_contains")
             if not (warehouse and name_contains):
                 raise CommandError("Укажите либо --id, либо пару --warehouse и --name-contains")
-            qs = WarehouseService.objects.filter(
-                warehouse__name__iexact=warehouse, name__icontains=name_contains
-            )
+            qs = WarehouseService.objects.filter(warehouse__name__iexact=warehouse, name__icontains=name_contains)
 
         services = list(qs.select_related("warehouse"))
         if not services:
