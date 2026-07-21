@@ -6,8 +6,10 @@ from django.db import models
 from core.managers import OptimizedWarehouseManager
 from core.mixins import BalanceMethodsMixin
 
+from .requisites import CounterpartyContactsMixin, CounterpartyRequisitesMixin
 
-class Warehouse(BalanceMethodsMixin, models.Model):
+
+class Warehouse(BalanceMethodsMixin, CounterpartyRequisitesMixin, CounterpartyContactsMixin, models.Model):
     SITE_CHOICES = [
         (1, "Площадка 1"),
         (2, "Площадка 2"),

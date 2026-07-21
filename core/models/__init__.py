@@ -75,6 +75,11 @@ from .contact import (  # noqa: E402, F401
     ContactEmail,
     ContactPhone,
 )
+from .requisites import (  # noqa: E402, F401
+    CounterpartyBankAccount,
+    CounterpartyContactsMixin,
+    CounterpartyRequisitesMixin,
+)
 from .email import (  # noqa: E402, F401
     ContainerEmail,
     ContainerEmailLink,

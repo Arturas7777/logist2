@@ -4,8 +4,12 @@ from django.db import models
 
 from core.mixins import BalanceMethodsMixin
 
+from .requisites import CounterpartyRequisitesMixin
 
-class Carrier(BalanceMethodsMixin, models.Model):
+
+# Carrier получает только регистрационные реквизиты: телефон / email / EORI
+# у него существовали до миксинов как собственные поля.
+class Carrier(BalanceMethodsMixin, CounterpartyRequisitesMixin, models.Model):
     name = models.CharField(max_length=100, verbose_name="Название перевозчика", db_index=True)
     short_name = models.CharField(max_length=20, blank=True, null=True, verbose_name="Короткое название")
     contact_person = models.CharField(max_length=100, blank=True, null=True, verbose_name="Контактное лицо")

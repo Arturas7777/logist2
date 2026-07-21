@@ -5,8 +5,10 @@ from django.db import models
 from core.managers import OptimizedCompanyManager
 from core.mixins import BalanceMethodsMixin
 
+from .requisites import CounterpartyContactsMixin, CounterpartyRequisitesMixin
 
-class Company(BalanceMethodsMixin, models.Model):
+
+class Company(BalanceMethodsMixin, CounterpartyRequisitesMixin, CounterpartyContactsMixin, models.Model):
     """Модель для логистической компании Caromoto Lithuania"""
 
     name = models.CharField(

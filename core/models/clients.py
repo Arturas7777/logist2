@@ -6,9 +6,10 @@ from core.managers import OptimizedClientManager
 from core.mixins import BalanceMethodsMixin
 
 from ._vehicle_types import VEHICLE_TYPE_CHOICES
+from .requisites import CounterpartyContactsMixin, CounterpartyRequisitesMixin
 
 
-class Client(BalanceMethodsMixin, models.Model):
+class Client(BalanceMethodsMixin, CounterpartyRequisitesMixin, CounterpartyContactsMixin, models.Model):
     TARIFF_CHOICES = [
         ("NONE", "Без тарифа"),
         ("FIXED", "Фикс. цена (не зависит от кол-ва)"),

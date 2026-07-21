@@ -3,6 +3,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import admin, messages
+from django.contrib.contenttypes.admin import GenericTabularInline
 from django.db import models
 from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import render
@@ -33,6 +34,7 @@ from core.models import (
     Client,
     Company,
     Container,
+    CounterpartyBankAccount,
     Line,
     LineService,
     Warehouse,
@@ -44,6 +46,32 @@ logger = logging.getLogger(__name__)
 
 
 # ==============================================================================
+# Общее для всех контрагентов: счета + раскладка реквизитов
+# ==============================================================================
+
+
+class CounterpartyBankAccountInline(GenericTabularInline):
+    """Банковские счета контрагента — свёрнутый блок на карточке."""
+
+    model = CounterpartyBankAccount
+    extra = 0
+    classes = ["collapse"]
+    fields = ("bank_name", "iban", "swift", "currency", "is_primary", "notes")
+    verbose_name = "Счёт"
+    verbose_name_plural = "Счета контрагента"
+
+
+# Единая раскладка реквизитов в «Основной информации»:
+# регистрационные коды → страна/адрес → контакты → сайт.
+_REQUISITES_FIELDS = (
+    ("imones_kodas", "vat_code", "eori_code"),
+    ("registration_country", "physical_address"),
+    ("phone", "general_email"),
+    "website",
+)
+
+
+# ==============================================================================
 # WarehouseAdmin
 # ==============================================================================
 
@@ -52,7 +80,7 @@ logger = logging.getLogger(__name__)
 class WarehouseAdmin(admin.ModelAdmin):
     list_display = ("name", "address", "free_days", "balance_display")
     list_filter = ("free_days",)
-    search_fields = ("name", "address")
+    search_fields = ("name", "address", "imones_kodas", "vat_code")
     readonly_fields = ("balance",)
     exclude = (
         "default_unloading_fee",
@@ -65,9 +93,9 @@ class WarehouseAdmin(admin.ModelAdmin):
         "additional_expenses",
         "complex_fee",
     )
-    inlines = [WarehouseServiceInline]
+    inlines = [CounterpartyBankAccountInline, WarehouseServiceInline]
     fieldsets = (
-        ("Основные данные", {"fields": ("name",)}),
+        ("Основные данные", {"fields": ("name", *_REQUISITES_FIELDS)}),
         (
             "Площадки",
             {
@@ -317,6 +345,8 @@ class ClientAdmin(admin.ModelAdmin):
         "telegram_chat_id2",
         "telegram_chat_id3",
         "telegram_chat_id4",
+        "imones_kodas",
+        "vat_code",
     )
     actions = ["reset_balances", "recalculate_balance", "reset_client_balance"]
     list_per_page = 50
@@ -328,7 +358,7 @@ class ClientAdmin(admin.ModelAdmin):
         "new_transactions_display",
         "telegram_link_display",
     )
-    inlines = [ClientTariffRateInline]
+    inlines = [CounterpartyBankAccountInline, ClientTariffRateInline]
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
@@ -386,7 +416,7 @@ class ClientAdmin(admin.ModelAdmin):
         return queryset, use_distinct
 
     fieldsets = (
-        ("Основная информация", {"fields": ("name",)}),
+        ("Основная информация", {"fields": ("name", *_REQUISITES_FIELDS)}),
         (
             "🔔 Уведомления",
             {
@@ -940,13 +970,13 @@ class CompanyAdmin(admin.ModelAdmin):
     change_form_template = "admin/company_change.html"
     list_display = ("name", "balance_display", "is_main_company", "created_at", "updated_at")
     list_filter = ("created_at",)
-    search_fields = ("name",)
+    search_fields = ("name", "imones_kodas", "vat_code")
     readonly_fields = ("created_at", "updated_at", "balance")
     actions = ["reset_company_balance"]
-    inlines = [CompanyServiceInline]
+    inlines = [CounterpartyBankAccountInline, CompanyServiceInline]
 
     fieldsets = (
-        ("Основная информация", {"fields": ("name",)}),
+        ("Основная информация", {"fields": ("name", *_REQUISITES_FIELDS)}),
         ("Баланс", {"fields": ("balance",), "description": "Баланс компании"}),
     )
 
@@ -1082,13 +1112,13 @@ class LineAdmin(admin.ModelAdmin):
     form = LineForm
     list_display = ("name", "services_count_display", "ths_fee_display", "open_invoices_display", "balance_display")
     list_filter = ("balance_updated_at",)
-    search_fields = ("name",)
+    search_fields = ("name", "imones_kodas", "vat_code")
     readonly_fields = ("balance",)
     actions = ["reset_line_balance"]
     exclude = ("ocean_freight_rate", "documentation_fee", "handling_fee", "additional_fees")
-    inlines = [LineTHSCoefficientInline, LineServiceInline]
+    inlines = [CounterpartyBankAccountInline, LineTHSCoefficientInline, LineServiceInline]
     fieldsets = (
-        ("Основные данные", {"fields": ("name",)}),
+        ("Основные данные", {"fields": ("name", *_REQUISITES_FIELDS)}),
         (
             "THS по умолчанию",
             {
@@ -1277,13 +1307,26 @@ class CarrierAdmin(admin.ModelAdmin):
     change_form_template = "admin/carrier_change.html"
     form = CarrierForm
     list_display = ("name", "eori_code", "contact_person", "phone", "balance_display")
-    search_fields = ("name", "eori_code", "contact_person", "phone", "email")
+    search_fields = ("name", "eori_code", "contact_person", "phone", "email", "imones_kodas", "vat_code")
     list_filter = ("created_at",)
     readonly_fields = ("created_at", "updated_at", "balance")
     exclude = ("transport_rate", "loading_fee", "unloading_fee", "fuel_surcharge", "additional_fees")
-    inlines = [CarrierServiceInline, CarrierTruckInline, CarrierDriverInline]
+    inlines = [CounterpartyBankAccountInline, CarrierServiceInline, CarrierTruckInline, CarrierDriverInline]
+    # У Carrier телефон/email/EORI — собственные исторические поля,
+    # поэтому раскладка своя (та же логика: коды → адрес → контакты → сайт).
     fieldsets = (
-        ("Основная информация", {"fields": ("name", "short_name", "eori_code", "contact_person", "phone", "email")}),
+        (
+            "Основная информация",
+            {
+                "fields": (
+                    ("name", "short_name"),
+                    ("imones_kodas", "vat_code", "eori_code"),
+                    ("registration_country", "physical_address"),
+                    ("contact_person", "phone", "email"),
+                    "website",
+                )
+            },
+        ),
         ("Баланс", {"fields": ("balance",)}),
     )
 

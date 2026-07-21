@@ -5,9 +5,10 @@ from django.db import models
 from core.mixins import BalanceMethodsMixin
 
 from ._vehicle_types import VEHICLE_TYPE_CHOICES
+from .requisites import CounterpartyContactsMixin, CounterpartyRequisitesMixin
 
 
-class Line(BalanceMethodsMixin, models.Model):
+class Line(BalanceMethodsMixin, CounterpartyRequisitesMixin, CounterpartyContactsMixin, models.Model):
     name = models.CharField(max_length=100, verbose_name="Название линии", db_index=True)
 
     balance = models.DecimalField(
