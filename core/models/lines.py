@@ -7,9 +7,40 @@ from core.mixins import BalanceMethodsMixin
 from ._vehicle_types import VEHICLE_TYPE_CHOICES
 from .requisites import CounterpartyContactsMixin, CounterpartyRequisitesMixin
 
+# Фирменные цвета контейнеров известных морских линий.
+# Ключ — подстрока в названии линии (без учёта регистра); порядок важен:
+# более специфичные подстроки должны идти раньше коротких.
+LINE_BRAND_COLORS = {
+    "MAERSK": "#4E8FBF",
+    "MSC": "#D9A404",
+    "CMA": "#1F4E9C",
+    "HAPAG": "#F47920",
+    "HAPPAG": "#F47920",  # встречающееся написание с опечаткой
+    "EVERGREEN": "#00834D",
+    "COSCO": "#10538F",
+    "YANG MING": "#F5A800",
+    "OOCL": "#8B2332",
+    "SEALAND": "#C8102E",
+    "ARKAS": "#00437B",
+    "TURKON": "#0072BC",
+    "HMM": "#E11837",
+    "ZIM": "#5C6670",
+    "ONE": "#D6187E",
+}
+
+DEFAULT_CONTAINER_COLOR = "#8B93A3"
+
 
 class Line(BalanceMethodsMixin, CounterpartyRequisitesMixin, CounterpartyContactsMixin, models.Model):
     name = models.CharField(max_length=100, verbose_name="Название линии", db_index=True)
+
+    brand_color = models.CharField(
+        max_length=7,
+        blank=True,
+        default="",
+        verbose_name="Цвет бренда",
+        help_text="HEX-цвет контейнера линии, напр. #F47920. Пусто — подбирается автоматически по названию.",
+    )
 
     balance = models.DecimalField(
         max_digits=15,
@@ -48,6 +79,17 @@ class Line(BalanceMethodsMixin, CounterpartyRequisitesMixin, CounterpartyContact
 
     def __str__(self):
         return self.name
+
+    @property
+    def container_color(self):
+        """Цвет 3D-контейнера линии: ручной ``brand_color`` или автоподбор по названию."""
+        if self.brand_color:
+            return self.brand_color
+        name = (self.name or "").upper()
+        for key, color in LINE_BRAND_COLORS.items():
+            if key in name:
+                return color
+        return DEFAULT_CONTAINER_COLOR
 
 
 class LineTHSCoefficient(models.Model):

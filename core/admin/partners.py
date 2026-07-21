@@ -1116,7 +1116,7 @@ class LineAdmin(admin.ModelAdmin):
     exclude = ("ocean_freight_rate", "documentation_fee", "handling_fee", "additional_fees")
     inlines = [CounterpartyBankAccountInline, LineTHSCoefficientInline, LineServiceInline]
     fieldsets = (
-        ("Основные данные", {"classes": ("cm-requisites",), "fields": _REQUISITES_FIELDS}),
+        ("Основные данные", {"classes": ("cm-requisites",), "fields": (*_REQUISITES_FIELDS, ("brand_color",))}),
         (
             "THS по умолчанию",
             {

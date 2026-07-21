@@ -15,11 +15,43 @@
 
 <div class="cm-form-grid" {% if original %}style="--cm-status-color: {{ original.get_status_color }};"{% endif %}>
   <div class="cm-form-main">
+    {% comment %}
+      3D-контейнер в цвете бренда линии (аналог фото в карточке авто).
+      На странице добавления линии и номера ещё нет — рисуем нейтральный
+      серый контейнер без надписей.
+    {% endcomment %}
+    {% firstof original.line.container_color "#8B93A3" as cm_container_color %}
+    <div id="cm-container-3d-frame" class="cm-car-photo-frame cm-container-3d-frame">
+      {% if original %}
+        {% include "admin/core/container/_container_3d.html" with color=cm_container_color number=original.number %}
+      {% else %}
+        {% include "admin/core/container/_container_3d.html" with color=cm_container_color number="" %}
+      {% endif %}
+    </div>
     {{ block.super }}
   </div>
 
   <script>
   document.addEventListener('DOMContentLoaded', function() {
+    // 3D-контейнер переносим в контент первого fieldset «Основные данные»
+    // (исключая секцию «Переписка», которую JS поднимает наверх колонки).
+    // Секция коллапсирующая (<details><summary>), поэтому вставляем перед
+    // первым .form-row — рядом с полями, слева, как фото в карточке авто.
+    var containerFrame = document.getElementById('cm-container-3d-frame');
+    if (containerFrame) {
+      var mainFieldset = document.querySelector(
+        '.cm-form-main fieldset.module:not(#container-emails-section)'
+      );
+      if (mainFieldset) {
+        var firstRow = mainFieldset.querySelector('.form-row');
+        if (firstRow) {
+          firstRow.parentNode.insertBefore(containerFrame, firstRow);
+        } else {
+          mainFieldset.appendChild(containerFrame);
+        }
+      }
+    }
+
     var gdriveRow = document.querySelector('.form-row.field-google_drive_folder_url');
     var slot = document.getElementById('gdrive-field-slot');
     if (gdriveRow && slot) {

@@ -1,0 +1,15 @@
+{% load static %}
+{% comment %}
+Фотореалистичный 3D-контейнер для карточки контейнера.
+Параметры include:
+  color  — базовый HEX-цвет контейнера (бренд линии);
+  number — номер контейнера (используется только для aria-label), может быть пустым.
+Устройство: нейтрально-серый рендер (img/container_base.webp, с альфа-каналом)
+перекрашивается слоем цвета через mix-blend-mode: multiply, ограниченным
+mask-image по силуэту контейнера.
+{% endcomment %}
+<div class="cm-container-photo" style="--cm-line-color: {{ color }};" role="img"
+     aria-label="Контейнер {{ number|default:'' }}">
+  <img class="cm-container-photo-img" src="{% static 'img/container_base.webp' %}?v=2" alt="">
+  <div class="cm-container-photo-tint"></div>
+</div>

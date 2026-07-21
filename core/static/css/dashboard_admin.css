@@ -2641,6 +2641,34 @@ fieldset.cm-requisites p.url input {
     display: block;
 }
 
+/* Фотореалистичный 3D-контейнер в карточке контейнера.
+   Нейтрально-серый рендер перекрашивается в цвет бренда линии слоем
+   .cm-container-photo-tint: mix-blend-mode multiply сохраняет тени и
+   блики, а mask-image ограничивает заливку силуэтом контейнера.
+   Ширина < 100%: рамка (.cm-car-photo-frame) центрирует картинку,
+   и вокруг остаётся воздух, чтобы не смотрелось впритык. */
+.cm-container-photo {
+    position: relative;
+    width: 78%;
+}
+.cm-container-photo-img {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+.cm-container-photo-tint {
+    position: absolute;
+    inset: 0;
+    background: var(--cm-line-color, #9aa3af);
+    mix-blend-mode: multiply;
+    -webkit-mask-image: url("../img/container_base.webp?v=2");
+    mask-image: url("../img/container_base.webp?v=2");
+    -webkit-mask-size: 100% 100%;
+    mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    pointer-events: none;
+}
 .cm-form-main fieldset.module::after {
     content: '';
     display: table;
