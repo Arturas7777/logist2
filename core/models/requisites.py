@@ -26,27 +26,25 @@ class CounterpartyRequisitesMixin(models.Model):
         max_length=50,
         blank=True,
         default="",
-        verbose_name="Įm. k. (код предприятия)",
-        help_text="Įmonės kodas — регистрационный код юрлица.",
+        verbose_name="Im.k.",
     )
     vat_code = models.CharField(
         max_length=50,
         blank=True,
         default="",
-        verbose_name="Код НДС плательщика",
-        help_text="PVM mokėtojo kodas, например LT100012345678.",
+        verbose_name="Код НДС",
     )
     registration_country = models.CharField(
         max_length=100,
         blank=True,
         default="",
-        verbose_name="Страна регистрации",
+        verbose_name="Страна",
     )
     physical_address = models.CharField(
         max_length=300,
         blank=True,
         default="",
-        verbose_name="Физический адрес",
+        verbose_name="Адрес",
     )
     website = models.URLField(
         blank=True,
@@ -75,14 +73,12 @@ class CounterpartyContactsMixin(models.Model):
         blank=True,
         default="",
         verbose_name="Общая почта",
-        help_text="Общий email компании — автоматически попадает в «Контакты».",
     )
     eori_code = models.CharField(
         max_length=50,
         blank=True,
         default="",
         verbose_name="EORI код",
-        help_text="Код EORI для таможенного оформления.",
     )
 
     class Meta:

@@ -20,7 +20,6 @@ class Carrier(BalanceMethodsMixin, CounterpartyRequisitesMixin, models.Model):
         blank=True,
         null=True,
         verbose_name="EORI код",
-        help_text="Код EORI перевозчика для таможенного оформления",
     )
 
     balance = models.DecimalField(

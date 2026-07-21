@@ -225,6 +225,21 @@
       padding: 9px 12px !important;
     }
 
+    /* ===== Мобильная раскладка (≤1024px) =====
+       dashboard_admin.css переводит form-multiline в колонку, но фиксированные
+       flex-basis выше (110…320px — это ШИРИНЫ колонок) в вертикальной колонке
+       работают как ВЫСОТА и дают огромные пробелы между полями. Сбрасываем.
+       Специфичность равна правилам раскладки выше, побеждает порядок в файле. */
+    @media (max-width: 1024px) {
+      body.model-car .cm-form-main .form-row.form-row .form-multiline > div,
+      body.model-car .cm-form-main .form-row.form-row .form-multiline > div:has(.fieldBox) {
+        flex: 0 0 auto !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+      }
+    }
+
     /* ===== Modals — Caromoto Design System ===== */
     .cm-modal-overlay {
       display: none;

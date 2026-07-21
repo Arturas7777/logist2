@@ -61,13 +61,11 @@ class CounterpartyBankAccountInline(GenericTabularInline):
     verbose_name_plural = "Счета контрагента"
 
 
-# Единая раскладка реквизитов в «Основной информации»:
-# регистрационные коды → страна/адрес → контакты → сайт.
+# Единая раскладка реквизитов в «Основной информации» — два ряда:
+# название + регистрационные коды → страна/адрес/контакты/сайт.
 _REQUISITES_FIELDS = (
-    ("imones_kodas", "vat_code", "eori_code"),
-    ("registration_country", "physical_address"),
-    ("phone", "general_email"),
-    "website",
+    ("name", "imones_kodas", "vat_code", "eori_code"),
+    ("registration_country", "physical_address", "phone", "general_email", "website"),
 )
 
 
@@ -95,7 +93,7 @@ class WarehouseAdmin(admin.ModelAdmin):
     )
     inlines = [CounterpartyBankAccountInline, WarehouseServiceInline]
     fieldsets = (
-        ("Основные данные", {"fields": ("name", *_REQUISITES_FIELDS)}),
+        ("Основные данные", {"classes": ("cm-requisites",), "fields": _REQUISITES_FIELDS}),
         (
             "Площадки",
             {
@@ -416,7 +414,7 @@ class ClientAdmin(admin.ModelAdmin):
         return queryset, use_distinct
 
     fieldsets = (
-        ("Основная информация", {"fields": ("name", *_REQUISITES_FIELDS)}),
+        ("Основная информация", {"classes": ("cm-requisites",), "fields": _REQUISITES_FIELDS}),
         (
             "🔔 Уведомления",
             {
@@ -976,7 +974,7 @@ class CompanyAdmin(admin.ModelAdmin):
     inlines = [CounterpartyBankAccountInline, CompanyServiceInline]
 
     fieldsets = (
-        ("Основная информация", {"fields": ("name", *_REQUISITES_FIELDS)}),
+        ("Основная информация", {"classes": ("cm-requisites",), "fields": _REQUISITES_FIELDS}),
         ("Баланс", {"fields": ("balance",), "description": "Баланс компании"}),
     )
 
@@ -1118,7 +1116,7 @@ class LineAdmin(admin.ModelAdmin):
     exclude = ("ocean_freight_rate", "documentation_fee", "handling_fee", "additional_fees")
     inlines = [CounterpartyBankAccountInline, LineTHSCoefficientInline, LineServiceInline]
     fieldsets = (
-        ("Основные данные", {"fields": ("name", *_REQUISITES_FIELDS)}),
+        ("Основные данные", {"classes": ("cm-requisites",), "fields": _REQUISITES_FIELDS}),
         (
             "THS по умолчанию",
             {
@@ -1318,13 +1316,11 @@ class CarrierAdmin(admin.ModelAdmin):
         (
             "Основная информация",
             {
+                "classes": ("cm-requisites",),
                 "fields": (
-                    ("name", "short_name"),
-                    ("imones_kodas", "vat_code", "eori_code"),
-                    ("registration_country", "physical_address"),
-                    ("contact_person", "phone", "email"),
-                    "website",
-                )
+                    ("name", "short_name", "imones_kodas", "vat_code", "eori_code"),
+                    ("registration_country", "physical_address", "contact_person", "phone", "email", "website"),
+                ),
             },
         ),
         ("Баланс", {"fields": ("balance",)}),

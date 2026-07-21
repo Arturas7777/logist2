@@ -1366,7 +1366,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             # Раскладка первой строки + рядов «Тайтл / Важно»: inline-style
             # на обёртках flex-элементов. CSS-каскад в форме ненадёжен
             # (responsive.css media-queries сжимают поля). См. файл.
-            "js/car_form_layout.js?v=11",
+            "js/car_form_layout.js?v=12",
         )
 
     def save_model(self, request, obj, form, change):

@@ -2274,13 +2274,41 @@ body.popup #footer {
     border-bottom: none !important;
 }
 
-/* Multi-field rows: add gap and size field wrappers evenly */
+/* Multi-field rows: компактные адаптивные колонки (как в реквизитах
+   контрагентов). База ~170px, потолок 320px; min-width: fit-content —
+   при сужении окна колонка не сжимается уже собственного содержимого,
+   контент не обрезается, ряд переносит колонки на следующую строку.
+   Страницы со своей раскладкой (карточка авто) переопределяют ширины
+   конкретных полей собственными более специфичными правилами. */
 .cm-form-main .form-row .form-multiline {
     gap: 8px 16px !important;
+    flex-wrap: wrap !important;
 }
 .cm-form-main .form-row .form-multiline > div {
-    flex: 1 1 0 !important;
-    min-width: 120px !important;
+    flex: 1 1 170px !important;
+    min-width: fit-content !important;
+    max-width: 320px !important;
+}
+/* Длинные поля (названия, адреса, почта и т.п.) — шире остальных */
+.cm-form-main .form-row .form-multiline > div:has(.field-name),
+.cm-form-main .form-row .form-multiline > div:has(.field-brand),
+.cm-form-main .form-row .form-multiline > div:has(.field-client),
+.cm-form-main .form-row .form-multiline > div:has(.field-address),
+.cm-form-main .form-row .form-multiline > div:has(.field-physical_address),
+.cm-form-main .form-row .form-multiline > div:has(.field-email),
+.cm-form-main .form-row .form-multiline > div:has(.field-general_email),
+.cm-form-main .form-row .form-multiline > div:has(.field-contact_person),
+.cm-form-main .form-row .form-multiline > div:has(.field-website),
+.cm-form-main .form-row .form-multiline > div:has(.field-notes),
+.cm-form-main .form-row .form-multiline > div:has(.field-description) {
+    flex: 2 1 240px !important;
+    max-width: 420px !important;
+}
+/* «Внутренняя» ширина инпута следует за содержимым (field-sizing) —
+   её подхватывает min-width: fit-content колонки. В браузерах без
+   поддержки остаётся дефолтный минимум. */
+.cm-form-main .form-row input:not([type="checkbox"]):not([type="hidden"]) {
+    field-sizing: content;
 }
 
 /* Stack label ABOVE input (override Django flex-direction: row on flex-container) */
@@ -2314,11 +2342,15 @@ body.popup #footer {
     box-sizing: border-box !important;
 }
 
-/* Single-field rows (no .fieldBox): also full width inputs */
+/* Single-field rows (no .fieldBox): не на всю страницу — потолок 480px.
+   При более длинном содержимом поле растёт по нему (min-width: fit-content
+   сильнее max-width), текст не прячется. */
 .cm-form-main .form-row .flex-container:not(.form-multiline) input:not([type="checkbox"]):not([type="hidden"]),
 .cm-form-main .form-row .flex-container:not(.form-multiline) select,
 .cm-form-main .form-row .flex-container:not(.form-multiline) .related-widget-wrapper {
     width: 100% !important;
+    max-width: 480px !important;
+    min-width: fit-content !important;
     box-sizing: border-box !important;
 }
 
@@ -2353,6 +2385,113 @@ body.popup #footer {
     height: auto !important;
     min-height: 36px !important;
     padding: 8px 12px !important;
+}
+
+/* ===== Реквизиты контрагентов (fieldset.cm-requisites) =====
+   «Основная информация» в карточках Client/Company/Warehouse/Line/Carrier:
+   подписи НАД полями (как в карточке авто), поля растянуты на всю ширину.
+   Класс вешается через fieldsets(..., {"classes": ("cm-requisites",)}). */
+fieldset.cm-requisites .form-row {
+    overflow: visible !important;
+    border-bottom: none !important;
+}
+/* Ряды из нескольких полей: компактные адаптивные колонки.
+   База ~170px с потолком 240px; длинные поля (имя, адрес, почта,
+   контактное лицо) — база 240px, потолок 380px. min-width: fit-content
+   не даёт колонке сжаться уже собственного содержимого: при сужении
+   окна поле не обрезает введённый текст, а переносится на новую строку. */
+fieldset.cm-requisites .form-row .form-multiline {
+    gap: 8px 16px !important;
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+}
+fieldset.cm-requisites .form-row .form-multiline > div {
+    flex: 1 1 170px !important;
+    min-width: fit-content !important;
+    max-width: 240px !important;
+}
+fieldset.cm-requisites .form-row .form-multiline > div:has(.field-name),
+fieldset.cm-requisites .form-row .form-multiline > div:has(.field-physical_address),
+fieldset.cm-requisites .form-row .form-multiline > div:has(.field-general_email),
+fieldset.cm-requisites .form-row .form-multiline > div:has(.field-email),
+fieldset.cm-requisites .form-row .form-multiline > div:has(.field-contact_person),
+fieldset.cm-requisites .form-row .form-multiline > div:has(.field-website) {
+    flex: 2 1 240px !important;
+    max-width: 380px !important;
+}
+/* «Внутренняя» (интринсик) ширина инпута следует за содержимым —
+   именно её подхватывает min-width: fit-content колонки выше.
+   В браузерах без поддержки field-sizing остаётся дефолтный минимум. */
+fieldset.cm-requisites .form-row input:not([type="checkbox"]):not([type="hidden"]) {
+    field-sizing: content;
+}
+/* Мобильные экраны: Django responsive.css (<768px) переводит
+   .flex-container (в т.ч. .form-multiline) в column — и flex-basis выше
+   (170/240px, задуманные как ШИРИНА) начинают работать как ВЫСОТА,
+   давая огромные вертикальные пробелы. Сбрасываем basis на auto. */
+@media (max-width: 767px) {
+    fieldset.cm-requisites .form-row .form-multiline {
+        gap: 10px !important;
+    }
+    /* Второй селектор с :has() — та же специфичность, что у правил
+       «широких» полей выше; побеждает за счёт порядка в файле. */
+    fieldset.cm-requisites .form-row .form-multiline > div,
+    fieldset.cm-requisites .form-row .form-multiline > div:has(.fieldBox) {
+        flex: 0 0 auto !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+    }
+    fieldset.cm-requisites .form-row .flex-container:not(.form-multiline) input:not([type="checkbox"]):not([type="hidden"]),
+    fieldset.cm-requisites .form-row .flex-container:not(.form-multiline) select {
+        max-width: 100% !important;
+        min-width: 0 !important;
+    }
+}
+/* Подпись над полем: flex-контейнер поля в колонку */
+fieldset.cm-requisites .form-row .flex-container:not(.form-multiline) {
+    flex-direction: column !important;
+    align-items: stretch !important;
+}
+fieldset.cm-requisites .form-row label {
+    float: none !important;
+    width: auto !important;
+    min-width: auto !important;
+    margin-bottom: 5px !important;
+    font-weight: 600 !important;
+    padding: 0 !important;
+}
+/* Поля заполняют свою колонку целиком */
+fieldset.cm-requisites .form-row .fieldBox input,
+fieldset.cm-requisites .form-row .fieldBox select {
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
+/* Однополевые ряды (Название, Сайт): не на всю страницу — потолок 480px,
+   но при более длинном содержимом поле растёт по нему (min-width сильнее
+   max-width), так что текст не прячется. */
+fieldset.cm-requisites .form-row .flex-container:not(.form-multiline) input:not([type="checkbox"]):not([type="hidden"]),
+fieldset.cm-requisites .form-row .flex-container:not(.form-multiline) select {
+    width: 100% !important;
+    max-width: 480px !important;
+    min-width: fit-content !important;
+    box-sizing: border-box !important;
+}
+/* URL-виджет «Сайт»: прячем строку «Текущий адрес: …», оставляем input */
+fieldset.cm-requisites p.url {
+    font-size: 0 !important;
+    line-height: 0 !important;
+    color: transparent !important;
+    margin: 0 !important;
+}
+fieldset.cm-requisites p.url a,
+fieldset.cm-requisites p.url br {
+    display: none !important;
+}
+fieldset.cm-requisites p.url input {
+    font-size: .88rem !important;
+    line-height: normal !important;
+    color: var(--cm-text) !important;
 }
 
 /* Select2 (автодополняемые Клиент/Склад/Линия/Перевозчик) — приводим к виду
@@ -3089,10 +3228,17 @@ body.model-newinvoice.change-form #content > h2 {
 
     .cm-form-main .form-row .form-multiline {
         flex-direction: column !important;
+        gap: 10px !important;
     }
-    .cm-form-main .form-row .form-multiline > div {
-        flex: 1 1 auto !important;
+    /* flex-basis сбрасываем на auto: в колонке basis работает как ВЫСОТА,
+       и фиксированные ширины (170/240px) дали бы огромные вертикальные
+       пробелы. Второй селектор с :has() — специфичность выше, чем у
+       десктопных правил «широких» полей, побеждает за счёт порядка. */
+    .cm-form-main .form-row .form-multiline > div,
+    .cm-form-main .form-row.form-row .form-multiline > div:has(.flex-container) {
+        flex: 0 0 auto !important;
         min-width: 0 !important;
+        max-width: 100% !important;
         width: 100% !important;
     }
 
