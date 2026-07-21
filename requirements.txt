@@ -73,7 +73,7 @@ colorama==0.4.6
     #   tqdm
 constantly==23.10.4
     # via twisted
-cryptography==46.0.7
+cryptography==49.0.0
     # via
     #   -r requirements.in
     #   autobahn
@@ -81,13 +81,13 @@ cryptography==46.0.7
     #   pdfminer-six
     #   pyopenssl
     #   service-identity
-daphne==4.1.2
+daphne==4.2.2
     # via -r requirements.in
 distro==1.9.0
     # via
     #   anthropic
     #   openai
-django==5.2.15
+django==5.2.16
     # via
     #   -r requirements.in
     #   channels
@@ -124,7 +124,7 @@ h11==0.16.0
     # via httpcore
 httpcore==1.0.9
     # via httpx
-httplib2==0.31.2
+httplib2==0.32.0
     # via
     #   google-api-python-client
     #   google-auth-httplib2
@@ -151,7 +151,7 @@ jiter==0.15.0
     #   openai
 kombu==5.6.2
     # via celery
-msgpack==1.1.0
+msgpack==1.2.1
     # via channels-redis
 oauthlib==3.3.1
     # via requests-oauthlib
@@ -165,7 +165,7 @@ pdfminer-six==20251230
     # via pdfplumber
 pdfplumber==0.11.9
     # via -r requirements.in
-pillow==12.2.0
+pillow==12.3.0
     # via
     #   -r requirements.in
     #   pdfplumber
@@ -183,13 +183,9 @@ psutil==7.2.2
 psycopg2-binary==2.9.12
     # via -r requirements.in
 pyasn1==0.6.3
-    # via
-    #   pyasn1-modules
-    #   service-identity
+    # via pyasn1-modules
 pyasn1-modules==0.4.2
-    # via
-    #   google-auth
-    #   service-identity
+    # via google-auth
 pycparser==2.22
     # via cffi
 pydantic==2.11.10
@@ -202,7 +198,7 @@ pyjwt==2.13.0
     # via redis
 pymupdf==1.27.2.3
     # via -r requirements.in
-pyopenssl==26.0.0
+pyopenssl==26.3.0
     # via twisted
 pyparsing==3.3.2
     # via httplib2
@@ -232,7 +228,7 @@ requests-oauthlib==2.0.0
     # via google-auth-oauthlib
 sentry-sdk[celery,django]==2.62.0
     # via -r requirements.in
-service-identity==24.2.0
+service-identity==26.1.0
     # via twisted
 six==1.17.0
     # via python-dateutil
