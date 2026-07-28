@@ -101,6 +101,8 @@ class WarehouseAdmin(admin.ModelAdmin):
                     ("address_name", "address"),
                     ("address2_name", "address2"),
                     ("address3_name", "address3"),
+                    ("address4_name", "address4"),
+                    ("address5_name", "address5"),
                 )
             },
         ),

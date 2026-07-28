@@ -14,6 +14,8 @@ class Warehouse(BalanceMethodsMixin, CounterpartyRequisitesMixin, CounterpartyCo
         (1, "Площадка 1"),
         (2, "Площадка 2"),
         (3, "Площадка 3"),
+        (4, "Площадка 4"),
+        (5, "Площадка 5"),
     ]
 
     name = models.CharField(max_length=100, verbose_name="Название склада", db_index=True)
@@ -29,6 +31,14 @@ class Warehouse(BalanceMethodsMixin, CounterpartyRequisitesMixin, CounterpartyCo
     # Площадка 3
     address3_name = models.CharField(max_length=100, blank=True, verbose_name="Название площадки 3")
     address3 = models.CharField(max_length=300, blank=True, verbose_name="Адрес площадки 3")
+
+    # Площадка 4
+    address4_name = models.CharField(max_length=100, blank=True, verbose_name="Название площадки 4")
+    address4 = models.CharField(max_length=300, blank=True, verbose_name="Адрес площадки 4")
+
+    # Площадка 5
+    address5_name = models.CharField(max_length=100, blank=True, verbose_name="Название площадки 5")
+    address5 = models.CharField(max_length=300, blank=True, verbose_name="Адрес площадки 5")
 
     balance = models.DecimalField(
         max_digits=15,
@@ -71,11 +81,15 @@ class Warehouse(BalanceMethodsMixin, CounterpartyRequisitesMixin, CounterpartyCo
         return self.name
 
     def get_site_address(self, site_number):
-        """Возвращает (name, address) для площадки 1/2/3"""
+        """Возвращает (name, address) для площадки 1-5"""
         if site_number == 2:
             return (self.address2_name, self.address2)
         elif site_number == 3:
             return (self.address3_name, self.address3)
+        elif site_number == 4:
+            return (self.address4_name, self.address4)
+        elif site_number == 5:
+            return (self.address5_name, self.address5)
         return (self.address_name, self.address)
 
     def get_available_sites(self):
@@ -87,6 +101,10 @@ class Warehouse(BalanceMethodsMixin, CounterpartyRequisitesMixin, CounterpartyCo
             sites.append((2, self.address2))
         if self.address3:
             sites.append((3, self.address3))
+        if self.address4:
+            sites.append((4, self.address4))
+        if self.address5:
+            sites.append((5, self.address5))
         return sites
 
 
