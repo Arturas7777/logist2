@@ -753,10 +753,12 @@ class GoogleDriveSync:
 
             for container in containers_no_photos:
                 try:
-                    if container.google_drive_folder_url:
-                        added = GoogleDriveSync.download_folder_photos(container.google_drive_folder_url, container)
-                    else:
-                        added = GoogleDriveSync.sync_container_by_number(container.number)
+                    # sync_container_by_number сам использует сохранённую ссылку
+                    # для папки ВЫГРУЖЕННЫХ и дополнительно ищет папку
+                    # В КОНТЕЙНЕРЕ (KONTO VIDUS). Прямой вызов
+                    # download_folder_photos по ссылке пропускал бы фото
+                    # IN_CONTAINER.
+                    added = GoogleDriveSync.sync_container_by_number(container.number)
 
                     stats["containers_checked"] += 1
                     stats["photos_added"] += added
@@ -832,12 +834,11 @@ class GoogleDriveSync:
 
             for container in recent_containers:
                 try:
-                    # Если есть ссылка на Google Drive - используем её
-                    if container.google_drive_folder_url:
-                        added = GoogleDriveSync.download_folder_photos(container.google_drive_folder_url, container)
-                    else:
-                        # Ищем папку автоматически по номеру контейнера
-                        added = GoogleDriveSync.sync_container_by_number(container.number)
+                    # Всегда через sync_container_by_number: он использует
+                    # сохранённую ссылку для папки ВЫГРУЖЕННЫХ и дополнительно
+                    # ищет папку В КОНТЕЙНЕРЕ (иначе фото IN_CONTAINER
+                    # никогда не подгрузятся после сохранения ссылки).
+                    added = GoogleDriveSync.sync_container_by_number(container.number)
 
                     stats["containers_processed"] += 1
                     stats["photos_added"] += added
@@ -906,10 +907,9 @@ class GoogleDriveSync:
 
             for container in containers_no_photos:
                 try:
-                    if container.google_drive_folder_url:
-                        added = GoogleDriveSync.download_folder_photos(container.google_drive_folder_url, container)
-                    else:
-                        added = GoogleDriveSync.sync_container_by_number(container.number)
+                    # Всегда через sync_container_by_number (см. комментарий
+                    # в sync_recent_containers).
+                    added = GoogleDriveSync.sync_container_by_number(container.number)
 
                     stats["containers_checked"] += 1
                     stats["photos_added"] += added

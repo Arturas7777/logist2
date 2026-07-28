@@ -88,19 +88,17 @@ def sync_container_photos_from_gdrive(request, container_id):
         if request.method != "POST":
             return JsonResponse({"success": False, "error": "Only POST method allowed"}, status=405)
 
-        container = Container.objects.get(id=container_id)
-        folder_url = container.google_drive_folder_url
+        Container.objects.get(id=container_id)  # 404 если контейнера нет
 
         from core.tasks import sync_container_photos_gdrive_task
 
-        sync_container_photos_gdrive_task.delay(container_id, folder_url or None)
+        # Не передаём folder_url: задача через sync_container_by_number сама
+        # использует сохранённую ссылку для папки ВЫГРУЖЕННЫХ и дополнительно
+        # ищет папку В КОНТЕЙНЕРЕ. Передача ссылки напрямую загружала бы
+        # только фото UNLOADING.
+        sync_container_photos_gdrive_task.delay(container_id)
 
-        message = "Загрузка фотографий начата. "
-        if folder_url:
-            message += "Используется указанная ссылка на папку."
-        else:
-            message += "Ищем папку по номеру контейнера."
-        message += " Обновите страницу через 1-2 минуты."
+        message = "Загрузка фотографий начата (выгруженные + в контейнере). Обновите страницу через 1-2 минуты."
 
         return JsonResponse(
             {
