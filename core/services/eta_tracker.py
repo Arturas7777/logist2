@@ -7,8 +7,10 @@ Track & Trace: список событий, где TRANSPORT-события с
 конечный порт выгрузки (промежуточные ARRI при трансшипментах раньше).
 
 Доступ:
-  * Maersk  — https://developer.maersk.com, ключ приложения в заголовке
-    ``Consumer-Key`` (env ``MAERSK_CONSUMER_KEY``).
+  * Maersk  — https://developer.maersk.com, OAuth2 client_credentials:
+    Consumer Key + Client Secret приложения (env ``MAERSK_CONSUMER_KEY`` /
+    ``MAERSK_CLIENT_SECRET``) обмениваются на Bearer-токен, все запросы
+    идут с заголовками ``Consumer-Key`` + ``Authorization: Bearer``.
   * CMA CGM — https://api-portal.cma-cgm.com, API-ключ в заголовке
     ``KeyId`` (env ``CMA_CGM_API_KEY``).
   * MSC — доступ к API выдаётся по заявке на их портале; адаптер добавим,
@@ -72,21 +74,65 @@ def extract_eta_from_events(payload) -> date | None:
 # ── Адаптеры линий ─────────────────────────────────────────────────────────
 
 
-def _fetch_maersk(container_number: str) -> tuple[object | None, str]:
-    """DCSA-события Maersk. Возвращает (payload, error_message)."""
+_MAERSK_TOKEN_URL = "https://api.maersk.com/customer-identity/oauth/v2/access_token"
+_MAERSK_TOKEN_CACHE_KEY = "eta_tracker:maersk_oauth_token"
+
+
+def _get_maersk_token() -> tuple[str | None, str]:
+    """OAuth2 client_credentials токен Maersk (кэшируется до истечения)."""
+    from django.core.cache import cache
+
     key = (getattr(settings, "MAERSK_CONSUMER_KEY", "") or "").strip()
+    secret = (getattr(settings, "MAERSK_CLIENT_SECRET", "") or "").strip()
     if not key:
         return None, "MAERSK_CONSUMER_KEY не задан в .env"
+    if not secret:
+        return None, "MAERSK_CLIENT_SECRET не задан в .env"
+
+    token = cache.get(_MAERSK_TOKEN_CACHE_KEY)
+    if token:
+        return token, ""
+
+    resp = requests.post(
+        _MAERSK_TOKEN_URL,
+        headers={"Consumer-Key": key, "Content-Type": "application/x-www-form-urlencoded"},
+        data={"grant_type": "client_credentials", "client_id": key, "client_secret": secret},
+        timeout=REQUEST_TIMEOUT,
+    )
+    if resp.status_code in (400, 401, 403):
+        return None, f"Maersk отклонил учётные данные (HTTP {resp.status_code}) — проверьте Consumer Key / Client Secret"
+    resp.raise_for_status()
+    data = resp.json()
+    token = data.get("access_token")
+    if not token:
+        return None, "Maersk не вернул access_token"
+    expires_in = int(data.get("expires_in") or 3600)
+    cache.set(_MAERSK_TOKEN_CACHE_KEY, token, max(60, expires_in - 60))
+    return token, ""
+
+
+def _fetch_maersk(container_number: str) -> tuple[object | None, str]:
+    """DCSA-события Maersk. Возвращает (payload, error_message)."""
+    token, error = _get_maersk_token()
+    if token is None:
+        return None, error
+    key = (getattr(settings, "MAERSK_CONSUMER_KEY", "") or "").strip()
     resp = requests.get(
         "https://api.maersk.com/track-and-trace-private/events",
         params={"equipmentReference": container_number},
-        headers={"Consumer-Key": key, "Accept": "application/json"},
+        headers={
+            "Consumer-Key": key,
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        },
         timeout=REQUEST_TIMEOUT,
     )
     if resp.status_code == 404:
-        return None, "контейнер не найден в системе Maersk"
+        # Maersk отвечает 404 и когда OAuth-клиент не привязан к Customer
+        # Code, участвующему в перевозке (см. доку Track & Trace Events).
+        return None, "контейнер не найден в системе Maersk (или приложению не выдан ваш Customer Code)"
     if resp.status_code in (401, 403):
-        return None, f"Maersk отклонил ключ (HTTP {resp.status_code}) — проверьте MAERSK_CONSUMER_KEY"
+        return None, f"Maersk отклонил запрос (HTTP {resp.status_code}) — проверьте доступ приложения"
     resp.raise_for_status()
     return resp.json(), ""
 

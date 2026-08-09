@@ -571,10 +571,12 @@ AGENT_MODEL = os.getenv("AGENT_MODEL", "claude-sonnet-5")
 SCAN_AI_MODEL = os.getenv("SCAN_AI_MODEL", AGENT_MODEL)
 
 # ── Track & Trace API морских линий (обновление ETA контейнеров) ──────────
-# Maersk: developer.maersk.com → своё приложение → Consumer Key.
+# Maersk: developer.maersk.com → приложение → Consumer Key + Client Secret
+# (OAuth2 client_credentials; приложению должен быть выдан ваш Customer Code).
 # CMA CGM: api-portal.cma-cgm.com → подписка на Track & Trace → API Key.
-# Пустой ключ = линия просто пропускается (см. core/services/eta_tracker.py).
+# Пустые ключи = линия просто пропускается (см. core/services/eta_tracker.py).
 MAERSK_CONSUMER_KEY = os.getenv("MAERSK_CONSUMER_KEY", "")
+MAERSK_CLIENT_SECRET = os.getenv("MAERSK_CLIENT_SECRET", "")
 CMA_CGM_API_KEY = os.getenv("CMA_CGM_API_KEY", "")
 AGENT_MAX_TOKENS = int(os.getenv("AGENT_MAX_TOKENS", "2000"))
 AGENT_REQUEST_TIMEOUT = int(os.getenv("AGENT_REQUEST_TIMEOUT", "60"))
