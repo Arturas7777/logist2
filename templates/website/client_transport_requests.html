@@ -169,14 +169,14 @@
                                     <i class="bi bi-save"></i> {% trans "Сохранить изменения" %}
                                 </button>
                             {% else %}
-                                <button type="submit" name="save_draft" value="1" class="btn {% if editing %}btn-warning flex-grow-1{% else %}btn-outline-secondary{% endif %}">
+                                <button type="submit" name="save_draft" value="1" class="btn {% if editing %}btn-warning{% else %}btn-secondary{% endif %} flex-grow-1 w-50">
                                     {% if editing %}
                                         <i class="bi bi-save"></i> {% trans "Сохранить изменения" %}
                                     {% else %}
                                         <i class="bi bi-file-earmark"></i> {% trans "Черновик" %}
                                     {% endif %}
                                 </button>
-                                <button type="submit" class="btn btn-success flex-grow-1">
+                                <button type="submit" class="btn btn-success flex-grow-1 w-50">
                                     <i class="bi bi-send"></i> {% trans "Подать заявку" %}
                                 </button>
                             {% endif %}
