@@ -34,12 +34,20 @@ SESSION_COOKIE_AGE = 86400
 # SESSION_SAVE_EVERY_REQUEST=True создавало лишнюю нагрузку на Redis.
 # Сессия обновляется на логине/логауте, чего достаточно.
 SESSION_SAVE_EVERY_REQUEST = False
-SESSION_COOKIE_SAMESITE = "Strict"
+# Lax, НЕ Strict: со Strict куки не отправляются при переходе на сайт по
+# внешней ссылке (почта/мессенджер) — пользователь выглядел разлогиненным,
+# а Django выпускал НОВЫЙ csrftoken, из-за чего формы в уже открытых
+# вкладках падали с «CSRF token from POST incorrect» (403).
+# От CSRF-атак защищает сам токен: Lax не отправляет куки при
+# кросс-сайтовом POST.
+SESSION_COOKIE_SAMESITE = "Lax"
 
 # CSRF hardening
 CSRF_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SAMESITE = "Strict"
-CSRF_FAILURE_VIEW = "django.views.csrf.csrf_failure"
+CSRF_COOKIE_SAMESITE = "Lax"
+# Дружелюбная страница вместо голого 403: объясняет, что форма устарела,
+# и предлагает вернуться и повторить отправку.
+CSRF_FAILURE_VIEW = "core.views_website.errors.csrf_failure"
 
 # Email: use real SMTP in production
 EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
