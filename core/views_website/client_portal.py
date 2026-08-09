@@ -83,7 +83,9 @@ def client_dashboard(request):
             # Метка «Уже в заявке»: авто состоит в активной заявке на автовоз.
             .annotate(
                 in_active_request=Exists(
-                    TransportRequest.objects.filter(client=client, cars=OuterRef("pk")).exclude(status="COMPLETED")
+                    TransportRequest.objects.filter(client=client, cars=OuterRef("pk")).exclude(
+                        status__in=TransportRequest.INACTIVE_STATUSES
+                    )
                 )
             )
         )

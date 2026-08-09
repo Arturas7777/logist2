@@ -61,7 +61,7 @@ from .portal_docs import (
     declaration_print,
     upload_document,
 )
-from .portal_transport import transport_request_edit, transport_requests
+from .portal_transport import transport_request_delete, transport_request_edit, transport_requests
 from .public import (
     about_page,
     contact_page,
@@ -89,7 +89,7 @@ __all__ = [
     'client_documents', 'upload_document', 'create_declaration_request',
     'declaration_print',
     # portal_transport
-    'transport_requests', 'transport_request_edit',
+    'transport_requests', 'transport_request_edit', 'transport_request_delete',
     # api
     'IsClientUser', 'ClientCarViewSet', 'ClientContainerViewSet',
     'NewsViewSet', 'ContactMessageViewSet',

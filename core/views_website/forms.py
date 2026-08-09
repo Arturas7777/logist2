@@ -134,7 +134,9 @@ class TransportRequestForm(forms.ModelForm):
         # и не заблокированы (is_important — блокировка добавления в автовоз).
         # Авто, уже состоящее в другой активной заявке (не «Оформлена»),
         # выбрать нельзя. При редактировании — плюс машины этой заявки.
-        in_other_active_request = TransportRequest.objects.filter(cars=OuterRef("pk")).exclude(status="COMPLETED")
+        in_other_active_request = TransportRequest.objects.filter(cars=OuterRef("pk")).exclude(
+            status__in=TransportRequest.INACTIVE_STATUSES
+        )
         if self.instance.pk:
             in_other_active_request = in_other_active_request.exclude(pk=self.instance.pk)
         cars_qs = (

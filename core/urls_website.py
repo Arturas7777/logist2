@@ -41,6 +41,11 @@ urlpatterns = [
     # ========== Заявки на автовоз ==========
     path("transport-requests/", views_website.transport_requests, name="transport_requests"),
     path("transport-requests/<int:pk>/edit/", views_website.transport_request_edit, name="transport_request_edit"),
+    path(
+        "transport-requests/<int:pk>/delete/",
+        views_website.transport_request_delete,
+        name="transport_request_delete",
+    ),
     # ========== Скачивание фотографий ==========
     path("photo/car/<int:photo_id>/download/", views_website.download_car_photo, name="download_car_photo"),
     path(

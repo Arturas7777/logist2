@@ -706,9 +706,10 @@ class TransportRequest(models.Model):
     """Заявка клиента с данными автовоза, который заберёт его автомобили.
 
     Жизненный цикл: Черновик → Подана → Принята → В процессе → Оформлена.
-    Клиент может редактировать заявку до статуса «В процессе»; правка
-    заявки в статусе «Принята» возвращает её в «Подана» (админ принимает
-    заново) — см. ``portal_transport.transport_request_edit``.
+    Клиент может редактировать и удалять заявку только в статусах
+    «Черновик»/«Подана» — см. ``portal_transport``. «Удаление» клиентом —
+    мягкое: заявка получает статус «Отменена» и скрывается из кабинета,
+    но остаётся видимой администратору как неактуальная.
     """
 
     STATUS_CHOICES = [
@@ -717,10 +718,14 @@ class TransportRequest(models.Model):
         ("ACCEPTED", "Принята"),
         ("IN_PROGRESS", "В процессе"),
         ("COMPLETED", "Оформлена"),
+        ("CANCELLED", "Отменена"),
     ]
 
-    # Статусы, в которых клиент ещё может менять заявку.
-    CLIENT_EDITABLE_STATUSES = {"DRAFT", "SUBMITTED", "ACCEPTED"}
+    # Статусы, в которых клиент ещё может менять и удалять заявку.
+    CLIENT_EDITABLE_STATUSES = {"DRAFT", "SUBMITTED"}
+
+    # Статусы, в которых заявка «активна» (авто занято заявкой).
+    INACTIVE_STATUSES = {"COMPLETED", "CANCELLED"}
 
     number = models.CharField(max_length=50, unique=True, blank=True, verbose_name="Номер заявки")
     client = models.ForeignKey(

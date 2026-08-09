@@ -5,10 +5,16 @@ import json
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 
 from core.models.website import ClientUser, TransportRequest
 
 from .forms import TransportRequestForm
+
+
+def _client_requests(client):
+    """Заявки клиента для списка в кабинете (отменённые скрыты)."""
+    return TransportRequest.objects.filter(client=client).exclude(status="CANCELLED").prefetch_related("cars")
 
 
 def _get_client(request):
@@ -45,16 +51,14 @@ def _save_request(request, form, client, *, instance=None):
 
     * кнопка «Сохранить черновик» → DRAFT;
     * кнопка «Отправить» → SUBMITTED;
-    * правка поданной заявки — статус не меняется (SUBMITTED),
-      но заявка в статусе «Принята» возвращается в «Подана» —
-      администратор должен принять её заново.
+    * правка поданной заявки — статус не меняется (SUBMITTED).
     """
     transport_request = form.save(commit=False)
     old_status = instance.status if instance else None
 
     if "save_draft" in request.POST:
         transport_request.status = "DRAFT"
-    elif old_status in (None, "DRAFT", "ACCEPTED"):
+    elif old_status in (None, "DRAFT"):
         transport_request.status = "SUBMITTED"
 
     transport_request.client = client
@@ -62,13 +66,6 @@ def _save_request(request, form, client, *, instance=None):
         transport_request.created_by = request.user
     transport_request.save()
     form.save_m2m()
-
-    if old_status == "ACCEPTED" and transport_request.status == "SUBMITTED":
-        messages.info(
-            request,
-            f"Заявка {transport_request.number} была изменена после принятия, "
-            "поэтому её статус снова «Подана» — администратор рассмотрит её повторно.",
-        )
     return transport_request
 
 
@@ -101,15 +98,13 @@ def transport_requests(request):
             initial["cars"] = selected_ids
         form = TransportRequestForm(client=client, initial=initial)
 
-    requests_qs = TransportRequest.objects.filter(client=client).prefetch_related("cars")
-
     return render(
         request,
         "website/client_transport_requests.html",
         {
             "client": client,
             "form": form,
-            "transport_requests": requests_qs,
+            "transport_requests": _client_requests(client),
             "editing": None,
             "known_carriers_json": _known_carriers_json(client),
         },
@@ -144,16 +139,42 @@ def transport_request_edit(request, pk):
     else:
         form = TransportRequestForm(client=client, instance=transport_request)
 
-    requests_qs = TransportRequest.objects.filter(client=client).prefetch_related("cars")
-
     return render(
         request,
         "website/client_transport_requests.html",
         {
             "client": client,
             "form": form,
-            "transport_requests": requests_qs,
+            "transport_requests": _client_requests(client),
             "editing": transport_request,
             "known_carriers_json": _known_carriers_json(client),
         },
     )
+
+
+@login_required
+@require_POST
+def transport_request_delete(request, pk):
+    """Удаление заявки клиентом — мягкое: статус «Отменена».
+
+    Разрешено только в статусах «Черновик»/«Подана». Заявка скрывается из
+    кабинета, но остаётся в системе — администратор видит её со статусом
+    «Отменена» (неактуальна), а авто снова доступны для новых заявок.
+    """
+    client = _get_client(request)
+    if client is None:
+        return render(request, "website/not_authorized.html", status=403)
+
+    transport_request = get_object_or_404(TransportRequest, pk=pk, client=client)
+    if not transport_request.is_client_editable:
+        messages.error(
+            request,
+            f"Заявка {transport_request.number} уже в работе "
+            f"(статус «{transport_request.get_status_display()}») и не может быть удалена.",
+        )
+        return redirect("website:transport_requests")
+
+    transport_request.status = "CANCELLED"
+    transport_request.save(update_fields=["status", "updated_at"])
+    messages.success(request, f"Заявка {transport_request.number} удалена.")
+    return redirect("website:transport_requests")

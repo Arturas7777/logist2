@@ -306,6 +306,7 @@ class TransportRequestAdmin(admin.ModelAdmin):
             "ACCEPTED": "#4CAF50",
             "IN_PROGRESS": "#2196F3",
             "COMPLETED": "#6a1b9a",
+            "CANCELLED": "#d9534f",
         }
         return format_html(
             '<span style="background-color: {}; color: white; padding: 3px 8px; border-radius: 3px;">{}</span>',
