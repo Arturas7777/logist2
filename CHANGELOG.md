@@ -7,6 +7,20 @@
 
 ## [Unreleased]
 
+### Added — Автообновление ETA контейнеров из Track & Trace API морских линий (2026-08-10)
+
+- **`core/services/eta_tracker.py`**: запрос событий контейнера по стандарту
+  DCSA у Maersk (`api.maersk.com`, заголовок `Consumer-Key`) и CMA CGM
+  (`apis.cma-cgm.net`, заголовок `KeyId`); ETA = самое позднее плановое
+  прибытие (PLN/EST ARRI) — при трансшипментах это конечный порт.
+- **Триггеры**: после применения dock receipt (номер + линия известны) —
+  немедленный запрос ETA; ежедневно в 05:45 — обновление всех контейнеров
+  «В пути» (`update_container_etas_task` в celery beat).
+- **Настройка**: env-ключи `MAERSK_CONSUMER_KEY` и `CMA_CGM_API_KEY`
+  (`logist2/settings/base.py`); линии без ключа/адаптера пропускаются.
+  MSC подключим после получения доступа к их порталу.
+- Тесты: `core/tests/test_eta_tracker.py` (моки, без сети).
+
 ### Added — Загрузка dock receipt и тайтлов в карточку контейнера с надёжным распознаванием VIN (2026-08-09)
 
 - **Панель «Документы (AI)» в карточке контейнера**

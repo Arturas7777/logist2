@@ -108,4 +108,10 @@ app.conf.beat_schedule = {
         "task": "core.tasks_agent.morning_digest_task",
         "schedule": crontab(hour=7, minute=0, day_of_week="1-5"),
     },
+    # ETA контейнеров «В пути» из Track & Trace API линий (Maersk/CMA CGM).
+    # Линии без ключа в .env пропускаются (см. core/services/eta_tracker.py).
+    "update-container-etas-daily": {
+        "task": "core.tasks.update_container_etas_task",
+        "schedule": crontab(hour=5, minute=45),
+    },
 }

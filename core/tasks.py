@@ -890,6 +890,52 @@ def process_scan_job(self, job_id):
     return {"ok": True, "job_id": job.id, "status": job.status, "auto_applied": auto_applied}
 
 
+@shared_task(bind=True, max_retries=2, default_retry_delay=300, time_limit=120)
+def update_container_eta_task(self, container_id):
+    """Обновить ETA одного контейнера из Track & Trace API его линии.
+
+    Ставится после применения dock receipt (номер и линия уже известны).
+    """
+    from core.models import Container
+    from core.services.eta_tracker import update_container_eta
+
+    container = Container.objects.select_related("line").filter(pk=container_id).first()
+    if container is None:
+        return {"ok": False, "reason": "container_not_found"}
+    result = update_container_eta(container)
+    return {"ok": True, **result}
+
+
+@shared_task(time_limit=1800)
+def update_container_etas_task():
+    """Ежедневное обновление ETA всех контейнеров «В пути» (celery beat).
+
+    Линии без настроенного ключа/адаптера просто пропускаются — задача
+    безопасна и до получения всех доступов.
+    """
+    from core.models import Container
+    from core.services.eta_tracker import update_container_eta
+
+    containers = Container.objects.filter(status="FLOATING", line__isnull=False).select_related("line")
+    updated, unchanged, skipped = 0, 0, 0
+    for container in containers:
+        try:
+            result = update_container_eta(container)
+        except Exception:
+            logger.exception("ETA update failed for container %s", container.number)
+            skipped += 1
+            continue
+        if result["updated"]:
+            updated += 1
+        elif result["new_eta"]:
+            unchanged += 1
+        else:
+            skipped += 1
+    summary = {"total": containers.count(), "updated": updated, "unchanged": unchanged, "skipped": skipped}
+    logger.info("update_container_etas: %s", summary)
+    return summary
+
+
 @shared_task(bind=True, max_retries=1, default_retry_delay=600, time_limit=180)
 def check_business_rules(self):
     """

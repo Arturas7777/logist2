@@ -571,7 +571,23 @@ def apply_dock_receipt_job(job: ScanProcessingJob, *, applied_by=None) -> ScanPr
         len(affected),
         len(created_vins),
     )
+    # Номер контейнера и линия теперь известны — запрашиваем ETA у линии
+    # (после коммита, чтобы не ходить в сеть внутри транзакции).
+    transaction.on_commit(lambda: _schedule_eta_update(container.pk))
     return job
+
+
+def _schedule_eta_update(container_id: int) -> None:
+    """Ставит фоновое обновление ETA; без брокера выполняет синхронно."""
+    from core.tasks import update_container_eta_task
+
+    try:
+        update_container_eta_task.delay(container_id)
+    except Exception:
+        try:
+            update_container_eta_task(container_id)  # type: ignore[call-arg]
+        except Exception:
+            logger.exception("ETA update failed for container #%s", container_id)
 
 
 def _resolve_weight_kg(veh: dict) -> Decimal | None:
