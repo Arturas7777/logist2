@@ -19,7 +19,8 @@ CONTAINERS_PER_PAGE = 50
 
 
 def _attach_model_images(cars):
-    """Проставляет каждому авто ``model_image_url`` — мини-картинку модели.
+    """Проставляет каждому авто картинку модели: ``model_image_url``
+    (мини-версия для списков) и ``model_image_full_url`` (полная, для карточки).
 
     Повторяет логику подбора ``find_car_model_image_url`` (админка), но одним
     запросом на страницу вместо 2–3 запросов на каждое авто: записей
@@ -30,8 +31,18 @@ def _attach_model_images(cars):
         return
     recs = [((r.brand or "").strip().lower(), r) for r in records]
 
+    def _url(image_field, version_ts):
+        if not image_field:
+            return None
+        try:
+            url = image_field.url
+        except ValueError:
+            return None
+        return f"{url}?v={version_ts}" if version_ts else url
+
     for car in cars:
         car.model_image_url = None
+        car.model_image_full_url = None
         brand = (car.brand or "").strip().lower()
         if not brand:
             continue
@@ -47,14 +58,10 @@ def _attach_model_images(cars):
                 best, best_score = rec, score
         if best is None:
             continue
-        image_field = best.thumbnail or best.image
-        try:
-            url = image_field.url
-        except ValueError:
-            continue
-        if best.updated_at:
-            url = f"{url}?v={int(best.updated_at.timestamp())}"
-        car.model_image_url = url
+        version_ts = int(best.updated_at.timestamp()) if best.updated_at else None
+        full_url = _url(best.image, version_ts)
+        car.model_image_url = _url(best.thumbnail, version_ts) or full_url
+        car.model_image_full_url = full_url
 
 
 @login_required
@@ -152,6 +159,7 @@ def car_detail(request, car_id):
             id=car_id,
             client=client_user.client,
         )
+        _attach_model_images([car])
 
         return render(request, "website/car_detail.html", {"car": car})
     except ClientUser.DoesNotExist:

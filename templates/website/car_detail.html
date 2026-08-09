@@ -12,18 +12,37 @@
         </ol>
     </nav>
 
-    <!-- Заголовок -->
-    <div class="row mb-4">
-        <div class="col-md-8">
-            <h1 class="mb-2">
-                <i class="bi bi-car-front text-primary"></i> {{ car.brand }} {{ car.year }}
-            </h1>
-            <p class="text-muted mb-0">VIN: {{ car.vin }}</p>
-        </div>
-        <div class="col-md-4 text-md-end">
-            <span class="badge {% if car.status == 'TRANSFERRED' %}bg-success{% elif car.status == 'FLOATING' %}bg-info{% elif car.status == 'IN_PORT' %}bg-warning{% else %}bg-primary{% endif %} fs-5">
-                {{ car.get_status_display }}
-            </span>
+    <!-- Шапка карточки: картинка модели + основное -->
+    <div class="card border-0 shadow-sm mb-4 overflow-hidden">
+        <div class="row g-0 align-items-center">
+            {% if car.model_image_full_url %}
+            <div class="col-md-4 text-center p-3 car-hero-image">
+                <img src="{{ car.model_image_full_url }}" alt="{{ car.brand }}"
+                     class="img-fluid" style="max-height:180px;object-fit:contain;">
+            </div>
+            {% endif %}
+            <div class="col p-4">
+                <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+                    <div>
+                        <h1 class="h3 mb-1">{{ car.brand }} {{ car.year }}</h1>
+                        <div class="text-muted">VIN: <code>{{ car.vin }}</code></div>
+                    </div>
+                    <span class="status-badge status-{{ car.status }} fs-6">
+                        {{ car.get_status_display }}
+                    </span>
+                </div>
+                <div class="d-flex flex-wrap gap-3 mt-3 text-muted small">
+                    {% if car.container %}
+                    <span><i class="bi bi-box-seam"></i> {{ car.container.number }}</span>
+                    {% endif %}
+                    {% if car.warehouse %}
+                    <span><i class="bi bi-geo-alt"></i> {{ car.warehouse.name }}</span>
+                    {% endif %}
+                    {% if car.unload_date %}
+                    <span><i class="bi bi-calendar-check"></i> Разгружен {{ car.unload_date|date:"d.m.Y" }}</span>
+                    {% endif %}
+                </div>
+            </div>
         </div>
     </div>
 
@@ -116,7 +135,7 @@
                             <tr>
                                 <th>Статус:</th>
                                 <td>
-                                    <span class="badge {% if car.status == 'TRANSFERRED' %}bg-success{% elif car.status == 'FLOATING' %}bg-info{% elif car.status == 'IN_PORT' %}bg-warning{% else %}bg-primary{% endif %}">
+                                    <span class="status-badge status-{{ car.status }}">
                                         {{ car.get_status_display }}
                                     </span>
                                 </td>
@@ -222,6 +241,24 @@
 </div>
 
 <style>
+/* Цвета статусов — единая гамма проекта (как на дашборде) */
+.status-badge {
+    padding: .35em .6em;
+    font-weight: 500;
+    border-radius: 10px;
+    white-space: nowrap;
+}
+.status-FLOATING  { background:#d1ecf1; color:#0c5460; }
+.status-IN_PORT   { background:#f8d7da; color:#721c24; }
+.status-UNLOADED  { background:#d4edda; color:#155724; }
+.status-TRANSFERRED { background:#e2d9f3; color:#4b2e83; }
+.status-PENDING, .status-NEW { background:#fff3cd; color:#856404; }
+.car-hero-image {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
 .photo-item {
     overflow: hidden;
     border-radius: 0.5rem;
