@@ -69,6 +69,32 @@ def compress_image_bytes(
 CAR_MODEL_CANVAS = (800, 450)  # 16:9
 CAR_MODEL_PADDING = 0.04  # небольшое поле ПОСЛЕ обрезки прозрачных краёв
 WEBP_QUALITY = 88
+# Мини-версия для списков (кабинет клиента и т.п.): ~2–4 КБ на файл.
+CAR_MODEL_THUMB_CANVAS = (160, 90)
+CAR_MODEL_THUMB_QUALITY = 80
+
+
+def make_car_model_thumb_bytes(
+    data: bytes,
+    *,
+    size: tuple[int, int] = CAR_MODEL_THUMB_CANVAS,
+    quality: int = CAR_MODEL_THUMB_QUALITY,
+) -> bytes | None:
+    """Уменьшает (уже нормализованную) картинку модели до мини-версии WebP.
+
+    Возвращает байты WebP либо None при ошибке."""
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            im.load()
+            if im.mode != "RGBA":
+                im = im.convert("RGBA")
+            im.thumbnail(size, Image.Resampling.LANCZOS)
+            buf = io.BytesIO()
+            im.save(buf, format="WEBP", quality=quality, method=6)
+            return buf.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError) as e:
+        logger.warning("make_car_model_thumb: ошибка обработки (%s)", e)
+        return None
 
 
 def normalize_car_model_image_bytes(

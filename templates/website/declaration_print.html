@@ -1,0 +1,109 @@
+{% load i18n %}<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ declaration.number }} — {% trans "Данные для оформления декларации" %}</title>
+    <style>
+        @page { size: A4; margin: 18mm 16mm; }
+        * { box-sizing: border-box; }
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            font-size: 12px;
+            color: #1a1a1a;
+            max-width: 178mm;
+            margin: 0 auto;
+            padding: 16px;
+        }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; margin-bottom: 18px; }
+        .header h1 { font-size: 16px; margin: 0 0 4px; }
+        .header .muted { color: #666; font-size: 11px; }
+        .doc-number { text-align: right; font-size: 13px; font-weight: 600; }
+        h2 { font-size: 13px; margin: 18px 0 6px; text-transform: uppercase; letter-spacing: .4px; color: #2c3e50; border-bottom: 1px solid #ddd; padding-bottom: 3px; }
+        table { width: 100%; border-collapse: collapse; }
+        td { padding: 4px 8px; vertical-align: top; }
+        td.label { width: 40%; color: #555; }
+        td.value { font-weight: 600; }
+        .footer { margin-top: 28px; font-size: 11px; color: #666; }
+        .sign-row { display: flex; justify-content: space-between; margin-top: 34px; }
+        .sign { width: 45%; border-top: 1px solid #999; padding-top: 4px; font-size: 11px; color: #555; }
+        .print-btn { position: fixed; top: 12px; right: 12px; padding: 8px 16px; background: #2c3e50; color: #fff; border: 0; border-radius: 6px; cursor: pointer; font-size: 13px; }
+        @media print { .print-btn { display: none; } body { padding: 0; } }
+    </style>
+</head>
+<body>
+    <button class="print-btn" onclick="window.print()">{% trans "Печать" %}</button>
+
+    <div class="header">
+        <div>
+            <h1>Caromoto Lithuania, MB</h1>
+            <div class="muted">{% trans "Данные для оформления декларации" %} — {{ declaration.get_declaration_type_display }}</div>
+        </div>
+        <div class="doc-number">
+            {{ declaration.number }}<br>
+            <span class="muted">{{ declaration.created_at|date:"d.m.Y" }}</span>
+        </div>
+    </div>
+
+    <h2>{% trans "Транспортное средство" %}</h2>
+    <table>
+        <tr><td class="label">VIN</td><td class="value">{{ car.vin }}</td></tr>
+        <tr><td class="label">{% trans "Марка / модель" %}</td><td class="value">{{ car.brand|default:"—" }}</td></tr>
+        <tr><td class="label">{% trans "Год выпуска" %}</td><td class="value">{{ car.year|default:"—" }}</td></tr>
+        <tr><td class="label">{% trans "Тип ТС" %}</td><td class="value">{{ car.get_vehicle_type_display|default:"—" }}</td></tr>
+        {% if car.weight_kg %}<tr><td class="label">{% trans "Вес, кг" %}</td><td class="value">{{ car.weight_kg }}</td></tr>{% endif %}
+        {% if car.container %}<tr><td class="label">{% trans "Контейнер" %}</td><td class="value">{{ car.container.number }}</td></tr>{% endif %}
+        {% if car.warehouse %}<tr><td class="label">{% trans "Склад" %}</td><td class="value">{{ car.warehouse.name }}</td></tr>{% endif %}
+        <tr><td class="label">{% trans "Наличие тайтла" %}</td><td class="value">{% if car.has_title %}{% trans "Да" %}{% else %}{% trans "Нет" %}{% endif %}</td></tr>
+    </table>
+
+    <h2>{% trans "Отправитель / декларант" %}</h2>
+    <table>
+        <tr><td class="label">{% trans "Клиент" %}</td><td class="value">{{ client.name }}</td></tr>
+    </table>
+
+    <h2>{% trans "Получатель" %}</h2>
+    <table>
+        <tr><td class="label">{% trans "Имя / компания" %}</td><td class="value">{{ declaration.buyer_name }}</td></tr>
+        {% if declaration.buyer_code %}<tr><td class="label">{% trans "Код" %}</td><td class="value">{{ declaration.buyer_code }}</td></tr>{% endif %}
+        <tr><td class="label">{% trans "Страна" %}</td><td class="value">{{ declaration.buyer_country }}</td></tr>
+        {% if declaration.buyer_address %}<tr><td class="label">{% trans "Адрес" %}</td><td class="value">{{ declaration.buyer_address }}</td></tr>{% endif %}
+    </table>
+
+    <h2>{% trans "Направление и стоимость" %}</h2>
+    <table>
+        <tr><td class="label">{% trans "Страна назначения" %}</td><td class="value">{{ declaration.destination_country }}</td></tr>
+        {% if declaration.destination_city %}<tr><td class="label">{% trans "Город назначения" %}</td><td class="value">{{ declaration.destination_city }}</td></tr>{% endif %}
+        <tr>
+            <td class="label">{% trans "Стоимость по инвойсу" %}</td>
+            <td class="value">{% if declaration.invoice_value %}{{ declaration.invoice_value }} {{ declaration.currency }}{% else %}—{% endif %}</td>
+        </tr>
+    </table>
+
+    {% if declaration.notes %}
+    <h2>{% trans "Примечания" %}</h2>
+    <p>{{ declaration.notes|linebreaksbr }}</p>
+    {% endif %}
+
+    {% if documents %}
+    <h2>{% trans "Приложенные документы" %}</h2>
+    <table>
+        {% for doc in documents %}
+        <tr>
+            <td class="label">{{ doc.get_document_type_display }}</td>
+            <td class="value">{{ doc.filename }} <span style="color:#888;font-weight:400;">({{ doc.uploaded_at|date:"d.m.Y" }})</span></td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+
+    <div class="sign-row">
+        <div class="sign">{% trans "Подпись клиента" %}</div>
+        <div class="sign">{% trans "Дата" %}</div>
+    </div>
+
+    <div class="footer">
+        Caromoto Lithuania, MB · caromoto-lt.com · info@caromoto-lt.com<br>
+        {% trans "Документ сформирован автоматически в личном кабинете клиента." %}
+    </div>
+</body>
+</html>

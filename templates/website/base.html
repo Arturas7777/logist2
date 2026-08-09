@@ -97,18 +97,29 @@
                             </a>
                             <ul class="dropdown-menu dropdown-menu-end">
                                 <li><a class="dropdown-item" href="{% url 'website:dashboard' %}">
-                                    <i class="bi bi-speedometer2"></i> Личный кабинет
+                                    <i class="bi bi-speedometer2"></i> {% trans "Личный кабинет" %}
+                                </a></li>
+                                <li><a class="dropdown-item" href="{% url 'website:documents' %}">
+                                    <i class="bi bi-file-earmark-text"></i> {% trans "Документы и декларации" %}
+                                </a></li>
+                                <li><a class="dropdown-item" href="{% url 'website:transport_requests' %}">
+                                    <i class="bi bi-truck"></i> {% trans "Заявки на автовоз" %}
                                 </a></li>
                                 <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item" href="/admin/logout/">
-                                    <i class="bi bi-box-arrow-right"></i> Выйти
-                                </a></li>
+                                <li>
+                                    <form method="post" action="{% url 'website:logout' %}">
+                                        {% csrf_token %}
+                                        <button type="submit" class="dropdown-item">
+                                            <i class="bi bi-box-arrow-right"></i> {% trans "Выйти" %}
+                                        </button>
+                                    </form>
+                                </li>
                             </ul>
                         </li>
                     {% else %}
                         <li class="nav-item">
-                            <a class="nav-link" href="/admin/login/">
-                                <i class="bi bi-box-arrow-in-right"></i> Вход
+                            <a class="nav-link" href="{% url 'website:login' %}">
+                                <i class="bi bi-box-arrow-in-right"></i> {% trans "Вход" %}
                             </a>
                         </li>
                     {% endif %}

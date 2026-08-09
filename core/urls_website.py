@@ -25,10 +25,22 @@ urlpatterns = [
     # ========== Новости ==========
     path("news/", views_website.news_list, name="news_list"),
     path("news/<slug:slug>/", views_website.news_detail, name="news_detail"),
+    # ========== Аутентификация клиентов ==========
+    path("login/", views_website.ClientLoginView.as_view(), name="login"),
+    path("logout/", views_website.ClientLogoutView.as_view(), name="logout"),
+    path("register/", views_website.client_register, name="register"),
     # ========== Личный кабинет ==========
     path("dashboard/", views_website.client_dashboard, name="dashboard"),
     path("car/<int:car_id>/", views_website.car_detail, name="car_detail"),
     path("container/<int:container_id>/", views_website.container_detail, name="container_detail"),
+    # ========== Документы и декларации ==========
+    path("documents/", views_website.client_documents, name="documents"),
+    path("documents/upload/", views_website.upload_document, name="upload_document"),
+    path("documents/declaration/create/", views_website.create_declaration_request, name="create_declaration"),
+    path("documents/declaration/<int:pk>/print/", views_website.declaration_print, name="declaration_print"),
+    # ========== Заявки на автовоз ==========
+    path("transport-requests/", views_website.transport_requests, name="transport_requests"),
+    path("transport-requests/<int:pk>/edit/", views_website.transport_request_edit, name="transport_request_edit"),
     # ========== Скачивание фотографий ==========
     path("photo/car/<int:photo_id>/download/", views_website.download_car_photo, name="download_car_photo"),
     path(

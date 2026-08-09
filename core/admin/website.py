@@ -7,15 +7,62 @@
 - Загрузка фото происходит автоматически с Google Drive
 """
 
-from django.contrib import admin
+from django import forms
+from django.contrib import admin, messages
+from django.contrib.auth.models import User
+from django.utils.crypto import get_random_string
 from django.utils.html import format_html
 
-from core.models.website import AIChat, ClientUser, ContactMessage, NewsPost, NotificationLog, TrackingRequest
+from core.models.website import (
+    AIChat,
+    ClientDocument,
+    ClientUser,
+    ContactMessage,
+    DeclarationRequest,
+    NewsPost,
+    NotificationLog,
+    TrackingRequest,
+    TransportRequest,
+)
+
+# Без похожих символов (l/1/I/O/0), чтобы пароль легко диктовался клиенту.
+PASSWORD_ALPHABET = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def generate_client_password():
+    return get_random_string(10, allowed_chars=PASSWORD_ALPHABET)
+
+
+class ClientUserCreateForm(forms.ModelForm):
+    """Создание доступа клиента одной формой: логин + пароль + клиент.
+
+    Django User создаётся автоматически; пустой пароль = сгенерировать.
+    """
+
+    username = forms.CharField(max_length=150, label="Логин")
+    email = forms.EmailField(required=False, label="Email")
+    password = forms.CharField(
+        required=False,
+        label="Пароль",
+        help_text="Оставьте пустым — пароль будет сгенерирован автоматически и показан после сохранения.",
+    )
+
+    class Meta:
+        model = ClientUser
+        fields = ["client", "phone", "language", "is_verified"]
+
+    def clean_username(self):
+        username = self.cleaned_data["username"].strip()
+        if User.objects.filter(username__iexact=username).exists():
+            raise forms.ValidationError("Пользователь с таким логином уже существует.")
+        return username
 
 
 @admin.register(ClientUser)
 class ClientUserAdmin(admin.ModelAdmin):
     """Управление клиентскими пользователями"""
+
+    add_form = ClientUserCreateForm
 
     list_display = ["user", "client", "phone", "language", "is_verified", "created_at"]
     list_filter = ["is_verified", "language", "created_at"]
@@ -30,10 +77,244 @@ class ClientUserAdmin(admin.ModelAdmin):
         ("Даты", {"fields": ("created_at", "last_login"), "classes": ("collapse",)}),
     )
 
+    add_fieldsets = (
+        (
+            "Новый доступ клиента",
+            {
+                "fields": ("username", "email", "password", "client", "phone", "language", "is_verified"),
+                "description": "Django-пользователь будет создан автоматически. "
+                "Если пароль не указан — он будет сгенерирован и показан в сообщении после сохранения.",
+            },
+        ),
+    )
+
+    actions = ["reset_password"]
+
+    def get_form(self, request, obj=None, **kwargs):
+        if obj is None:
+            kwargs["form"] = self.add_form
+        return super().get_form(request, obj, **kwargs)
+
+    def get_fieldsets(self, request, obj=None):
+        if obj is None:
+            return self.add_fieldsets
+        return super().get_fieldsets(request, obj)
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            password = form.cleaned_data.get("password") or generate_client_password()
+            user = User.objects.create_user(
+                username=form.cleaned_data["username"],
+                email=form.cleaned_data.get("email") or "",
+                password=password,
+            )
+            obj.user = user
+            messages.success(
+                request,
+                f"Создан доступ: логин «{user.username}», пароль «{password}». "
+                "Передайте эти данные клиенту — пароль больше нигде не отображается.",
+            )
+        super().save_model(request, obj, form, change)
+
+    @admin.action(description="Сгенерировать новый пароль")
+    def reset_password(self, request, queryset):
+        for client_user in queryset.select_related("user"):
+            password = generate_client_password()
+            client_user.user.set_password(password)
+            client_user.user.save(update_fields=["password"])
+            messages.success(
+                request,
+                f"{client_user.user.username} ({client_user.client.name}): новый пароль «{password}»",
+            )
+
 
 # CarPhotoAdmin и ContainerPhotoAdmin УДАЛЕНЫ
 # Фотографии теперь отображаются только в inline карточки контейнера
 # Загрузка фото происходит автоматически с Google Drive
+
+
+@admin.register(ClientDocument)
+class ClientDocumentAdmin(admin.ModelAdmin):
+    """Документы, загруженные клиентами через кабинет"""
+
+    list_display = ["document_type", "client", "car", "status_display", "uploaded_at", "file_link"]
+    list_filter = ["status", "document_type", "uploaded_at"]
+    list_select_related = ("client", "car", "uploaded_by")
+    search_fields = ["client__name", "car__vin", "comment"]
+    autocomplete_fields = ["client", "car"]
+    readonly_fields = ["uploaded_by", "uploaded_at"]
+    date_hierarchy = "uploaded_at"
+
+    fieldsets = (
+        ("Документ", {"fields": ("client", "car", "document_type", "file", "comment")}),
+        ("Обработка", {"fields": ("status", "staff_comment")}),
+        ("Метаданные", {"fields": ("uploaded_by", "uploaded_at"), "classes": ("collapse",)}),
+    )
+
+    actions = ["mark_accepted", "mark_rejected"]
+
+    def status_display(self, obj):
+        colors = {"NEW": "#f0ad4e", "ACCEPTED": "#4CAF50", "REJECTED": "#f44336"}
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 8px; border-radius: 3px;">{}</span>',
+            colors.get(obj.status, "#666"),
+            obj.get_status_display(),
+        )
+
+    status_display.short_description = "Статус"
+    status_display.admin_order_field = "status"
+
+    def file_link(self, obj):
+        if obj.file:
+            return format_html('<a href="{}" target="_blank">📎 {}</a>', obj.file.url, obj.filename)
+        return "—"
+
+    file_link.short_description = "Файл"
+
+    def mark_accepted(self, request, queryset):
+        queryset.update(status="ACCEPTED")
+
+    mark_accepted.short_description = "Отметить как принятые"
+
+    def mark_rejected(self, request, queryset):
+        queryset.update(status="REJECTED")
+
+    mark_rejected.short_description = "Отметить как отклонённые"
+
+
+@admin.register(DeclarationRequest)
+class DeclarationRequestAdmin(admin.ModelAdmin):
+    """Заявки клиентов на оформление деклараций"""
+
+    list_display = ["number", "client", "car", "declaration_type", "status_display", "created_at", "print_link"]
+    list_filter = ["status", "declaration_type", "created_at"]
+    list_select_related = ("client", "car")
+    search_fields = ["number", "client__name", "car__vin", "buyer_name"]
+    autocomplete_fields = ["client", "car"]
+    readonly_fields = ["number", "created_by", "created_at", "updated_at"]
+    date_hierarchy = "created_at"
+
+    fieldsets = (
+        ("Заявка", {"fields": ("number", "client", "car", "declaration_type")}),
+        ("Получатель", {"fields": ("buyer_name", "buyer_code", "buyer_country", "buyer_address")}),
+        (
+            "Направление и стоимость",
+            {"fields": ("destination_country", "destination_city", "invoice_value", "currency")},
+        ),
+        ("Примечания", {"fields": ("notes",)}),
+        ("Обработка", {"fields": ("status", "staff_comment")}),
+        ("Метаданные", {"fields": ("created_by", "created_at", "updated_at"), "classes": ("collapse",)}),
+    )
+
+    def status_display(self, obj):
+        colors = {"NEW": "#f0ad4e", "IN_PROGRESS": "#2196F3", "READY": "#4CAF50", "REJECTED": "#f44336"}
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 8px; border-radius: 3px;">{}</span>',
+            colors.get(obj.status, "#666"),
+            obj.get_status_display(),
+        )
+
+    status_display.short_description = "Статус"
+    status_display.admin_order_field = "status"
+
+    def print_link(self, obj):
+        from django.urls import reverse
+
+        return format_html(
+            '<a href="{}" target="_blank">🖨 Печать</a>', reverse("website:declaration_print", args=[obj.pk])
+        )
+
+    print_link.short_description = "Печатная форма"
+
+
+@admin.register(TransportRequest)
+class TransportRequestAdmin(admin.ModelAdmin):
+    """Заявки клиентов с данными автовозов"""
+
+    list_display = [
+        "number",
+        "client",
+        "carrier_display",
+        "truck_display",
+        "driver_name",
+        "border_crossing",
+        "cars_count",
+        "status_display",
+        "created_at",
+    ]
+    list_filter = ["status", "created_at"]
+    list_select_related = ("client", "auto_transport")
+    search_fields = [
+        "number",
+        "client__name",
+        "carrier_name",
+        "carrier_eori",
+        "truck_number",
+        "driver_name",
+        "cars__vin",
+    ]
+    autocomplete_fields = ["client", "cars", "auto_transport"]
+    readonly_fields = ["number", "created_by", "created_at", "updated_at"]
+    filter_horizontal = ()
+    date_hierarchy = "created_at"
+
+    fieldsets = (
+        ("Заявка", {"fields": ("number", "client", "cars")}),
+        (
+            "Данные автовоза",
+            {
+                "fields": (
+                    "carrier_name",
+                    "carrier_eori",
+                    "truck_number",
+                    "trailer_number",
+                    "driver_name",
+                    "driver_phone",
+                    "border_crossing",
+                    "planned_loading_date",
+                )
+            },
+        ),
+        ("Комментарий клиента", {"fields": ("comment",)}),
+        ("Обработка", {"fields": ("status", "staff_comment", "auto_transport")}),
+        ("Метаданные", {"fields": ("created_by", "created_at", "updated_at"), "classes": ("collapse",)}),
+    )
+
+    def carrier_display(self, obj):
+        if obj.carrier_name and obj.carrier_eori:
+            return f"{obj.carrier_name} ({obj.carrier_eori})"
+        return obj.carrier_name or "—"
+
+    carrier_display.short_description = "Перевозчик"
+
+    def truck_display(self, obj):
+        if obj.trailer_number:
+            return f"{obj.truck_number} / {obj.trailer_number}"
+        return obj.truck_number
+
+    truck_display.short_description = "Тягач / прицеп"
+
+    def cars_count(self, obj):
+        return obj.cars.count()
+
+    cars_count.short_description = "Машин"
+
+    def status_display(self, obj):
+        colors = {
+            "DRAFT": "#9e9e9e",
+            "SUBMITTED": "#f0ad4e",
+            "ACCEPTED": "#4CAF50",
+            "IN_PROGRESS": "#2196F3",
+            "COMPLETED": "#6a1b9a",
+        }
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 8px; border-radius: 3px;">{}</span>',
+            colors.get(obj.status, "#666"),
+            obj.get_status_display(),
+        )
+
+    status_display.short_description = "Статус"
+    status_display.admin_order_field = "status"
 
 
 @admin.register(AIChat)

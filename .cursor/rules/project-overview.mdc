@@ -198,3 +198,4 @@ docs/                       # AUDIT_ROUND3.md, BACKUPS.md (+журнал restore
 - **PowerShell + SSH/инлайн-Python:** кавычки ломаются. Решение: написать скрипт в `scripts/debug/` → выполнить → удалить. Для сервера: scp скрипта → ssh python → rm. В скрипте для сервера добавлять `sys.path.insert(0, "/var/www/www-root/data/www/logist2")`.
 - **Шимы:** старые импорты (`core.models_billing`, `core.admin_banking`) работают через реэкспорты, но новый код должен импортировать из пакетов (`core.models.billing`).
 - **Локальный прогон содержит .env** с PG-кредами (`DB_USER=arturas`) и `COMPANY_NAME`.
+- **Проверка изменений:** браузерную проверку (browser-use субагент) НЕ запускать по умолчанию — достаточно ruff + программного смоука (Django test client). Пользователь сам сообщит, если что-то выглядит/работает не так. Браузер — только по явной просьбе.

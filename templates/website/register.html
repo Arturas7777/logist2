@@ -1,0 +1,79 @@
+{% extends "website/base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Регистрация" %} - Caromoto Lithuania{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-7 col-lg-6">
+            <div class="card border-0 shadow-sm" style="border-radius: 16px;">
+                <div class="card-body p-4 p-md-5">
+                    <div class="text-center mb-4">
+                        <div class="d-inline-flex align-items-center justify-content-center rounded-circle mb-3"
+                             style="width:64px;height:64px;background:#e8f5e9;color:#2e7d32;font-size:1.8rem;">
+                            <i class="bi bi-person-plus"></i>
+                        </div>
+                        <h1 class="h4 mb-1">{% trans "Регистрация в личном кабинете" %}</h1>
+                        <p class="text-muted small mb-0">
+                            {% trans "После регистрации мы привяжем к вашему аккаунту ваши автомобили" %}
+                        </p>
+                    </div>
+
+                    {% if form.non_field_errors %}
+                    <div class="alert alert-danger">
+                        {% for error in form.non_field_errors %}{{ error }}<br>{% endfor %}
+                    </div>
+                    {% endif %}
+
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label">{{ form.name.label }} *</label>
+                            {{ form.name }}
+                            {% if form.name.errors %}<div class="text-danger small mt-1">{{ form.name.errors.0 }}</div>{% endif %}
+                        </div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-7">
+                                <label class="form-label">{{ form.email.label }} *</label>
+                                {{ form.email }}
+                                {% if form.email.errors %}<div class="text-danger small mt-1">{{ form.email.errors.0 }}</div>{% endif %}
+                            </div>
+                            <div class="col-md-5">
+                                <label class="form-label">{{ form.phone.label }}</label>
+                                {{ form.phone }}
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">{{ form.username.label }} *</label>
+                            {{ form.username }}
+                            {% if form.username.errors %}<div class="text-danger small mt-1">{{ form.username.errors.0 }}</div>{% endif %}
+                        </div>
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label">{{ form.password1.label }} *</label>
+                                {{ form.password1 }}
+                                {% if form.password1.errors %}<div class="text-danger small mt-1">{{ form.password1.errors.0 }}</div>{% endif %}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">{{ form.password2.label }} *</label>
+                                {{ form.password2 }}
+                                {% if form.password2.errors %}<div class="text-danger small mt-1">{{ form.password2.errors.0 }}</div>{% endif %}
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="bi bi-person-plus"></i> {% trans "Зарегистрироваться" %}
+                        </button>
+                    </form>
+
+                    <hr class="my-4">
+                    <p class="text-muted small text-center mb-0">
+                        {% trans "Уже есть аккаунт?" %}
+                        <a href="{% url 'website:login' %}">{% trans "Войти" %}</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

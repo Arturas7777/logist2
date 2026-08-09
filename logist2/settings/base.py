@@ -269,8 +269,12 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-LOGIN_URL = "/admin/login/"
-LOGOUT_REDIRECT_URL = "/admin/login/"
+# Клиентский вход на сайте. Django admin использует собственный login
+# (redirect_field уводит staff на /admin/login/ сам), поэтому глобальный
+# LOGIN_URL указывает на клиентскую страницу входа.
+LOGIN_URL = "/login/"
+LOGIN_REDIRECT_URL = "/dashboard/"
+LOGOUT_REDIRECT_URL = "/"
 
 # ---------------------------------------------------------------------------
 # I18n

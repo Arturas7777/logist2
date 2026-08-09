@@ -8,6 +8,7 @@ import zipfile
 
 from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
+from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils import timezone
 from PIL import Image
@@ -548,3 +549,237 @@ class NotificationLog(models.Model):
                 f"{status} [{self.channel}] {self.get_notification_type_display()} - {self.car.vin} → {self.email_to}"
             )
         return f"{status} [{self.channel}] {self.get_notification_type_display()} → {self.email_to}"
+
+
+# ---------------------------------------------------------------------------
+# Кабинет клиента: документы, декларации, заявки на автовоз
+# ---------------------------------------------------------------------------
+
+CLIENT_DOCUMENT_ALLOWED_EXTENSIONS = ["pdf", "jpg", "jpeg", "png"]
+
+
+class ClientDocument(models.Model):
+    """Документ, загруженный клиентом через кабинет (для оформления декларации и пр.)."""
+
+    DOCUMENT_TYPES = [
+        ("PURCHASE_INVOICE", "Инвойс покупки (Bill of Sale)"),
+        ("TITLE", "Тайтл"),
+        ("BILL_OF_LADING", "Коносамент (Bill of Lading)"),
+        ("EXPORT_DECLARATION", "Экспортная декларация"),
+        ("POWER_OF_ATTORNEY", "Доверенность"),
+        ("OTHER", "Другой документ"),
+    ]
+
+    STATUS_CHOICES = [
+        ("NEW", "Новый"),
+        ("ACCEPTED", "Принят"),
+        ("REJECTED", "Отклонён"),
+    ]
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="portal_documents", verbose_name="Клиент")
+    car = models.ForeignKey(
+        Car,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="client_documents",
+        verbose_name="Автомобиль",
+    )
+    document_type = models.CharField(
+        max_length=30, choices=DOCUMENT_TYPES, default="OTHER", verbose_name="Тип документа"
+    )
+    file = models.FileField(
+        upload_to="client_documents/%Y/%m/",
+        validators=[FileExtensionValidator(CLIENT_DOCUMENT_ALLOWED_EXTENSIONS)],
+        verbose_name="Файл",
+    )
+    comment = models.TextField(blank=True, verbose_name="Комментарий клиента")
+
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="NEW", verbose_name="Статус")
+    staff_comment = models.TextField(blank=True, verbose_name="Комментарий сотрудника")
+
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Загрузил")
+    uploaded_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата загрузки")
+
+    class Meta:
+        verbose_name = "Документ клиента"
+        verbose_name_plural = "Документы клиентов"
+        ordering = ["-uploaded_at"]
+        indexes = [
+            models.Index(fields=["client", "-uploaded_at"], name="clientdoc_client_idx"),
+        ]
+
+    def __str__(self):
+        target = self.car.vin if self.car else self.client.name
+        return f"{self.get_document_type_display()} — {target}"
+
+    @property
+    def filename(self):
+        return os.path.basename(self.file.name)
+
+
+class DeclarationRequest(models.Model):
+    """Заявка клиента на оформление декларации: данные + печатная форма."""
+
+    DECLARATION_TYPES = [
+        ("TRANSIT", "Транзитная (T1)"),
+        ("EXPORT", "Экспортная"),
+        ("IMPORT", "Импортная"),
+        ("REEXPORT", "Реэкспорт"),
+    ]
+
+    STATUS_CHOICES = [
+        ("NEW", "Новая"),
+        ("IN_PROGRESS", "В работе"),
+        ("READY", "Готова"),
+        ("REJECTED", "Отклонена"),
+    ]
+
+    CURRENCY_CHOICES = [
+        ("USD", "USD"),
+        ("EUR", "EUR"),
+    ]
+
+    number = models.CharField(max_length=50, unique=True, blank=True, verbose_name="Номер заявки")
+    client = models.ForeignKey(
+        Client, on_delete=models.CASCADE, related_name="declaration_requests", verbose_name="Клиент"
+    )
+    car = models.ForeignKey(
+        Car, on_delete=models.CASCADE, related_name="declaration_requests", verbose_name="Автомобиль"
+    )
+    declaration_type = models.CharField(
+        max_length=10, choices=DECLARATION_TYPES, default="TRANSIT", verbose_name="Тип декларации"
+    )
+
+    # Получатель / покупатель
+    buyer_name = models.CharField(max_length=255, verbose_name="Получатель (имя / компания)")
+    buyer_code = models.CharField(
+        max_length=50, blank=True, verbose_name="Код получателя", help_text="Регистрационный или личный код"
+    )
+    buyer_country = models.CharField(max_length=100, verbose_name="Страна получателя")
+    buyer_address = models.CharField(max_length=255, blank=True, verbose_name="Адрес получателя")
+
+    # Направление
+    destination_country = models.CharField(max_length=100, verbose_name="Страна назначения")
+    destination_city = models.CharField(max_length=100, blank=True, verbose_name="Город назначения")
+
+    # Стоимость по инвойсу
+    invoice_value = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True, verbose_name="Стоимость по инвойсу"
+    )
+    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default="USD", verbose_name="Валюта")
+
+    notes = models.TextField(blank=True, verbose_name="Примечания клиента")
+
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default="NEW", verbose_name="Статус")
+    staff_comment = models.TextField(blank=True, verbose_name="Комментарий сотрудника")
+
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Создал")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        verbose_name = "Заявка на декларацию"
+        verbose_name_plural = "Заявки на декларации"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["client", "-created_at"], name="declreq_client_idx"),
+            models.Index(fields=["status"], name="declreq_status_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.number} — {self.car.vin} ({self.get_declaration_type_display()})"
+
+    def save(self, *args, **kwargs):
+        if not self.number:
+            from django.db import transaction as db_transaction
+
+            from .series import next_document_number
+
+            date_str = timezone.now().strftime("%Y%m%d")
+            with db_transaction.atomic():
+                self.number = next_document_number(DeclarationRequest, f"DECL-{date_str}", pad=3)
+        super().save(*args, **kwargs)
+
+
+class TransportRequest(models.Model):
+    """Заявка клиента с данными автовоза, который заберёт его автомобили.
+
+    Жизненный цикл: Черновик → Подана → Принята → В процессе → Оформлена.
+    Клиент может редактировать заявку до статуса «В процессе»; правка
+    заявки в статусе «Принята» возвращает её в «Подана» (админ принимает
+    заново) — см. ``portal_transport.transport_request_edit``.
+    """
+
+    STATUS_CHOICES = [
+        ("DRAFT", "Черновик"),
+        ("SUBMITTED", "Подана"),
+        ("ACCEPTED", "Принята"),
+        ("IN_PROGRESS", "В процессе"),
+        ("COMPLETED", "Оформлена"),
+    ]
+
+    # Статусы, в которых клиент ещё может менять заявку.
+    CLIENT_EDITABLE_STATUSES = {"DRAFT", "SUBMITTED", "ACCEPTED"}
+
+    number = models.CharField(max_length=50, unique=True, blank=True, verbose_name="Номер заявки")
+    client = models.ForeignKey(
+        Client, on_delete=models.CASCADE, related_name="transport_requests", verbose_name="Клиент"
+    )
+    cars = models.ManyToManyField(Car, related_name="transport_requests", verbose_name="Автомобили")
+
+    # Данные автовоза
+    carrier_name = models.CharField(max_length=255, blank=True, verbose_name="Перевозчик (название)")
+    carrier_eori = models.CharField(max_length=50, blank=True, verbose_name="EORI код перевозчика")
+    truck_number = models.CharField(max_length=20, verbose_name="Номер тягача")
+    trailer_number = models.CharField(max_length=20, blank=True, verbose_name="Номер прицепа")
+    driver_name = models.CharField(max_length=100, verbose_name="ФИО водителя")
+    driver_phone = models.CharField(max_length=20, blank=True, verbose_name="Телефон водителя")
+    border_crossing = models.CharField(max_length=100, blank=True, verbose_name="Граница пересечения")
+    planned_loading_date = models.DateField(null=True, blank=True, verbose_name="Планируемая дата загрузки")
+
+    comment = models.TextField(blank=True, verbose_name="Комментарий клиента")
+
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default="DRAFT", verbose_name="Статус")
+    staff_comment = models.TextField(blank=True, verbose_name="Комментарий сотрудника")
+    auto_transport = models.ForeignKey(
+        "AutoTransport",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="client_requests",
+        verbose_name="Автовоз",
+        help_text="Автовоз, созданный по этой заявке",
+    )
+
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Создал")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        verbose_name = "Заявка на автовоз"
+        verbose_name_plural = "Заявки на автовоз"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["client", "-created_at"], name="transreq_client_idx"),
+            models.Index(fields=["status"], name="transreq_status_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.number} — {self.client.name}"
+
+    @property
+    def is_client_editable(self):
+        """Может ли клиент редактировать заявку (до статуса «В процессе»)."""
+        return self.status in self.CLIENT_EDITABLE_STATUSES
+
+    def save(self, *args, **kwargs):
+        if not self.number:
+            from django.db import transaction as db_transaction
+
+            from .series import next_document_number
+
+            date_str = timezone.now().strftime("%Y%m%d")
+            with db_transaction.atomic():
+                self.number = next_document_number(TransportRequest, f"TR-{date_str}", pad=3)
+        super().save(*args, **kwargs)

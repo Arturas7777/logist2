@@ -1,0 +1,305 @@
+{% extends "website/base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Заявки на автовоз" %} - {{ client.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .portal-hero {
+        background: linear-gradient(135deg, var(--primary-color, #2c3e50) 0%, #34495e 100%);
+        color: #fff;
+        padding: 2rem 0;
+        margin-bottom: 2rem;
+    }
+    .status-badge { padding: .35em .6em; font-weight: 500; border-radius: 10px; }
+    .status-DRAFT { background:#e9ecef; color:#495057; }
+    .status-SUBMITTED { background:#fff3cd; color:#856404; }
+    .status-ACCEPTED { background:#d4edda; color:#155724; }
+    .status-IN_PROGRESS { background:#d1ecf1; color:#0c5460; }
+    .status-COMPLETED { background:#e2d9f3; color:#4b2e83; }
+    .empty-state { text-align:center; padding: 2.5rem 1rem; color:#7b8794; }
+    .empty-state i { font-size: 2.5rem; opacity:.35; }
+    .cars-checkboxes {
+        max-height: 220px;
+        overflow-y: auto;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: .5rem .75rem;
+    }
+    .cars-checkboxes div { padding: .15rem 0; }
+    .cars-checkboxes input { margin-right: .5rem; }
+    /* Выпадающий список перевозчиков из прошлых заявок */
+    .carrier-wrap { position: relative; }
+    .carrier-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        z-index: 1050;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        box-shadow: 0 8px 20px rgba(0,0,0,.12);
+        max-height: 220px;
+        overflow-y: auto;
+        display: none;
+    }
+    .carrier-dropdown .item { padding: .45rem .75rem; cursor: pointer; }
+    .carrier-dropdown .item:hover { background: #f1f3f5; }
+    .carrier-dropdown .item .eori { color: #6c757d; font-size: .8rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="portal-hero">
+    <div class="container">
+        <div class="text-white-50 small mb-1">
+            <a href="{% url 'website:dashboard' %}" class="text-white-50 text-decoration-none">
+                <i class="bi bi-arrow-left"></i> {% trans "Личный кабинет" %}
+            </a>
+        </div>
+        <h1 class="h3 mb-0"><i class="bi bi-truck"></i> {% trans "Заявки на автовоз" %}</h1>
+    </div>
+</section>
+
+<div class="container pb-5">
+    {% if messages %}
+        {% for message in messages %}
+        <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags }}{% endif %} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="row g-4">
+        <!-- Форма заявки -->
+        <div class="col-lg-5">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0 pt-3">
+                    {% if editing %}
+                    <h5 class="mb-0"><i class="bi bi-pencil-square text-warning"></i> {% trans "Редактирование заявки" %} {{ editing.number }}</h5>
+                    <p class="text-muted small mb-0">
+                        {% trans "Статус" %}: {{ editing.get_status_display }}.
+                        {% if editing.status == 'ACCEPTED' %}
+                            {% trans "После изменения заявка вернётся в статус «Подана»." %}
+                        {% endif %}
+                    </p>
+                    {% else %}
+                    <h5 class="mb-0"><i class="bi bi-plus-circle text-primary"></i> {% trans "Новая заявка" %}</h5>
+                    <p class="text-muted small mb-0">{% trans "Укажите данные автовоза, который заберёт ваши автомобили" %}</p>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        {% if form.non_field_errors %}
+                        <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+                        {% endif %}
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold">{% trans "Автомобили" %} *</label>
+                            {% if form.cars.field.queryset %}
+                            <div class="cars-checkboxes">
+                                {% for checkbox in form.cars %}
+                                <div>{{ checkbox.tag }} <label for="{{ checkbox.id_for_label }}" class="small mb-0">{{ checkbox.choice_label }}</label></div>
+                                {% endfor %}
+                            </div>
+                            {% else %}
+                            <div class="text-muted small">{% trans "Нет автомобилей, доступных для передачи автовозом." %}</div>
+                            {% endif %}
+                            {% if form.cars.errors %}<div class="text-danger small mt-1">{{ form.cars.errors.0 }}</div>{% endif %}
+                        </div>
+
+                        <div class="row g-2 mb-2">
+                            <div class="col-7">
+                                <label class="form-label small">{% trans "Перевозчик (название)" %} *</label>
+                                <div class="carrier-wrap">
+                                    {{ form.carrier_name }}
+                                    <div class="carrier-dropdown" id="carrierDropdown"></div>
+                                </div>
+                                {% if form.carrier_name.errors %}<div class="text-danger small">{{ form.carrier_name.errors.0 }}</div>{% endif %}
+                            </div>
+                            <div class="col-5">
+                                <label class="form-label small">{% trans "EORI код перевозчика" %} *</label>
+                                {{ form.carrier_eori }}
+                                {% if form.carrier_eori.errors %}<div class="text-danger small">{{ form.carrier_eori.errors.0 }}</div>{% endif %}
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-6">
+                                <label class="form-label small">{% trans "Номер тягача" %} *</label>
+                                {{ form.truck_number }}
+                                {% if form.truck_number.errors %}<div class="text-danger small">{{ form.truck_number.errors.0 }}</div>{% endif %}
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small">{% trans "Номер прицепа" %}</label>
+                                {{ form.trailer_number }}
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-7">
+                                <label class="form-label small">{% trans "ФИО водителя" %} *</label>
+                                {{ form.driver_name }}
+                                {% if form.driver_name.errors %}<div class="text-danger small">{{ form.driver_name.errors.0 }}</div>{% endif %}
+                            </div>
+                            <div class="col-5">
+                                <label class="form-label small">{% trans "Телефон водителя" %}</label>
+                                {{ form.driver_phone }}
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-2">
+                            <div class="col-7">
+                                <label class="form-label small">{% trans "Граница пересечения" %}</label>
+                                {{ form.border_crossing }}
+                            </div>
+                            <div class="col-5">
+                                <label class="form-label small">{% trans "Дата загрузки" %}</label>
+                                {{ form.planned_loading_date }}
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small">{% trans "Комментарий" %}</label>
+                            {{ form.comment }}
+                        </div>
+
+                        <div class="d-flex gap-2">
+                            {% if editing and editing.status != 'DRAFT' %}
+                                <button type="submit" class="btn btn-primary flex-grow-1">
+                                    <i class="bi bi-save"></i> {% trans "Сохранить изменения" %}
+                                </button>
+                            {% else %}
+                                <button type="submit" class="btn btn-primary flex-grow-1">
+                                    <i class="bi bi-send"></i> {% trans "Подать заявку" %}
+                                </button>
+                                <button type="submit" name="save_draft" value="1" class="btn btn-outline-secondary">
+                                    <i class="bi bi-file-earmark"></i> {% trans "Черновик" %}
+                                </button>
+                            {% endif %}
+                            {% if editing %}
+                                <a href="{% url 'website:transport_requests' %}" class="btn btn-outline-secondary">
+                                    {% trans "Отмена" %}
+                                </a>
+                            {% endif %}
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Список заявок -->
+        <div class="col-lg-7">
+            <h5 class="mb-3"><i class="bi bi-list-check text-success"></i> {% trans "Мои заявки" %}</h5>
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-0">
+                    {% if transport_requests %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>{% trans "Номер" %}</th>
+                                    <th>{% trans "Автовоз" %}</th>
+                                    <th>{% trans "Авто" %}</th>
+                                    <th>{% trans "Статус" %}</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for req in transport_requests %}
+                                <tr {% if editing and editing.pk == req.pk %}class="table-warning"{% endif %}>
+                                    <td>
+                                        <div class="fw-semibold small">{{ req.number }}</div>
+                                        <div class="text-muted small">{{ req.created_at|date:"d.m.Y H:i" }}</div>
+                                    </td>
+                                    <td class="small">
+                                        {% if req.carrier_name %}
+                                        <div class="fw-semibold">{{ req.carrier_name }}{% if req.carrier_eori %} <span class="text-muted">({{ req.carrier_eori }})</span>{% endif %}</div>
+                                        {% endif %}
+                                        <div>{{ req.truck_number }}{% if req.trailer_number %} / {{ req.trailer_number }}{% endif %}</div>
+                                        <div class="text-muted">{{ req.driver_name }}{% if req.driver_phone %} · {{ req.driver_phone }}{% endif %}</div>
+                                        {% if req.border_crossing %}<div class="text-muted"><i class="bi bi-signpost"></i> {{ req.border_crossing }}</div>{% endif %}
+                                    </td>
+                                    <td class="small">
+                                        {% for car in req.cars.all %}
+                                        <code class="small d-block">{{ car.vin }}</code>
+                                        {% endfor %}
+                                    </td>
+                                    <td>
+                                        <span class="status-badge status-{{ req.status }}">{{ req.get_status_display }}</span>
+                                        {% if req.staff_comment %}
+                                            <div class="text-muted small mt-1">{{ req.staff_comment }}</div>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        {% if req.is_client_editable %}
+                                        <a class="btn btn-sm btn-outline-primary" href="{% url 'website:transport_request_edit' req.pk %}" title="{% trans 'Редактировать' %}">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="empty-state">
+                        <i class="bi bi-truck"></i>
+                        <p class="mt-2 mb-0">{% trans "Заявок пока нет." %}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    // Перевозчики из предыдущих заявок клиента: [{name, eori}, ...]
+    var knownCarriers = {{ known_carriers_json|safe }};
+    var nameInput = document.getElementById("id_carrier_name");
+    var eoriInput = document.getElementById("id_carrier_eori");
+    var dropdown = document.getElementById("carrierDropdown");
+    if (!nameInput || !dropdown || !knownCarriers.length) return;
+
+    function render(filter) {
+        var q = (filter || "").trim().toLowerCase();
+        var items = knownCarriers.filter(function (c) {
+            return !q || c.name.toLowerCase().indexOf(q) !== -1;
+        });
+        if (!items.length) { dropdown.style.display = "none"; return; }
+        dropdown.innerHTML = "";
+        items.forEach(function (c) {
+            var div = document.createElement("div");
+            div.className = "item";
+            var title = document.createElement("div");
+            title.textContent = c.name;
+            div.appendChild(title);
+            if (c.eori) {
+                var eori = document.createElement("div");
+                eori.className = "eori";
+                eori.textContent = "EORI: " + c.eori;
+                div.appendChild(eori);
+            }
+            div.addEventListener("mousedown", function (e) {
+                e.preventDefault();
+                nameInput.value = c.name;
+                if (eoriInput && c.eori) eoriInput.value = c.eori;
+                dropdown.style.display = "none";
+            });
+            dropdown.appendChild(div);
+        });
+        dropdown.style.display = "block";
+    }
+
+    nameInput.addEventListener("focus", function () { render(nameInput.value); });
+    nameInput.addEventListener("input", function () { render(nameInput.value); });
+    nameInput.addEventListener("blur", function () {
+        setTimeout(function () { dropdown.style.display = "none"; }, 150);
+    });
+})();
+</script>
+{% endblock %}

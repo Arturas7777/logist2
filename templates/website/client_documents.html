@@ -1,0 +1,264 @@
+{% extends "website/base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Документы" %} - {{ client.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .portal-hero {
+        background: linear-gradient(135deg, var(--primary-color, #2c3e50) 0%, #34495e 100%);
+        color: #fff;
+        padding: 2rem 0;
+        margin-bottom: 2rem;
+    }
+    .status-badge { padding: .35em .6em; font-weight: 500; border-radius: 10px; }
+    .status-NEW { background:#fff3cd; color:#856404; }
+    .status-ACCEPTED, .status-READY { background:#d4edda; color:#155724; }
+    .status-REJECTED { background:#f8d7da; color:#721c24; }
+    .status-IN_PROGRESS { background:#d1ecf1; color:#0c5460; }
+    .empty-state { text-align:center; padding: 2.5rem 1rem; color:#7b8794; }
+    .empty-state i { font-size: 2.5rem; opacity:.35; }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="portal-hero">
+    <div class="container">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div>
+                <div class="text-white-50 small mb-1">
+                    <a href="{% url 'website:dashboard' %}" class="text-white-50 text-decoration-none">
+                        <i class="bi bi-arrow-left"></i> {% trans "Личный кабинет" %}
+                    </a>
+                </div>
+                <h1 class="h3 mb-0"><i class="bi bi-file-earmark-text"></i> {% trans "Документы и декларации" %}</h1>
+            </div>
+        </div>
+    </div>
+</section>
+
+<div class="container pb-5">
+    {% if messages %}
+        {% for message in messages %}
+        <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags }}{% endif %} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="row g-4">
+        <!-- ЛЕВАЯ КОЛОНКА: мои документы -->
+        <div class="col-lg-6">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="mb-0"><i class="bi bi-cloud-arrow-up text-primary"></i> {% trans "Мои документы" %}</h4>
+                <button class="btn btn-sm btn-primary" data-bs-toggle="collapse" data-bs-target="#uploadForm">
+                    <i class="bi bi-plus-lg"></i> {% trans "Загрузить" %}
+                </button>
+            </div>
+
+            <div class="collapse mb-3" id="uploadForm">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body">
+                        <form method="post" action="{% url 'website:upload_document' %}" enctype="multipart/form-data">
+                            {% csrf_token %}
+                            <div class="mb-2">
+                                <label class="form-label small">{% trans "Автомобиль (необязательно)" %}</label>
+                                {{ document_form.car }}
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small">{% trans "Тип документа" %}</label>
+                                {{ document_form.document_type }}
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small">{% trans "Файл (PDF, JPG, PNG — до 20 МБ)" %}</label>
+                                {{ document_form.file }}
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small">{% trans "Комментарий" %}</label>
+                                {{ document_form.comment }}
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-sm">
+                                <i class="bi bi-cloud-arrow-up"></i> {% trans "Загрузить документ" %}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-0">
+                    {% if documents %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>{% trans "Документ" %}</th>
+                                    <th>{% trans "Авто" %}</th>
+                                    <th>{% trans "Статус" %}</th>
+                                    <th>{% trans "Дата" %}</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for doc in documents %}
+                                <tr>
+                                    <td>
+                                        <div class="fw-semibold small">{{ doc.get_document_type_display }}</div>
+                                        {% if doc.comment %}<div class="text-muted small">{{ doc.comment|truncatechars:40 }}</div>{% endif %}
+                                    </td>
+                                    <td>{% if doc.car %}<code class="small">{{ doc.car.vin }}</code>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                                    <td>
+                                        <span class="status-badge status-{{ doc.status }}">{{ doc.get_status_display }}</span>
+                                        {% if doc.status == 'REJECTED' and doc.staff_comment %}
+                                            <div class="text-danger small mt-1">{{ doc.staff_comment }}</div>
+                                        {% endif %}
+                                    </td>
+                                    <td class="small">{{ doc.uploaded_at|date:"d.m.Y" }}</td>
+                                    <td class="text-end">
+                                        <a class="btn btn-sm btn-outline-secondary" href="{{ doc.file.url }}" target="_blank" rel="noopener">
+                                            <i class="bi bi-download"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="empty-state">
+                        <i class="bi bi-file-earmark"></i>
+                        <p class="mt-2 mb-0">{% trans "Документов пока нет. Загрузите первый документ." %}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- ПРАВАЯ КОЛОНКА: заявки на декларации -->
+        <div class="col-lg-6">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="mb-0"><i class="bi bi-file-earmark-ruled text-success"></i> {% trans "Заявки на декларации" %}</h4>
+                <button class="btn btn-sm btn-success" data-bs-toggle="collapse" data-bs-target="#declarationForm">
+                    <i class="bi bi-plus-lg"></i> {% trans "Создать" %}
+                </button>
+            </div>
+
+            <div class="collapse mb-3" id="declarationForm">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body">
+                        <form method="post" action="{% url 'website:create_declaration' %}">
+                            {% csrf_token %}
+                            <div class="row g-2 mb-2">
+                                <div class="col-md-7">
+                                    <label class="form-label small">{% trans "Автомобиль" %}</label>
+                                    {{ declaration_form.car }}
+                                </div>
+                                <div class="col-md-5">
+                                    <label class="form-label small">{% trans "Тип декларации" %}</label>
+                                    {{ declaration_form.declaration_type }}
+                                </div>
+                            </div>
+                            <div class="row g-2 mb-2">
+                                <div class="col-md-7">
+                                    <label class="form-label small">{% trans "Получатель (имя / компания)" %}</label>
+                                    {{ declaration_form.buyer_name }}
+                                </div>
+                                <div class="col-md-5">
+                                    <label class="form-label small">{% trans "Код получателя" %}</label>
+                                    {{ declaration_form.buyer_code }}
+                                </div>
+                            </div>
+                            <div class="row g-2 mb-2">
+                                <div class="col-md-5">
+                                    <label class="form-label small">{% trans "Страна получателя" %}</label>
+                                    {{ declaration_form.buyer_country }}
+                                </div>
+                                <div class="col-md-7">
+                                    <label class="form-label small">{% trans "Адрес получателя" %}</label>
+                                    {{ declaration_form.buyer_address }}
+                                </div>
+                            </div>
+                            <div class="row g-2 mb-2">
+                                <div class="col-md-6">
+                                    <label class="form-label small">{% trans "Страна назначения" %}</label>
+                                    {{ declaration_form.destination_country }}
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small">{% trans "Город назначения" %}</label>
+                                    {{ declaration_form.destination_city }}
+                                </div>
+                            </div>
+                            <div class="row g-2 mb-2">
+                                <div class="col-md-7">
+                                    <label class="form-label small">{% trans "Стоимость по инвойсу" %}</label>
+                                    {{ declaration_form.invoice_value }}
+                                </div>
+                                <div class="col-md-5">
+                                    <label class="form-label small">{% trans "Валюта" %}</label>
+                                    {{ declaration_form.currency }}
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small">{% trans "Примечания" %}</label>
+                                {{ declaration_form.notes }}
+                            </div>
+                            <button type="submit" class="btn btn-success btn-sm">
+                                <i class="bi bi-send"></i> {% trans "Отправить заявку" %}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-0">
+                    {% if declarations %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>{% trans "Номер" %}</th>
+                                    <th>{% trans "Авто" %}</th>
+                                    <th>{% trans "Тип" %}</th>
+                                    <th>{% trans "Статус" %}</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for decl in declarations %}
+                                <tr>
+                                    <td>
+                                        <div class="fw-semibold small">{{ decl.number }}</div>
+                                        <div class="text-muted small">{{ decl.created_at|date:"d.m.Y" }}</div>
+                                    </td>
+                                    <td><code class="small">{{ decl.car.vin }}</code></td>
+                                    <td class="small">{{ decl.get_declaration_type_display }}</td>
+                                    <td>
+                                        <span class="status-badge status-{{ decl.status }}">{{ decl.get_status_display }}</span>
+                                        {% if decl.status == 'REJECTED' and decl.staff_comment %}
+                                            <div class="text-danger small mt-1">{{ decl.staff_comment }}</div>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        <a class="btn btn-sm btn-outline-primary" href="{% url 'website:declaration_print' decl.id %}" target="_blank" rel="noopener" title="{% trans 'Печатная форма' %}">
+                                            <i class="bi bi-printer"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="empty-state">
+                        <i class="bi bi-file-earmark-ruled"></i>
+                        <p class="mt-2 mb-0">{% trans "Заявок пока нет. Создайте заявку на оформление декларации." %}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

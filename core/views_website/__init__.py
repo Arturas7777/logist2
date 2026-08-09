@@ -33,6 +33,11 @@ from .ai_chat import (
     ai_chat_history,
     get_ai_response,
 )
+from .auth import (
+    ClientLoginView,
+    ClientLogoutView,
+    client_register,
+)
 from .api import (
     ClientCarViewSet,
     ClientContainerViewSet,
@@ -50,6 +55,13 @@ from .photos_authed import (
     download_car_photo,
     download_container_photo,
 )
+from .portal_docs import (
+    client_documents,
+    create_declaration_request,
+    declaration_print,
+    upload_document,
+)
+from .portal_transport import transport_request_edit, transport_requests
 from .public import (
     about_page,
     contact_page,
@@ -71,6 +83,13 @@ __all__ = [
     'news_list', 'news_detail',
     # client_portal
     'client_dashboard', 'car_detail', 'container_detail',
+    # auth
+    'ClientLoginView', 'ClientLogoutView', 'client_register',
+    # portal_docs
+    'client_documents', 'upload_document', 'create_declaration_request',
+    'declaration_print',
+    # portal_transport
+    'transport_requests', 'transport_request_edit',
     # api
     'IsClientUser', 'ClientCarViewSet', 'ClientContainerViewSet',
     'NewsViewSet', 'ContactMessageViewSet',

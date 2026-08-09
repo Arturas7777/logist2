@@ -39,6 +39,9 @@ MODEL_ICONS = {
     "siteproconnection": "bi-plug-fill",
     "siteproinvoicesync": "bi-arrow-repeat",
     "clientuser": "bi-person-badge",
+    "clientdocument": "bi-file-earmark-arrow-up",
+    "declarationrequest": "bi-file-earmark-ruled",
+    "transportrequest": "bi-truck-flatbed",
     "aichat": "bi-chat-dots-fill",
     "newspost": "bi-newspaper",
     "contactmessage": "bi-envelope-fill",
@@ -125,7 +128,16 @@ ADMIN_GROUPS = OrderedDict(
             {
                 "icon": "bi-globe",
                 "collapsed": True,
-                "items": ["clientuser", "newspost", "contactmessage", "trackingrequest", "aichat"],
+                "items": [
+                    "clientuser",
+                    "clientdocument",
+                    "declarationrequest",
+                    "transportrequest",
+                    "newspost",
+                    "contactmessage",
+                    "trackingrequest",
+                    "aichat",
+                ],
             },
         ),
         (

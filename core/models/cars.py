@@ -856,6 +856,13 @@ class CarModelImage(models.Model):
         verbose_name="Изображение",
         help_text="Любой формат/размер — приведётся к единому виду автоматически.",
     )
+    thumbnail = models.ImageField(
+        upload_to="car_model_images/thumbs/",
+        blank=True,
+        null=True,
+        verbose_name="Миниатюра",
+        help_text="Создаётся автоматически (для списков, ~2–4 КБ).",
+    )
     is_active = models.BooleanField(default=True, verbose_name="Активна")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создана")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлена")
@@ -875,6 +882,43 @@ class CarModelImage(models.Model):
     def __str__(self):
         return f"{self.brand}{f' ({self.year})' if self.year else ''}"
 
+    def create_thumbnail(self):
+        """Создаёт мини-версию картинки (WebP ~160×90) для списков.
+
+        Возвращает True, если миниатюра создана (без save())."""
+        import os
+
+        from django.core.files.base import ContentFile
+
+        from core.services.photo_optimize import make_car_model_thumb_bytes
+
+        if not self.image or not getattr(self.image, "name", ""):
+            return False
+        try:
+            self.image.open("rb")
+            try:
+                raw = self.image.read()
+            finally:
+                self.image.close()
+        except (OSError, ValueError) as e:
+            logger.warning("CarModelImage %s: не удалось прочитать изображение: %s", self.pk, e)
+            return False
+
+        thumb_bytes = make_car_model_thumb_bytes(raw)
+        if not thumb_bytes:
+            return False
+
+        # Старую миниатюру удаляем, чтобы не копить осиротевшие файлы.
+        if self.thumbnail and getattr(self.thumbnail, "name", ""):
+            try:
+                self.thumbnail.storage.delete(self.thumbnail.name)
+            except (OSError, ValueError):
+                pass
+
+        base = os.path.splitext(os.path.basename(self.image.name))[0] + "_thumb.webp"
+        self.thumbnail.save(base, ContentFile(thumb_bytes), save=False)
+        return True
+
     def save(self, *args, **kwargs):
         # Нормализуем картинку (единый канвас + WebP) только когда меняется
         # само изображение — чтобы повторные save() (смена is_active и т.п.)
@@ -885,4 +929,7 @@ class CarModelImage(models.Model):
                 from core.services.photo_optimize import normalize_car_model_image_field
 
                 normalize_car_model_image_field(self, "image")
+            # Миниатюра пересоздаётся вместе с изображением.
+            if self.create_thumbnail() and update_fields is not None:
+                kwargs["update_fields"] = set(update_fields) | {"thumbnail"}
         super().save(*args, **kwargs)
