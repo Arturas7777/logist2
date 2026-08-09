@@ -165,27 +165,27 @@
 
                         <div class="d-flex gap-2">
                             {% if editing and editing.status != 'DRAFT' %}
-                                <button type="submit" class="btn btn-primary flex-grow-1">
+                                <button type="submit" class="btn btn-warning flex-grow-1">
                                     <i class="bi bi-save"></i> {% trans "Сохранить изменения" %}
                                 </button>
                             {% else %}
-                                <button type="submit" class="btn btn-primary flex-grow-1">
-                                    <i class="bi bi-send"></i> {% trans "Подать заявку" %}
-                                </button>
-                                <button type="submit" name="save_draft" value="1" class="btn btn-outline-secondary">
+                                <button type="submit" name="save_draft" value="1" class="btn {% if editing %}btn-warning flex-grow-1{% else %}btn-outline-secondary{% endif %}">
                                     {% if editing %}
                                         <i class="bi bi-save"></i> {% trans "Сохранить изменения" %}
                                     {% else %}
                                         <i class="bi bi-file-earmark"></i> {% trans "Черновик" %}
                                     {% endif %}
                                 </button>
-                            {% endif %}
-                            {% if editing %}
-                                <a href="{% url 'website:transport_requests' %}" class="btn btn-outline-secondary">
-                                    {% trans "Отмена" %}
-                                </a>
+                                <button type="submit" class="btn btn-success flex-grow-1">
+                                    <i class="bi bi-send"></i> {% trans "Подать заявку" %}
+                                </button>
                             {% endif %}
                         </div>
+                        {% if editing %}
+                        <a href="{% url 'website:transport_requests' %}" class="btn btn-danger w-100 mt-2">
+                            {% trans "Отмена" %}
+                        </a>
+                        {% endif %}
                     </form>
                 </div>
             </div>
