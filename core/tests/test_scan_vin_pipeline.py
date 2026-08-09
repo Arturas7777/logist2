@@ -260,6 +260,19 @@ def test_title_force_new_creates_car_in_target_container(db, container):
     assert new_car.container_id == container.id
 
 
+def test_title_apply_does_not_touch_title_notes(db, container):
+    # title_notes — поле только для ручных заметок оператора: применение
+    # тайтла ставит has_title, но ничего не дописывает в заметку.
+    car = _make_car("AAA11111111111111", container, title_notes="моя ручная заметка")
+    job = _make_title_job([car.vin], target=container, extra={"title_number": "X1", "title_state": "CA"})
+
+    apply_title_job(job)
+
+    car.refresh_from_db()
+    assert car.has_title is True
+    assert car.title_notes == "моя ручная заметка"
+
+
 def test_title_exact_match_ignores_container(db, container):
     # Точное совпадение VIN работает и без контекста контейнера.
     car = _make_car("BBB22222222222222")

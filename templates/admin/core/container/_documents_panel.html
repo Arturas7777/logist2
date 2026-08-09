@@ -120,6 +120,26 @@ ScanProcessingJob с target_container = этот контейнер, обраб�
       .catch(function (e) { setMessage('Ошибка: ' + e, true); });
   }
 
+  // AI-обработка ставит Car.has_title=True в БД, пока карточка открыта.
+  // Инлайн машин отрисован ДО этого: если пользователь сохранит форму,
+  // Django перезапишет галочку обратно в False (устаревшее значение из
+  // формы). Поэтому при каждом обновлении статусов синхронизируем
+  // чекбоксы «Т» в инлайне с актуальным состоянием из БД.
+  function syncTitleCheckboxes(jobs) {
+    var vinInputs = document.querySelectorAll('input[name$="-vin"]');
+    if (!vinInputs.length) return;
+    jobs.forEach(function (job) {
+      if (job.scan_type !== 'TITLE' || job.status !== 'APPLIED') return;
+      if (!job.car_vin || !job.car_has_title) return;
+      vinInputs.forEach(function (vinInput) {
+        if ((vinInput.value || '').trim().toUpperCase() !== job.car_vin) return;
+        var prefix = vinInput.name.replace(/-vin$/, '');
+        var cb = document.querySelector('input[name="' + prefix + '-has_title"]');
+        if (cb && !cb.checked) cb.checked = true;
+      });
+    });
+  }
+
   function renderJobs(data) {
     var box = document.getElementById('cm-docs-jobs');
     box.innerHTML = '';
@@ -199,17 +219,28 @@ ScanProcessingJob с target_container = этот контейнер, обраб�
     });
   }
 
+  var pollErrors = 0;
+
   function refreshJobs() {
     fetch(jobsUrl, { credentials: 'same-origin' })
       .then(function (r) { return r.json(); })
       .then(function (data) {
+        pollErrors = 0;
         renderJobs(data);
+        syncTitleCheckboxes(data.jobs);
         clearTimeout(pollTimer);
         if (data.has_active) {
           pollTimer = setTimeout(refreshJobs, 4000);
         }
       })
-      .catch(function () { /* тихо: панель не критична */ });
+      .catch(function () {
+        // Сетевая ошибка не должна убивать поллинг: пока задачи могут быть
+        // активны, пробуем ещё (иначе чекбоксы «Т» не синхронизируются).
+        if (++pollErrors <= 10) {
+          clearTimeout(pollTimer);
+          pollTimer = setTimeout(refreshJobs, 6000);
+        }
+      });
   }
 
   function uploadFiles(scanType, files) {

@@ -926,6 +926,11 @@ class ContainerAdmin(admin.ModelAdmin):
                     "auto_apply_skipped": data.get("auto_apply_skipped") or "",
                     "needs_review": job.status == ScanProcessingJob.STATUS_NEEDS_REVIEW,
                     "has_vin_conflict": bool(data.get("vin_mismatch_review")),
+                    # Для live-синхронизации чекбокса «Т» в инлайне машин:
+                    # AI мог поставить has_title, пока карточка открыта, и
+                    # сохранение устаревшей формы сбросило бы галочку.
+                    "car_vin": job.linked_car.vin if job.linked_car_id and job.linked_car else "",
+                    "car_has_title": bool(job.linked_car.has_title) if job.linked_car_id and job.linked_car else False,
                     "admin_url": reverse("admin:core_scanprocessingjob_change", args=[job.id]),
                     "created_at": timezone.localtime(job.created_at).strftime("%d.%m %H:%M"),
                 }

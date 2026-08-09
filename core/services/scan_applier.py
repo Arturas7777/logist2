@@ -170,7 +170,7 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
       3. Если и так не нашли — глобальный fuzzy-поиск → review; при
          отсутствии похожих создаём новый Car (FLOATING).
       4. Прикрепляем оригинальный скан в ``car.title_scan``,
-         ставим ``has_title=True``, дополняем ``title_notes``.
+         ставим ``has_title=True`` (``title_notes`` не трогаем — ручное поле).
       5. linked_car / created_new_car / status=APPLIED.
     """
     if job.scan_type != ScanProcessingJob.SCAN_TYPE_TITLE:
@@ -315,14 +315,9 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
         _copy_field_file(job.original_file, car.title_scan)
 
     car.has_title = True
-    # Минимальная пометка в title_notes — что именно AI прочитал.
-    auto_note = _build_title_note(data)
-    if auto_note and auto_note not in (car.title_notes or ""):
-        sep = " | " if car.title_notes else ""
-        car.title_notes = (car.title_notes or "") + sep + auto_note
-        # Подрезаем под лимит CharField(200).
-        car.title_notes = car.title_notes[:200]
-    car.save(update_fields=["title_scan", "has_title", "title_notes"])
+    # title_notes НЕ трогаем — это поле только для ручных заметок оператора.
+    # Что именно AI прочитал (номер тайтла, штат, дата) — в applied_changes.
+    car.save(update_fields=["title_scan", "has_title"])
 
     # Если был флаг "подозрение VIN" — после успешного apply убираем,
     # чтобы не путал в админке.
@@ -342,7 +337,7 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
         "created_new_car": created_new,
         "title_scan_attached": bool(car.title_scan),
         "has_title_set": True,
-        "title_notes_appended": auto_note,
+        "title_info": _build_title_note(data),
     }
     if context_match_note:
         job.applied_changes["vin_context_match"] = context_match_note
@@ -374,7 +369,7 @@ def _build_brand(data: dict) -> str:
 
 
 def _build_title_note(data: dict) -> str:
-    """Краткая авто-аннотация для title_notes."""
+    """Краткая сводка тайтла (номер/штат/дата) для applied_changes."""
     parts = []
     title_number = data.get("title_number")
     state = data.get("title_state")
