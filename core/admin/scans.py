@@ -45,7 +45,7 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
         "created_at",
     )
     list_filter = ("scan_type", "status", "created_at")
-    list_select_related = ("linked_car", "linked_container", "created_by")
+    list_select_related = ("linked_car", "linked_container", "target_container", "created_by")
     search_fields = (
         "extracted_data__container_number",
         "extracted_data__booking_number",
@@ -59,6 +59,7 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
         "scan_type",
         "status",
         "original_file_preview",
+        "target_container",
         "extracted_data_pretty",
         "applied_changes_pretty",
         "linked_car",
@@ -76,7 +77,7 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
         (
             "Скан",
             {
-                "fields": ("scan_type", "status", "original_file_preview"),
+                "fields": ("scan_type", "status", "target_container", "original_file_preview"),
             },
         ),
         (
@@ -555,11 +556,13 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
             if not files:
                 messages.warning(request, "Не выбрано ни одного файла.")
                 return HttpResponseRedirect(request.get_full_path())
+            from core.services.scan_extractor import SUPPORTED_EXTENSIONS
+
             created_ids = []
             for f in files:
-                # Быстрая sanity-проверка: хотим PDF.
-                if not f.name.lower().endswith(".pdf"):
-                    messages.warning(request, f"Пропущен (не PDF): {f.name}")
+                ext = "." + f.name.lower().rsplit(".", 1)[-1] if "." in f.name else ""
+                if ext not in SUPPORTED_EXTENSIONS:
+                    messages.warning(request, f"Пропущен (поддерживаются PDF/JPG/PNG): {f.name}")
                     continue
                 job = ScanProcessingJob.objects.create(
                     scan_type=scan_type,

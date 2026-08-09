@@ -88,10 +88,11 @@ def parse_receipt_image(image_path: str) -> dict:
 
     client = anthropic.Anthropic(api_key=api_key)
 
+    from django.conf import settings
+
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model=getattr(settings, "AGENT_MODEL", "claude-sonnet-5"),
         max_tokens=2000,
-        temperature=0,
         system=SYSTEM_PROMPT,
         messages=[
             {
@@ -114,7 +115,9 @@ def parse_receipt_image(image_path: str) -> dict:
         ],
     )
 
-    return _parse_json_response(response.content[0].text)
+    from core.services.llm_text import anthropic_response_text
+
+    return _parse_json_response(anthropic_response_text(response))
 
 
 def parse_transaction_receipt(transaction_id: int) -> dict | None:

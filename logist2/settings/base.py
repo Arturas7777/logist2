@@ -563,7 +563,12 @@ AI_RAG_MAX_AGE_HOURS = int(os.getenv("AI_RAG_MAX_AGE_HOURS", "24"))
 # Главный рубильник: пока False — beat-задачи агента ничего не делают.
 AGENT_ENABLED = str(os.getenv("AGENT_ENABLED", "False")).lower() == "true"
 # Anthropic API. Ключ общий с invoice audit (ANTHROPIC_API_KEY).
-AGENT_MODEL = os.getenv("AGENT_MODEL", "claude-sonnet-4-20250514")
+# ВАЖНО: claude-sonnet-4-20250514 удалена из API (404 not_found) —
+# используем alias claude-sonnet-5, он всегда указывает на актуальную Sonnet.
+AGENT_MODEL = os.getenv("AGENT_MODEL", "claude-sonnet-5")
+# Модель для AI-обработки сканов (титулы / dock receipts). По умолчанию —
+# та же, что у агента; можно переопределить отдельно через env.
+SCAN_AI_MODEL = os.getenv("SCAN_AI_MODEL", AGENT_MODEL)
 AGENT_MAX_TOKENS = int(os.getenv("AGENT_MAX_TOKENS", "2000"))
 AGENT_REQUEST_TIMEOUT = int(os.getenv("AGENT_REQUEST_TIMEOUT", "60"))
 # Сколько новых писем разбирать за один запуск (защита от лавины при

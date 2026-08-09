@@ -269,6 +269,10 @@
 
 {% block after_related_objects %}
   {{ block.super }}
+  {# Документы (AI): dock receipt + тайтлы — загрузка и статусы обработки. #}
+  {% if original.pk %}
+  {% include "admin/core/container/_documents_panel.html" %}
+  {% endif %}
   {# Photos — JS позиционирует их после последнего inline. #}
   {% if original.pk %}
   {% include "admin/core/container/photos_gallery.html" with photos_json=photos_json %}

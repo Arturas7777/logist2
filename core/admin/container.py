@@ -807,6 +807,208 @@ class ContainerAdmin(admin.ModelAdmin):
 
         return super().change_view(request, object_id, form_url, extra_context)
 
+    # ── Документы (AI): загрузка dock receipt / тайтлов из карточки ────────
+
+    def get_urls(self):
+        from django.urls import path
+
+        urls = super().get_urls()
+        custom = [
+            path(
+                "<int:object_id>/upload-docs/",
+                self.admin_site.admin_view(self.upload_docs_view),
+                name="core_container_upload_docs",
+            ),
+            path(
+                "<int:object_id>/scan-jobs/",
+                self.admin_site.admin_view(self.scan_jobs_view),
+                name="core_container_scan_jobs",
+            ),
+            path(
+                "<int:object_id>/scan-jobs/<int:job_id>/action/",
+                self.admin_site.admin_view(self.scan_job_action_view),
+                name="core_container_scan_job_action",
+            ),
+        ]
+        return custom + urls
+
+    def upload_docs_view(self, request, object_id: int):
+        """AJAX-загрузка сканов (dock receipt / тайтлы) из карточки контейнера.
+
+        Создаёт ScanProcessingJob с ``target_container`` = этот контейнер:
+        матчинг VIN пойдёт в первую очередь по машинам контейнера, а
+        уверенные результаты применятся автоматически (см. scan_applier).
+        """
+        from django.http import JsonResponse
+        from django.shortcuts import get_object_or_404
+
+        from core.models.scans import ScanProcessingJob
+        from core.services.scan_extractor import SUPPORTED_EXTENSIONS
+        from core.tasks import process_scan_job
+
+        if request.method != "POST":
+            return JsonResponse({"error": "POST only"}, status=405)
+        if not self.has_change_permission(request):
+            return JsonResponse({"error": "Нет прав"}, status=403)
+
+        container = get_object_or_404(Container, pk=object_id)
+        scan_type = request.POST.get("scan_type", "")
+        if scan_type not in dict(ScanProcessingJob.SCAN_TYPE_CHOICES):
+            return JsonResponse({"error": f"Неизвестный тип скана: {scan_type}"}, status=400)
+
+        files = request.FILES.getlist("files")
+        if not files:
+            return JsonResponse({"error": "Не выбрано ни одного файла"}, status=400)
+
+        created, skipped = [], []
+        for f in files:
+            ext = "." + f.name.lower().rsplit(".", 1)[-1] if "." in f.name else ""
+            if ext not in SUPPORTED_EXTENSIONS:
+                skipped.append(f.name)
+                continue
+            job = ScanProcessingJob.objects.create(
+                scan_type=scan_type,
+                original_file=f,
+                created_by=request.user,
+                target_container=container,
+            )
+            created.append(job.id)
+            # Бросаем в Celery; если broker недоступен — выполняем синхронно.
+            try:
+                process_scan_job.delay(job.id)
+            except Exception:
+                logger.warning("Celery недоступен — обрабатываем job #%s синхронно", job.id)
+                process_scan_job(job.id)  # type: ignore[call-arg]
+
+        return JsonResponse({"created": created, "skipped": skipped})
+
+    def scan_jobs_view(self, request, object_id: int):
+        """JSON-статусы AI-задач этого контейнера (для панели в карточке)."""
+        from django.db.models import Q
+        from django.http import JsonResponse
+        from django.urls import reverse
+
+        from core.models.scans import ScanProcessingJob
+
+        jobs = (
+            ScanProcessingJob.objects.filter(Q(target_container_id=object_id) | Q(linked_container_id=object_id))
+            .select_related("linked_car")
+            .order_by("-created_at")[:50]
+        )
+
+        items = []
+        has_active = False
+        for job in jobs:
+            data = job.extracted_data or {}
+            changes = job.applied_changes or {}
+            if job.status in (ScanProcessingJob.STATUS_PENDING, ScanProcessingJob.STATUS_PROCESSING):
+                has_active = True
+
+            if job.scan_type == ScanProcessingJob.SCAN_TYPE_TITLE:
+                summary = ", ".join(data.get("vins") or []) or "—"
+                if job.linked_car_id and job.linked_car:
+                    summary = job.linked_car.vin
+            else:
+                n_veh = len(data.get("vehicles") or [])
+                summary = (data.get("container_number") or "—") + (f" ({n_veh} авто)" if n_veh else "")
+
+            items.append(
+                {
+                    "id": job.id,
+                    "scan_type": job.scan_type,
+                    "scan_type_label": job.get_scan_type_display(),
+                    "status": job.status,
+                    "status_label": job.get_status_display(),
+                    "summary": summary,
+                    "file_name": (job.original_file.name or "").rsplit("/", 1)[-1] if job.original_file else "",
+                    "error_message": job.error_message or "",
+                    "auto_applied": bool(changes.get("auto_applied")),
+                    "auto_apply_skipped": data.get("auto_apply_skipped") or "",
+                    "needs_review": job.status == ScanProcessingJob.STATUS_NEEDS_REVIEW,
+                    "has_vin_conflict": bool(data.get("vin_mismatch_review")),
+                    "admin_url": reverse("admin:core_scanprocessingjob_change", args=[job.id]),
+                    "created_at": timezone.localtime(job.created_at).strftime("%d.%m %H:%M"),
+                }
+            )
+        return JsonResponse({"jobs": items, "has_active": has_active})
+
+    def scan_job_action_view(self, request, object_id: int, job_id: int):
+        """AJAX-действия над AI-задачей прямо из панели карточки контейнера.
+
+        Поддерживает те же операции, что actions в админке ScanProcessingJob
+        (применить / применить как новый Car / повторить / игнорировать),
+        чтобы весь workflow закрывался без ухода со страницы контейнера.
+        """
+        from django.db.models import Q
+        from django.http import JsonResponse
+        from django.shortcuts import get_object_or_404
+
+        from core.models.scans import ScanProcessingJob
+
+        if request.method != "POST":
+            return JsonResponse({"error": "POST only"}, status=405)
+        if not self.has_change_permission(request):
+            return JsonResponse({"error": "Нет прав"}, status=403)
+
+        job = get_object_or_404(
+            ScanProcessingJob.objects.filter(Q(target_container_id=object_id) | Q(linked_container_id=object_id)),
+            pk=job_id,
+        )
+        action = request.POST.get("action", "")
+
+        if action in ("apply", "apply_force"):
+            if job.status != ScanProcessingJob.STATUS_NEEDS_REVIEW:
+                return JsonResponse(
+                    {"error": f"Задача в статусе «{job.get_status_display()}» — применять нечего"},
+                    status=400,
+                )
+            from core.services.scan_applier import apply_job
+
+            if action == "apply_force":
+                data = job.extracted_data or {}
+                data["skip_vin_check"] = True
+                job.extracted_data = data
+                job.save(update_fields=["extracted_data"])
+            try:
+                apply_job(job, applied_by=request.user)
+            except Exception:
+                logger.exception("Failed to apply scan job #%s from container card", job.pk)
+                return JsonResponse({"error": "Не удалось применить — см. логи сервера"}, status=500)
+            job.refresh_from_db()
+            if job.status != ScanProcessingJob.STATUS_APPLIED:
+                # applier сам отложил обратно (например, VIN-конфликт).
+                return JsonResponse(
+                    {"ok": False, "message": job.error_message or "Задача осталась на проверке"},
+                )
+            return JsonResponse({"ok": True, "message": "Применено"})
+
+        if action == "retry":
+            if job.status in (ScanProcessingJob.STATUS_PROCESSING, ScanProcessingJob.STATUS_APPLIED):
+                return JsonResponse({"error": "Задача уже в работе или применена"}, status=400)
+            from core.tasks import process_scan_job
+
+            job.status = ScanProcessingJob.STATUS_PENDING
+            job.error_message = ""
+            job.save(update_fields=["status", "error_message"])
+            try:
+                process_scan_job.delay(job.id)
+            except Exception:
+                logger.warning("Celery недоступен — повторная обработка job #%s синхронно", job.id)
+                process_scan_job(job.id)  # type: ignore[call-arg]
+            return JsonResponse({"ok": True, "message": "Обработка перезапущена"})
+
+        if action == "ignore":
+            if job.status not in (ScanProcessingJob.STATUS_NEEDS_REVIEW, ScanProcessingJob.STATUS_ERROR):
+                return JsonResponse(
+                    {"error": "Игнорировать можно только задачи «на проверке» или с ошибкой"},
+                    status=400,
+                )
+            job.status = ScanProcessingJob.STATUS_IGNORED
+            job.save(update_fields=["status"])
+            return JsonResponse({"ok": True, "message": "Задача проигнорирована"})
+
+        return JsonResponse({"error": f"Неизвестное действие: {action}"}, status=400)
+
     def get_changelist(self, request, **kwargs):
         """Adds default filtering for statuses 'In Port' and 'Unloaded'"""
         if not request.GET.get("status_multi"):

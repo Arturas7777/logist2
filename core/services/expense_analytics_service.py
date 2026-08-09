@@ -232,15 +232,18 @@ class ExpenseAnalyticsService:
             f"Проанализируй и дай инсайты. Верни ТОЛЬКО JSON."
         )
 
+        from django.conf import settings
+
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=getattr(settings, "AGENT_MODEL", "claude-sonnet-5"),
             max_tokens=1500,
-            temperature=0.3,
             system=system,
             messages=[{"role": "user", "content": user_msg}],
         )
 
-        text = response.content[0].text.strip()
+        from core.services.llm_text import anthropic_response_text
+
+        text = anthropic_response_text(response)
         if text.startswith("```"):
             lines = text.split("\n")
             lines = [l for l in lines if not l.strip().startswith("```")]

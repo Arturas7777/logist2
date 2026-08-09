@@ -80,7 +80,12 @@ def detect_line_from_carrier(exporting_carrier: str | None):
 _VIN_FUZZY_MAX_DISTANCE = 2
 
 
-def find_similar_vins(vin: str, *, max_distance: int = _VIN_FUZZY_MAX_DISTANCE) -> list[tuple[str, int, int]]:
+def find_similar_vins(
+    vin: str,
+    *,
+    max_distance: int = _VIN_FUZZY_MAX_DISTANCE,
+    queryset=None,
+) -> list[tuple[str, int, int]]:
     """Возвращает список ``(db_vin, car_id, hamming_distance)`` похожих VIN.
 
     Используется ТОЛЬКО для VIN длиной 17 (стандарт). Для нестандартных
@@ -88,12 +93,15 @@ def find_similar_vins(vin: str, *, max_distance: int = _VIN_FUZZY_MAX_DISTANCE) 
     сравнить. Кандидат с distance=0 (точное совпадение) НЕ возвращается —
     его надо ловить через ``Car.objects.filter(vin=...)``.
 
+    ``queryset`` — опциональное ограничение поиска (например, машины
+    одного контейнера при загрузке скана из его карточки).
+
     Сортируем по возрастанию distance: ближайшие — первыми.
     """
     if not vin or len(vin) != 17:
         return []
     candidates: list[tuple[str, int, int]] = []
-    qs = Car.objects.exclude(vin="").values_list("vin", "id")
+    qs = (queryset if queryset is not None else Car.objects.all()).exclude(vin="").values_list("vin", "id")
     for db_vin, car_id in qs.iterator():
         if not db_vin or len(db_vin) != 17:
             continue
@@ -155,16 +163,20 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
 
     Логика:
       1. Берём первый VIN из ``extracted_data.vins``.
-      2. Ищем Car по точному VIN. Если не найден — создаём новый Car
-         со статусом FLOATING и заполненными year/brand (если AI извлёк).
-      3. Прикрепляем оригинальный PDF в ``car.title_scan``.
-      4. Ставим ``car.has_title=True``. Если есть ``title_notes`` —
-         накладываем (не затирая существующие).
+      2. Ищем Car по точному VIN. Если не найден и скан загружен из
+         карточки контейнера (``target_container``) — fuzzy-поиск среди
+         машин ЭТОГО контейнера: единственный кандидат с отличием ≤ 2
+         символов почти наверняка и есть нужная машина (OCR-ошибка).
+      3. Если и так не нашли — глобальный fuzzy-поиск → review; при
+         отсутствии похожих создаём новый Car (FLOATING).
+      4. Прикрепляем оригинальный скан в ``car.title_scan``,
+         ставим ``has_title=True``, дополняем ``title_notes``.
       5. linked_car / created_new_car / status=APPLIED.
     """
     if job.scan_type != ScanProcessingJob.SCAN_TYPE_TITLE:
         raise ValueError(f"Job #{job.pk} is not a TITLE job")
     data = job.extracted_data or {}
+    target = job.target_container if job.target_container_id else None
 
     vins = [v for v in (_normalize_vin(x) for x in (data.get("vins") or [])) if v]
     if not vins:
@@ -174,6 +186,31 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
     primary_vin = vins[0]
     car = Car.objects.filter(vin=primary_vin).first()
     created_new = False
+    context_match_note = ""
+    if car is None and target is not None and not data.get("skip_vin_check"):
+        # ── Контекст контейнера: ожидаемые VIN известны ──
+        # Список машин контейнера мал (обычно 3-5), поэтому единственный
+        # fuzzy-кандидат (≤ 2 символа разницы) — надёжный матч: даже если
+        # AI ошибся в 1-2 символах, титул относится именно к этой машине.
+        container_similar = find_similar_vins(primary_vin, queryset=target.container_cars.all())
+        if len(container_similar) == 1:
+            db_vin, car_id, dist = container_similar[0]
+            car = Car.objects.filter(pk=car_id).first()
+            if car is not None:
+                context_match_note = (
+                    f"VIN из титула {primary_vin} сматчен с {db_vin} "
+                    f"(машина контейнера {target.number}, отличие {dist} симв.)"
+                )
+                data["vin_context_match"] = {
+                    "extracted_vin": primary_vin,
+                    "matched_vin": db_vin,
+                    "container": target.number,
+                    "hamming_distance": dist,
+                }
+                vins[0] = db_vin
+                data["vins"] = vins
+                primary_vin = db_vin
+                logger.info("TITLE job #%s: %s", job.pk, context_match_note)
     if car is None:
         # ── Защита от OCR-ошибок при чтении VIN ──
         # Прежде чем создать новую карточку, проверим, нет ли в БД
@@ -237,16 +274,40 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
                     similar[0][2],
                 )
                 return job
+        if target is not None and not data.get("skip_vin_check"):
+            # Титул загружен в карточку контейнера, но VIN не совпал ни с
+            # одной машиной (ни точно, ни fuzzy). Автосоздание новой машины
+            # здесь почти наверняка ошибка (VIN прочитан неверно или титул
+            # не от этого контейнера) — отправляем на review.
+            job.extracted_data = data
+            job.status = ScanProcessingJob.STATUS_NEEDS_REVIEW
+            job.error_message = (
+                f"VIN {primary_vin} не совпал ни с одной машиной контейнера "
+                f"{target.number} и не найден в базе. Проверьте скан вручную."
+            )
+            job.save(update_fields=["extracted_data", "status", "error_message"])
+            logger.warning(
+                "TITLE job #%s deferred: VIN %s не найден среди машин контейнера %s",
+                job.pk,
+                primary_vin,
+                target.number,
+            )
+            return job
         # Создаём новую карточку Car с минимальным набором полей.
-        # Статус FLOATING — чтобы потом юзер привязал контейнер вручную.
+        # Статус FLOATING — чтобы потом юзер привязал контейнер вручную
+        # (или сразу в контейнер, если скан загружен из его карточки).
         year = _safe_int(data.get("year"))
         brand_full = _build_brand(data)
-        car = Car.objects.create(
-            vin=primary_vin,
-            year=year or 0,
-            brand=brand_full or "Unknown",
-            status="FLOATING",
-        )
+        create_kwargs = {
+            "vin": primary_vin,
+            "year": year or 0,
+            "brand": brand_full or "Unknown",
+            "status": "FLOATING",
+        }
+        if target is not None:
+            create_kwargs["container"] = target
+            create_kwargs["status"] = target.status
+        car = Car.objects.create(**create_kwargs)
         created_new = True
 
     # Прикрепляем PDF (если уже был — перезаписываем).
@@ -265,8 +326,9 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
 
     # Если был флаг "подозрение VIN" — после успешного apply убираем,
     # чтобы не путал в админке.
-    if data.pop("vin_mismatch_review", None) or data.pop("skip_vin_check", None):
-        job.extracted_data = data
+    data.pop("vin_mismatch_review", None)
+    data.pop("skip_vin_check", None)
+    job.extracted_data = data
 
     job.linked_car = car
     job.created_new_car = created_new
@@ -282,6 +344,10 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
         "has_title_set": True,
         "title_notes_appended": auto_note,
     }
+    if context_match_note:
+        job.applied_changes["vin_context_match"] = context_match_note
+    if created_new and target is not None:
+        job.applied_changes["attached_to_container"] = target.number
     job.save(
         update_fields=[
             "linked_car",
@@ -343,9 +409,10 @@ def apply_dock_receipt_job(job: ScanProcessingJob, *, applied_by=None) -> ScanPr
     if job.scan_type != ScanProcessingJob.SCAN_TYPE_DOCK_RECEIPT:
         raise ValueError(f"Job #{job.pk} is not a DOCK_RECEIPT job")
     data = job.extracted_data or {}
+    target = job.target_container if job.target_container_id else None
 
     container_number = (data.get("container_number") or "").strip().upper()
-    if not container_number:
+    if not container_number and target is None:
         _mark_error(job, "AI не нашёл container_number в Dock Receipt")
         return job
 
@@ -354,7 +421,18 @@ def apply_dock_receipt_job(job: ScanProcessingJob, *, applied_by=None) -> ScanPr
     # Авто-определение линии из "Exporting Carrier".
     detected_line = detect_line_from_carrier(data.get("exporting_carrier"))
 
-    container = Container.objects.filter(number=container_number).first()
+    number_mismatch = ""
+    if target is not None:
+        # Скан загружен из карточки контейнера — применяем именно к нему,
+        # НЕ создаём новый по распознанному номеру. Расхождение номера
+        # фиксируем для аудита (в auto-режиме такой job до apply не дойдёт —
+        # см. evaluate_auto_apply).
+        container = target
+        if container_number and container_number != container.number:
+            number_mismatch = f"№ в документе: {container_number}, карточка: {container.number}"
+            logger.warning("DOCK_RECEIPT job #%s: расхождение номера контейнера (%s)", job.pk, number_mismatch)
+    else:
+        container = Container.objects.filter(number=container_number).first()
     created_new_container = False
     auto_filled_fields: list[str] = []  # для applied_changes
 
@@ -422,13 +500,24 @@ def apply_dock_receipt_job(job: ScanProcessingJob, *, applied_by=None) -> ScanPr
         if car is None:
             year = _safe_int(veh.get("year"))
             brand_full = _build_brand(veh)
-            car = Car.objects.create(
-                vin=vin,
-                year=year or 0,
-                brand=brand_full or "Unknown",
-                status=container.status,  # обычно FLOATING
-                container=container,
-            )
+            create_kwargs = {
+                "vin": vin,
+                "year": year or 0,
+                "brand": brand_full or "Unknown",
+                "status": container.status,  # обычно FLOATING
+                "container": container,
+            }
+            # Наследуем поля контейнера — так же, как это делает ручное
+            # добавление машины в inline контейнера (save_formset).
+            if container.warehouse_id:
+                create_kwargs["warehouse_id"] = container.warehouse_id
+            if container.client_id:
+                create_kwargs["client_id"] = container.client_id
+            if container.line_id:
+                create_kwargs["line_id"] = container.line_id
+            if container.unload_date:
+                create_kwargs["unload_date"] = container.unload_date
+            car = Car.objects.create(**create_kwargs)
             car_created = True
             created_vins.append(vin)
         else:
@@ -465,6 +554,8 @@ def apply_dock_receipt_job(job: ScanProcessingJob, *, applied_by=None) -> ScanPr
         "exporting_carrier": data.get("exporting_carrier"),
         "vehicles": affected,
     }
+    if number_mismatch:
+        job.applied_changes["container_number_mismatch"] = number_mismatch
     job.save(
         update_fields=[
             "linked_container",
@@ -533,3 +624,146 @@ def apply_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessingJob:
     if job.scan_type == ScanProcessingJob.SCAN_TYPE_DOCK_RECEIPT:
         return apply_dock_receipt_job(job, applied_by=applied_by)
     raise ValueError(f"Unknown scan_type: {job.scan_type}")
+
+
+# ── Авто-применение (без ручного review) ───────────────────────────────────
+
+# Уровни уверенности распознавания VIN, достаточные для авто-применения,
+# когда VIN подтверждён существующей записью в БД (точное совпадение).
+_AUTO_APPLY_DB_MATCH_LEVELS = {"high", "medium"}
+
+
+def _vin_confidence_level(data: dict, vin: str) -> str | None:
+    """Достаёт уровень уверенности для VIN из extracted_data титула."""
+    for item in data.get("vin_confidences") or []:
+        if _normalize_vin(item.get("vin")) == vin:
+            return item.get("level")
+    return None
+
+
+def evaluate_auto_apply(job: ScanProcessingJob) -> tuple[bool, str]:
+    """Решает, можно ли применить job автоматически, без ручного review.
+
+    Возвращает ``(ok, reason)`` — reason пишется в extracted_data /
+    applied_changes для аудита.
+
+    Принципы:
+      * TITLE применяем сам только когда VIN однозначно сопоставлен
+        СУЩЕСТВУЮЩЕЙ машине (точное совпадение или единственный
+        fuzzy-кандидат среди машин контейнера контекста). Автосоздание
+        новых Car из титула всегда требует подтверждения.
+      * DOCK_RECEIPT применяем сам только при загрузке из карточки
+        контейнера: номер в документе не противоречит карточке, и каждый
+        VIN либо уже есть в базе, либо распознан с уверенностью high.
+    """
+    from core.services.vin_validator import is_north_american_vin, is_vin_checksum_valid
+
+    if job.status != ScanProcessingJob.STATUS_NEEDS_REVIEW:
+        return False, f"статус {job.status}, а не NEEDS_REVIEW"
+    data = job.extracted_data or {}
+    if data.get("vin_mismatch_review"):
+        return False, "есть неразрешённый VIN-конфликт"
+    target = job.target_container if job.target_container_id else None
+
+    if job.scan_type == ScanProcessingJob.SCAN_TYPE_TITLE:
+        vins = [v for v in (_normalize_vin(x) for x in (data.get("vins") or [])) if v]
+        if not vins:
+            return False, "AI не нашёл VIN в титуле"
+        if len(vins) > 1:
+            return False, "в титуле несколько VIN — нужен ручной разбор"
+        vin = vins[0]
+        level = _vin_confidence_level(data, vin)
+
+        exact = Car.objects.filter(vin=vin).first()
+        if exact is not None:
+            if level not in _AUTO_APPLY_DB_MATCH_LEVELS:
+                return False, f"уверенность распознавания VIN: {level or 'нет данных'}"
+            if target is not None and exact.container_id != target.id:
+                return False, (f"VIN {vin} принадлежит машине вне контейнера {target.number} — нужно подтверждение")
+            return True, f"VIN {vin} точно совпал с существующей машиной (Car #{exact.id})"
+
+        if target is not None:
+            similar = find_similar_vins(vin, queryset=target.container_cars.all())
+            if len(similar) == 1:
+                db_vin, _car_id, dist = similar[0]
+                # Матчим на VIN из БД — он должен сам быть консистентным
+                # (для NA-VIN контрольная цифра обязана сходиться).
+                if is_north_american_vin(db_vin) and not is_vin_checksum_valid(db_vin):
+                    return False, f"VIN машины контейнера {db_vin} не проходит контрольную цифру"
+                return True, (
+                    f"единственный похожий VIN среди машин контейнера {target.number}: {db_vin} (отличие {dist} симв.)"
+                )
+            if len(similar) > 1:
+                return False, "несколько похожих VIN среди машин контейнера"
+        return False, "VIN не найден в базе — создание новой машины требует подтверждения"
+
+    if job.scan_type == ScanProcessingJob.SCAN_TYPE_DOCK_RECEIPT:
+        if target is None:
+            return False, "dock receipt загружен без привязки к контейнеру"
+        container_number = (data.get("container_number") or "").strip().upper()
+        if container_number and container_number != target.number:
+            return False, (
+                f"номер контейнера в документе ({container_number}) не совпадает с карточкой ({target.number})"
+            )
+        vehicles = data.get("vehicles") or []
+        if not vehicles:
+            return False, "AI не нашёл ни одной машины в dock receipt"
+        for veh in vehicles:
+            vin = _normalize_vin(veh.get("vin"))
+            if not vin or len(vin) != 17:
+                return False, f"невалидный VIN в списке машин: {vin or '—'}"
+            level = (veh.get("vin_confidence") or {}).get("level")
+            if Car.objects.filter(vin=vin).exists():
+                # Машина уже в базе — VIN подтверждён записью; блокируем
+                # только явное расхождение (low = второй проход разошёлся
+                # или NHTSA противоречит данным документа).
+                if level == "low":
+                    return False, f"VIN {vin} распознан с низкой уверенностью"
+                continue
+            if level != "high":
+                return False, f"новая машина {vin}: уверенность {level or 'нет данных'} (нужна high)"
+        return True, f"все {len(vehicles)} VIN уверенно распознаны, контейнер {target.number} из контекста"
+
+    return False, f"неизвестный scan_type {job.scan_type}"
+
+
+def maybe_auto_apply(job: ScanProcessingJob) -> bool:
+    """Применяет job автоматически, если evaluate_auto_apply разрешил.
+
+    Вызывается из Celery-задачи после AI-извлечения. Возвращает True,
+    если job был применён. Любая ошибка применения не роняет задачу —
+    job остаётся в NEEDS_REVIEW для ручного разбора.
+    """
+    try:
+        ok, reason = evaluate_auto_apply(job)
+    except Exception:
+        logger.exception("evaluate_auto_apply failed for job #%s", job.pk)
+        return False
+
+    data = job.extracted_data or {}
+    if not ok:
+        data["auto_apply_skipped"] = reason
+        job.extracted_data = data
+        job.save(update_fields=["extracted_data"])
+        logger.info("Job #%s оставлен на ручную проверку: %s", job.pk, reason)
+        return False
+
+    data.pop("auto_apply_skipped", None)
+    job.extracted_data = data
+    try:
+        apply_job(job, applied_by=None)
+    except Exception:
+        logger.exception("Auto-apply failed for job #%s", job.pk)
+        return False
+
+    job.refresh_from_db()
+    if job.status != ScanProcessingJob.STATUS_APPLIED:
+        # applier сам отложил в review (например, поймал fuzzy-конфликт).
+        return False
+    changes = job.applied_changes or {}
+    changes["auto_applied"] = True
+    changes["auto_apply_reason"] = reason
+    job.applied_changes = changes
+    job.save(update_fields=["applied_changes"])
+    logger.info("Job #%s применён автоматически: %s", job.pk, reason)
+    return True

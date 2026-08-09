@@ -7,6 +7,46 @@
 
 ## [Unreleased]
 
+### Added — Загрузка dock receipt и тайтлов в карточку контейнера с надёжным распознаванием VIN (2026-08-09)
+
+- **Панель «Документы (AI)» в карточке контейнера**
+  (`templates/admin/core/container/_documents_panel.html`): drag-and-drop
+  загрузка dock receipt и тайтлов (PDF/JPG/PNG) прямо из карточки, статусы
+  обработки в реальном времени и кнопки действий (Применить / Создать новый
+  Car / Повторить / Игнорировать) — весь workflow без ухода на страницу
+  задач. AJAX-эндпоинты в `core/admin/container.py`.
+- **Надёжное чтение VIN** (`core/services/vin_corrector.py`, переработан
+  `scan_extractor.py`): рендер страниц с высоким DPI + тайлинг, второй
+  посимвольный проход по VIN, нормализация запрещённых I/O/Q, автокоррекция
+  по контрольной цифре (таблица OCR-путаниц), скоринг уверенности
+  high/medium/low (checksum + NHTSA + повторное чтение).
+- **Контекст контейнера**: `ScanProcessingJob.target_container` (миграция
+  `0014`) — VIN тайтла матчится в первую очередь по машинам этого
+  контейнера (fuzzy ≤ 2 символа), dock receipt применяется к нему без
+  поиска по номеру.
+- **Авто-применение** (`scan_applier.evaluate_auto_apply/maybe_auto_apply`):
+  уверенные результаты применяются без ручного review — тайтл при
+  однозначном матче VIN, dock receipt при совпадении номера и high-VIN;
+  машины создаются из dock receipt с весами (кг) и наследуют
+  склад/клиента/линию контейнера. Заполненные вручную поля (например BOL
+  в booking number) не перетираются. Причина решения — в
+  `extracted_data.auto_apply_skipped` / `applied_changes.auto_apply_reason`.
+- Тесты: `core/tests/test_scan_vin_pipeline.py` (35 шт.).
+
+### Fixed — Совместимость с claude-sonnet-5 во всех AI-сервисах (2026-08-09)
+
+- **Модель**: `claude-sonnet-4-20250514` удалена из Anthropic API (404) —
+  дефолт `AGENT_MODEL` обновлён на `claude-sonnet-5`, добавлена настройка
+  `SCAN_AI_MODEL` (`logist2/settings/base.py`).
+- **`temperature` deprecated** у новых моделей — параметр убран из всех
+  вызовов `messages.create`.
+- **Thinking-блоки**: claude-sonnet-5 может возвращать блоки размышлений
+  перед текстом, `response.content[0].text` падал с `AttributeError:
+  'ThinkingBlock' object has no attribute 'text'`. Добавлен общий хелпер
+  `core/services/llm_text.py` (собирает только text-блоки), подключён в
+  scan_extractor, invoice_audit, receipt_parser, expense_analytics;
+  `max_tokens` для сканов поднят до 4000 (thinking расходует тот же бюджет).
+
 ### Added — Удаление заявки на автовоз клиентом + ужесточение правил редактирования (2026-08-09)
 
 - **Кнопка-корзина** на странице «Мои заявки» рядом с редактированием

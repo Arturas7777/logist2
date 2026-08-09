@@ -111,7 +111,7 @@ class AgentLLMClient:
         import anthropic
 
         self._client = anthropic.Anthropic(api_key=api_key)
-        self.model = model or getattr(settings, "AGENT_MODEL", "claude-sonnet-4-20250514")
+        self.model = model or getattr(settings, "AGENT_MODEL", "claude-sonnet-5")
         self.run = run
         if run is not None and not run.model:
             run.model = self.model

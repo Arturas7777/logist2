@@ -808,19 +808,18 @@ def push_invoice_to_sitepro_task(self, invoice_id):
         raise self.retry(exc=exc)
 
 
-@shared_task(bind=True, max_retries=2, default_retry_delay=60, time_limit=180)
+@shared_task(bind=True, max_retries=2, default_retry_delay=60, time_limit=300)
 def process_scan_job(self, job_id):
-    """AI-обработка одного отсканированного PDF (Title или Dock Receipt).
+    """AI-обработка одного отсканированного документа (Title или Dock Receipt).
 
     Этапы:
       1. status PROCESSING.
-      2. Конвертируем PDF → PNG, отправляем в Claude Vision.
+      2. Рендерим PDF/JPG/PNG в JPEG-страницы, отправляем в Claude Vision
+         (двухпроходное чтение VIN + автокоррекция, см. scan_extractor).
       3. Сохраняем extracted_data, статус NEEDS_REVIEW.
-      4. При ошибке: status=ERROR, error_message заполнено.
-
-    Применение к карточкам Car/Container — НЕ здесь, а руками через
-    админку (см. ScanProcessingJobAdmin.action 'apply_jobs') — это
-    осознанный workflow review-then-apply.
+      4. Если результат уверенный (см. scan_applier.evaluate_auto_apply) —
+         применяем автоматически; иначе job остаётся на ручную проверку.
+      5. При ошибке: status=ERROR, error_message заполнено.
     """
     from core.models_scans import ScanProcessingJob
     from core.services.scan_extractor import (
@@ -852,11 +851,11 @@ def process_scan_job(self, job_id):
         # FileField даёт нам путь, только если используется FileSystemStorage.
         # Если хранилище удалённое (S3) — лучше скачать локально. У нас сейчас
         # FileSystemStorage, поэтому идём напрямую через .path.
-        pdf_path = job.original_file.path
+        scan_path = job.original_file.path
         if job.scan_type == ScanProcessingJob.SCAN_TYPE_TITLE:
-            extracted = extract_title(pdf_path)
+            extracted = extract_title(scan_path)
         elif job.scan_type == ScanProcessingJob.SCAN_TYPE_DOCK_RECEIPT:
-            extracted = extract_dock_receipt(pdf_path)
+            extracted = extract_dock_receipt(scan_path)
         else:
             raise ValueError(f"Unknown scan_type: {job.scan_type}")
     except Exception as exc:
@@ -878,7 +877,17 @@ def process_scan_job(self, job_id):
     else:
         job.status = ScanProcessingJob.STATUS_NEEDS_REVIEW
     job.save(update_fields=["extracted_data", "processed_at", "status", "error_message"])
-    return {"ok": True, "job_id": job.id, "status": job.status}
+
+    auto_applied = False
+    if job.status == ScanProcessingJob.STATUS_NEEDS_REVIEW:
+        # Уверенные результаты применяем сразу (тайтл — к машине,
+        # dock receipt — к контейнеру контекста); спорные остаются
+        # в NEEDS_REVIEW для ручного разбора.
+        from core.services.scan_applier import maybe_auto_apply
+
+        auto_applied = maybe_auto_apply(job)
+        job.refresh_from_db()
+    return {"ok": True, "job_id": job.id, "status": job.status, "auto_applied": auto_applied}
 
 
 @shared_task(bind=True, max_retries=1, default_retry_delay=600, time_limit=180)

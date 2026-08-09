@@ -138,19 +138,22 @@ def call_llm(text: str) -> dict:
 
     client = anthropic.Anthropic(api_key=api_key)
 
+    from django.conf import settings
+
     user_message = f"Вот текст счёта-фактуры. Извлеки данные по схеме. Верни ТОЛЬКО JSON, без markdown:\n\n{text}"
 
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model=getattr(settings, "AGENT_MODEL", "claude-sonnet-5"),
         max_tokens=4000,
-        temperature=0,
         system=SYSTEM_PROMPT,
         messages=[
             {"role": "user", "content": user_message},
         ],
     )
 
-    return _parse_llm_json(response.content[0].text)
+    from core.services.llm_text import anthropic_response_text
+
+    return _parse_llm_json(anthropic_response_text(response))
 
 
 def _parse_llm_json(text: str) -> dict:
@@ -248,15 +251,18 @@ def call_llm_with_images(images_b64: list[str]) -> dict:
         }
     )
 
+    from django.conf import settings
+
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model=getattr(settings, "AGENT_MODEL", "claude-sonnet-5"),
         max_tokens=4000,
-        temperature=0,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": content_blocks}],
     )
 
-    return _parse_llm_json(response.content[0].text)
+    from core.services.llm_text import anthropic_response_text
+
+    return _parse_llm_json(anthropic_response_text(response))
 
 
 def _find_cars_by_vins(vins: set, brand_hints: dict | None = None) -> dict:

@@ -1,0 +1,274 @@
+{% comment %}
+Панель «Документы (AI)» в карточке контейнера.
+
+Загрузка dock receipt и сканов тайтлов прямо из карточки: файлы уходят в
+ScanProcessingJob с target_container = этот контейнер, обрабатываются AI
+(Claude Vision + валидация VIN) и при уверенном результате применяются
+автоматически. Список задач обновляется опросом JSON-эндпоинта.
+{% endcomment %}
+<div class="module" id="container-docs-section"
+     style="margin-top: 20px; border: 1px solid var(--cm-border, #dee2e6); border-radius: 8px; overflow: hidden;">
+  <h2 style="margin: 0; padding: 10px 14px;">📄 Документы (AI-обработка)</h2>
+
+  <div style="padding: 14px;">
+    <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+      {# ── Dock Receipt ── #}
+      <label id="cm-docs-drop-dock"
+             style="flex: 1; min-width: 240px; display: block; border: 2px dashed #10b981; border-radius: 8px;
+                    padding: 18px 12px; text-align: center; cursor: pointer; transition: background .2s;">
+        <div style="font-weight: 600; color: #10b981;">Dock Receipt</div>
+        <div style="font-size: 12px; color: #6c757d; margin-top: 4px;">
+          Перетащите или нажмите (PDF/JPG/PNG).<br>
+          Машины из документа добавятся в этот контейнер.
+        </div>
+        <input type="file" id="cm-docs-input-dock" multiple
+               accept="application/pdf,image/jpeg,image/png" style="position: absolute; left: -9999px;">
+      </label>
+
+      {# ── Тайтлы ── #}
+      <label id="cm-docs-drop-title"
+             style="flex: 1; min-width: 240px; display: block; border: 2px dashed #3b82f6; border-radius: 8px;
+                    padding: 18px 12px; text-align: center; cursor: pointer; transition: background .2s;">
+        <div style="font-weight: 600; color: #3b82f6;">Тайтлы (можно несколько)</div>
+        <div style="font-size: 12px; color: #6c757d; margin-top: 4px;">
+          Перетащите или нажмите (PDF/JPG/PNG).<br>
+          VIN сверяется с машинами контейнера, тайтл прикрепится к нужному авто.
+        </div>
+        <input type="file" id="cm-docs-input-title" multiple
+               accept="application/pdf,image/jpeg,image/png" style="position: absolute; left: -9999px;">
+      </label>
+    </div>
+
+    <div id="cm-docs-message" style="margin-top: 10px; font-size: 13px;"></div>
+    <div id="cm-docs-jobs" style="margin-top: 12px;"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var uploadUrl = "{% url 'admin:core_container_upload_docs' original.pk %}";
+  var jobsUrl = "{% url 'admin:core_container_scan_jobs' original.pk %}";
+  var actionUrlTemplate = "{% url 'admin:core_container_scan_job_action' original.pk 0 %}";
+  var pollTimer = null;
+
+  var STATUS_COLORS = {
+    PENDING: "#9ca3af",
+    PROCESSING: "#06b6d4",
+    NEEDS_REVIEW: "#f59e0b",
+    APPLIED: "#10b981",
+    ERROR: "#ef4444",
+    IGNORED: "#d1d5db"
+  };
+  var TYPE_COLORS = { TITLE: "#3b82f6", DOCK_RECEIPT: "#10b981" };
+
+  function getCsrf() {
+    var el = document.querySelector('[name=csrfmiddlewaretoken]');
+    return el ? el.value : '';
+  }
+
+  function setMessage(text, isError) {
+    var box = document.getElementById('cm-docs-message');
+    box.textContent = text || '';
+    box.style.color = isError ? '#ef4444' : '#10b981';
+  }
+
+  function badge(text, bg, dark) {
+    var s = document.createElement('span');
+    s.textContent = text;
+    s.style.cssText = 'background:' + bg + ';color:' + (dark ? '#212529' : '#fff') +
+      ';padding:2px 8px;border-radius:4px;font-size:11px;white-space:nowrap;';
+    return s;
+  }
+
+  function actionButton(label, color, onClick) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.style.cssText = 'background:#fff;border:1px solid ' + color + ';color:' + color +
+      ';padding:2px 10px;border-radius:4px;font-size:12px;cursor:pointer;white-space:nowrap;';
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  function postAction(jobId, action, confirmText) {
+    if (confirmText && !window.confirm(confirmText)) return;
+    var fd = new FormData();
+    fd.append('action', action);
+    setMessage('Выполняется…', false);
+    fetch(actionUrlTemplate.replace(/0\/action\/$/, jobId + '/action/'), {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'X-CSRFToken': getCsrf() },
+      body: fd
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          setMessage('Ошибка: ' + (res.data.error || 'не удалось выполнить'), true);
+        } else if (res.data.ok === false) {
+          setMessage(res.data.message || 'Задача осталась на проверке', true);
+        } else {
+          setMessage(res.data.message || 'Готово', false);
+          // Применение могло добавить машины в контейнер — предложим
+          // обновить страницу, чтобы увидеть их в списке.
+          if (action === 'apply' || action === 'apply_force') {
+            setMessage((res.data.message || 'Готово') + '. Обновите страницу, чтобы увидеть изменения в карточке.', false);
+          }
+        }
+        refreshJobs();
+      })
+      .catch(function (e) { setMessage('Ошибка: ' + e, true); });
+  }
+
+  function renderJobs(data) {
+    var box = document.getElementById('cm-docs-jobs');
+    box.innerHTML = '';
+    if (!data.jobs.length) {
+      var empty = document.createElement('div');
+      empty.textContent = 'Документы ещё не загружались.';
+      empty.style.cssText = 'color:#6c757d;font-size:13px;';
+      box.appendChild(empty);
+      return;
+    }
+    data.jobs.forEach(function (job) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;' +
+        'border-top:1px solid var(--cm-border, #f1f3f5);font-size:13px;flex-wrap:wrap;';
+
+      row.appendChild(badge(job.scan_type_label, TYPE_COLORS[job.scan_type] || '#9ca3af'));
+      row.appendChild(badge(job.status_label, STATUS_COLORS[job.status] || '#9ca3af',
+                            job.status === 'NEEDS_REVIEW'));
+
+      var summary = document.createElement('code');
+      summary.textContent = job.summary;
+      summary.style.cssText = 'font-size:12px;';
+      row.appendChild(summary);
+
+      if (job.auto_applied) {
+        row.appendChild(badge('применено автоматически', '#0d6efd'));
+      }
+
+      var hint = job.error_message || job.auto_apply_skipped;
+      if (hint && (job.needs_review || job.status === 'ERROR')) {
+        var hintEl = document.createElement('span');
+        hintEl.textContent = hint;
+        hintEl.style.cssText = 'color:#b45309;font-size:12px;flex-basis:100%;padding-left:4px;';
+        row.appendChild(hintEl);
+      }
+
+      var spacer = document.createElement('span');
+      spacer.style.cssText = 'flex:1;';
+      row.appendChild(spacer);
+
+      if (job.needs_review) {
+        row.appendChild(actionButton('✅ Применить', '#10b981', function () {
+          postAction(job.id, 'apply');
+        }));
+        // Для тайтла, чей VIN не сматчился с машинами: форс-вариант —
+        // поверить скану и создать новую машину с этим VIN.
+        if (job.scan_type === 'TITLE' && (job.has_vin_conflict || job.auto_apply_skipped || job.error_message)) {
+          row.appendChild(actionButton('⚠ Создать новый Car', '#f59e0b', function () {
+            postAction(job.id, 'apply_force',
+              'VIN из скана не совпал с машинами. Создать НОВУЮ машину с этим VIN в контейнере?');
+          }));
+        }
+      }
+      if (job.status === 'ERROR' || job.needs_review) {
+        row.appendChild(actionButton('🔁 Повторить', '#06b6d4', function () {
+          postAction(job.id, 'retry');
+        }));
+        row.appendChild(actionButton('🚫', '#9ca3af', function () {
+          postAction(job.id, 'ignore', 'Игнорировать этот документ?');
+        }));
+      }
+
+      var when = document.createElement('span');
+      when.textContent = job.created_at;
+      when.style.cssText = 'color:#6c757d;font-size:12px;';
+      row.appendChild(when);
+
+      var link = document.createElement('a');
+      link.href = job.admin_url;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.textContent = 'Детали';
+      link.style.cssText = 'font-size:12px;color:#6c757d;';
+      row.appendChild(link);
+
+      box.appendChild(row);
+    });
+  }
+
+  function refreshJobs() {
+    fetch(jobsUrl, { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        renderJobs(data);
+        clearTimeout(pollTimer);
+        if (data.has_active) {
+          pollTimer = setTimeout(refreshJobs, 4000);
+        }
+      })
+      .catch(function () { /* тихо: панель не критична */ });
+  }
+
+  function uploadFiles(scanType, files) {
+    if (!files || !files.length) return;
+    var fd = new FormData();
+    fd.append('scan_type', scanType);
+    Array.from(files).forEach(function (f) { fd.append('files', f); });
+    setMessage('Загрузка ' + files.length + ' файла(ов)…', false);
+    fetch(uploadUrl, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'X-CSRFToken': getCsrf() },
+      body: fd
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          setMessage('Ошибка: ' + (res.data.error || 'не удалось загрузить'), true);
+          return;
+        }
+        var msg = 'Загружено: ' + res.data.created.length;
+        if (res.data.skipped.length) {
+          msg += '; пропущено (не PDF/JPG/PNG): ' + res.data.skipped.join(', ');
+        }
+        msg += '. Обработка AI запущена.';
+        setMessage(msg, false);
+        refreshJobs();
+      })
+      .catch(function (e) { setMessage('Ошибка загрузки: ' + e, true); });
+  }
+
+  function wireDropzone(zoneId, inputId, scanType) {
+    var zone = document.getElementById(zoneId);
+    var input = document.getElementById(inputId);
+    if (!zone || !input) return;
+
+    input.addEventListener('change', function () {
+      uploadFiles(scanType, input.files);
+      input.value = '';
+    });
+    ['dragenter', 'dragover'].forEach(function (ev) {
+      zone.addEventListener(ev, function (e) {
+        e.preventDefault(); e.stopPropagation();
+        zone.style.background = 'rgba(13, 110, 253, .06)';
+      });
+    });
+    ['dragleave', 'drop'].forEach(function (ev) {
+      zone.addEventListener(ev, function (e) {
+        e.preventDefault(); e.stopPropagation();
+        zone.style.background = '';
+      });
+    });
+    zone.addEventListener('drop', function (e) {
+      if (e.dataTransfer.files.length) uploadFiles(scanType, e.dataTransfer.files);
+    });
+  }
+
+  wireDropzone('cm-docs-drop-dock', 'cm-docs-input-dock', 'DOCK_RECEIPT');
+  wireDropzone('cm-docs-drop-title', 'cm-docs-input-title', 'TITLE');
+  refreshJobs();
+})();
+</script>

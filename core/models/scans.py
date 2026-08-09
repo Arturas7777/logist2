@@ -57,8 +57,21 @@ class ScanProcessingJob(models.Model):
 
     original_file = models.FileField(
         upload_to="scan_jobs/%Y/%m/",
-        verbose_name="Исходный PDF",
-        help_text="PDF, загруженный пользователем (один документ = одна задача).",
+        verbose_name="Исходный скан",
+        help_text="PDF/JPG/PNG, загруженный пользователем (один документ = одна задача).",
+    )
+
+    # Контекст загрузки: если скан загружен из карточки контейнера,
+    # матчинг VIN идёт в первую очередь по машинам ЭТОГО контейнера,
+    # а dock receipt применяется к нему без поиска по номеру.
+    target_container = models.ForeignKey(
+        "core.Container",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="scan_jobs_targeted",
+        verbose_name="Контейнер (контекст загрузки)",
+        help_text="Заполняется при загрузке скана из карточки контейнера.",
     )
 
     # Что AI извлёк (raw):

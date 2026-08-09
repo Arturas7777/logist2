@@ -43,7 +43,7 @@
       <ul style="margin:8px 0 0; padding-left:24px;">
         <li>Container number, Booking number</li>
         <li>VIN-ы машин в контейнере</li>
-        <li>Масса каждой машины (lbs → автоматически в kg)</li>
+        <li>Масса каждой машины (в кг, как в документе)</li>
         <li>Vessel, voyage, ports, shipper, consignee</li>
       </ul>
       <p style="margin: 8px 0 0; color: #6c757d; font-size: 13px;">
@@ -63,9 +63,9 @@
                   transition: background 0.2s, border-color 0.2s;"
            id="dropzone">
       <div style="font-size:48px;margin-bottom:12px;">📄</div>
-      <div style="font-size:16px;font-weight:600;color:#495057;">Перетащите PDF-сканы сюда</div>
+      <div style="font-size:16px;font-weight:600;color:#495057;">Перетащите сканы сюда (PDF / JPG / PNG)</div>
       <div style="font-size:13px;color:#6c757d;margin-top:8px;">или нажмите, чтобы выбрать (можно сразу несколько)</div>
-      <input type="file" id="files-input" name="files" multiple accept="application/pdf"
+      <input type="file" id="files-input" name="files" multiple accept="application/pdf,image/jpeg,image/png"
              style="position:absolute;left:-9999px;">
     </label>
 
