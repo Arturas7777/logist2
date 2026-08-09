@@ -13,8 +13,11 @@ Track & Trace: список событий, где TRANSPORT-события с
     идут с заголовками ``Consumer-Key`` + ``Authorization: Bearer``.
   * CMA CGM — https://api-portal.cma-cgm.com, API-ключ в заголовке
     ``KeyId`` (env ``CMA_CGM_API_KEY``).
-  * MSC — доступ к API выдаётся по заявке на их портале; адаптер добавим,
-    когда будут реквизиты.
+  * MSC — доступ по заявке (Direct Integration request на
+    developerportal.msc.com); API — DCSA 2.2 на Azure API Management.
+    После онбординга MSC выдаёт base URL и subscription key — env
+    ``MSC_API_BASE_URL`` / ``MSC_API_KEY`` (+ ``MSC_API_KEY_HEADER``,
+    по умолчанию ``Ocp-Apim-Subscription-Key`` — стандарт Azure APIM).
 
 Вызывается из Celery-задач (``update_container_eta_task`` после применения
 dock receipt и ``update_container_etas_task`` ежедневно по beat) — см.
@@ -156,11 +159,39 @@ def _fetch_cma_cgm(container_number: str) -> tuple[object | None, str]:
     return resp.json(), ""
 
 
-# Имя Line в БД → адаптер. MSC/Hapag/COSCO/ONE/OOCL подключим по мере
-# получения доступов.
+def _fetch_msc(container_number: str) -> tuple[object | None, str]:
+    """DCSA-события MSC (реквизиты выдаются после онбординга Direct Integration).
+
+    MSC хостит API на Azure API Management: базовый URL и subscription key
+    приходят в онбординг-письме. Заголовок ключа по умолчанию —
+    ``Ocp-Apim-Subscription-Key``; если MSC пришлёт другой, задаётся через
+    ``MSC_API_KEY_HEADER``.
+    """
+    base_url = (getattr(settings, "MSC_API_BASE_URL", "") or "").strip().rstrip("/")
+    key = (getattr(settings, "MSC_API_KEY", "") or "").strip()
+    if not base_url or not key:
+        return None, "MSC_API_BASE_URL / MSC_API_KEY не заданы в .env (ждём онбординга MSC)"
+    header = (getattr(settings, "MSC_API_KEY_HEADER", "") or "").strip() or "Ocp-Apim-Subscription-Key"
+    resp = requests.get(
+        f"{base_url}/events",
+        params={"equipmentReference": container_number},
+        headers={header: key, "Accept": "application/json"},
+        timeout=REQUEST_TIMEOUT,
+    )
+    if resp.status_code == 404:
+        return None, "контейнер не найден в системе MSC"
+    if resp.status_code in (401, 403):
+        return None, f"MSC отклонил ключ (HTTP {resp.status_code}) — проверьте MSC_API_KEY"
+    resp.raise_for_status()
+    return resp.json(), ""
+
+
+# Имя Line в БД → адаптер. Hapag/COSCO/ONE/OOCL подключим по мере
+# получения доступов (у них единичные контейнеры).
 LINE_FETCHERS = {
     "MAERSK": _fetch_maersk,
     "CMA": _fetch_cma_cgm,
+    "MSC": _fetch_msc,
 }
 
 

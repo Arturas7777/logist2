@@ -106,6 +106,18 @@ def test_update_container_eta_missing_key(maersk_container, settings):
     assert "MAERSK_CONSUMER_KEY" in result["message"]
 
 
+def test_update_container_eta_msc_waits_for_onboarding(db, settings):
+    settings.MSC_API_BASE_URL = ""
+    settings.MSC_API_KEY = ""
+    line = Line.objects.create(name="MSC")
+    container = Container.objects.create(number="MSDU1234567", status="FLOATING", line=line)
+
+    result = update_container_eta(container)
+
+    assert result["updated"] is False
+    assert "MSC_API" in result["message"]
+
+
 def test_update_container_eta_fetch_error(maersk_container, monkeypatch):
     import requests
 

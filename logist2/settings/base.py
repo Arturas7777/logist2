@@ -578,6 +578,11 @@ SCAN_AI_MODEL = os.getenv("SCAN_AI_MODEL", AGENT_MODEL)
 MAERSK_CONSUMER_KEY = os.getenv("MAERSK_CONSUMER_KEY", "")
 MAERSK_CLIENT_SECRET = os.getenv("MAERSK_CLIENT_SECRET", "")
 CMA_CGM_API_KEY = os.getenv("CMA_CGM_API_KEY", "")
+# MSC: реквизиты выдаются после онбординга Direct Integration
+# (developerportal.msc.com). Header по умолчанию — стандарт Azure APIM.
+MSC_API_BASE_URL = os.getenv("MSC_API_BASE_URL", "")
+MSC_API_KEY = os.getenv("MSC_API_KEY", "")
+MSC_API_KEY_HEADER = os.getenv("MSC_API_KEY_HEADER", "Ocp-Apim-Subscription-Key")
 AGENT_MAX_TOKENS = int(os.getenv("AGENT_MAX_TOKENS", "2000"))
 AGENT_REQUEST_TIMEOUT = int(os.getenv("AGENT_REQUEST_TIMEOUT", "60"))
 # Сколько новых писем разбирать за один запуск (защита от лавины при
