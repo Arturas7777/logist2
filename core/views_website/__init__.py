@@ -66,6 +66,7 @@ from .portal_transport import (
     transport_request_doc_action,
     transport_request_doc_delete,
     transport_request_edit,
+    transport_request_remove_car,
     transport_request_submit,
     transport_requests,
 )
@@ -97,7 +98,7 @@ __all__ = [
     'declaration_print',
     # portal_transport
     'transport_requests', 'transport_request_edit', 'transport_request_delete',
-    'transport_request_submit',
+    'transport_request_submit', 'transport_request_remove_car',
     'transport_request_doc_action', 'transport_request_doc_delete',
     # api
     'IsClientUser', 'ClientCarViewSet', 'ClientContainerViewSet',

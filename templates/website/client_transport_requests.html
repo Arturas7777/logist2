@@ -62,18 +62,26 @@
     .doc-gen-icon { color: #0dcaf0; font-size: .85rem; flex-shrink: 0; }
     .req-car-row {
         display: flex; align-items: center; gap: .45rem;
-        flex-wrap: nowrap; margin: .2rem 0;
+        flex-wrap: wrap; margin: .2rem 0;
     }
+    .req-car-remove {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 1.5rem; height: 1.5rem; padding: 0; border: 0;
+        border-radius: .35rem; background: transparent;
+        color: #adb5bd; font-size: 1.25rem; line-height: 1;
+        flex-shrink: 0; text-decoration: none;
+    }
+    .req-car-remove:hover { color: #dc3545; background: rgba(220, 53, 69, .08); }
     .req-car-dd .dropdown-toggle {
         display: inline-flex; align-items: center; gap: .45rem;
-        width: 26.5rem; height: 2.15rem;
+        width: 22.5rem; height: 2.15rem;
         border: 1px solid #dee2e6; background: #fff; border-radius: 8px;
         padding: 0 .6rem; text-align: left;
     }
     .req-car-dd .dropdown-toggle:hover,
     .req-car-dd .dropdown-toggle.show { border-color: #0d6efd; background: #e7f1ff; }
     .req-car-name {
-        display: inline-block; width: 13.5rem;
+        display: inline-block; width: 10rem;
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         font-weight: 600; font-size: .875rem; line-height: 1.2;
     }
@@ -100,10 +108,14 @@
         width: 1.35rem; height: .72rem; object-fit: cover; border-radius: 2px;
         box-shadow: 0 0 0 1px rgba(0,0,0,.12); vertical-align: 0;
     }
-    /* Иконки справа от кнопки авто — плитки высотой как поле */
+    /* Иконки + крестик одной группой сразу после поля авто */
+    .req-car-trailing {
+        display: inline-flex; align-items: center; flex-wrap: wrap;
+        gap: .3rem; min-height: 2.15rem; flex: 0 1 auto;
+    }
     .req-car-doc-icons {
-        display: inline-flex; align-items: center; gap: .3rem;
-        height: 2.15rem; flex-shrink: 0;
+        display: inline-flex; align-items: center; flex-wrap: wrap;
+        gap: .3rem; min-height: 2.15rem;
     }
     .req-car-doc-icons .doc-ico-tile {
         display: inline-flex; align-items: center; justify-content: center;
@@ -147,7 +159,7 @@
     }
     .req-submit-form { flex: 0 0 auto; }
     .req-submit-btn {
-        width: 26.5rem; height: 2.15rem;
+        width: 22.5rem; height: 2.15rem;
         display: inline-flex; align-items: center; justify-content: center;
     }
     .req-card-edit-btns {
@@ -340,7 +352,7 @@
                                 <div class="dropdown req-car-dd">
                                     <button type="button" class="btn btn-sm dropdown-toggle"
                                             data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
-                                        <span class="req-car-name" title="{{ section.car.year }} {{ section.car.brand }}">{{ section.car.year }} {{ section.car.brand }}</span>
+                                        <span class="req-car-name" title="{{ section.car.year }} {{ section.car.brand }}">{{ section.car.brand }}</span>
                                         <code class="req-car-vin">{{ section.car.vin }}</code>
                                     </button>
                                     <ul class="dropdown-menu shadow">
@@ -395,26 +407,37 @@
                                         {% endfor %}
                                     </ul>
                                 </div>
-                                {% if section.present_icons %}
-                                <span class="req-car-doc-icons">
-                                    {% for ico in section.present_icons %}
-                                    <button type="button"
-                                            class="doc-ico-tile doc-preview-btn{% if ico.icon_is_flag %} is-flag{% endif %}"
-                                            style="--doc-ico: {{ ico.icon_color|default:'#868e96' }};"
-                                            title="{{ ico.label }}: {{ ico.filename }}"
-                                            aria-label="{{ ico.label }}"
-                                            data-url="{{ ico.file_url }}"
-                                            data-title="{{ ico.label }}"
-                                            data-filename="{{ ico.filename }}">
-                                        {% if ico.icon_data %}
-                                        <img class="doc-type-img{% if ico.type == 'PASSPORT' %} doc-passport{% endif %}" src="{{ ico.icon_data }}" alt="">
-                                        {% elif ico.icon_img %}
-                                        <img class="doc-type-img" src="{% static ico.icon_img %}" alt="">
-                                        {% else %}
-                                        <i class="bi {{ ico.icon }} doc-type-ico" aria-hidden="true"></i>
-                                        {% endif %}
-                                    </button>
-                                    {% endfor %}
+                                {% if section.present_icons or req.is_client_editable %}
+                                <span class="req-car-trailing">
+                                    {% if section.present_icons %}
+                                    <span class="req-car-doc-icons">
+                                        {% for ico in section.present_icons %}
+                                        <button type="button"
+                                                class="doc-ico-tile doc-preview-btn{% if ico.icon_is_flag %} is-flag{% endif %}"
+                                                style="--doc-ico: {{ ico.icon_color|default:'#868e96' }};"
+                                                title="{{ ico.label }}: {{ ico.filename }}"
+                                                aria-label="{{ ico.label }}"
+                                                data-url="{{ ico.file_url }}"
+                                                data-title="{{ ico.label }}"
+                                                data-filename="{{ ico.filename }}">
+                                            {% if ico.icon_data %}
+                                            <img class="doc-type-img{% if ico.type == 'PASSPORT' %} doc-passport{% endif %}" src="{{ ico.icon_data }}" alt="">
+                                            {% elif ico.icon_img %}
+                                            <img class="doc-type-img" src="{% static ico.icon_img %}" alt="">
+                                            {% else %}
+                                            <i class="bi {{ ico.icon }} doc-type-ico" aria-hidden="true"></i>
+                                            {% endif %}
+                                        </button>
+                                        {% endfor %}
+                                    </span>
+                                    {% endif %}
+                                    {% if req.is_client_editable %}
+                                    <form method="post" action="{% url 'website:transport_request_remove_car' req.pk section.car.pk %}" class="d-inline"
+                                          onsubmit="return confirm('{% trans 'Убрать этот автомобиль из заявки?' %}');">
+                                        {% csrf_token %}
+                                        <button type="submit" class="req-car-remove" title="{% trans 'Убрать из заявки' %}" aria-label="{% trans 'Убрать из заявки' %}">&times;</button>
+                                    </form>
+                                    {% endif %}
                                 </span>
                                 {% endif %}
                             </div>

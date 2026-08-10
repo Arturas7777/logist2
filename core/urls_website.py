@@ -52,6 +52,11 @@ urlpatterns = [
         name="transport_request_submit",
     ),
     path(
+        "transport-requests/<int:pk>/cars/<int:car_id>/remove/",
+        views_website.transport_request_remove_car,
+        name="transport_request_remove_car",
+    ),
+    path(
         "transport-requests/<int:pk>/docs/",
         views_website.transport_request_doc_action,
         name="transport_request_doc_action",

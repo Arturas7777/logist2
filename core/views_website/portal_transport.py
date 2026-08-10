@@ -388,6 +388,28 @@ def transport_request_submit(request, pk):
     return redirect("website:transport_requests")
 
 
+@login_required
+@require_POST
+def transport_request_remove_car(request, pk, car_id):
+    """Убрать автомобиль из заявки (и связанные документы пакета)."""
+    client = _get_client(request)
+    if client is None:
+        return render(request, "website/not_authorized.html", status=403)
+
+    transport_request = get_object_or_404(TransportRequest, pk=pk, client=client)
+    if not transport_request.is_client_editable:
+        messages.error(request, "Заявка уже в работе — состав автомобилей изменить нельзя.")
+        return redirect("website:transport_requests")
+
+    car = get_object_or_404(transport_request.cars, pk=car_id)
+    for doc in transport_request.documents.filter(car=car):
+        doc.file.delete(save=False)
+        doc.delete()
+    transport_request.doc_packages.filter(car=car).delete()
+    transport_request.cars.remove(car)
+    return redirect("website:transport_requests")
+
+
 # ---------------------------------------------------------------------------
 # Пакет документов автовоза (оформление на Беларусь)
 # ---------------------------------------------------------------------------
