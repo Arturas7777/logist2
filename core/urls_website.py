@@ -47,6 +47,11 @@ urlpatterns = [
         name="transport_request_delete",
     ),
     path(
+        "transport-requests/<int:pk>/submit/",
+        views_website.transport_request_submit,
+        name="transport_request_submit",
+    ),
+    path(
         "transport-requests/<int:pk>/docs/",
         views_website.transport_request_doc_action,
         name="transport_request_doc_action",

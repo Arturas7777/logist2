@@ -153,6 +153,20 @@ def _date_lt(day: datetime.date) -> str:
     return f"{day.year} m. {MONTHS_LT_GENITIVE[day.month - 1]} {day.day} d."
 
 
+def _wrap_address_html(address: str) -> str:
+    """Адрес в 1–2 строки: последняя часть (обычно страна) с новой строки."""
+    lines = []
+    for raw in (address or "").splitlines():
+        parts = [part.strip() for part in raw.split(",") if part.strip()]
+        if not parts:
+            continue
+        if len(parts) == 1:
+            lines.append(parts[0])
+        else:
+            lines.append(", ".join(parts[:-1]) + ",<br/>" + parts[-1])
+    return "<br/>".join(lines)
+
+
 def _money_usd(amount: Decimal) -> str:
     if amount == amount.to_integral_value():
         return f"${amount:,.0f}"
@@ -358,7 +372,9 @@ def generate_invoice_pdf(car, *, number: str, date: datetime.date, amount: Decim
     buyer_lines = [buyer["name"]]
     if buyer.get("passport_number"):
         buyer_lines.append(buyer["passport_number"])
-    buyer_lines.extend(filter(None, (buyer.get("address") or "").splitlines()))
+    address_html = _wrap_address_html(buyer.get("address") or "")
+    if address_html:
+        buyer_lines.append(address_html)
     buyer_html = "<br/>".join(buyer_lines)
 
     # Слева — логотип (вместо большой надписи INVOICE); справа уже есть INVOICE # / DATE.
@@ -378,9 +394,11 @@ def generate_invoice_pdf(car, *, number: str, date: datetime.date, amount: Decim
     )
     header.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
 
+    seller_address_html = _wrap_address_html(SELLER_ADDRESS)
+    seller_bank_address_html = _wrap_address_html(SELLER_BANK_ADDRESS)
     requisites = Paragraph(
-        f"<b>ACCOUNT NAME:</b> {SELLER_NAME}<br/>{SELLER_ADDRESS}<br/><br/>"
-        f"<b>BANK REFERENCE:</b> {SELLER_BANK}<br/>{SELLER_BANK_ADDRESS}<br/>"
+        f"<b>ACCOUNT NAME:</b> {SELLER_NAME}<br/>{seller_address_html}<br/><br/>"
+        f"<b>BANK REFERENCE:</b> {SELLER_BANK}<br/>{seller_bank_address_html}<br/>"
         f"<b>ACCOUNT NUMBER USD:</b> {SELLER_ACCOUNT_USD}<br/>"
         f"<b>INTERNATIONAL SWIFT CODE:</b> {SELLER_SWIFT}<br/>"
         f"<b>ABA (ROUTING NUMBER):</b> {SELLER_ABA}",

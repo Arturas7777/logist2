@@ -179,6 +179,8 @@ def _docs_context(transport_request):
             }
             slots.append(slot)
             if docs:
+                latest = docs[0]
+                name = (latest.filename or "").lower()
                 present_icons.append(
                     {
                         "type": doc_type,
@@ -188,6 +190,9 @@ def _docs_context(transport_request):
                         "icon_data": icon_data,
                         "icon_is_flag": icon_is_flag,
                         "icon_color": color,
+                        "file_url": latest.file.url,
+                        "filename": latest.filename,
+                        "is_image": name.endswith((".jpg", ".jpeg", ".png", ".gif", ".webp")),
                     }
                 )
         doc_sections.append({"car": car, "slots": slots, "present_icons": present_icons})
@@ -254,9 +259,7 @@ def transport_requests(request):
             open_doc = request.POST.get("open_doc", "").strip()
             if open_doc:
                 return redirect(_open_doc_url(transport_request, open_doc, request.POST.get("open_doc_car", "")))
-            if transport_request.status == "DRAFT":
-                messages.success(request, "Черновик сохранён.")
-            else:
+            if transport_request.status != "DRAFT":
                 messages.success(request, "Заявка подана. Мы свяжемся с вами после обработки.")
             return redirect("website:transport_requests")
     else:
@@ -311,9 +314,7 @@ def transport_request_edit(request, pk):
             open_doc = request.POST.get("open_doc", "").strip()
             if open_doc:
                 return redirect(_open_doc_url(saved, open_doc, request.POST.get("open_doc_car", "")))
-            if saved.status == "DRAFT":
-                messages.success(request, "Черновик сохранён.")
-            else:
+            if saved.status != "DRAFT":
                 messages.success(request, "Заявка сохранена.")
             return redirect("website:transport_requests")
     else:
@@ -362,6 +363,28 @@ def transport_request_delete(request, pk):
     transport_request.status = "CANCELLED"
     transport_request.save(update_fields=["status", "updated_at"])
     messages.success(request, "Заявка удалена.")
+    return redirect("website:transport_requests")
+
+
+@login_required
+@require_POST
+def transport_request_submit(request, pk):
+    """Подать черновик заявки (DRAFT → SUBMITTED) из карточки в списке."""
+    client = _get_client(request)
+    if client is None:
+        return render(request, "website/not_authorized.html", status=403)
+
+    transport_request = get_object_or_404(TransportRequest, pk=pk, client=client)
+    if transport_request.status != "DRAFT":
+        messages.error(request, "Подать можно только черновик.")
+        return redirect("website:transport_requests")
+    if not transport_request.cars.exists():
+        messages.error(request, "Добавьте хотя бы один автомобиль, затем подайте заявку.")
+        return redirect("website:transport_requests")
+
+    transport_request.status = "SUBMITTED"
+    transport_request.save(update_fields=["status", "updated_at"])
+    messages.success(request, "Заявка подана. Мы свяжемся с вами после обработки.")
     return redirect("website:transport_requests")
 
 

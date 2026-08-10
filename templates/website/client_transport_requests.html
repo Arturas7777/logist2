@@ -140,6 +140,29 @@
         object-fit: cover; border-radius: 2px;
         box-shadow: 0 0 0 1px rgba(0,0,0,.1);
     }
+    /* Подать заявку = ширина поля модель+VIN; ручка/корзина — правый край карточки */
+    .req-card-actions {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: .45rem; flex-wrap: nowrap;
+    }
+    .req-submit-form { flex: 0 0 auto; }
+    .req-submit-btn {
+        width: 26.5rem; height: 2.15rem;
+        display: inline-flex; align-items: center; justify-content: center;
+    }
+    .req-card-edit-btns {
+        display: inline-flex; align-items: center; gap: .25rem;
+        flex-shrink: 0; margin-left: auto; margin-right: .15rem;
+    }
+    #docPreviewModal .modal-body { padding: .5rem; background: #f1f3f5; }
+    #docPreviewModal .doc-preview-frame {
+        width: 100%; height: min(78vh, 820px); border: 0; background: #fff; border-radius: 4px;
+    }
+    #docPreviewModal .doc-preview-img {
+        display: block; max-width: 100%; max-height: min(78vh, 820px);
+        margin: 0 auto; border-radius: 4px;
+    }
+    #docPreviewModal .doc-preview-fallback { display: none; text-align: center; padding: 2rem 1rem; }
 </style>
 {% endblock %}
 
@@ -263,21 +286,21 @@
                                 <button type="submit" class="btn btn-warning flex-grow-1">
                                     <i class="bi bi-save"></i> {% trans "Сохранить изменения" %}
                                 </button>
-                            {% else %}
-                                <button type="submit" name="save_draft" value="1" class="btn {% if editing %}btn-warning{% else %}btn-secondary{% endif %} flex-grow-1 w-50">
-                                    {% if editing %}
-                                        <i class="bi bi-save"></i> {% trans "Сохранить изменения" %}
-                                    {% else %}
-                                        <i class="bi bi-file-earmark"></i> {% trans "Создать черновик" %}
-                                    {% endif %}
+                            {% elif editing %}
+                                <button type="submit" name="save_draft" value="1" class="btn btn-warning flex-grow-1">
+                                    <i class="bi bi-save"></i> {% trans "Сохранить изменения" %}
                                 </button>
-                                <button type="submit" class="btn btn-success flex-grow-1 w-50">
-                                    <i class="bi bi-send"></i> {% trans "Подать заявку" %}
+                            {% else %}
+                                <button type="submit" name="save_draft" value="1" class="btn btn-secondary flex-grow-1 w-50">
+                                    <i class="bi bi-file-earmark"></i> {% trans "Создать черновик" %}
+                                </button>
+                                <button type="button" id="btnClearRequestForm" class="btn btn-danger flex-grow-1 w-50">
+                                    {% trans "Отменить" %}
                                 </button>
                             {% endif %}
                         </div>
                         {% if editing %}
-                        <a href="{% url 'website:transport_requests' %}" class="btn btn-danger w-100 mt-2">
+                        <a href="{% url 'website:transport_requests' %}" class="btn btn-outline-secondary w-100 mt-2">
                             {% trans "Отмена" %}
                         </a>
                         {% endif %}
@@ -285,11 +308,6 @@
                 </div>
             </div>
 
-            {% if not editing %}
-            <p class="text-muted small mt-3 mb-0">
-                {% trans "Документы — в карточке заявки: нажмите на автомобиль и выберите тип документа в меню." %}
-            </p>
-            {% endif %}
         </div>
 
         <!-- Список заявок -->
@@ -359,7 +377,11 @@
                                             {% for doc in slot.docs %}
                                             <div class="px-3 pb-1 d-flex align-items-center gap-1">
                                                 {% if doc.is_generated %}<i class="bi bi-magic doc-gen-icon" title="{% trans 'Сгенерирован системой' %}"></i>{% endif %}
-                                                <a class="doc-file-link text-truncate" href="{{ doc.file.url }}" target="_blank" rel="noopener" title="{{ doc.filename }}">{{ doc.filename }}</a>
+                                                <button type="button" class="btn btn-link doc-file-link text-truncate p-0 doc-preview-btn"
+                                                        data-url="{{ doc.file.url }}"
+                                                        data-title="{{ slot.label }}"
+                                                        data-filename="{{ doc.filename }}"
+                                                        title="{{ doc.filename }}">{{ doc.filename }}</button>
                                                 {% if req.is_client_editable %}
                                                 <form method="post" action="{% url 'website:transport_request_doc_delete' req.pk doc.pk %}" class="ms-auto"
                                                       onsubmit="return confirm('{% trans 'Удалить файл?' %}');">
@@ -377,13 +399,13 @@
                                 <span class="req-car-doc-icons">
                                     {% for ico in section.present_icons %}
                                     <button type="button"
-                                            class="doc-ico-tile doc-open-btn{% if ico.icon_is_flag %} is-flag{% endif %}"
+                                            class="doc-ico-tile doc-preview-btn{% if ico.icon_is_flag %} is-flag{% endif %}"
                                             style="--doc-ico: {{ ico.icon_color|default:'#868e96' }};"
-                                            title="{{ ico.label }}"
+                                            title="{{ ico.label }}: {{ ico.filename }}"
                                             aria-label="{{ ico.label }}"
-                                            data-doc-type="{{ ico.type }}"
-                                            data-car="{{ section.car.pk }}"
-                                            data-req="{{ req.pk }}">
+                                            data-url="{{ ico.file_url }}"
+                                            data-title="{{ ico.label }}"
+                                            data-filename="{{ ico.filename }}">
                                         {% if ico.icon_data %}
                                         <img class="doc-type-img{% if ico.type == 'PASSPORT' %} doc-passport{% endif %}" src="{{ ico.icon_data }}" alt="">
                                         {% elif ico.icon_img %}
@@ -398,18 +420,30 @@
                             </div>
                             {% endfor %}
                         </div>
-                        {% if req.is_client_editable %}
-                        <div class="d-flex justify-content-end gap-1 mt-2 me-n1">
-                            <a class="btn btn-sm btn-outline-primary" href="{% url 'website:transport_request_edit' req.pk %}" title="{% trans 'Редактировать' %}">
-                                <i class="bi bi-pencil"></i>
-                            </a>
-                            <form method="post" action="{% url 'website:transport_request_delete' req.pk %}" class="d-inline"
-                                  onsubmit="return confirm('{% trans 'Удалить заявку?' %}');">
+                        {% if req.status == 'DRAFT' or req.is_client_editable %}
+                        <div class="req-card-actions mt-2">
+                            {% if req.status == 'DRAFT' %}
+                            <form method="post" action="{% url 'website:transport_request_submit' req.pk %}" class="req-submit-form">
                                 {% csrf_token %}
-                                <button type="submit" class="btn btn-sm btn-outline-danger" title="{% trans 'Удалить' %}">
-                                    <i class="bi bi-trash"></i>
+                                <button type="submit" class="btn btn-success req-submit-btn">
+                                    <i class="bi bi-send"></i> {% trans "Подать заявку" %}
                                 </button>
                             </form>
+                            {% endif %}
+                            {% if req.is_client_editable %}
+                            <div class="req-card-edit-btns">
+                                <a class="btn btn-sm btn-outline-primary" href="{% url 'website:transport_request_edit' req.pk %}" title="{% trans 'Редактировать' %}">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                <form method="post" action="{% url 'website:transport_request_delete' req.pk %}" class="d-inline"
+                                      onsubmit="return confirm('{% trans 'Удалить заявку?' %}');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="{% trans 'Удалить' %}">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                            {% endif %}
                         </div>
                         {% endif %}
                     </div>
@@ -431,6 +465,34 @@
 </div>
 
 {% if transport_requests %}
+<!-- Просмотр загруженного / сгенерированного файла -->
+<div class="modal fade" id="docPreviewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title" id="docPreviewTitle">{% trans "Документ" %}</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <iframe class="doc-preview-frame" title="{% trans 'Просмотр документа' %}"></iframe>
+        <img class="doc-preview-img d-none" alt="">
+        <div class="doc-preview-fallback">
+          <p class="text-muted mb-2">{% trans "Предпросмотр недоступен для этого файла." %}</p>
+          <a class="btn btn-sm btn-primary doc-preview-download" href="#" download>
+            <i class="bi bi-download"></i> {% trans "Скачать" %}
+          </a>
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <a class="btn btn-sm btn-outline-primary doc-preview-download" href="#" download>
+          <i class="bi bi-download"></i> {% trans "Скачать" %}
+        </a>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{% trans "Закрыть" %}</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ============ Модальные окна документов пакета ============ -->
 
 {% url 'website:transport_request_doc_action' transport_requests.0.pk as doc_action_url %}
@@ -769,6 +831,34 @@
 {% block extra_js %}
 <script>
 (function () {
+    var clearBtn = document.getElementById("btnClearRequestForm");
+    var form = document.getElementById("requestForm");
+    if (!clearBtn || !form) return;
+    clearBtn.addEventListener("click", function () {
+        form.querySelectorAll("input[type='text'], input[type='tel'], input[type='email'], input[type='date'], input[type='number'], input[type='hidden']:not([name='csrfmiddlewaretoken']), textarea").forEach(function (el) {
+            if (el.id === "saveDraftInput" || el.id === "openDocInput") {
+                el.value = "";
+                if (el.id === "saveDraftInput") el.disabled = true;
+                return;
+            }
+            el.value = "";
+        });
+        form.querySelectorAll("input[type='checkbox'], input[type='radio']").forEach(function (el) {
+            el.checked = false;
+        });
+        form.querySelectorAll("select").forEach(function (el) {
+            el.selectedIndex = 0;
+        });
+        form.querySelectorAll(".is-invalid, .text-danger.small").forEach(function (el) {
+            el.classList.remove("is-invalid");
+        });
+        form.querySelectorAll(".alert-danger").forEach(function (el) {
+            el.remove();
+        });
+    });
+})();
+
+(function () {
     // Перевозчики из предыдущих заявок клиента: [{name, eori}, ...]
     var knownCarriers = {{ known_carriers_json|safe }};
     var nameInput = document.getElementById("id_carrier_name");
@@ -813,10 +903,104 @@
     });
 })();
 
-// ===== Документы: выпадающее меню у авто в карточке =====
+// ===== Документы: просмотр файла и меню добавления =====
 (function () {
     var PKG_BY_REQ = {{ package_data_by_request_json|default:"{}"|safe }};
     var ACTION_URLS = {{ doc_action_urls_json|default:"{}"|safe }};
+
+    function isImageName(name) {
+        return /\.(jpe?g|png|gif|webp)$/i.test(name || "");
+    }
+
+    var previewObjectUrl = null;
+
+    function revokePreviewObjectUrl() {
+        if (previewObjectUrl) {
+            URL.revokeObjectURL(previewObjectUrl);
+            previewObjectUrl = null;
+        }
+    }
+
+    function showPreviewParts(modalEl, mode) {
+        var frame = modalEl.querySelector(".doc-preview-frame");
+        var img = modalEl.querySelector(".doc-preview-img");
+        var fallback = modalEl.querySelector(".doc-preview-fallback");
+        frame.classList.toggle("d-none", mode !== "pdf");
+        img.classList.toggle("d-none", mode !== "image");
+        fallback.style.display = mode === "fallback" ? "block" : "none";
+        if (mode !== "pdf") frame.removeAttribute("src");
+        if (mode !== "image") img.removeAttribute("src");
+    }
+
+    function openDocPreview(url, title, filename) {
+        var modalEl = document.getElementById("docPreviewModal");
+        if (!modalEl || !url) return;
+        var frame = modalEl.querySelector(".doc-preview-frame");
+        var img = modalEl.querySelector(".doc-preview-img");
+        var titleEl = modalEl.querySelector("#docPreviewTitle");
+        var downloads = modalEl.querySelectorAll(".doc-preview-download");
+        var name = filename || url.split("/").pop() || "";
+        if (titleEl) titleEl.textContent = title || name || "{% trans 'Документ' %}";
+        downloads.forEach(function (a) {
+            a.href = url;
+            a.setAttribute("download", name);
+        });
+        document.querySelectorAll(".req-car-dd .dropdown-toggle.show").forEach(function (toggle) {
+            bootstrap.Dropdown.getOrCreateInstance(toggle).hide();
+        });
+        revokePreviewObjectUrl();
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+
+        if (isImageName(name) || isImageName(url)) {
+            showPreviewParts(modalEl, "image");
+            img.src = url;
+            img.alt = name;
+            return;
+        }
+
+        if (!(/\.pdf($|\?)/i.test(name) || /\.pdf($|\?)/i.test(url))) {
+            showPreviewParts(modalEl, "fallback");
+            return;
+        }
+
+        // PDF через blob: иначе X-Frame-Options: DENY блокирует iframe /media/...
+        showPreviewParts(modalEl, "pdf");
+        frame.removeAttribute("src");
+        fetch(url, { credentials: "same-origin" })
+            .then(function (resp) {
+                if (!resp.ok) throw new Error("HTTP " + resp.status);
+                return resp.blob();
+            })
+            .then(function (blob) {
+                var pdfBlob = blob.type === "application/pdf"
+                    ? blob
+                    : new Blob([blob], { type: "application/pdf" });
+                previewObjectUrl = URL.createObjectURL(pdfBlob);
+                frame.src = previewObjectUrl;
+            })
+            .catch(function () {
+                showPreviewParts(modalEl, "fallback");
+            });
+    }
+
+    var previewModal = document.getElementById("docPreviewModal");
+    if (previewModal) {
+        previewModal.addEventListener("hidden.bs.modal", function () {
+            var frame = previewModal.querySelector(".doc-preview-frame");
+            var img = previewModal.querySelector(".doc-preview-img");
+            revokePreviewObjectUrl();
+            if (frame) frame.removeAttribute("src");
+            if (img) img.removeAttribute("src");
+        });
+    }
+
+    document.querySelectorAll(".doc-preview-btn").forEach(function (btn) {
+        btn.addEventListener("click", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            openDocPreview(btn.dataset.url, btn.dataset.title, btn.dataset.filename);
+        });
+    });
 
     function openDoc(reqId, docType, carId) {
         var modal = document.getElementById("docModal-" + docType);
@@ -837,7 +1021,6 @@
             }
             input.value = value;
         });
-        // Закрыть dropdown перед модалкой
         document.querySelectorAll(".req-car-dd .dropdown-toggle.show").forEach(function (toggle) {
             bootstrap.Dropdown.getOrCreateInstance(toggle).hide();
         });
