@@ -702,6 +702,23 @@ class DeclarationRequest(models.Model):
         super().save(*args, **kwargs)
 
 
+# Типы документов пакета для оформления автовоза (Беларусь).
+# Порядок = порядок кнопок в кабинете клиента.
+TRANSPORT_DOCUMENT_TYPES = [
+    ("PASSPORT", "Паспорт"),
+    ("INVOICE", "Инвойс"),
+    ("SIGNATURE", "Подпись"),
+    ("PAYMENT_ORDER", "Платёжка"),
+    ("LETTER_USA", "Письмо USA"),
+    ("OBLIGATION", "Обязательство клиента"),
+    ("CONTRACT", "Договор на перевозку"),
+    ("OTHER", "Остальное"),
+]
+
+# Типы, которые нельзя сгенерировать — только реальные файлы.
+TRANSPORT_UPLOAD_ONLY_TYPES = {"PASSPORT", "SIGNATURE", "OTHER"}
+
+
 class TransportRequest(models.Model):
     """Заявка клиента с данными автовоза, который заберёт его автомобили.
 
@@ -788,3 +805,68 @@ class TransportRequest(models.Model):
             with db_transaction.atomic():
                 self.number = next_document_number(TransportRequest, f"TR-{date_str}", pad=3)
         super().save(*args, **kwargs)
+
+
+class TransportDocumentPackage(models.Model):
+    """Данные пакета документов на авто в заявке (оформление на Беларусь).
+
+    Хранит введённые клиентом данные покупателя (из паспорта — адрес вводится
+    вручную, т.к. рукописный адрес плохо читается машинно) и параметры
+    генерации документов (номера/даты/суммы/реквизиты) в ``data``.
+    """
+
+    request = models.ForeignKey(
+        TransportRequest, on_delete=models.CASCADE, related_name="doc_packages", verbose_name="Заявка"
+    )
+    car = models.ForeignKey(
+        Car, on_delete=models.CASCADE, related_name="transport_doc_packages", verbose_name="Автомобиль"
+    )
+    data = models.JSONField(default=dict, blank=True, verbose_name="Данные пакета")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
+
+    class Meta:
+        verbose_name = "Пакет документов автовоза"
+        verbose_name_plural = "Пакеты документов автовоза"
+        constraints = [
+            models.UniqueConstraint(fields=["request", "car"], name="uniq_docpackage_request_car"),
+        ]
+
+    def __str__(self):
+        return f"Пакет документов — {self.request.number} / {self.car.vin}"
+
+
+class TransportRequestDocument(models.Model):
+    """Файл документа пакета (загруженный клиентом или сгенерированный)."""
+
+    request = models.ForeignKey(
+        TransportRequest, on_delete=models.CASCADE, related_name="documents", verbose_name="Заявка"
+    )
+    car = models.ForeignKey(
+        Car, on_delete=models.CASCADE, related_name="transport_documents", verbose_name="Автомобиль"
+    )
+    doc_type = models.CharField(
+        max_length=20, choices=TRANSPORT_DOCUMENT_TYPES, default="OTHER", verbose_name="Тип документа"
+    )
+    file = models.FileField(
+        upload_to="transport_docs/%Y/%m/",
+        validators=[FileExtensionValidator(CLIENT_DOCUMENT_ALLOWED_EXTENSIONS)],
+        verbose_name="Файл",
+    )
+    is_generated = models.BooleanField(default=False, verbose_name="Сгенерирован системой")
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Загрузил")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата добавления")
+
+    class Meta:
+        verbose_name = "Документ заявки на автовоз"
+        verbose_name_plural = "Документы заявок на автовоз"
+        ordering = ["doc_type", "-created_at"]
+        indexes = [
+            models.Index(fields=["request", "car"], name="transdoc_request_car_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.get_doc_type_display()} — {self.request.number} / {self.car.vin}"
+
+    @property
+    def filename(self):
+        return os.path.basename(self.file.name)

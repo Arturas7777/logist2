@@ -46,6 +46,16 @@ urlpatterns = [
         views_website.transport_request_delete,
         name="transport_request_delete",
     ),
+    path(
+        "transport-requests/<int:pk>/docs/",
+        views_website.transport_request_doc_action,
+        name="transport_request_doc_action",
+    ),
+    path(
+        "transport-requests/<int:pk>/docs/<int:doc_id>/delete/",
+        views_website.transport_request_doc_delete,
+        name="transport_request_doc_delete",
+    ),
     # ========== Скачивание фотографий ==========
     path("photo/car/<int:photo_id>/download/", views_website.download_car_photo, name="download_car_photo"),
     path(

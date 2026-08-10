@@ -1,5 +1,5 @@
 {% extends "website/base.html" %}
-{% load i18n %}
+{% load i18n static %}
 
 {% block title %}{% trans "Заявки на автовоз" %} - {{ client.name }}{% endblock %}
 
@@ -17,6 +17,8 @@
     .status-ACCEPTED { background:#d4edda; color:#155724; }
     .status-IN_PROGRESS { background:#d1ecf1; color:#0c5460; }
     .status-COMPLETED { background:#e2d9f3; color:#4b2e83; }
+    .request-card-DRAFT { background:#e9ecef; }
+    .request-card-editing { background:#fff3cd; }
     .empty-state { text-align:center; padding: 2.5rem 1rem; color:#7b8794; }
     .empty-state i { font-size: 2.5rem; opacity:.35; }
     .cars-checkboxes {
@@ -47,6 +49,97 @@
     .carrier-dropdown .item { padding: .45rem .75rem; cursor: pointer; }
     .carrier-dropdown .item:hover { background: #f1f3f5; }
     .carrier-dropdown .item .eori { color: #6c757d; font-size: .8rem; }
+    /* Пакет документов */
+    .doc-slot { display: flex; align-items: flex-start; gap: .6rem; padding: .45rem 0; border-bottom: 1px dashed #e9ecef; }
+    .doc-slot:last-child { border-bottom: 0; }
+    .doc-slot .doc-open-btn { min-width: 12.5rem; text-align: left; }
+    .doc-files { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; min-height: 2rem; }
+    .doc-chip { display: inline-flex; align-items: center; gap: .3rem; background: #f1f3f5; border-radius: 20px;
+                padding: .15rem .3rem .15rem .65rem; font-size: .78rem; max-width: 100%; }
+    .doc-chip a { text-decoration: none; max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .doc-chip form { display: inline; margin: 0; }
+    .doc-chip .btn-del { border: 0; background: none; color: #dc3545; padding: 0 .3rem; line-height: 1; }
+    .doc-gen-icon { color: #0dcaf0; font-size: .85rem; flex-shrink: 0; }
+    .req-car-row {
+        display: flex; align-items: center; gap: .45rem;
+        flex-wrap: nowrap; margin: .2rem 0;
+    }
+    .req-car-dd .dropdown-toggle {
+        display: inline-flex; align-items: center; gap: .45rem;
+        width: 26.5rem; height: 2.15rem;
+        border: 1px solid #dee2e6; background: #fff; border-radius: 8px;
+        padding: 0 .6rem; text-align: left;
+    }
+    .req-car-dd .dropdown-toggle:hover,
+    .req-car-dd .dropdown-toggle.show { border-color: #0d6efd; background: #e7f1ff; }
+    .req-car-name {
+        display: inline-block; width: 13.5rem;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-weight: 600; font-size: .875rem; line-height: 1.2;
+    }
+    .req-car-vin {
+        display: inline-block; width: 10.8rem;
+        font-size: .95rem; line-height: 1.2; margin: 0 !important;
+    }
+    .req-car-dd .dropdown-menu { min-width: 16rem; max-width: 22rem; }
+    .req-car-dd .dropdown-item { white-space: normal; }
+    .req-car-dd .doc-file-link { font-size: .75rem; color: #6c757d; text-decoration: none; }
+    .req-car-dd .doc-file-link:hover { text-decoration: underline; }
+    /* Иконки в меню — компактные */
+    .req-car-dd .dropdown-item .doc-type-ico,
+    .req-car-dd .dropdown-item-text .doc-type-ico {
+        font-size: 1.15rem; line-height: 1; margin-right: .4rem; vertical-align: -0.1em;
+    }
+    .req-car-dd .dropdown-item .doc-type-img,
+    .req-car-dd .dropdown-item-text .doc-type-img {
+        width: 1.15rem; height: 1.15rem; object-fit: contain;
+        margin-right: .4rem; vertical-align: -0.15em;
+    }
+    .req-car-dd .dropdown-item .doc-type-img.is-flag,
+    .req-car-dd .dropdown-item-text .doc-type-img.is-flag {
+        width: 1.35rem; height: .72rem; object-fit: cover; border-radius: 2px;
+        box-shadow: 0 0 0 1px rgba(0,0,0,.12); vertical-align: 0;
+    }
+    /* Иконки справа от кнопки авто — плитки высотой как поле */
+    .req-car-doc-icons {
+        display: inline-flex; align-items: center; gap: .3rem;
+        height: 2.15rem; flex-shrink: 0;
+    }
+    .req-car-doc-icons .doc-ico-tile {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 2.15rem; height: 2.15rem; padding: 0; border: 0;
+        border-radius: .45rem;
+        background: color-mix(in srgb, var(--doc-ico, #868e96) 14%, #fff);
+        box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--doc-ico, #868e96) 28%, transparent);
+        cursor: pointer; transition: background .15s ease, transform .12s ease;
+    }
+    .req-car-doc-icons .doc-ico-tile:hover {
+        background: color-mix(in srgb, var(--doc-ico, #868e96) 26%, #fff);
+        transform: translateY(-1px);
+    }
+    .req-car-doc-icons .doc-ico-tile:focus-visible {
+        outline: 2px solid color-mix(in srgb, var(--doc-ico, #868e96) 55%, #fff);
+        outline-offset: 1px;
+    }
+    .req-car-doc-icons .doc-ico-tile.is-flag {
+        background: #f8f9fa;
+        box-shadow: inset 0 0 0 1px rgba(0,0,0,.1);
+    }
+    .req-car-doc-icons .doc-type-ico {
+        font-size: 1.2rem; line-height: 1; color: var(--doc-ico);
+    }
+    .req-car-doc-icons .doc-type-img {
+        width: 1.45rem; height: 1.45rem; object-fit: contain;
+    }
+    /* паспорт: чуть меньше прежних 1.65, силуэт читается за счёт SVG */
+    .req-car-doc-icons .doc-type-img.doc-passport {
+        width: 1.48rem; height: 1.48rem;
+    }
+    .req-car-doc-icons .is-flag .doc-type-img {
+        width: 1.45rem; height: .78rem; aspect-ratio: 19 / 10;
+        object-fit: cover; border-radius: 2px;
+        box-shadow: 0 0 0 1px rgba(0,0,0,.1);
+    }
 </style>
 {% endblock %}
 
@@ -78,7 +171,7 @@
             <div class="card border-0 shadow-sm">
                 <div class="card-header bg-white border-0 pt-3">
                     {% if editing %}
-                    <h5 class="mb-0"><i class="bi bi-pencil-square text-warning"></i> {% trans "Редактирование заявки" %} {{ editing.number }}</h5>
+                    <h5 class="mb-0"><i class="bi bi-pencil-square text-warning"></i> {% trans "Редактирование заявки" %}</h5>
                     <p class="text-muted small mb-0">
                         {% trans "Статус" %}: {{ editing.get_status_display }}.
                         {% if editing.status == 'ACCEPTED' %}
@@ -91,8 +184,10 @@
                     {% endif %}
                 </div>
                 <div class="card-body">
-                    <form method="post">
+                    <form method="post" id="requestForm">
                         {% csrf_token %}
+                        <input type="hidden" name="open_doc" id="openDocInput" value="">
+                        <input type="hidden" name="save_draft" id="saveDraftInput" value="" disabled>
                         {% if form.non_field_errors %}
                         <div class="alert alert-danger">{{ form.non_field_errors }}</div>
                         {% endif %}
@@ -189,81 +284,486 @@
                     </form>
                 </div>
             </div>
+
+            {% if not editing %}
+            <p class="text-muted small mt-3 mb-0">
+                {% trans "Документы — в карточке заявки: нажмите на автомобиль и выберите тип документа в меню." %}
+            </p>
+            {% endif %}
         </div>
 
         <!-- Список заявок -->
         <div class="col-lg-7">
             <h5 class="mb-3"><i class="bi bi-list-check text-success"></i> {% trans "Мои заявки" %}</h5>
-            <div class="card border-0 shadow-sm">
-                <div class="card-body p-0">
-                    {% if transport_requests %}
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0 align-middle">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>{% trans "Номер" %}</th>
-                                    <th>{% trans "Автовоз" %}</th>
-                                    <th>{% trans "Авто" %}</th>
-                                    <th>{% trans "Статус" %}</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for req in transport_requests %}
-                                <tr {% if editing and editing.pk == req.pk %}class="table-warning"{% endif %}>
-                                    <td>
-                                        <div class="fw-semibold small">{{ req.number }}</div>
-                                        <div class="text-muted small">{{ req.created_at|date:"d.m.Y H:i" }}</div>
-                                    </td>
-                                    <td class="small">
-                                        {% if req.carrier_name %}
-                                        <div class="fw-semibold">{{ req.carrier_name }}{% if req.carrier_eori %} <span class="text-muted">({{ req.carrier_eori }})</span>{% endif %}</div>
-                                        {% endif %}
-                                        <div>{{ req.truck_number }}{% if req.trailer_number %} / {{ req.trailer_number }}{% endif %}</div>
-                                        <div class="text-muted">{{ req.driver_name }}{% if req.driver_phone %} · {{ req.driver_phone }}{% endif %}</div>
-                                        {% if req.border_crossing %}<div class="text-muted"><i class="bi bi-signpost"></i> {{ req.border_crossing }}</div>{% endif %}
-                                    </td>
-                                    <td class="small">
-                                        {% for car in req.cars.all %}
-                                        <code class="small d-block">{{ car.vin }}</code>
-                                        {% endfor %}
-                                    </td>
-                                    <td>
-                                        <span class="status-badge status-{{ req.status }}">{{ req.get_status_display }}</span>
-                                        {% if req.staff_comment %}
-                                            <div class="text-muted small mt-1">{{ req.staff_comment }}</div>
-                                        {% endif %}
-                                    </td>
-                                    <td class="text-end text-nowrap">
-                                        {% if req.is_client_editable %}
-                                        <a class="btn btn-sm btn-outline-primary" href="{% url 'website:transport_request_edit' req.pk %}" title="{% trans 'Редактировать' %}">
-                                            <i class="bi bi-pencil"></i>
-                                        </a>
-                                        <form method="post" action="{% url 'website:transport_request_delete' req.pk %}" class="d-inline"
-                                              onsubmit="return confirm('{% trans 'Удалить заявку' %} {{ req.number }}?');">
-                                            {% csrf_token %}
-                                            <button type="submit" class="btn btn-sm btn-outline-danger" title="{% trans 'Удалить' %}">
-                                                <i class="bi bi-trash"></i>
+            {% if transport_requests %}
+            <div class="d-flex flex-column gap-2">
+                {% for req in transport_requests %}
+                <div class="card border-0 shadow-sm request-card-{{ req.status }}{% if editing and editing.pk == req.pk %} request-card-editing{% endif %}"
+                     id="req-{{ req.pk }}"
+                     data-req-id="{{ req.pk }}"
+                     data-carrier-name="{{ req.carrier_name }}">
+                    <div class="card-body py-2 ps-3 pe-2">
+                        <div class="d-flex justify-content-between align-items-start gap-2">
+                            <div class="small min-w-0">
+                                {% if req.carrier_name %}<div class="fw-semibold">{{ req.carrier_name }}</div>{% endif %}
+                                <div>{{ req.truck_number }}{% if req.trailer_number %} / {{ req.trailer_number }}{% endif %}{% if req.driver_name %} · {{ req.driver_name }}{% endif %}</div>
+                                {% if req.border_crossing %}<div class="text-muted"><i class="bi bi-signpost"></i> {{ req.border_crossing }}</div>{% endif %}
+                            </div>
+                            <div class="text-end text-nowrap flex-shrink-0 me-n1">
+                                <span class="status-badge status-{{ req.status }}">{{ req.get_status_display }}</span>
+                                {% if req.staff_comment %}
+                                    <div class="text-muted small mt-1 text-wrap" style="max-width: 12rem;">{{ req.staff_comment }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="d-flex flex-column mt-2">
+                            {% for section in req.doc_sections %}
+                            <div class="req-car-row" data-req-car="{{ req.pk }}" data-car-id="{{ section.car.pk }}">
+                                <div class="dropdown req-car-dd">
+                                    <button type="button" class="btn btn-sm dropdown-toggle"
+                                            data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+                                        <span class="req-car-name" title="{{ section.car.year }} {{ section.car.brand }}">{{ section.car.year }} {{ section.car.brand }}</span>
+                                        <code class="req-car-vin">{{ section.car.vin }}</code>
+                                    </button>
+                                    <ul class="dropdown-menu shadow">
+                                        <li><h6 class="dropdown-header">{% trans "Документы" %}</h6></li>
+                                        {% for slot in section.slots %}
+                                        <li>
+                                            {% if req.is_client_editable %}
+                                            <button type="button" class="dropdown-item doc-open-btn"
+                                                    data-doc-type="{{ slot.type }}"
+                                                    data-car="{{ section.car.pk }}"
+                                                    data-req="{{ req.pk }}">
+                                                {% if slot.icon_data %}
+                                                <img class="doc-type-img{% if slot.type == 'PASSPORT' %} doc-passport{% endif %}" src="{{ slot.icon_data }}" alt="">
+                                                {% elif slot.icon_img %}
+                                                <img class="doc-type-img{% if slot.icon_is_flag %} is-flag{% endif %}" src="{% static slot.icon_img %}" alt="">
+                                                {% else %}
+                                                <i class="bi {{ slot.icon }} doc-type-ico" style="color: {{ slot.icon_color }};"></i>
+                                                {% endif %}
+                                                {{ slot.label }}
+                                                {% if slot.docs %}<i class="bi bi-check2 ms-1 text-success"></i>{% endif %}
                                             </button>
-                                        </form>
+                                            {% else %}
+                                            <span class="dropdown-item-text">
+                                                {% if slot.icon_data %}
+                                                <img class="doc-type-img{% if slot.type == 'PASSPORT' %} doc-passport{% endif %}" src="{{ slot.icon_data }}" alt="">
+                                                {% elif slot.icon_img %}
+                                                <img class="doc-type-img{% if slot.icon_is_flag %} is-flag{% endif %}" src="{% static slot.icon_img %}" alt="">
+                                                {% else %}
+                                                <i class="bi {{ slot.icon }} doc-type-ico" style="color: {{ slot.icon_color }};"></i>
+                                                {% endif %}
+                                                {{ slot.label }}
+                                            </span>
+                                            {% endif %}
+                                            {% for doc in slot.docs %}
+                                            <div class="px-3 pb-1 d-flex align-items-center gap-1">
+                                                {% if doc.is_generated %}<i class="bi bi-magic doc-gen-icon" title="{% trans 'Сгенерирован системой' %}"></i>{% endif %}
+                                                <a class="doc-file-link text-truncate" href="{{ doc.file.url }}" target="_blank" rel="noopener" title="{{ doc.filename }}">{{ doc.filename }}</a>
+                                                {% if req.is_client_editable %}
+                                                <form method="post" action="{% url 'website:transport_request_doc_delete' req.pk doc.pk %}" class="ms-auto"
+                                                      onsubmit="return confirm('{% trans 'Удалить файл?' %}');">
+                                                    {% csrf_token %}
+                                                    <button type="submit" class="btn btn-link btn-sm text-danger p-0" title="{% trans 'Удалить' %}">&times;</button>
+                                                </form>
+                                                {% endif %}
+                                            </div>
+                                            {% endfor %}
+                                        </li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                                {% if section.present_icons %}
+                                <span class="req-car-doc-icons">
+                                    {% for ico in section.present_icons %}
+                                    <button type="button"
+                                            class="doc-ico-tile doc-open-btn{% if ico.icon_is_flag %} is-flag{% endif %}"
+                                            style="--doc-ico: {{ ico.icon_color|default:'#868e96' }};"
+                                            title="{{ ico.label }}"
+                                            aria-label="{{ ico.label }}"
+                                            data-doc-type="{{ ico.type }}"
+                                            data-car="{{ section.car.pk }}"
+                                            data-req="{{ req.pk }}">
+                                        {% if ico.icon_data %}
+                                        <img class="doc-type-img{% if ico.type == 'PASSPORT' %} doc-passport{% endif %}" src="{{ ico.icon_data }}" alt="">
+                                        {% elif ico.icon_img %}
+                                        <img class="doc-type-img" src="{% static ico.icon_img %}" alt="">
+                                        {% else %}
+                                        <i class="bi {{ ico.icon }} doc-type-ico" aria-hidden="true"></i>
                                         {% endif %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                                    </button>
+                                    {% endfor %}
+                                </span>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% if req.is_client_editable %}
+                        <div class="d-flex justify-content-end gap-1 mt-2 me-n1">
+                            <a class="btn btn-sm btn-outline-primary" href="{% url 'website:transport_request_edit' req.pk %}" title="{% trans 'Редактировать' %}">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <form method="post" action="{% url 'website:transport_request_delete' req.pk %}" class="d-inline"
+                                  onsubmit="return confirm('{% trans 'Удалить заявку?' %}');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="{% trans 'Удалить' %}">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </div>
+                        {% endif %}
                     </div>
-                    {% else %}
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
                     <div class="empty-state">
                         <i class="bi bi-truck"></i>
                         <p class="mt-2 mb-0">{% trans "Заявок пока нет." %}</p>
                     </div>
-                    {% endif %}
                 </div>
             </div>
+            {% endif %}
         </div>
     </div>
 </div>
+
+{% if transport_requests %}
+<!-- ============ Модальные окна документов пакета ============ -->
+
+{% url 'website:transport_request_doc_action' transport_requests.0.pk as doc_action_url %}
+
+<!-- Паспорт -->
+<div class="modal fade" id="docModal-PASSPORT" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form method="post" action="{{ doc_action_url }}" enctype="multipart/form-data">
+        {% csrf_token %}
+        <input type="hidden" name="doc_type" value="PASSPORT">
+        <input type="hidden" name="car" value="" class="doc-car-input">
+        <div class="modal-header">
+          <h6 class="modal-title"><i class="bi bi-person-vcard"></i> {% trans "Паспорт покупателя" %}</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">{% trans "Файл паспорта (PDF/JPG/PNG)" %}</label>
+            <input type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm">
+            <div class="form-text">{% trans "Паспорт нельзя сгенерировать — нужен реальный документ. После загрузки номер, ФИО латиницей и даты распознаются автоматически." %}</div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">{% trans "ФИО по-русски (введите вручную)" %} *</label>
+            <input type="text" name="buyer_name_ru" class="form-control form-control-sm pkg-field" placeholder="Зизико Владимир Константинович">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">{% trans "Адрес проживания по-русски (введите вручную)" %} *</label>
+            <textarea name="buyer_address_ru" rows="2" class="form-control form-control-sm pkg-field"
+                      placeholder="д. Большая Лысица, Несвижского р-на, ул. Гая 5"></textarea>
+            <div class="form-text">{% trans "Рукописный адрес в паспорте плохо распознаётся — введите его кириллицей, латинский вариант подставится автоматически." %}</div>
+          </div>
+          <div class="text-muted small mb-1"><i class="bi bi-magic"></i> {% trans "Поля ниже распознаются с фото паспорта — проверьте и поправьте при необходимости." %}</div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-6">
+              <label class="form-label small">{% trans "ФИО латиницей (как в паспорте)" %}</label>
+              <input type="text" name="buyer_name" class="form-control form-control-sm pkg-field" placeholder="ZIZIKA ULADZIMIR">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">{% trans "Номер паспорта" %}</label>
+              <input type="text" name="buyer_passport_number" class="form-control form-control-sm pkg-field" placeholder="MC3902087">
+            </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-6">
+              <label class="form-label small">{% trans "Дата выдачи" %}</label>
+              <input type="date" name="buyer_passport_issue_date" class="form-control form-control-sm pkg-field">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">{% trans "Дата рождения" %}</label>
+              <input type="date" name="buyer_birth_date" class="form-control form-control-sm pkg-field">
+            </div>
+          </div>
+          <div class="mb-1">
+            <label class="form-label small">{% trans "Адрес латиницей (для инвойса и платёжки)" %}</label>
+            <textarea name="buyer_address" rows="2" class="form-control form-control-sm pkg-field"
+                      placeholder="ul. Gaya 5, d.Bolshaya lysitsa, Nesvizhskiy r-on, Belarus"></textarea>
+            <div class="form-text">{% trans "Заполняется автоматически из адреса кириллицей; чтобы транслитерировать заново — очистите поле и сохраните." %}</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{% trans "Закрыть" %}</button>
+          <button type="submit" name="action" value="save" class="btn btn-sm btn-primary"><i class="bi bi-save"></i> {% trans "Сохранить" %}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Инвойс -->
+<div class="modal fade" id="docModal-INVOICE" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ doc_action_url }}" enctype="multipart/form-data">
+        {% csrf_token %}
+        <input type="hidden" name="doc_type" value="INVOICE">
+        <input type="hidden" name="car" value="" class="doc-car-input">
+        <div class="modal-header">
+          <h6 class="modal-title"><i class="bi bi-receipt"></i> {% trans "Инвойс" %}</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">{% trans "Файл инвойса (если уже есть)" %}</label>
+            <input type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm">
+          </div>
+          <div class="row g-2 mb-1">
+            <div class="col-4">
+              <label class="form-label small">{% trans "Номер" %}</label>
+              <input type="text" name="invoice_number" class="form-control form-control-sm pkg-field" placeholder="{% trans 'авто' %}">
+            </div>
+            <div class="col-4">
+              <label class="form-label small">{% trans "Дата" %}</label>
+              <input type="date" name="invoice_date" class="form-control form-control-sm pkg-field">
+            </div>
+            <div class="col-4">
+              <label class="form-label small">{% trans "Сумма, USD" %}</label>
+              <input type="text" name="invoice_amount" class="form-control form-control-sm pkg-field" placeholder="2850">
+            </div>
+          </div>
+          <div class="form-text">
+            {% trans "Номер, дата и сумма нужны для платёжки — заполните их и при загрузке готового инвойса. Для генерации данные покупателя берутся из окна «Паспорт». Дата не может быть выходным или праздником — при необходимости сдвинется на рабочий день." %}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{% trans "Закрыть" %}</button>
+          <button type="submit" name="action" value="save" class="btn btn-sm btn-primary"><i class="bi bi-save"></i> {% trans "Сохранить" %}</button>
+          <button type="submit" name="action" value="generate" class="btn btn-sm btn-success"><i class="bi bi-magic"></i> {% trans "Сгенерировать" %}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Подпись -->
+<div class="modal fade" id="docModal-SIGNATURE" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ doc_action_url }}" enctype="multipart/form-data">
+        {% csrf_token %}
+        <input type="hidden" name="doc_type" value="SIGNATURE">
+        <input type="hidden" name="car" value="" class="doc-car-input">
+        <div class="modal-header">
+          <h6 class="modal-title"><i class="bi bi-pen"></i> {% trans "Подпись покупателя" %}</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-1">
+            <label class="form-label small fw-semibold">{% trans "Файл подписи (JPG/PNG)" %}</label>
+            <input type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm">
+            <div class="form-text">
+              {% trans "Подпись нельзя сгенерировать — нужна реальная. Загрузите фото на белом фоне (JPG/PNG): система уберёт фон, сделает штрихи синими «как от ручки», обрежет поля и уменьшит размер. Готовый файл проставится в платёжку и обязательство." %}
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{% trans "Закрыть" %}</button>
+          <button type="submit" name="action" value="save" class="btn btn-sm btn-primary"><i class="bi bi-save"></i> {% trans "Сохранить" %}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Платёжка -->
+<div class="modal fade" id="docModal-PAYMENT_ORDER" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form method="post" action="{{ doc_action_url }}" enctype="multipart/form-data">
+        {% csrf_token %}
+        <input type="hidden" name="doc_type" value="PAYMENT_ORDER">
+        <input type="hidden" name="car" value="" class="doc-car-input">
+        <div class="modal-header">
+          <h6 class="modal-title"><i class="bi bi-cash-stack"></i> {% trans "Платёжка (платёжное поручение)" %}</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">{% trans "Файл платёжки (если уже есть)" %}</label>
+            <input type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm">
+          </div>
+          <div class="form-text">
+            {% trans "Сумма берётся из «Инвойс», данные плательщика — из «Паспорт». Счёт, банк (BTA Bank), номер (ДДММ-N) и дата платёжки (случайный рабочий день в течение месяца после инвойса) подставляются автоматически." %}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{% trans "Закрыть" %}</button>
+          <button type="submit" name="action" value="save" class="btn btn-sm btn-primary"><i class="bi bi-save"></i> {% trans "Сохранить" %}</button>
+          <button type="submit" name="action" value="generate" class="btn btn-sm btn-success"><i class="bi bi-magic"></i> {% trans "Сгенерировать" %}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Письмо USA -->
+<div class="modal fade" id="docModal-LETTER_USA" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ doc_action_url }}" enctype="multipart/form-data">
+        {% csrf_token %}
+        <input type="hidden" name="doc_type" value="LETTER_USA">
+        <input type="hidden" name="car" value="" class="doc-car-input">
+        <div class="modal-header">
+          <h6 class="modal-title"><i class="bi bi-envelope-paper"></i> {% trans "Письмо USA (гарантийное письмо продавца)" %}</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">{% trans "Файл письма (если уже есть)" %}</label>
+            <input type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm">
+          </div>
+          <p class="form-text mb-0">
+            {% trans "Дата письма подбирается автоматически: рабочий день США не раньше чем через 3 недели после инвойса и не позже чем за неделю до генерации." %}
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{% trans "Закрыть" %}</button>
+          <button type="submit" name="action" value="save" class="btn btn-sm btn-primary"><i class="bi bi-save"></i> {% trans "Сохранить" %}</button>
+          <button type="submit" name="action" value="generate" class="btn btn-sm btn-success"><i class="bi bi-magic"></i> {% trans "Сгенерировать" %}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Обязательство клиента -->
+<div class="modal fade" id="docModal-OBLIGATION" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ doc_action_url }}" enctype="multipart/form-data">
+        {% csrf_token %}
+        <input type="hidden" name="doc_type" value="OBLIGATION">
+        <input type="hidden" name="car" value="" class="doc-car-input">
+        <div class="modal-header">
+          <h6 class="modal-title"><i class="bi bi-file-earmark-text"></i> {% trans "Обязательство клиента" %}</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">{% trans "Файл обязательства (если уже есть)" %}</label>
+            <input type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm">
+          </div>
+          <p class="form-text mb-0">
+            {% trans "ФИО, паспорт и адрес берутся из окна «Паспорт» (русские варианты — если заполнены), подпись — из окна «Подпись». Дата подбирается автоматически: рабочий день Беларуси в последние 3 недели до генерации (не раньше инвойса)." %}
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{% trans "Закрыть" %}</button>
+          <button type="submit" name="action" value="save" class="btn btn-sm btn-primary"><i class="bi bi-save"></i> {% trans "Сохранить" %}</button>
+          <button type="submit" name="action" value="generate" class="btn btn-sm btn-success"><i class="bi bi-magic"></i> {% trans "Сгенерировать" %}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Договор на перевозку -->
+<div class="modal fade" id="docModal-CONTRACT" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form method="post" action="{{ doc_action_url }}" enctype="multipart/form-data">
+        {% csrf_token %}
+        <input type="hidden" name="doc_type" value="CONTRACT">
+        <input type="hidden" name="car" value="" class="doc-car-input">
+        <div class="modal-header">
+          <h6 class="modal-title"><i class="bi bi-file-earmark-ruled"></i> {% trans "Договор на перевозку" %}</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">{% trans "Файл договора (если уже есть)" %}</label>
+            <input type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm">
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-3">
+              <label class="form-label small">{% trans "Номер" %}</label>
+              <input type="text" name="contract_number" class="form-control form-control-sm pkg-field" placeholder="{% trans 'авто' %}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small">{% trans "Дата" %}</label>
+              <input type="date" name="contract_date" class="form-control form-control-sm pkg-field">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">{% trans "Перевозчик (компания)" %}</label>
+              <input type="text" name="carrier_company" class="form-control form-control-sm pkg-field" placeholder="MAXER TRANSPORT Sp. z.o.o.">
+            </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-7">
+              <label class="form-label small">{% trans "Адрес перевозчика" %}</label>
+              <textarea name="carrier_address" rows="2" class="form-control form-control-sm pkg-field"
+                        placeholder="ul. Jagiellońska 78, lok. 4.54 A, 03-301&#10;Warszawa, Polska"></textarea>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label small">{% trans "Директор перевозчика" %}</label>
+              <input type="text" name="carrier_director" class="form-control form-control-sm pkg-field" placeholder="Victor Iuzefovici">
+            </div>
+          </div>
+          <div class="row g-2 mb-1">
+            <div class="col-md-4">
+              <label class="form-label small">REGON</label>
+              <input type="text" name="carrier_regon" class="form-control form-control-sm pkg-field">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">NIP</label>
+              <input type="text" name="carrier_nip" class="form-control form-control-sm pkg-field">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">KRS</label>
+              <input type="text" name="carrier_krs" class="form-control form-control-sm pkg-field">
+            </div>
+          </div>
+          <div class="form-text">{% trans "Генерируется двуязычный договор (LT/EN) между перевозчиком и Caromoto. Дата не раньше инвойса и не в выходной." %}</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{% trans "Закрыть" %}</button>
+          <button type="submit" name="action" value="save" class="btn btn-sm btn-primary"><i class="bi bi-save"></i> {% trans "Сохранить" %}</button>
+          <button type="submit" name="action" value="generate" class="btn btn-sm btn-success"><i class="bi bi-magic"></i> {% trans "Сгенерировать" %}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Остальное -->
+<div class="modal fade" id="docModal-OTHER" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ doc_action_url }}" enctype="multipart/form-data">
+        {% csrf_token %}
+        <input type="hidden" name="doc_type" value="OTHER">
+        <input type="hidden" name="car" value="" class="doc-car-input">
+        <div class="modal-header">
+          <h6 class="modal-title"><i class="bi bi-files"></i> {% trans "Остальное" %}</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-1">
+            <label class="form-label small fw-semibold">{% trans "Файлы (PDF/JPG/PNG)" %}</label>
+            <input type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm">
+            <div class="form-text">{% trans "Сюда можно загрузить любые дополнительные документы, в том числе все документы одним файлом." %}</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{% trans "Закрыть" %}</button>
+          <button type="submit" name="action" value="save" class="btn btn-sm btn-primary"><i class="bi bi-save"></i> {% trans "Сохранить" %}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
@@ -311,6 +811,63 @@
     nameInput.addEventListener("blur", function () {
         setTimeout(function () { dropdown.style.display = "none"; }, 150);
     });
+})();
+
+// ===== Документы: выпадающее меню у авто в карточке =====
+(function () {
+    var PKG_BY_REQ = {{ package_data_by_request_json|default:"{}"|safe }};
+    var ACTION_URLS = {{ doc_action_urls_json|default:"{}"|safe }};
+
+    function openDoc(reqId, docType, carId) {
+        var modal = document.getElementById("docModal-" + docType);
+        if (!modal) return;
+        var action = ACTION_URLS[String(reqId)];
+        if (!action) return;
+        var form = modal.querySelector("form");
+        if (form) form.action = action;
+        modal.querySelectorAll(".doc-car-input").forEach(function (input) { input.value = carId; });
+        var data = (PKG_BY_REQ[String(reqId)] || {})[String(carId)] || {};
+        var card = document.getElementById("req-" + reqId);
+        var carrierFromCard = card ? (card.getAttribute("data-carrier-name") || "") : "";
+        modal.querySelectorAll(".pkg-field").forEach(function (input) {
+            var value = data[input.name] || "";
+            if (!value && input.name === "carrier_company") {
+                var carrierName = document.getElementById("id_carrier_name");
+                value = (carrierName && carrierName.value) || carrierFromCard || "";
+            }
+            input.value = value;
+        });
+        // Закрыть dropdown перед модалкой
+        document.querySelectorAll(".req-car-dd .dropdown-toggle.show").forEach(function (toggle) {
+            bootstrap.Dropdown.getOrCreateInstance(toggle).hide();
+        });
+        bootstrap.Modal.getOrCreateInstance(modal).show();
+    }
+
+    document.querySelectorAll(".doc-open-btn[data-req]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            openDoc(btn.dataset.req, btn.dataset.docType, btn.dataset.car);
+        });
+    });
+
+    var docsReq = "{{ docs_req|default:''|escapejs }}";
+    var docsCar = "{{ docs_car|default:''|escapejs }}";
+    var autoOpen = "{{ open_doc|default:''|escapejs }}";
+    if (docsReq) {
+        var card = document.getElementById("req-" + docsReq);
+        if (card) card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        if (!docsCar) {
+            var firstRow = document.querySelector('.req-car-row[data-req-car="' + docsReq + '"]');
+            if (firstRow) docsCar = firstRow.getAttribute("data-car-id");
+        }
+        if (docsCar && !autoOpen) {
+            var toggle = document.querySelector(
+                '.req-car-row[data-req-car="' + docsReq + '"][data-car-id="' + docsCar + '"] .dropdown-toggle'
+            );
+            if (toggle) bootstrap.Dropdown.getOrCreateInstance(toggle).show();
+        }
+        if (autoOpen && docsCar) openDoc(docsReq, autoOpen, docsCar);
+    }
 })();
 </script>
 {% endblock %}

@@ -23,6 +23,7 @@ from core.models.website import (
     NotificationLog,
     TrackingRequest,
     TransportRequest,
+    TransportRequestDocument,
 )
 
 # Без похожих символов (l/1/I/O/0), чтобы пароль легко диктовался клиенту.
@@ -227,9 +228,27 @@ class DeclarationRequestAdmin(admin.ModelAdmin):
     print_link.short_description = "Печатная форма"
 
 
+class TransportRequestDocumentInline(admin.TabularInline):
+    """Документы пакета (Беларусь), загруженные/сгенерированные в кабинете."""
+
+    model = TransportRequestDocument
+    extra = 0
+    fields = ("car", "doc_type", "file_link", "is_generated", "uploaded_by", "created_at")
+    readonly_fields = ("file_link", "uploaded_by", "created_at")
+
+    def file_link(self, obj):
+        if obj.pk and obj.file:
+            return format_html('<a href="{}" target="_blank">{}</a>', obj.file.url, obj.filename)
+        return "—"
+
+    file_link.short_description = "Файл"
+
+
 @admin.register(TransportRequest)
 class TransportRequestAdmin(admin.ModelAdmin):
     """Заявки клиентов с данными автовозов"""
+
+    inlines = [TransportRequestDocumentInline]
 
     list_display = [
         "number",
