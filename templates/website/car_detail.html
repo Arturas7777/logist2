@@ -1,17 +1,35 @@
 {% extends "website/base.html" %}
+{% load i18n %}
 
 {% block title %}{{ car.brand }} {{ car.year }} - {{ car.vin }}{% endblock %}
 
-{% block content %}
-<div class="container my-5">
-    <!-- Навигация -->
-    <nav aria-label="breadcrumb">
-        <ol class="breadcrumb">
-            <li class="breadcrumb-item"><a href="{% url 'website:dashboard' %}">Личный кабинет</a></li>
-            <li class="breadcrumb-item active">{{ car.vin }}</li>
-        </ol>
-    </nav>
+{% block extra_css %}
+<style>
+    .portal-hero {
+        background: linear-gradient(135deg, var(--primary-color, #2c3e50) 0%, #34495e 100%);
+        color: #fff;
+        padding: 2rem 0;
+        margin-bottom: 2rem;
+    }
+</style>
+{% endblock %}
 
+{% block content %}
+<section class="portal-hero">
+    <div class="container">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div>
+                <h1 class="h3 mb-0">{{ car.brand }} {{ car.year }}</h1>
+                <div class="text-white-50 small mt-1">VIN: {{ car.vin }}</div>
+            </div>
+            <a href="{% url 'website:dashboard' %}" class="btn btn-sm btn-light">
+                <i class="bi bi-arrow-left"></i> {% trans "Назад" %}
+            </a>
+        </div>
+    </div>
+</section>
+
+<div class="container pb-5">
     <!-- Шапка карточки: картинка модели + основное -->
     <div class="card border-0 shadow-sm mb-4 overflow-hidden">
         <div class="row g-0 align-items-center">

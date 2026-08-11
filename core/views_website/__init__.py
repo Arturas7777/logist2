@@ -62,6 +62,7 @@ from .portal_docs import (
     upload_document,
 )
 from .portal_transport import (
+    transport_request_add_cars,
     transport_request_delete,
     transport_request_doc_action,
     transport_request_doc_delete,
@@ -114,6 +115,7 @@ __all__ = [  # noqa: RUF022
     "transport_request_delete",
     "transport_request_submit",
     "transport_request_remove_car",
+    "transport_request_add_cars",
     "transport_request_doc_action",
     "transport_request_doc_delete",
     "transport_request_download_packages",

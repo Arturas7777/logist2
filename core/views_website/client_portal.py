@@ -4,7 +4,7 @@ from urllib.parse import urlencode
 
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Count, Exists, OuterRef, Prefetch, Q
+from django.db.models import Case, Exists, F, IntegerField, OuterRef, Prefetch, Q, Value, When
 from django.shortcuts import get_object_or_404, render
 
 from core.models import Car, CarModelImage, Container
@@ -15,7 +15,6 @@ from core.models_website import CarPhoto, ClientUser, ContainerPhoto
 # ВСЕ авто клиента (со всеми публичными фото) — для клиента с сотнями
 # машин это тяжёлый запрос и большой HTML. Теперь — постранично.
 CARS_PER_PAGE = 50
-CONTAINERS_PER_PAGE = 50
 
 
 def _attach_model_images(cars):
@@ -101,13 +100,26 @@ def client_dashboard(request):
         status_codes = [s for s in selected_statuses if s in valid_statuses]
         if status_codes:
             cars_qs = cars_qs.filter(status__in=status_codes)
+        else:
+            # По умолчанию: только «Разгружен» и «В порту». Остальное — через фильтр.
+            cars_qs = cars_qs.filter(status__in=["UNLOADED", "IN_PORT"])
         in_request = "IN_REQUEST" in selected_statuses
         no_request = "NO_REQUEST" in selected_statuses
         # Оба сразу = «все», фильтровать нечего.
         if in_request != no_request:
             cars_qs = cars_qs.filter(in_active_request=in_request)
 
-        cars_qs = cars_qs.order_by("-id")
+        # Сверху давнее разгруженные UNLOADED, ниже — IN_PORT.
+        cars_qs = cars_qs.order_by(
+            Case(
+                When(status="UNLOADED", then=Value(0)),
+                When(status="IN_PORT", then=Value(1)),
+                default=Value(2),
+                output_field=IntegerField(),
+            ),
+            F("unload_date").asc(nulls_last=True),
+            "-id",
+        )
 
         paginator = Paginator(cars_qs, CARS_PER_PAGE)
         cars_page = paginator.get_page(request.GET.get("page"))
@@ -121,24 +133,10 @@ def client_dashboard(request):
         filter_params += [("status", s) for s in selected_statuses if s in valid_filter_values]
         qs_extra = urlencode(filter_params)
 
-        # Таблице контейнеров нужны только номер/линия/склад/статус/даты и
-        # количество машин — фото и сами машины не выводятся, поэтому вместо
-        # prefetch — один Count в SQL. Список постраничный, как и авто.
-        containers_qs = (
-            Container.objects.filter(client=client)
-            .select_related("line", "warehouse")
-            .annotate(cars_count=Count("container_cars"))
-            .order_by("-id")
-        )
-        containers_paginator = Paginator(containers_qs, CONTAINERS_PER_PAGE)
-        containers_page = containers_paginator.get_page(request.GET.get("cpage"))
-
         context = {
             "client": client,
             "cars": cars_page,
             "cars_page": cars_page,
-            "containers": containers_page,
-            "containers_page": containers_page,
             "search_query": search_query,
             "selected_statuses": selected_statuses,
             "car_status_choices": Container.STATUS_CHOICES,

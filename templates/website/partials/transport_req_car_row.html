@@ -1,0 +1,116 @@
+{% load i18n static %}
+<div class="req-car-row" data-req-car="{{ req.pk }}" data-car-id="{{ section.car.pk }}">
+    <div class="dropdown req-car-dd">
+        <button type="button" class="btn btn-sm dropdown-toggle"
+                data-bs-toggle="dropdown" data-bs-auto-close="outside"
+                data-bs-popper-config='{"strategy":"fixed"}'
+                aria-expanded="false">
+            <span class="req-car-name" title="{{ section.car.year }} {{ section.car.brand }}">{{ section.car.brand }}</span>
+            <code class="req-car-vin">{{ section.car.vin }}</code>
+        </button>
+        <ul class="dropdown-menu shadow">
+            <li><h6 class="dropdown-header py-1">{% trans "Документы" %}</h6></li>
+            {% for slot in section.slots %}
+            {% if not slot.doc_rows %}
+            <li>
+                {% if req.is_client_editable %}
+                <button type="button" class="dropdown-item doc-add-item doc-open-btn"
+                        data-doc-type="{{ slot.type }}"
+                        data-car="{{ section.car.pk }}"
+                        data-req="{{ req.pk }}">
+                    <i class="bi bi-plus-lg" aria-hidden="true"></i>{{ slot.label }}
+                </button>
+                {% else %}
+                <span class="dropdown-item-text text-muted">{{ slot.label }}</span>
+                {% endif %}
+            </li>
+            {% else %}
+            <li>
+                <div class="doc-chips-row" style="--doc-ico: {{ slot.icon_color|default:'#868e96' }};">
+                    {% for row in slot.doc_rows %}
+                    <span class="doc-chip-wrap">
+                        <span class="doc-chip-check" title="{% trans 'Загружено' %}" aria-hidden="true">
+                            <i class="bi bi-check-lg"></i>
+                        </span>
+                        <span class="doc-chip">
+                            {% if slot.icon_data %}
+                            <img class="doc-type-img{% if slot.type == 'PASSPORT' %} doc-passport{% endif %}" src="{{ slot.icon_data }}" alt="">
+                            {% elif slot.icon_img %}
+                            <img class="doc-type-img{% if slot.icon_is_flag %} is-flag{% endif %}" src="{% static slot.icon_img %}" alt="">
+                            {% else %}
+                            <i class="bi {{ slot.icon }} doc-type-ico" aria-hidden="true"></i>
+                            {% endif %}
+                            <button type="button" class="doc-chip-name doc-preview-btn"
+                                    data-url="{{ row.doc.file.url }}"
+                                    data-title="{{ row.display_name }}"
+                                    data-filename="{{ row.doc.filename }}"
+                                    title="{{ row.doc.filename }}">{{ row.display_name }}</button>
+                            {% if req.is_client_editable %}
+                            <form method="post" action="{% url 'website:transport_request_doc_delete' req.pk row.doc.pk %}"
+                                  onsubmit="return confirm('{% trans 'Удалить файл?' %}');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn-del" title="{% trans 'Удалить' %}" aria-label="{% trans 'Удалить' %}">&times;</button>
+                            </form>
+                            {% endif %}
+                        </span>
+                    </span>
+                    {% endfor %}
+                    {% if req.is_client_editable %}
+                    <button type="button" class="doc-chip-add doc-open-btn"
+                            title="{% trans 'Добавить / изменить' %}"
+                            aria-label="{% trans 'Добавить / изменить' %}"
+                            data-doc-type="{{ slot.type }}"
+                            data-car="{{ section.car.pk }}"
+                            data-req="{{ req.pk }}">
+                        <i class="bi bi-plus-lg" aria-hidden="true"></i>
+                    </button>
+                    {% endif %}
+                </div>
+            </li>
+            {% endif %}
+            {% endfor %}
+        </ul>
+    </div>
+    {% if section.present_icons or req.is_client_editable %}
+    <span class="req-car-trailing">
+        {% if section.present_icons %}
+        <span class="req-car-doc-icons">
+            {% for ico in section.present_icons %}
+            <button type="button"
+                    class="doc-ico-tile doc-preview-btn{% if ico.icon_is_flag %} is-flag{% endif %}"
+                    style="--doc-ico: {{ ico.icon_color|default:'#868e96' }};"
+                    title="{{ ico.label }}: {{ ico.filename }}"
+                    aria-label="{{ ico.label }}"
+                    data-url="{{ ico.file_url }}"
+                    data-title="{{ ico.label }}"
+                    data-filename="{{ ico.filename }}">
+                {% if ico.icon_data %}
+                <img class="doc-type-img{% if ico.type == 'PASSPORT' %} doc-passport{% endif %}" src="{{ ico.icon_data }}" alt="">
+                {% elif ico.icon_img %}
+                <img class="doc-type-img" src="{% static ico.icon_img %}" alt="">
+                {% else %}
+                <i class="bi {{ ico.icon }} doc-type-ico" aria-hidden="true"></i>
+                {% endif %}
+            </button>
+            {% endfor %}
+        </span>
+        {% endif %}
+        {% if req.is_client_editable %}
+        <span class="req-car-end-btns">
+            <button type="button"
+                    class="req-car-generate-all"
+                    title="{% trans 'Сгенерировать всё' %}"
+                    aria-label="{% trans 'Сгенерировать всё' %}"
+                    data-req="{{ req.pk }}"
+                    data-car="{{ section.car.pk }}">
+                <i class="bi bi-magic" aria-hidden="true"></i>
+            </button>
+            <form method="post" action="{% url 'website:transport_request_remove_car' req.pk section.car.pk %}" class="d-inline req-car-remove-form">
+                {% csrf_token %}
+                <button type="submit" class="req-car-remove" title="{% trans 'Убрать из заявки' %}" aria-label="{% trans 'Убрать из заявки' %}">&times;</button>
+            </form>
+        </span>
+        {% endif %}
+    </span>
+    {% endif %}
+</div>

@@ -7,11 +7,14 @@ from urllib.parse import quote
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.files.base import ContentFile
-from django.http import HttpResponse
+from django.db.models import Exists, OuterRef
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
+from core.models import Car
 from core.models.website import (
     CLIENT_DOCUMENT_ALLOWED_EXTENSIONS,
     TRANSPORT_DOCUMENT_TYPES,
@@ -296,6 +299,7 @@ def transport_requests(request):
             "form": form,
             "transport_requests": transport_requests,
             "editing": None,
+            "editing_car_ids": set(),
             "known_carriers_json": _known_carriers_json(client),
             "doc_types": TRANSPORT_DOCUMENT_TYPES,
             "docs_req": request.GET.get("docs_req", ""),
@@ -344,9 +348,13 @@ def transport_request_edit(request, pk):
             "form": form,
             "transport_requests": transport_requests,
             "editing": transport_request,
+            "editing_car_ids": {str(pk) for pk in transport_request.cars.values_list("pk", flat=True)},
             "known_carriers_json": _known_carriers_json(client),
             "doc_types": TRANSPORT_DOCUMENT_TYPES,
-            "docs_req": request.GET.get("docs_req", "") or str(transport_request.pk),
+            # docs_req/docs_car/open_doc — только из GET (возврат после работы с документами).
+            # Не подставляем pk заявки автоматически: иначе при клике на карандаш
+            # JS сам открывает dropdown документов у первой машины.
+            "docs_req": request.GET.get("docs_req", ""),
             "docs_car": request.GET.get("docs_car", "") or request.GET.get("car", ""),
             "open_doc": request.GET.get("open_doc", ""),
             **_docs_map_context(transport_requests),
@@ -432,16 +440,123 @@ def transport_request_submit(request, pk):
     return redirect("website:transport_requests")
 
 
+def _wants_json(request):
+    return (
+        request.headers.get("x-requested-with") == "XMLHttpRequest"
+        or "application/json" in (request.headers.get("accept") or "")
+    )
+
+
+def _eligible_cars_for_request(client, transport_request):
+    """Авто, которые клиент может добавить в заявку (те же правила, что в форме)."""
+    in_other_active = TransportRequest.objects.filter(cars=OuterRef("pk")).exclude(
+        status__in=TransportRequest.INACTIVE_STATUSES
+    ).exclude(pk=transport_request.pk)
+    return (
+        Car.objects.filter(client=client)
+        .exclude(status="TRANSFERRED")
+        .filter(is_important=False)
+        .filter(~Exists(in_other_active))
+    )
+
+
+def _render_req_car_row(request, transport_request, section):
+    return render_to_string(
+        "website/partials/transport_req_car_row.html",
+        {"req": transport_request, "section": section},
+        request=request,
+    )
+
+
+@login_required
+@require_POST
+def transport_request_add_cars(request, pk):
+    """Добавить один или несколько автомобилей в заявку (AJAX из кабинета)."""
+    client = _get_client(request)
+    if client is None:
+        if _wants_json(request):
+            return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
+        return render(request, "website/not_authorized.html", status=403)
+
+    transport_request = get_object_or_404(TransportRequest, pk=pk, client=client)
+    if not transport_request.is_client_editable:
+        if _wants_json(request):
+            return JsonResponse({"ok": False, "error": "locked"}, status=400)
+        messages.error(request, "Заявка уже в работе — состав автомобилей изменить нельзя.")
+        return redirect("website:transport_requests")
+
+    raw_ids = request.POST.getlist("car_ids")
+    if not raw_ids and request.POST.get("car_ids"):
+        raw_ids = [x.strip() for x in request.POST.get("car_ids", "").split(",") if x.strip()]
+    car_ids = []
+    for raw in raw_ids:
+        if str(raw).isdigit():
+            car_ids.append(int(raw))
+    car_ids = list(dict.fromkeys(car_ids))
+    if not car_ids:
+        if _wants_json(request):
+            return JsonResponse({"ok": False, "error": "empty"}, status=400)
+        messages.error(request, "Не выбраны автомобили.")
+        return redirect("website:transport_request_edit", pk=pk)
+
+    already = set(transport_request.cars.values_list("pk", flat=True))
+    to_add_ids = [cid for cid in car_ids if cid not in already]
+    cars = list(_eligible_cars_for_request(client, transport_request).filter(pk__in=to_add_ids))
+    if not cars:
+        if _wants_json(request):
+            return JsonResponse({"ok": False, "error": "unavailable"}, status=400)
+        messages.error(request, "Выбранные автомобили недоступны для этой заявки.")
+        return redirect("website:transport_request_edit", pk=pk)
+
+    transport_request.cars.add(*cars)
+    # Свежий prefetch для секций документов добавленных авто.
+    transport_request = (
+        TransportRequest.objects.filter(pk=transport_request.pk)
+        .prefetch_related("cars", "documents", "doc_packages")
+        .get()
+    )
+    sections_by_car = {s["car"].pk: s for s in _docs_context(transport_request)["doc_sections"]}
+    added = []
+    for car in cars:
+        section = sections_by_car.get(car.pk)
+        if not section:
+            continue
+        added.append(
+            {
+                "id": car.pk,
+                "brand": car.brand or "",
+                "vin": car.vin or "",
+                "year": car.year or "",
+                "html": _render_req_car_row(request, transport_request, section),
+            }
+        )
+
+    if _wants_json(request):
+        return JsonResponse(
+            {
+                "ok": True,
+                "request_id": transport_request.pk,
+                "added": added,
+                "cars_count": transport_request.cars.count(),
+            }
+        )
+    return redirect("website:transport_request_edit", pk=pk)
+
+
 @login_required
 @require_POST
 def transport_request_remove_car(request, pk, car_id):
     """Убрать автомобиль из заявки (и связанные документы пакета)."""
     client = _get_client(request)
     if client is None:
+        if _wants_json(request):
+            return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
         return render(request, "website/not_authorized.html", status=403)
 
     transport_request = get_object_or_404(TransportRequest, pk=pk, client=client)
     if not transport_request.is_client_editable:
+        if _wants_json(request):
+            return JsonResponse({"ok": False, "error": "locked"}, status=400)
         messages.error(request, "Заявка уже в работе — состав автомобилей изменить нельзя.")
         return redirect("website:transport_requests")
 
@@ -451,6 +566,15 @@ def transport_request_remove_car(request, pk, car_id):
         doc.delete()
     transport_request.doc_packages.filter(car=car).delete()
     transport_request.cars.remove(car)
+    if _wants_json(request):
+        return JsonResponse(
+            {
+                "ok": True,
+                "request_id": transport_request.pk,
+                "car_id": car_id,
+                "cars_left": transport_request.cars.count(),
+            }
+        )
     return redirect("website:transport_requests")
 
 

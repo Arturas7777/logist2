@@ -1,7 +1,7 @@
 {% extends "website/base.html" %}
 {% load i18n static %}
 
-{% block title %}{% trans "Заявки на автовоз" %} - {{ client.name }}{% endblock %}
+{% block title %}{% trans "Заявки на вывоз авто" %} - {{ client.name }}{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -19,6 +19,21 @@
     .status-COMPLETED { background:#e2d9f3; color:#4b2e83; }
     .request-card-DRAFT { background:#e9ecef; }
     .request-card-editing { background:#fff3cd; }
+    /* Приподнятые карточки формы и заявок */
+    .portal-elevated-card {
+        box-shadow:
+            0 2px 4px rgba(0, 0, 0, .04),
+            0 8px 20px rgba(0, 0, 0, .1),
+            0 18px 40px rgba(0, 0, 0, .08) !important;
+        border-radius: .65rem;
+    }
+    .portal-elevated-card.request-card-DRAFT,
+    .portal-elevated-card.request-card-editing {
+        box-shadow:
+            0 2px 4px rgba(0, 0, 0, .05),
+            0 10px 24px rgba(0, 0, 0, .12),
+            0 20px 44px rgba(0, 0, 0, .08) !important;
+    }
     .empty-state { text-align:center; padding: 2.5rem 1rem; color:#7b8794; }
     .empty-state i { font-size: 2.5rem; opacity:.35; }
     .cars-checkboxes {
@@ -54,16 +69,95 @@
     .doc-slot:last-child { border-bottom: 0; }
     .doc-slot .doc-open-btn { min-width: 12.5rem; text-align: left; }
     .doc-files { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; min-height: 2rem; }
-    .doc-chip { display: inline-flex; align-items: center; gap: .3rem; background: #f1f3f5; border-radius: 20px;
-                padding: .15rem .3rem .15rem .65rem; font-size: .78rem; max-width: 100%; }
-    .doc-chip a { text-decoration: none; max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .doc-chip-wrap {
+        display: inline-flex; align-items: center; gap: .35rem; max-width: 100%;
+    }
+    .doc-chip-check {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 1.2rem; height: 1.2rem; flex-shrink: 0;
+        border-radius: 50%;
+        background: linear-gradient(145deg, #51cf66 0%, #2f9e44 100%);
+        color: #fff;
+        box-shadow: 0 1px 3px rgba(47, 158, 68, .35);
+    }
+    .doc-chip-check .bi { font-size: .72rem; line-height: 1; font-weight: 700; }
+    .doc-chip {
+        display: inline-flex; align-items: center; gap: .35rem;
+        background: linear-gradient(180deg, #fff 0%, #f8faf8 100%);
+        border: 1px solid rgba(47, 158, 68, .28);
+        border-radius: 999px;
+        padding: .22rem .28rem .22rem .42rem;
+        font-size: .8rem; font-weight: 500; max-width: 100%; line-height: 1.2;
+        box-shadow: 0 1px 2px rgba(33, 37, 41, .06), inset 0 1px 0 rgba(255,255,255,.9);
+        transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    .doc-chip:hover {
+        border-color: rgba(47, 158, 68, .5);
+        box-shadow: 0 2px 6px rgba(47, 158, 68, .12), inset 0 1px 0 rgba(255,255,255,.9);
+    }
+    .doc-chip a,
+    .doc-chip .doc-chip-name {
+        text-decoration: none; max-width: 8.5rem; overflow: hidden; text-overflow: ellipsis;
+        white-space: nowrap; border: 0; background: none; padding: 0; color: #2b2f32;
+        font-size: inherit; font-weight: 600; cursor: pointer; text-align: left;
+    }
+    .doc-chip .doc-chip-name:hover { color: #0d6efd; }
     .doc-chip form { display: inline; margin: 0; }
-    .doc-chip .btn-del { border: 0; background: none; color: #dc3545; padding: 0 .3rem; line-height: 1; }
+    .doc-chip .btn-del {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 1.15rem; height: 1.15rem; border: 0; border-radius: 50%;
+        background: transparent; color: #adb5bd; padding: 0; line-height: 1;
+        font-size: .95rem; transition: background .12s ease, color .12s ease;
+    }
+    .doc-chip .btn-del:hover { background: rgba(220, 53, 69, .12); color: #dc3545; }
+    .doc-chip .doc-type-ico { font-size: .95rem; line-height: 1; color: var(--doc-ico, #2f9e44); }
+    .doc-chip .doc-type-img { width: .95rem; height: .95rem; object-fit: contain; }
+    .doc-chip .doc-type-img.is-flag {
+        width: 1.15rem; height: .6rem; object-fit: cover; border-radius: 2px;
+        box-shadow: 0 0 0 1px rgba(0,0,0,.1);
+    }
     .doc-gen-icon { color: #0dcaf0; font-size: .85rem; flex-shrink: 0; }
     .req-car-row {
         display: flex; align-items: center; gap: .45rem;
         flex-wrap: wrap; margin: .2rem 0;
+        overflow: visible;
+        transition: opacity .22s ease, transform .22s ease, max-height .28s ease, margin .28s ease;
     }
+    /* overflow/max-height только на анимации — иначе клиппится dropdown документов */
+    .req-car-row.is-removing,
+    .req-car-row.is-adding {
+        overflow: hidden;
+        max-height: 4rem;
+    }
+    .req-car-row.is-removing {
+        opacity: 0; transform: translateY(-6px); max-height: 0; margin: 0; pointer-events: none;
+    }
+    .req-car-row.is-adding {
+        animation: reqCarRowIn .32s ease;
+    }
+    @keyframes reqCarRowIn {
+        from { opacity: 0; transform: translateX(-10px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+    .cars-check-row {
+        display: flex; align-items: center; gap: .4rem; flex-wrap: wrap;
+        padding: .15rem 0;
+    }
+    .cars-check-row .cars-check-label { flex: 1 1 auto; min-width: 0; }
+    /* Уже в заявке — скрываем из левого списка, чекбокс остаётся checked в форме */
+    .cars-check-row[data-in-request="1"] { display: none; }
+    .cars-to-req-btn {
+        display: none; align-items: center; gap: .25rem;
+        border: 0; border-radius: 999px;
+        padding: .15rem .55rem .15rem .45rem;
+        font-size: .75rem; font-weight: 600; line-height: 1.2;
+        color: #0d6efd; background: #e7f1ff;
+        white-space: nowrap; flex-shrink: 0;
+        transition: background .12s ease, transform .12s ease;
+    }
+    .cars-check-row.is-checked:not([data-in-request="1"]) .cars-to-req-btn { display: inline-flex; }
+    .cars-to-req-btn:hover { background: #d0e3ff; transform: translateX(2px); }
+    .cars-to-req-btn:disabled { opacity: .55; pointer-events: none; }
     .req-car-end-btns {
         display: inline-flex; align-items: center; gap: .1rem; flex-shrink: 0;
     }
@@ -78,6 +172,10 @@
     .req-car-generate-all { font-size: 1rem; color: #845ef7; }
     .req-car-generate-all:hover { color: #7048e8; background: rgba(132, 94, 247, .1); }
     .req-car-remove:hover { color: #dc3545; background: rgba(220, 53, 69, .08); }
+    .req-cars-list { overflow: visible; }
+    .portal-elevated-card.card,
+    .portal-elevated-card .card-body { overflow: visible; }
+    .req-car-dd .dropdown-menu { z-index: 1080; }
     .req-car-dd .dropdown-toggle {
         display: inline-flex; align-items: center; gap: .45rem;
         width: 22.5rem; height: 2.15rem;
@@ -99,34 +197,20 @@
     .req-car-dd .dropdown-item { white-space: nowrap; padding: .3rem .85rem; font-size: .875rem; }
     .req-car-dd .doc-add-item { color: #495057; }
     .req-car-dd .doc-add-item .bi-plus-lg { color: #0d6efd; margin-right: .35rem; font-size: .95rem; }
-    .req-car-dd .doc-file-row {
-        display: flex; align-items: center; gap: .35rem;
-        padding: .28rem .55rem .28rem .75rem; min-height: 1.85rem;
+    .req-car-dd .doc-chips-row {
+        display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
+        padding: .35rem .8rem;
     }
-    .req-car-dd .doc-file-row .doc-type-ico { font-size: 1.05rem; line-height: 1; flex-shrink: 0; }
-    .req-car-dd .doc-file-row .doc-type-img {
-        width: 1.05rem; height: 1.05rem; object-fit: contain; flex-shrink: 0;
+    .req-car-dd .doc-chip-add {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 1.5rem; height: 1.5rem; padding: 0;
+        border: 1px dashed rgba(13, 110, 253, .45);
+        border-radius: 50%; background: #f8fbff; color: #0d6efd; font-size: .82rem; line-height: 1;
+        transition: background .12s ease, border-color .12s ease, transform .12s ease;
     }
-    .req-car-dd .doc-file-row .doc-type-img.is-flag {
-        width: 1.25rem; height: .66rem; object-fit: cover; border-radius: 2px;
-        box-shadow: 0 0 0 1px rgba(0,0,0,.12);
+    .req-car-dd .doc-chip-add:hover {
+        border-color: #0d6efd; background: #e7f1ff; transform: scale(1.05);
     }
-    .req-car-dd .doc-file-link {
-        flex: 1 1 auto; min-width: 0; border: 0; background: none; padding: 0;
-        text-align: left; font-size: .875rem; color: #212529; text-decoration: none;
-        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
-    }
-    .req-car-dd .doc-file-link:hover { color: #0d6efd; text-decoration: underline; }
-    .req-car-dd .doc-file-del {
-        flex-shrink: 0; border: 0; background: none; color: #adb5bd;
-        padding: 0 .15rem; line-height: 1; font-size: 1.1rem;
-    }
-    .req-car-dd .doc-file-del:hover { color: #dc3545; }
-    .req-car-dd .doc-file-add {
-        flex-shrink: 0; border: 0; background: none; color: #0d6efd;
-        padding: 0 .2rem; line-height: 1; font-size: .9rem;
-    }
-    .req-car-dd .doc-file-add:hover { color: #0a58ca; }
     /* Иконки + крестик одной группой сразу после поля авто */
     .req-car-trailing {
         display: inline-flex; align-items: center; flex-wrap: wrap;
@@ -176,10 +260,20 @@
         display: flex; align-items: center; justify-content: space-between;
         gap: .45rem; flex-wrap: nowrap;
     }
-    .req-submit-form { flex: 0 0 auto; }
+    /* Ширина как у поля машины (модель+VIN), не шире */
+    .req-card-primary-actions {
+        display: flex; align-items: center; gap: .45rem;
+        width: 22.5rem; max-width: 100%;
+    }
+    .req-submit-form { flex: 1 1 auto; min-width: 0; }
     .req-submit-btn {
-        width: 22.5rem; height: 2.15rem;
+        width: 100%; height: 2.15rem;
         display: inline-flex; align-items: center; justify-content: center;
+    }
+    .req-card-save-btn {
+        flex: 0 0 auto; height: 2.15rem;
+        display: inline-flex; align-items: center; justify-content: center;
+        padding-left: .85rem; padding-right: .85rem;
     }
     .req-card-edit-btns {
         display: inline-flex; align-items: center; gap: .25rem;
@@ -200,12 +294,14 @@
 {% block content %}
 <section class="portal-hero">
     <div class="container">
-        <div class="text-white-50 small mb-1">
-            <a href="{% url 'website:dashboard' %}" class="text-white-50 text-decoration-none">
-                <i class="bi bi-arrow-left"></i> {% trans "Личный кабинет" %}
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div>
+                <h1 class="h3 mb-0"><i class="bi bi-truck"></i> {% trans "Заявки на вывоз авто" %}</h1>
+            </div>
+            <a href="{% url 'website:dashboard' %}" class="btn btn-sm btn-light">
+                <i class="bi bi-arrow-left"></i> {% trans "Назад" %}
             </a>
         </div>
-        <h1 class="h3 mb-0"><i class="bi bi-truck"></i> {% trans "Заявки на автовоз" %}</h1>
     </div>
 </section>
 
@@ -222,22 +318,21 @@
     <div class="row g-4">
         <!-- Форма заявки -->
         <div class="col-lg-5">
-            <div class="card border-0 shadow-sm">
-                <div class="card-header bg-white border-0 pt-3">
+            {% if editing %}
+            <h5 class="mb-3"><i class="bi bi-pencil-square text-warning"></i> {% trans "Редактирование заявки" %}</h5>
+            {% else %}
+            <h5 class="mb-3"><i class="bi bi-plus-circle text-primary"></i> {% trans "Новая заявка" %}</h5>
+            {% endif %}
+            <div class="card border-0 portal-elevated-card">
+                <div class="card-body">
                     {% if editing %}
-                    <h5 class="mb-0"><i class="bi bi-pencil-square text-warning"></i> {% trans "Редактирование заявки" %}</h5>
-                    <p class="text-muted small mb-0">
+                    <p class="text-muted small mb-3">
                         {% trans "Статус" %}: {{ editing.get_status_display }}.
                         {% if editing.status == 'ACCEPTED' %}
                             {% trans "После изменения заявка вернётся в статус «Подана»." %}
                         {% endif %}
                     </p>
-                    {% else %}
-                    <h5 class="mb-0"><i class="bi bi-plus-circle text-primary"></i> {% trans "Новая заявка" %}</h5>
-                    <p class="text-muted small mb-0">{% trans "Укажите данные автовоза, который заберёт ваши автомобили" %}</p>
                     {% endif %}
-                </div>
-                <div class="card-body">
                     <form method="post" id="requestForm">
                         {% csrf_token %}
                         <input type="hidden" name="open_doc" id="openDocInput" value="">
@@ -249,9 +344,21 @@
                         <div class="mb-3">
                             <label class="form-label small fw-semibold">{% trans "Автомобили" %} *</label>
                             {% if form.cars.field.queryset %}
-                            <div class="cars-checkboxes">
+                            <div class="cars-checkboxes" id="carsCheckboxes"{% if editing %} data-editing-req="{{ editing.pk }}" data-add-url="{% url 'website:transport_request_add_cars' editing.pk %}"{% endif %}>
                                 {% for checkbox in form.cars %}
-                                <div>{{ checkbox.tag }} <label for="{{ checkbox.id_for_label }}" class="small mb-0">{{ checkbox.choice_label }}</label></div>
+                                {% with car_id=checkbox.data.value|stringformat:"s" %}
+                                <div class="cars-check-row{% if checkbox.data.selected %} is-checked{% endif %}"
+                                     data-car-id="{{ car_id }}"
+                                     data-in-request="{% if car_id in editing_car_ids %}1{% else %}0{% endif %}">
+                                    {{ checkbox.tag }}
+                                    <label for="{{ checkbox.id_for_label }}" class="small mb-0 cars-check-label">{{ checkbox.choice_label }}</label>
+                                    {% if editing %}
+                                    <button type="button" class="cars-to-req-btn" data-car-id="{{ car_id }}" title="{% trans 'Добавить в заявку' %}">
+                                        {% trans "В заявку" %} <i class="bi bi-arrow-right" aria-hidden="true"></i>
+                                    </button>
+                                    {% endif %}
+                                </div>
+                                {% endwith %}
                                 {% endfor %}
                             </div>
                             {% else %}
@@ -314,13 +421,19 @@
 
                         <div class="d-flex gap-2">
                             {% if editing and editing.status != 'DRAFT' %}
-                                <button type="submit" class="btn btn-warning flex-grow-1">
+                                <button type="submit" class="btn btn-warning flex-grow-1 w-50">
                                     <i class="bi bi-save"></i> {% trans "Сохранить изменения" %}
                                 </button>
+                                <a href="{% url 'website:transport_requests' %}" class="btn btn-danger flex-grow-1 w-50">
+                                    {% trans "Отменить" %}
+                                </a>
                             {% elif editing %}
-                                <button type="submit" name="save_draft" value="1" class="btn btn-warning flex-grow-1">
+                                <button type="submit" name="save_draft" value="1" class="btn btn-warning flex-grow-1 w-50">
                                     <i class="bi bi-save"></i> {% trans "Сохранить изменения" %}
                                 </button>
+                                <a href="{% url 'website:transport_requests' %}" class="btn btn-danger flex-grow-1 w-50">
+                                    {% trans "Отменить" %}
+                                </a>
                             {% else %}
                                 <button type="submit" name="save_draft" value="1" class="btn btn-secondary flex-grow-1 w-50">
                                     <i class="bi bi-file-earmark"></i> {% trans "Создать черновик" %}
@@ -330,11 +443,6 @@
                                 </button>
                             {% endif %}
                         </div>
-                        {% if editing %}
-                        <a href="{% url 'website:transport_requests' %}" class="btn btn-outline-secondary w-100 mt-2">
-                            {% trans "Отмена" %}
-                        </a>
-                        {% endif %}
                     </form>
                 </div>
             </div>
@@ -347,7 +455,7 @@
             {% if transport_requests %}
             <div class="d-flex flex-column gap-2">
                 {% for req in transport_requests %}
-                <div class="card border-0 shadow-sm request-card-{{ req.status }}{% if editing and editing.pk == req.pk %} request-card-editing{% endif %}"
+                <div class="card border-0 portal-elevated-card request-card-{{ req.status }}{% if editing and editing.pk == req.pk %} request-card-editing{% endif %}"
                      id="req-{{ req.pk }}"
                      data-req-id="{{ req.pk }}"
                      data-carrier-name="{{ req.carrier_name }}">
@@ -357,6 +465,11 @@
                                 {% if req.carrier_name %}<div class="fw-semibold">{{ req.carrier_name }}</div>{% endif %}
                                 <div>{{ req.truck_number }}{% if req.trailer_number %} / {{ req.trailer_number }}{% endif %}{% if req.driver_name %} · {{ req.driver_name }}{% endif %}</div>
                                 {% if req.border_crossing %}<div class="text-muted"><i class="bi bi-signpost"></i> {{ req.border_crossing }}</div>{% endif %}
+                                {% if req.comment %}
+                                    <div class="text-muted mt-1 text-wrap" title="{% trans 'Комментарий' %}">
+                                        <i class="bi bi-chat-left-text"></i> {{ req.comment }}
+                                    </div>
+                                {% endif %}
                             </div>
                             <div class="text-end text-nowrap flex-shrink-0 me-n1">
                                 <span class="status-badge status-{{ req.status }}">{{ req.get_status_display }}</span>
@@ -365,126 +478,28 @@
                                 {% endif %}
                             </div>
                         </div>
-                        <div class="d-flex flex-column mt-2">
+                        <div class="d-flex flex-column mt-2 req-cars-list" data-req-id="{{ req.pk }}">
                             {% for section in req.doc_sections %}
-                            <div class="req-car-row" data-req-car="{{ req.pk }}" data-car-id="{{ section.car.pk }}">
-                                <div class="dropdown req-car-dd">
-                                    <button type="button" class="btn btn-sm dropdown-toggle"
-                                            data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
-                                        <span class="req-car-name" title="{{ section.car.year }} {{ section.car.brand }}">{{ section.car.brand }}</span>
-                                        <code class="req-car-vin">{{ section.car.vin }}</code>
-                                    </button>
-                                    <ul class="dropdown-menu shadow">
-                                        <li><h6 class="dropdown-header py-1">{% trans "Документы" %}</h6></li>
-                                        {% for slot in section.slots %}
-                                        {% if not slot.doc_rows %}
-                                        <li>
-                                            {% if req.is_client_editable %}
-                                            <button type="button" class="dropdown-item doc-add-item doc-open-btn"
-                                                    data-doc-type="{{ slot.type }}"
-                                                    data-car="{{ section.car.pk }}"
-                                                    data-req="{{ req.pk }}">
-                                                <i class="bi bi-plus-lg" aria-hidden="true"></i>{{ slot.label }}
-                                            </button>
-                                            {% else %}
-                                            <span class="dropdown-item-text text-muted">{{ slot.label }}</span>
-                                            {% endif %}
-                                        </li>
-                                        {% else %}
-                                        {% for row in slot.doc_rows %}
-                                        <li>
-                                            <div class="doc-file-row">
-                                                {% if slot.icon_data %}
-                                                <img class="doc-type-img{% if slot.type == 'PASSPORT' %} doc-passport{% endif %}" src="{{ slot.icon_data }}" alt="">
-                                                {% elif slot.icon_img %}
-                                                <img class="doc-type-img{% if slot.icon_is_flag %} is-flag{% endif %}" src="{% static slot.icon_img %}" alt="">
-                                                {% else %}
-                                                <i class="bi {{ slot.icon }} doc-type-ico" style="color: {{ slot.icon_color }};" aria-hidden="true"></i>
-                                                {% endif %}
-                                                <button type="button" class="doc-file-link doc-preview-btn"
-                                                        data-url="{{ row.doc.file.url }}"
-                                                        data-title="{{ row.display_name }}"
-                                                        data-filename="{{ row.doc.filename }}"
-                                                        title="{{ row.doc.filename }}">{{ row.display_name }}</button>
-                                                {% if req.is_client_editable %}
-                                                {% if forloop.last %}
-                                                <button type="button" class="doc-file-add doc-open-btn"
-                                                        title="{% trans 'Добавить / изменить' %}"
-                                                        aria-label="{% trans 'Добавить / изменить' %}"
-                                                        data-doc-type="{{ slot.type }}"
-                                                        data-car="{{ section.car.pk }}"
-                                                        data-req="{{ req.pk }}">
-                                                    <i class="bi bi-plus-lg" aria-hidden="true"></i>
-                                                </button>
-                                                {% endif %}
-                                                <form method="post" action="{% url 'website:transport_request_doc_delete' req.pk row.doc.pk %}" class="d-inline m-0"
-                                                      onsubmit="return confirm('{% trans 'Удалить файл?' %}');">
-                                                    {% csrf_token %}
-                                                    <button type="submit" class="doc-file-del" title="{% trans 'Удалить' %}" aria-label="{% trans 'Удалить' %}">&times;</button>
-                                                </form>
-                                                {% endif %}
-                                            </div>
-                                        </li>
-                                        {% endfor %}
-                                        {% endif %}
-                                        {% endfor %}
-                                    </ul>
-                                </div>
-                                {% if section.present_icons or req.is_client_editable %}
-                                <span class="req-car-trailing">
-                                    {% if section.present_icons %}
-                                    <span class="req-car-doc-icons">
-                                        {% for ico in section.present_icons %}
-                                        <button type="button"
-                                                class="doc-ico-tile doc-preview-btn{% if ico.icon_is_flag %} is-flag{% endif %}"
-                                                style="--doc-ico: {{ ico.icon_color|default:'#868e96' }};"
-                                                title="{{ ico.label }}: {{ ico.filename }}"
-                                                aria-label="{{ ico.label }}"
-                                                data-url="{{ ico.file_url }}"
-                                                data-title="{{ ico.label }}"
-                                                data-filename="{{ ico.filename }}">
-                                            {% if ico.icon_data %}
-                                            <img class="doc-type-img{% if ico.type == 'PASSPORT' %} doc-passport{% endif %}" src="{{ ico.icon_data }}" alt="">
-                                            {% elif ico.icon_img %}
-                                            <img class="doc-type-img" src="{% static ico.icon_img %}" alt="">
-                                            {% else %}
-                                            <i class="bi {{ ico.icon }} doc-type-ico" aria-hidden="true"></i>
-                                            {% endif %}
-                                        </button>
-                                        {% endfor %}
-                                    </span>
-                                    {% endif %}
-                                    {% if req.is_client_editable %}
-                                    <span class="req-car-end-btns">
-                                        <button type="button"
-                                                class="req-car-generate-all"
-                                                title="{% trans 'Сгенерировать всё' %}"
-                                                aria-label="{% trans 'Сгенерировать всё' %}"
-                                                data-req="{{ req.pk }}"
-                                                data-car="{{ section.car.pk }}">
-                                            <i class="bi bi-magic" aria-hidden="true"></i>
-                                        </button>
-                                        <form method="post" action="{% url 'website:transport_request_remove_car' req.pk section.car.pk }}" class="d-inline"
-                                              onsubmit="return confirm('{% trans 'Убрать этот автомобиль из заявки?' %}');">
-                                            {% csrf_token %}
-                                            <button type="submit" class="req-car-remove" title="{% trans 'Убрать из заявки' %}" aria-label="{% trans 'Убрать из заявки' %}">&times;</button>
-                                        </form>
-                                    </span>
-                                    {% endif %}
-                                </span>
-                                {% endif %}
-                            </div>
+                            {% include "website/partials/transport_req_car_row.html" with req=req section=section %}
                             {% endfor %}
                         </div>
                         <div class="req-card-actions mt-2">
-                            {% if req.status == 'DRAFT' %}
-                            <form method="post" action="{% url 'website:transport_request_submit' req.pk %}" class="req-submit-form">
-                                {% csrf_token %}
-                                <button type="submit" class="btn btn-success req-submit-btn">
-                                    <i class="bi bi-send"></i> {% trans "Подать заявку" %}
+                            <div class="req-card-primary-actions">
+                                {% if editing and editing.pk == req.pk and req.status == 'DRAFT' %}
+                                <button type="submit" form="requestForm" name="save_draft" value="1"
+                                        class="btn btn-warning req-card-save-btn">
+                                    <i class="bi bi-save"></i> {% trans "Сохранить" %}
                                 </button>
-                            </form>
-                            {% endif %}
+                                {% endif %}
+                                {% if req.status == 'DRAFT' %}
+                                <form method="post" action="{% url 'website:transport_request_submit' req.pk %}" class="req-submit-form">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-success req-submit-btn">
+                                        <i class="bi bi-send"></i> {% trans "Подать заявку" %}
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
                             <div class="req-card-edit-btns">
                                 <a class="btn btn-sm btn-outline-secondary" href="{% url 'website:transport_request_download_packages' req.pk %}" title="{% trans 'Скачать пакеты документов' %}">
                                     <i class="bi bi-download"></i>
@@ -508,7 +523,7 @@
                 {% endfor %}
             </div>
             {% else %}
-            <div class="card border-0 shadow-sm">
+            <div class="card border-0 portal-elevated-card">
                 <div class="card-body">
                     <div class="empty-state">
                         <i class="bi bi-truck"></i>
@@ -1162,12 +1177,12 @@
         });
     }
 
-    document.querySelectorAll(".doc-preview-btn").forEach(function (btn) {
-        btn.addEventListener("click", function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            openDocPreview(btn.dataset.url, btn.dataset.title, btn.dataset.filename);
-        });
+    document.addEventListener("click", function (e) {
+        var previewBtn = e.target.closest(".doc-preview-btn");
+        if (!previewBtn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openDocPreview(previewBtn.dataset.url, previewBtn.dataset.title, previewBtn.dataset.filename);
     });
 
     function parseMoneyInput(value) {
@@ -1327,36 +1342,175 @@
         bootstrap.Modal.getOrCreateInstance(modal).show();
     }
 
-    document.querySelectorAll(".doc-open-btn[data-req]").forEach(function (btn) {
-        btn.addEventListener("click", function () {
-            openDoc(btn.dataset.req, btn.dataset.docType, btn.dataset.car);
+    function csrfToken() {
+        var input = document.querySelector("#requestForm [name=csrfmiddlewaretoken]")
+            || document.querySelector("[name=csrfmiddlewaretoken]");
+        return input ? input.value : "";
+    }
+
+    function syncCarsCheckRow(row) {
+        if (!row) return;
+        var cb = row.querySelector('input[type="checkbox"]');
+        row.classList.toggle("is-checked", !!(cb && cb.checked));
+    }
+
+    function markCarInRequest(carId, inRequest) {
+        var row = document.querySelector('#carsCheckboxes .cars-check-row[data-car-id="' + carId + '"]');
+        if (!row) return;
+        row.setAttribute("data-in-request", inRequest ? "1" : "0");
+        var cb = row.querySelector('input[type="checkbox"]');
+        if (cb) cb.checked = !!inRequest;
+        syncCarsCheckRow(row);
+    }
+
+    function addCarsToRequest(carIds) {
+        var box = document.getElementById("carsCheckboxes");
+        if (!box || !carIds.length) return Promise.resolve();
+        var url = box.getAttribute("data-add-url");
+        var reqId = box.getAttribute("data-editing-req");
+        if (!url || !reqId) return Promise.resolve();
+
+        var body = new FormData();
+        carIds.forEach(function (id) { body.append("car_ids", id); });
+
+        var buttons = [];
+        carIds.forEach(function (id) {
+            var btn = box.querySelector('.cars-to-req-btn[data-car-id="' + id + '"]');
+            if (btn) { btn.disabled = true; buttons.push(btn); }
         });
-    });
-    document.querySelectorAll(".req-car-generate-all[data-req]").forEach(function (btn) {
-        btn.addEventListener("click", function (e) {
+
+        return fetch(url, {
+            method: "POST",
+            headers: {
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json",
+                "X-CSRFToken": csrfToken()
+            },
+            body: body,
+            credentials: "same-origin"
+        })
+            .then(function (resp) {
+                if (!resp.ok) throw new Error("HTTP " + resp.status);
+                return resp.json();
+            })
+            .then(function (data) {
+                if (!data || !data.ok) throw new Error("add failed");
+                var list = document.querySelector('.req-cars-list[data-req-id="' + reqId + '"]');
+                (data.added || []).forEach(function (item) {
+                    markCarInRequest(String(item.id), true);
+                    if (!list || !item.html) return;
+                    if (list.querySelector('.req-car-row[data-car-id="' + item.id + '"]')) return;
+                    var wrap = document.createElement("div");
+                    wrap.innerHTML = item.html.trim();
+                    var row = wrap.firstElementChild;
+                    if (!row) return;
+                    row.classList.add("is-adding");
+                    list.appendChild(row);
+                    setTimeout(function () { row.classList.remove("is-adding"); }, 360);
+                });
+            })
+            .catch(function () {
+                alert("{% trans 'Не удалось добавить автомобиль в заявку.' %}");
+            })
+            .finally(function () {
+                buttons.forEach(function (btn) { btn.disabled = false; });
+            });
+    }
+
+    document.addEventListener("click", function (e) {
+        var openBtn = e.target.closest(".doc-open-btn[data-req]");
+        if (openBtn) {
+            openDoc(openBtn.dataset.req, openBtn.dataset.docType, openBtn.dataset.car);
+            return;
+        }
+        var genBtn = e.target.closest(".req-car-generate-all[data-req]");
+        if (genBtn) {
             e.preventDefault();
             e.stopPropagation();
-            openGenerateAll(btn.dataset.req, btn.dataset.car);
-        });
+            openGenerateAll(genBtn.dataset.req, genBtn.dataset.car);
+            return;
+        }
+        var toReqBtn = e.target.closest(".cars-to-req-btn");
+        if (toReqBtn) {
+            e.preventDefault();
+            addCarsToRequest([toReqBtn.getAttribute("data-car-id")]);
+        }
     });
+
+    document.addEventListener("change", function (e) {
+        var cb = e.target.closest('#carsCheckboxes input[type="checkbox"]');
+        if (!cb) return;
+        syncCarsCheckRow(cb.closest(".cars-check-row"));
+    });
+
+    document.addEventListener("submit", function (e) {
+        var form = e.target.closest(".req-car-remove-form");
+        if (!form) return;
+        e.preventDefault();
+        var row = form.closest(".req-car-row");
+        if (!row || row.classList.contains("is-removing")) return;
+        var btn = form.querySelector(".req-car-remove");
+        if (btn) btn.disabled = true;
+        var csrf = form.querySelector("[name=csrfmiddlewaretoken]");
+        var carId = row.getAttribute("data-car-id");
+        fetch(form.action, {
+            method: "POST",
+            headers: {
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept": "application/json",
+                "X-CSRFToken": csrf ? csrf.value : csrfToken()
+            },
+            body: new FormData(form),
+            credentials: "same-origin"
+        })
+            .then(function (resp) {
+                if (!resp.ok) throw new Error("HTTP " + resp.status);
+                return resp.json();
+            })
+            .then(function (data) {
+                if (!data || !data.ok) throw new Error("remove failed");
+                row.classList.add("is-removing");
+                setTimeout(function () { row.remove(); }, 280);
+                if (carId) markCarInRequest(String(carId), false);
+            })
+            .catch(function () {
+                if (btn) btn.disabled = false;
+                form.submit();
+            });
+    });
+
+    document.querySelectorAll("#carsCheckboxes .cars-check-row").forEach(syncCarsCheckRow);
 
     var docsReq = "{{ docs_req|default:''|escapejs }}";
     var docsCar = "{{ docs_car|default:''|escapejs }}";
     var autoOpen = "{{ open_doc|default:''|escapejs }}";
-    if (docsReq) {
-        var card = document.getElementById("req-" + docsReq);
+    var editingReq = "{% if editing %}{{ editing.pk }}{% endif %}";
+
+    function scrollToRequestCard(reqId) {
+        if (!reqId) return;
+        var card = document.getElementById("req-" + reqId);
         if (card) card.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        if (!docsCar) {
-            var firstRow = document.querySelector('.req-car-row[data-req-car="' + docsReq + '"]');
-            if (firstRow) docsCar = firstRow.getAttribute("data-car-id");
-        }
+    }
+
+    if (docsReq) {
+        scrollToRequestCard(docsReq);
+        // Меню документов открываем только если явно указана машина
+        // (возврат после действия с документами), не при входе в редактирование.
         if (docsCar && !autoOpen) {
             var toggle = document.querySelector(
                 '.req-car-row[data-req-car="' + docsReq + '"][data-car-id="' + docsCar + '"] .dropdown-toggle'
             );
             if (toggle) bootstrap.Dropdown.getOrCreateInstance(toggle).show();
         }
-        if (autoOpen && docsCar) openDoc(docsReq, autoOpen, docsCar);
+        if (autoOpen) {
+            if (!docsCar) {
+                var firstRow = document.querySelector('.req-car-row[data-req-car="' + docsReq + '"]');
+                if (firstRow) docsCar = firstRow.getAttribute("data-car-id");
+            }
+            if (docsCar) openDoc(docsReq, autoOpen, docsCar);
+        }
+    } else if (editingReq) {
+        scrollToRequestCard(editingReq);
     }
 })();
 </script>
