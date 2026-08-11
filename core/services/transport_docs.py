@@ -496,6 +496,36 @@ def generate_document(
     return document_filename(doc_type, car), pdf_bytes, notices
 
 
+# Полный пакет по кнопке «Сгенерировать всё» — без договора на перевозку.
+GENERATE_ALL_DOC_TYPES = ("INVOICE", "PAYMENT_ORDER", "LETTER_USA", "OBLIGATION")
+
+
+def generate_all_documents(
+    transport_request,
+    car,
+    data: dict,
+    signature_bytes: bytes | None = None,
+) -> tuple[list[tuple[str, str, bytes]], list[str]]:
+    """Сгенерировать INVOICE → PAYMENT → LETTER → OBLIGATION.
+
+    Возвращает ``([(doc_type, filename, pdf_bytes), ...], notices)``.
+    Данные ``data`` мутируются (номера/даты) как при одиночной генерации.
+    """
+    results: list[tuple[str, str, bytes]] = []
+    notices: list[str] = []
+    for doc_type in GENERATE_ALL_DOC_TYPES:
+        filename, pdf_bytes, doc_notices = generate_document(
+            transport_request,
+            car,
+            data,
+            doc_type,
+            signature_bytes=signature_bytes,
+        )
+        results.append((doc_type, filename, pdf_bytes))
+        notices.extend(doc_notices)
+    return results, notices
+
+
 # ---------------------------------------------------------------------------
 # Архив пакетов: один PDF на VIN + тайтл из админки
 # ---------------------------------------------------------------------------

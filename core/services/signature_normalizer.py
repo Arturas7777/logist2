@@ -3,6 +3,10 @@
 Превращает снимок подписи (телефон / скан) в компактный PNG:
 прозрачный фон, синие штрихи «как от шариковой ручки», обрезка полей,
 разумный размер в пикселях.
+
+Важно: не используем морфологический opening (Min→Max) — он рвёт тонкие
+штрихи и даёт «пробелы» в подписи. Вместо этого мягкий blur + лёгкое
+утолщение (dilate), чтобы сомкнуть микроразрывы.
 """
 
 from __future__ import annotations
@@ -21,11 +25,11 @@ _PROCESS_MAX_SIDE = 1600
 # Макс. размер готовой подписи (длинная сторона).
 _MAX_SIDE = 900
 _MIN_SIDE = 120
-# Полупрозрачный «туман» от бумаги/тени убираем полностью.
-# На телефонных фото текстура бумаги даёт альфу ~60–140; штрихи — ~200+.
-_HAZE_CUTOFF = 165
-# Штрих должен быть заметно темнее бумаги (иначе остаётся серый прямоугольник).
-_INK_LUMA_GAP = 42
+# Полупрозрачный «туман» от бумаги: порог мягче прежнего (165), чтобы не
+# выедать полутона тонких штрихов.
+_HAZE_CUTOFF = 110
+# Штрих должен быть темнее бумаги; меньший gap сохраняет бледные линии ручки.
+_INK_LUMA_GAP = 28
 
 
 def normalize_signature_image(
@@ -56,14 +60,16 @@ def normalize_signature_image(
         img = img.copy()
         img.thumbnail((_PROCESS_MAX_SIDE, _PROCESS_MAX_SIDE), Image.LANCZOS)
 
-    gray = img.convert("L").filter(ImageFilter.MedianFilter(size=3))
+    # Лёгкий blur сглаживает JPEG-шум, не разрывая тонкие штрихи (в отличие от Median).
+    gray = img.convert("L").filter(ImageFilter.GaussianBlur(radius=0.6))
     bg_luma = _estimate_bg_luma(gray)
     alpha = gray.point(lambda luma, t=bg_luma: _luma_to_alpha(luma, t))
-    # Жёстко срезаем слабую альфу — иначе в PDF виден серый прямоугольник фона.
+    # Срезаем слабую альфу — иначе в PDF виден серый прямоугольник фона.
     cutoff = _adaptive_haze_cutoff(alpha)
     alpha = alpha.point(lambda a, c=cutoff: 0 if a < c else a)
-    # Мелкий шум бумаги (точки) — морфологическое opening.
-    alpha = alpha.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.MaxFilter(3))
+    # Лёгкое утолщение (dilate) смыкает микроразрывы; opening здесь НЕ делаем.
+    alpha = alpha.filter(ImageFilter.MaxFilter(3))
+
     ink = ink_rgb or _INK_RGB
     out = Image.new("RGBA", gray.size, (*ink, 0))
     out.putalpha(alpha)
@@ -133,9 +139,9 @@ def _adaptive_haze_cutoff(alpha) -> int:
         # Мало кандидатов — не завышаем порог (тонкие штрихи на чистом скане).
         return _HAZE_CUTOFF
     strong.sort()
-    # Нижняя граница плотных штрихов (15-й перцентиль сильных пикселей).
-    p15 = strong[int(len(strong) * 0.15)]
-    return max(_HAZE_CUTOFF, min(220, int(p15) - 10))
+    # Нижняя граница плотных штрихов (10-й перцентиль сильных пикселей).
+    p10 = strong[int(len(strong) * 0.10)]
+    return max(_HAZE_CUTOFF, min(190, int(p10) - 15))
 
 
 def _crop_to_content(img, pad_ratio: float = 0.06):

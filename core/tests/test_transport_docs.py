@@ -525,6 +525,32 @@ def test_normalize_signature_removes_bg_and_tints_blue():
     assert b > r and b > g
 
 
+def test_normalize_signature_keeps_thin_stroke_continuous():
+    """Тонкий штрих не должен разваливаться на «пробелы» (бывший opening Min→Max)."""
+    from PIL import Image
+
+    from core.services.signature_normalizer import normalize_signature_image
+
+    img = Image.new("RGB", (500, 180), (255, 255, 255))
+    # Тонкая линия ~2 px — типичный штрих шариковой ручки на фото.
+    for x in range(40, 460):
+        for y in range(88, 90):
+            img.putpixel((x, y), (30, 30, 30))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=95)
+    png = normalize_signature_image(buf.getvalue())
+    assert png
+    out = Image.open(io.BytesIO(png)).convert("RGBA")
+    alpha = out.split()[-1]
+    # По горизонтали штрих должен покрывать большую часть ширины без больших дыр.
+    ink_cols = 0
+    w, h = out.size
+    for x in range(w):
+        if any(alpha.getpixel((x, y)) > 120 for y in range(h)):
+            ink_cols += 1
+    assert ink_cols / w > 0.55
+
+
 def test_normalize_signature_rerun_on_rgba_keeps_transparency():
     from PIL import Image
 
@@ -667,3 +693,73 @@ def test_download_packages_empty_redirects(logged_client, transport_request):
     response = logged_client.get(url)
     assert response.status_code == 302
     assert response.url == reverse("website:transport_requests")
+
+
+def test_generate_all_package(logged_client, transport_request, car, settings, tmp_path):
+    from PIL import Image
+
+    settings.MEDIA_ROOT = str(tmp_path)
+    # Паспорт-картинка (AI отключён — заполняем поля вручную).
+    passport = Image.new("RGB", (200, 120), (240, 240, 240))
+    passport_buf = io.BytesIO()
+    passport.save(passport_buf, format="JPEG")
+    passport_upload = SimpleUploadedFile("passport.jpg", passport_buf.getvalue(), content_type="image/jpeg")
+
+    sign = Image.new("RGB", (300, 120), (255, 255, 255))
+    for x in range(30, 270):
+        for y in range(55, 75):
+            sign.putpixel((x, y), (10, 10, 10))
+    sign_buf = io.BytesIO()
+    sign.save(sign_buf, format="JPEG")
+    sign_upload = SimpleUploadedFile("sign.jpg", sign_buf.getvalue(), content_type="image/jpeg")
+
+    url = reverse("website:transport_request_generate_all", args=[transport_request.pk])
+    response = logged_client.post(
+        url,
+        {
+            "car": car.pk,
+            "passport": passport_upload,
+            "signature": sign_upload,
+            "buyer_name_ru": BUYER_DATA["buyer_name_ru"],
+            "buyer_address_ru": BUYER_DATA["buyer_address_ru"],
+            "buyer_name": BUYER_DATA["buyer_name"],
+            "buyer_passport_number": BUYER_DATA["buyer_passport_number"],
+            "buyer_birth_date": BUYER_DATA["buyer_birth_date"],
+            "buyer_passport_issue_date": BUYER_DATA["buyer_passport_issue_date"],
+            "buyer_address": BUYER_DATA["buyer_address"],
+            "invoice_amount": "2850",
+            # Не позже чем за 4 недели до «сегодня» — иначе LETTER_USA не датируется.
+            "invoice_date": "2026-06-10",
+            "invoice_extra_desc": ["Fee"],
+            "invoice_extra_amount": ["150"],
+        },
+    )
+    assert response.status_code == 302
+    types = set(transport_request.documents.filter(car=car, is_generated=True).values_list("doc_type", flat=True))
+    assert types == {"INVOICE", "PAYMENT_ORDER", "LETTER_USA", "OBLIGATION"}
+    assert not transport_request.documents.filter(car=car, doc_type="CONTRACT").exists()
+    assert transport_request.documents.filter(car=car, doc_type="PASSPORT").exists()
+    assert transport_request.documents.filter(car=car, doc_type="SIGNATURE").exists()
+    package = transport_request.doc_packages.get(car=car)
+    assert package.data["invoice_extra_lines"] == [{"description": "Fee", "amount": "150"}]
+
+
+def test_signature_flowable_respects_max_box():
+    """Широкая и высокая подписи вписываются в один и тот же max box."""
+    from PIL import Image
+
+    from core.services.transport_docs_pdf import _signature_flowable
+
+    def _png(size):
+        img = Image.new("RGBA", size, (25, 55, 160, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    wide = _signature_flowable(_png((900, 120)), max_height=1.8 * 28.35, max_width=5.2 * 28.35)
+    tall = _signature_flowable(_png((120, 900)), max_height=1.8 * 28.35, max_width=5.2 * 28.35)
+    assert wide is not None and tall is not None
+    assert wide.drawWidth <= 5.2 * 28.35 + 0.01
+    assert wide.drawHeight <= 1.8 * 28.35 + 0.01
+    assert tall.drawWidth <= 5.2 * 28.35 + 0.01
+    assert tall.drawHeight <= 1.8 * 28.35 + 0.01

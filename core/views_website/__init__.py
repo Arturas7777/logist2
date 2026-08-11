@@ -67,6 +67,7 @@ from .portal_transport import (
     transport_request_doc_delete,
     transport_request_download_packages,
     transport_request_edit,
+    transport_request_generate_all,
     transport_request_remove_car,
     transport_request_submit,
     transport_requests,
@@ -116,6 +117,7 @@ __all__ = [  # noqa: RUF022
     "transport_request_doc_action",
     "transport_request_doc_delete",
     "transport_request_download_packages",
+    "transport_request_generate_all",
     # api
     "IsClientUser",
     "ClientCarViewSet",

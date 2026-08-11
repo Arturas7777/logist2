@@ -71,6 +71,11 @@ urlpatterns = [
         views_website.transport_request_download_packages,
         name="transport_request_download_packages",
     ),
+    path(
+        "transport-requests/<int:pk>/generate-all/",
+        views_website.transport_request_generate_all,
+        name="transport_request_generate_all",
+    ),
     # ========== Скачивание фотографий ==========
     path("photo/car/<int:photo_id>/download/", views_website.download_car_photo, name="download_car_photo"),
     path(

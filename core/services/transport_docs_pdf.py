@@ -224,8 +224,17 @@ def _build_pdf(story, *, margins=(2 * cm, 2 * cm, 2 * cm, 2 * cm)) -> bytes:
     return buffer.getvalue()
 
 
-def _signature_flowable(signature_bytes: bytes | None, height=1.4 * cm):
-    """Картинка подписи (jpg/png) с сохранением пропорций; None если нет/не картинка."""
+def _signature_flowable(
+    signature_bytes: bytes | None,
+    *,
+    max_height: float = 1.5 * cm,
+    max_width: float = 4.8 * cm,
+):
+    """Картинка подписи с вписыванием в max_height × max_width (пропорции сохранены).
+
+    Раньше фиксировали только высоту — широкая подпись раздувалась на полстраницы
+    в платёжке, а узкая/высокая становилась крошечной в обязательстве.
+    """
     if not signature_bytes:
         return None
     try:
@@ -233,8 +242,16 @@ def _signature_flowable(signature_bytes: bytes | None, height=1.4 * cm):
         width_px, height_px = reader.getSize()
     except Exception:  # не картинка (например, PDF) — просто без подписи
         return None
-    width = height * width_px / height_px
-    return Image(io.BytesIO(signature_bytes), width=width, height=height)
+    if not width_px or not height_px:
+        return None
+    width = max_height * width_px / height_px
+    height = max_height
+    if width > max_width:
+        height = max_width * height_px / width_px
+        width = max_width
+    image = Image(io.BytesIO(signature_bytes), width=width, height=height, mask="auto")
+    image.hAlign = "LEFT"
+    return image
 
 
 def _asset_flowable(name: str, *, max_height: float, max_width: float | None = None):
@@ -546,7 +563,7 @@ def generate_payment_order_pdf(
         f"ОПЛАТА ПО ИНВОЙСУ № {invoice_number}<br/>"
         f"ДАТА {_date_ru(invoice_date)}  /ПЕРЕВОД НЕ СВЯЗАН С ПРЕДПРИНИМАТЕЛЬСКОЙ ДЕЯТЕЛЬНОСТЬЮ/"
     )
-    signature = _signature_flowable(signature_bytes, height=2.2 * cm)
+    signature = _signature_flowable(signature_bytes, max_height=1.8 * cm, max_width=5.2 * cm)
 
     def P(text, style=label):
         return Paragraph(text, style)
@@ -940,7 +957,7 @@ def generate_obligation_pdf(car, *, date: datetime.date, buyer: dict, signature_
         "России, не буду."
     )
 
-    signature = _signature_flowable(signature_bytes)
+    signature = _signature_flowable(signature_bytes, max_height=1.6 * cm, max_width=4.6 * cm)
     sign_row = Table(
         [
             [

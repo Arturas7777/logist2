@@ -211,14 +211,17 @@ def _docs_map_context(transport_requests):
     """
     package_by_request = {}
     action_urls = {}
+    generate_all_urls = {}
     for tr in transport_requests:
         ctx = _docs_context(tr)
         tr.doc_sections = ctx["doc_sections"]
         package_by_request[str(tr.pk)] = ctx["package_data"]
         action_urls[str(tr.pk)] = reverse("website:transport_request_doc_action", args=[tr.pk])
+        generate_all_urls[str(tr.pk)] = reverse("website:transport_request_generate_all", args=[tr.pk])
     return {
         "package_data_by_request_json": json.dumps(package_by_request, ensure_ascii=False),
         "doc_action_urls_json": json.dumps(action_urls, ensure_ascii=False),
+        "generate_all_urls_json": json.dumps(generate_all_urls, ensure_ascii=False),
     }
 
 
@@ -694,3 +697,150 @@ def transport_request_doc_delete(request, pk, doc_id):
     doc.delete()
     messages.success(request, f"«{_DOC_TYPE_LABELS[doc.doc_type]}»: файл удалён.")
     return redirect(_edit_url(transport_request, car))
+
+
+# Поля, которые принимает окно «Сгенерировать всё».
+_GENERATE_ALL_FIELDS = (
+    "buyer_name_ru",
+    "buyer_address_ru",
+    "buyer_name",
+    "buyer_passport_number",
+    "buyer_birth_date",
+    "buyer_passport_issue_date",
+    "buyer_address",
+    "invoice_number",
+    "invoice_date",
+    "invoice_amount",
+)
+
+
+def _save_upload_doc(request, transport_request, car, doc_type, upload):
+    """Сохранить загруженный файл пакета; для подписи — нормализация."""
+    extension = upload.name.rsplit(".", 1)[-1].lower() if "." in upload.name else ""
+    if extension not in CLIENT_DOCUMENT_ALLOWED_EXTENSIONS:
+        raise PackageDataError(f"Файл {upload.name} — допустимы только PDF, JPG и PNG.")
+    if upload.size > MAX_UPLOAD_SIZE:
+        raise PackageDataError(f"Файл {upload.name} слишком большой (максимум 20 МБ).")
+
+    file_to_save = upload
+    if doc_type == "SIGNATURE" and extension in {"jpg", "jpeg", "png"}:
+        from core.services.signature_normalizer import normalize_signature_image
+
+        normalized = normalize_signature_image(upload.read())
+        upload.seek(0)
+        if normalized:
+            stem = upload.name.rsplit(".", 1)[0] if "." in upload.name else "signature"
+            file_to_save = ContentFile(normalized, name=f"{stem}.png")
+        # Старые сгенерированные «авто»-подписи заменяем.
+        for old in transport_request.documents.filter(car=car, doc_type="SIGNATURE", is_generated=True):
+            old.file.delete(save=False)
+            old.delete()
+
+    return TransportRequestDocument.objects.create(
+        request=transport_request,
+        car=car,
+        doc_type=doc_type,
+        file=file_to_save,
+        uploaded_by=request.user,
+    )
+
+
+@login_required
+@require_POST
+def transport_request_generate_all(request, pk):
+    """Сгенерировать полный пакет по авто (без договора на перевозку).
+
+    Принимает паспорт, адрес кириллицей, подпись и данные инвойса; сохраняет
+    файлы, распознаёт паспорт и создаёт INVOICE / PAYMENT / LETTER / OBLIGATION.
+    """
+    transport_request, error_response = _get_editable_request(request, pk)
+    if transport_request is None:
+        return error_response
+
+    car = get_object_or_404(transport_request.cars, pk=request.POST.get("car", ""))
+    package, _ = TransportDocumentPackage.objects.get_or_create(request=transport_request, car=car)
+    return_url = _edit_url(transport_request, car)
+
+    try:
+        for field in _GENERATE_ALL_FIELDS:
+            if field in request.POST:
+                package.data[field] = request.POST.get(field, "").strip()
+        package.data["invoice_extra_lines"] = docs_service.normalize_invoice_extra_lines_from_post(request.POST)
+        docs_service.parse_date(package.data.get("buyer_birth_date"))
+        docs_service.parse_date(package.data.get("buyer_passport_issue_date"))
+        docs_service.parse_date(package.data.get("invoice_date"))
+        docs_service.parse_amount(package.data.get("invoice_amount"))
+    except PackageDataError as exc:
+        messages.error(request, f"«Сгенерировать всё»: {exc}")
+        return redirect(return_url)
+
+    if not (package.data.get("buyer_address_ru") or "").strip():
+        messages.error(request, "«Сгенерировать всё»: укажите адрес проживания кириллицей.")
+        return redirect(return_url)
+    if not (package.data.get("buyer_name_ru") or "").strip():
+        messages.error(request, "«Сгенерировать всё»: укажите ФИО по-русски.")
+        return redirect(return_url)
+    if docs_service.parse_amount(package.data.get("invoice_amount")) is None:
+        messages.error(request, "«Сгенерировать всё»: укажите цену автомобиля в инвойсе.")
+        return redirect(return_url)
+
+    passport_upload = request.FILES.get("passport")
+    signature_upload = request.FILES.get("signature")
+    has_passport = transport_request.documents.filter(car=car, doc_type="PASSPORT").exists()
+    has_signature = transport_request.documents.filter(car=car, doc_type="SIGNATURE").exists()
+
+    try:
+        saved_passport = []
+        if passport_upload:
+            saved_passport.append(_save_upload_doc(request, transport_request, car, "PASSPORT", passport_upload))
+        elif not has_passport:
+            raise PackageDataError("Загрузите файл паспорта.")
+        if signature_upload:
+            _save_upload_doc(request, transport_request, car, "SIGNATURE", signature_upload)
+        elif not has_signature:
+            raise PackageDataError("Загрузите файл подписи.")
+    except PackageDataError as exc:
+        package.save(update_fields=["data", "updated_at"])
+        messages.error(request, f"«Сгенерировать всё»: {exc}")
+        return redirect(return_url)
+
+    _apply_passport_ai(request, package, saved_passport)
+    # После AI адрес/ФИО латиницей могут появиться; без латиницы инвойс не соберётся.
+    if not (package.data.get("buyer_address") or "").strip() and (package.data.get("buyer_address_ru") or "").strip():
+        from core.services import passport_extractor
+
+        latin = passport_extractor.transliterate_address(package.data["buyer_address_ru"])
+        if latin:
+            package.data["buyer_address"] = latin
+
+    try:
+        results, notices = docs_service.generate_all_documents(
+            transport_request,
+            car,
+            package.data,
+            signature_bytes=_signature_bytes(transport_request, car),
+        )
+    except PackageDataError as exc:
+        package.save(update_fields=["data", "updated_at"])
+        messages.error(request, f"«Сгенерировать всё»: {exc}")
+        return redirect(return_url)
+
+    package.save(update_fields=["data", "updated_at"])
+    for doc_type, filename, pdf_bytes in results:
+        for old in transport_request.documents.filter(car=car, doc_type=doc_type, is_generated=True):
+            old.file.delete(save=False)
+            old.delete()
+        TransportRequestDocument.objects.create(
+            request=transport_request,
+            car=car,
+            doc_type=doc_type,
+            file=ContentFile(pdf_bytes, name=filename),
+            is_generated=True,
+            uploaded_by=request.user,
+        )
+
+    labels = ", ".join(_DOC_TYPE_LABELS[dt] for dt, _, _ in results)
+    messages.success(request, f"Пакет сгенерирован: {labels}.")
+    for notice in notices:
+        messages.info(request, notice)
+    return redirect(return_url)

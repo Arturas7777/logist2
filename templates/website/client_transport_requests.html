@@ -64,13 +64,19 @@
         display: flex; align-items: center; gap: .45rem;
         flex-wrap: wrap; margin: .2rem 0;
     }
-    .req-car-remove {
+    .req-car-end-btns {
+        display: inline-flex; align-items: center; gap: .1rem; flex-shrink: 0;
+    }
+    .req-car-remove,
+    .req-car-generate-all {
         display: inline-flex; align-items: center; justify-content: center;
         width: 1.5rem; height: 1.5rem; padding: 0; border: 0;
         border-radius: .35rem; background: transparent;
         color: #adb5bd; font-size: 1.25rem; line-height: 1;
         flex-shrink: 0; text-decoration: none;
     }
+    .req-car-generate-all { font-size: 1rem; color: #845ef7; }
+    .req-car-generate-all:hover { color: #7048e8; background: rgba(132, 94, 247, .1); }
     .req-car-remove:hover { color: #dc3545; background: rgba(220, 53, 69, .08); }
     .req-car-dd .dropdown-toggle {
         display: inline-flex; align-items: center; gap: .45rem;
@@ -432,11 +438,21 @@
                                     </span>
                                     {% endif %}
                                     {% if req.is_client_editable %}
-                                    <form method="post" action="{% url 'website:transport_request_remove_car' req.pk section.car.pk %}" class="d-inline"
-                                          onsubmit="return confirm('{% trans 'Убрать этот автомобиль из заявки?' %}');">
-                                        {% csrf_token %}
-                                        <button type="submit" class="req-car-remove" title="{% trans 'Убрать из заявки' %}" aria-label="{% trans 'Убрать из заявки' %}">&times;</button>
-                                    </form>
+                                    <span class="req-car-end-btns">
+                                        <button type="button"
+                                                class="req-car-generate-all"
+                                                title="{% trans 'Сгенерировать всё' %}"
+                                                aria-label="{% trans 'Сгенерировать всё' %}"
+                                                data-req="{{ req.pk }}"
+                                                data-car="{{ section.car.pk }}">
+                                            <i class="bi bi-magic" aria-hidden="true"></i>
+                                        </button>
+                                        <form method="post" action="{% url 'website:transport_request_remove_car' req.pk section.car.pk }}" class="d-inline"
+                                              onsubmit="return confirm('{% trans 'Убрать этот автомобиль из заявки?' %}');">
+                                            {% csrf_token %}
+                                            <button type="submit" class="req-car-remove" title="{% trans 'Убрать из заявки' %}" aria-label="{% trans 'Убрать из заявки' %}">&times;</button>
+                                        </form>
+                                    </span>
                                     {% endif %}
                                 </span>
                                 {% endif %}
@@ -635,6 +651,99 @@
           <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{% trans "Закрыть" %}</button>
           <button type="submit" name="action" value="save" class="btn btn-sm btn-primary"><i class="bi bi-save"></i> {% trans "Сохранить" %}</button>
           <button type="submit" name="action" value="generate" class="btn btn-sm btn-success"><i class="bi bi-magic"></i> {% trans "Сгенерировать" %}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Сгенерировать всё (полный пакет без договора) -->
+<div class="modal fade" id="docModal-GENERATE_ALL" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form method="post" action="#" enctype="multipart/form-data">
+        {% csrf_token %}
+        <input type="hidden" name="car" value="" class="doc-car-input">
+        <div class="modal-header">
+          <h6 class="modal-title"><i class="bi bi-magic"></i> {% trans "Сгенерировать всё" %}</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="small text-muted mb-3">
+            {% trans "Заполните данные и загрузите файлы — будут созданы инвойс, платёжка, письмо USA и обязательство клиента. Договор на перевозку не генерируется." %}
+          </p>
+          <div class="row g-2 mb-3">
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">{% trans "Паспорт (PDF/JPG/PNG)" %} *</label>
+              <input type="file" name="passport" accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm">
+              <div class="form-text">{% trans "Если паспорт уже загружен для этого авто — можно не прикладывать снова. ФИО и даты распознаются автоматически." %}</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small fw-semibold">{% trans "Подпись (JPG/PNG)" %} *</label>
+              <input type="file" name="signature" accept=".jpg,.jpeg,.png" class="form-control form-control-sm">
+              <div class="form-text">{% trans "Если подпись уже загружена — можно не прикладывать снова." %}</div>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold">{% trans "ФИО по-русски" %} *</label>
+            <input type="text" name="buyer_name_ru" class="form-control form-control-sm pkg-field" placeholder="Зизико Владимир Константинович">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">{% trans "Адрес проживания кириллицей" %} *</label>
+            <textarea name="buyer_address_ru" rows="2" class="form-control form-control-sm pkg-field"
+                      placeholder="д. Большая Лысица, Несвижского р-на, ул. Гая 5"></textarea>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-6">
+              <label class="form-label small">{% trans "ФИО латиницей" %}</label>
+              <input type="text" name="buyer_name" class="form-control form-control-sm pkg-field" placeholder="ZIZIKA ULADZIMIR">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">{% trans "Номер паспорта" %}</label>
+              <input type="text" name="buyer_passport_number" class="form-control form-control-sm pkg-field" placeholder="MC3902087">
+            </div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-6">
+              <label class="form-label small">{% trans "Дата выдачи" %}</label>
+              <input type="date" name="buyer_passport_issue_date" class="form-control form-control-sm pkg-field">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">{% trans "Дата рождения" %}</label>
+              <input type="date" name="buyer_birth_date" class="form-control form-control-sm pkg-field">
+            </div>
+          </div>
+          <hr class="my-3">
+          <div class="row g-2 mb-1">
+            <div class="col-4">
+              <label class="form-label small">{% trans "Номер инвойса" %}</label>
+              <input type="text" name="invoice_number" class="form-control form-control-sm pkg-field" placeholder="{% trans 'авто' %}">
+            </div>
+            <div class="col-4">
+              <label class="form-label small">{% trans "Дата инвойса" %}</label>
+              <input type="date" name="invoice_date" class="form-control form-control-sm pkg-field">
+            </div>
+            <div class="col-4">
+              <label class="form-label small">{% trans "Цена авто, USD" %} *</label>
+              <input type="text" name="invoice_amount" class="form-control form-control-sm pkg-field invoice-amount-input" placeholder="2850">
+            </div>
+          </div>
+          <div class="mt-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <label class="form-label small fw-semibold mb-0">{% trans "Дополнительные строки" %}</label>
+              <button type="button" class="btn btn-sm btn-outline-secondary invoice-add-line">
+                <i class="bi bi-plus-lg"></i> {% trans "Добавить" %}
+              </button>
+            </div>
+            <div class="invoice-extra-lines"></div>
+            <div class="small fw-semibold mt-2 invoice-total-preview text-muted">{% trans "Итого" %}: —</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">{% trans "Закрыть" %}</button>
+          <button type="submit" class="btn btn-sm btn-success">
+            <i class="bi bi-magic"></i> {% trans "Сгенерировать пакет" %}
+          </button>
         </div>
       </form>
     </div>
@@ -941,6 +1050,7 @@
 (function () {
     var PKG_BY_REQ = {{ package_data_by_request_json|default:"{}"|safe }};
     var ACTION_URLS = {{ doc_action_urls_json|default:"{}"|safe }};
+    var GENERATE_ALL_URLS = {{ generate_all_urls_json|default:"{}"|safe }};
 
     function isImageName(name) {
         return /\.(jpe?g|png|gif|webp)$/i.test(name || "");
@@ -1115,27 +1225,41 @@
         updateInvoiceTotalPreview(modal);
     }
 
-    var invoiceModal = document.getElementById("docModal-INVOICE");
-    if (invoiceModal) {
-        invoiceModal.addEventListener("click", function (e) {
-            if (e.target.closest(".invoice-add-line")) {
-                e.preventDefault();
-                addInvoiceExtraRow(invoiceModal, "", "");
+    document.addEventListener("click", function (e) {
+        var addBtn = e.target.closest(".invoice-add-line");
+        if (addBtn) {
+            e.preventDefault();
+            addInvoiceExtraRow(addBtn.closest(".modal"), "", "");
+            return;
+        }
+        var removeBtn = e.target.closest(".invoice-remove-line");
+        if (removeBtn) {
+            e.preventDefault();
+            var modal = removeBtn.closest(".modal");
+            var row = removeBtn.closest(".invoice-extra-row");
+            if (row) row.remove();
+            updateInvoiceTotalPreview(modal);
+        }
+    });
+    document.addEventListener("input", function (e) {
+        if (
+            e.target.classList.contains("invoice-amount-input") ||
+            e.target.classList.contains("invoice-extra-amount")
+        ) {
+            updateInvoiceTotalPreview(e.target.closest(".modal"));
+        }
+    });
+
+    function fillPkgFields(modal, data, reqId) {
+        var card = document.getElementById("req-" + reqId);
+        var carrierFromCard = card ? (card.getAttribute("data-carrier-name") || "") : "";
+        modal.querySelectorAll(".pkg-field").forEach(function (input) {
+            var value = data[input.name] || "";
+            if (!value && input.name === "carrier_company") {
+                var carrierName = document.getElementById("id_carrier_name");
+                value = (carrierName && carrierName.value) || carrierFromCard || "";
             }
-            if (e.target.closest(".invoice-remove-line")) {
-                e.preventDefault();
-                var row = e.target.closest(".invoice-extra-row");
-                if (row) row.remove();
-                updateInvoiceTotalPreview(invoiceModal);
-            }
-        });
-        invoiceModal.addEventListener("input", function (e) {
-            if (
-                e.target.classList.contains("invoice-amount-input") ||
-                e.target.classList.contains("invoice-extra-amount")
-            ) {
-                updateInvoiceTotalPreview(invoiceModal);
-            }
+            input.value = value;
         });
     }
 
@@ -1148,16 +1272,7 @@
         if (form) form.action = action;
         modal.querySelectorAll(".doc-car-input").forEach(function (input) { input.value = carId; });
         var data = (PKG_BY_REQ[String(reqId)] || {})[String(carId)] || {};
-        var card = document.getElementById("req-" + reqId);
-        var carrierFromCard = card ? (card.getAttribute("data-carrier-name") || "") : "";
-        modal.querySelectorAll(".pkg-field").forEach(function (input) {
-            var value = data[input.name] || "";
-            if (!value && input.name === "carrier_company") {
-                var carrierName = document.getElementById("id_carrier_name");
-                value = (carrierName && carrierName.value) || carrierFromCard || "";
-            }
-            input.value = value;
-        });
+        fillPkgFields(modal, data, reqId);
         if (docType === "INVOICE") {
             fillInvoiceExtraLines(modal, data.invoice_extra_lines || []);
         }
@@ -1167,9 +1282,33 @@
         bootstrap.Modal.getOrCreateInstance(modal).show();
     }
 
+    function openGenerateAll(reqId, carId) {
+        var modal = document.getElementById("docModal-GENERATE_ALL");
+        if (!modal) return;
+        var action = GENERATE_ALL_URLS[String(reqId)];
+        if (!action) return;
+        var form = modal.querySelector("form");
+        if (form) {
+            form.action = action;
+            form.querySelectorAll('input[type="file"]').forEach(function (input) { input.value = ""; });
+        }
+        modal.querySelectorAll(".doc-car-input").forEach(function (input) { input.value = carId; });
+        var data = (PKG_BY_REQ[String(reqId)] || {})[String(carId)] || {};
+        fillPkgFields(modal, data, reqId);
+        fillInvoiceExtraLines(modal, data.invoice_extra_lines || []);
+        bootstrap.Modal.getOrCreateInstance(modal).show();
+    }
+
     document.querySelectorAll(".doc-open-btn[data-req]").forEach(function (btn) {
         btn.addEventListener("click", function () {
             openDoc(btn.dataset.req, btn.dataset.docType, btn.dataset.car);
+        });
+    });
+    document.querySelectorAll(".req-car-generate-all[data-req]").forEach(function (btn) {
+        btn.addEventListener("click", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            openGenerateAll(btn.dataset.req, btn.dataset.car);
         });
     });
 
