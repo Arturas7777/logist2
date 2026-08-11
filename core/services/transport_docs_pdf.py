@@ -364,7 +364,20 @@ def _president_block(style):
 # ---------------------------------------------------------------------------
 
 
-def generate_invoice_pdf(car, *, number: str, date: datetime.date, amount: Decimal, buyer: dict) -> bytes:
+def generate_invoice_pdf(
+    car,
+    *,
+    number: str,
+    date: datetime.date,
+    amount: Decimal,
+    buyer: dict,
+    extra_lines: list[dict] | None = None,
+) -> bytes:
+    """PDF инвойса: строка авто + опциональные доп. строки, итог = сумма всех.
+
+    ``amount`` — цена автомобиля. ``extra_lines`` — список
+    ``{"description": str, "amount": Decimal}``.
+    """
     base = _style()
     bold = _style("bold")
     small = _style("small", fontSize=9, leading=12)
@@ -415,25 +428,37 @@ def generate_invoice_pdf(car, *, number: str, date: datetime.date, amount: Decim
     )
     to_blocks.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
 
-    money = _money_usd(amount)
+    car_money = _money_usd(amount)
     category = buyer.get("car_category") or "М1"
-    items = Table(
+    total = amount
+    item_rows = [
         [
-            [
-                Paragraph("<b>QUANTITY</b>", base),
-                Paragraph("<b>DESCRIPTION</b>", base),
-                Paragraph("<b>Unit price</b>", base),
-                Paragraph("<b>Total</b>", base),
-            ],
+            Paragraph("<b>QUANTITY</b>", base),
+            Paragraph("<b>DESCRIPTION</b>", base),
+            Paragraph("<b>Unit price</b>", base),
+            Paragraph("<b>Total</b>", base),
+        ],
+        [
+            Paragraph("1", base),
+            Paragraph(f"{car_description(car)}<br/>Car category - {category}", base),
+            Paragraph(car_money, base),
+            Paragraph(car_money, base),
+        ],
+    ]
+    for line in extra_lines or []:
+        line_amount = line["amount"]
+        total += line_amount
+        line_money = _money_usd(line_amount)
+        item_rows.append(
             [
                 Paragraph("1", base),
-                Paragraph(f"{car_description(car)}<br/>Car category - {category}", base),
-                Paragraph(money, base),
-                Paragraph(money, base),
-            ],
-        ],
-        colWidths=[2.6 * cm, 9.4 * cm, 2.5 * cm, 2.5 * cm],
-    )
+                Paragraph(str(line["description"]), base),
+                Paragraph(line_money, base),
+                Paragraph(line_money, base),
+            ]
+        )
+
+    items = Table(item_rows, colWidths=[2.6 * cm, 9.4 * cm, 2.5 * cm, 2.5 * cm])
     items.setStyle(
         TableStyle(
             [
@@ -444,12 +469,13 @@ def generate_invoice_pdf(car, *, number: str, date: datetime.date, amount: Decim
         )
     )
 
+    total_money = _money_usd(total)
     totals = Table(
         [
-            ["", Paragraph("<b>SUBTOTAL</b>", base), Paragraph(money, base)],
+            ["", Paragraph("<b>SUBTOTAL</b>", base), Paragraph(total_money, base)],
             ["", Paragraph("<b>SALES TAX</b>", base), Paragraph("-", base)],
             ["", Paragraph("<b>SHIPPING &amp; HANDLING</b>", base), Paragraph("-", base)],
-            ["", Paragraph("<b>TOTAL DUE</b>", bold), Paragraph(f"<b>{money}</b>", bold)],
+            ["", Paragraph("<b>TOTAL DUE</b>", bold), Paragraph(f"<b>{total_money}</b>", bold)],
         ],
         colWidths=[9.5 * cm, 5.0 * cm, 2.5 * cm],
     )
@@ -621,9 +647,7 @@ def generate_payment_order_pdf(
         colWidths=[L, W - L],
         rowHeights=[1.5 * cm, 0.8 * cm],
     )
-    payer_block.setStyle(
-        box("mid", [("VALIGN", (0, 0), (-1, 0), "TOP"), ("VALIGN", (0, 1), (-1, 1), "MIDDLE")])
-    )
+    payer_block.setStyle(box("mid", [("VALIGN", (0, 0), (-1, 0), "TOP"), ("VALIGN", (0, 1), (-1, 1), "MIDDLE")]))
 
     send_bank = Table(
         [[P("Банк-отправитель:", label), P(bank_name, value), P("Код банка", label), P(bank_code, value)]],

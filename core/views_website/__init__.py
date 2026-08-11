@@ -33,17 +33,17 @@ from .ai_chat import (
     ai_chat_history,
     get_ai_response,
 )
-from .auth import (
-    ClientLoginView,
-    ClientLogoutView,
-    client_register,
-)
 from .api import (
     ClientCarViewSet,
     ClientContainerViewSet,
     ContactMessageViewSet,
     IsClientUser,
     NewsViewSet,
+)
+from .auth import (
+    ClientLoginView,
+    ClientLogoutView,
+    client_register,
 )
 from .client_portal import (
     car_detail,
@@ -65,6 +65,7 @@ from .portal_transport import (
     transport_request_delete,
     transport_request_doc_action,
     transport_request_doc_delete,
+    transport_request_download_packages,
     transport_request_edit,
     transport_request_remove_car,
     transport_request_submit,
@@ -85,30 +86,55 @@ from .signed_photos import (
 )
 from .tracking import track_shipment
 
-__all__ = [
+__all__ = [  # noqa: RUF022
     # public
-    'website_home', 'about_page', 'services_page', 'contact_page',
-    'news_list', 'news_detail',
+    "website_home",
+    "about_page",
+    "services_page",
+    "contact_page",
+    "news_list",
+    "news_detail",
     # client_portal
-    'client_dashboard', 'car_detail', 'container_detail',
+    "client_dashboard",
+    "car_detail",
+    "container_detail",
     # auth
-    'ClientLoginView', 'ClientLogoutView', 'client_register',
+    "ClientLoginView",
+    "ClientLogoutView",
+    "client_register",
     # portal_docs
-    'client_documents', 'upload_document', 'create_declaration_request',
-    'declaration_print',
+    "client_documents",
+    "upload_document",
+    "create_declaration_request",
+    "declaration_print",
     # portal_transport
-    'transport_requests', 'transport_request_edit', 'transport_request_delete',
-    'transport_request_submit', 'transport_request_remove_car',
-    'transport_request_doc_action', 'transport_request_doc_delete',
+    "transport_requests",
+    "transport_request_edit",
+    "transport_request_delete",
+    "transport_request_submit",
+    "transport_request_remove_car",
+    "transport_request_doc_action",
+    "transport_request_doc_delete",
+    "transport_request_download_packages",
     # api
-    'IsClientUser', 'ClientCarViewSet', 'ClientContainerViewSet',
-    'NewsViewSet', 'ContactMessageViewSet',
+    "IsClientUser",
+    "ClientCarViewSet",
+    "ClientContainerViewSet",
+    "NewsViewSet",
+    "ContactMessageViewSet",
     # tracking
-    'track_shipment',
+    "track_shipment",
     # photos_authed
-    'download_car_photo', 'download_container_photo', 'download_all_car_photos',
+    "download_car_photo",
+    "download_container_photo",
+    "download_all_car_photos",
     # ai_chat
-    'get_ai_response', 'ai_chat', 'ai_chat_feedback', 'ai_chat_history',
+    "get_ai_response",
+    "ai_chat",
+    "ai_chat_feedback",
+    "ai_chat_history",
     # signed_photos
-    'get_container_photos', 'download_photos_archive', 'serve_signed_photo',
+    "get_container_photos",
+    "download_photos_archive",
+    "serve_signed_photo",
 ]

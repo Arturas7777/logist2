@@ -19,10 +19,16 @@
 from __future__ import annotations
 
 import datetime
+import io
+import logging
+import os
 import random
+import zipfile
 from decimal import Decimal, InvalidOperation
 
 import holidays as holidays_lib
+
+logger = logging.getLogger(__name__)
 
 # Какие праздники учитывать для даты каждого генерируемого документа.
 DOC_HOLIDAY_COUNTRIES = {
@@ -87,6 +93,69 @@ def parse_amount(value: str | None) -> Decimal | None:
     if amount <= 0:
         raise PackageDataError("Сумма должна быть больше нуля.")
     return amount
+
+
+def parse_invoice_extra_lines(data: dict) -> list[dict]:
+    """Доп. строки инвойса из ``data['invoice_extra_lines']``.
+
+    Каждая строка: ``{"description": str, "amount": Decimal}``.
+    Пустые/битые элементы пропускаются с ошибкой только если заполнена
+    ровно одна из двух частей (описание без суммы или наоборот).
+    """
+    raw = data.get("invoice_extra_lines") or []
+    if not isinstance(raw, list):
+        raise PackageDataError("Некорректный формат дополнительных строк инвойса.")
+    lines: list[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        description = str(item.get("description") or "").strip()
+        amount_raw = item.get("amount")
+        amount_str = "" if amount_raw is None else str(amount_raw).strip()
+        if not description and not amount_str:
+            continue
+        if not description:
+            raise PackageDataError("У доп. строки инвойса укажите описание.")
+        if not amount_str:
+            raise PackageDataError(f"У доп. строки «{description}» укажите сумму.")
+        lines.append({"description": description, "amount": parse_amount(amount_str)})
+    return lines
+
+
+def invoice_total_amount(data: dict) -> Decimal | None:
+    """Итоговая сумма инвойса: цена авто + доп. строки."""
+    base = parse_amount(data.get("invoice_amount"))
+    if base is None:
+        return None
+    total = base
+    for line in parse_invoice_extra_lines(data):
+        total += line["amount"]
+    return total
+
+
+def normalize_invoice_extra_lines_from_post(post) -> list[dict]:
+    """Собрать ``invoice_extra_lines`` из списков полей формы.
+
+    Ожидает ``invoice_extra_desc`` / ``invoice_extra_amount`` (getlist).
+    Возвращает список словарей со строковыми суммами (как в JSON пакета).
+    """
+    descs = post.getlist("invoice_extra_desc")
+    amounts = post.getlist("invoice_extra_amount")
+    # Выравниваем длины на случай рассинхрона полей.
+    size = max(len(descs), len(amounts))
+    lines: list[dict] = []
+    for idx in range(size):
+        description = (descs[idx] if idx < len(descs) else "").strip()
+        amount_str = (amounts[idx] if idx < len(amounts) else "").strip()
+        if not description and not amount_str:
+            continue
+        if not description:
+            raise PackageDataError("У доп. строки инвойса укажите описание.")
+        if not amount_str:
+            raise PackageDataError(f"У доп. строки «{description}» укажите сумму.")
+        parse_amount(amount_str)  # валидация
+        lines.append({"description": description, "amount": amount_str})
+    return lines
 
 
 def resolve_document_date(
@@ -174,10 +243,7 @@ def pick_letter_usa_date(
         if is_business_day(day := start + datetime.timedelta(days=offset), countries)
     ]
     if not candidates:
-        raise PackageDataError(
-            "В допустимом диапазоне нет рабочих дней США для письма USA. "
-            "Проверьте дату инвойса."
-        )
+        raise PackageDataError("В допустимом диапазоне нет рабочих дней США для письма USA. Проверьте дату инвойса.")
     return random.choice(candidates)
 
 
@@ -297,11 +363,19 @@ def generate_document(
         require(data, "buyer_address", "Сначала укажите адрес покупателя в окне «Паспорт».")
         amount = parse_amount(data.get("invoice_amount"))
         if amount is None:
-            raise PackageDataError("Укажите сумму инвойса.")
+            raise PackageDataError("Укажите цену автомобиля в инвойсе.")
+        extra_lines = parse_invoice_extra_lines(data)
         number = (data.get("invoice_number") or "").strip() or str(next_portal_number("PORTAL-USA-INVOICE", 32545))
         data["invoice_number"] = number
         date = resolve("invoice_date")
-        pdf_bytes = pdf.generate_invoice_pdf(car, number=number, date=date, amount=amount, buyer=_buyer_from(data))
+        pdf_bytes = pdf.generate_invoice_pdf(
+            car,
+            number=number,
+            date=date,
+            amount=amount,
+            buyer=_buyer_from(data),
+            extra_lines=extra_lines,
+        )
 
     elif doc_type == "PAYMENT_ORDER":
         invoice_number = require(
@@ -313,7 +387,7 @@ def generate_document(
         invoice_date = get_invoice_date(data)
         if invoice_date is None:
             raise PackageDataError("Укажите дату инвойса в окне «Инвойс».")
-        amount = parse_amount(data.get("invoice_amount"))
+        amount = invoice_total_amount(data)
         if amount is None:
             raise PackageDataError("Укажите сумму инвойса в окне «Инвойс».")
         require(data, "buyer_name", "Сначала заполните данные покупателя в окне «Паспорт».")
@@ -420,3 +494,131 @@ def generate_document(
         raise PackageDataError("Этот документ нельзя сгенерировать — загрузите реальный файл.")
 
     return document_filename(doc_type, car), pdf_bytes, notices
+
+
+# ---------------------------------------------------------------------------
+# Архив пакетов: один PDF на VIN + тайтл из админки
+# ---------------------------------------------------------------------------
+
+# Подпись — входной файл для генерации, в пакет для скачивания не кладём.
+_ARCHIVE_SKIP_DOC_TYPES = frozenset({"SIGNATURE"})
+
+_IMAGE_EXTS = frozenset({"jpg", "jpeg", "png", "gif", "webp"})
+
+
+def package_pdf_filename(car) -> str:
+    """Имя единого PDF-пакета на авто: ``PACKAGE MALIBU 1248.pdf``."""
+    model_word = car.brand.split()[-1].upper() if car.brand else "CAR"
+    return f"PACKAGE {model_word} {car.vin[-4:]}.pdf"
+
+
+def _read_storage_file(field_file) -> bytes | None:
+    """Прочитать FileField; ``None``, если файла нет или он недоступен."""
+    if not field_file or not getattr(field_file, "name", None):
+        return None
+    try:
+        field_file.open("rb")
+    except (FileNotFoundError, ValueError, OSError) as exc:
+        logger.warning("archive: cannot open %s: %s", getattr(field_file, "name", "?"), exc)
+        return None
+    try:
+        return field_file.read()
+    finally:
+        field_file.close()
+
+
+def _append_file_bytes(out_doc, data: bytes, filename: str) -> None:
+    """Добавить PDF или изображение в объединённый документ (PyMuPDF)."""
+    import fitz
+
+    ext = os.path.splitext(filename or "")[1].lstrip(".").lower()
+    if ext == "pdf" or data[:4] == b"%PDF":
+        src = fitz.open(stream=data, filetype="pdf")
+        try:
+            out_doc.insert_pdf(src)
+        finally:
+            src.close()
+        return
+    if ext in _IMAGE_EXTS or ext == "jpg":
+        filetype = "jpeg" if ext in {"jpg", "jpeg"} else ext
+        try:
+            img = fitz.open(stream=data, filetype=filetype)
+        except Exception:
+            # fallback: пусть PyMuPDF сам угадает формат
+            img = fitz.open(stream=data)
+        try:
+            pdf_bytes = img.convert_to_pdf()
+        finally:
+            img.close()
+        src = fitz.open(stream=pdf_bytes, filetype="pdf")
+        try:
+            out_doc.insert_pdf(src)
+        finally:
+            src.close()
+        return
+    raise PackageDataError(f"Неподдерживаемый формат файла: {filename or ext or '?'}")
+
+
+def build_car_package_pdf(transport_request, car) -> bytes | None:
+    """Собрать единый PDF по авто: документы заявки + тайтл из админки.
+
+    Порядок страниц — как в ``TRANSPORT_DOCUMENT_TYPES`` (без подписи),
+    затем скан тайтла ``Car.title_scan``. Возвращает ``None``, если нечего
+    положить в пакет.
+    """
+    import fitz
+
+    from core.models.website import TRANSPORT_DOCUMENT_TYPES
+
+    type_order = {code: idx for idx, (code, _) in enumerate(TRANSPORT_DOCUMENT_TYPES)}
+    docs = [d for d in transport_request.documents.filter(car=car) if d.doc_type not in _ARCHIVE_SKIP_DOC_TYPES]
+    docs.sort(key=lambda d: (type_order.get(d.doc_type, 99), d.created_at, d.pk))
+
+    out = fitz.open()
+    try:
+        for doc in docs:
+            data = _read_storage_file(doc.file)
+            if not data:
+                continue
+            try:
+                _append_file_bytes(out, data, doc.filename)
+            except Exception as exc:
+                logger.warning(
+                    "archive: skip doc id=%s (%s): %s",
+                    doc.pk,
+                    doc.filename,
+                    exc,
+                )
+
+        title_data = _read_storage_file(getattr(car, "title_scan", None))
+        if title_data:
+            title_name = os.path.basename(car.title_scan.name) if car.title_scan.name else "title.pdf"
+            try:
+                _append_file_bytes(out, title_data, title_name)
+            except Exception as exc:
+                logger.warning("archive: skip title for car %s: %s", car.vin, exc)
+
+        if out.page_count == 0:
+            return None
+        return out.tobytes()
+    finally:
+        out.close()
+
+
+def build_request_packages_zip(transport_request) -> tuple[str, bytes]:
+    """ZIP с PDF-пакетами по каждому VIN заявки.
+
+    Возвращает ``(имя_архива, байты)``. Пустой архив → ``PackageDataError``.
+    """
+    buf = io.BytesIO()
+    added = 0
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for car in transport_request.cars.all().order_by("id"):
+            pdf_bytes = build_car_package_pdf(transport_request, car)
+            if not pdf_bytes:
+                continue
+            zf.writestr(package_pdf_filename(car), pdf_bytes)
+            added += 1
+    if added == 0:
+        raise PackageDataError("Нет документов для скачивания. Загрузите или сформируйте документы по автомобилям.")
+    return f"{transport_request.number}_packages.zip", buf.getvalue()

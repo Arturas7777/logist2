@@ -132,6 +132,93 @@ def test_generate_invoice(transport_request, car):
     assert data["invoice_number"]  # номер присвоен автоматически
 
 
+def test_invoice_total_with_extra_lines():
+    data = {
+        "invoice_amount": "2850",
+        "invoice_extra_lines": [
+            {"description": "Delivery", "amount": "150"},
+            {"description": "Fee", "amount": "50.5"},
+        ],
+    }
+    assert docs.invoice_total_amount(data) == Decimal("3050.5")
+    lines = docs.parse_invoice_extra_lines(data)
+    assert len(lines) == 2
+    assert lines[0]["description"] == "Delivery"
+    assert lines[0]["amount"] == Decimal("150")
+
+
+def test_generate_invoice_with_extra_lines(transport_request, car):
+    import fitz
+
+    data = {
+        **BUYER_DATA,
+        "invoice_amount": "2850",
+        "invoice_date": "2026-08-12",
+        "invoice_extra_lines": [
+            {"description": "Auction fee", "amount": "150"},
+            {"description": "Loading", "amount": "50"},
+        ],
+    }
+    _, pdf_bytes, _ = docs.generate_document(transport_request, car, data, "INVOICE")
+    page = fitz.open(stream=pdf_bytes, filetype="pdf")[0]
+    text = page.get_text()
+    assert "Auction fee" in text
+    assert "Loading" in text
+    assert "$150" in text
+    assert "$50" in text
+    assert "$3,050" in text  # 2850 + 150 + 50
+
+
+def test_payment_order_uses_invoice_total_with_extras(transport_request, car):
+    import fitz
+
+    data = {
+        **BUYER_DATA,
+        "invoice_number": "32545",
+        "invoice_date": "2026-08-12",
+        "invoice_amount": "2850",
+        "invoice_extra_lines": [{"description": "Fee", "amount": "150"}],
+    }
+    _, pdf_bytes, _ = docs.generate_document(transport_request, car, data, "PAYMENT_ORDER")
+    text = fitz.open(stream=pdf_bytes, filetype="pdf")[0].get_text()
+    # платёжка берёт итоговую сумму (2850+150), не только цену авто
+    assert "Три тысячи" in text
+    assert amount_in_words_ru(Decimal("3000")).split()[0] in text
+    assert "две тысячи восемьсот" not in text.lower()
+
+
+def test_invoice_extra_lines_saved_via_view(logged_client, transport_request, car, settings, tmp_path):
+    settings.MEDIA_ROOT = str(tmp_path)
+    logged_client.post(
+        _doc_url(transport_request),
+        {"doc_type": "PASSPORT", "car": car.pk, "action": "save", **BUYER_DATA},
+    )
+    response = logged_client.post(
+        _doc_url(transport_request),
+        {
+            "doc_type": "INVOICE",
+            "car": car.pk,
+            "action": "generate",
+            "invoice_amount": "2850",
+            "invoice_date": "2026-08-12",
+            "invoice_extra_desc": ["Auction fee", "Loading"],
+            "invoice_extra_amount": ["150", "50"],
+        },
+    )
+    assert response.status_code == 302
+    package = transport_request.doc_packages.get(car=car)
+    assert package.data["invoice_extra_lines"] == [
+        {"description": "Auction fee", "amount": "150"},
+        {"description": "Loading", "amount": "50"},
+    ]
+    doc = transport_request.documents.get(doc_type="INVOICE")
+    import fitz
+
+    text = fitz.open(stream=doc.file.read(), filetype="pdf")[0].get_text()
+    assert "Auction fee" in text
+    assert "$3,050" in text
+
+
 def test_generate_payment_order_needs_invoice(transport_request, car):
     with pytest.raises(PackageDataError, match="инвойс"):
         docs.generate_document(transport_request, car, dict(BUYER_DATA), "PAYMENT_ORDER")
@@ -146,13 +233,14 @@ def test_generate_payment_order(transport_request, car):
     }
     filename, pdf_bytes, notices = docs.generate_document(transport_request, car, data, "PAYMENT_ORDER")
     assert pdf_bytes[:4] == b"%PDF"
-    import fitz
     import re
+
+    import fitz
 
     page = fitz.open(stream=pdf_bytes, filetype="pdf")[0]
     text = page.get_text()
     assert docs.DEFAULT_BELARUS_PAYER_IBAN in text.replace(" ", "")
-    assert 'BTA Bank' in text
+    assert "BTA Bank" in text
     assert docs.DEFAULT_BELARUS_PAYER_BANK_CODE in text
     assert re.fullmatch(r"\d{4}-\d{1,4}", data["payment_number"])
     payment_date = datetime.date.fromisoformat(data["payment_date"])
@@ -179,15 +267,9 @@ def test_bank_stamp_date_and_variety(tmp_path, monkeypatch):
     assert len(paths) >= 8
     assert all(p.exists() and p.read_bytes()[:4] == b"\x89PNG" for p in paths)
 
-    a = bank_stamp.compose_executor_stamp_field(
-        day, field_width_pt=280, field_height_pt=150, payment_number="2711-24"
-    )
-    b = bank_stamp.compose_executor_stamp_field(
-        day, field_width_pt=280, field_height_pt=150, payment_number="2711-25"
-    )
-    a2 = bank_stamp.compose_executor_stamp_field(
-        day, field_width_pt=280, field_height_pt=150, payment_number="2711-24"
-    )
+    a = bank_stamp.compose_executor_stamp_field(day, field_width_pt=280, field_height_pt=150, payment_number="2711-24")
+    b = bank_stamp.compose_executor_stamp_field(day, field_width_pt=280, field_height_pt=150, payment_number="2711-25")
+    a2 = bank_stamp.compose_executor_stamp_field(day, field_width_pt=280, field_height_pt=150, payment_number="2711-24")
     assert a[:4] == b"\x89PNG"
     assert a == a2
     assert a != b
@@ -493,3 +575,95 @@ def test_docs_locked_when_in_progress(logged_client, transport_request, car):
     )
     assert response.status_code == 302
     assert not TransportRequestDocument.objects.filter(request=transport_request).exists()
+
+
+# ---------------------------------------------------------------------------
+# Скачивание ZIP-пакетов (один PDF на VIN + тайтл)
+# ---------------------------------------------------------------------------
+
+
+def _tiny_pdf(text: str = "doc") -> bytes:
+    import fitz
+
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), text)
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+def test_build_car_package_includes_title_and_skips_signature(transport_request, car, settings, tmp_path):
+    settings.MEDIA_ROOT = str(tmp_path)
+    TransportRequestDocument.objects.create(
+        request=transport_request,
+        car=car,
+        doc_type="PASSPORT",
+        file=SimpleUploadedFile("passport.pdf", _tiny_pdf("passport"), content_type="application/pdf"),
+    )
+    TransportRequestDocument.objects.create(
+        request=transport_request,
+        car=car,
+        doc_type="SIGNATURE",
+        file=SimpleUploadedFile("sign.png", b"\x89PNG\r\n\x1a\n", content_type="image/png"),
+    )
+    TransportRequestDocument.objects.create(
+        request=transport_request,
+        car=car,
+        doc_type="INVOICE",
+        file=SimpleUploadedFile("invoice.pdf", _tiny_pdf("invoice"), content_type="application/pdf"),
+        is_generated=True,
+    )
+    car.title_scan.save(
+        "title.pdf", SimpleUploadedFile("title.pdf", _tiny_pdf("title"), content_type="application/pdf")
+    )
+    car.save(update_fields=["title_scan"])
+
+    pdf_bytes = docs.build_car_package_pdf(transport_request, car)
+    assert pdf_bytes and pdf_bytes[:4] == b"%PDF"
+    import fitz
+
+    merged = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        assert merged.page_count == 3  # passport + invoice + title, без подписи
+        texts = " ".join(page.get_text() for page in merged)
+        assert "passport" in texts
+        assert "invoice" in texts
+        assert "title" in texts
+    finally:
+        merged.close()
+
+
+def test_download_packages_zip(logged_client, transport_request, car, settings, tmp_path):
+    import zipfile
+
+    settings.MEDIA_ROOT = str(tmp_path)
+    TransportRequestDocument.objects.create(
+        request=transport_request,
+        car=car,
+        doc_type="OTHER",
+        file=SimpleUploadedFile("other.pdf", _tiny_pdf("other"), content_type="application/pdf"),
+    )
+    car.title_scan.save(
+        "title.pdf", SimpleUploadedFile("title.pdf", _tiny_pdf("title"), content_type="application/pdf")
+    )
+    car.save(update_fields=["title_scan"])
+
+    url = reverse("website:transport_request_download_packages", args=[transport_request.pk])
+    response = logged_client.get(url)
+    assert response.status_code == 200
+    assert response["Content-Type"] == "application/zip"
+    assert transport_request.number in response["Content-Disposition"]
+
+    with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+        names = zf.namelist()
+        assert len(names) == 1
+        assert names[0] == docs.package_pdf_filename(car)
+        assert zf.read(names[0])[:4] == b"%PDF"
+
+
+def test_download_packages_empty_redirects(logged_client, transport_request):
+    url = reverse("website:transport_request_download_packages", args=[transport_request.pk])
+    response = logged_client.get(url)
+    assert response.status_code == 302
+    assert response.url == reverse("website:transport_requests")

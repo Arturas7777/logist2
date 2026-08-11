@@ -443,7 +443,6 @@
                             </div>
                             {% endfor %}
                         </div>
-                        {% if req.status == 'DRAFT' or req.is_client_editable %}
                         <div class="req-card-actions mt-2">
                             {% if req.status == 'DRAFT' %}
                             <form method="post" action="{% url 'website:transport_request_submit' req.pk %}" class="req-submit-form">
@@ -453,8 +452,11 @@
                                 </button>
                             </form>
                             {% endif %}
-                            {% if req.is_client_editable %}
                             <div class="req-card-edit-btns">
+                                <a class="btn btn-sm btn-outline-secondary" href="{% url 'website:transport_request_download_packages' req.pk %}" title="{% trans 'Скачать пакеты документов' %}">
+                                    <i class="bi bi-download"></i>
+                                </a>
+                                {% if req.is_client_editable %}
                                 <a class="btn btn-sm btn-outline-primary" href="{% url 'website:transport_request_edit' req.pk %}" title="{% trans 'Редактировать' %}">
                                     <i class="bi bi-pencil"></i>
                                 </a>
@@ -465,10 +467,9 @@
                                         <i class="bi bi-trash"></i>
                                     </button>
                                 </form>
+                                {% endif %}
                             </div>
-                            {% endif %}
                         </div>
-                        {% endif %}
                     </div>
                 </div>
                 {% endfor %}
@@ -587,7 +588,7 @@
 
 <!-- Инвойс -->
 <div class="modal fade" id="docModal-INVOICE" tabindex="-1">
-  <div class="modal-dialog">
+  <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <form method="post" action="{{ doc_action_url }}" enctype="multipart/form-data">
         {% csrf_token %}
@@ -612,12 +613,22 @@
               <input type="date" name="invoice_date" class="form-control form-control-sm pkg-field">
             </div>
             <div class="col-4">
-              <label class="form-label small">{% trans "Сумма, USD" %}</label>
-              <input type="text" name="invoice_amount" class="form-control form-control-sm pkg-field" placeholder="2850">
+              <label class="form-label small">{% trans "Цена авто, USD" %}</label>
+              <input type="text" name="invoice_amount" class="form-control form-control-sm pkg-field invoice-amount-input" placeholder="2850">
             </div>
           </div>
-          <div class="form-text">
-            {% trans "Номер, дата и сумма нужны для платёжки — заполните их и при загрузке готового инвойса. Для генерации данные покупателя берутся из окна «Паспорт». Дата не может быть выходным или праздником — при необходимости сдвинется на рабочий день." %}
+          <div class="mt-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <label class="form-label small fw-semibold mb-0">{% trans "Дополнительные строки" %}</label>
+              <button type="button" class="btn btn-sm btn-outline-secondary invoice-add-line">
+                <i class="bi bi-plus-lg"></i> {% trans "Добавить" %}
+              </button>
+            </div>
+            <div class="invoice-extra-lines"></div>
+            <div class="small fw-semibold mt-2 invoice-total-preview text-muted">{% trans "Итого" %}: —</div>
+          </div>
+          <div class="form-text mt-2">
+            {% trans "Номер, дата и цена авто нужны для платёжки — заполните их и при загрузке готового инвойса. Можно добавить доп. строки с описанием и суммой; в инвойсе и платёжке будет общая сумма. Для генерации данные покупателя берутся из окна «Паспорт». Дата не может быть выходным или праздником — при необходимости сдвинется на рабочий день." %}
           </div>
         </div>
         <div class="modal-footer">
@@ -1025,6 +1036,109 @@
         });
     });
 
+    function parseMoneyInput(value) {
+        var cleaned = String(value || "").trim().replace(/\s+/g, "").replace("$", "");
+        if (!cleaned) return null;
+        if (cleaned.indexOf(",") >= 0 && cleaned.indexOf(".") < 0) {
+            cleaned = cleaned.replace(",", ".");
+        } else {
+            cleaned = cleaned.replace(/,/g, "");
+        }
+        var num = Number(cleaned);
+        return isFinite(num) ? num : null;
+    }
+
+    function formatMoneyPreview(amount) {
+        if (amount == null || !isFinite(amount)) return "—";
+        try {
+            return "$" + amount.toLocaleString("en-US", {
+                minimumFractionDigits: amount % 1 ? 2 : 0,
+                maximumFractionDigits: 2
+            });
+        } catch (e) {
+            return "$" + amount;
+        }
+    }
+
+    function updateInvoiceTotalPreview(modal) {
+        if (!modal) return;
+        var preview = modal.querySelector(".invoice-total-preview");
+        if (!preview) return;
+        var total = 0;
+        var hasAny = false;
+        var carAmount = parseMoneyInput((modal.querySelector(".invoice-amount-input") || {}).value);
+        if (carAmount != null) {
+            total += carAmount;
+            hasAny = true;
+        }
+        modal.querySelectorAll(".invoice-extra-row .invoice-extra-amount").forEach(function (input) {
+            var amount = parseMoneyInput(input.value);
+            if (amount != null) {
+                total += amount;
+                hasAny = true;
+            }
+        });
+        preview.textContent = "{% trans 'Итого' %}: " + (hasAny ? formatMoneyPreview(total) : "—");
+    }
+
+    function addInvoiceExtraRow(modal, description, amount) {
+        var container = modal.querySelector(".invoice-extra-lines");
+        if (!container) return;
+        var row = document.createElement("div");
+        row.className = "row g-2 mb-1 invoice-extra-row align-items-center";
+        row.innerHTML =
+            '<div class="col-7">' +
+            '<input type="text" name="invoice_extra_desc" class="form-control form-control-sm invoice-extra-desc" ' +
+            'placeholder="{% filter escapejs %}{% trans "Описание" %}{% endfilter %}" value="">' +
+            "</div>" +
+            '<div class="col-4">' +
+            '<input type="text" name="invoice_extra_amount" class="form-control form-control-sm invoice-extra-amount" ' +
+            'placeholder="150" value="">' +
+            "</div>" +
+            '<div class="col-1 px-0 text-end">' +
+            '<button type="button" class="btn btn-sm btn-outline-danger invoice-remove-line" ' +
+            'title="{% filter escapejs %}{% trans "Удалить строку" %}{% endfilter %}">&times;</button>' +
+            "</div>";
+        container.appendChild(row);
+        if (description) row.querySelector(".invoice-extra-desc").value = description;
+        if (amount) row.querySelector(".invoice-extra-amount").value = amount;
+        updateInvoiceTotalPreview(modal);
+    }
+
+    function fillInvoiceExtraLines(modal, lines) {
+        var container = modal.querySelector(".invoice-extra-lines");
+        if (!container) return;
+        container.innerHTML = "";
+        (lines || []).forEach(function (line) {
+            addInvoiceExtraRow(modal, line.description || "", line.amount || "");
+        });
+        updateInvoiceTotalPreview(modal);
+    }
+
+    var invoiceModal = document.getElementById("docModal-INVOICE");
+    if (invoiceModal) {
+        invoiceModal.addEventListener("click", function (e) {
+            if (e.target.closest(".invoice-add-line")) {
+                e.preventDefault();
+                addInvoiceExtraRow(invoiceModal, "", "");
+            }
+            if (e.target.closest(".invoice-remove-line")) {
+                e.preventDefault();
+                var row = e.target.closest(".invoice-extra-row");
+                if (row) row.remove();
+                updateInvoiceTotalPreview(invoiceModal);
+            }
+        });
+        invoiceModal.addEventListener("input", function (e) {
+            if (
+                e.target.classList.contains("invoice-amount-input") ||
+                e.target.classList.contains("invoice-extra-amount")
+            ) {
+                updateInvoiceTotalPreview(invoiceModal);
+            }
+        });
+    }
+
     function openDoc(reqId, docType, carId) {
         var modal = document.getElementById("docModal-" + docType);
         if (!modal) return;
@@ -1044,6 +1158,9 @@
             }
             input.value = value;
         });
+        if (docType === "INVOICE") {
+            fillInvoiceExtraLines(modal, data.invoice_extra_lines || []);
+        }
         document.querySelectorAll(".req-car-dd .dropdown-toggle.show").forEach(function (toggle) {
             bootstrap.Dropdown.getOrCreateInstance(toggle).hide();
         });

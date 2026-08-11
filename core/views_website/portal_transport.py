@@ -7,9 +7,10 @@ from urllib.parse import quote
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.files.base import ContentFile
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 
 from core.models.website import (
     CLIENT_DOCUMENT_ALLOWED_EXTENSIONS,
@@ -40,6 +41,7 @@ _ICON_PASSPORT_SVG = """
   <path d="M4.55 12.55c.3-2.05 1.7-3.2 3.45-3.2s3.15 1.15 3.45 3.2v.4H4.55z"/>
 </svg>
 """
+
 
 def _client_requests(client):
     """Заявки клиента для списка в кабинете (отменённые скрыты)."""
@@ -367,6 +369,35 @@ def transport_request_delete(request, pk):
 
 
 @login_required
+@require_GET
+def transport_request_download_packages(request, pk):
+    """Скачать ZIP: по одному PDF-пакету на каждый VIN (+ тайтл из админки)."""
+    client = _get_client(request)
+    if client is None:
+        return render(request, "website/not_authorized.html", status=403)
+
+    transport_request = get_object_or_404(
+        TransportRequest.objects.prefetch_related("cars", "documents"),
+        pk=pk,
+        client=client,
+    )
+    if transport_request.status == "CANCELLED":
+        messages.error(request, "Отменённую заявку скачать нельзя.")
+        return redirect("website:transport_requests")
+
+    try:
+        filename, zip_bytes = docs_service.build_request_packages_zip(transport_request)
+    except PackageDataError as exc:
+        messages.error(request, str(exc))
+        return redirect("website:transport_requests")
+
+    response = HttpResponse(zip_bytes, content_type="application/zip")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Content-Length"] = str(len(zip_bytes))
+    return response
+
+
+@login_required
 @require_POST
 def transport_request_submit(request, pk):
     """Подать черновик заявки (DRAFT → SUBMITTED) из карточки в списке."""
@@ -441,6 +472,12 @@ def _update_package_data(package, doc_type, post):
             if package.data.get(field, "") != value:
                 package.data[field] = value
                 changed = True
+    if doc_type == "INVOICE":
+        # Доп. строки всегда перечитываем с формы (в т.ч. пустой список = очистка).
+        lines = docs_service.normalize_invoice_extra_lines_from_post(post)
+        if package.data.get("invoice_extra_lines") != lines:
+            package.data["invoice_extra_lines"] = lines
+            changed = True
     return changed
 
 
