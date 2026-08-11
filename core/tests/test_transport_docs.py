@@ -250,10 +250,15 @@ def test_generate_payment_order(transport_request, car):
     assert docs.is_business_day(payment_date, ("BY",))
     assert data["payer_bank_name"] == docs.DEFAULT_BELARUS_PAYER_BANK
     assert data["payer_bank_code"] == docs.DEFAULT_BELARUS_PAYER_BANK_CODE
-    # подписи нет — предупреждение
-    assert any("Подпись" in n for n in notices)
+    # Подпись клиента по умолчанию не ставится — предупреждения нет.
+    assert not any("Подпись" in n for n in notices)
     # Печать исполнителя банка (PNG) встроена в PDF.
     assert page.get_images()
+
+    # С галочкой, но без файла подписи — предупреждение.
+    data_flag = {**data, "payment_include_signature": "1", "payment_number": "", "payment_date": ""}
+    _, _, notices_flag = docs.generate_document(transport_request, car, data_flag, "PAYMENT_ORDER")
+    assert any("Подпись" in n for n in notices_flag)
 
 
 def test_bank_stamp_date_and_variety(tmp_path, monkeypatch):

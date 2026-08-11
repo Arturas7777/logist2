@@ -412,7 +412,15 @@ def generate_document(
             "bank_name": DEFAULT_BELARUS_PAYER_BANK,
             "bank_code": DEFAULT_BELARUS_PAYER_BANK_CODE,
         }
-        if signature_bytes is None:
+        # Подпись клиента на платёжке — только по явному флагу из UI (по умолчанию выкл.).
+        include_signature = str(data.get("payment_include_signature") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        payment_signature = signature_bytes if include_signature else None
+        if include_signature and payment_signature is None:
             notices.append("Подпись не загружена — платёжка сформирована без подписи плательщика.")
         pdf_bytes = pdf.generate_payment_order_pdf(
             car,
@@ -422,7 +430,7 @@ def generate_document(
             invoice_number=invoice_number,
             invoice_date=invoice_date,
             payer=payer,
-            signature_bytes=signature_bytes,
+            signature_bytes=payment_signature,
         )
 
     elif doc_type == "LETTER_USA":

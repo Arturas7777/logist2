@@ -481,6 +481,12 @@ def _update_package_data(package, doc_type, post):
         if package.data.get("invoice_extra_lines") != lines:
             package.data["invoice_extra_lines"] = lines
             changed = True
+    if doc_type == "PAYMENT_ORDER":
+        # Checkbox: отсутствие в POST = выключено.
+        flag = "1" if post.get("payment_include_signature") in ("1", "on", "true", "yes") else ""
+        if package.data.get("payment_include_signature", "") != flag:
+            package.data["payment_include_signature"] = flag
+            changed = True
     return changed
 
 
