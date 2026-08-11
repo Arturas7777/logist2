@@ -168,10 +168,20 @@ def _docs_context(transport_request):
             else:
                 icon_img, icon_data, icon_bi = "", "", icon
             icon_is_flag = bool(icon_img) and icon_img.endswith("flag-us.svg")
+            # Старые первыми: «Инвойс», затем «Инвойс 2»…
+            ordered = sorted(docs, key=lambda d: (d.created_at, d.pk))
+            doc_rows = [
+                {
+                    "doc": doc,
+                    "display_name": label if idx == 1 else f"{label} {idx}",
+                }
+                for idx, doc in enumerate(ordered, start=1)
+            ]
             slot = {
                 "type": doc_type,
                 "label": label,
-                "docs": docs,
+                "docs": ordered,
+                "doc_rows": doc_rows,
                 "can_generate": doc_type not in TRANSPORT_UPLOAD_ONLY_TYPES,
                 "icon": icon_bi,
                 "icon_img": icon_img,
@@ -180,8 +190,8 @@ def _docs_context(transport_request):
                 "icon_color": color,
             }
             slots.append(slot)
-            if docs:
-                latest = docs[0]
+            if ordered:
+                latest = ordered[-1]
                 name = (latest.filename or "").lower()
                 present_icons.append(
                     {
