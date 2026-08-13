@@ -33,7 +33,7 @@ def about_page(request):
     return render(request, "website/about.html", context)
 
 
-@cache_page(60 * 60)
+@cache_page(60 * 60, key_prefix="services-v33")
 def services_page(request):
     return render(request, "website/services.html")
 
