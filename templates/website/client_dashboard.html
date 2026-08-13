@@ -212,8 +212,8 @@
                                 <input type="checkbox" class="form-check-input" id="select-all-cars" title="{% trans 'Выбрать все' %}">
                             </th>
                             <th>{% trans "Фото" %}</th>
+                            <th>{% trans "Марка" %}</th>
                             <th>VIN</th>
-                            <th>{% trans "Марка / Год" %}</th>
                             <th class="title-cell">{% trans "Тайтл" %}</th>
                             <th>{% trans "Контейнер" %}</th>
                             <th>{% trans "Разгружен" %}</th>
@@ -244,11 +244,10 @@
                                     {% endif %}
                                 {% endwith %}
                             </td>
-                            <td><code>{{ car.vin }}</code></td>
                             <td>
-                                <a class="fw-semibold text-decoration-none d-block" href="{% url 'website:car_detail' car.id %}">{{ car.brand|default:"—" }}</a>
-                                <div class="text-muted small">{{ car.year|default:"" }}</div>
+                                <a class="fw-semibold text-decoration-none" href="{% url 'website:car_detail' car.id %}">{{ car.brand|default:"—" }}</a>
                             </td>
+                            <td><code>{{ car.vin }}</code></td>
                             <td class="title-cell">
                                 {% if car.title_scan %}
                                 <button type="button"
