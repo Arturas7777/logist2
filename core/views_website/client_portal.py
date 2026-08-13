@@ -122,7 +122,9 @@ def client_dashboard(request):
         if in_request != no_request:
             cars_qs = cars_qs.filter(in_active_request=in_request)
 
-        # Сверху давнее разгруженные UNLOADED, ниже — IN_PORT.
+        # UNLOADED — давние разгрузки сверху (рабочий список склада).
+        # TRANSFERRED — свежие передачи сверху: у старых часто нет фото,
+        # иначе первая страница фильтра «Передан» идёт без иконки галереи.
         cars_qs = cars_qs.order_by(
             Case(
                 When(status="UNLOADED", then=Value(0)),
@@ -130,6 +132,7 @@ def client_dashboard(request):
                 default=Value(2),
                 output_field=IntegerField(),
             ),
+            F("transfer_date").desc(nulls_last=True),
             F("unload_date").asc(nulls_last=True),
             "-id",
         )
