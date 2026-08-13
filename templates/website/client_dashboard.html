@@ -42,6 +42,24 @@
     .status-UNLOADED  { background:#d4edda; color:#155724; }
     .status-TRANSFERRED { background:#e2d9f3; color:#4b2e83; }
     .status-PENDING, .status-NEW { background:#fff3cd; color:#856404; }
+    .gallery-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        margin-left: 6px;
+        padding: 1px 6px 1px 5px;
+        border-radius: 10px;
+        background: #e8f5e9;
+        color: #198754;
+        text-decoration: none;
+        font-size: .75rem;
+        font-weight: 600;
+        line-height: 1.4;
+        white-space: nowrap;
+        vertical-align: middle;
+    }
+    .gallery-link:hover { background: #c8e6c9; color: #146c43; }
+    .gallery-link .bi { font-size: .9rem; }
     .empty-state {
         text-align:center;
         padding: 3rem 1rem;
@@ -204,6 +222,13 @@
                             <td>
                                 {% if car.container %}
                                     <span class="text-monospace">{{ car.container.number }}</span>
+                                    {% if car.container_photos_count %}
+                                    <a class="gallery-link"
+                                       href="{% url 'website:home' %}?track={{ car.container.number }}&photos=1"
+                                       title="{% trans 'Фотографии контейнера — та же галерея, что в поиске на главной' %}">
+                                        <i class="bi bi-camera"></i>{{ car.container_photos_count }}
+                                    </a>
+                                    {% endif %}
                                 {% else %}
                                     <span class="text-muted">—</span>
                                 {% endif %}

@@ -4,7 +4,8 @@ from urllib.parse import urlencode
 
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Case, Exists, F, IntegerField, OuterRef, Prefetch, Q, Value, When
+from django.db.models import Case, Count, Exists, F, IntegerField, OuterRef, Prefetch, Q, Subquery, Value, When
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404, render
 
 from core.models import Car, CarModelImage, Container
@@ -75,6 +76,13 @@ def client_dashboard(request):
         # спец-значения IN_REQUEST («Уже в заявке») / NO_REQUEST («Без заявки»).
         selected_statuses = [s for s in request.GET.getlist("status") if s.strip()]
 
+        container_photos_sq = (
+            ContainerPhoto.objects.filter(container_id=OuterRef("container_id"), is_public=True)
+            .order_by()
+            .values("container_id")
+            .annotate(c=Count("id"))
+            .values("c")[:1]
+        )
         cars_qs = (
             Car.objects.filter(client=client)
             .select_related("warehouse", "container")
@@ -85,7 +93,12 @@ def client_dashboard(request):
                     TransportRequest.objects.filter(client=client, cars=OuterRef("pk")).exclude(
                         status__in=TransportRequest.INACTIVE_STATUSES
                     )
-                )
+                ),
+                # Публичные фото контейнера — та же галерея, что на главной в поиске.
+                container_photos_count=Coalesce(
+                    Subquery(container_photos_sq, output_field=IntegerField()),
+                    Value(0),
+                ),
             )
         )
 
