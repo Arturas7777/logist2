@@ -43,8 +43,10 @@ def test_dashboard_gallery_link_when_container_has_photos(portal_login):
     assert response.status_code == 200
     html = response.content.decode()
     assert "GALLERY0011" in html
-    assert "?track=GALLERY0011&amp;photos=1" in html or "?track=GALLERY0011&photos=1" in html
+    assert 'data-container-photos="GALLERY0011"' in html
     assert "bi-camera" in html
+    assert 'id="photosModal"' in html
+    assert "?track=" not in html
 
 
 def test_dashboard_hides_gallery_icon_without_photos(portal_login):
@@ -62,4 +64,4 @@ def test_dashboard_hides_gallery_icon_without_photos(portal_login):
     assert response.status_code == 200
     html = response.content.decode()
     assert "NOPHOTO0011" in html
-    assert "photos=1" not in html
+    assert "data-container-photos" not in html

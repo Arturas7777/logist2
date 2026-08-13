@@ -48,15 +48,17 @@
         gap: 3px;
         margin-left: 6px;
         padding: 1px 6px 1px 5px;
+        border: 0;
         border-radius: 10px;
         background: #e8f5e9;
         color: #198754;
-        text-decoration: none;
+        font: inherit;
         font-size: .75rem;
         font-weight: 600;
         line-height: 1.4;
         white-space: nowrap;
         vertical-align: middle;
+        cursor: pointer;
     }
     .gallery-link:hover { background: #c8e6c9; color: #146c43; }
     .gallery-link .bi { font-size: .9rem; }
@@ -223,11 +225,11 @@
                                 {% if car.container %}
                                     <span class="text-monospace">{{ car.container.number }}</span>
                                     {% if car.container_photos_count %}
-                                    <a class="gallery-link"
-                                       href="{% url 'website:home' %}?track={{ car.container.number }}&photos=1"
-                                       title="{% trans 'Фотографии контейнера — та же галерея, что в поиске на главной' %}">
+                                    <button type="button" class="gallery-link"
+                                            data-container-photos="{{ car.container.number }}"
+                                            title="{% trans 'Фотографии контейнера' %}">
                                         <i class="bi bi-camera"></i>{{ car.container_photos_count }}
-                                    </a>
+                                    </button>
                                     {% endif %}
                                 {% else %}
                                     <span class="text-muted">—</span>
@@ -296,6 +298,7 @@
 {% endblock %}
 
 {% block extra_js %}
+{% include "website/partials/container_photos_modal.html" %}
 <script>
 (function () {
     var form = document.getElementById("mass-request-form");

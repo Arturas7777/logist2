@@ -205,91 +205,18 @@
     </div>
 </section>
 
+{% endblock %}
 
-<!-- Модальное окно для фотографий контейнера -->
-<div class="modal fade" id="photosModal" tabindex="-1" aria-labelledby="photosModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-xl modal-fullscreen-lg-down">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="photosModalLabel">
-                    <i class="bi bi-camera"></i> Фотографии контейнера
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div id="photos-loading" class="text-center py-4">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Загрузка...</span>
-                    </div>
-                    <p class="mt-2">Загружаем фотографии...</p>
-                </div>
-                <div id="photos-content" style="display: none;">
-                    <!-- Вкладки для типов фото -->
-                    <ul class="nav nav-tabs mb-3" id="photosTabs" role="tablist">
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link active" id="all-photos-tab" data-bs-toggle="tab" data-bs-target="#all-photos" type="button" role="tab">
-                                <i class="bi bi-images"></i> Все
-                            </button>
-                        </li>
-                        <li class="nav-item" role="presentation" id="unloading-tab-li" style="display: none;">
-                            <button class="nav-link" id="unloading-tab" data-bs-toggle="tab" data-bs-target="#unloading-photos" type="button" role="tab">
-                                <i class="bi bi-truck"></i> Выгруженные
-                            </button>
-                        </li>
-                        <li class="nav-item" role="presentation" id="in-container-tab-li" style="display: none;">
-                            <button class="nav-link" id="in-container-tab" data-bs-toggle="tab" data-bs-target="#in-container-photos" type="button" role="tab">
-                                <i class="bi bi-box-seam"></i> В контейнере
-                            </button>
-                        </li>
-                    </ul>
-                    
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="selectAllPhotos">
-                                <label class="form-check-label" for="selectAllPhotos">
-                                    Выбрать все
-                                </label>
-                            </div>
-                        </div>
-                        <div class="col-md-6 text-end">
-                            <button id="downloadSelectedBtn" class="btn btn-success" disabled>
-                                <i class="bi bi-download"></i> Скачать выбранные
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div class="tab-content" id="photosTabContent">
-                        <div class="tab-pane fade show active" id="all-photos" role="tabpanel">
-                            <div id="photos-grid-all" class="row g-3"></div>
-                        </div>
-                        <div class="tab-pane fade" id="unloading-photos" role="tabpanel">
-                            <div id="photos-grid-unloading" class="row g-3"></div>
-                        </div>
-                        <div class="tab-pane fade" id="in-container-photos" role="tabpanel">
-                            <div id="photos-grid-in-container" class="row g-3"></div>
-                        </div>
-                    </div>
-                </div>
-                <div id="photos-error" class="alert alert-danger" style="display: none;">
-                    <i class="bi bi-exclamation-triangle"></i> Ошибка загрузки фотографий
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
+{% block extra_js %}
+{% include "website/partials/container_photos_modal.html" %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const trackingForm = document.getElementById('tracking-form');
     const trackingResult = document.getElementById('tracking-result');
     const photosSection = document.getElementById('photos-section');
     const showPhotosBtn = document.getElementById('show-photos-btn');
-    const photosModal = new bootstrap.Modal(document.getElementById('photosModal'));
-    
+
     let currentContainerNumber = null;
-    // H5a: токен из ответа get_container_photos. Нужен для download_photos_archive.
-    let currentContainerToken = null;
     const urlParams = new URLSearchParams(window.location.search);
     const autoTrack = urlParams.get('track');
     let autoShowPhotos = urlParams.get('photos') === '1';
@@ -300,28 +227,33 @@ document.addEventListener('DOMContentLoaded', function() {
         div.textContent = String(str);
         return div.innerHTML;
     }
-    
-    // Обновляем обработчик формы отслеживания
+
+    function openGallery(containerNumber) {
+        if (containerNumber && window.ContainerPhotosGallery) {
+            ContainerPhotosGallery.open(containerNumber);
+        }
+    }
+
     let isSubmitting = false;
-    
+
     trackingForm.addEventListener('submit', function(e) {
         e.preventDefault();
-        
+
         if (isSubmitting) return;
-        
+
         const trackingNumber = document.getElementById('tracking_number').value.trim();
-        
+
         if (!trackingNumber) {
             showResult('Пожалуйста, введите номер для отслеживания', 'danger');
             return;
         }
-        
+
         isSubmitting = true;
         const submitBtn = trackingForm.querySelector('button[type="submit"]');
         submitBtn.disabled = true;
-        
+
         showResult('<div class="spinner-border spinner-border-sm me-2"></div>Поиск...', 'info');
-        
+
         fetch('{% url "website:track_shipment" %}', {
             method: 'POST',
             headers: {
@@ -345,29 +277,29 @@ document.addEventListener('DOMContentLoaded', function() {
                 photosSection.style.display = 'none';
                 return;
             }
-            
+
             if (data.type) {
                 let resultHtml = '<div class="alert alert-success"><h6><i class="bi bi-check-circle"></i> Груз найден!</h6>';
-                
+
                 if (data.type === 'car') {
                     const car = data.data;
                     resultHtml += `<p><strong>Автомобиль:</strong> ${escapeHtml(car.vin)}</p>`;
                     resultHtml += `<p><strong>Марка:</strong> ${escapeHtml(car.brand || 'N/A')}</p>`;
                     resultHtml += `<p><strong>Статус:</strong> ${escapeHtml(car.status_display || car.status)}</p>`;
-                    
+
                     if (car.container_unload_date) {
                         const unloadDate = new Date(car.container_unload_date);
                         resultHtml += `<p><strong>Дата разгрузки:</strong> ${escapeHtml(unloadDate.toLocaleDateString('ru-RU'))}</p>`;
                     }
-                    
+
                     if (car.warehouse_address) {
                         resultHtml += `<p><strong>Склад:</strong> ${escapeHtml(car.warehouse_address)}</p>`;
                     }
-                    
+
                     if (car.container_number) {
                         resultHtml += `<p><strong>Контейнер:</strong> ${escapeHtml(car.container_number)}</p>`;
                     }
-                    
+
                     if (car.container_number && car.container_photos_count > 0) {
                         currentContainerNumber = car.container_number;
                         photosSection.style.display = 'block';
@@ -377,43 +309,41 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
 
                     if (autoShowPhotos && currentContainerNumber) {
-                        loadContainerPhotos(currentContainerNumber);
-                        photosModal.show();
+                        openGallery(currentContainerNumber);
                         autoShowPhotos = false;
                     }
                 } else if (data.type === 'container') {
                     const container = data.data;
                     resultHtml += `<p><strong>Контейнер:</strong> ${escapeHtml(container.number)}</p>`;
                     resultHtml += `<p><strong>Статус:</strong> ${escapeHtml(container.status_display || container.status)}</p>`;
-                    
+
                     if (container.unload_date) {
                         const unloadDate = new Date(container.unload_date);
                         resultHtml += `<p><strong>Дата разгрузки:</strong> ${escapeHtml(unloadDate.toLocaleDateString('ru-RU'))}</p>`;
                     }
-                    
+
                     if (container.line_name) {
                         resultHtml += `<p><strong>Линия:</strong> ${escapeHtml(container.line_name)}</p>`;
                     }
-                    
+
                     if (container.warehouse_address) {
                         resultHtml += `<p><strong>Склад:</strong> ${escapeHtml(container.warehouse_address)}</p>`;
                     }
-                    
+
                     if (container.cars_count) {
                         resultHtml += `<p><strong>Автомобилей:</strong> ${escapeHtml(container.cars_count)}</p>`;
                     }
-                    
+
                     currentContainerNumber = container.number;
                     photosSection.style.display = 'block';
                     showPhotosBtn.style.display = 'block';
 
                     if (autoShowPhotos && currentContainerNumber) {
-                        loadContainerPhotos(currentContainerNumber);
-                        photosModal.show();
+                        openGallery(currentContainerNumber);
                         autoShowPhotos = false;
                     }
                 }
-                
+
                 resultHtml += '</div>';
                 showResult(resultHtml, 'success');
             } else if (data.error) {
@@ -437,655 +367,15 @@ document.addEventListener('DOMContentLoaded', function() {
             submitBtn.disabled = false;
         });
     });
-    
+
     showPhotosBtn.addEventListener('click', function() {
-        if (currentContainerNumber) {
-            loadContainerPhotos(currentContainerNumber);
-            photosModal.show();
-        }
+        openGallery(currentContainerNumber);
     });
-    
+
     function showResult(message, type) {
         trackingResult.innerHTML = message;
     }
-    
-    function loadContainerPhotos(containerNumber) {
-        const photosLoading = document.getElementById('photos-loading');
-        const photosContent = document.getElementById('photos-content');
-        const photosError = document.getElementById('photos-error');
-        
-        // Grids для каждого типа
-        const photosGridAll = document.getElementById('photos-grid-all');
-        const photosGridInContainer = document.getElementById('photos-grid-in-container');
-        const photosGridUnloading = document.getElementById('photos-grid-unloading');
-        
-        // Вкладки
-        const inContainerTabLi = document.getElementById('in-container-tab-li');
-        const unloadingTabLi = document.getElementById('unloading-tab-li');
-        
-        // Показываем загрузку
-        photosLoading.style.display = 'block';
-        photosContent.style.display = 'none';
-        photosError.style.display = 'none';
-        
-        fetch(`/api/container-photos/${containerNumber}/`)
-        .then(response => response.json())
-        .then(data => {
-            photosLoading.style.display = 'none';
-            
-            if (data.success && data.photos.length > 0) {
-                // H5a: сохраняем подписанный токен для последующего ZIP-запроса.
-                currentContainerToken = data.container_token || null;
 
-                // Очищаем все grid'ы
-                photosGridAll.innerHTML = '';
-                photosGridInContainer.innerHTML = '';
-                photosGridUnloading.innerHTML = '';
-                
-                // Счётчики
-                let inContainerCount = 0;
-                let unloadingCount = 0;
-                
-                data.photos.forEach(photo => {
-                    const photoCard = createPhotoCard(photo);
-                    
-                    // Добавляем во "Все"
-                    photosGridAll.appendChild(photoCard.cloneNode(true));
-                    
-                    // Добавляем в соответствующую вкладку
-                    if (photo.photo_type_code === 'IN_CONTAINER') {
-                        photosGridInContainer.appendChild(photoCard.cloneNode(true));
-                        inContainerCount++;
-                    } else if (photo.photo_type_code === 'UNLOADING') {
-                        photosGridUnloading.appendChild(photoCard.cloneNode(true));
-                        unloadingCount++;
-                    } else {
-                        // GENERAL - добавляем в обе категории
-                        photosGridUnloading.appendChild(photoCard.cloneNode(true));
-                        unloadingCount++;
-                    }
-                });
-                
-                
-                // Показываем/скрываем вкладки в зависимости от наличия фото
-                inContainerTabLi.style.display = inContainerCount > 0 ? 'block' : 'none';
-                unloadingTabLi.style.display = unloadingCount > 0 ? 'block' : 'none';
-                
-                // Сбрасываем на вкладку "Все"
-                document.getElementById('all-photos-tab').click();
-                
-                photosContent.style.display = 'block';
-                setupPhotoSelection();
-                setupPhotoZoom();
-            } else {
-                photosError.innerHTML = '<i class="bi bi-exclamation-triangle"></i> Фотографии не найдены';
-                photosError.style.display = 'block';
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            photosLoading.style.display = 'none';
-            photosError.style.display = 'block';
-        });
-    }
-    
-    function createPhotoCard(photo) {
-        const photoCard = document.createElement('div');
-        photoCard.className = 'col-6 col-md-4 col-lg-3';
-        photoCard.innerHTML = `
-            <div class="card h-100">
-                <div class="card-img-top-container" style="aspect-ratio: 4/3; overflow: hidden; cursor: pointer; position: relative;">
-                    <img src="${photo.thumbnail_url}" class="card-img-top photo-preview" style="width: 100%; height: 100%; object-fit: cover;" alt="${photo.description}" data-full-url="${photo.url}" loading="lazy">
-                    <div class="photo-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0); transition: all 0.3s; display: flex; align-items: center; justify-content: center;">
-                        <i class="bi bi-zoom-in" style="color: white; font-size: 2rem; opacity: 0; transition: opacity 0.3s;"></i>
-                    </div>
-                </div>
-                <div class="card-body p-2">
-                    <div class="form-check">
-                        <input class="form-check-input photo-checkbox" type="checkbox" value="${photo.id}" id="photo_${photo.id}_${Math.random().toString(36).substr(2, 9)}">
-                        <label class="form-check-label">
-                            <small class="text-muted">${photo.photo_type}</small>
-                        </label>
-                    </div>
-                </div>
-            </div>
-        `;
-        return photoCard;
-    }
-    
-    function setupPhotoSelection() {
-        const selectAllCheckbox = document.getElementById('selectAllPhotos');
-        const downloadBtn = document.getElementById('downloadSelectedBtn');
-        const photosContent = document.getElementById('photos-content');
-        
-        // Удаляем старые обработчики если есть
-        const newSelectAll = selectAllCheckbox.cloneNode(true);
-        selectAllCheckbox.parentNode.replaceChild(newSelectAll, selectAllCheckbox);
-        
-        const newDownloadBtn = downloadBtn.cloneNode(true);
-        downloadBtn.parentNode.replaceChild(newDownloadBtn, downloadBtn);
-        
-        // Получаем чекбоксы из активной вкладки
-        function getActiveTabCheckboxes() {
-            const activePane = document.querySelector('#photosTabContent .tab-pane.active');
-            return activePane ? Array.from(activePane.querySelectorAll('.photo-checkbox')) : [];
-        }
-        
-        // Получаем ID выбранных фото (уникальные)
-        function getSelectedPhotoIds() {
-            const checkboxes = getActiveTabCheckboxes();
-            const ids = new Set();
-            checkboxes.forEach(cb => {
-                if (cb.checked) ids.add(cb.value);
-            });
-            return Array.from(ids);
-        }
-        
-        // Обновление кнопки скачивания
-        function updateDownloadButton() {
-            const count = getSelectedPhotoIds().length;
-            newDownloadBtn.disabled = count === 0;
-            newDownloadBtn.innerHTML = `<i class="bi bi-download"></i> Скачать выбранные${count > 0 ? ' (' + count + ')' : ''}`;
-        }
-        
-        // "Выбрать все"
-        newSelectAll.addEventListener('change', function() {
-            const checkboxes = getActiveTabCheckboxes();
-            checkboxes.forEach(checkbox => {
-                checkbox.checked = this.checked;
-            });
-            updateDownloadButton();
-        });
-        
-        // Обработка клика на чекбоксы (делегирование)
-        photosContent.addEventListener('change', function(e) {
-            if (e.target.classList.contains('photo-checkbox')) {
-                updateDownloadButton();
-                
-                const checkboxes = getActiveTabCheckboxes();
-                const checkedCount = checkboxes.filter(cb => cb.checked).length;
-                const totalCount = checkboxes.length;
-                
-                newSelectAll.checked = checkedCount === totalCount && totalCount > 0;
-                newSelectAll.indeterminate = checkedCount > 0 && checkedCount < totalCount;
-            }
-        });
-        
-        // Сброс при смене вкладки
-        document.querySelectorAll('#photosTabs button').forEach(tab => {
-            tab.addEventListener('shown.bs.tab', function() {
-                newSelectAll.checked = false;
-                newSelectAll.indeterminate = false;
-                updateDownloadButton();
-            });
-        });
-        
-        // Скачивание
-        newDownloadBtn.addEventListener('click', function() {
-            const photoIds = getSelectedPhotoIds();
-            if (photoIds.length > 0) {
-                downloadPhotosArchive(photoIds);
-            }
-        });
-        
-        // Инициализация
-        updateDownloadButton();
-    }
-    
-    function downloadPhotosArchive(photoIds) {
-        // H5a: на сервер обязательно передаём container_token, который
-        // мы получили в ответе get_container_photos. Без него endpoint
-        // вернёт 400 — это защищает от перебора photo_ids в обход
-        // галереи.
-        fetch('/api/download-photos-archive/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
-            },
-            body: JSON.stringify({
-                photo_ids: photoIds,
-                container_token: currentContainerToken || ''
-            })
-        })
-        .then(response => {
-            if (response.ok) {
-                return response.blob();
-            } else {
-                throw new Error('Ошибка при скачивании архива');
-            }
-        })
-        .then(blob => {
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `container_photos_${currentContainerNumber}.zip`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Ошибка при скачивании архива');
-        });
-    }
-    
-    let currentPhotoIndex = 0;
-    let currentTabPhotosUrls = [];
-    let _viewerKeyHandler = null;
-    let _viewerScale = 1;
-    
-    // Block Escape from reaching Bootstrap modal when photo viewer is open
-    document.getElementById('photosModal').addEventListener('keydown', function(e) {
-        if (e.key === 'Escape' && document.getElementById('photo-viewer')) {
-            e.stopImmediatePropagation();
-            e.preventDefault();
-        }
-    }, true);
-    
-    function setupPhotoZoom() {
-        // Получаем URL фото из активной вкладки
-        function getActiveTabPhotos() {
-            const activePane = document.querySelector('#photosTabContent .tab-pane.active');
-            if (!activePane) return [];
-            
-            const images = activePane.querySelectorAll('.photo-preview');
-            return Array.from(images).map(img => img.getAttribute('data-full-url'));
-        }
-        
-        // Находим индекс фото в активной вкладке
-        function getPhotoIndexInActiveTab(container) {
-            const activePane = document.querySelector('#photosTabContent .tab-pane.active');
-            if (!activePane) return 0;
-            
-            const containers = Array.from(activePane.querySelectorAll('.card-img-top-container'));
-            return containers.indexOf(container);
-        }
-        
-        // Обрабатываем все контейнеры
-        const allContainers = document.querySelectorAll('.card-img-top-container');
-        
-        allContainers.forEach((container) => {
-            const overlay = container.querySelector('.photo-overlay');
-            const icon = overlay.querySelector('i');
-            
-            container.addEventListener('mouseenter', function() {
-                overlay.style.background = 'rgba(0,0,0,0.5)';
-                icon.style.opacity = '1';
-            });
-            
-            container.addEventListener('mouseleave', function() {
-                overlay.style.background = 'rgba(0,0,0,0)';
-                icon.style.opacity = '0';
-            });
-            
-            // Открываем фото по клику
-            container.addEventListener('click', function() {
-                // Получаем фото только из активной вкладки
-                currentTabPhotosUrls = getActiveTabPhotos();
-                currentPhotoIndex = getPhotoIndexInActiveTab(container);
-                
-                if (currentPhotoIndex >= 0 && currentTabPhotosUrls.length > 0) {
-                    openPhotoViewer(currentTabPhotosUrls[currentPhotoIndex]);
-                }
-            });
-        });
-    }
-    
-    function openPhotoViewer(imageUrl) {
-        // Создаем модальное окно для просмотра фото
-        const viewer = document.createElement('div');
-        viewer.id = 'photo-viewer';
-        viewer.style.cssText = `
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.95);
-            z-index: 9999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        `;
-        
-        viewer.innerHTML = `
-            <div style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
-                <div id="image-container" style="width: 90%; height: 90%; display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: grab;">
-                    <img id="viewer-image" src="${imageUrl}" style="max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px;">
-                </div>
-                
-                <!-- Навигация -->
-                <button id="prev-photo" class="nav-btn" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.35); border: none; color: rgba(0,0,0,0.7); padding: 12px 16px; border-radius: 50%; cursor: pointer; font-size: 1.2rem; z-index: 10000; transition: opacity 0.3s ease, background 0.2s ease; ${currentPhotoIndex > 0 ? '' : 'display:none;'}">
-                    <i class="bi bi-chevron-left"></i>
-                </button>
-                
-                <button id="next-photo" class="nav-btn" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.35); border: none; color: rgba(0,0,0,0.7); padding: 12px 16px; border-radius: 50%; cursor: pointer; font-size: 1.2rem; z-index: 10000; transition: opacity 0.3s ease, background 0.2s ease; ${currentPhotoIndex < currentTabPhotosUrls.length - 1 ? '' : 'display:none;'}">
-                    <i class="bi bi-chevron-right"></i>
-                </button>
-                
-                <!-- Верхняя панель -->
-                <div style="position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); padding: 10px 20px; border-radius: 25px; color: white; z-index: 10000;">
-                    <span data-photo-counter>${currentPhotoIndex + 1} / ${currentTabPhotosUrls.length}</span>
-                </div>
-                
-                <!-- Кнопки управления -->
-                <div style="position: absolute; top: 20px; right: 20px; display: flex; gap: 10px; z-index: 10000;">
-                    <button id="zoom-in" style="background: rgba(255,255,255,0.9); border: none; color: black; padding: 10px 15px; border-radius: 5px; cursor: pointer;">
-                        <i class="bi bi-zoom-in"></i>
-                    </button>
-                    <button id="zoom-out" style="background: rgba(255,255,255,0.9); border: none; color: black; padding: 10px 15px; border-radius: 5px; cursor: pointer;">
-                        <i class="bi bi-zoom-out"></i>
-                    </button>
-                    <button id="zoom-reset" style="background: rgba(255,255,255,0.9); border: none; color: black; padding: 10px 15px; border-radius: 5px; cursor: pointer;">
-                        <i class="bi bi-arrows-angle-contract"></i>
-                    </button>
-                    <button id="download-single" style="background: var(--accent-green); border: none; color: white; padding: 10px 15px; border-radius: 5px; cursor: pointer;">
-                        <i class="bi bi-download"></i>
-                    </button>
-                    <button id="close-viewer" onclick="event.stopPropagation(); window._closePhotoViewer && window._closePhotoViewer();" style="background: var(--accent-red); border: none; color: white; padding: 10px 15px; border-radius: 5px; cursor: pointer;">
-                        <i class="bi bi-x-lg"></i>
-                    </button>
-                </div>
-            </div>
-        `;
-        
-        document.body.appendChild(viewer);
-        document.body.style.overflow = 'hidden';
-        
-        // Переменные для зума и перемещения
-        let scale = 1;
-        let translateX = 0;
-        let translateY = 0;
-        let isDragging = false;
-        let startX, startY;
-        
-        const img = document.getElementById('viewer-image');
-        const container = document.getElementById('image-container');
-        
-        // Функция обновления трансформации
-        function updateTransform(withTransition = false) {
-            if (withTransition) {
-                img.style.transition = 'transform 0.3s ease';
-            } else {
-                img.style.transition = 'none';
-            }
-            img.style.transform = `scale(${scale}) translate(${translateX}px, ${translateY}px)`;
-            container.style.cursor = scale > 1 ? 'grab' : 'default';
-            
-            // Скрываем/показываем кнопки навигации при зуме
-            const navBtns = document.querySelectorAll('.nav-btn');
-            navBtns.forEach(btn => {
-                btn.style.opacity = scale > 1 ? '0' : '1';
-                btn.style.pointerEvents = scale > 1 ? 'none' : 'auto';
-            });
-        }
-        
-        // Зум кнопками (с плавностью)
-        document.getElementById('zoom-in')?.addEventListener('click', function(e) {
-            e.stopPropagation();
-            scale = Math.min(scale + 0.5, 5);
-            updateTransform(true);
-        });
-        
-        document.getElementById('zoom-out')?.addEventListener('click', function(e) {
-            e.stopPropagation();
-            scale = Math.max(scale - 0.5, 1);
-            if (scale === 1) {
-                translateX = 0;
-                translateY = 0;
-            }
-            updateTransform(true);
-        });
-        
-        document.getElementById('zoom-reset')?.addEventListener('click', function(e) {
-            e.stopPropagation();
-            scale = 1;
-            translateX = 0;
-            translateY = 0;
-            updateTransform(true);
-        });
-        
-        // Зум колесиком мыши (с плавностью)
-        container.addEventListener('wheel', function(e) {
-            e.preventDefault();
-            const delta = e.deltaY > 0 ? -0.1 : 0.1;
-            scale = Math.min(Math.max(scale + delta, 1), 5);
-            if (scale === 1) {
-                translateX = 0;
-                translateY = 0;
-            }
-            updateTransform(true);
-        });
-        
-        // Перемещение изображения при зуме
-        // Используем document для отслеживания mousemove и mouseup
-        // чтобы корректно обрабатывать отпускание мыши за пределами контейнера
-        
-        container.addEventListener('mousedown', function(e) {
-            if (scale > 1) {
-                e.preventDefault(); // Предотвращаем выделение текста
-                isDragging = true;
-                container.style.cursor = 'grabbing';
-                startX = e.clientX - translateX;
-                startY = e.clientY - translateY;
-            }
-        });
-        
-        // Отслеживаем движение на всём документе
-        function handleMouseMove(e) {
-            if (isDragging) {
-                e.preventDefault();
-                translateX = e.clientX - startX;
-                translateY = e.clientY - startY;
-                updateTransform(false);
-            }
-        }
-        
-        // Отслеживаем отпускание мыши на всём документе
-        function handleMouseUp() {
-            if (isDragging) {
-                isDragging = false;
-                if (scale > 1) {
-                    container.style.cursor = 'grab';
-                }
-            }
-        }
-        
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-        
-        // Сохраняем ссылки на обработчики для удаления при закрытии
-        viewer._dragHandlers = { move: handleMouseMove, up: handleMouseUp };
-        
-        // === TOUCH СОБЫТИЯ ДЛЯ ТЕЛЕФОНА ===
-        let touchStartX = 0;
-        let touchStartY = 0;
-        let touchStartDist = 0;
-        let initialScale = 1;
-        let isSwiping = false;
-        
-        // Расчёт расстояния между двумя пальцами
-        function getTouchDistance(touches) {
-            const dx = touches[0].clientX - touches[1].clientX;
-            const dy = touches[0].clientY - touches[1].clientY;
-            return Math.sqrt(dx * dx + dy * dy);
-        }
-        
-        container.addEventListener('touchstart', function(e) {
-            if (e.touches.length === 2) {
-                // Pinch-to-zoom начало
-                touchStartDist = getTouchDistance(e.touches);
-                initialScale = scale;
-            } else if (e.touches.length === 1 && scale === 1) {
-                // Свайп начало (только если нет зума)
-                touchStartX = e.touches[0].clientX;
-                touchStartY = e.touches[0].clientY;
-                isSwiping = true;
-            }
-        }, { passive: true });
-        
-        container.addEventListener('touchmove', function(e) {
-            if (e.touches.length === 2) {
-                // Pinch-to-zoom
-                e.preventDefault();
-                const currentDist = getTouchDistance(e.touches);
-                const ratio = currentDist / touchStartDist;
-                scale = Math.min(Math.max(initialScale * ratio, 1), 5);
-                if (scale === 1) {
-                    translateX = 0;
-                    translateY = 0;
-                }
-                updateTransform(false);
-            } else if (e.touches.length === 1 && scale > 1) {
-                // Панорамирование при зуме
-                e.preventDefault();
-                if (isDragging) {
-                    translateX = e.touches[0].clientX - startX;
-                    translateY = e.touches[0].clientY - startY;
-                    updateTransform(false);
-                }
-            }
-        }, { passive: false });
-        
-        container.addEventListener('touchend', function(e) {
-            if (isSwiping && scale === 1 && e.changedTouches.length === 1) {
-                const touchEndX = e.changedTouches[0].clientX;
-                const touchEndY = e.changedTouches[0].clientY;
-                const diffX = touchEndX - touchStartX;
-                const diffY = touchEndY - touchStartY;
-                
-                // Свайп только если горизонтальное движение больше вертикального
-                if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 50) {
-                    if (diffX > 0 && currentPhotoIndex > 0) {
-                        // Свайп вправо - предыдущее фото
-                        currentPhotoIndex--;
-                        updateViewerImage();
-                    } else if (diffX < 0 && currentPhotoIndex < currentTabPhotosUrls.length - 1) {
-                        // Свайп влево - следующее фото
-                        currentPhotoIndex++;
-                        updateViewerImage();
-                    }
-                }
-            }
-            isSwiping = false;
-            touchStartDist = 0;
-        }, { passive: true });
-        
-        // Touch drag для панорамирования при зуме
-        container.addEventListener('touchstart', function(e) {
-            if (e.touches.length === 1 && scale > 1) {
-                isDragging = true;
-                startX = e.touches[0].clientX - translateX;
-                startY = e.touches[0].clientY - translateY;
-            }
-        }, { passive: true });
-        
-        container.addEventListener('touchend', function() {
-            isDragging = false;
-        }, { passive: true });
-        
-        // Навигация между фото
-        document.getElementById('prev-photo')?.addEventListener('click', function(e) {
-            e.stopPropagation();
-            if (currentPhotoIndex > 0) {
-                currentPhotoIndex--;
-                updateViewerImage();
-            }
-        });
-        
-        document.getElementById('next-photo')?.addEventListener('click', function(e) {
-            e.stopPropagation();
-            if (currentPhotoIndex < currentTabPhotosUrls.length - 1) {
-                currentPhotoIndex++;
-                updateViewerImage();
-            }
-        });
-        
-        function updateViewerImage() {
-            const img = document.getElementById('viewer-image');
-            if (!img) return;
-            scale = 1;
-            _viewerScale = 1;
-            translateX = 0;
-            translateY = 0;
-            img.src = currentTabPhotosUrls[currentPhotoIndex];
-            updateTransform(true);
-            
-            const counter = viewer.querySelector('[data-photo-counter]');
-            if (counter) counter.textContent = `${currentPhotoIndex + 1} / ${currentTabPhotosUrls.length}`;
-            
-            const prevBtn = document.getElementById('prev-photo');
-            const nextBtn = document.getElementById('next-photo');
-            if (prevBtn) prevBtn.style.display = currentPhotoIndex > 0 ? '' : 'none';
-            if (nextBtn) nextBtn.style.display = currentPhotoIndex < currentTabPhotosUrls.length - 1 ? '' : 'none';
-        }
-        
-        // Sync scale to global for keyboard handler
-        const origUpdateTransform = updateTransform;
-        updateTransform = function(wt) { origUpdateTransform(wt); _viewerScale = scale; };
-        
-        // Track mousedown position to distinguish click from drag
-        let clickStartX = 0, clickStartY = 0;
-        viewer.addEventListener('mousedown', function(e) {
-            clickStartX = e.clientX;
-            clickStartY = e.clientY;
-        });
-        
-        // Close when clicking dark area (not image); drag > 5px ignored
-        viewer.addEventListener('click', function(e) {
-            if (Math.abs(e.clientX - clickStartX) > 5 || Math.abs(e.clientY - clickStartY) > 5) return;
-            if (e.target.tagName === 'IMG') return;
-            closePhotoViewer();
-        });
-        
-        // Скачивание отдельного фото
-        document.getElementById('download-single').addEventListener('click', function(e) {
-            e.stopPropagation();
-            const link = document.createElement('a');
-            link.href = currentTabPhotosUrls[currentPhotoIndex];
-            link.download = currentTabPhotosUrls[currentPhotoIndex].split('/').pop();
-            link.click();
-        });
-        
-        // Keyboard handler
-        if (_viewerKeyHandler) {
-            document.removeEventListener('keydown', _viewerKeyHandler, true);
-        }
-        _viewerKeyHandler = function(e) {
-            if (!document.getElementById('photo-viewer')) return;
-            if (e.key === 'Escape') {
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                closePhotoViewer();
-            } else if (e.key === 'ArrowLeft') {
-                e.preventDefault();
-                if (currentPhotoIndex > 0) { currentPhotoIndex--; updateViewerImage(); }
-            } else if (e.key === 'ArrowRight') {
-                e.preventDefault();
-                if (currentPhotoIndex < currentTabPhotosUrls.length - 1) { currentPhotoIndex++; updateViewerImage(); }
-            }
-        };
-        document.addEventListener('keydown', _viewerKeyHandler, true);
-    }
-    
-    function closePhotoViewer() {
-        const viewer = document.getElementById('photo-viewer');
-        if (viewer) {
-            if (viewer._dragHandlers) {
-                document.removeEventListener('mousemove', viewer._dragHandlers.move);
-                document.removeEventListener('mouseup', viewer._dragHandlers.up);
-            }
-            if (_viewerKeyHandler) {
-                document.removeEventListener('keydown', _viewerKeyHandler, true);
-                _viewerKeyHandler = null;
-            }
-            viewer.remove();
-            document.body.style.overflow = '';
-        }
-    }
-    window._closePhotoViewer = closePhotoViewer;
     if (autoTrack) {
         document.getElementById('tracking_number').value = autoTrack;
         trackingForm.dispatchEvent(new Event('submit'));
@@ -1093,4 +383,3 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 {% endblock %}
-
