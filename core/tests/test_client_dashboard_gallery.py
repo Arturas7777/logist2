@@ -149,3 +149,19 @@ def test_dashboard_title_warning_when_scan_missing(portal_login):
     assert "bi-exclamation-triangle-fill" in html
     assert "title-tile is-missing" in html
     assert "title-tile doc-preview-btn" not in html
+
+
+def test_dashboard_hides_request_checkbox_for_floating(portal_login):
+    http, owner = portal_login
+    Car.objects.create(
+        year=2024,
+        brand="Kia",
+        vin="FLOATDASHVIN00001",
+        status="FLOATING",
+        client=owner,
+    )
+    response = http.get(reverse("website:dashboard"), {"status": "FLOATING"})
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert "FLOATDASHVIN00001" in html
+    assert 'class="form-check-input car-select"' not in html

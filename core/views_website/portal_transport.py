@@ -7,14 +7,12 @@ from urllib.parse import quote
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.files.base import ContentFile
-from django.db.models import Exists, OuterRef
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
-from core.models import Car
 from core.models.website import (
     CLIENT_DOCUMENT_ALLOWED_EXTENSIONS,
     TRANSPORT_DOCUMENT_TYPES,
@@ -27,7 +25,7 @@ from core.models.website import (
 from core.services import transport_docs as docs_service
 from core.services.transport_docs import PackageDataError
 
-from .forms import MAX_UPLOAD_SIZE, TransportRequestForm
+from .forms import MAX_UPLOAD_SIZE, TransportRequestForm, client_requestable_cars
 
 logger = logging.getLogger(__name__)
 
@@ -449,15 +447,7 @@ def _wants_json(request):
 
 def _eligible_cars_for_request(client, transport_request):
     """Авто, которые клиент может добавить в заявку (те же правила, что в форме)."""
-    in_other_active = TransportRequest.objects.filter(cars=OuterRef("pk")).exclude(
-        status__in=TransportRequest.INACTIVE_STATUSES
-    ).exclude(pk=transport_request.pk)
-    return (
-        Car.objects.filter(client=client)
-        .exclude(status="TRANSFERRED")
-        .filter(is_important=False)
-        .filter(~Exists(in_other_active))
-    )
+    return client_requestable_cars(client, exclude_request_pk=transport_request.pk)
 
 
 def _render_req_car_row(request, transport_request, section):

@@ -62,23 +62,23 @@
     }
     .gallery-link:hover { background: #c8e6c9; color: #146c43; }
     .gallery-link .bi { font-size: .9rem; }
-    .title-cell { text-align: center; width: 52px; }
+    .title-cell { text-align: center; width: 44px; }
     .title-tile {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 2.15rem;
-        height: 2.15rem;
+        width: 1.7rem;
+        height: 1.7rem;
         padding: 0;
         border: 0;
-        border-radius: .45rem;
+        border-radius: .35rem;
         background: color-mix(in srgb, var(--title-ico, #6c5ce7) 14%, #fff);
         box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--title-ico, #6c5ce7) 28%, transparent);
         color: var(--title-ico, #6c5ce7);
         cursor: pointer;
         transition: background .15s ease, transform .12s ease;
     }
-    .title-tile .bi { font-size: 1.15rem; line-height: 1; }
+    .title-tile .bi { font-size: .95rem; line-height: 1; }
     .title-tile:hover {
         background: color-mix(in srgb, var(--title-ico, #6c5ce7) 26%, #fff);
         transform: translateY(-1px);
@@ -226,7 +226,7 @@
                         {% for car in cars %}
                         <tr>
                             <td>
-                                {% if car.status != "TRANSFERRED" and not car.is_important and not car.in_active_request %}
+                                {% if car.status != "TRANSFERRED" and car.status != "FLOATING" and not car.is_important and not car.in_active_request %}
                                 <input type="checkbox" class="form-check-input car-select" name="cars" value="{{ car.id }}">
                                 {% endif %}
                             </td>

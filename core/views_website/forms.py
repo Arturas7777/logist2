@@ -8,6 +8,30 @@ from django.db.models import Exists, OuterRef
 from core.models import Car
 from core.models.website import ClientDocument, DeclarationRequest, TransportRequest
 
+# В заявку на автовоз — только то, что уже можно забрать со склада/порта.
+# FLOATING («В пути») ещё не приплыли; TRANSFERRED уже уехали.
+REQUESTABLE_CAR_STATUSES = ("UNLOADED", "IN_PORT")
+
+
+def client_requestable_cars(client, *, exclude_request_pk=None, extra_cars=None):
+    """Машины клиента, которые можно поставить галочкой в заявке на автовоз."""
+    in_other_active_request = TransportRequest.objects.filter(cars=OuterRef("pk")).exclude(
+        status__in=TransportRequest.INACTIVE_STATUSES
+    )
+    if exclude_request_pk:
+        in_other_active_request = in_other_active_request.exclude(pk=exclude_request_pk)
+    cars_qs = (
+        Car.objects.filter(client=client)
+        .filter(status__in=REQUESTABLE_CAR_STATUSES)
+        .filter(is_important=False)
+        .filter(~Exists(in_other_active_request))
+        .order_by("-id")
+    )
+    if extra_cars is not None:
+        cars_qs = (cars_qs | extra_cars).distinct().order_by("-id")
+    return cars_qs
+
+
 # Максимальный размер загружаемого клиентом файла (20 МБ).
 MAX_UPLOAD_SIZE = 20 * 1024 * 1024
 
@@ -130,25 +154,14 @@ class TransportRequestForm(forms.ModelForm):
 
     def __init__(self, *args, client=None, **kwargs):
         super().__init__(*args, **kwargs)
-        # Забрать автовозом можно только машины, которые ещё не переданы
-        # и не заблокированы (is_important — блокировка добавления в автовоз).
-        # Авто, уже состоящее в другой активной заявке (не «Оформлена»),
-        # выбрать нельзя. При редактировании — плюс машины этой заявки.
-        in_other_active_request = TransportRequest.objects.filter(cars=OuterRef("pk")).exclude(
-            status__in=TransportRequest.INACTIVE_STATUSES
+        # Забрать автовозом можно только разгруженные / в порту.
+        # «В пути» ещё не приплыли; переданные уже уехали.
+        extra = self.instance.cars.all() if self.instance.pk else None
+        self.fields["cars"].queryset = client_requestable_cars(
+            client,
+            exclude_request_pk=self.instance.pk if self.instance.pk else None,
+            extra_cars=extra,
         )
-        if self.instance.pk:
-            in_other_active_request = in_other_active_request.exclude(pk=self.instance.pk)
-        cars_qs = (
-            Car.objects.filter(client=client)
-            .exclude(status="TRANSFERRED")
-            .filter(is_important=False)
-            .filter(~Exists(in_other_active_request))
-            .order_by("-id")
-        )
-        if self.instance.pk:
-            cars_qs = (cars_qs | self.instance.cars.all()).distinct().order_by("-id")
-        self.fields["cars"].queryset = cars_qs
         # Перевозчик и его EORI обязательны для оформления.
         self.fields["carrier_name"].required = True
         self.fields["carrier_eori"].required = True

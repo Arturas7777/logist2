@@ -382,6 +382,41 @@ def test_number_hidden_on_portal(logged_client, transport_request):
     assert transport_request.number not in response.content.decode()
 
 
+def test_request_form_omits_floating_cars(portal_client):
+    from core.views_website.forms import TransportRequestForm
+
+    floating = Car.objects.create(
+        year=2024, brand="Kia", vin="FLOATVIN000000001", status="FLOATING", client=portal_client
+    )
+    in_port = Car.objects.create(
+        year=2024, brand="BMW", vin="INPORTVIN00000001", status="IN_PORT", client=portal_client
+    )
+    unloaded = Car.objects.create(
+        year=2023, brand="Audi", vin="UNLOADVIN00000001", status="UNLOADED", client=portal_client
+    )
+    form = TransportRequestForm(client=portal_client)
+    pks = set(form.fields["cars"].queryset.values_list("pk", flat=True))
+    assert floating.pk not in pks
+    assert in_port.pk in pks
+    assert unloaded.pk in pks
+
+
+def test_transport_requests_page_hides_floating_cars(logged_client, portal_client):
+    floating = Car.objects.create(
+        year=2024, brand="Kia", vin="FLOATPAGEVIN00001", status="FLOATING", client=portal_client
+    )
+    unloaded = Car.objects.create(
+        year=2023, brand="Audi", vin="UNLOADPAGEVIN0001", status="UNLOADED", client=portal_client
+    )
+    response = logged_client.get(
+        reverse("website:transport_requests"), {"cars": [floating.pk, unloaded.pk]}
+    )
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert "UNLOADPAGEVIN0001" in html
+    assert "FLOATPAGEVIN00001" not in html
+
+
 def test_passport_requires_address(logged_client, transport_request, car):
     response = logged_client.post(
         _doc_url(transport_request),
