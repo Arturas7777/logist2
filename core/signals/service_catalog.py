@@ -14,7 +14,7 @@ import logging
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models.signals import post_save, pre_delete
+from django.db.models.signals import post_save, pre_delete, pre_save
 from django.dispatch import receiver
 
 from core.models import (
@@ -82,117 +82,157 @@ def _recalc_cars_total_price_inline(car_ids):
 # ---------------------------------------------------------------------------
 # Catalog change → bulk update of related CarService rows
 # ---------------------------------------------------------------------------
+#
+# ``default_markup`` в каталоге — только для НОВЫХ CarService (при создании
+# авто / добавлении услуги). Сохранение карточки склада/линии раньше
+# массово перезаписывало ``markup_amount`` у всех существующих машин
+# (включая переданные и с тарифной наценкой). Админский formset при этом
+# save()'ит КАЖДУЮ строку, даже нетронутую — поэтому правка наценки у
+# одной услуги склада обнуляла наценки остальных.
+#
+# Теперь: существующие машины трогаем только если изменилась цена
+# (``custom_price``) или услуга выключена. ``markup_amount`` не трогаем.
+
+
+_CATALOG_TRACK_FIELDS = ("default_price", "is_active")
+
+
+def _stash_catalog_previous(sender, instance):
+    """Снимок цены/активности до save — чтобы post_save знал, что реально изменилось."""
+    instance._catalog_previous = None
+    if not instance.pk:
+        return
+    instance._catalog_previous = sender.objects.filter(pk=instance.pk).values(*_CATALOG_TRACK_FIELDS).first()
+
+
+def _price_actually_changed(instance) -> bool:
+    prev = getattr(instance, "_catalog_previous", None)
+    if prev is None:
+        return False
+    return Decimal(str(prev["default_price"] or 0)) != Decimal(str(instance.default_price or 0))
+
+
+def _clear_catalog_previous(instance):
+    instance._catalog_previous = None
+
+
+@receiver(pre_save, sender=WarehouseService)
+def warehouse_service_pre_save(sender, instance, **kwargs):
+    _stash_catalog_previous(sender, instance)
+
+
+@receiver(pre_save, sender=LineService)
+def line_service_pre_save(sender, instance, **kwargs):
+    _stash_catalog_previous(sender, instance)
+
+
+@receiver(pre_save, sender=CarrierService)
+def carrier_service_pre_save(sender, instance, **kwargs):
+    _stash_catalog_previous(sender, instance)
+
+
+@receiver(pre_save, sender=CompanyService)
+def company_service_pre_save(sender, instance, **kwargs):
+    _stash_catalog_previous(sender, instance)
+
+
+def _delete_related_carservices(service_type, service_id):
+    affected_car_ids = list(
+        CarService.objects.filter(service_type=service_type, service_id=service_id).values_list("car_id", flat=True)
+    )
+    deleted, _ = CarService.objects.filter(service_type=service_type, service_id=service_id).delete()
+    if deleted:
+        _enqueue_recalc_cars_total_price(affected_car_ids)
 
 
 @receiver(post_save, sender=WarehouseService)
-def update_cars_on_warehouse_service_change(sender, instance, **kwargs):
+def update_cars_on_warehouse_service_change(sender, instance, created, **kwargs):
     try:
-        if instance.is_active and instance.default_price > 0:
-            car_services = list(
-                CarService.objects.filter(
-                    service_type="WAREHOUSE", service_id=instance.id, car__warehouse=instance.warehouse
-                ).select_related("car")
-            )
-            if not car_services:
-                return
-            default_markup_val = getattr(instance, "default_markup", None) or Decimal("0")
-            for cs in car_services:
-                if is_storage_service(instance):
-                    days = Decimal(str(cs.car.days or 0))
-                    cs.custom_price = days * Decimal(str(instance.default_price or 0))
-                    cs.markup_amount = days * Decimal(str(default_markup_val))
-                else:
-                    cs.custom_price = instance.default_price
-                    cs.markup_amount = default_markup_val
-            CarService.objects.bulk_update(car_services, ["custom_price", "markup_amount"], batch_size=100)
-            _enqueue_recalc_cars_total_price([cs.car_id for cs in car_services])
-        else:
-            affected_car_ids = list(
-                CarService.objects.filter(service_type="WAREHOUSE", service_id=instance.id).values_list(
-                    "car_id", flat=True
-                )
-            )
-            CarService.objects.filter(service_type="WAREHOUSE", service_id=instance.id).delete()
-            _enqueue_recalc_cars_total_price(affected_car_ids)
+        if not (instance.is_active and instance.default_price > 0):
+            _delete_related_carservices("WAREHOUSE", instance.id)
+            return
+        if created or not _price_actually_changed(instance):
+            return
+        car_services = list(
+            CarService.objects.filter(
+                service_type="WAREHOUSE", service_id=instance.id, car__warehouse=instance.warehouse
+            ).select_related("car")
+        )
+        if not car_services:
+            return
+        for cs in car_services:
+            if is_storage_service(instance):
+                days = Decimal(str(cs.car.days or 0))
+                cs.custom_price = days * Decimal(str(instance.default_price or 0))
+            else:
+                cs.custom_price = instance.default_price
+        CarService.objects.bulk_update(car_services, ["custom_price"], batch_size=100)
+        _enqueue_recalc_cars_total_price([cs.car_id for cs in car_services])
     except Exception as e:
         logger.error("Error updating cars on warehouse service change: %s", e)
+    finally:
+        _clear_catalog_previous(instance)
 
 
 @receiver(post_save, sender=LineService)
-def update_cars_on_line_service_change(sender, instance, **kwargs):
-    """Симметрично с Warehouse/Carrier/CompanyService:
-    при изменении ``default_price/markup`` активной услуги линии — обновить
-    цены всех ``CarService`` этого типа на машинах нужной линии и
-    пересчитать ``Car.total_price``. Если услуга стала неактивной —
-    удалить связанные ``CarService``.
-
-    Раньше LineService обновлял только при ``is_active=False``, и при
-    ручной правке прайса в каталоге цены машин «зависали» на старой
-    ``default_price`` до явного перерасчёта в админке Car — это и
-    фиксирует пункт #14 плана.
+def update_cars_on_line_service_change(sender, instance, created, **kwargs):
+    """При изменении ``default_price`` активной услуги линии — обновить
+    ``custom_price`` связанных ``CarService`` (наценку не трогаем).
+    Если услуга стала неактивной — удалить связанные ``CarService``.
     """
     try:
-        if instance.is_active and instance.default_price > 0:
-            default_markup = getattr(instance, "default_markup", None) or Decimal("0")
-            affected_car_ids = list(
-                CarService.objects.filter(
-                    service_type="LINE", service_id=instance.id, car__line=instance.line
-                ).values_list("car_id", flat=True)
-            )
-            CarService.objects.filter(service_type="LINE", service_id=instance.id, car__line=instance.line).update(
-                custom_price=instance.default_price, markup_amount=default_markup
-            )
-            _enqueue_recalc_cars_total_price(affected_car_ids)
-        else:
-            affected_car_ids = list(
-                CarService.objects.filter(service_type="LINE", service_id=instance.id).values_list("car_id", flat=True)
-            )
-            deleted = CarService.objects.filter(service_type="LINE", service_id=instance.id).delete()
-            if deleted[0] > 0:
-                _enqueue_recalc_cars_total_price(affected_car_ids)
+        if not (instance.is_active and instance.default_price > 0):
+            _delete_related_carservices("LINE", instance.id)
+            return
+        if created or not _price_actually_changed(instance):
+            return
+        qs = CarService.objects.filter(service_type="LINE", service_id=instance.id, car__line=instance.line)
+        affected_car_ids = list(qs.values_list("car_id", flat=True))
+        qs.update(custom_price=instance.default_price)
+        _enqueue_recalc_cars_total_price(affected_car_ids)
     except Exception as e:
         logger.error("Error updating cars on line service change: %s", e)
+    finally:
+        _clear_catalog_previous(instance)
 
 
 @receiver(post_save, sender=CarrierService)
-def update_cars_on_carrier_service_change(sender, instance, **kwargs):
+def update_cars_on_carrier_service_change(sender, instance, created, **kwargs):
     try:
-        if instance.is_active and instance.default_price > 0:
-            default_markup = getattr(instance, "default_markup", None) or Decimal("0")
-            affected_car_ids = list(
-                CarService.objects.filter(
-                    service_type="CARRIER", service_id=instance.id, car__carrier=instance.carrier
-                ).values_list("car_id", flat=True)
-            )
-            CarService.objects.filter(
-                service_type="CARRIER", service_id=instance.id, car__carrier=instance.carrier
-            ).update(custom_price=instance.default_price, markup_amount=default_markup)
-            _enqueue_recalc_cars_total_price(affected_car_ids)
-        else:
-            affected_car_ids = list(
-                CarService.objects.filter(service_type="CARRIER", service_id=instance.id).values_list(
-                    "car_id", flat=True
-                )
-            )
-            CarService.objects.filter(service_type="CARRIER", service_id=instance.id).delete()
-            _enqueue_recalc_cars_total_price(affected_car_ids)
+        if not (instance.is_active and instance.default_price > 0):
+            _delete_related_carservices("CARRIER", instance.id)
+            return
+        if created or not _price_actually_changed(instance):
+            return
+        qs = CarService.objects.filter(service_type="CARRIER", service_id=instance.id, car__carrier=instance.carrier)
+        affected_car_ids = list(qs.values_list("car_id", flat=True))
+        qs.update(custom_price=instance.default_price)
+        _enqueue_recalc_cars_total_price(affected_car_ids)
     except Exception as e:
         logger.error("Error updating cars on carrier service change: %s", e)
+    finally:
+        _clear_catalog_previous(instance)
 
 
 @receiver(post_save, sender=CompanyService)
-def update_cars_on_company_service_change(sender, instance, **kwargs):
+def update_cars_on_company_service_change(sender, instance, created, **kwargs):
     try:
-        car_services = CarService.objects.filter(service_type="COMPANY", service_id=instance.id)
-        affected_car_ids = list(car_services.values_list("car_id", flat=True).distinct())
-        if instance.is_active and instance.default_price > 0:
-            default_markup = getattr(instance, "default_markup", None) or Decimal("0")
-            car_services.update(custom_price=instance.default_price, markup_amount=default_markup)
-        else:
-            car_services.delete()
+        qs = CarService.objects.filter(service_type="COMPANY", service_id=instance.id)
+        if not (instance.is_active and instance.default_price > 0):
+            affected_car_ids = list(qs.values_list("car_id", flat=True).distinct())
+            deleted, _ = qs.delete()
+            if deleted:
+                _enqueue_recalc_cars_total_price(affected_car_ids)
+            return
+        if created or not _price_actually_changed(instance):
+            return
+        affected_car_ids = list(qs.values_list("car_id", flat=True).distinct())
+        qs.update(custom_price=instance.default_price)
         _enqueue_recalc_cars_total_price(affected_car_ids)
     except Exception as e:
         logger.error("Error updating cars on company service change: %s", e)
+    finally:
+        _clear_catalog_previous(instance)
 
 
 # ---------------------------------------------------------------------------
