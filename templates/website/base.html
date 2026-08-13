@@ -57,34 +57,22 @@
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end">
                             <li>
-                                <form action="/i18n/setlang/" method="post" class="d-inline">
-                                    {% csrf_token %}
-                                    <input name="next" type="hidden" value="{{ request.path }}">
-                                    <input type="hidden" name="language" value="lt">
-                                    <button type="submit" class="dropdown-item {% if LANGUAGE_CODE == 'lt' %}active{% endif %}">
-                                        🇱🇹 Lietuvių
-                                    </button>
-                                </form>
+                                <a class="dropdown-item {% if LANGUAGE_CODE == 'lt' %}active{% endif %}"
+                                   href="{% url 'website:set_language' %}?language=lt&next={{ request.get_full_path|urlencode }}">
+                                    🇱🇹 Lietuvių
+                                </a>
                             </li>
                             <li>
-                                <form action="/i18n/setlang/" method="post" class="d-inline">
-                                    {% csrf_token %}
-                                    <input name="next" type="hidden" value="{{ request.path }}">
-                                    <input type="hidden" name="language" value="en">
-                                    <button type="submit" class="dropdown-item {% if LANGUAGE_CODE == 'en' %}active{% endif %}">
-                                        🇬🇧 English
-                                    </button>
-                                </form>
+                                <a class="dropdown-item {% if LANGUAGE_CODE == 'en' %}active{% endif %}"
+                                   href="{% url 'website:set_language' %}?language=en&next={{ request.get_full_path|urlencode }}">
+                                    🇬🇧 English
+                                </a>
                             </li>
                             <li>
-                                <form action="/i18n/setlang/" method="post" class="d-inline">
-                                    {% csrf_token %}
-                                    <input name="next" type="hidden" value="{{ request.path }}">
-                                    <input type="hidden" name="language" value="ru">
-                                    <button type="submit" class="dropdown-item {% if LANGUAGE_CODE == 'ru' %}active{% endif %}">
-                                        🇷🇺 Русский
-                                    </button>
-                                </form>
+                                <a class="dropdown-item {% if LANGUAGE_CODE == 'ru' %}active{% endif %}"
+                                   href="{% url 'website:set_language' %}?language=ru&next={{ request.get_full_path|urlencode }}">
+                                    🇷🇺 Русский
+                                </a>
                             </li>
                         </ul>
                     </li>

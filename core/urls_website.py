@@ -25,6 +25,7 @@ urlpatterns = [
     # ========== Новости ==========
     path("news/", views_website.news_list, name="news_list"),
     path("news/<slug:slug>/", views_website.news_detail, name="news_detail"),
+    path("set-language/", views_website.set_site_language, name="set_language"),
     # ========== Аутентификация клиентов ==========
     path("login/", views_website.ClientLoginView.as_view(), name="login"),
     path("logout/", views_website.ClientLogoutView.as_view(), name="logout"),

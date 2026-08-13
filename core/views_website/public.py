@@ -1,8 +1,14 @@
 """Публичные страницы сайта (home, about, services, contact, news)."""
 
+from django.conf import settings
 from django.db.models import F
+from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
-from django.views.decorators.cache import cache_page
+from django.utils import translation
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.translation import check_for_language
+from django.views.decorators.cache import cache_page, never_cache
+from django.views.decorators.http import require_GET
 
 from core.models_website import NewsPost
 
@@ -55,3 +61,39 @@ def news_detail(request, slug):
     NewsPost.objects.filter(pk=post.pk).update(views=F("views") + 1)
     post.views += 1
     return render(request, "website/news_detail.html", {"post": post})
+
+
+@never_cache
+@require_GET
+def set_site_language(request):
+    """Смена языка сайта без CSRF.
+
+    Главная, «О нас» и другие публичные страницы кэшируются ``@cache_page``,
+    поэтому в HTML попадает чужой или протухший csrf-токен. POST на
+    ``/i18n/setlang/`` из такого кэша даёт 403 «Форма устарела».
+    GET-ссылка CSRF не требует: смена языка не меняет данные пользователя.
+    """
+    lang_code = (request.GET.get("language") or "").strip()
+    next_url = request.GET.get("next") or request.META.get("HTTP_REFERER") or "/"
+    if not url_has_allowed_host_and_scheme(
+        url=next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        next_url = "/"
+    if not (lang_code and check_for_language(lang_code)):
+        return HttpResponseRedirect(next_url)
+
+    translation.activate(lang_code)
+    response = HttpResponseRedirect(next_url)
+    response.set_cookie(
+        settings.LANGUAGE_COOKIE_NAME,
+        lang_code,
+        max_age=settings.LANGUAGE_COOKIE_AGE,
+        path=settings.LANGUAGE_COOKIE_PATH,
+        domain=settings.LANGUAGE_COOKIE_DOMAIN,
+        secure=settings.LANGUAGE_COOKIE_SECURE,
+        httponly=settings.LANGUAGE_COOKIE_HTTPONLY,
+        samesite=settings.LANGUAGE_COOKIE_SAMESITE,
+    )
+    return response

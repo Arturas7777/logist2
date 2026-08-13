@@ -79,6 +79,7 @@ from .public import (
     news_detail,
     news_list,
     services_page,
+    set_site_language,
     website_home,
 )
 from .signed_photos import (
@@ -96,6 +97,7 @@ __all__ = [  # noqa: RUF022
     "contact_page",
     "news_list",
     "news_detail",
+    "set_site_language",
     # client_portal
     "client_dashboard",
     "car_detail",
