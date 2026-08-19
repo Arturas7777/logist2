@@ -67,6 +67,18 @@ class TestPartnerAdminPagesRender:
         # Коллапс-блок счетов контрагента присутствует на карточке
         assert "Счета контрагента" in html
 
+    def test_warehouse_addresses_api_keeps_site_numbers(self, admin_client):
+        wh = Warehouse.objects.create(
+            name="WH-Sites-API",
+            address="Klaipeda, Nevezio 5",
+            address4="Klaipeda, Minijos 181",
+        )
+        resp = admin_client.get(f"/admin/core/warehouse/{wh.pk}/addresses/")
+        assert resp.status_code == 200
+        by_value = {item["value"]: item["label"] for item in resp.json()["addresses"]}
+        assert by_value[1] == "Klaipeda, Nevezio 5"
+        assert by_value[4] == "Klaipeda, Minijos 181"
+
 
 @pytest.mark.django_db
 class TestCounterpartyBankAccount:

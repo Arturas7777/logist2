@@ -1362,7 +1362,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         js = (
             "js/htmx.min.js",
             "js/logist2_htmx.js",
-            "js/warehouse_address.js",
+            "js/warehouse_address.js?v=2",
             # Раскладка первой строки + рядов «Тайтл / Важно»: inline-style
             # на обёртках flex-элементов. CSS-каскад в форме ненадёжен
             # (responsive.css media-queries сжимают поля). См. файл.

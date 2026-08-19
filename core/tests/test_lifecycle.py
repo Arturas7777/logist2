@@ -181,6 +181,20 @@ class NormalizationModelsTest(TestCase):
         site = WarehouseSite.objects.create(warehouse=wh, number=1, name="Main", address="123 Street")
         self.assertEqual(str(site), "WH-Norm — Main")
 
+    def test_available_sites_keep_slot_numbers(self):
+        """Пустая площадка 5 не сдвигает Minijos (слот 4) на место Nevezio (1)."""
+        wh = Warehouse.objects.create(
+            name="WH-Atlantic-like",
+            address="Klaipeda, Nevezio 5",
+            address2="Klaipeda, Vilniaus pl.8",
+            address3="Klaipeda, Svepeliu 3",
+            address4="Klaipeda, Minijos 181",
+        )
+        sites = dict(wh.get_available_sites())
+        self.assertEqual(sites[1], "Klaipeda, Nevezio 5")
+        self.assertEqual(sites[4], "Klaipeda, Minijos 181")
+        self.assertNotIn(5, sites)
+
     def test_warehouse_site_unique(self):
         from django.db import IntegrityError
 

@@ -43,10 +43,10 @@
         if (!warehouseSelect || !addressSelect) return;
 
         var savedValue = addressSelect.value || '1';
+        var lastWarehouseId = warehouseSelect.value || '';
 
-        var currentWarehouseId = warehouseSelect.value;
-        if (currentWarehouseId) {
-            fetchAddresses(currentWarehouseId, function(addresses) {
+        if (lastWarehouseId) {
+            fetchAddresses(lastWarehouseId, function(addresses) {
                 updateAddressSelect(addressSelect, addresses, savedValue);
             });
         } else {
@@ -54,7 +54,16 @@
         }
 
         function onWarehouseChange() {
-            fetchAddresses(warehouseSelect.value, function(addresses) {
+            var newId = warehouseSelect.value || '';
+            // Select2 при инициализации autocomplete шлёт jQuery `change`
+            // на уже выбранный склад. Раньше это сбрасывало площадку на 1
+            // (у ATLANTIC это Nevezio 5), и после сохранения Minijos 181
+            // в карточке снова показывалась первая площадка.
+            if (newId === lastWarehouseId) {
+                return;
+            }
+            lastWarehouseId = newId;
+            fetchAddresses(newId, function(addresses) {
                 updateAddressSelect(addressSelect, addresses, '1');
             });
         }

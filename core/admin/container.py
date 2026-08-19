@@ -134,7 +134,7 @@ class ContainerAdmin(admin.ModelAdmin):
 
     class Media:
         # dashboard_admin.css подключается глобально в base_site.html
-        js = ("js/htmx.min.js", "js/warehouse_address.js", "js/line_ths.js")
+        js = ("js/htmx.min.js", "js/warehouse_address.js?v=2", "js/line_ths.js")
 
     def get_changeform_initial_data(self, request):
         """Дефолты для формы добавления контейнера.
