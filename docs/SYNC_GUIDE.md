@@ -156,6 +156,10 @@ ssh root@176.118.198.78 "cd /var/www/www-root/data/www/logist2 && ./vps_push.sh 
 
 ## Первоначальная настройка на новом компьютере
 
+> Если на машине вообще ничего не установлено (ни Python, ни PostgreSQL) —
+> см. подробную инструкцию `docs/NEW_MACHINE_SETUP.md`. Ниже — короткий
+> вариант для машины, где софт уже есть.
+
 ```powershell
 git clone https://github.com/Arturas7777/logist2.git
 cd logist2

@@ -276,6 +276,10 @@ logist2/
 
 - [`CHANGELOG.md`](CHANGELOG.md) — история значимых изменений
   (формат [Keep a Changelog](https://keepachangelog.com/)).
+- [`docs/NEW_MACHINE_SETUP.md`](docs/NEW_MACHINE_SETUP.md) — развёртывание на
+  чистой Windows-машине: что установить, какие файлы перенести руками
+  (`.env`, SSH-ключи, `.mo`), как не поломать миграции при работе с двух
+  компьютеров.
 - `.cursor/rules/git-workflow.mdc` — git workflow, deploy, sync_db.
 - `.cursor/rules/project-overview.mdc` — подробный обзор проекта.
 - `docs/BACKUPS.md` — автоматизированные бэкапы PostgreSQL (cron,
