@@ -1,6 +1,6 @@
 {% load i18n %}
 {% comment %}
-Переписка клиента с менеджером по одной заявке на автовоз.
+Переписка клиента с брокером по одной заявке на автовоз.
 
 Показывает только диалог «мы ↔ клиент»: внутренняя работа со складом
 (письма, warehouse_state) в кабинете не отображается.
@@ -12,7 +12,7 @@
 <details class="req-messages mt-2" data-req-id="{{ req.pk }}" {% if req.unread_for_client %}open{% endif %}>
     <summary class="small d-flex align-items-center gap-2">
         <i class="bi bi-chat-dots"></i>
-        <span>{% trans "Переписка с менеджером" %}</span>
+        <span>{% trans "Переписка с брокером" %}</span>
         {% if req.unread_for_client %}
         <span class="badge bg-danger req-msg-badge">{{ req.unread_for_client }}</span>
         {% else %}
@@ -24,7 +24,7 @@
         {% for msg in req.msg_list %}
         <div class="req-msg {% if msg.is_from_staff %}req-msg-staff{% else %}req-msg-client{% endif %}">
             <div class="req-msg-meta">
-                {% if msg.is_from_staff %}{% trans "Менеджер" %}{% else %}{% trans "Вы" %}{% endif %}
+                {% if msg.is_from_staff %}{% trans "Брокер" %}{% else %}{% trans "Вы" %}{% endif %}
                 · {{ msg.created_at|date:"d.m.Y H:i" }}
                 {% if msg.car %}· {{ msg.car.vin }}{% endif %}
             </div>
@@ -42,15 +42,17 @@
         {% endfor %}
     </div>
 
+    {# Кнопка под полем, а не в input-group: рядом с textarea на две строки #}
+    {# она вытягивалась в узкую высокую полосу. #}
     <form class="req-msg-form mt-2" data-url="{% url 'website:transport_request_message_send' req.pk %}">
         {% csrf_token %}
-        <div class="input-group input-group-sm">
-            <textarea class="form-control" name="body" rows="2"
-                      placeholder="{% trans 'Ответить менеджеру…' %}"></textarea>
-            <button type="submit" class="btn btn-primary">
-                <i class="bi bi-send"></i>
+        <textarea class="form-control form-control-sm" name="body" rows="2"
+                  placeholder="{% trans 'Ответить брокеру…' %}"></textarea>
+        <div class="req-msg-actions mt-1">
+            <div class="req-msg-status small"></div>
+            <button type="submit" class="btn btn-sm btn-primary req-msg-send">
+                <i class="bi bi-send"></i> {% trans "Отправить" %}
             </button>
         </div>
-        <div class="req-msg-status small mt-1"></div>
     </form>
 </details>

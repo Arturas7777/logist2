@@ -299,7 +299,7 @@
     }
     #docPreviewModal .doc-preview-fallback { display: none; text-align: center; padding: 2rem 1rem; }
 
-    /* ── Переписка с менеджером по заявке ── */
+    /* ── Переписка с брокером по заявке ── */
     .req-messages > summary {
         cursor: pointer; list-style: none; color: #495057;
         padding: .3rem 0; user-select: none;
@@ -321,6 +321,10 @@
     .req-msg-body { white-space: pre-wrap; word-break: break-word; }
     .req-msg-docs { display: flex; flex-wrap: wrap; gap: .2rem; margin-top: .3rem; }
     .req-msg-form textarea { font-size: .82rem; resize: vertical; }
+    .req-msg-actions { display: flex; align-items: center; gap: .5rem; }
+    /* Статус занимает остаток строки, кнопка остаётся у правого края. */
+    .req-msg-status { flex: 1 1 auto; min-width: 0; }
+    .req-msg-send { flex: 0 0 auto; white-space: nowrap; padding-inline: .9rem; }
 </style>
 {% endblock %}
 
@@ -1682,7 +1686,7 @@
     }
 })();
 
-// ── Переписка с менеджером: отправка ответа и отметка прочтения ──────────
+// ── Переписка с брокером: отправка ответа и отметка прочтения ───────────
 (function () {
     function csrf() {
         var el = document.querySelector("[name=csrfmiddlewaretoken]");
@@ -1731,7 +1735,7 @@
                     btn.disabled = false;
                     if (!data.ok) {
                         status.textContent = data.error || "Ошибка";
-                        status.className = "req-msg-status small mt-1 text-danger";
+                        status.className = "req-msg-status small text-danger";
                         return;
                     }
                     var empty = thread.querySelector(".req-msg-empty");
@@ -1750,13 +1754,13 @@
                     thread.scrollTop = thread.scrollHeight;
                     textarea.value = "";
                     status.textContent = "Отправлено";
-                    status.className = "req-msg-status small mt-1 text-success";
+                    status.className = "req-msg-status small text-success";
                     setTimeout(function () { status.textContent = ""; }, 3000);
                 })
                 .catch(function (err) {
                     btn.disabled = false;
                     status.textContent = String(err);
-                    status.className = "req-msg-status small mt-1 text-danger";
+                    status.className = "req-msg-status small text-danger";
                 });
         });
     });
