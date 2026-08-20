@@ -140,7 +140,7 @@ def test_board_groups_cars_by_declaration(staff_client, transport_request, car, 
     assert "Декларация №2" in body
     # Отдельная декларация и её тип подписаны, примечание видно.
     assert "отдельная" in body
-    assert "Экспортная" in body
+    assert "Экспорт" in body
     assert "отдельно, срочно" in body
     assert "деклараций: 2" in body
 
@@ -179,7 +179,7 @@ def test_card_shows_separate_declaration(staff_client, transport_request, car, s
 
     assert "Отдельная декларация" in body
     assert "отдельно на экспорт" in body
-    assert "№1 · Экспортная" in body
+    assert "№1 · Экспорт" in body
 
 
 # ---------------------------------------------------------------------------

@@ -633,9 +633,9 @@ class DeclarationRequest(models.Model):
     """Заявка клиента на оформление декларации: данные + печатная форма."""
 
     DECLARATION_TYPES = [
-        ("TRANSIT", "Транзитная (T1)"),
-        ("EXPORT", "Экспортная"),
-        ("IMPORT", "Импортная"),
+        ("TRANSIT", "Транзит (T1)"),
+        ("EXPORT", "Экспорт"),
+        ("IMPORT", "Импорт"),
         ("REEXPORT", "Реэкспорт"),
     ]
 
@@ -745,9 +745,9 @@ TRANSPORT_UPLOAD_ONLY_TYPES = {"TITLE", "PASSPORT", "SIGNATURE", "OTHER"}
 # автовоз всегда подразумевает декларацию, и когда мы начнём оформлять их
 # сами, тип перенесётся в ``DeclarationRequest`` без конвертации.
 TRANSPORT_DECLARATION_TYPES = [
-    ("TRANSIT", "Транзитная (T1)"),
-    ("EXPORT", "Экспортная"),
-    ("IMPORT", "Импортная"),
+    ("TRANSIT", "Транзит (T1)"),
+    ("EXPORT", "Экспорт"),
+    ("IMPORT", "Импорт"),
     ("REEXPORT", "Реэкспорт"),
 ]
 

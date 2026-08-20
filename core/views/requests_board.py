@@ -438,7 +438,7 @@ def request_status_set(request: HttpRequest, pk: int):
 
 
 def _declaration_labels_by_car(lines) -> dict[int, str]:
-    """``{car_id: "№2 · Транзитная (T1)"}`` — подпись декларации для чипа авто."""
+    """``{car_id: "№2 · Транзит (T1)"}`` — подпись декларации для чипа авто."""
     labels: dict[int, str] = {}
     for index, line in enumerate(lines, start=1):
         text = line.type_display or "тип не выбран"

@@ -21,10 +21,14 @@
     align-items: center;
     margin-bottom: 18px;
 }
+/* Табы уже разделены гэпом тулбара — свой нижний отступ им не нужен. */
+.rb-toolbar .type-tabs { margin-bottom: 0; }
+/* Без «margin-left: auto»: восьми табам редко хватает одной строки, а на
+   переносе прижатый вправо поиск отрывался от карточек на широком экране. */
 .rb-search {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
-    margin-left: auto;
 }
 .rb-search input[type="search"] {
     padding: 8px 12px;
