@@ -92,6 +92,13 @@
                                 <li><a class="dropdown-item" href="{% url 'website:transport_requests' %}">
                                     <i class="bi bi-truck"></i> {% trans "Заявки на вывоз авто" %}
                                 </a></li>
+                                {# Памятка таможни — про транзит через Литву, поэтому раздел #}
+                                {# только у клиентов из Беларуси (Client.country). #}
+                                {% if user.clientuser.client.sees_sanctions_check %}
+                                <li><a class="dropdown-item" href="{% url 'website:sanctions_check' %}">
+                                    <i class="bi bi-shield-check"></i> {% trans "Проверка на санкции" %}
+                                </a></li>
+                                {% endif %}
                                 <li><hr class="dropdown-divider"></li>
                                 <li>
                                     <form method="post" action="{% url 'website:logout' %}">

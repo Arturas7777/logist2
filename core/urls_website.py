@@ -107,6 +107,9 @@ urlpatterns = [
         views_website.transport_request_messages_read,
         name="transport_request_messages_read",
     ),
+    # ========== Проверка на санкции (клиенты из Беларуси) ==========
+    path("sanctions-check/", views_website.sanctions_check_page, name="sanctions_check"),
+    path("sanctions-check/vin/", views_website.sanctions_vin_lookup, name="sanctions_vin_lookup"),
     # ========== Скачивание фотографий ==========
     path("photo/car/<int:photo_id>/download/", views_website.download_car_photo, name="download_car_photo"),
     path(

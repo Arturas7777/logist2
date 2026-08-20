@@ -16,7 +16,35 @@ class Client(BalanceMethodsMixin, CounterpartyRequisitesMixin, CounterpartyConta
         ("FLEXIBLE", "Гибкая цена (зависит от кол-ва авто)"),
     ]
 
+    # Страна клиента (не путать с ``registration_country`` — там свободный
+    # текст из реквизитов юрлица). Кодом она нужна, чтобы кабинет мог решать,
+    # какие разделы показывать: например «Проверка на санкции» — только тем,
+    # кто везёт авто транзитом через Литву в Беларусь.
+    COUNTRY_CHOICES = [
+        ("BY", "Беларусь"),
+        ("MD", "Молдова"),
+        ("UA", "Украина"),
+        ("KZ", "Казахстан"),
+        ("KG", "Киргизия"),
+        ("UZ", "Узбекистан"),
+        ("AM", "Армения"),
+        ("AZ", "Азербайджан"),
+        ("GE", "Грузия"),
+        ("LT", "Литва"),
+        ("LV", "Латвия"),
+        ("PL", "Польша"),
+        ("OTHER", "Другая"),
+    ]
+
     name = models.CharField(max_length=100, verbose_name="Имя клиента", db_index=True)
+    country = models.CharField(
+        max_length=5,
+        choices=COUNTRY_CHOICES,
+        blank=True,
+        default="",
+        verbose_name="Страна клиента",
+        help_text="Определяет разделы кабинета: «Проверка на санкции» видна клиентам из Беларуси.",
+    )
     email = models.EmailField(blank=True, null=True, verbose_name="Email 1")
     email2 = models.EmailField(blank=True, null=True, verbose_name="Email 2")
     email3 = models.EmailField(blank=True, null=True, verbose_name="Email 3")
@@ -60,6 +88,13 @@ class Client(BalanceMethodsMixin, CounterpartyRequisitesMixin, CounterpartyConta
 
     def __str__(self):
         return self.name
+
+    @property
+    def sees_sanctions_check(self) -> bool:
+        """Показывать ли клиенту раздел «Проверка на санкции» в кабинете."""
+        from core.services.sanctions_check import is_available_for_country
+
+        return is_available_for_country(self.country)
 
     def clean(self):
         """Валидирует Telegram chat_id: только числовой ID, не @username.

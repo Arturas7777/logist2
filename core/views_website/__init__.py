@@ -25,6 +25,8 @@ URL-конфиг работал без изменений.
 * :mod:`.signed_photos`  — публичные signed-URL для галереи (H5a):
   ``get_container_photos``, ``download_photos_archive``,
   ``serve_signed_photo``.
+* :mod:`.portal_sanctions` — «Проверка на санкции» для клиентов из Беларуси
+  (``sanctions_check_page``, ``sanctions_vin_lookup``).
 """
 
 from .ai_chat import (
@@ -60,6 +62,11 @@ from .portal_docs import (
     create_declaration_request,
     declaration_print,
     upload_document,
+)
+from .portal_sanctions import (
+    client_sees_sanctions_check,
+    sanctions_check_page,
+    sanctions_vin_lookup,
 )
 from .portal_transport import (
     transport_request_add_cars,
@@ -132,6 +139,10 @@ __all__ = [  # noqa: RUF022
     "transport_request_generate_all",
     "transport_request_message_send",
     "transport_request_messages_read",
+    # portal_sanctions
+    "sanctions_check_page",
+    "sanctions_vin_lookup",
+    "client_sees_sanctions_check",
     # api
     "IsClientUser",
     "ClientCarViewSet",

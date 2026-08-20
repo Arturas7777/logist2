@@ -104,12 +104,10 @@ def _is_transient(exc: Exception) -> bool:
         return False
     return isinstance(
         exc,
-        (
-            anthropic.RateLimitError,
-            anthropic.APIConnectionError,
-            anthropic.APITimeoutError,
-            anthropic.InternalServerError,
-        ),
+        anthropic.RateLimitError
+        | anthropic.APIConnectionError
+        | anthropic.APITimeoutError
+        | anthropic.InternalServerError,
     )
 
 

@@ -68,6 +68,13 @@ _REQUISITES_FIELDS = (
     ("registration_country", "physical_address", "phone", "general_email", "website"),
 )
 
+# У клиента дополнительно есть кодовая страна: от неё зависят разделы
+# кабинета (см. ``Client.country``).
+_CLIENT_REQUISITES_FIELDS = (
+    _REQUISITES_FIELDS[0],
+    ("country", *_REQUISITES_FIELDS[1]),
+)
+
 
 # ==============================================================================
 # WarehouseAdmin
@@ -327,6 +334,7 @@ class ClientAdmin(admin.ModelAdmin):
     change_form_template = "admin/client_change.html"
     list_display = (
         "name",
+        "country",
         "tariff_display",
         "emails_display",
         "telegram_display",
@@ -334,7 +342,7 @@ class ClientAdmin(admin.ModelAdmin):
         "new_balance_display",
         "balance_status_new",
     )
-    list_filter = (ClientDebtFilter, "notification_enabled", "telegram_enabled", "tariff_type")
+    list_filter = (ClientDebtFilter, "country", "notification_enabled", "telegram_enabled", "tariff_type")
     search_fields = (
         "name",
         "email",
@@ -416,7 +424,7 @@ class ClientAdmin(admin.ModelAdmin):
         return queryset, use_distinct
 
     fieldsets = (
-        ("Основная информация", {"classes": ("cm-requisites",), "fields": _REQUISITES_FIELDS}),
+        ("Основная информация", {"classes": ("cm-requisites",), "fields": _CLIENT_REQUISITES_FIELDS}),
         (
             "🔔 Уведомления",
             {

@@ -1,0 +1,263 @@
+{% extends "website/base.html" %}
+{% load i18n %}
+
+{% comment %}
+«Проверка на санкции» — кабинет клиента из Беларуси.
+
+Клиент вводит VIN, кнопка «Заполнить по VIN» подтягивает характеристики из
+NHTSA (core.views_website.portal_sanctions.sanctions_vin_lookup), поля можно
+поправить руками — NHTSA не знает ни клиренса, ни таможенной категории.
+Вердикт считает core.services.sanctions_check по памятке таможни.
+{% endcomment %}
+
+{% block title %}{% trans "Проверка на санкции" %} - {{ client.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .portal-hero {
+        background: linear-gradient(135deg, var(--primary-color, #2c3e50) 0%, #34495e 100%);
+        color: #fff;
+        padding: 2rem 0;
+        margin-bottom: 2rem;
+    }
+    .sc-card { border: 0; box-shadow: 0 2px 12px rgba(0,0,0,.07); border-radius: .75rem; }
+    .sc-hint { font-size: .8rem; color: #6c757d; }
+    /* Вердикт: цвет полосы слева сразу говорит, чем закончилась проверка. */
+    .sc-verdict { border-left: 6px solid #adb5bd; }
+    .sc-verdict.v-ALLOWED { border-left-color: #198754; }
+    .sc-verdict.v-ALLOWED_WITH_EXTRA { border-left-color: #fd7e14; }
+    .sc-verdict.v-SANCTIONED { border-left-color: #dc3545; }
+    .sc-verdict.v-NEED_DATA { border-left-color: #0dcaf0; }
+    .sc-verdict-title { font-weight: 700; }
+    .sc-doc-list { margin: 0; padding-left: 1.1rem; }
+    .sc-doc-list li { margin-bottom: .2rem; }
+    .sc-vin-input { text-transform: uppercase; font-family: 'Courier New', monospace; }
+    .sc-source { font-size: .78rem; color: #6c757d; }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="portal-hero">
+    <div class="container">
+        <div class="text-white-50 small mb-1">
+            <a href="{% url 'website:dashboard' %}" class="text-white-50 text-decoration-none">
+                <i class="bi bi-arrow-left"></i> {% trans "Личный кабинет" %}
+            </a>
+        </div>
+        <h1 class="h3 mb-0"><i class="bi bi-shield-check"></i> {% trans "Проверка на санкции" %}</h1>
+        <div class="small text-white-50 mt-1">
+            {% trans "Пройдёт ли автомобиль транзитом через Литву" %}
+        </div>
+    </div>
+</section>
+
+<div class="container pb-5">
+    <div class="row g-4">
+        <!-- Форма -->
+        <div class="col-lg-5">
+            <div class="card sc-card">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">{% trans "Данные автомобиля" %}</h5>
+                    <form method="post" id="sc-form">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold" for="{{ form.vin.id_for_label }}">
+                                {% trans "VIN" %}
+                            </label>
+                            <div class="input-group input-group-sm">
+                                <input type="text" name="vin" maxlength="17" id="{{ form.vin.id_for_label }}"
+                                       value="{{ form.vin.value|default:'' }}"
+                                       class="form-control sc-vin-input" placeholder="1HGCM82633A004352">
+                                <button type="button" class="btn btn-outline-secondary" id="sc-lookup">
+                                    <i class="bi bi-search"></i> {% trans "Заполнить по VIN" %}
+                                </button>
+                            </div>
+                            <div class="sc-hint mt-1">
+                                {% trans "Данные подтянутся из базы NHTSA (США). Проверьте их и поправьте, если нужно." %}
+                            </div>
+                            <div class="sc-source mt-1" id="sc-source"></div>
+                        </div>
+
+                        <div class="row g-2">
+                            <div class="col-12">
+                                <label class="form-label small fw-semibold">{% trans "Категория" %}</label>
+                                {{ form.category }}
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label small fw-semibold">{% trans "Двигатель" %}</label>
+                                {{ form.engine_type }}
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-semibold">{% trans "Объём, см³" %}</label>
+                                {{ form.displacement_cc }}
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-semibold">{% trans "Год выпуска" %}</label>
+                                {{ form.year }}
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label small fw-semibold">{% trans "Просвет (клиренс)" %}</label>
+                                {{ form.clearance }}
+                                <div class="sc-hint mt-1">
+                                    {% trans "Санкции касаются машин с просветом от 165 мм — это кроссоверы, внедорожники и пикапы." %}
+                                </div>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label small fw-semibold">{% trans "Стоимость, EUR" %}</label>
+                                {{ form.price_eur }}
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-sm mt-3 w-100">
+                            <i class="bi bi-shield-check"></i> {% trans "Проверить" %}
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Результат -->
+        <div class="col-lg-7">
+            {% if result %}
+            <div class="card sc-card sc-verdict v-{{ result.verdict }}">
+                <div class="card-body">
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                        <span class="sc-verdict-title h5 mb-0">{{ result.verdict_label }}</span>
+                        {% if result.cn_code %}
+                        <span class="badge bg-secondary">{% trans "код КН" %} {{ result.cn_code }}</span>
+                        {% endif %}
+                    </div>
+                    {% if result.cn_note %}<div class="text-muted small mb-3">{{ result.cn_note }}</div>{% endif %}
+
+                    {% for reason in result.reasons %}
+                    <p class="mb-2">{{ reason }}</p>
+                    {% endfor %}
+
+                    {% if result.missing %}
+                    <div class="alert alert-info py-2 px-3 small mb-3">
+                        <div class="fw-semibold mb-1">{% trans "Чтобы дать точный ответ, не хватает:" %}</div>
+                        <ul class="sc-doc-list">
+                            {% for item in result.missing %}<li>{{ item }}</li>{% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+
+                    {% for warning in result.warnings %}
+                    <div class="alert alert-warning py-2 px-3 small mb-2">{{ warning }}</div>
+                    {% endfor %}
+
+                    {% if result.documents %}
+                    <div class="mt-3">
+                        <div class="fw-semibold mb-1">{% trans "Документы, которые попросит таможня:" %}</div>
+                        <ul class="sc-doc-list small">
+                            {% for doc in result.documents %}<li>{{ doc }}</li>{% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% else %}
+            <div class="card sc-card">
+                <div class="card-body">
+                    <h5 class="card-title">{% trans "Как это работает" %}</h5>
+                    <p class="small mb-2">
+                        {% blocktrans trimmed %}
+                        Проверка построена на памятке литовской таможни: она определяет код КН по типу
+                        двигателя и объёму, а затем смотрит на просвет и возраст автомобиля.
+                        {% endblocktrans %}
+                    </p>
+                    <ul class="small mb-3">
+                        <li>{% trans "Просвет меньше 165 мм — автомобиль не попадает в санкционную позицию." %}</li>
+                        <li>{% trans "Просвет от 165 мм и возраст больше 5 лет — можно, но нужна справка о клиренсе от официального представителя бренда в Литве." %}</li>
+                        <li>{% trans "Просвет от 165 мм и возраст до 5 лет — санкции, такую машину брать не стоит." %}</li>
+                        <li>{% trans "Бензин и дизель до 1900 см³, мотоциклы и коллекционные авто от 30 лет — вне санкций." %}</li>
+                    </ul>
+                    <div class="fw-semibold small mb-1">{% trans "Базовый пакет документов:" %}</div>
+                    <ul class="sc-doc-list small mb-0">
+                        {% for doc in base_documents %}<li>{{ doc }}</li>{% endfor %}
+                    </ul>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="sc-hint mt-3">
+                {% blocktrans trimmed %}
+                Ответ носит справочный характер: окончательное решение принимает инспектор таможни.
+                Если сомневаетесь — напишите брокеру в заявке на вывоз авто.
+                {% endblocktrans %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Подстановка характеристик по VIN: NHTSA заполняет то, что знает, остальное
+// клиент указывает сам (клиренса и таможенной категории в базе NHTSA нет).
+(function () {
+    var form = document.getElementById("sc-form");
+    var button = document.getElementById("sc-lookup");
+    var source = document.getElementById("sc-source");
+    if (!form || !button) return;
+
+    function setValue(name, value) {
+        var field = form.querySelector("[name=" + name + "]");
+        if (!field || value === null || value === undefined || value === "") return;
+        field.value = value;
+    }
+
+    button.addEventListener("click", function () {
+        var vinField = form.querySelector("[name=vin]");
+        var vin = (vinField.value || "").trim().toUpperCase();
+        vinField.value = vin;
+        if (vin.length !== 17) {
+            source.className = "sc-source mt-1 text-danger";
+            source.textContent = "{% trans 'VIN должен быть из 17 символов.' %}";
+            return;
+        }
+        button.disabled = true;
+        source.className = "sc-source mt-1";
+        source.textContent = "{% trans 'Запрашиваем NHTSA…' %}";
+
+        var body = new FormData();
+        body.append("vin", vin);
+        body.append("csrfmiddlewaretoken", form.querySelector("[name=csrfmiddlewaretoken]").value);
+
+        fetch("{% url 'website:sanctions_vin_lookup' %}", {
+            method: "POST",
+            body: body,
+            credentials: "same-origin",
+        })
+            .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+            .then(function (res) {
+                button.disabled = false;
+                if (!res.ok || !res.data.ok) {
+                    source.className = "sc-source mt-1 text-danger";
+                    source.textContent = res.data.error || "{% trans 'Не удалось получить данные.' %}";
+                    return;
+                }
+                var fields = res.data.fields || {};
+                setValue("category", fields.category);
+                setValue("engine_type", fields.engine_type);
+                setValue("displacement_cc", fields.displacement_cc);
+                setValue("year", fields.year);
+                setValue("clearance", fields.clearance);
+
+                var parts = [res.data.car];
+                var src = res.data.source || {};
+                if (src.body_class) parts.push(src.body_class);
+                if (src.fuel) parts.push(src.fuel);
+                if (src.electrification) parts.push(src.electrification);
+                source.className = "sc-source mt-1";
+                source.textContent = "NHTSA: " + parts.filter(Boolean).join(" · ");
+            })
+            .catch(function (err) {
+                button.disabled = false;
+                source.className = "sc-source mt-1 text-danger";
+                source.textContent = String(err);
+            });
+    });
+})();
+</script>
+{% endblock %}
