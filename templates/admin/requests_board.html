@@ -79,7 +79,32 @@
 }
 .rb-fact-label { color: var(--cm-text-secondary, #6b7280); font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; }
 .rb-fact-value { color: var(--cm-text, #1a1a2e); font-weight: 600; }
-.rb-cars { display: flex; flex-direction: column; gap: 6px; }
+.rb-decls { display: flex; flex-direction: column; gap: 8px; }
+/* Одна рамка = одна декларация, которую заказываем складу. Сплошная
+   фиолетовая полоса слева — отдельная декларация, собранная сотрудником;
+   серая — авто по типу заявки. Толстая полоса = авто в декларации несколько. */
+.rb-decl {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+    border: 1px solid rgba(0,0,0,.06);
+    border-left: 3px solid rgba(148,163,184,.75);
+    border-radius: var(--cm-radius-xs, 8px);
+    background: rgba(148,163,184,.06);
+}
+.rb-decl.is-separate {
+    border-left-color: var(--cm-purple, #6c5ce7);
+    background: rgba(108,92,231,.06);
+}
+.rb-decl.is-multi { border-left-width: 6px; }
+.rb-decl-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: .78rem; }
+.rb-decl-num { font-weight: 700; color: var(--cm-text, #1a1a2e); }
+.rb-decl-note { color: var(--cm-text-secondary, #6b7280); font-size: .74rem; }
+.rb-decl .rb-car { background: var(--cm-card, #fff); }
+/* Перечень недостающих документов бывает длинным — переносим его по словам,
+   иначе чип уезжает за край карточки. */
+.rb-car .rb-chip.warn { white-space: normal; }
 .rb-car {
     display: flex;
     gap: 8px;
@@ -106,6 +131,8 @@
 .rb-chip.info { background: rgba(108,92,231,.12); color: #4c3dcc; }
 .rb-chip.muted { background: rgba(148,163,184,.18); color: #475569; }
 .rb-chip.alert { background: rgba(239,68,68,.14); color: #b91c1c; }
+.rb-chip.multi { background: var(--cm-purple, #6c5ce7); color: #fff; }
+.rb-chip.sep { background: rgba(14,165,233,.16); color: #0369a1; }
 .rb-empty {
     padding: 60px 20px;
     text-align: center;
@@ -161,6 +188,9 @@
                 <span class="rb-head-right">
                     {% if card.unread %}<span class="rb-chip alert">✉ {{ card.unread }} от клиента</span>{% endif %}
                     {% if card.unread_emails %}<span class="rb-chip info">📥 {{ card.unread_emails }} от склада</span>{% endif %}
+                    {% if card.declarations|length > 1 %}
+                    <span class="rb-chip sep">деклараций: {{ card.declarations|length }}</span>
+                    {% endif %}
                     {% if tr.destination_country %}<span class="rb-chip muted">{{ tr.get_destination_country_display }}</span>{% endif %}
                     <span class="rb-chip muted">{{ tr.get_status_display }}</span>
                     {% if tr.warehouse_state != "NOT_SENT" %}
@@ -194,32 +224,35 @@
                     </div>
                 </div>
 
-                {% if card.declarations|length > 1 %}
-                <div class="rb-cars">
-                    <div class="rb-car">
-                        <span class="rb-fact-label">Декларации ({{ card.declarations|length }})</span>
-                        {% for decl in card.declarations %}
-                        <span class="rb-chip info">
-                            №{{ forloop.counter }} {{ decl.type_display|default:"тип не выбран" }} · {{ decl.cars_count }} авто
-                        </span>
+                <div class="rb-decls">
+                    {% for decl in card.declarations %}
+                    <div class="rb-decl{% if decl.is_separate %} is-separate{% endif %}{% if decl.cars|length > 1 %} is-multi{% endif %}">
+                        <div class="rb-decl-head">
+                            <span class="rb-decl-num">Декларация №{{ decl.index }}</span>
+                            {% if decl.type_display %}
+                            <span class="rb-chip info">{{ decl.type_display }}</span>
+                            {% else %}
+                            <span class="rb-chip warn">тип не выбран</span>
+                            {% endif %}
+                            <span class="rb-chip {% if decl.cars|length > 1 %}multi{% else %}muted{% endif %}">
+                                {{ decl.cars|length }} авто{% if decl.cars|length > 1 %} вместе{% endif %}
+                            </span>
+                            {% if decl.is_separate %}<span class="rb-chip sep">отдельная</span>{% endif %}
+                            {% if decl.note %}<span class="rb-decl-note">{{ decl.note }}</span>{% endif %}
+                        </div>
+                        {% for row in decl.cars %}
+                        <div class="rb-car">
+                            <span class="rb-vin">{{ row.car.vin }}</span>
+                            <span>{{ row.car.brand }}{% if row.car.year %} {{ row.car.year }}{% endif %}</span>
+                            {% if row.warehouse %}<span class="rb-chip muted">{{ row.warehouse }}</span>{% endif %}
+                            {% if row.container %}<span class="rb-chip muted">{{ row.container }}</span>{% endif %}
+                            {% if row.is_complete %}
+                            <span class="rb-chip ok">пакет полный</span>
+                            {% else %}
+                            <span class="rb-chip warn">нет: {{ row.missing|join:", " }}</span>
+                            {% endif %}
+                        </div>
                         {% endfor %}
-                    </div>
-                </div>
-                {% endif %}
-
-                <div class="rb-cars">
-                    {% for row in card.cars %}
-                    <div class="rb-car">
-                        <span class="rb-vin">{{ row.car.vin }}</span>
-                        <span>{{ row.car.brand }}{% if row.car.year %} {{ row.car.year }}{% endif %}</span>
-                        {% if row.warehouse %}<span class="rb-chip muted">{{ row.warehouse }}</span>{% endif %}
-                        {% if row.container %}<span class="rb-chip muted">{{ row.container }}</span>{% endif %}
-                        <span class="rb-chip info">{{ row.declaration }}</span>
-                        {% if row.is_complete %}
-                        <span class="rb-chip ok">пакет полный</span>
-                        {% else %}
-                        <span class="rb-chip warn">нет: {{ row.missing|join:", " }}</span>
-                        {% endif %}
                     </div>
                     {% empty %}
                     <div class="rb-missing">В заявке нет автомобилей.</div>

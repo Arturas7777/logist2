@@ -182,24 +182,35 @@ def requests_board_page(request: HttpRequest):
 def _board_card(transport_request) -> dict:
     """Данные одной карточки доски (без тяжёлых запросов на каждую заявку)."""
     readiness = check_request(transport_request)
-    types_by_car = transport_request.declaration_types_by_car()
-    cars = []
+    rows_by_car = {}
     for status in readiness.cars:
         car = status.car
-        cars.append(
-            {
-                "car": car,
-                "declaration": _DECLARATION_LABELS.get(types_by_car.get(car.pk) or "", "—"),
-                "warehouse": car.warehouse.name if car.warehouse_id else "",
-                "container": car.container.number if car.container_id else "",
-                "missing": status.missing_labels,
-                "is_complete": status.is_complete,
-            }
-        )
+        rows_by_car[car.pk] = {
+            "car": car,
+            "warehouse": car.warehouse.name if car.warehouse_id else "",
+            "container": car.container.number if car.container_id else "",
+            "missing": status.missing_labels,
+            "is_complete": status.is_complete,
+        }
+
+    # Машины на карточке сгруппированы по декларациям, а не одним списком:
+    # сотруднику важно видеть, что именно заказывается складу — одна
+    # декларация на несколько авто или несколько отдельных.
+    plan = declarations.declaration_plan(transport_request, include_empty=False)
+    blocks = [
+        {
+            "index": index,
+            "type_display": line.type_display,
+            "is_separate": not line.is_default,
+            "note": line.note,
+            "cars": [rows_by_car[car.pk] for car in line.cars if car.pk in rows_by_car],
+        }
+        for index, line in enumerate(plan, start=1)
+    ]
+
     return {
         "request": transport_request,
-        "cars": cars,
-        "declarations": declarations.declaration_plan(transport_request, include_empty=False),
+        "declarations": blocks,
         "readiness": readiness,
         "unread": getattr(transport_request, "unread_client_msgs", 0) or 0,
         "unread_emails": transport_request.email_links.filter(is_read=False).count(),

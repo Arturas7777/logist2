@@ -130,6 +130,30 @@ def test_board_search_by_vin(staff_client, transport_request, car):
     assert transport_request.number in response.content.decode()
 
 
+def test_board_groups_cars_by_declaration(staff_client, transport_request, car, second_car):
+    from core.services import transport_declarations as decl
+
+    decl.create_group(transport_request, "EXPORT", [second_car.pk], note="отдельно, срочно")
+    body = staff_client.get(reverse("admin_requests_board"), {"tab": "all"}).content.decode()
+
+    assert "Декларация №1" in body
+    assert "Декларация №2" in body
+    # Отдельная декларация и её тип подписаны, примечание видно.
+    assert "отдельная" in body
+    assert "Экспортная" in body
+    assert "отдельно, срочно" in body
+    assert "деклараций: 2" in body
+
+
+def test_board_marks_declaration_with_several_cars(staff_client, transport_request, car, second_car):
+    body = staff_client.get(reverse("admin_requests_board"), {"tab": "all"}).content.decode()
+
+    # Обе машины идут одной транзитной декларацией заявки.
+    assert "2 авто вместе" in body
+    assert "is-multi" in body
+    assert "Декларация №2" not in body
+
+
 def test_board_closed_for_client(logged_client):
     response = logged_client.get(reverse("admin_requests_board"))
     assert response.status_code in (302, 403)
