@@ -32,7 +32,12 @@ from django.core.files.uploadedfile import UploadedFile
 from django.utils import timezone
 
 from core.models_contact import Contact, ContactEmail
-from core.models_email import CarEmailLink, ContainerEmail, ContainerEmailLink
+from core.models_email import (
+    CarEmailLink,
+    ContainerEmail,
+    ContainerEmailLink,
+    TransportRequestEmailLink,
+)
 from core.services.email_reply_parser import (
     compose_reply_html,
     plain_text_to_simple_html,
@@ -53,6 +58,7 @@ __all__ = [
     "compose_new_email",
     "compose_new_email_from_autotransport",
     "compose_new_email_from_car",
+    "compose_new_email_from_transport_request",
     "reply_to_email",
     "resolve_group_addrs",
     "sanitize_email_html",
@@ -245,9 +251,13 @@ _SAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._\- а-яА-ЯёЁ]+")
 
 
 def _validate_and_read_attachments(
-    files: Iterable[UploadedFile] | None,
+    files: Iterable[UploadedFile | tuple[str, bytes, str]] | None,
 ) -> list[tuple[str, bytes, str]]:
     """Читает загруженные файлы в память, проверяет суммарный лимит.
+
+    Принимает как ``UploadedFile`` из формы, так и уже готовые кортежи
+    ``(filename, data, mime)`` — второй вариант нужен для писем, которые
+    собирает сервер (например пакет PDF из ``TransportRequestDocument``).
 
     Возвращает список кортежей ``(filename, data, mime)`` для ``build_mime_message``.
     """
@@ -261,13 +271,17 @@ def _validate_and_read_attachments(
     for f in files:
         if not f:
             continue
-        data = f.read()
+        if isinstance(f, tuple | list):
+            filename, data, mime = f
+            data = bytes(data)
+        else:
+            data = f.read()
+            filename = getattr(f, "name", "") or "attachment.bin"
+            mime = getattr(f, "content_type", "") or "application/octet-stream"
         total += len(data)
         if total > max_bytes:
             raise ComposeError(f"Суммарный размер вложений превышает лимит {max_mb} МБ.")
-        filename = getattr(f, "name", "") or "attachment.bin"
-        mime = getattr(f, "content_type", "") or "application/octet-stream"
-        result.append((filename, data, mime))
+        result.append((filename or "attachment.bin", data, mime or "application/octet-stream"))
     return result
 
 
@@ -455,18 +469,24 @@ def reply_to_email(
     origin_container=None,
     origin_car=None,
     origin_autotransport=None,
+    origin_transport_request=None,
 ) -> ContainerEmail:
     """Отвечает на существующее письмо. Кладёт новое в тот же Gmail thread.
 
-    ``origin_container`` / ``origin_car`` / ``origin_autotransport`` —
-    сущность, из карточки которой пользователь нажал «Ответить». Влияет
-    только на линковку (помечаем прочитанным в карточке-источнике) и на
-    ``sent_from_container`` для контейнерного сценария. Если ни одно не
-    передано — берём первый связанный контейнер из parent_email как
-    fallback (старое поведение).
+    ``origin_container`` / ``origin_car`` / ``origin_autotransport`` /
+    ``origin_transport_request`` — сущность, из карточки которой пользователь
+    нажал «Ответить». Влияет только на линковку (помечаем прочитанным в
+    карточке-источнике) и на ``sent_from_container`` для контейнерного
+    сценария. Если ни одно не передано — берём первый связанный контейнер из
+    parent_email как fallback (старое поведение).
     """
 
-    if origin_container is None and origin_car is None and origin_autotransport is None:
+    if (
+        origin_container is None
+        and origin_car is None
+        and origin_autotransport is None
+        and origin_transport_request is None
+    ):
         origin_container = parent_email.containers.first()
 
     to_list = _parse_addrs(to)
@@ -532,6 +552,7 @@ def reply_to_email(
         source_text_for_matching=f"{subject}\n{body_text_final}",
         origin_car=origin_car,
         origin_autotransport=origin_autotransport,
+        origin_transport_request=origin_transport_request,
     )
 
 
@@ -630,6 +651,7 @@ def _send_and_persist(
     source_text_for_matching: str = "",
     origin_car=None,
     origin_autotransport=None,
+    origin_transport_request=None,
 ) -> ContainerEmail:
     now = timezone.now()
 
@@ -690,6 +712,12 @@ def _send_and_persist(
             parent_email=parent_email,
             source_text=source_text_for_matching,
         )
+        _link_outgoing_to_transport_requests(
+            email=email,
+            origin_transport_request=origin_transport_request,
+            parent_email=parent_email,
+            source_text=source_text_for_matching,
+        )
         raise
 
     gmail_id = response.get("id", "") or ""
@@ -738,6 +766,12 @@ def _send_and_persist(
         email=email,
         origin_car=origin_car,
         origin_autotransport=origin_autotransport,
+        parent_email=parent_email,
+        source_text=source_text_for_matching,
+    )
+    _link_outgoing_to_transport_requests(
+        email=email,
+        origin_transport_request=origin_transport_request,
         parent_email=parent_email,
         source_text=source_text_for_matching,
     )
@@ -913,8 +947,61 @@ def _link_outgoing_to_cars(
         CarEmailLink.objects.bulk_create(links, ignore_conflicts=True)
 
 
+def _link_outgoing_to_transport_requests(
+    *,
+    email: ContainerEmail,
+    origin_transport_request,
+    parent_email: ContainerEmail | None,
+    source_text: str,
+) -> None:
+    """Линкует исходящее письмо к заявкам на автовоз.
+
+    Набор заявок = {origin} ∪ {заявки родительского письма} ∪ {номера
+    ``TR-…`` в subject/body}. Карточка-источник помечается прочитанной —
+    мы сами отправили это письмо.
+    """
+    from core.services.email_matcher import _match_by_transport_request_numbers
+
+    seen: set[int] = set()
+    links: list[TransportRequestEmailLink] = []
+
+    def _add(rid: int | None, matched_by: str, is_read: bool) -> None:
+        if not rid or rid in seen:
+            return
+        seen.add(rid)
+        links.append(
+            TransportRequestEmailLink(
+                email=email,
+                request_id=rid,
+                matched_by=matched_by,
+                is_read=is_read,
+            )
+        )
+
+    if origin_transport_request is not None and getattr(origin_transport_request, "pk", None):
+        _add(origin_transport_request.pk, ContainerEmail.MATCHED_BY_MANUAL, is_read=True)
+
+    if parent_email is not None and parent_email.pk:
+        try:
+            parent_ids = list(parent_email.transport_requests.values_list("id", flat=True))
+        except Exception:  # pragma: no cover — защитная обёртка
+            parent_ids = []
+        for rid in parent_ids:
+            _add(rid, ContainerEmail.MATCHED_BY_THREAD, is_read=False)
+
+    if source_text:
+        try:
+            for rid in _match_by_transport_request_numbers(source_text):
+                _add(rid, ContainerEmail.MATCHED_BY_REQUEST_NUMBER, is_read=False)
+        except Exception as exc:  # pragma: no cover — защитная обёртка
+            logger.warning("[email_compose] link-transport-requests failed: %s", exc)
+
+    if links:
+        TransportRequestEmailLink.objects.bulk_create(links, ignore_conflicts=True)
+
+
 # ---------------------------------------------------------------------------
-# Compose from Car / AutoTransport
+# Compose from Car / AutoTransport / TransportRequest
 # ---------------------------------------------------------------------------
 
 
@@ -923,6 +1010,7 @@ def _compose_new_email_internal(
     origin_container=None,
     origin_car=None,
     origin_autotransport=None,
+    origin_transport_request=None,
     default_subject: str,
     user: AbstractBaseUser | None,
     to: str | Iterable[str],
@@ -992,6 +1080,7 @@ def _compose_new_email_internal(
         source_text_for_matching=f"{subject}\n{body_text_final}",
         origin_car=origin_car,
         origin_autotransport=origin_autotransport,
+        origin_transport_request=origin_transport_request,
     )
 
 
@@ -1042,6 +1131,34 @@ def compose_new_email_from_autotransport(
     return _compose_new_email_internal(
         origin_autotransport=autotransport,
         default_subject=default_subject,
+        user=user,
+        to=to,
+        cc=cc,
+        bcc=bcc,
+        subject=subject,
+        body_text=body_text,
+        attachments=attachments,
+    )
+
+
+def compose_new_email_from_transport_request(
+    *,
+    transport_request,
+    user: AbstractBaseUser | None,
+    to: str | Iterable[str],
+    cc: str | Iterable[str] | None = None,
+    bcc: str | Iterable[str] | None = None,
+    subject: str = "",
+    body_text: str = "",
+    attachments: Iterable[UploadedFile | tuple[str, bytes, str]] | None = None,
+) -> ContainerEmail:
+    """Новое письмо из карточки заявки на автовоз (обычно — заявка складу)."""
+    if transport_request is None or not getattr(transport_request, "pk", None):
+        raise ComposeError("Не указана заявка-источник.")
+    number = getattr(transport_request, "number", "") or f"#{transport_request.pk}"
+    return _compose_new_email_internal(
+        origin_transport_request=transport_request,
+        default_subject=f"Užklausa {number}",
         user=user,
         to=to,
         cc=cc,

@@ -22,6 +22,7 @@ from core.models_email import (
     ContainerEmail,
     ContainerEmailLink,
     EmailGroup,
+    TransportRequestEmailLink,
 )
 from core.services.email_compose import resolve_group_addrs, sanitize_email_html
 from core.services.email_reply_parser import (
@@ -187,6 +188,11 @@ def email_mark_read(request, email_id: int):
             email_id=email.pk,
             car_id=scope_id,
         ).update(is_read=new_val)
+    elif scope == "transportrequest" and scope_id:
+        updated = TransportRequestEmailLink.objects.filter(
+            email_id=email.pk,
+            request_id=scope_id,
+        ).update(is_read=new_val)
     elif scope == "autotransport" and scope_id:
         from core.models import AutoTransport  # локально, чтобы избежать circular
 
@@ -284,6 +290,85 @@ def email_mark_car_read(request, car_id: int):
             _enqueue_gmail_mark_read(gmail_ids)
 
     return JsonResponse({"ok": True, "updated": updated})
+
+
+@staff_member_required
+@require_POST
+def email_mark_transportrequest_read(request, request_id: int):
+    """Помечает всю переписку по заявке на автовоз прочитанной."""
+    affected = list(
+        TransportRequestEmailLink.objects.filter(request_id=request_id, is_read=False)
+        .values_list("email_id", flat=True)
+        .distinct()
+    )
+    updated = TransportRequestEmailLink.objects.filter(
+        request_id=request_id,
+        is_read=False,
+    ).update(is_read=True)
+
+    if affected:
+        gmail_ids = list(
+            ContainerEmail.objects.filter(
+                pk__in=affected,
+                direction=ContainerEmail.DIRECTION_INCOMING,
+            )
+            .exclude(gmail_id="")
+            .values_list("gmail_id", flat=True)
+            .distinct()
+        )
+        if gmail_ids:
+            _enqueue_gmail_mark_read(gmail_ids)
+
+    return JsonResponse({"ok": True, "updated": updated})
+
+
+@staff_member_required
+@require_GET
+def email_transportrequest_updates(request, request_id: int):
+    """Polling-эндпоинт для панели переписки в карточке заявки на автовоз."""
+    try:
+        since_id = int(request.GET.get("since_id", 0))
+    except (TypeError, ValueError):
+        since_id = 0
+    since_id = max(0, since_id)
+
+    from django.db.models import OuterRef, Subquery
+
+    qs = (
+        ContainerEmail.objects.filter(transport_requests__id=request_id)
+        .annotate(
+            is_read_here=Subquery(
+                TransportRequestEmailLink.objects.filter(
+                    email=OuterRef("pk"),
+                    request_id=request_id,
+                ).values("is_read")[:1]
+            )
+        )
+        .distinct()
+    )
+    total = qs.count()
+    unread = TransportRequestEmailLink.objects.filter(request_id=request_id, is_read=False).count()
+    latest = qs.order_by("-pk").values_list("pk", flat=True).first() or 0
+
+    bubbles = []
+    if latest > since_id:
+        for email in qs.filter(pk__gt=since_id).order_by("-received_at", "-pk")[:50]:
+            html = render(
+                request,
+                "admin/core/container/_email_bubble.html",
+                {"email": email},
+            ).content.decode("utf-8")
+            bubbles.append({"id": email.pk, "html": html})
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "latest_id": latest,
+            "total": total,
+            "unread": unread,
+            "bubbles": bubbles,
+        }
+    )
 
 
 @staff_member_required
@@ -422,11 +507,13 @@ def email_reply_draft(request, email_id: int):
 def _resolve_origin_scope(request):
     """Определяет «карточку-источник» по POST-параметрам.
 
-    Возвращает ``(scope, origin_container, origin_car, origin_autotransport)``.
+    Возвращает
+    ``(scope, origin_container, origin_car, origin_autotransport, origin_transport_request)``.
     Поддерживаемые сценарии:
       * ``scope=container`` + ``scope_id`` (или back-compat ``container_id``);
       * ``scope=car`` + ``scope_id``;
-      * ``scope=autotransport`` + ``scope_id``.
+      * ``scope=autotransport`` + ``scope_id``;
+      * ``scope=transportrequest`` + ``scope_id``.
     Если scope не задан, пытаемся угадать по back-compat ``container_id``.
     """
     scope = (request.POST.get("scope") or "").strip().lower()
@@ -436,6 +523,7 @@ def _resolve_origin_scope(request):
     origin_container = None
     origin_car = None
     origin_autotransport = None
+    origin_transport_request = None
 
     if scope == "car" and scope_id:
         from core.models import Car
@@ -444,7 +532,7 @@ def _resolve_origin_scope(request):
             origin_car = Car.objects.only("id", "vin").get(pk=int(scope_id))
         except (Car.DoesNotExist, ValueError):
             origin_car = None
-        return "car", origin_container, origin_car, origin_autotransport
+        return "car", origin_container, origin_car, origin_autotransport, origin_transport_request
 
     if scope == "autotransport" and scope_id:
         from core.models import AutoTransport
@@ -453,7 +541,16 @@ def _resolve_origin_scope(request):
             origin_autotransport = AutoTransport.objects.only("id", "number").get(pk=int(scope_id))
         except (AutoTransport.DoesNotExist, ValueError):
             origin_autotransport = None
-        return "autotransport", origin_container, origin_car, origin_autotransport
+        return "autotransport", origin_container, origin_car, origin_autotransport, origin_transport_request
+
+    if scope == "transportrequest" and scope_id:
+        from core.models.website import TransportRequest
+
+        try:
+            origin_transport_request = TransportRequest.objects.only("id", "number").get(pk=int(scope_id))
+        except (TransportRequest.DoesNotExist, ValueError):
+            origin_transport_request = None
+        return "transportrequest", origin_container, origin_car, origin_autotransport, origin_transport_request
 
     # container / default / back-compat
     from core.models import Container
@@ -464,7 +561,7 @@ def _resolve_origin_scope(request):
             origin_container = Container.objects.only("id").get(pk=int(cid))
         except (Container.DoesNotExist, ValueError):
             origin_container = None
-    return "container", origin_container, origin_car, origin_autotransport
+    return "container", origin_container, origin_car, origin_autotransport, origin_transport_request
 
 
 @staff_member_required
@@ -485,7 +582,13 @@ def email_reply_send(request, email_id: int):
         pk=email_id,
     )
 
-    scope, origin_container, origin_car, origin_autotransport = _resolve_origin_scope(request)
+    (
+        scope,
+        origin_container,
+        origin_car,
+        origin_autotransport,
+        origin_transport_request,
+    ) = _resolve_origin_scope(request)
 
     # Back-compat: если scope=container не задан и container_id тоже, берём
     # первый контейнер из parent (старое поведение).
@@ -507,6 +610,7 @@ def email_reply_send(request, email_id: int):
             origin_container=origin_container,
             origin_car=origin_car,
             origin_autotransport=origin_autotransport,
+            origin_transport_request=origin_transport_request,
         )
     except ComposeError as exc:
         return _compose_error_response(exc, status=400)
@@ -521,6 +625,7 @@ def email_reply_send(request, email_id: int):
         container_id=getattr(origin_container, "pk", None),
         car_id=getattr(origin_car, "pk", None),
         autotransport=origin_autotransport,
+        transport_request_id=getattr(origin_transport_request, "pk", None),
     )
 
 
@@ -537,7 +642,13 @@ def email_compose_send(request):
             status=400,
         )
 
-    scope, origin_container, origin_car, origin_autotransport = _resolve_origin_scope(request)
+    (
+        scope,
+        origin_container,
+        origin_car,
+        origin_autotransport,
+        origin_transport_request,
+    ) = _resolve_origin_scope(request)
 
     common_kwargs = {
         "user": request.user,
@@ -555,6 +666,7 @@ def email_compose_send(request):
             compose_new_email,
             compose_new_email_from_autotransport,
             compose_new_email_from_car,
+            compose_new_email_from_transport_request,
         )
 
         if scope == "car":
@@ -564,6 +676,16 @@ def email_compose_send(request):
                     status=400,
                 )
             sent = compose_new_email_from_car(car=origin_car, **common_kwargs)
+        elif scope == "transportrequest":
+            if origin_transport_request is None:
+                return JsonResponse(
+                    {"ok": False, "error": "Заявка не найдена."},
+                    status=400,
+                )
+            sent = compose_new_email_from_transport_request(
+                transport_request=origin_transport_request,
+                **common_kwargs,
+            )
         elif scope == "autotransport":
             if origin_autotransport is None:
                 return JsonResponse(
@@ -594,6 +716,7 @@ def email_compose_send(request):
         container_id=getattr(origin_container, "pk", None),
         car_id=getattr(origin_car, "pk", None),
         autotransport=origin_autotransport,
+        transport_request_id=getattr(origin_transport_request, "pk", None),
     )
 
 
@@ -812,6 +935,7 @@ def _render_bubble_response(
     scope: str = "container",
     car_id: int | None = None,
     autotransport=None,
+    transport_request_id: int | None = None,
 ) -> JsonResponse:
     """Рендерит один баббл и возвращает его в JSON (ok + html).
 
@@ -822,7 +946,21 @@ def _render_bubble_response(
 
     context: dict = {}
 
-    if scope == "car" and car_id:
+    if scope == "transportrequest" and transport_request_id:
+        email = (
+            ContainerEmail.objects.filter(pk=email.pk)
+            .annotate(
+                is_read_here=Subquery(
+                    TransportRequestEmailLink.objects.filter(
+                        email=OuterRef("pk"),
+                        request_id=transport_request_id,
+                    ).values("is_read")[:1]
+                )
+            )
+            .prefetch_related("containers", "cars")
+            .first()
+        ) or email
+    elif scope == "car" and car_id:
         email = (
             ContainerEmail.objects.filter(pk=email.pk)
             .annotate(

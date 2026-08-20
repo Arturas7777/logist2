@@ -1,0 +1,191 @@
+{% extends "admin/custom_page_base.html" %}
+{% load static %}
+
+{% comment %}
+Черновик письма-заявки складу на литовском — /admin/requests/<pk>/warehouse-letter/.
+
+Отдельная страница, а не модалка: в админке нет Bootstrap JS, а текст письма
+сотрудник обычно правит перед отправкой. Получатели предзаполнены из данных
+склада (общая почта + email-контакты), вложения — PDF-пакеты по каждому авто.
+{% endcomment %}
+
+{% block page_style %}
+<style>
+.wl-card {
+    background: var(--cm-card, #fff);
+    border-radius: var(--cm-radius, 14px);
+    box-shadow: var(--cm-shadow-card, 0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08));
+    margin-bottom: 16px;
+    overflow: hidden;
+}
+.wl-card > h2 {
+    margin: 0;
+    padding: 14px 20px;
+    background: #ededf2;
+    border-bottom: 1px solid rgba(0,0,0,.06);
+    font-size: .95rem;
+    font-weight: 700;
+}
+.wl-inner { padding: 16px 20px; }
+.wl-field { margin-bottom: 12px; }
+.wl-field label {
+    display: block;
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: var(--cm-text-secondary, #6b7280);
+    margin-bottom: 4px;
+}
+.wl-field input, .wl-field select, .wl-field textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 11px;
+    border: 1px solid var(--cm-border, #ebebf0);
+    border-radius: var(--cm-radius-xs, 8px);
+    font-size: 13px;
+    background: #fff;
+}
+.wl-field textarea { min-height: 380px; font-family: 'Courier New', monospace; line-height: 1.5; }
+.wl-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.wl-att { display: flex; flex-direction: column; gap: 6px; }
+.wl-att label { display: flex; gap: 8px; align-items: center; font-size: .82rem; }
+.wl-note { font-size: .78rem; color: var(--cm-text-secondary, #6b7280); }
+.wl-warn { font-size: .82rem; color: #b45309; }
+.wl-chip {
+    display: inline-flex;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: .74rem;
+    font-weight: 600;
+    background: rgba(148,163,184,.18);
+    color: #475569;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cm-page wide">
+    <a class="cm-back" href="{{ card_url }}">← К карточке заявки {{ transport_request.number }}</a>
+    <h1>Письмо складу (LT) — {{ transport_request.number }}</h1>
+
+    {% if messages %}
+    <div class="wl-card"><div class="wl-inner">
+        {% for message in messages %}<p class="wl-warn">{{ message }}</p>{% endfor %}
+    </div></div>
+    {% endif %}
+
+    {% if warehouses|length > 1 or not warehouse %}
+    <div class="wl-card">
+        <h2>Склад-получатель</h2>
+        <div class="wl-inner">
+            {% if warehouses %}
+            <p class="wl-note">
+                Машины заявки относятся к {{ warehouses|length }} склад(ам) — письмо формируется
+                отдельно на каждый, состав авто ограничивается машинами выбранного склада.
+            </p>
+            <form method="get" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                <select name="warehouse">
+                    {% for wh in warehouses %}
+                    <option value="{{ wh.pk }}" {% if warehouse and warehouse.pk == wh.pk %}selected{% endif %}>{{ wh.name }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="pc-action primary">Сформировать черновик</button>
+            </form>
+            {% else %}
+            <p class="wl-warn">У автомобилей заявки не указан склад — письмо отправить некому.</p>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if error %}
+    <div class="wl-card"><div class="wl-inner"><p class="wl-warn">{{ error }}</p></div></div>
+    {% endif %}
+
+    {% if draft %}
+    {% if readiness.blockers %}
+    <div class="wl-card">
+        <h2>Замечания по заявке</h2>
+        <div class="wl-inner">
+            <ul style="margin:0;padding-left:18px;">
+                {% for blocker in readiness.blockers %}<li class="wl-warn">{{ blocker }}</li>{% endfor %}
+            </ul>
+            <p class="wl-note">Отправку это не блокирует, но текст письма может оказаться неполным.</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <form method="post" action="{% url 'admin_request_warehouse_letter_send' transport_request.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="warehouse" value="{{ draft.warehouse.pk }}">
+
+        <div class="wl-card">
+            <h2>Получатели — {{ draft.warehouse.name }}</h2>
+            <div class="wl-inner">
+                <div class="wl-field">
+                    <label for="wl-to">Кому</label>
+                    <input id="wl-to" name="to" value="{{ draft.recipients|join:', ' }}" required>
+                    {% if not draft.recipients %}
+                    <p class="wl-warn">У склада не найдено ни общей почты, ни email-контактов — впишите адрес вручную.</p>
+                    {% endif %}
+                </div>
+                <div class="wl-row">
+                    <div class="wl-field">
+                        <label for="wl-cc">Копия (CC)</label>
+                        <input id="wl-cc" name="cc" value="">
+                    </div>
+                    <div class="wl-field">
+                        <label for="wl-bcc">Скрытая копия (BCC)</label>
+                        <input id="wl-bcc" name="bcc" value="">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="wl-card">
+            <h2>Вложения — PDF-пакеты по авто</h2>
+            <div class="wl-inner">
+                <div class="wl-att">
+                    {% for row in draft.cars %}
+                    <label>
+                        <input type="checkbox" name="cars" value="{{ row.car.pk }}"
+                               {% if row.package_available %}checked{% else %}disabled{% endif %}>
+                        <span>{{ row.package_filename }}</span>
+                        <span class="wl-chip">{{ row.car.vin }}</span>
+                        <span class="wl-chip">{{ row.declaration_lt|default:"тип не выбран" }}</span>
+                        {% if not row.package_available %}<span class="wl-warn">нет документов</span>{% endif %}
+                    </label>
+                    {% endfor %}
+                </div>
+                <p class="wl-note" style="margin-top:10px;">
+                    Пакет собирается так же, как ZIP в кабинете клиента: документы по порядку типов
+                    (без подписи) плюс скан тайтла из карточки авто.
+                </p>
+            </div>
+        </div>
+
+        <div class="wl-card">
+            <h2>Письмо</h2>
+            <div class="wl-inner">
+                <div class="wl-field">
+                    <label for="wl-subject">Тема</label>
+                    <input id="wl-subject" name="subject" value="{{ draft.subject }}" required>
+                </div>
+                <div class="wl-field">
+                    <label for="wl-body">Текст (литовский — правьте при необходимости)</label>
+                    <textarea id="wl-body" name="body_text">{{ draft.body_text }}</textarea>
+                </div>
+                <div class="pc-actions">
+                    <button type="submit" class="pc-action primary">Отправить складу</button>
+                    <a class="pc-action outline" href="{{ card_url }}">Отмена</a>
+                </div>
+                <p class="wl-note" style="margin-top:10px;">
+                    После отправки заявка помечается как отправленная складу, а ответ склада
+                    автоматически попадёт в ветку переписки в карточке.
+                </p>
+            </div>
+        </div>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}

@@ -10,8 +10,19 @@
         </button>
         <ul class="dropdown-menu shadow">
             <li><h6 class="dropdown-header py-1">{% trans "Документы" %}</h6></li>
+            {% if section.missing_labels %}
+            <li>
+                <span class="dropdown-item-text small doc-missing-hint">
+                    <i class="bi bi-exclamation-circle text-warning"></i>
+                    {% trans "Нужны" %}: {{ section.missing_labels|join:", " }}
+                </span>
+            </li>
+            {% endif %}
             {% for slot in section.slots %}
+            {# Пустой слот «Остальное» не показываем: вместо ручной загрузки — #}
+            {# отдельный пункт «Одним файлом» ниже, а сюда падает нераспознанное. #}
             {% if not slot.doc_rows %}
+            {% if not slot.is_bulk %}
             <li>
                 {% if req.is_client_editable %}
                 <button type="button" class="dropdown-item doc-add-item doc-open-btn"
@@ -19,11 +30,13 @@
                         data-car="{{ section.car.pk }}"
                         data-req="{{ req.pk }}">
                     <i class="bi bi-plus-lg" aria-hidden="true"></i>{{ slot.label }}
+                    {% if slot.is_missing %}<span class="doc-required-mark" title="{% trans 'Обязательный документ' %}">*</span>{% endif %}
                 </button>
                 {% else %}
                 <span class="dropdown-item-text text-muted">{{ slot.label }}</span>
                 {% endif %}
             </li>
+            {% endif %}
             {% else %}
             <li>
                 <div class="doc-chips-row" style="--doc-ico: {{ slot.icon_color|default:'#868e96' }};">
@@ -45,7 +58,23 @@
                                     data-title="{{ row.display_name }}"
                                     data-filename="{{ row.doc.filename }}"
                                     title="{{ row.doc.filename }}">{{ row.display_name }}</button>
-                            {% if req.is_client_editable %}
+                            {% if slot.is_bulk and req.is_client_editable and not row.doc.is_generated %}
+                            {# Нераспознанное из «Одним файлом» — клиент указывает тип сам. #}
+                            <form method="post" action="{% url 'website:transport_request_doc_retype' req.pk row.doc.pk %}" class="doc-retype-form">
+                                {% csrf_token %}
+                                <select name="doc_type" class="doc-retype-select"
+                                        title="{% trans 'Указать тип документа' %}"
+                                        onchange="if (this.value) this.form.submit();">
+                                    <option value="">{% trans "указать тип" %}</option>
+                                    {% for code, label in doc_types %}
+                                    {% if code != "OTHER" %}<option value="{{ code }}">{{ label }}</option>{% endif %}
+                                    {% endfor %}
+                                </select>
+                            </form>
+                            {% endif %}
+                            {# Тайтл из нашей системы клиент не удаляет: он всё равно #}
+                            {# прикрепится обратно при следующем открытии кабинета. #}
+                            {% if req.is_client_editable and not row.is_system_title %}
                             <form method="post" action="{% url 'website:transport_request_doc_delete' req.pk row.doc.pk %}"
                                   onsubmit="return confirm('{% trans 'Удалить файл?' %}');">
                                 {% csrf_token %}
@@ -55,7 +84,7 @@
                         </span>
                     </span>
                     {% endfor %}
-                    {% if req.is_client_editable %}
+                    {% if req.is_client_editable and not slot.is_bulk %}
                     <button type="button" class="doc-chip-add doc-open-btn"
                             title="{% trans 'Добавить / изменить' %}"
                             aria-label="{% trans 'Добавить / изменить' %}"
@@ -68,6 +97,33 @@
                 </div>
             </li>
             {% endif %}
+            {% endfor %}
+
+            {% if req.is_client_editable %}
+            <li><hr class="dropdown-divider"></li>
+            <li>
+                <button type="button" class="dropdown-item doc-add-item doc-bulk-btn"
+                        data-car="{{ section.car.pk }}"
+                        data-req="{{ req.pk }}">
+                    <i class="bi bi-stars" aria-hidden="true"></i>{% trans "Одним файлом" %}
+                </button>
+            </li>
+            {% endif %}
+            {% for upload in section.bulk_uploads %}
+            <li>
+                <span class="dropdown-item-text small bulk-status-row" data-upload="{{ upload.pk }}">
+                    {% if upload.is_running %}
+                    <span class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
+                    {% trans "Разбираем файл..." %}
+                    {% elif upload.status == "ERROR" %}
+                    <i class="bi bi-exclamation-triangle text-warning"></i>
+                    <span class="text-muted">{{ upload.error_message }}</span>
+                    {% else %}
+                    <i class="bi bi-check2-circle text-success"></i>
+                    <span class="text-muted">{{ upload.sorted_labels|join:", "|default:_("документы не распознаны") }}</span>
+                    {% endif %}
+                </span>
+            </li>
             {% endfor %}
         </ul>
     </div>

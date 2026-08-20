@@ -1,12 +1,21 @@
 """Формы кабинета клиента: регистрация, документы, декларации, заявки на автовоз."""
 
+import json
+
 from django import forms
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.db.models import Exists, OuterRef
 
 from core.models import Car
-from core.models.website import ClientDocument, DeclarationRequest, TransportRequest
+from core.models.website import (
+    DEFAULT_PROCEDURE_BY_COUNTRY,
+    TRANSPORT_DECLARATION_TYPES,
+    TRANSPORT_DESTINATION_COUNTRIES,
+    ClientDocument,
+    DeclarationRequest,
+    TransportRequest,
+)
 
 # В заявку на автовоз — только то, что уже можно забрать со склада/порта.
 # FLOATING («В пути») ещё не приплыли; TRANSFERRED уже уехали.
@@ -130,12 +139,21 @@ class DeclarationRequestForm(forms.ModelForm):
 
 
 class TransportRequestForm(forms.ModelForm):
-    """Заявка с данными автовоза, который заберёт автомобили клиента."""
+    """Заявка с данными автовоза, который заберёт автомобили клиента.
+
+    Клиент указывает страну назначения и одну таможенную процедуру на всю
+    заявку: от этой пары зависит обязательный пакет документов
+    (``TransportDocumentRule``). Разбивку на несколько отдельных деклараций
+    (и смешанные процедуры) собирает сотрудник в админ-карточке заявки,
+    клиенту она не показывается — см. ``TransportDeclarationGroup``.
+    """
 
     class Meta:
         model = TransportRequest
         fields = [
             "cars",
+            "destination_country",
+            "declaration_type",
             "carrier_name",
             "carrier_eori",
             "truck_number",
@@ -165,6 +183,21 @@ class TransportRequestForm(forms.ModelForm):
         # Перевозчик и его EORI обязательны для оформления.
         self.fields["carrier_name"].required = True
         self.fields["carrier_eori"].required = True
+        # Страна назначения и процедура обязательны: от них зависит пакет.
+        country = self.fields["destination_country"]
+        country.required = True
+        country.label = "Страна назначения"
+        country.help_text = ""
+        country.choices = [("", "— выберите страну —"), *TRANSPORT_DESTINATION_COUNTRIES]
+        # Процедура по умолчанию подставляется по стране на клиенте (JS),
+        # но клиент может выбрать любую из четырёх.
+        country.widget.attrs["data-default-procedures"] = json.dumps(DEFAULT_PROCEDURE_BY_COUNTRY)
+
+        declaration = self.fields["declaration_type"]
+        declaration.required = True
+        declaration.label = "Таможенная процедура"
+        declaration.help_text = ""
+        declaration.choices = [("", "— выберите процедуру —"), *TRANSPORT_DECLARATION_TYPES]
         # Автокомплит браузера мешает выпадающему списку перевозчиков.
         self.fields["carrier_name"].widget.attrs["autocomplete"] = "off"
         for name, field in self.fields.items():

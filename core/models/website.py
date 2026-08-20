@@ -478,6 +478,8 @@ class NotificationLog(models.Model):
         ("PLANNED", "Планируемая разгрузка"),
         ("UNLOADED", "Разгрузка выполнена"),
         ("CAR_UNLOADED", "Разгрузка ТС (без контейнера)"),
+        ("REQUEST_MESSAGE", "Сообщение по заявке на автовоз"),
+        ("REQUEST_DOCS", "Запрос документов по заявке"),
     ]
 
     CHANNEL_CHOICES = [
@@ -501,6 +503,15 @@ class NotificationLog(models.Model):
         null=True,
         blank=True,
         help_text="Для уведомлений о разгрузке ТС без контейнера",
+    )
+    transport_request = models.ForeignKey(
+        "TransportRequest",
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        verbose_name="Заявка на автовоз",
+        null=True,
+        blank=True,
+        help_text="Для уведомлений по переписке в заявке на автовоз",
     )
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="notifications", verbose_name="Клиент")
     notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES, verbose_name="Тип уведомления")
@@ -650,6 +661,15 @@ class DeclarationRequest(models.Model):
     declaration_type = models.CharField(
         max_length=10, choices=DECLARATION_TYPES, default="TRANSIT", verbose_name="Тип декларации"
     )
+    transport_request = models.ForeignKey(
+        "TransportRequest",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="declaration_requests",
+        verbose_name="Заявка на автовоз",
+        help_text="Заявка, из которой создана декларация (когда оформляем сами).",
+    )
 
     # Получатель / покупатель
     buyer_name = models.CharField(max_length=255, verbose_name="Получатель (имя / компания)")
@@ -705,6 +725,7 @@ class DeclarationRequest(models.Model):
 # Типы документов пакета для оформления автовоза (Беларусь).
 # Порядок = порядок кнопок в кабинете клиента.
 TRANSPORT_DOCUMENT_TYPES = [
+    ("TITLE", "Тайтл"),
     ("PASSPORT", "Паспорт"),
     ("INVOICE", "Инвойс"),
     ("SIGNATURE", "Подпись"),
@@ -716,7 +737,87 @@ TRANSPORT_DOCUMENT_TYPES = [
 ]
 
 # Типы, которые нельзя сгенерировать — только реальные файлы.
-TRANSPORT_UPLOAD_ONLY_TYPES = {"PASSPORT", "SIGNATURE", "OTHER"}
+TRANSPORT_UPLOAD_ONLY_TYPES = {"TITLE", "PASSPORT", "SIGNATURE", "OTHER"}
+
+
+# Типы деклараций (таможенных процедур), которые может потребовать заявка на
+# автовоз. Совпадают с ``DeclarationRequest.DECLARATION_TYPES`` — заявка на
+# автовоз всегда подразумевает декларацию, и когда мы начнём оформлять их
+# сами, тип перенесётся в ``DeclarationRequest`` без конвертации.
+TRANSPORT_DECLARATION_TYPES = [
+    ("TRANSIT", "Транзитная (T1)"),
+    ("EXPORT", "Экспортная"),
+    ("IMPORT", "Импортная"),
+    ("REEXPORT", "Реэкспорт"),
+]
+
+# Страны назначения, куда клиенты забирают авто автовозом. Список короткий
+# намеренно: требования таможни по документам заводятся на каждую страну
+# отдельно (``TransportDocumentRule``), поэтому новую страну добавляем
+# вместе с её набором документов.
+TRANSPORT_DESTINATION_COUNTRIES = [
+    ("BY", "Беларусь"),
+    ("MD", "Молдова"),
+    ("UA", "Украина"),
+]
+
+# Процедура, которая подставляется клиенту по умолчанию при выборе страны.
+# Клиент может её изменить — это только подсказка под типовой сценарий.
+DEFAULT_PROCEDURE_BY_COUNTRY = {
+    "BY": "TRANSIT",
+    "MD": "TRANSIT",
+    "UA": "REEXPORT",
+}
+
+
+class TransportDocumentRule(models.Model):
+    """Требования таможни к пакету документов: страна + процедура → типы.
+
+    В разные страны таможня требует разный набор документов, поэтому список
+    обязательных типов заводит сотрудник в админке, а не разработчик в коде:
+    одна строка = одна пара «страна назначения + таможенная процедура».
+    Если строки для пары нет или она выключена, используется встроенный
+    набор по умолчанию (см. ``core.services.transport_request_check``).
+    """
+
+    country = models.CharField(
+        max_length=2, choices=TRANSPORT_DESTINATION_COUNTRIES, verbose_name="Страна назначения"
+    )
+    procedure = models.CharField(
+        max_length=10, choices=TRANSPORT_DECLARATION_TYPES, verbose_name="Таможенная процедура"
+    )
+    required_doc_types = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Обязательные документы",
+        help_text="Типы документов, без которых пакет по авто считается неполным.",
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Действует",
+        help_text="Выключено — для этой пары берётся набор по умолчанию.",
+    )
+    note = models.CharField(max_length=255, blank=True, verbose_name="Примечание")
+    updated_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Изменил"
+    )
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата изменения")
+
+    class Meta:
+        verbose_name = "Требования к документам"
+        verbose_name_plural = "Требования к документам (страна + процедура)"
+        ordering = ["country", "procedure"]
+        constraints = [
+            models.UniqueConstraint(fields=["country", "procedure"], name="uniq_docrule_country_procedure"),
+        ]
+
+    def __str__(self):
+        return f"{self.get_country_display()} · {self.get_procedure_display()}"
+
+    @property
+    def required_doc_labels(self):
+        labels = dict(TRANSPORT_DOCUMENT_TYPES)
+        return [labels.get(code, code) for code in self.required_doc_types or []]
 
 
 class TransportRequest(models.Model):
@@ -727,6 +828,20 @@ class TransportRequest(models.Model):
     «Черновик»/«Подана» — см. ``portal_transport``. «Удаление» клиентом —
     мягкое: заявка получает статус «Отменена» и скрывается из кабинета,
     но остаётся видимой администратору как неактуальная.
+
+    Заявка на автовоз всегда подразумевает декларацию. Клиент выбирает
+    страну назначения (``destination_country``) и одну процедуру на всю
+    заявку (``declaration_type``); от пары «страна + процедура» зависит
+    обязательный пакет документов (``TransportDocumentRule``). Сотрудник при
+    необходимости разбивает машины на отдельные декларации вручную — см.
+    ``TransportDeclarationGroup``. Сейчас декларации оформляет склад по
+    нашему письму-заявке (``core.services.warehouse_request_email``);
+    в будущем будем оформлять сами — точка расширения
+    ``DeclarationRequest.transport_request``.
+
+    Работа со складом — ВНУТРЕННЕЕ состояние (``warehouse_state`` и
+    отметки времени), клиент его не видит: в кабинете отображается только
+    ``status``. Поэтому новые значения в ``STATUS_CHOICES`` не вводятся.
     """
 
     STATUS_CHOICES = [
@@ -736,6 +851,17 @@ class TransportRequest(models.Model):
         ("IN_PROGRESS", "В процессе"),
         ("COMPLETED", "Оформлена"),
         ("CANCELLED", "Отменена"),
+    ]
+
+    WAREHOUSE_NOT_SENT = "NOT_SENT"
+    WAREHOUSE_SENT = "SENT"
+    WAREHOUSE_CONFIRMED = "CONFIRMED"
+    WAREHOUSE_REJECTED = "REJECTED"
+    WAREHOUSE_STATE_CHOICES = [
+        (WAREHOUSE_NOT_SENT, "Не отправлена складу"),
+        (WAREHOUSE_SENT, "Отправлена складу"),
+        (WAREHOUSE_CONFIRMED, "Подтверждена складом"),
+        (WAREHOUSE_REJECTED, "Отклонена складом"),
     ]
 
     # Статусы, в которых клиент ещё может менять и удалять заявку.
@@ -774,6 +900,48 @@ class TransportRequest(models.Model):
         help_text="Автовоз, созданный по этой заявке",
     )
 
+    # ── Оформление декларации ────────────────────────────────────────────
+    destination_country = models.CharField(
+        max_length=2,
+        choices=TRANSPORT_DESTINATION_COUNTRIES,
+        blank=True,
+        verbose_name="Страна назначения",
+        help_text="Куда идут автомобили — от страны зависят требования таможни к пакету документов.",
+    )
+    declaration_type = models.CharField(
+        max_length=10,
+        choices=TRANSPORT_DECLARATION_TYPES,
+        blank=True,
+        verbose_name="Требуемая декларация",
+        help_text=(
+            "Тип по умолчанию: одна декларация на все авто заявки. "
+            "Отдельные декларации на часть машин задаются в карточке заявки."
+        ),
+    )
+
+    # ── Работа со складом (внутреннее, клиенту не показывается) ──────────
+    warehouse = models.ForeignKey(
+        "Warehouse",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="transport_requests",
+        verbose_name="Склад-получатель",
+        help_text="Склад, которому отправлена заявка на загрузку автовоза.",
+    )
+    warehouse_state = models.CharField(
+        max_length=10,
+        choices=WAREHOUSE_STATE_CHOICES,
+        default=WAREHOUSE_NOT_SENT,
+        verbose_name="Состояние по складу",
+    )
+    sent_to_warehouse_at = models.DateTimeField(null=True, blank=True, verbose_name="Отправлена складу")
+    warehouse_confirmed_at = models.DateTimeField(null=True, blank=True, verbose_name="Подтверждена складом")
+
+    # Ждём от клиента документы: разрешает клиенту править заявку и
+    # догружать файлы даже когда заявка уже в работе.
+    awaiting_client_docs = models.BooleanField(default=False, verbose_name="Ожидаем документы от клиента")
+
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Создал")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата обновления")
@@ -792,8 +960,88 @@ class TransportRequest(models.Model):
 
     @property
     def is_client_editable(self):
-        """Может ли клиент редактировать заявку (до статуса «В процессе»)."""
-        return self.status in self.CLIENT_EDITABLE_STATUSES
+        """Может ли клиент редактировать заявку.
+
+        Обычно — до статуса «В процессе». Плюс исключение: если мы запросили
+        у клиента документы (``awaiting_client_docs``), правка и догрузка
+        снова разрешены, даже когда заявка уже в работе.
+        """
+        if self.status == "CANCELLED":
+            return False
+        return self.status in self.CLIENT_EDITABLE_STATUSES or self.awaiting_client_docs
+
+    def emails_for_panel(self):
+        """Переписка со складом для панели в карточке заявки.
+
+        ``is_read_here`` — флаг из ``TransportRequestEmailLink`` именно этой
+        заявки (аналог ``Container.emails_for_panel`` / ``AutoTransport``).
+        """
+        from django.db.models import OuterRef, Subquery
+
+        from .email import ContainerEmail, TransportRequestEmailLink
+
+        return (
+            ContainerEmail.objects.filter(transport_requests__id=self.pk)
+            .annotate(
+                is_read_here=Subquery(
+                    TransportRequestEmailLink.objects.filter(
+                        email=OuterRef("pk"),
+                        request_id=self.pk,
+                    ).values("is_read")[:1]
+                )
+            )
+            .distinct()
+            .order_by("-received_at")
+        )
+
+    def default_warehouse(self):
+        """Склад по машинам заявки: единственный — вернём его, иначе ``None``.
+
+        Если в заявке машины с разных складов, выбрать получателя письма
+        автоматически нельзя — сотрудник указывает склад вручную.
+        """
+        ids = {car.warehouse_id for car in self.cars.all() if car.warehouse_id}
+        if len(ids) != 1:
+            return None
+        from .warehouses import Warehouse
+
+        return Warehouse.objects.filter(pk=ids.pop()).first()
+
+    def declaration_types_by_car(self):
+        """``{car_id: declaration_type}`` — под какой тип собирается пакет.
+
+        Приоритет: отдельная декларация (``declaration_groups``), затем тип
+        заявки. Пустая строка означает «тип не выбран» — письмо складу такие
+        авто не даёт отправить, чтобы не просить декларацию наугад.
+        """
+        by_group = {}
+        for group in self.declaration_groups.prefetch_related("cars"):
+            for car in group.cars.all():
+                by_group.setdefault(car.pk, group.declaration_type)
+        return {car.pk: by_group.get(car.pk) or self.declaration_type for car in self.cars.all()}
+
+    def unread_messages_for_staff(self):
+        """Сколько ответов клиента мы ещё не прочитали."""
+        return self.messages.filter(author_kind="CLIENT", read_by_staff_at__isnull=True).count()
+
+    def unread_messages_for_client(self):
+        """Сколько наших сообщений клиент ещё не прочитал."""
+        return self.messages.filter(author_kind="STAFF", read_by_client_at__isnull=True).count()
+
+    def pending_requested_doc_types(self):
+        """Типы документов, которые мы запросили и которых до сих пор нет.
+
+        Считаем по всем нашим сообщениям заявки: объединение запрошенных
+        типов минус типы, файлы которых уже загружены (по любому авто).
+        Порядок — как в ``TRANSPORT_DOCUMENT_TYPES``.
+        """
+        requested: set[str] = set()
+        for codes in self.messages.filter(author_kind="STAFF").values_list("requested_doc_types", flat=True):
+            requested.update(codes or [])
+        if not requested:
+            return []
+        present = set(self.documents.values_list("doc_type", flat=True))
+        return [code for code, _label in TRANSPORT_DOCUMENT_TYPES if code in requested - present]
 
     def save(self, *args, **kwargs):
         if not self.number:
@@ -805,6 +1053,117 @@ class TransportRequest(models.Model):
             with db_transaction.atomic():
                 self.number = next_document_number(TransportRequest, f"TR-{date_str}", pad=3)
         super().save(*args, **kwargs)
+
+
+class TransportBulkUpload(models.Model):
+    """Пакет документов, присланный одним файлом, и его разбор искусственным интеллектом.
+
+    Клиенты часто сканируют всё подряд в один PDF: паспорт, инвойс, платёжку,
+    договор. Такой файл сохраняется здесь целиком, а
+    ``core.tasks.process_transport_bulk_upload`` отправляет страницы в Claude
+    Vision, определяет тип каждой страницы, режет исходник на отдельные
+    документы пакета (``TransportRequestDocument``) и раскладывает их по
+    слотам. Страницы, тип которых уверенно определить не удалось, попадают в
+    «Остальное» — клиент их видит и может указать тип вручную.
+
+    Исходный файл не удаляем: если раскладка вышла неудачной, сотрудник
+    всегда может посмотреть, что именно прислал клиент.
+    """
+
+    STATUS_PENDING = "PENDING"
+    STATUS_PROCESSING = "PROCESSING"
+    STATUS_DONE = "DONE"
+    STATUS_ERROR = "ERROR"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "В очереди"),
+        (STATUS_PROCESSING, "Обрабатывается"),
+        (STATUS_DONE, "Разобран"),
+        (STATUS_ERROR, "Ошибка"),
+    ]
+
+    request = models.ForeignKey(
+        TransportRequest, on_delete=models.CASCADE, related_name="bulk_uploads", verbose_name="Заявка"
+    )
+    car = models.ForeignKey(
+        Car, on_delete=models.CASCADE, related_name="transport_bulk_uploads", verbose_name="Автомобиль"
+    )
+    file = models.FileField(
+        upload_to="transport_docs/bulk/%Y/%m/",
+        validators=[FileExtensionValidator(CLIENT_DOCUMENT_ALLOWED_EXTENSIONS)],
+        verbose_name="Исходный файл",
+    )
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_PENDING, verbose_name="Статус")
+    pages_total = models.PositiveSmallIntegerField(default=0, verbose_name="Страниц в файле")
+    # {"documents": [{"doc_type", "pages": [1,2], "filename"}], "unrecognized": [5, 6]}
+    result = models.JSONField(default=dict, blank=True, verbose_name="Результат разбора")
+    error_message = models.TextField(blank=True, verbose_name="Ошибка")
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Загрузил")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата загрузки")
+    processed_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата разбора")
+
+    class Meta:
+        verbose_name = "Пакет одним файлом"
+        verbose_name_plural = "Пакеты одним файлом"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.filename} — {self.request.number}"
+
+    @property
+    def filename(self):
+        return os.path.basename(self.file.name)
+
+    @property
+    def is_running(self):
+        return self.status in (self.STATUS_PENDING, self.STATUS_PROCESSING)
+
+    @property
+    def sorted_labels(self):
+        """Что получилось после разбора: «Паспорт, Инвойс (2 стр.)»."""
+        labels = dict(TRANSPORT_DOCUMENT_TYPES)
+        out = []
+        for item in (self.result or {}).get("documents", []):
+            label = labels.get(item.get("doc_type"), item.get("doc_type", ""))
+            pages = item.get("pages") or []
+            out.append(f"{label} ({len(pages)} стр.)" if len(pages) > 1 else label)
+        return out
+
+
+class TransportDeclarationGroup(models.Model):
+    """Отдельная декларация внутри заявки: тип + набор авто под неё.
+
+    По умолчанию на заявку оформляется одна декларация типа
+    ``TransportRequest.declaration_type`` — в неё попадают все авто заявки.
+    Реальность бывает сложнее: часть машин уходит одной транзитной T1,
+    другая часть — второй отдельной T1, а несколько машин — каждая по своей
+    экспортной. Такие расклады сотрудник собирает вручную в карточке заявки:
+    каждая группа = одна декларация, авто вне групп идут одной декларацией
+    типа заявки. Клиент этой разбивки не видит — он выбирает только тип.
+
+    Когда декларации начнём оформлять сами, группа станет источником для
+    ``DeclarationRequest`` (одна группа → одна декларация).
+    """
+
+    request = models.ForeignKey(
+        TransportRequest, on_delete=models.CASCADE, related_name="declaration_groups", verbose_name="Заявка"
+    )
+    declaration_type = models.CharField(
+        max_length=10, choices=TRANSPORT_DECLARATION_TYPES, verbose_name="Тип декларации"
+    )
+    cars = models.ManyToManyField(
+        Car, blank=True, related_name="transport_declaration_groups", verbose_name="Автомобили"
+    )
+    note = models.CharField(max_length=255, blank=True, verbose_name="Примечание")
+    position = models.PositiveSmallIntegerField(default=0, verbose_name="Порядок")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+
+    class Meta:
+        verbose_name = "Декларация заявки"
+        verbose_name_plural = "Декларации заявки"
+        ordering = ["position", "pk"]
+
+    def __str__(self):
+        return f"{self.get_declaration_type_display()} — {self.request.number}"
 
 
 class TransportDocumentPackage(models.Model):
@@ -870,3 +1229,106 @@ class TransportRequestDocument(models.Model):
     @property
     def filename(self):
         return os.path.basename(self.file.name)
+
+
+class TransportRequestMessage(models.Model):
+    """Сообщение в переписке по заявке на автовоз (мы ↔ клиент).
+
+    Отдельная от email-переписки со складом ветка: сотрудник пишет клиенту
+    замечания («не хватает паспорта», «поправьте номер прицепа»), клиент
+    отвечает и правит заявку в кабинете. Сообщения видны в карточке заявки
+    и на доске заявок в админке.
+
+    Непрочитанное считаем по двум полям-временам, а не счётчиками: временная
+    метка отвечает сразу на два вопроса — «прочитано ли» и «когда», не
+    требует денормализации на заявке и не рассинхронизируется при удалении
+    сообщений. Своё сообщение автор помечает прочитанным сразу при создании
+    (см. ``TransportRequestMessage.save``), поэтому непрочитанные для стороны
+    X — это ``read_by_X_at__isnull=True``.
+
+    ``requested_doc_types`` — коды из ``TRANSPORT_DOCUMENT_TYPES``, которые
+    мы просим клиента догрузить; кабинет показывает их не текстом, а
+    кнопками, открывающими существующие модалки загрузки нужного типа.
+    """
+
+    AUTHOR_STAFF = "STAFF"
+    AUTHOR_CLIENT = "CLIENT"
+    AUTHOR_KIND_CHOICES = [
+        (AUTHOR_STAFF, "От нас клиенту"),
+        (AUTHOR_CLIENT, "От клиента"),
+    ]
+
+    KIND_MESSAGE = "MESSAGE"
+    KIND_DOC_REQUEST = "DOC_REQUEST"
+    KIND_CHOICES = [
+        (KIND_MESSAGE, "Сообщение"),
+        (KIND_DOC_REQUEST, "Запрос документов"),
+    ]
+
+    request = models.ForeignKey(
+        TransportRequest, on_delete=models.CASCADE, related_name="messages", verbose_name="Заявка"
+    )
+    author_kind = models.CharField(
+        max_length=10, choices=AUTHOR_KIND_CHOICES, default=AUTHOR_STAFF, verbose_name="Автор (сторона)"
+    )
+    kind = models.CharField(max_length=15, choices=KIND_CHOICES, default=KIND_MESSAGE, verbose_name="Тип")
+    author = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Автор", related_name="+"
+    )
+    car = models.ForeignKey(
+        Car,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="transport_request_messages",
+        verbose_name="Автомобиль",
+        help_text="Если замечание относится к конкретному авто заявки.",
+    )
+    body = models.TextField(blank=True, verbose_name="Текст")
+    requested_doc_types = models.JSONField(
+        default=list, blank=True, verbose_name="Запрошенные документы", help_text="Коды типов документов пакета."
+    )
+    attachment = models.FileField(
+        upload_to="transport_messages/%Y/%m/",
+        blank=True,
+        validators=[FileExtensionValidator(CLIENT_DOCUMENT_ALLOWED_EXTENSIONS)],
+        verbose_name="Вложение",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    read_by_staff_at = models.DateTimeField(null=True, blank=True, verbose_name="Прочитано сотрудником")
+    read_by_client_at = models.DateTimeField(null=True, blank=True, verbose_name="Прочитано клиентом")
+
+    class Meta:
+        verbose_name = "Сообщение по заявке на автовоз"
+        verbose_name_plural = "Сообщения по заявкам на автовоз"
+        ordering = ["created_at", "pk"]
+        indexes = [
+            models.Index(fields=["request", "created_at"], name="trmsg_request_idx"),
+            models.Index(fields=["request", "read_by_staff_at"], name="trmsg_unread_staff_idx"),
+            models.Index(fields=["request", "read_by_client_at"], name="trmsg_unread_client_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.get_author_kind_display()} — {self.request.number} ({self.created_at:%d.%m.%Y %H:%M})"
+
+    @property
+    def is_from_staff(self):
+        return self.author_kind == self.AUTHOR_STAFF
+
+    @property
+    def requested_doc_labels(self):
+        """Человеческие названия запрошенных типов документов."""
+        labels = dict(TRANSPORT_DOCUMENT_TYPES)
+        return [labels.get(code, code) for code in (self.requested_doc_types or [])]
+
+    def save(self, *args, **kwargs):
+        if not self.pk:
+            # Автор своё сообщение уже «прочитал» — иначе бейдж непрочитанного
+            # загорится у самого отправителя.
+            now = timezone.now()
+            if self.author_kind == self.AUTHOR_STAFF and self.read_by_staff_at is None:
+                self.read_by_staff_at = now
+            elif self.author_kind == self.AUTHOR_CLIENT and self.read_by_client_at is None:
+                self.read_by_client_at = now
+        super().save(*args, **kwargs)

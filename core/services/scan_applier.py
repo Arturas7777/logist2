@@ -53,6 +53,21 @@ DEFAULT_NEW_CONTAINER_WAREHOUSE_NAME = "NETO"
 DEFAULT_NEW_CONTAINER_UNLOAD_SITE = 1  # site=1 → Perkelos 10 для NETO
 
 
+def _attach_title_to_transport_requests(car) -> None:
+    """Доложить свежий тайтл в пакеты активных заявок на автовоз.
+
+    Тайтл обязателен в любом пакете, а заявка на авто может быть подана
+    раньше, чем к нам придёт скан. Без этого бейдж полноты пакета на доске
+    заявок висел бы «нет тайтла» до того, как сотрудник откроет карточку.
+    """
+    from core.models.website import TransportRequest
+    from core.services import transport_package_actions
+
+    requests = TransportRequest.objects.filter(cars=car).exclude(status__in=TransportRequest.INACTIVE_STATUSES)
+    for transport_request in requests:
+        transport_package_actions.sync_title_documents(transport_request)
+
+
 def detect_line_from_carrier(exporting_carrier: str | None):
     """По полю 'Exporting Carrier' из dock receipt вернуть Line (или None).
 
@@ -318,6 +333,8 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
     # title_notes НЕ трогаем — это поле только для ручных заметок оператора.
     # Что именно AI прочитал (номер тайтла, штат, дата) — в applied_changes.
     car.save(update_fields=["title_scan", "has_title"])
+
+    _attach_title_to_transport_requests(car)
 
     # Если был флаг "подозрение VIN" — после успешного apply убираем,
     # чтобы не путал в админке.

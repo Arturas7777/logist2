@@ -208,7 +208,12 @@ def _ingest_one(
     report: SyncReport,
     ingest_filters: list[tuple] | None = None,
 ) -> None:
-    from core.models_email import CarEmailLink, ContainerEmail, ContainerEmailLink
+    from core.models_email import (
+        CarEmailLink,
+        ContainerEmail,
+        ContainerEmailLink,
+        TransportRequestEmailLink,
+    )
 
     if ContainerEmail.objects.filter(gmail_id=gmail_id).exists():
         return
@@ -355,6 +360,24 @@ def _ingest_one(
                         car_links,
                         ignore_conflicts=True,
                     )
+                # Ответы склада на письмо-заявку по автовозу: тот же тред
+                # (или номер TR-… в теме) → письмо появляется в карточке
+                # заявки на доске заявок.
+                if match.transport_hits:
+                    link_is_read = is_incoming and not gmail_is_unread
+                    tr_links = [
+                        TransportRequestEmailLink(
+                            email=obj,
+                            request_id=hit.request_id,
+                            matched_by=hit.matched_by,
+                            is_read=link_is_read,
+                        )
+                        for hit in match.transport_hits
+                    ]
+                    TransportRequestEmailLink.objects.bulk_create(
+                        tr_links,
+                        ignore_conflicts=True,
+                    )
             else:
                 # Идемпотентно обновим gmail_id/labels. Связи с контейнерами
                 # не пересчитываем: пользователь мог вручную перепривязать.
@@ -384,6 +407,10 @@ def _ingest_one(
                         is_read=False,
                     ).update(is_read=True)
                     CarEmailLink.objects.filter(
+                        email_id=obj.pk,
+                        is_read=False,
+                    ).update(is_read=True)
+                    TransportRequestEmailLink.objects.filter(
                         email_id=obj.pk,
                         is_read=False,
                     ).update(is_read=True)

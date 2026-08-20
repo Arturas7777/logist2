@@ -34,6 +34,7 @@ class ContainerEmail(models.Model):
     MATCHED_BY_MANUAL = "MANUAL"
     MATCHED_BY_UNMATCHED = "UNMATCHED"
     MATCHED_BY_VIN = "VIN"
+    MATCHED_BY_REQUEST_NUMBER = "REQUEST_NUMBER"
     MATCHED_BY_CHOICES = [
         (MATCHED_BY_CONTAINER_NUMBER, "По номеру контейнера"),
         (MATCHED_BY_BOOKING_NUMBER, "По номеру букинга"),
@@ -41,6 +42,7 @@ class ContainerEmail(models.Model):
         (MATCHED_BY_MANUAL, "Привязано вручную"),
         (MATCHED_BY_UNMATCHED, "Не привязано"),
         (MATCHED_BY_VIN, "По VIN машины"),
+        (MATCHED_BY_REQUEST_NUMBER, "По номеру заявки на автовоз"),
     ]
 
     # Phase 2: одно письмо может быть привязано к нескольким контейнерам
@@ -67,6 +69,18 @@ class ContainerEmail(models.Model):
         related_name="emails",
         blank=True,
         verbose_name="Машины (по VIN)",
+    )
+
+    # Переписка по заявке клиента на автовоз: письма складу («впустите
+    # автовоз, оформите декларацию») и ответы склада. Линкуются по треду и
+    # по номеру заявки — см. ``TransportRequestEmailLink``.
+    transport_requests = models.ManyToManyField(
+        "TransportRequest",
+        through="TransportRequestEmailLink",
+        through_fields=("email", "request"),
+        related_name="emails",
+        blank=True,
+        verbose_name="Заявки на автовоз",
     )
 
     # Для исходящих писем — из какой карточки контейнера их отправили.
@@ -391,6 +405,61 @@ class CarEmailLink(models.Model):
 
     def __str__(self) -> str:
         return f"link<email={self.email_id}, car={self.car_id}, {self.matched_by}>"
+
+
+class TransportRequestEmailLink(models.Model):
+    """Связь «письмо ↔ заявка на автовоз» (through для
+    ``ContainerEmail.transport_requests``).
+
+    Заявка — единица общения со складом: мы отправляем письмо-заявку на
+    литовском, склад отвечает в тот же Gmail-тред. Поэтому линковка идёт
+    по ``thread_id`` (наследование от уже связанных писем треда) и по
+    номеру заявки (``TR-YYYYMMDD-NNN``) в теме/теле — на случай, если склад
+    ответит новым письмом вне треда.
+
+    ``is_read`` per-ссылка — как у контейнеров и машин: письмо, отправленное
+    из карточки заявки, сразу прочитано здесь, а ответ склада приходит
+    непрочитанным и подсвечивает бейдж на доске заявок.
+    """
+
+    email = models.ForeignKey(
+        ContainerEmail,
+        on_delete=models.CASCADE,
+        related_name="transport_request_links",
+    )
+    request = models.ForeignKey(
+        "TransportRequest",
+        on_delete=models.CASCADE,
+        related_name="email_links",
+    )
+    matched_by = models.CharField(
+        max_length=20,
+        choices=ContainerEmail.MATCHED_BY_CHOICES,
+        default=ContainerEmail.MATCHED_BY_UNMATCHED,
+        verbose_name="Как сопоставлено",
+        help_text="THREAD — ответ склада в треде; MANUAL — отправлено из карточки заявки.",
+    )
+    is_read = models.BooleanField(
+        default=False,
+        verbose_name="Прочитано в карточке заявки",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Связь письма с заявкой на автовоз"
+        verbose_name_plural = "Связи писем с заявками на автовоз"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["email", "request"],
+                name="trreqemaillink_unique_email_request",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["request", "is_read"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"link<email={self.email_id}, request={self.request_id}, {self.matched_by}>"
 
 
 class EmailGroup(models.Model):

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ subject }}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            border-bottom: 2px solid #6c5ce7;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            color: #6c5ce7;
+            margin: 0;
+            font-size: 24px;
+        }
+        .badge {
+            display: inline-block;
+            background-color: #6c5ce7;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .greeting {
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+        .message-block {
+            background-color: #f0edff;
+            border-left: 4px solid #6c5ce7;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin: 20px 0;
+            white-space: pre-wrap;
+        }
+        .docs-block {
+            background-color: #fff3e0;
+            border-left: 4px solid #FF9800;
+            padding: 15px 20px;
+            margin: 20px 0;
+        }
+        .docs-block ul {
+            margin: 8px 0 0;
+            padding-left: 20px;
+        }
+        .car-details {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin: 20px 0;
+            border-left: 4px solid #9ca3af;
+        }
+        .vin-value {
+            word-break: break-all;
+            font-family: 'Courier New', monospace;
+        }
+        .cta {
+            text-align: center;
+            margin: 24px 0 8px;
+        }
+        .cta a {
+            display: inline-block;
+            background-color: #6c5ce7;
+            color: #ffffff;
+            text-decoration: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+        }
+        .footer a {
+            color: #6c5ce7;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{ company_name }}</h1>
+            <span class="badge">{% if is_doc_request %}Нужны документы{% else %}Сообщение по заявке{% endif %}</span>
+        </div>
+
+        <p class="greeting">Уважаемый(ая) {{ client_name }},</p>
+
+        <p>По вашей заявке на автовоз <strong>{{ request_number }}</strong> есть сообщение от нашего менеджера.</p>
+
+        {% if body %}
+        <div class="message-block">{{ body }}</div>
+        {% endif %}
+
+        {% if requested_doc_labels %}
+        <div class="docs-block">
+            <strong>Просим загрузить документы:</strong>
+            <ul>
+                {% for label in requested_doc_labels %}
+                <li>{{ label }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if car %}
+        <div class="car-details">
+            <p style="margin: 0 0 6px;"><strong>По автомобилю:</strong></p>
+            <p style="margin: 0;">{{ car.brand }} {{ car.year }}</p>
+            <p style="margin: 4px 0 0;">VIN: <span class="vin-value">{{ car.vin }}</span></p>
+        </div>
+        {% endif %}
+
+        {% if portal_url %}
+        <div class="cta">
+            <a href="{{ portal_url }}">Открыть заявку в кабинете</a>
+        </div>
+        {% endif %}
+
+        <p>Ответить можно прямо в карточке заявки в личном кабинете.</p>
+
+        <div class="footer">
+            <p><strong>{{ company_name }}</strong></p>
+            {% if company_phone %}<p>Телефон: {{ company_phone }}</p>{% endif %}
+            {% if company_email %}<p>Email: <a href="mailto:{{ company_email }}">{{ company_email }}</a></p>{% endif %}
+            {% if company_website %}<p>Сайт: <a href="{{ company_website }}">{{ company_website }}</a></p>{% endif %}
+        </div>
+    </div>
+</body>
+</html>

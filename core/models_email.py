@@ -2,10 +2,12 @@
 
 from core.models.email import *  # noqa: F403
 from core.models.email import (  # noqa: F401
+    CarEmailLink,
     ContainerEmail,
     ContainerEmailLink,
     EmailGroup,
     EmailGroupMember,
     EmailIngestFilter,
     GmailSyncState,
+    TransportRequestEmailLink,
 )

@@ -14,6 +14,7 @@ from django.utils.crypto import get_random_string
 from django.utils.html import format_html
 
 from core.models.website import (
+    TRANSPORT_DOCUMENT_TYPES,
     AIChat,
     ClientDocument,
     ClientUser,
@@ -22,8 +23,11 @@ from core.models.website import (
     NewsPost,
     NotificationLog,
     TrackingRequest,
+    TransportDeclarationGroup,
+    TransportDocumentRule,
     TransportRequest,
     TransportRequestDocument,
+    TransportRequestMessage,
 )
 
 # Без похожих символов (l/1/I/O/0), чтобы пароль легко диктовался клиенту.
@@ -191,12 +195,12 @@ class DeclarationRequestAdmin(admin.ModelAdmin):
     list_filter = ["status", "declaration_type", "created_at"]
     list_select_related = ("client", "car")
     search_fields = ["number", "client__name", "car__vin", "buyer_name"]
-    autocomplete_fields = ["client", "car"]
+    autocomplete_fields = ["client", "car", "transport_request"]
     readonly_fields = ["number", "created_by", "created_at", "updated_at"]
     date_hierarchy = "created_at"
 
     fieldsets = (
-        ("Заявка", {"fields": ("number", "client", "car", "declaration_type")}),
+        ("Заявка", {"fields": ("number", "client", "car", "declaration_type", "transport_request")}),
         ("Получатель", {"fields": ("buyer_name", "buyer_code", "buyer_country", "buyer_address")}),
         (
             "Направление и стоимость",
@@ -244,11 +248,37 @@ class TransportRequestDocumentInline(admin.TabularInline):
     file_link.short_description = "Файл"
 
 
+class TransportRequestMessageInline(admin.TabularInline):
+    """Переписка с клиентом по заявке (читается, пишется на доске заявок)."""
+
+    model = TransportRequestMessage
+    extra = 0
+    fields = ("author_kind", "kind", "author", "car", "body", "requested_doc_types", "created_at")
+    readonly_fields = ("created_at",)
+
+
+class TransportDeclarationGroupInline(admin.TabularInline):
+    """Отдельные декларации заявки: авто вне групп идут по типу заявки.
+
+    Удобнее собирать разбивку на доске заявок; здесь — для точечных правок.
+    """
+
+    model = TransportDeclarationGroup
+    extra = 0
+    fields = ("declaration_type", "cars", "note", "position")
+    autocomplete_fields = ("cars",)
+
+
 @admin.register(TransportRequest)
 class TransportRequestAdmin(admin.ModelAdmin):
-    """Заявки клиентов с данными автовозов"""
+    """Заявки клиентов с данными автовозов.
 
-    inlines = [TransportRequestDocumentInline]
+    Основная работа с заявкой идёт на карточной доске ``/admin/requests/``
+    (правка, документы, переписка, письмо складу); эта форма остаётся для
+    точечных правок и поиска.
+    """
+
+    inlines = [TransportDeclarationGroupInline, TransportRequestDocumentInline, TransportRequestMessageInline]
 
     list_display = [
         "number",
@@ -259,9 +289,17 @@ class TransportRequestAdmin(admin.ModelAdmin):
         "border_crossing",
         "cars_count",
         "status_display",
+        "board_link",
         "created_at",
     ]
-    list_filter = ["status", "created_at"]
+    list_filter = [
+        "status",
+        "warehouse_state",
+        "destination_country",
+        "declaration_type",
+        "awaiting_client_docs",
+        "created_at",
+    ]
     list_select_related = ("client", "auto_transport")
     search_fields = [
         "number",
@@ -295,9 +333,35 @@ class TransportRequestAdmin(admin.ModelAdmin):
             },
         ),
         ("Комментарий клиента", {"fields": ("comment",)}),
-        ("Обработка", {"fields": ("status", "staff_comment", "auto_transport")}),
+        (
+            "Обработка",
+            {
+                "fields": (
+                    "status",
+                    "destination_country",
+                    "declaration_type",
+                    "awaiting_client_docs",
+                    "staff_comment",
+                    "auto_transport",
+                )
+            },
+        ),
+        (
+            "Склад (внутреннее, клиенту не видно)",
+            {
+                "fields": ("warehouse", "warehouse_state", "sent_to_warehouse_at", "warehouse_confirmed_at"),
+                "classes": ("collapse",),
+            },
+        ),
         ("Метаданные", {"fields": ("created_by", "created_at", "updated_at"), "classes": ("collapse",)}),
     )
+
+    def board_link(self, obj):
+        from django.urls import reverse
+
+        return format_html('<a href="{}">Карточка на доске</a>', reverse("admin_request_card", args=[obj.pk]))
+
+    board_link.short_description = "Доска заявок"
 
     def carrier_display(self, obj):
         if obj.carrier_name and obj.carrier_eori:
@@ -335,6 +399,57 @@ class TransportRequestAdmin(admin.ModelAdmin):
 
     status_display.short_description = "Статус"
     status_display.admin_order_field = "status"
+
+
+class TransportDocumentRuleForm(forms.ModelForm):
+    """Обязательные документы — чекбоксами, а не JSON-строкой."""
+
+    required_doc_types = forms.MultipleChoiceField(
+        choices=TRANSPORT_DOCUMENT_TYPES,
+        widget=forms.CheckboxSelectMultiple,
+        required=False,
+        label="Обязательные документы",
+        help_text="Отметьте, что таможня этой страны требует при этой процедуре.",
+    )
+
+    class Meta:
+        model = TransportDocumentRule
+        fields = "__all__"
+
+    def clean_required_doc_types(self):
+        # Порядок как в TRANSPORT_DOCUMENT_TYPES — списки одинаково выглядят везде.
+        selected = set(self.cleaned_data.get("required_doc_types") or [])
+        return [code for code, _label in TRANSPORT_DOCUMENT_TYPES if code in selected]
+
+
+@admin.register(TransportDocumentRule)
+class TransportDocumentRuleAdmin(admin.ModelAdmin):
+    """Требования таможни к пакету документов по стране и процедуре.
+
+    Пары, для которых строки нет, считаются по встроенному набору
+    (``core.services.transport_request_check``).
+    """
+
+    form = TransportDocumentRuleForm
+    list_display = ["country", "procedure", "documents_display", "is_active", "updated_at", "updated_by"]
+    list_filter = ["country", "procedure", "is_active"]
+    search_fields = ["note"]
+    readonly_fields = ["updated_at", "updated_by"]
+
+    fieldsets = (
+        ("Направление", {"fields": ("country", "procedure", "is_active")}),
+        ("Пакет документов", {"fields": ("required_doc_types",)}),
+        ("Служебное", {"fields": ("note", "updated_by", "updated_at")}),
+    )
+
+    def documents_display(self, obj):
+        return ", ".join(obj.required_doc_labels) or "—"
+
+    documents_display.short_description = "Обязательные документы"
+
+    def save_model(self, request, obj, form, change):
+        obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(AIChat)

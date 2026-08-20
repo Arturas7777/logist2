@@ -1,0 +1,229 @@
+{% comment %}
+Блок «Переписка со складом» в карточке заявки на автовоз.
+
+Письма привязаны к заявке через ``TransportRequestEmailLink``: наше письмо
+складу линкуется при отправке, ответы склада подхватываются по gmail
+threadId / In-Reply-To и по номеру заявки в теме (``core.services.email_matcher``).
+
+Compose/Reply через общий ``window.CMComposer`` из
+``admin/core/email/_composer.html``, scope=transportrequest + scopeId=pk.
+URLs: /core/emails/transport-request/<id>/mark-all-read|updates/.
+
+Клиенту эта переписка НЕ видна — она существует только в админке.
+{% endcomment %}
+{% load static %}
+{% load email_extras %}
+
+{% with emails=transport_request.emails_for_panel %}
+<div class="rc-card cm-panel-with-reply" id="tr-emails-section"
+     data-tr-id="{{ transport_request.pk }}">
+    <details open>
+        <summary>
+            ✉️ Переписка со складом
+            <span class="rc-chip muted" id="tr-emails-badge">{{ emails|length }}</span>
+        </summary>
+        <div class="rc-inner">
+            <div class="pc-actions" style="margin-bottom:12px;">
+                <button type="button" class="pc-action outline" id="tr-emails-sync">↻ Синхронизировать Gmail</button>
+                <button type="button" class="pc-action primary" id="tr-email-compose">✍ Написать складу</button>
+                <span class="rc-status-msg" id="tr-emails-status"></span>
+            </div>
+
+            {% if not emails %}
+            <p class="rc-note" id="tr-emails-empty">
+                Писем по заявке пока нет. Отправьте письмо складу — ответы придут в эту ветку автоматически.
+            </p>
+            {% endif %}
+            <div class="cm-chat" id="tr-emails-list">
+                {% for email in emails %}
+                {% include "admin/core/container/_email_bubble.html" with email=email %}
+                {% endfor %}
+            </div>
+        </div>
+    </details>
+</div>
+
+{% include "admin/core/email/_composer.html" %}
+
+<style>
+/* Лента писем: минимально необходимое, остальное — из _composer.html. */
+#tr-emails-section .cm-chat { display: flex; flex-direction: column; gap: 10px; max-height: 640px; overflow-y: auto; }
+#tr-emails-section .cm-msg { display: flex; align-items: flex-end; gap: 8px; max-width: 88%; }
+#tr-emails-section .cm-msg.cm-in { align-self: flex-start; }
+#tr-emails-section .cm-msg.cm-out { align-self: flex-end; flex-direction: row-reverse; }
+#tr-emails-section .cm-avatar {
+    width: 32px; height: 32px; border-radius: 50%; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; flex-shrink: 0;
+}
+#tr-emails-section .cm-msg-col { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+#tr-emails-section .cm-msg.cm-out .cm-msg-col { align-items: flex-end; }
+#tr-emails-section .cm-msg-header { padding: 0 8px 3px; font-size: 12px; color: #64748b; display: flex; gap: 6px; flex-wrap: wrap; }
+#tr-emails-section .cm-msg-from { font-weight: 600; color: #334155; word-break: break-all; }
+#tr-emails-section .cm-bubble {
+    padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.5;
+    background: #fff; border: 1px solid #e5e7eb; overflow-wrap: break-word; max-width: 100%;
+}
+#tr-emails-section .cm-msg.cm-out .cm-bubble { background: #dbeafe; border-color: #bfdbfe; color: #1e3a8a; }
+#tr-emails-section .cm-msg[data-unread="1"] .cm-bubble { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
+#tr-emails-section .cm-subj { font-weight: 600; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px dashed rgba(100,116,139,.2); }
+#tr-emails-section .cm-body { white-space: pre-wrap; word-break: break-word; }
+#tr-emails-section .cm-attachments { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+#tr-emails-section .cm-attachment {
+    display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px;
+    background: rgba(255,255,255,.7); border: 1px solid rgba(100,116,139,.25);
+    border-radius: 10px; font-size: 12px; color: #334155; text-decoration: none; max-width: 240px;
+}
+#tr-emails-section .cm-att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+#tr-emails-section .cm-msg-recipients > summary { cursor: pointer; font-size: 11px; color: #475569; list-style: none; }
+#tr-emails-section .cm-msg-addr-list { margin: 4px 0 0; padding-left: 16px; font-size: 11px; color: #475569; }
+#tr-emails-section .cm-quote-details > summary { cursor: pointer; font-size: 12px; color: #64748b; }
+#tr-emails-section .cm-quote-body {
+    margin-top: 6px; padding: 8px 10px; background: rgba(148,163,184,.08);
+    border-left: 3px solid #cbd5e1; color: #64748b; font-size: 13px; white-space: pre-wrap; max-height: 240px; overflow-y: auto;
+}
+</style>
+
+<script>
+(function() {
+    var section = document.getElementById('tr-emails-section');
+    if (!section) return;
+    var details = section.querySelector(':scope > details');
+    var list    = document.getElementById('tr-emails-list');
+    var badge   = document.getElementById('tr-emails-badge');
+    var status  = document.getElementById('tr-emails-status');
+    var trId    = section.dataset.trId;
+    var csrf    = (document.querySelector('[name=csrfmiddlewaretoken]') || {}).value || '';
+
+    function refreshBadge() {
+        if (!badge || !list) return;
+        var total  = list.querySelectorAll('.cm-msg').length;
+        var unread = list.querySelectorAll('.cm-msg[data-unread="1"]').length;
+        badge.textContent = unread ? (unread + '/' + total) : total;
+        badge.className = 'rc-chip ' + (unread ? 'alert' : 'muted');
+    }
+    refreshBadge();
+
+    function markAllRead() {
+        var unreadEls = list ? list.querySelectorAll('.cm-msg[data-unread="1"]') : [];
+        if (!unreadEls.length) return;
+        fetch('/core/emails/transport-request/' + trId + '/mark-all-read/', {
+            method: 'POST',
+            headers: {'X-CSRFToken': csrf},
+            credentials: 'same-origin',
+        }).then(function() {
+            unreadEls.forEach(function(el) { el.setAttribute('data-unread', '0'); });
+            refreshBadge();
+        }).catch(function() {});
+    }
+
+    var firstOpen = true;
+    function markAllReadOnce() {
+        if (!firstOpen) return;
+        firstOpen = false;
+        markAllRead();
+    }
+    if (details) {
+        details.addEventListener('toggle', function() {
+            if (details.open) markAllReadOnce();
+        });
+    }
+    // Панель живёт во вкладке карточки: пока вкладку не открыли, письма
+    // прочитанными не помечаем — отметку запускает сама вкладка.
+    window.TRMailPanel = {markAllRead: markAllReadOnce};
+
+    var syncBtn = document.getElementById('tr-emails-sync');
+    if (syncBtn) {
+        syncBtn.addEventListener('click', function() {
+            syncBtn.disabled = true;
+            fetch('/core/emails/sync/', {method: 'POST', headers: {'X-CSRFToken': csrf}, credentials: 'same-origin'})
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    status.style.color = data.ok ? '#16a34a' : '#b91c1c';
+                    status.textContent = data.ok ? '✓ Синхронизация запущена, обновите страницу через пару секунд.'
+                                                 : ('✗ ' + (data.error || 'Ошибка'));
+                    syncBtn.disabled = false;
+                })
+                .catch(function(err) {
+                    status.style.color = '#b91c1c';
+                    status.textContent = '✗ ' + err;
+                    syncBtn.disabled = false;
+                });
+        });
+    }
+
+    function insertBubble(html) {
+        if (!list || !html) return;
+        var tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        var node = tmp.firstElementChild;
+        if (node) {
+            list.insertBefore(node, list.firstChild);
+            var empty = document.getElementById('tr-emails-empty');
+            if (empty) empty.remove();
+            refreshBadge();
+        }
+    }
+
+    var composeBtn = document.getElementById('tr-email-compose');
+    if (composeBtn) {
+        composeBtn.addEventListener('click', function() {
+            if (!window.CMComposer) return;
+            window.CMComposer.open({
+                mode: 'compose',
+                scope: 'transportrequest',
+                scopeId: trId,
+                to: '{{ transport_request.warehouse.general_email|default:""|escapejs }}',
+                subject: 'Užklausa {{ transport_request.number|escapejs }}',
+                body: '',
+                maxMb: 25,
+                onSuccess: function(data) { insertBubble(data && data.html); },
+            });
+        });
+    }
+
+    if (list) {
+        list.addEventListener('click', function(e) {
+            var btn = e.target.closest('.cm-reply-btn');
+            if (!btn || !window.CMComposer) return;
+            e.preventDefault();
+            window.CMComposer.openReplyFor(btn.dataset.emailId, 'transportrequest', trId, function(data) {
+                insertBubble(data && data.html);
+            });
+        });
+    }
+
+    (function poll() {
+        var INTERVAL = 30000;
+        var inFlight = false;
+        function latestId() {
+            if (!list) return 0;
+            var max = 0;
+            list.querySelectorAll('.cm-msg[data-email-id]').forEach(function(el) {
+                var id = parseInt(el.getAttribute('data-email-id'), 10) || 0;
+                if (id > max) max = id;
+            });
+            return max;
+        }
+        setInterval(function() {
+            if (inFlight || document.visibilityState !== 'visible') return;
+            if (!details || !details.open) return;
+            inFlight = true;
+            fetch('/core/emails/transport-request/' + trId + '/updates/?since_id=' + latestId(),
+                  {credentials: 'same-origin'})
+                .then(function(r) { return r.ok ? r.json() : null; })
+                .then(function(data) {
+                    if (!data || !data.ok || !Array.isArray(data.bubbles)) return;
+                    data.bubbles.slice().reverse().forEach(function(b) {
+                        if (list.querySelector('.cm-msg[data-email-id="' + b.id + '"]')) return;
+                        insertBubble(b.html);
+                    });
+                    markAllRead();
+                })
+                .catch(function() {})
+                .finally(function() { inFlight = false; });
+        }, INTERVAL);
+    })();
+})();
+</script>
+{% endwith %}

@@ -1,0 +1,1248 @@
+{% extends "admin/custom_page_base.html" %}
+{% load static %}
+
+{% comment %}
+Карточка заявки на автовоз — /admin/requests/<pk>/.
+
+Компоновка: слева рабочая область с табами (документы / переписка с клиентом /
+почта склада), справа закреплённая колонка со состоянием и данными автовоза.
+Пакет документов свёрнут в плитки по типам: слот раскрывается по клику, файлы
+открываются в просмотрщике (PDF через blob — /media/ отдаётся с
+X-Frame-Options: DENY, в iframe напрямую не открывается).
+
+Права сотрудника максимальные: правка данных автовоза, состав машин, пакет
+документов с генерацией PDF за клиента (та же логика, что в кабинете —
+core.services.transport_package_actions), переписка с клиентом, письмо складу
+на литовском и создание рейса.
+
+Внутренняя работа со складом (warehouse_state, письма) клиенту не видна —
+она существует только здесь.
+{% endcomment %}
+
+{% block page_style %}
+<style>
+.rc-page { padding-top: 0; }
+
+/* ── Шапка ──────────────────────────────────────────────────────────── */
+.rc-topbar {
+    position: sticky;
+    /* Ниже липкой шапки админки (.cm-topbar), иначе уезжает под неё. */
+    top: var(--cm-topbar-h, 60px);
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 14px 0 12px;
+    margin-bottom: 14px;
+    background: var(--cm-bg, #f4f2ff);
+    border-bottom: 1px solid rgba(108,92,231,.12);
+}
+.rc-topbar h1 { margin: 0; font-size: 1.25rem; }
+.rc-topbar .rc-spacer { flex: 1 1 auto; }
+.rc-back {
+    text-decoration: none;
+    color: var(--cm-purple, #6c5ce7);
+    font-size: .82rem;
+    white-space: nowrap;
+}
+
+.rc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: .74rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.rc-chip.ok { background: rgba(16,185,129,.12); color: #047857; }
+.rc-chip.warn { background: rgba(245,158,11,.15); color: #92400e; }
+.rc-chip.info { background: rgba(108,92,231,.12); color: #4c3dcc; }
+.rc-chip.muted { background: rgba(148,163,184,.18); color: #475569; }
+.rc-chip.alert { background: rgba(239,68,68,.14); color: #b91c1c; }
+
+/* ── Каркас: работа слева, состояние справа ─────────────────────────── */
+.rc-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 330px;
+    gap: 18px;
+    align-items: start;
+}
+@media (max-width: 1180px) {
+    .rc-grid { grid-template-columns: minmax(0, 1fr); }
+    .rc-side { position: static !important; }
+}
+.rc-side {
+    position: sticky;
+    top: calc(var(--cm-topbar-h, 60px) + 62px);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.rc-card {
+    background: var(--cm-card, #fff);
+    border-radius: var(--cm-radius, 14px);
+    box-shadow: var(--cm-shadow-card, 0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08));
+    margin-bottom: 14px;
+    overflow: hidden;
+}
+.rc-side .rc-card { margin-bottom: 0; }
+.rc-card > h2, .rc-card > details > summary {
+    margin: 0;
+    padding: 11px 16px;
+    background: #ededf2;
+    border-bottom: 1px solid rgba(0,0,0,.06);
+    font-size: .85rem;
+    font-weight: 700;
+    color: var(--cm-text, #1a1a2e);
+    list-style: none;
+    cursor: default;
+}
+.rc-card > details > summary { cursor: pointer; }
+.rc-card > details > summary::-webkit-details-marker { display: none; }
+.rc-inner { padding: 14px 16px; }
+
+/* ── Табы рабочей области ───────────────────────────────────────────── */
+.rc-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.rc-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 15px;
+    border: 1px solid var(--cm-border, #ebebf0);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--cm-text, #1a1a2e);
+    font: inherit;
+    font-size: .82rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.rc-tab:hover { border-color: var(--cm-purple, #6c5ce7); }
+.rc-tab.active {
+    background: var(--cm-purple, #6c5ce7);
+    border-color: var(--cm-purple, #6c5ce7);
+    color: #fff;
+}
+.rc-tab .rc-tab-badge {
+    min-width: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: rgba(108,92,231,.14);
+    color: #4c3dcc;
+    font-size: .7rem;
+    text-align: center;
+}
+.rc-tab.active .rc-tab-badge { background: rgba(255,255,255,.25); color: #fff; }
+.rc-tab .rc-tab-badge.alert { background: #ef4444; color: #fff; }
+.rc-panel[hidden] { display: none; }
+
+/* ── Авто и пакет документов ────────────────────────────────────────── */
+.rc-car {
+    background: var(--cm-card, #fff);
+    border-radius: var(--cm-radius, 14px);
+    box-shadow: var(--cm-shadow-card, 0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08));
+    margin-bottom: 12px;
+    overflow: hidden;
+}
+.rc-car.target { outline: 2px solid var(--cm-purple, #6c5ce7); }
+.rc-car-head {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    background: var(--cm-bg, #f5f6fa);
+    border-bottom: 1px solid rgba(0,0,0,.05);
+}
+.rc-vin { font-family: 'Courier New', monospace; font-weight: 700; font-size: .88rem; }
+.rc-car-title { font-size: .84rem; color: #4a4a68; }
+.rc-car-head .rc-head-right { margin-left: auto; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.rc-mini-select {
+    padding: 4px 8px;
+    border: 1px solid var(--cm-border, #ebebf0);
+    border-radius: 8px;
+    background: #fff;
+    font-size: 12px;
+}
+.rc-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--cm-border, #ebebf0);
+    border-radius: 8px;
+    background: #fff;
+    color: #64748b;
+    font: inherit;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    text-decoration: none;
+}
+.rc-icon-btn:hover { border-color: var(--cm-purple, #6c5ce7); color: var(--cm-purple, #6c5ce7); }
+.rc-icon-btn.danger:hover { border-color: #ef4444; color: #ef4444; }
+
+/* ── Декларации заявки ──────────────────────────────────────────────── */
+.rc-decl {
+    border: 1px solid var(--cm-border, #ebebf0);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-top: 10px;
+    background: #fff;
+}
+.rc-decl.default { background: var(--cm-bg, #f5f6fa); }
+.rc-decl-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rc-decl-head strong { font-size: .82rem; }
+.rc-decl-note {
+    padding: 4px 8px;
+    border: 1px solid var(--cm-border, #ebebf0);
+    border-radius: 8px;
+    font-size: 12px;
+    min-width: 180px;
+}
+.rc-decl-cars { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.rc-decl-picker { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; }
+.rc-decl-picker label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: .76rem;
+    font-family: 'Courier New', monospace;
+}
+.rc-decl-picker label.other { color: #b45309; }
+.rc-decl-add { margin-top: 12px; }
+.rc-decl-add > summary { cursor: pointer; font-size: .8rem; color: var(--cm-purple, #6c5ce7); }
+.pc-action.outline.rc-danger { color: #b91c1c; border-color: rgba(185,28,28,.35); }
+.pc-action.outline.rc-danger:hover { color: #b91c1c; border-color: #b91c1c; background: rgba(185,28,28,.06); }
+
+.rc-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 7px;
+    padding: 12px 14px;
+}
+.rc-tile {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 7px 9px;
+    border: 1px solid var(--cm-border, #ebebf0);
+    border-radius: 10px;
+    background: #fff;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.rc-tile:hover { border-color: var(--cm-purple, #6c5ce7); }
+.rc-tile.has { border-color: rgba(16,185,129,.45); background: rgba(16,185,129,.06); }
+.rc-tile.missing { border-color: rgba(245,158,11,.55); background: rgba(245,158,11,.07); }
+.rc-tile.active { border-color: var(--cm-purple, #6c5ce7); box-shadow: 0 0 0 2px rgba(108,92,231,.18); }
+.rc-bulk {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin: 10px 0 4px; padding: 8px 10px;
+    border: 1px dashed rgba(108,92,231,.35); border-radius: 10px;
+    background: rgba(108,92,231,.04);
+}
+.rc-bulk input[type=file] { font-size: .74rem; max-width: 230px; }
+.rc-tile-label { font-size: .76rem; font-weight: 600; color: var(--cm-text, #1a1a2e); }
+.rc-tile-meta { font-size: .68rem; color: #6b7280; }
+.rc-tile.missing .rc-tile-meta { color: #b45309; font-weight: 600; }
+.rc-tile.has .rc-tile-meta { color: #047857; }
+
+.rc-slot { border-top: 1px solid var(--cm-border, #ebebf0); padding: 12px 14px; background: #fbfbfe; }
+.rc-slot[hidden] { display: none; }
+.rc-slot-title { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+.rc-slot-title strong { font-size: .86rem; }
+
+.rc-files { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.rc-file {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    border: 1px solid var(--cm-border, #ebebf0);
+    border-radius: 999px;
+    background: #fff;
+    overflow: hidden;
+}
+.rc-file-open {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 240px;
+    padding: 4px 10px;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: .74rem;
+    color: var(--cm-text, #1a1a2e);
+    cursor: pointer;
+}
+.rc-file-open .rc-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-file-open:hover { color: var(--cm-purple, #6c5ce7); }
+.rc-file-act {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 7px;
+    border: 0;
+    border-left: 1px solid var(--cm-border, #ebebf0);
+    background: none;
+    color: #94a3b8;
+    font: inherit;
+    font-size: .74rem;
+    cursor: pointer;
+    text-decoration: none;
+}
+.rc-file-act:hover { color: var(--cm-purple, #6c5ce7); }
+.rc-file-act.danger:hover { color: #ef4444; }
+
+.rc-slot-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px 12px;
+    margin-bottom: 10px;
+}
+.rc-slot-fields label { display: block; font-size: .68rem; color: var(--cm-text-secondary, #6b7280); margin-bottom: 3px; }
+.rc-slot-fields input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 9px;
+    border: 1px solid var(--cm-border, #ebebf0);
+    border-radius: 8px;
+    font-size: 12px;
+}
+.rc-slot-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.rc-slot-actions input[type=file] { font-size: 12px; }
+.rc-inline-form { display: inline; }
+
+/* ── Поля заявки (правая колонка) ───────────────────────────────────── */
+.rc-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px 12px; }
+.rc-field.wide { grid-column: 1 / -1; }
+.rc-field label {
+    display: block;
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: var(--cm-text-secondary, #6b7280);
+    margin-bottom: 3px;
+}
+.rc-field input, .rc-field select, .rc-field textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 9px;
+    border: 1px solid var(--cm-border, #ebebf0);
+    border-radius: 8px;
+    font-size: 12.5px;
+    background: #fff;
+}
+.rc-field textarea { resize: vertical; }
+.rc-save-row { margin-top: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.rc-status-msg { font-size: 12px; }
+.rc-note { font-size: .76rem; color: var(--cm-text-secondary, #6b7280); }
+.rc-blockers { margin: 6px 0 0; padding-left: 16px; font-size: .76rem; color: #b45309; }
+.rc-check { display: flex; gap: 6px; align-items: flex-start; font-size: .76rem; color: #4a4a68; }
+
+/* ── Переписка с клиентом ───────────────────────────────────────────── */
+.rc-thread { display: flex; flex-direction: column; gap: 10px; max-height: 460px; overflow-y: auto; padding-right: 4px; }
+.rc-msg { max-width: 84%; padding: 9px 13px; border-radius: 14px; font-size: 13px; line-height: 1.5; }
+.rc-msg.staff { align-self: flex-end; background: #dbeafe; border: 1px solid #bfdbfe; color: #1e3a8a; border-top-right-radius: 4px; }
+.rc-msg.client { align-self: flex-start; background: #fff; border: 1px solid #e5e7eb; border-top-left-radius: 4px; }
+.rc-msg-meta { font-size: 11px; color: #64748b; margin-bottom: 4px; }
+.rc-msg-body { white-space: pre-wrap; word-break: break-word; }
+.rc-msg-docs { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+.rc-doc-picker { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 8px 0 12px; }
+.rc-doc-picker label { display: inline-flex; align-items: center; gap: 5px; font-size: .76rem; }
+.rc-msg-form textarea {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 74px;
+    padding: 9px 12px;
+    border: 1px solid var(--cm-border, #ebebf0);
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+/* ── Просмотрщик файлов ─────────────────────────────────────────────── */
+.rc-viewer {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: rgba(15,23,42,.95);
+    backdrop-filter: blur(3px);
+    display: none;
+    flex-direction: column;
+}
+.rc-viewer.open { display: flex; }
+.rc-viewer-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    color: #fff;
+}
+.rc-viewer-title { font-size: .86rem; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-viewer-sub { font-size: .74rem; opacity: .75; }
+.rc-viewer-bar .rc-spacer { flex: 1 1 auto; }
+.rc-viewer-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 11px;
+    border: 1px solid rgba(255,255,255,.35);
+    border-radius: 8px;
+    background: rgba(255,255,255,.08);
+    color: #fff;
+    font: inherit;
+    font-size: .78rem;
+    cursor: pointer;
+    text-decoration: none;
+}
+.rc-viewer-btn:hover { background: rgba(255,255,255,.2); color: #fff; }
+.rc-viewer-btn[disabled] { opacity: .35; cursor: default; }
+.rc-viewer-stage {
+    flex: 1;
+    min-height: 0;
+    margin: 0 14px 14px;
+    border-radius: 12px;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: auto;
+}
+.rc-viewer-stage iframe { width: 100%; height: 100%; border: 0; border-radius: 12px; }
+.rc-viewer-stage img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.rc-viewer-fallback { padding: 40px 20px; text-align: center; color: #475569; font-size: .88rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cm-page wide rc-page">
+    <div class="rc-topbar">
+        <a class="rc-back" href="{% url 'admin_requests_board' %}">← Доска</a>
+        <h1>{{ transport_request.number }}</h1>
+        <span class="rc-chip muted">{{ transport_request.client.name }}</span>
+        <span class="rc-chip {% if transport_request.destination_country %}muted{% else %}alert{% endif %}">
+            {% if transport_request.destination_country %}{{ transport_request.get_destination_country_display }}{% else %}страна не выбрана{% endif %}
+        </span>
+        <span class="rc-chip info" id="rc-status-chip">{{ transport_request.get_status_display }}</span>
+        <span class="rc-chip {% if transport_request.warehouse_state == 'CONFIRMED' %}ok{% elif transport_request.warehouse_state == 'REJECTED' %}alert{% elif transport_request.warehouse_state == 'SENT' %}info{% else %}muted{% endif %}"
+              id="rc-wh-state-chip">
+            склад: {{ transport_request.get_warehouse_state_display }}
+        </span>
+        {% if readiness.is_complete %}
+        <span class="rc-chip ok">пакеты полные</span>
+        {% else %}
+        <span class="rc-chip warn">не хватает {{ readiness.missing_doc_types|length }} тип(ов)</span>
+        {% endif %}
+
+        <span class="rc-spacer"></span>
+
+        <a class="pc-action primary" href="{% url 'admin_request_warehouse_letter' transport_request.pk %}">✉ Письмо складу (LT)</a>
+        {% if transport_request.auto_transport_id %}
+        <a class="pc-action green" href="{% url 'admin:core_autotransport_change' transport_request.auto_transport_id %}">
+            🚚 Рейс {{ transport_request.auto_transport.number }}
+        </a>
+        {% else %}
+        <form method="post" action="{% url 'admin_request_create_autotransport' transport_request.pk %}" class="rc-inline-form">
+            {% csrf_token %}
+            {% if carrier_match.carrier %}
+            <input type="hidden" name="carrier" value="{{ carrier_match.carrier.pk }}">
+            <button type="submit" class="pc-action green" title="Перевозчик из справочника: {{ carrier_match.carrier.name }}">
+                🚚 Создать рейс
+            </button>
+            {% elif carrier_match.will_create %}
+            <input type="hidden" name="create_carrier" value="1">
+            <button type="submit" class="pc-action amber"
+                    onclick="return confirm('Перевозчик «{{ transport_request.carrier_name|escapejs }}» не найден в справочнике. Будет создан новый. Продолжить?');">
+                🚚 Создать рейс + перевозчика
+            </button>
+            {% else %}
+            <button type="submit" class="pc-action outline" disabled title="В заявке не указан перевозчик">🚚 Создать рейс</button>
+            {% endif %}
+        </form>
+        {% endif %}
+        <a class="pc-action outline" href="{{ admin_change_url }}" title="Открыть в обычной админке">⚙</a>
+    </div>
+
+    {% if messages %}
+    <div class="rc-card"><div class="rc-inner">
+        {% for message in messages %}
+        <div class="rc-chip {% if message.tags == 'error' %}alert{% elif message.tags == 'warning' %}warn{% elif message.tags == 'success' %}ok{% else %}info{% endif %}"
+             style="display:block;margin-bottom:6px;">{{ message }}</div>
+        {% endfor %}
+    </div></div>
+    {% endif %}
+
+    <div class="rc-grid">
+        {# ── Рабочая область ─────────────────────────────────────────── #}
+        <div class="rc-work">
+            <div class="rc-tabs" id="rc-tabs">
+                <button type="button" class="rc-tab active" data-tab="docs">
+                    🚗 Автомобили и документы <span class="rc-tab-badge">{{ car_blocks|length }}</span>
+                </button>
+                <button type="button" class="rc-tab" data-tab="client">
+                    💬 Переписка с клиентом <span class="rc-tab-badge">{{ request_messages|length }}</span>
+                </button>
+                <button type="button" class="rc-tab" data-tab="warehouse">
+                    ✉️ Почта склада <span class="rc-tab-badge" id="rc-tab-mail-badge"></span>
+                </button>
+            </div>
+
+            {# ── Таб: авто и документы ───────────────────────────────── #}
+            <div class="rc-panel" data-panel="docs">
+                {# ── Декларации: сколько их и какие авто в каждой ────── #}
+                <div class="rc-card" id="rc-declarations">
+                    <h2>Декларации <span class="rc-chip muted">{{ declaration_panel.blocks|length }}</span></h2>
+                    <div class="rc-inner">
+                        <p class="rc-note">
+                            По умолчанию складу заказывается одна декларация на все авто заявки — её тип берётся
+                            из поля «Тип декларации (на заявку)» справа. Если часть машин идёт отдельной декларацией
+                            (или другим типом) — добавьте её здесь: один блок = одна декларация.
+                        </p>
+
+                        {% for block in declaration_panel.blocks %}
+                        {% if block.line.is_default %}
+                        <div class="rc-decl default">
+                            <div class="rc-decl-head">
+                                <strong>№{{ block.index }} · Общая декларация заявки</strong>
+                                <span class="rc-chip {% if block.line.declaration_type %}info{% else %}alert{% endif %}">
+                                    {{ block.line.type_display|default:"тип не выбран" }}
+                                </span>
+                                <span class="rc-chip muted">{{ block.line.cars_count }} авто</span>
+                            </div>
+                            <div class="rc-decl-cars">
+                                {% for car in block.line.cars %}<span class="rc-chip muted">{{ car.vin }}</span>{% endfor %}
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="rc-decl">
+                            <form method="post" action="{% url 'admin_request_declarations' transport_request.pk %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="update">
+                                <input type="hidden" name="group" value="{{ block.line.group.pk }}">
+                                <div class="rc-decl-head">
+                                    <strong>№{{ block.index }} · Отдельная декларация</strong>
+                                    <select name="declaration_type" class="rc-mini-select">
+                                        {% for code, label in declaration_types %}
+                                        <option value="{{ code }}" {% if block.line.declaration_type == code %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <input class="rc-decl-note" name="note" value="{{ block.line.note }}"
+                                           placeholder="примечание (необязательно)">
+                                    <span class="rc-spacer" style="flex:1 1 auto;"></span>
+                                    <button type="submit" class="pc-action outline">Сохранить</button>
+                                </div>
+                                <div class="rc-decl-picker">
+                                    {% for pick in block.picks %}
+                                    <label class="{% if pick.other_index %}other{% endif %}">
+                                        <input type="checkbox" name="cars" value="{{ pick.car.pk }}"
+                                               {% if pick.checked %}checked{% endif %}>
+                                        <span>{{ pick.car.vin }}</span>
+                                        {% if pick.other_index %}<span class="rc-chip muted">в №{{ pick.other_index }}</span>{% endif %}
+                                    </label>
+                                    {% endfor %}
+                                </div>
+                            </form>
+                            <form method="post" action="{% url 'admin_request_declarations' transport_request.pk %}"
+                                  class="rc-inline-form" style="margin-top:8px;"
+                                  onsubmit="return confirm('Удалить отдельную декларацию? Её авто вернутся в общую декларацию заявки.');">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="group" value="{{ block.line.group.pk }}">
+                                <button type="submit" class="pc-action outline rc-danger">Удалить декларацию</button>
+                            </form>
+                        </div>
+                        {% endif %}
+                        {% endfor %}
+
+                        {% if declaration_panel.add_picks %}
+                        <details class="rc-decl-add">
+                            <summary>+ Добавить отдельную декларацию</summary>
+                            <form method="post" action="{% url 'admin_request_declarations' transport_request.pk %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="add">
+                                <div class="rc-decl-head">
+                                    <select name="declaration_type" class="rc-mini-select">
+                                        {% for code, label in declaration_types %}
+                                        <option value="{{ code }}" {% if transport_request.declaration_type == code %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                    <input class="rc-decl-note" name="note" placeholder="примечание (необязательно)">
+                                    <span class="rc-spacer" style="flex:1 1 auto;"></span>
+                                    <button type="submit" class="pc-action green">Создать</button>
+                                </div>
+                                <div class="rc-decl-picker">
+                                    {% for pick in declaration_panel.add_picks %}
+                                    <label class="{% if pick.other_index %}other{% endif %}">
+                                        <input type="checkbox" name="cars" value="{{ pick.car.pk }}">
+                                        <span>{{ pick.car.vin }}</span>
+                                        {% if pick.other_index %}<span class="rc-chip muted">в №{{ pick.other_index }}</span>{% endif %}
+                                    </label>
+                                    {% endfor %}
+                                </div>
+                            </form>
+                        </details>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% for block in car_blocks %}
+                <article class="rc-car" id="car-{{ block.car.pk }}" data-car="{{ block.car.pk }}">
+                    <header class="rc-car-head">
+                        <span class="rc-vin">{{ block.car.vin }}</span>
+                        <span class="rc-car-title">{{ block.car.brand }}{% if block.car.year %} {{ block.car.year }}{% endif %}</span>
+                        {% if block.car.warehouse %}<span class="rc-chip muted">{{ block.car.warehouse.name }}</span>{% endif %}
+                        {% if block.car.container %}<span class="rc-chip muted">{{ block.car.container.number }}</span>{% endif %}
+                        {% if block.status.is_complete %}
+                        <span class="rc-chip ok">пакет полный</span>
+                        {% else %}
+                        <span class="rc-chip warn">нет: {{ block.status.missing_labels|join:", " }}</span>
+                        {% endif %}
+                        <span class="rc-head-right">
+                            <a class="rc-chip {% if block.declaration_type %}info{% else %}alert{% endif %}"
+                               href="#rc-declarations" title="Декларация, в которую входит это авто">
+                                {{ block.declaration_label|default:"декларация не задана" }}
+                            </a>
+                            <a class="rc-icon-btn" title="Скачать склеенный PDF-пакет"
+                               href="{% url 'admin_request_package_download' transport_request.pk block.car.pk %}">⤓</a>
+                            <form method="post" action="{% url 'admin_request_car_toggle' transport_request.pk %}" class="rc-inline-form"
+                                  onsubmit="return confirm('Убрать авто из заявки? Его документы пакета будут удалены.');">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="remove">
+                                <input type="hidden" name="car" value="{{ block.car.pk }}">
+                                <button type="submit" class="rc-icon-btn danger" title="Убрать авто из заявки">×</button>
+                            </form>
+                        </span>
+                    </header>
+
+                    <div class="rc-tiles">
+                        {% for slot in block.slots %}
+                        <button type="button"
+                                class="rc-tile {% if slot.docs %}has{% elif slot.is_missing %}missing{% endif %}"
+                                data-slot-btn="{{ block.car.pk }}-{{ slot.type }}">
+                            <span class="rc-tile-label">{{ slot.label }}</span>
+                            <span class="rc-tile-meta">
+                                {% if slot.docs %}✓ {{ slot.docs|length }} файл(ов)
+                                {% elif slot.is_missing %}нужен
+                                {% else %}нет файла{% endif %}
+                            </span>
+                        </button>
+                        {% endfor %}
+                    </div>
+
+                    <form method="post" action="{% url 'admin_request_bulk_upload' transport_request.pk %}"
+                          enctype="multipart/form-data" class="rc-bulk">
+                        {% csrf_token %}
+                        <input type="hidden" name="car" value="{{ block.car.pk }}">
+                        <span class="rc-note">Одним файлом:</span>
+                        <input type="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required>
+                        <button type="submit" class="pc-action outline" title="AI разложит документы из файла по типам">
+                            Разобрать AI
+                        </button>
+                        {% for upload in block.bulk_uploads %}
+                        <a class="rc-chip {% if upload.is_running %}info{% elif upload.status == 'ERROR' %}warn{% else %}ok{% endif %}"
+                           href="{{ upload.file.url }}" target="_blank" rel="noopener"
+                           title="Исходный файл клиента: {{ upload.filename }}{% if upload.error_message %} — {{ upload.error_message }}{% endif %}">
+                            {% if upload.is_running %}разбираем…
+                            {% elif upload.status == "ERROR" %}ошибка разбора
+                            {% else %}{{ upload.sorted_labels|join:", "|default:"ничего не распознано" }}{% endif %}
+                        </a>
+                        {% endfor %}
+                    </form>
+
+                    {% for slot in block.slots %}
+                    <section class="rc-slot" data-slot="{{ block.car.pk }}-{{ slot.type }}" hidden>
+                        <div class="rc-slot-title">
+                            <strong>{{ slot.label }}</strong>
+                            {% if slot.is_missing %}<span class="rc-chip warn">обязателен, файла нет</span>{% endif %}
+                            <span class="rc-spacer" style="flex:1 1 auto;"></span>
+                            <button type="button" class="rc-icon-btn" data-slot-close="{{ block.car.pk }}-{{ slot.type }}"
+                                    title="Свернуть">▲</button>
+                        </div>
+
+                        {% if slot.docs %}
+                        <div class="rc-files">
+                            {% for doc in slot.docs %}
+                            <span class="rc-file">
+                                <button type="button" class="rc-file-open"
+                                        data-file-url="{{ doc.file.url }}"
+                                        data-file-name="{{ doc.filename }}"
+                                        data-file-label="{{ slot.label }} · {{ block.car.vin }}">
+                                    <span>{% if doc.is_generated %}🤖{% else %}📄{% endif %}</span>
+                                    <span class="rc-file-name">{{ doc.filename }}</span>
+                                </button>
+                                <a class="rc-file-act" href="{{ doc.file.url }}" download title="Скачать">⤓</a>
+                                {% if not doc.is_generated %}
+                                <form method="post" action="{% url 'admin_request_doc_retype' transport_request.pk doc.pk %}"
+                                      class="rc-inline-form">
+                                    {% csrf_token %}
+                                    <select name="doc_type" class="rc-mini-select" title="Переложить в другой слот"
+                                            onchange="if (this.value) this.form.submit();">
+                                        <option value="">→ тип</option>
+                                        {% for code, label in doc_types %}
+                                        {% if code != slot.type %}<option value="{{ code }}">{{ label }}</option>{% endif %}
+                                        {% endfor %}
+                                    </select>
+                                </form>
+                                {% endif %}
+                                <form method="post" action="{% url 'admin_request_doc_delete' transport_request.pk doc.pk %}"
+                                      class="rc-inline-form" onsubmit="return confirm('Удалить файл?');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="rc-file-act danger" title="Удалить файл">×</button>
+                                </form>
+                            </span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        <form method="post" action="{% url 'admin_request_doc_action' transport_request.pk %}"
+                              enctype="multipart/form-data">
+                            {% csrf_token %}
+                            <input type="hidden" name="car" value="{{ block.car.pk }}">
+                            <input type="hidden" name="doc_type" value="{{ slot.type }}">
+                            {% if slot.fields %}
+                            <div class="rc-slot-fields">
+                                {% for field in slot.fields %}
+                                <div>
+                                    <label for="pf-{{ block.car.pk }}-{{ field.name }}">{{ field.label }}</label>
+                                    <input id="pf-{{ block.car.pk }}-{{ field.name }}" name="{{ field.name }}" value="{{ field.value }}">
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            <div class="rc-slot-actions">
+                                <input type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.png">
+                                <button type="submit" class="pc-action outline">Сохранить</button>
+                                {% if slot.can_generate %}
+                                <button type="submit" name="action" value="generate" class="pc-action primary">Сгенерировать PDF</button>
+                                {% endif %}
+                            </div>
+                        </form>
+                    </section>
+                    {% endfor %}
+                </article>
+                {% empty %}
+                <div class="rc-card"><div class="rc-inner"><p class="rc-note">В заявке нет автомобилей.</p></div></div>
+                {% endfor %}
+
+                {% if available_cars %}
+                <div class="rc-card">
+                    <div class="rc-inner">
+                        <form method="post" action="{% url 'admin_request_car_toggle' transport_request.pk %}"
+                              style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="add">
+                            <select name="car" class="rc-mini-select">
+                                {% for car in available_cars %}
+                                <option value="{{ car.pk }}">{{ car.vin }} — {{ car.brand }}{% if car.year %} {{ car.year }}{% endif %}</option>
+                                {% endfor %}
+                            </select>
+                            <button type="submit" class="pc-action green">Добавить авто в заявку</button>
+                        </form>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            {# ── Таб: переписка с клиентом ───────────────────────────── #}
+            <div class="rc-panel" data-panel="client" hidden>
+                <div class="rc-card">
+                    <h2>Переписка с клиентом</h2>
+                    <div class="rc-inner">
+                        <div class="rc-thread" id="rc-thread">
+                            {% for msg in request_messages %}
+                            <div class="rc-msg {% if msg.is_from_staff %}staff{% else %}client{% endif %}">
+                                <div class="rc-msg-meta">
+                                    {% if msg.is_from_staff %}Мы{% else %}Клиент{% endif %}
+                                    {% if msg.author %}· {{ msg.author.get_full_name|default:msg.author.username }}{% endif %}
+                                    · {{ msg.created_at|date:"d.m.Y H:i" }}
+                                    {% if msg.car %}· {{ msg.car.vin }}{% endif %}
+                                </div>
+                                {% if msg.body %}<div class="rc-msg-body">{{ msg.body }}</div>{% endif %}
+                                {% if msg.requested_doc_types %}
+                                <div class="rc-msg-docs">
+                                    {% for label in msg.requested_doc_labels %}<span class="rc-chip warn">{{ label }}</span>{% endfor %}
+                                </div>
+                                {% endif %}
+                            </div>
+                            {% empty %}
+                            <p class="rc-note" id="rc-thread-empty">Сообщений пока нет.</p>
+                            {% endfor %}
+                        </div>
+
+                        <form class="rc-msg-form" id="rc-msg-form" style="margin-top:14px;">
+                            <label class="rc-note" for="rc-msg-body">Сообщение клиенту (уйдёт на email и в Telegram)</label>
+                            <textarea id="rc-msg-body" name="body" placeholder="Например: не хватает паспорта покупателя по VIN …"></textarea>
+                            <p class="rc-note" style="margin:10px 0 0;">Запросить документы (отметьте типы — клиент увидит кнопки загрузки):</p>
+                            <div class="rc-doc-picker">
+                                {% for code, label in doc_types %}
+                                <label>
+                                    <input type="checkbox" name="requested_doc_types" value="{{ code }}"
+                                           {% if code in missing_doc_types %}checked{% endif %}>
+                                    {{ label }}
+                                </label>
+                                {% endfor %}
+                            </div>
+                            <div class="rc-save-row">
+                                <button type="submit" class="pc-action primary">Отправить клиенту</button>
+                                <span class="rc-status-msg" id="rc-msg-result"></span>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            {# ── Таб: почта склада (клиенту не видна) ────────────────── #}
+            <div class="rc-panel" data-panel="warehouse" hidden>
+                {% include "admin/requests/_emails_panel.html" %}
+            </div>
+        </div>
+
+        {# ── Правая колонка: состояние и данные ──────────────────────── #}
+        <aside class="rc-side">
+            <div class="rc-card">
+                <h2>Состояние</h2>
+                <div class="rc-inner">
+                    <div class="rc-fields">
+                        <div class="rc-field wide">
+                            <label for="rc-status">Статус (виден клиенту)</label>
+                            <select id="rc-status">
+                                {% for code, label in status_choices %}
+                                <option value="{{ code }}" {% if transport_request.status == code %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="rc-field wide">
+                            <label for="rc-wh-state">Склад (внутреннее)</label>
+                            <select id="rc-wh-state">
+                                {% for code, label in warehouse_state_choices %}
+                                <option value="{{ code }}" {% if transport_request.warehouse_state == code %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="rc-field wide">
+                            <label class="rc-check">
+                                <input type="checkbox" id="rc-awaiting" {% if transport_request.awaiting_client_docs %}checked{% endif %}>
+                                <span>Ждём документы от клиента — разрешить ему правку и догрузку</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="rc-save-row">
+                        <button type="button" class="pc-action primary" id="rc-status-save">Сохранить</button>
+                        <span class="rc-status-msg" id="rc-status-result"></span>
+                    </div>
+
+                    {% if readiness.blockers %}
+                    <p class="rc-note" style="margin:14px 0 0;">Перед отправкой складу стоит поправить:</p>
+                    <ul class="rc-blockers">
+                        {% for blocker in readiness.blockers %}<li>{{ blocker }}</li>{% endfor %}
+                    </ul>
+                    {% endif %}
+
+                    {% if carrier_match.will_create and carrier_match.candidates %}
+                    <p class="rc-note" style="margin:14px 0 6px;">Похожие перевозчики в справочнике:</p>
+                    <div class="pc-actions" style="margin:0;">
+                        {% for candidate in carrier_match.candidates %}
+                        <form method="post" action="{% url 'admin_request_create_autotransport' transport_request.pk %}" class="rc-inline-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="carrier" value="{{ candidate.pk }}">
+                            <button type="submit" class="pc-action outline">{{ candidate.name }}</button>
+                        </form>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="rc-card">
+                <h2>Данные автовоза и декларации</h2>
+                <div class="rc-inner">
+                    <form id="rc-fields-form">
+                        <div class="rc-fields">
+                            <div class="rc-field wide">
+                                <label for="f-carrier_name">Перевозчик</label>
+                                <input id="f-carrier_name" name="carrier_name" value="{{ transport_request.carrier_name }}">
+                            </div>
+                            <div class="rc-field wide">
+                                <label for="f-carrier_eori">EORI</label>
+                                <input id="f-carrier_eori" name="carrier_eori" value="{{ transport_request.carrier_eori }}">
+                            </div>
+                            <div class="rc-field">
+                                <label for="f-truck_number">Тягач</label>
+                                <input id="f-truck_number" name="truck_number" value="{{ transport_request.truck_number }}">
+                            </div>
+                            <div class="rc-field">
+                                <label for="f-trailer_number">Прицеп</label>
+                                <input id="f-trailer_number" name="trailer_number" value="{{ transport_request.trailer_number }}">
+                            </div>
+                            <div class="rc-field">
+                                <label for="f-driver_name">Водитель</label>
+                                <input id="f-driver_name" name="driver_name" value="{{ transport_request.driver_name }}">
+                            </div>
+                            <div class="rc-field">
+                                <label for="f-driver_phone">Телефон</label>
+                                <input id="f-driver_phone" name="driver_phone" value="{{ transport_request.driver_phone }}">
+                            </div>
+                            <div class="rc-field">
+                                <label for="f-border_crossing">Граница</label>
+                                <input id="f-border_crossing" name="border_crossing" value="{{ transport_request.border_crossing }}">
+                            </div>
+                            <div class="rc-field">
+                                <label for="f-planned_loading_date">Дата загрузки</label>
+                                <input id="f-planned_loading_date" name="planned_loading_date" type="date"
+                                       value="{{ transport_request.planned_loading_date|date:'Y-m-d' }}">
+                            </div>
+                            <div class="rc-field wide">
+                                <label for="f-destination_country">Страна назначения</label>
+                                <select id="f-destination_country" name="destination_country">
+                                    <option value="">— не выбрана —</option>
+                                    {% for code, label in destination_countries %}
+                                    <option value="{{ code }}" {% if transport_request.destination_country == code %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                                <span class="rc-note">От страны и процедуры зависит обязательный пакет документов.</span>
+                            </div>
+                            <div class="rc-field wide">
+                                <label for="f-declaration_type">Тип декларации (на заявку)</label>
+                                <select id="f-declaration_type" name="declaration_type">
+                                    <option value="">— не выбран —</option>
+                                    {% for code, label in declaration_types %}
+                                    <option value="{{ code }}" {% if transport_request.declaration_type == code %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                                <span class="rc-note">Общая декларация на авто без отдельной — разбивка в блоке «Декларации».</span>
+                            </div>
+                            <div class="rc-field wide">
+                                <label for="f-comment">Комментарий клиента</label>
+                                <textarea id="f-comment" name="comment" rows="2">{{ transport_request.comment }}</textarea>
+                            </div>
+                            <div class="rc-field wide">
+                                <label for="f-staff_comment">Наш комментарий (виден клиенту)</label>
+                                <textarea id="f-staff_comment" name="staff_comment" rows="2">{{ transport_request.staff_comment }}</textarea>
+                            </div>
+                        </div>
+                        <div class="rc-save-row">
+                            <button type="submit" class="pc-action primary">Сохранить данные</button>
+                            <span class="rc-status-msg" id="rc-fields-result"></span>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </aside>
+    </div>
+</div>
+
+{# ── Просмотрщик файлов ──────────────────────────────────────────────── #}
+<div class="rc-viewer" id="rc-viewer" role="dialog" aria-modal="true" aria-label="Просмотр документа">
+    <div class="rc-viewer-bar">
+        <div style="min-width:0;">
+            <div class="rc-viewer-title" id="rc-viewer-title">—</div>
+            <div class="rc-viewer-sub" id="rc-viewer-sub"></div>
+        </div>
+        <span class="rc-spacer"></span>
+        <button type="button" class="rc-viewer-btn" id="rc-viewer-prev" title="Предыдущий файл (←)">←</button>
+        <button type="button" class="rc-viewer-btn" id="rc-viewer-next" title="Следующий файл (→)">→</button>
+        <a class="rc-viewer-btn" id="rc-viewer-download" href="#" download>⤓ Скачать</a>
+        <a class="rc-viewer-btn" id="rc-viewer-tab" href="#" target="_blank" rel="noopener">↗ В новой вкладке</a>
+        <button type="button" class="rc-viewer-btn" id="rc-viewer-close" title="Закрыть (Esc)">✕</button>
+    </div>
+    <div class="rc-viewer-stage" id="rc-viewer-stage"></div>
+</div>
+
+<script>
+(function() {
+    var csrf = (document.querySelector('[name=csrfmiddlewaretoken]') || {}).value || '';
+    function post(url, data) {
+        return fetch(url, {
+            method: 'POST',
+            headers: {'X-CSRFToken': csrf},
+            body: data,
+            credentials: 'same-origin',
+        }).then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); });
+    }
+    function show(el, text, isError) {
+        if (!el) return;
+        el.textContent = text;
+        el.style.color = isError ? '#b91c1c' : '#16a34a';
+        setTimeout(function() { el.textContent = ''; }, 4000);
+    }
+
+    // ── Табы рабочей области ───────────────────────────────────────────
+    var panels = {};
+    document.querySelectorAll('.rc-panel').forEach(function(panel) {
+        panels[panel.dataset.panel] = panel;
+    });
+    var mailVisited = false;
+    function activateTab(name) {
+        if (!panels[name]) return;
+        document.querySelectorAll('.rc-tab').forEach(function(tab) {
+            tab.classList.toggle('active', tab.dataset.tab === name);
+        });
+        Object.keys(panels).forEach(function(key) {
+            panels[key].hidden = key !== name;
+        });
+        if (name === 'warehouse' && !mailVisited) {
+            mailVisited = true;
+            if (window.TRMailPanel && window.TRMailPanel.markAllRead) window.TRMailPanel.markAllRead();
+        }
+    }
+    document.querySelectorAll('.rc-tab').forEach(function(tab) {
+        tab.addEventListener('click', function() { activateTab(tab.dataset.tab); });
+    });
+
+    var mailBadge = document.getElementById('rc-tab-mail-badge');
+    if (mailBadge) {
+        // Счётчик писем и непрочитанных берём из готовой разметки панели.
+        var mailList = document.getElementById('tr-emails-list');
+        var total = mailList ? mailList.querySelectorAll('.cm-msg').length : 0;
+        var unread = mailList ? mailList.querySelectorAll('.cm-msg[data-unread="1"]').length : 0;
+        mailBadge.textContent = unread ? (unread + '/' + total) : total;
+        if (unread) mailBadge.classList.add('alert');
+    }
+
+    // ── Слоты документов: раскрыт максимум один на авто ────────────────
+    function closeSlots(carEl) {
+        carEl.querySelectorAll('.rc-slot').forEach(function(slot) { slot.hidden = true; });
+        carEl.querySelectorAll('.rc-tile').forEach(function(tile) { tile.classList.remove('active'); });
+    }
+    function openSlot(key) {
+        var slot = document.querySelector('.rc-slot[data-slot="' + key + '"]');
+        if (!slot) return;
+        var carEl = slot.closest('.rc-car');
+        var wasOpen = !slot.hidden;
+        closeSlots(carEl);
+        if (wasOpen) return;
+        slot.hidden = false;
+        var tile = carEl.querySelector('.rc-tile[data-slot-btn="' + key + '"]');
+        if (tile) tile.classList.add('active');
+        slot.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+    }
+    document.addEventListener('click', function(e) {
+        var tile = e.target.closest('.rc-tile[data-slot-btn]');
+        if (tile) { openSlot(tile.dataset.slotBtn); return; }
+        var closeBtn = e.target.closest('[data-slot-close]');
+        if (closeBtn) closeSlots(closeBtn.closest('.rc-car'));
+    });
+
+    // ── Просмотрщик файлов ─────────────────────────────────────────────
+    var viewer = document.getElementById('rc-viewer');
+    // Переносим в body: внутри #content он попадает в чужой контекст
+    // наложения и оказывается под липкой шапкой админки.
+    document.body.appendChild(viewer);
+    var stage = document.getElementById('rc-viewer-stage');
+    var vTitle = document.getElementById('rc-viewer-title');
+    var vSub = document.getElementById('rc-viewer-sub');
+    var vPrev = document.getElementById('rc-viewer-prev');
+    var vNext = document.getElementById('rc-viewer-next');
+    var vDownload = document.getElementById('rc-viewer-download');
+    var vTab = document.getElementById('rc-viewer-tab');
+    var files = [];
+    var index = 0;
+    var objectUrl = null;
+
+    function releaseObjectUrl() {
+        if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
+    }
+    function extensionOf(name) {
+        var match = /\.([a-z0-9]+)(?:$|\?)/i.exec(name || '');
+        return match ? match[1].toLowerCase() : '';
+    }
+    function renderFallback(file, note) {
+        stage.innerHTML = '';
+        var box = document.createElement('div');
+        box.className = 'rc-viewer-fallback';
+        box.textContent = note || ('Файл «' + file.name + '» нельзя показать в браузере — скачайте его.');
+        stage.appendChild(box);
+    }
+    function renderFile(i) {
+        if (!files.length) return;
+        index = (i + files.length) % files.length;
+        var file = files[index];
+        releaseObjectUrl();
+        stage.innerHTML = '';
+        vTitle.textContent = file.name;
+        vSub.textContent = file.label + ' · ' + (index + 1) + ' из ' + files.length;
+        vDownload.href = file.url;
+        vTab.href = file.url;
+        vPrev.disabled = vNext.disabled = files.length < 2;
+
+        var ext = extensionOf(file.name) || extensionOf(file.url);
+        if (['jpg', 'jpeg', 'png', 'gif', 'webp'].indexOf(ext) !== -1) {
+            var img = document.createElement('img');
+            img.alt = file.name;
+            img.src = file.url;
+            stage.appendChild(img);
+            return;
+        }
+        if (ext !== 'pdf') {
+            renderFallback(file);
+            return;
+        }
+        // PDF грузим как blob: /media/ отдаётся с X-Frame-Options: DENY,
+        // прямой src в iframe браузер блокирует.
+        renderFallback(file, 'Загрузка…');
+        var requested = file.url;
+        fetch(file.url, {credentials: 'same-origin'})
+            .then(function(r) { return r.ok ? r.blob() : Promise.reject(r.status); })
+            .then(function(blob) {
+                if (files[index].url !== requested) return;
+                stage.innerHTML = '';
+                objectUrl = URL.createObjectURL(blob);
+                var frame = document.createElement('iframe');
+                frame.title = file.name;
+                frame.src = objectUrl;
+                stage.appendChild(frame);
+            })
+            .catch(function() { renderFallback(file); });
+    }
+    function openViewer(list, start) {
+        files = list;
+        viewer.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        renderFile(start);
+    }
+    function closeViewer() {
+        viewer.classList.remove('open');
+        document.body.style.overflow = '';
+        releaseObjectUrl();
+        stage.innerHTML = '';
+        files = [];
+    }
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('.rc-file-open');
+        if (!btn) return;
+        e.preventDefault();
+        // Листаем по всем файлам этого авто, а не только текущего слота.
+        var scope = btn.closest('.rc-car') || document;
+        var buttons = Array.prototype.slice.call(scope.querySelectorAll('.rc-file-open'));
+        var list = buttons.map(function(node) {
+            return {url: node.dataset.fileUrl, name: node.dataset.fileName, label: node.dataset.fileLabel || ''};
+        });
+        openViewer(list, buttons.indexOf(btn));
+    });
+    document.getElementById('rc-viewer-close').addEventListener('click', closeViewer);
+    viewer.addEventListener('click', function(e) {
+        if (e.target === viewer) closeViewer();
+    });
+    vPrev.addEventListener('click', function() { renderFile(index - 1); });
+    vNext.addEventListener('click', function() { renderFile(index + 1); });
+    document.addEventListener('keydown', function(e) {
+        if (!viewer.classList.contains('open')) return;
+        if (e.key === 'Escape') closeViewer();
+        else if (e.key === 'ArrowLeft') renderFile(index - 1);
+        else if (e.key === 'ArrowRight') renderFile(index + 1);
+    });
+
+    // ── Правка полей заявки ────────────────────────────────────────────
+    var fieldsForm = document.getElementById('rc-fields-form');
+    if (fieldsForm) {
+        fieldsForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            var out = document.getElementById('rc-fields-result');
+            post('{% url "admin_request_update" transport_request.pk %}', new FormData(fieldsForm))
+                .then(function(res) {
+                    if (res.ok && res.data.ok) {
+                        show(out, res.data.updated.length ? 'Сохранено' : 'Без изменений');
+                    } else {
+                        var errs = res.data && res.data.errors ? Object.values(res.data.errors).join('; ') : 'Ошибка';
+                        show(out, errs, true);
+                    }
+                })
+                .catch(function(err) { show(out, String(err), true); });
+        });
+    }
+
+    // ── Статус и состояние по складу ───────────────────────────────────
+    var statusBtn = document.getElementById('rc-status-save');
+    if (statusBtn) {
+        statusBtn.addEventListener('click', function() {
+            var body = new FormData();
+            body.append('status', document.getElementById('rc-status').value);
+            body.append('warehouse_state', document.getElementById('rc-wh-state').value);
+            body.append('awaiting_client_docs', document.getElementById('rc-awaiting').checked ? '1' : '0');
+            var out = document.getElementById('rc-status-result');
+            post('{% url "admin_request_status_set" transport_request.pk %}', body)
+                .then(function(res) {
+                    if (res.ok && res.data.ok) {
+                        var whChip = document.getElementById('rc-wh-state-chip');
+                        if (whChip) whChip.textContent = 'склад: ' + res.data.warehouse_state_display;
+                        var stChip = document.getElementById('rc-status-chip');
+                        if (stChip) stChip.textContent = res.data.status_display;
+                        show(out, 'Сохранено');
+                    } else {
+                        show(out, (res.data && res.data.error) || 'Ошибка', true);
+                    }
+                })
+                .catch(function(err) { show(out, String(err), true); });
+        });
+    }
+
+    // ── Сообщение клиенту ──────────────────────────────────────────────
+    var msgForm = document.getElementById('rc-msg-form');
+    if (msgForm) {
+        msgForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            var out = document.getElementById('rc-msg-result');
+            post('{% url "admin_request_message_send" transport_request.pk %}', new FormData(msgForm))
+                .then(function(res) {
+                    if (!res.ok || !res.data.ok) {
+                        show(out, (res.data && res.data.error) || 'Ошибка', true);
+                        return;
+                    }
+                    var msg = res.data.message;
+                    var thread = document.getElementById('rc-thread');
+                    var empty = document.getElementById('rc-thread-empty');
+                    if (empty) empty.remove();
+                    var div = document.createElement('div');
+                    div.className = 'rc-msg staff';
+                    var meta = document.createElement('div');
+                    meta.className = 'rc-msg-meta';
+                    meta.textContent = 'Мы · ' + msg.author + ' · ' + msg.created_at;
+                    div.appendChild(meta);
+                    if (msg.body) {
+                        var body = document.createElement('div');
+                        body.className = 'rc-msg-body';
+                        body.textContent = msg.body;
+                        div.appendChild(body);
+                    }
+                    if (msg.requested && msg.requested.length) {
+                        var docs = document.createElement('div');
+                        docs.className = 'rc-msg-docs';
+                        msg.requested.forEach(function(label) {
+                            var chip = document.createElement('span');
+                            chip.className = 'rc-chip warn';
+                            chip.textContent = label;
+                            docs.appendChild(chip);
+                        });
+                        div.appendChild(docs);
+                    }
+                    thread.appendChild(div);
+                    thread.scrollTop = thread.scrollHeight;
+                    msgForm.reset();
+                    var d = res.data.delivery || {};
+                    show(out, 'Отправлено (email: ' + (d.email || 0) + ', telegram: ' + (d.telegram || 0) + ')');
+                })
+                .catch(function(err) { show(out, String(err), true); });
+        });
+    }
+
+    // ── Возврат после действия с документом: подсветить нужное авто ────
+    var params = new URLSearchParams(window.location.search);
+    var carParam = params.get('car');
+    if (carParam) {
+        var carEl = document.getElementById('car-' + carParam);
+        if (carEl) {
+            carEl.classList.add('target');
+            carEl.scrollIntoView({block: 'center', behavior: 'smooth'});
+            setTimeout(function() { carEl.classList.remove('target'); }, 2500);
+        }
+    }
+})();
+</script>
+{% endblock %}

@@ -700,6 +700,89 @@ def test_build_car_package_includes_title_and_skips_signature(transport_request,
         merged.close()
 
 
+def test_title_from_car_lands_in_package(transport_request, car, settings, tmp_path):
+    from core.services import transport_package_actions as actions
+
+    settings.MEDIA_ROOT = str(tmp_path)
+    car.title_scan.save(
+        "title.pdf", SimpleUploadedFile("title.pdf", _tiny_pdf("title"), content_type="application/pdf")
+    )
+    car.save(update_fields=["title_scan"])
+
+    assert actions.sync_title_documents(transport_request) == 1
+    doc = transport_request.documents.get(doc_type="TITLE")
+    assert doc.is_generated
+    # Повторный вызов дубликат не создаёт.
+    assert actions.sync_title_documents(transport_request) == 0
+    assert transport_request.documents.filter(doc_type="TITLE").count() == 1
+
+
+def test_title_not_attached_when_car_has_none(transport_request, car):
+    from core.services import transport_package_actions as actions
+
+    assert actions.sync_title_documents(transport_request) == 0
+    assert not transport_request.documents.filter(doc_type="TITLE").exists()
+
+
+def test_package_pdf_keeps_single_title_page(transport_request, car, settings, tmp_path):
+    from core.services import transport_package_actions as actions
+
+    settings.MEDIA_ROOT = str(tmp_path)
+    car.title_scan.save(
+        "title.pdf", SimpleUploadedFile("title.pdf", _tiny_pdf("title"), content_type="application/pdf")
+    )
+    car.save(update_fields=["title_scan"])
+    actions.sync_title_documents(transport_request)
+
+    pdf_bytes = docs.build_car_package_pdf(transport_request, car)
+    import fitz
+
+    merged = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        # Тайтл лежит и в документах заявки, и в карточке авто — страница одна.
+        assert merged.page_count == 1
+    finally:
+        merged.close()
+
+
+def test_client_cannot_delete_title_added_by_us(logged_client, transport_request, car, settings, tmp_path):
+    from core.services import transport_package_actions as actions
+
+    settings.MEDIA_ROOT = str(tmp_path)
+    car.title_scan.save(
+        "title.pdf", SimpleUploadedFile("title.pdf", _tiny_pdf("title"), content_type="application/pdf")
+    )
+    car.save(update_fields=["title_scan"])
+    actions.sync_title_documents(transport_request)
+    doc = transport_request.documents.get(doc_type="TITLE")
+
+    url = reverse("website:transport_request_doc_delete", args=[transport_request.pk, doc.pk])
+    response = logged_client.post(url)
+    assert response.status_code == 302
+    assert transport_request.documents.filter(pk=doc.pk).exists()
+
+
+def test_client_can_upload_own_title(logged_client, transport_request, car, settings, tmp_path):
+    settings.MEDIA_ROOT = str(tmp_path)
+    upload = SimpleUploadedFile("my-title.pdf", _tiny_pdf("title"), content_type="application/pdf")
+    response = logged_client.post(
+        _doc_url(transport_request),
+        {"doc_type": "TITLE", "car": car.pk, "action": "save", "files": upload},
+    )
+    assert response.status_code == 302
+    doc = transport_request.documents.get(doc_type="TITLE")
+    assert not doc.is_generated
+
+
+def test_title_cannot_be_generated(logged_client, transport_request, car):
+    response = logged_client.post(
+        _doc_url(transport_request),
+        {"doc_type": "TITLE", "car": car.pk, "action": "generate"},
+    )
+    assert response.status_code == 302
+    assert not transport_request.documents.filter(doc_type="TITLE").exists()
+
+
 def test_download_packages_zip(logged_client, transport_request, car, settings, tmp_path):
     import zipfile
 

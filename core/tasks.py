@@ -890,6 +890,39 @@ def process_scan_job(self, job_id):
     return {"ok": True, "job_id": job.id, "status": job.status, "auto_applied": auto_applied}
 
 
+@shared_task(bind=True, max_retries=3, default_retry_delay=60, retry_backoff=True, soft_time_limit=540, time_limit=600)
+def process_transport_bulk_upload(self, upload_id):
+    """Разбор пакета документов заявки, присланного одним файлом.
+
+    Страницы уходят в Claude Vision, определяется тип каждой, исходник
+    режется на отдельные документы пакета (см.
+    ``core.services.transport_bulk_split``). Повторяем только временные
+    сбои Anthropic (лимиты, сеть, 5xx) — остальные ошибки сервис сам
+    пишет в статус загрузки текстом для клиента.
+    """
+    from core.models.website import TransportBulkUpload
+    from core.services.transport_bulk_split import TransientSplitError, split_upload
+
+    try:
+        upload = TransportBulkUpload.objects.get(pk=upload_id)
+    except TransportBulkUpload.DoesNotExist:
+        logger.warning("[bulk_split] Загрузка #%s не найдена", upload_id)
+        return {"ok": False, "reason": "not_found"}
+
+    try:
+        result = split_upload(upload)
+    except TransientSplitError as exc:
+        logger.warning("[bulk_split] Загрузка #%s: повтор после сбоя (%s)", upload_id, exc)
+        raise self.retry(exc=exc)
+    logger.info(
+        "[bulk_split] Загрузка #%s: статус %s, документов %d",
+        upload_id,
+        upload.status,
+        len(result.get("documents", [])),
+    )
+    return {"ok": upload.status == TransportBulkUpload.STATUS_DONE, "upload_id": upload_id}
+
+
 @shared_task(bind=True, max_retries=2, default_retry_delay=300, time_limit=120)
 def update_container_eta_task(self, container_id):
     """Обновить ETA одного контейнера из Track & Trace API его линии.

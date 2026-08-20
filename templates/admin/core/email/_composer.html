@@ -5,7 +5,7 @@ AutoTransport (и потенциально — в других местах). Н
 
 opts:
   mode:          'compose' | 'reply'
-  scope:         'container' | 'car' | 'autotransport'
+  scope:         'container' | 'car' | 'autotransport' | 'transportrequest'
   scopeId:       id карточки-источника
   parentEmailId: id родительского письма (только mode='reply')
   to, cc, bcc, subject, body, maxMb  — начальные значения
@@ -950,6 +950,7 @@ opts:
                 container: 'Новое письмо по контейнеру',
                 car: 'Новое письмо по машине',
                 autotransport: 'Новое письмо по рейсу',
+                transportrequest: 'Новое письмо складу по заявке',
             };
             composerTitle.textContent = titles[scope] || 'Новое письмо';
         }

@@ -65,6 +65,7 @@ from core.views_invoice_audit import (
     supplier_cost_link,
     supplier_cost_car_services,
 )
+from core.views import requests_board
 from core.views.labels import print_labels_settings, print_labels_sheet
 from core.views.agent_board import (
     tasks_board_page,
@@ -179,6 +180,59 @@ urlpatterns = [
     ),
     path("admin/tasks-board/task/<int:task_id>/delegate/", task_delegate_to_agent, name="task_delegate_to_agent"),
     path("admin/tasks-board/task/<int:task_id>/complete/", task_complete_from_board, name="task_complete_from_board"),
+    # ── Доска заявок на автовоз ──────────────────────────────────────────────
+    path("admin/requests/", requests_board.requests_board_page, name="admin_requests_board"),
+    path("admin/requests/<int:pk>/", requests_board.request_card_page, name="admin_request_card"),
+    path("admin/requests/<int:pk>/update/", requests_board.request_update, name="admin_request_update"),
+    path("admin/requests/<int:pk>/status/", requests_board.request_status_set, name="admin_request_status_set"),
+    path(
+        "admin/requests/<int:pk>/declarations/",
+        requests_board.request_declarations,
+        name="admin_request_declarations",
+    ),
+    path("admin/requests/<int:pk>/car/", requests_board.request_car_toggle, name="admin_request_car_toggle"),
+    path("admin/requests/<int:pk>/doc/", requests_board.request_doc_action, name="admin_request_doc_action"),
+    path(
+        "admin/requests/<int:pk>/doc/<int:doc_id>/delete/",
+        requests_board.request_doc_delete,
+        name="admin_request_doc_delete",
+    ),
+    path(
+        "admin/requests/<int:pk>/doc/<int:doc_id>/retype/",
+        requests_board.request_doc_retype,
+        name="admin_request_doc_retype",
+    ),
+    path(
+        "admin/requests/<int:pk>/bulk-upload/",
+        requests_board.request_bulk_upload,
+        name="admin_request_bulk_upload",
+    ),
+    path(
+        "admin/requests/<int:pk>/generate-all/",
+        requests_board.request_generate_all,
+        name="admin_request_generate_all",
+    ),
+    path(
+        "admin/requests/<int:pk>/package/<int:car_id>/",
+        requests_board.request_package_download,
+        name="admin_request_package_download",
+    ),
+    path("admin/requests/<int:pk>/message/", requests_board.request_message_send, name="admin_request_message_send"),
+    path(
+        "admin/requests/<int:pk>/warehouse-letter/",
+        requests_board.warehouse_letter_page,
+        name="admin_request_warehouse_letter",
+    ),
+    path(
+        "admin/requests/<int:pk>/warehouse-letter/send/",
+        requests_board.warehouse_letter_send,
+        name="admin_request_warehouse_letter_send",
+    ),
+    path(
+        "admin/requests/<int:pk>/create-autotransport/",
+        requests_board.request_create_autotransport,
+        name="admin_request_create_autotransport",
+    ),
     # ── Мониторинг системы (CPU/RAM/Disk/Services/Postgres/Redis) ────────────
     path("admin/system-monitor/", system_monitor_page, name="system_monitor"),
     path("admin/system-monitor/snapshot/", system_monitor_snapshot, name="system_monitor_snapshot"),

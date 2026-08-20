@@ -600,9 +600,11 @@ def _append_file_bytes(out_doc, data: bytes, filename: str) -> None:
 def build_car_package_pdf(transport_request, car) -> bytes | None:
     """Собрать единый PDF по авто: документы заявки + тайтл из админки.
 
-    Порядок страниц — как в ``TRANSPORT_DOCUMENT_TYPES`` (без подписи),
-    затем скан тайтла ``Car.title_scan``. Возвращает ``None``, если нечего
-    положить в пакет.
+    Порядок страниц — как в ``TRANSPORT_DOCUMENT_TYPES`` (без подписи).
+    Скан ``Car.title_scan`` добавляем в конец только если тайтла нет среди
+    документов заявки: обычно он прикрепляется в пакет автоматически
+    (``transport_package_actions.sync_title_documents``), и второй раз в
+    PDF он не нужен. Возвращает ``None``, если нечего положить в пакет.
     """
     import fitz
 
@@ -628,7 +630,8 @@ def build_car_package_pdf(transport_request, car) -> bytes | None:
                     exc,
                 )
 
-        title_data = _read_storage_file(getattr(car, "title_scan", None))
+        has_title_doc = any(doc.doc_type == "TITLE" for doc in docs)
+        title_data = None if has_title_doc else _read_storage_file(getattr(car, "title_scan", None))
         if title_data:
             title_name = os.path.basename(car.title_scan.name) if car.title_scan.name else "title.pdf"
             try:

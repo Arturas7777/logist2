@@ -42,6 +42,7 @@ MODEL_ICONS = {
     "clientdocument": "bi-file-earmark-arrow-up",
     "declarationrequest": "bi-file-earmark-ruled",
     "transportrequest": "bi-truck-flatbed",
+    "transportdocumentrule": "bi-list-check",
     "aichat": "bi-chat-dots-fill",
     "newspost": "bi-newspaper",
     "contactmessage": "bi-envelope-fill",
@@ -129,6 +130,12 @@ ADMIN_GROUPS = OrderedDict(
                 "icon": "bi-globe",
                 "collapsed": True,
                 "items": [
+                    {
+                        "name": "Доска заявок на автовоз",
+                        "url": "/admin/requests/",
+                        "icon": "bi-truck-flatbed",
+                        "match": "/admin/requests/",
+                    },
                     "clientuser",
                     "clientdocument",
                     "declarationrequest",
@@ -160,6 +167,7 @@ ADMIN_GROUPS = OrderedDict(
                     "siteproinvoicesync",
                     "emailgroup",
                     "emailingestfilter",
+                    "transportdocumentrule",
                     "carmodelimage",
                     "agentpolicy",
                     "user",

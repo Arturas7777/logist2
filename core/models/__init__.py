@@ -81,12 +81,14 @@ from .requisites import (  # noqa: E402, F401
     CounterpartyRequisitesMixin,
 )
 from .email import (  # noqa: E402, F401
+    CarEmailLink,
     ContainerEmail,
     ContainerEmailLink,
     EmailGroup,
     EmailGroupMember,
     EmailIngestFilter,
     GmailSyncState,
+    TransportRequestEmailLink,
 )
 from .invoice_audit import (  # noqa: E402, F401
     InvoiceAudit,
@@ -125,7 +127,8 @@ __all__ = [
     'AgentRun', 'AgentAction', 'AgentQuestion', 'AgentMemory', 'AgentPolicy',
     # реэкспорт из соседних файлов
     'Contact', 'ContactEmail', 'ContactPhone',
-    'ContainerEmail', 'ContainerEmailLink',
+    'ContainerEmail', 'ContainerEmailLink', 'CarEmailLink',
+    'TransportRequestEmailLink',
     'EmailGroup', 'EmailGroupMember', 'EmailIngestFilter', 'GmailSyncState',
     'InvoiceAudit', 'SupplierCost',
     'SystemMetric', 'UptimeCheck',

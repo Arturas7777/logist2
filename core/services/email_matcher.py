@@ -39,6 +39,9 @@ _CONTAINER_NUMBER_RE = re.compile(r"\b([A-Z]{4}\d{7})\b")
 # Границы \b чтобы не цеплять подстроки длинных строк.
 _VIN_RE = re.compile(r"\b([A-HJ-NPR-Z0-9]{17})\b")
 
+# Номер заявки на автовоз: TR-YYYYMMDD-NNN (см. ``TransportRequest.save``).
+_TRANSPORT_REQUEST_NUMBER_RE = re.compile(r"\b(TR-\d{8}-\d+)\b")
+
 # Чтобы не ловить "U1", "UV3" как букинги — нижний предел длины.
 _MIN_BOOKING_LEN = 4
 
@@ -59,6 +62,14 @@ class CarMatchHit:
     matched_by: str = "VIN"
 
 
+@dataclass(frozen=True)
+class TransportRequestMatchHit:
+    """Одна привязка письма к заявке на автовоз."""
+
+    request_id: int
+    matched_by: str = "THREAD"
+
+
 @dataclass
 class MatchResult:
     """Результат матчинга: все найденные контейнеры + «первичная» причина.
@@ -68,10 +79,14 @@ class MatchResult:
     ``car_hits`` — машины, упомянутые по VIN в subject/body. Линкуются в
     ``CarEmailLink``; НЕ попадают в ``hits`` (автолинк Car → Container
     не делаем — только если номер контейнера тоже упомянут).
+    ``transport_hits`` — заявки на автовоз: ответ склада в нашем треде или
+    письмо с номером заявки в теме/теле. Линкуются в
+    ``TransportRequestEmailLink``.
     """
 
     hits: list[MatchHit] = field(default_factory=list)
     car_hits: list[CarMatchHit] = field(default_factory=list)
+    transport_hits: list[TransportRequestMatchHit] = field(default_factory=list)
 
     @property
     def is_matched(self) -> bool:
@@ -162,7 +177,53 @@ def match_email_to_containers(
             )
         )
 
-    return MatchResult(hits=hits, car_hits=car_hits)
+    return MatchResult(
+        hits=hits,
+        car_hits=car_hits,
+        transport_hits=match_email_to_transport_requests(msg),
+    )
+
+
+def match_email_to_transport_requests(msg: ParsedMessage) -> list[TransportRequestMatchHit]:
+    """Заявки на автовоз, к которым нужно привязать письмо.
+
+    Приоритеты: тред (ответ склада на наше письмо-заявку) → In-Reply-To →
+    номер заявки ``TR-YYYYMMDD-NNN`` в теме/теле (склад ответил новым
+    письмом вне треда). Функция чистая: только читает БД.
+    """
+    from core.models.email import ContainerEmail, TransportRequestEmailLink
+
+    hits: list[TransportRequestMatchHit] = []
+    seen: set[int] = set()
+
+    def _add(rid: int, matched_by: str) -> None:
+        if rid in seen:
+            return
+        seen.add(rid)
+        hits.append(TransportRequestMatchHit(request_id=rid, matched_by=matched_by))
+
+    tid = (msg.thread_id or "").strip()
+    if tid:
+        for rid in (
+            TransportRequestEmailLink.objects.filter(email__thread_id=tid)
+            .values_list("request_id", flat=True)
+            .distinct()
+        ):
+            _add(rid, ContainerEmail.MATCHED_BY_THREAD)
+
+    irt = (msg.in_reply_to or "").strip()
+    if irt and not hits:
+        for rid in (
+            TransportRequestEmailLink.objects.filter(email__message_id=irt)
+            .values_list("request_id", flat=True)
+            .distinct()
+        ):
+            _add(rid, ContainerEmail.MATCHED_BY_THREAD)
+
+    for rid in _match_by_transport_request_numbers(f"{msg.subject}\n{msg.body_text}"):
+        _add(rid, ContainerEmail.MATCHED_BY_REQUEST_NUMBER)
+
+    return hits
 
 
 # ── Backward-compat-обёртка (может ещё где-то использоваться) ───────────
@@ -267,6 +328,18 @@ def _match_by_vins(text: str) -> list[int]:
     rows = list(Car.objects.filter(vin__in=candidates).values_list("id", "vin"))
     rows.sort(key=lambda row: order_map.get((row[1] or "").upper(), 1_000_000))
     return [cid for cid, _vin in rows]
+
+
+def _match_by_transport_request_numbers(text: str) -> list[int]:
+    """Возвращает id заявок на автовоз, номера которых упомянуты в тексте."""
+    from core.models.website import TransportRequest
+
+    if not text:
+        return []
+    candidates = set(_TRANSPORT_REQUEST_NUMBER_RE.findall(text.upper()))
+    if not candidates:
+        return []
+    return list(TransportRequest.objects.filter(number__in=candidates).values_list("id", flat=True))
 
 
 def _match_by_bookings(text: str, booking_index: dict[str, int]) -> list[int]:

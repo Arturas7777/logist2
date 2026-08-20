@@ -1,0 +1,244 @@
+{% extends "admin/custom_page_base.html" %}
+{% load static %}
+
+{% comment %}
+Доска заявок на автовоз — /admin/requests/.
+
+Карточный список в стиле кабинета клиента: табы по состоянию, поиск,
+сводка по машинам и полноте пакета документов, бейджи непрочитанного
+(ответы клиента и письма склада). Клик по карточке — карточка заявки.
+
+Компоненты берутся из static/css/admin_custom_pages.css (.cm-page,
+.type-tabs, .pc-actions, .summary-strip); специфичное — ниже в page_style.
+{% endcomment %}
+
+{% block page_style %}
+<style>
+.rb-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 18px;
+}
+.rb-search {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+.rb-search input[type="search"] {
+    padding: 8px 12px;
+    border: 1px solid var(--cm-border, #ebebf0);
+    border-radius: var(--cm-radius-xs, 8px);
+    font-size: 13px;
+    min-width: 260px;
+    background: #fff;
+}
+.rb-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+    gap: 16px;
+}
+.rb-card {
+    background: var(--cm-card, #fff);
+    border-radius: var(--cm-radius, 14px);
+    box-shadow: var(--cm-shadow-card, 0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08));
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: box-shadow .15s ease, transform .15s ease;
+}
+.rb-card:hover {
+    box-shadow: 0 6px 20px rgba(0,0,0,.10);
+    transform: translateY(-1px);
+}
+.rb-card-head {
+    padding: 14px 18px;
+    background: #ededf2;
+    border-bottom: 1px solid rgba(0,0,0,.06);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.rb-num {
+    font-weight: 700;
+    font-size: .95rem;
+    color: var(--cm-text, #1a1a2e);
+    text-decoration: none;
+}
+.rb-num:hover { color: var(--cm-purple, #6c5ce7); }
+.rb-client { font-size: .82rem; color: var(--cm-text-secondary, #6b7280); }
+.rb-head-right { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.rb-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+.rb-facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px 14px;
+    font-size: .8rem;
+}
+.rb-fact-label { color: var(--cm-text-secondary, #6b7280); font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; }
+.rb-fact-value { color: var(--cm-text, #1a1a2e); font-weight: 600; }
+.rb-cars { display: flex; flex-direction: column; gap: 6px; }
+.rb-car {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 6px 10px;
+    background: var(--cm-bg, #f5f6fa);
+    border-radius: var(--cm-radius-xs, 8px);
+    font-size: .78rem;
+}
+.rb-vin { font-family: 'Courier New', monospace; font-weight: 600; }
+.rb-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: .7rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.rb-chip.ok { background: rgba(16,185,129,.12); color: #047857; }
+.rb-chip.warn { background: rgba(245,158,11,.15); color: #92400e; }
+.rb-chip.info { background: rgba(108,92,231,.12); color: #4c3dcc; }
+.rb-chip.muted { background: rgba(148,163,184,.18); color: #475569; }
+.rb-chip.alert { background: rgba(239,68,68,.14); color: #b91c1c; }
+.rb-empty {
+    padding: 60px 20px;
+    text-align: center;
+    color: var(--cm-text-secondary, #6b7280);
+    background: var(--cm-card, #fff);
+    border-radius: var(--cm-radius, 14px);
+}
+.rb-missing { font-size: .74rem; color: #b45309; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cm-page wide">
+    <h1>Заявки на автовоз</h1>
+
+    <div class="rb-toolbar">
+        <div class="type-tabs">
+            {% for tab in tabs %}
+            <a class="type-tab {% if tab.active %}active{% endif %}"
+               href="?tab={{ tab.code }}{% if search %}&q={{ search|urlencode }}{% endif %}">
+                {{ tab.label }} <span class="rb-chip muted">{{ tab.count }}</span>
+            </a>
+            {% endfor %}
+        </div>
+        <form class="rb-search" method="get">
+            <input type="hidden" name="tab" value="{{ active_tab }}">
+            <input type="search" name="q" value="{{ search }}"
+                   placeholder="Номер, клиент, VIN, перевозчик, тягач, водитель">
+            <button type="submit" class="pc-action primary">Найти</button>
+            {% if search %}<a class="pc-action outline" href="?tab={{ active_tab }}">Сброс</a>{% endif %}
+        </form>
+    </div>
+
+    {% if total_unread %}
+    <div class="summary-strip">
+        <span class="summary-chip">Новых ответов клиентов: <b>{{ total_unread }}</b></span>
+    </div>
+    {% endif %}
+
+    {% if not cards %}
+    <div class="rb-empty">
+        <div style="font-size:38px;opacity:.4;">📋</div>
+        <p>Заявок в этой группе нет.</p>
+    </div>
+    {% else %}
+    <div class="rb-grid">
+        {% for card in cards %}
+        {% with tr=card.request %}
+        <div class="rb-card">
+            <div class="rb-card-head">
+                <a class="rb-num" href="{{ card.url }}">{{ tr.number }}</a>
+                <span class="rb-client">{{ tr.client.name }}</span>
+                <span class="rb-head-right">
+                    {% if card.unread %}<span class="rb-chip alert">✉ {{ card.unread }} от клиента</span>{% endif %}
+                    {% if card.unread_emails %}<span class="rb-chip info">📥 {{ card.unread_emails }} от склада</span>{% endif %}
+                    {% if tr.destination_country %}<span class="rb-chip muted">{{ tr.get_destination_country_display }}</span>{% endif %}
+                    <span class="rb-chip muted">{{ tr.get_status_display }}</span>
+                    {% if tr.warehouse_state != "NOT_SENT" %}
+                    <span class="rb-chip {% if tr.warehouse_state == 'CONFIRMED' %}ok{% elif tr.warehouse_state == 'REJECTED' %}alert{% else %}info{% endif %}">
+                        {{ tr.get_warehouse_state_display }}
+                    </span>
+                    {% endif %}
+                </span>
+            </div>
+
+            <div class="rb-body">
+                <div class="rb-facts">
+                    <div>
+                        <div class="rb-fact-label">Перевозчик</div>
+                        <div class="rb-fact-value">{{ tr.carrier_name|default:"—" }}</div>
+                        {% if tr.carrier_eori %}<div class="rb-client">EORI {{ tr.carrier_eori }}</div>{% endif %}
+                    </div>
+                    <div>
+                        <div class="rb-fact-label">Тягач / прицеп</div>
+                        <div class="rb-fact-value">{{ tr.truck_number|default:"—" }}{% if tr.trailer_number %} / {{ tr.trailer_number }}{% endif %}</div>
+                    </div>
+                    <div>
+                        <div class="rb-fact-label">Водитель</div>
+                        <div class="rb-fact-value">{{ tr.driver_name|default:"—" }}</div>
+                        {% if tr.driver_phone %}<div class="rb-client">{{ tr.driver_phone }}</div>{% endif %}
+                    </div>
+                    <div>
+                        <div class="rb-fact-label">Загрузка / граница</div>
+                        <div class="rb-fact-value">{{ tr.planned_loading_date|date:"d.m.Y"|default:"—" }}</div>
+                        {% if tr.border_crossing %}<div class="rb-client">{{ tr.border_crossing }}</div>{% endif %}
+                    </div>
+                </div>
+
+                {% if card.declarations|length > 1 %}
+                <div class="rb-cars">
+                    <div class="rb-car">
+                        <span class="rb-fact-label">Декларации ({{ card.declarations|length }})</span>
+                        {% for decl in card.declarations %}
+                        <span class="rb-chip info">
+                            №{{ forloop.counter }} {{ decl.type_display|default:"тип не выбран" }} · {{ decl.cars_count }} авто
+                        </span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="rb-cars">
+                    {% for row in card.cars %}
+                    <div class="rb-car">
+                        <span class="rb-vin">{{ row.car.vin }}</span>
+                        <span>{{ row.car.brand }}{% if row.car.year %} {{ row.car.year }}{% endif %}</span>
+                        {% if row.warehouse %}<span class="rb-chip muted">{{ row.warehouse }}</span>{% endif %}
+                        {% if row.container %}<span class="rb-chip muted">{{ row.container }}</span>{% endif %}
+                        <span class="rb-chip info">{{ row.declaration }}</span>
+                        {% if row.is_complete %}
+                        <span class="rb-chip ok">пакет полный</span>
+                        {% else %}
+                        <span class="rb-chip warn">нет: {{ row.missing|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                    {% empty %}
+                    <div class="rb-missing">В заявке нет автомобилей.</div>
+                    {% endfor %}
+                </div>
+
+                {% if card.readiness.blockers %}
+                <div class="rb-missing">⚠ {{ card.readiness.blockers|join:" " }}</div>
+                {% endif %}
+
+                <div class="pc-actions">
+                    <a class="pc-action primary" href="{{ card.url }}">Открыть карточку</a>
+                    <a class="pc-action outline" href="{% url 'admin:core_transportrequest_change' tr.pk %}">В админке</a>
+                </div>
+            </div>
+        </div>
+        {% endwith %}
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -6,26 +6,28 @@ from urllib.parse import quote
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.files.base import ContentFile
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
 from core.models.website import (
-    CLIENT_DOCUMENT_ALLOWED_EXTENSIONS,
     TRANSPORT_DOCUMENT_TYPES,
     TRANSPORT_UPLOAD_ONLY_TYPES,
     ClientUser,
-    TransportDocumentPackage,
     TransportRequest,
     TransportRequestDocument,
+    TransportRequestMessage,
 )
+from core.services import transport_bulk_split as bulk_split
 from core.services import transport_docs as docs_service
+from core.services import transport_package_actions as package_actions
 from core.services.transport_docs import PackageDataError
+from core.services.transport_request_check import required_doc_types
 
-from .forms import MAX_UPLOAD_SIZE, TransportRequestForm, client_requestable_cars
+from .forms import TransportRequestForm, client_requestable_cars
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +51,22 @@ def _client_requests(client):
     return (
         TransportRequest.objects.filter(client=client)
         .exclude(status="CANCELLED")
-        .prefetch_related("cars", "documents", "doc_packages")
+        .prefetch_related("cars", "documents", "doc_packages", "messages__car", "bulk_uploads")
     )
+
+
+def _attach_messages(transport_requests):
+    """Вешает на заявки данные переписки для шаблона карточки.
+
+    Считаем в Python по уже предзагруженным ``messages`` — иначе на каждую
+    заявку ушло бы по два запроса за счётчиками.
+    """
+    labels = dict(TRANSPORT_DOCUMENT_TYPES)
+    for tr in transport_requests:
+        msgs = list(tr.messages.all())
+        tr.msg_list = msgs
+        tr.unread_for_client = sum(1 for m in msgs if m.is_from_staff and m.read_by_client_at is None)
+        tr.pending_doc_labels = [labels.get(code, code) for code in tr.pending_requested_doc_types()]
 
 
 def _get_client(request):
@@ -82,40 +98,12 @@ def _known_carriers_json(client):
     return json.dumps(carriers, ensure_ascii=False)
 
 
-# Поля данных пакета, которые принимает каждое модальное окно.
-_PACKAGE_FIELDS = {
-    "PASSPORT": [
-        "buyer_name",
-        "buyer_name_ru",
-        "buyer_birth_date",
-        "buyer_passport_number",
-        "buyer_passport_issue_date",
-        "buyer_address",
-        "buyer_address_ru",
-    ],
-    "INVOICE": ["invoice_number", "invoice_date", "invoice_amount"],
-    "PAYMENT_ORDER": [],
-    "LETTER_USA": [],
-    "OBLIGATION": [],
-    "CONTRACT": [
-        "contract_number",
-        "contract_date",
-        "carrier_company",
-        "carrier_address",
-        "carrier_director",
-        "carrier_regon",
-        "carrier_nip",
-        "carrier_krs",
-    ],
-    "SIGNATURE": [],
-    "OTHER": [],
-}
-
 _DOC_TYPE_LABELS = dict(TRANSPORT_DOCUMENT_TYPES)
 
 # Иконка для типа документа пакета: (icon, color).
 # icon: класс bi-* | "img:static/path" | "data:..." (data-URI).
 _DOC_TYPE_ICONS = {
+    "TITLE": ("bi-file-earmark-ruled", "#e8590c"),
     "PASSPORT": (_svg_data_uri(_ICON_PASSPORT_SVG), "#6f42c1"),
     "INVOICE": ("bi-currency-dollar", "#0ca678"),
     "SIGNATURE": ("bi-pen", "#228be6"),
@@ -148,17 +136,38 @@ def _open_doc_url(transport_request, doc_type, car_id=""):
 
 def _docs_context(transport_request):
     """Секции документов одной заявки: слоты по каждому авто."""
+    added_titles = package_actions.sync_title_documents(transport_request)
     cars = list(transport_request.cars.all())
     package_data = {p.car_id: p.data for p in transport_request.doc_packages.all()}
+    bulk_by_car: dict[int, list] = {}
+    for upload in transport_request.bulk_uploads.all():
+        bulk_by_car.setdefault(upload.car_id, []).append(upload)
+    # Прикреплённые только что тайтлы в prefetch не попали — перечитываем.
+    documents = (
+        TransportRequestDocument.objects.filter(request=transport_request)
+        if added_titles
+        else transport_request.documents.all()
+    )
     docs_by_car = {car.pk: {doc_type: [] for doc_type, _ in TRANSPORT_DOCUMENT_TYPES} for car in cars}
-    for doc in transport_request.documents.all():
+    for doc in documents:
         if doc.car_id in docs_by_car:
             docs_by_car[doc.car_id][doc.doc_type].append(doc)
 
+    # Какие документы обязательны — зависит от страны и процедуры заявки
+    # (требования таможни, ``TransportDocumentRule``). Клиенту показываем
+    # это прямо в списке документов, чтобы он не гадал, что ещё нужно.
+    types_by_car = transport_request.declaration_types_by_car()
+    required_cache: dict[str, tuple[str, ...]] = {}
+
     doc_sections = []
     for car in cars:
+        procedure = types_by_car.get(car.pk) or ""
+        if procedure not in required_cache:
+            required_cache[procedure] = required_doc_types(procedure, transport_request.destination_country)
+        required_types = required_cache[procedure]
         slots = []
         present_icons = []
+        missing_labels = []
         for doc_type, label in TRANSPORT_DOCUMENT_TYPES:
             docs = docs_by_car[car.pk][doc_type]
             icon, color = _DOC_TYPE_ICONS.get(doc_type, ("bi-file-earmark", "#6c757d"))
@@ -175,6 +184,9 @@ def _docs_context(transport_request):
                 {
                     "doc": doc,
                     "display_name": label if idx == 1 else f"{label} {idx}",
+                    # Тайтл, прикреплённый нами из карточки авто: клиенту его
+                    # не удалять (вернётся сам) и не перекладывать в другой тип.
+                    "is_system_title": doc_type == "TITLE" and doc.is_generated,
                 }
                 for idx, doc in enumerate(ordered, start=1)
             ]
@@ -183,6 +195,11 @@ def _docs_context(transport_request):
                 "label": label,
                 "docs": ordered,
                 "doc_rows": doc_rows,
+                # «Остальное» клиент не заполняет вручную: пакет загружается
+                # через «Одним файлом», а нераспознанное оседает в этом слоте.
+                "is_bulk": doc_type == "OTHER",
+                "is_required": doc_type in required_types,
+                "is_missing": doc_type in required_types and not docs,
                 "can_generate": doc_type not in TRANSPORT_UPLOAD_ONLY_TYPES,
                 "icon": icon_bi,
                 "icon_img": icon_img,
@@ -191,6 +208,8 @@ def _docs_context(transport_request):
                 "icon_color": color,
             }
             slots.append(slot)
+            if slot["is_missing"]:
+                missing_labels.append(label)
             if ordered:
                 latest = ordered[-1]
                 name = (latest.filename or "").lower()
@@ -208,7 +227,17 @@ def _docs_context(transport_request):
                         "is_image": name.endswith((".jpg", ".jpeg", ".png", ".gif", ".webp")),
                     }
                 )
-        doc_sections.append({"car": car, "slots": slots, "present_icons": present_icons})
+        uploads = bulk_by_car.get(car.pk, [])
+        doc_sections.append(
+            {
+                "car": car,
+                "slots": slots,
+                "present_icons": present_icons,
+                "bulk_uploads": uploads,
+                "bulk_running": any(u.is_running for u in uploads),
+                "missing_labels": missing_labels,
+            }
+        )
     return {
         "doc_sections": doc_sections,
         "package_data": {str(car.pk): package_data.get(car.pk, {}) for car in cars},
@@ -218,21 +247,29 @@ def _docs_context(transport_request):
 def _docs_map_context(transport_requests):
     """Документы всех заявок списка + JSON для JS-модалок.
 
-    На каждый объект заявки вешается ``doc_sections`` для шаблона карточек.
+    На каждый объект заявки вешается ``doc_sections`` для шаблона карточек и
+    данные переписки с менеджером.
     """
+    _attach_messages(transport_requests)
     package_by_request = {}
     action_urls = {}
     generate_all_urls = {}
+    bulk_urls = {}
+    bulk_status_urls = {}
     for tr in transport_requests:
         ctx = _docs_context(tr)
         tr.doc_sections = ctx["doc_sections"]
         package_by_request[str(tr.pk)] = ctx["package_data"]
         action_urls[str(tr.pk)] = reverse("website:transport_request_doc_action", args=[tr.pk])
         generate_all_urls[str(tr.pk)] = reverse("website:transport_request_generate_all", args=[tr.pk])
+        bulk_urls[str(tr.pk)] = reverse("website:transport_request_bulk_upload", args=[tr.pk])
+        bulk_status_urls[str(tr.pk)] = reverse("website:transport_request_bulk_status", args=[tr.pk])
     return {
         "package_data_by_request_json": json.dumps(package_by_request, ensure_ascii=False),
         "doc_action_urls_json": json.dumps(action_urls, ensure_ascii=False),
         "generate_all_urls_json": json.dumps(generate_all_urls, ensure_ascii=False),
+        "bulk_upload_urls_json": json.dumps(bulk_urls, ensure_ascii=False),
+        "bulk_status_urls_json": json.dumps(bulk_status_urls, ensure_ascii=False),
     }
 
 
@@ -439,9 +476,8 @@ def transport_request_submit(request, pk):
 
 
 def _wants_json(request):
-    return (
-        request.headers.get("x-requested-with") == "XMLHttpRequest"
-        or "application/json" in (request.headers.get("accept") or "")
+    return request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in (
+        request.headers.get("accept") or ""
     )
 
 
@@ -453,7 +489,7 @@ def _eligible_cars_for_request(client, transport_request):
 def _render_req_car_row(request, transport_request, section):
     return render_to_string(
         "website/partials/transport_req_car_row.html",
-        {"req": transport_request, "section": section},
+        {"req": transport_request, "section": section, "doc_types": TRANSPORT_DOCUMENT_TYPES},
         request=request,
     )
 
@@ -502,7 +538,7 @@ def transport_request_add_cars(request, pk):
     # Свежий prefetch для секций документов добавленных авто.
     transport_request = (
         TransportRequest.objects.filter(pk=transport_request.pk)
-        .prefetch_related("cars", "documents", "doc_packages")
+        .prefetch_related("cars", "documents", "doc_packages", "bulk_uploads")
         .get()
     )
     sections_by_car = {s["car"].pk: s for s in _docs_context(transport_request)["doc_sections"]}
@@ -590,102 +626,10 @@ def _get_editable_request(request, pk):
     return transport_request, None
 
 
-def _update_package_data(package, doc_type, post):
-    """Перенести поля модального окна в данные пакета (только присланные)."""
-    changed = False
-    for field in _PACKAGE_FIELDS.get(doc_type, []):
-        if field in post:
-            value = post.get(field, "").strip()
-            if package.data.get(field, "") != value:
-                package.data[field] = value
-                changed = True
-    if doc_type == "INVOICE":
-        # Доп. строки всегда перечитываем с формы (в т.ч. пустой список = очистка).
-        lines = docs_service.normalize_invoice_extra_lines_from_post(post)
-        if package.data.get("invoice_extra_lines") != lines:
-            package.data["invoice_extra_lines"] = lines
-            changed = True
-    if doc_type == "PAYMENT_ORDER":
-        # Checkbox: отсутствие в POST = выключено.
-        flag = "1" if post.get("payment_include_signature") in ("1", "on", "true", "yes") else ""
-        if package.data.get("payment_include_signature", "") != flag:
-            package.data["payment_include_signature"] = flag
-            changed = True
-    return changed
-
-
-# Подписи полей паспорта для сообщения «распознано автоматически».
-_PASSPORT_FIELD_LABELS = {
-    "buyer_name": "ФИО латиницей",
-    "buyer_passport_number": "номер паспорта",
-    "buyer_birth_date": "дата рождения",
-    "buyer_passport_issue_date": "дата выдачи",
-}
-
-
-def _apply_passport_ai(request, package, saved_docs):
-    """Автозаполнение данных пакета после загрузки паспорта.
-
-    * Из фото/скана главной страницы паспорта РБ распознаются номер,
-      ФИО латиницей и даты (заполняются только пустые поля — ручной
-      ввод не перетирается).
-    * Адрес, введённый кириллицей, транслитерируется в латиницу для
-      инвойса и платёжки, если латинский вариант ещё не заполнен.
-
-    Подпись из паспорта не вырезаем — качество crop слишком низкое;
-    нужна отдельная загрузка в слот «Подпись».
-    """
-    from core.services import passport_extractor
-
-    if not passport_extractor.ai_available():
-        if saved_docs:
-            messages.info(
-                request,
-                "«Паспорт»: автораспознавание сейчас недоступно — проверьте и заполните поля вручную.",
-            )
-        return
-    data = package.data
-
-    if saved_docs:
-        try:
-            extracted = passport_extractor.extract_passport(saved_docs[0].file.path)
-        except Exception:
-            logger.exception("Распознавание паспорта не удалось (документ %s)", saved_docs[0].pk)
-            extracted = {}
-        filled = []
-        for key, value in extracted.items():
-            if not (data.get(key) or "").strip():
-                data[key] = value
-                filled.append(_PASSPORT_FIELD_LABELS.get(key, key))
-        if filled:
-            messages.success(request, f"«Паспорт»: распознано автоматически — {', '.join(filled)}.")
-        elif not extracted:
-            messages.warning(
-                request,
-                "«Паспорт»: не удалось распознать данные с фото — заполните поля вручную.",
-            )
-
-    if not (data.get("buyer_address") or "").strip() and (data.get("buyer_address_ru") or "").strip():
-        latin = passport_extractor.transliterate_address(data["buyer_address_ru"])
-        if latin:
-            data["buyer_address"] = latin
-            messages.success(request, f"«Паспорт»: адрес транслитерирован — {latin}")
-
-
-def _signature_bytes(transport_request, car):
-    """Загруженная подпись (jpg/png) для простановки в генерируемые документы.
-
-    Повторно нормализуем при чтении: старые загрузки / слабый порог иначе
-    дают серый прямоугольник фона в PDF.
-    """
-    doc = transport_request.documents.filter(car=car, doc_type="SIGNATURE").order_by("-created_at").first()
-    if doc is None or not doc.file.name.lower().endswith((".jpg", ".jpeg", ".png")):
-        return None
-    with doc.file.open("rb") as fh:
-        raw = fh.read()
-    from core.services.signature_normalizer import normalize_signature_image
-
-    return normalize_signature_image(raw) or raw
+def _push_notices(request, notices):
+    """Разложить замечания сервиса в ``django.contrib.messages``."""
+    for level, text in notices:
+        getattr(messages, level, messages.info)(request, text)
 
 
 @login_required
@@ -702,115 +646,19 @@ def transport_request_doc_action(request, pk):
         return redirect(_edit_url(transport_request))
 
     car = get_object_or_404(transport_request.cars, pk=request.POST.get("car", ""))
-    package, _ = TransportDocumentPackage.objects.get_or_create(request=transport_request, car=car)
-    label = _DOC_TYPE_LABELS[doc_type]
-
-    # Валидация вводимых значений (дат/сумм) до сохранения.
     try:
-        _update_package_data(package, doc_type, request.POST)
-        for field in (
-            "buyer_birth_date",
-            "buyer_passport_issue_date",
-            "invoice_date",
-            "payment_date",
-            "contract_date",
-        ):
-            if field in _PACKAGE_FIELDS.get(doc_type, []):
-                docs_service.parse_date(package.data.get(field))
-        if "invoice_amount" in _PACKAGE_FIELDS.get(doc_type, []):
-            docs_service.parse_amount(package.data.get("invoice_amount"))
-    except PackageDataError as exc:
-        messages.error(request, f"«{label}»: {exc}")
-        return redirect(_edit_url(transport_request, car))
-
-    if request.POST.get("action") == "generate":
-        if doc_type in TRANSPORT_UPLOAD_ONLY_TYPES:
-            messages.error(request, f"«{label}» нельзя сгенерировать — загрузите реальный файл.")
-            return redirect(_edit_url(transport_request, car))
-        try:
-            filename, pdf_bytes, notices = docs_service.generate_document(
-                transport_request,
-                car,
-                package.data,
-                doc_type,
-                signature_bytes=_signature_bytes(transport_request, car),
-            )
-        except PackageDataError as exc:
-            package.save(update_fields=["data", "updated_at"])
-            messages.error(request, f"«{label}»: {exc}")
-            return redirect(_edit_url(transport_request, car))
-        package.save(update_fields=["data", "updated_at"])
-        # Пересгенерированный документ заменяет предыдущий сгенерированный.
-        for old in transport_request.documents.filter(car=car, doc_type=doc_type, is_generated=True):
-            old.file.delete(save=False)
-            old.delete()
-        TransportRequestDocument.objects.create(
-            request=transport_request,
+        notices = package_actions.apply_doc_action(
+            transport_request=transport_request,
             car=car,
             doc_type=doc_type,
-            file=ContentFile(pdf_bytes, name=filename),
-            is_generated=True,
-            uploaded_by=request.user,
+            post=request.POST,
+            files=request.FILES.getlist("files"),
+            user=request.user,
         )
-        messages.success(request, f"«{label}» сгенерирован.")
-        for notice in notices:
-            messages.info(request, f"«{label}»: {notice}")
+    except PackageDataError as exc:
+        messages.error(request, str(exc))
         return redirect(_edit_url(transport_request, car))
-
-    # Сохранение данных + загрузка файлов.
-    files = request.FILES.getlist("files")
-    saved_docs = []
-    for upload in files:
-        extension = upload.name.rsplit(".", 1)[-1].lower() if "." in upload.name else ""
-        if extension not in CLIENT_DOCUMENT_ALLOWED_EXTENSIONS:
-            messages.error(request, f"«{label}»: файл {upload.name} — допустимы только PDF, JPG и PNG.")
-            continue
-        if upload.size > MAX_UPLOAD_SIZE:
-            messages.error(request, f"«{label}»: файл {upload.name} слишком большой (максимум 20 МБ).")
-            continue
-        # Ручная подпись заменяет ранее вырезанную «авто»-версию.
-        if doc_type == "SIGNATURE" and not saved_docs:
-            for old in transport_request.documents.filter(car=car, doc_type="SIGNATURE", is_generated=True):
-                old.file.delete(save=False)
-                old.delete()
-        file_to_save = upload
-        if doc_type == "SIGNATURE" and extension in {"jpg", "jpeg", "png"}:
-            from core.services.signature_normalizer import normalize_signature_image
-
-            normalized = normalize_signature_image(upload.read())
-            upload.seek(0)
-            if normalized:
-                stem = upload.name.rsplit(".", 1)[0] if "." in upload.name else "signature"
-                file_to_save = ContentFile(normalized, name=f"{stem}.png")
-            else:
-                messages.warning(
-                    request,
-                    f"«{label}»: не удалось нормализовать {upload.name} — сохранён исходный файл.",
-                )
-        saved_docs.append(
-            TransportRequestDocument.objects.create(
-                request=transport_request,
-                car=car,
-                doc_type=doc_type,
-                file=file_to_save,
-                uploaded_by=request.user,
-            )
-        )
-
-    if doc_type == "PASSPORT":
-        _apply_passport_ai(request, package, saved_docs)
-        if not (package.data.get("buyer_address") or package.data.get("buyer_address_ru")):
-            messages.warning(
-                request,
-                "«Паспорт»: введите адрес проживания кириллицей — рукописный адрес в паспорте "
-                "плохо читается автоматикой, а латинский вариант подставится сам.",
-            )
-
-    package.save(update_fields=["data", "updated_at"])
-    if saved_docs:
-        messages.success(request, f"«{label}»: файлы добавлены ({len(saved_docs)} шт.).")
-    else:
-        messages.success(request, f"«{label}»: данные сохранены.")
+    _push_notices(request, notices)
     return redirect(_edit_url(transport_request, car))
 
 
@@ -823,56 +671,13 @@ def transport_request_doc_delete(request, pk, doc_id):
         return error_response
     doc = get_object_or_404(TransportRequestDocument, pk=doc_id, request=transport_request)
     car = doc.car
-    doc.file.delete(save=False)
-    doc.delete()
-    messages.success(request, f"«{_DOC_TYPE_LABELS[doc.doc_type]}»: файл удалён.")
+    if doc.doc_type == "TITLE" and doc.is_generated:
+        # Тайтл из нашей системы: удаление ничего не даст — он прикрепится
+        # обратно при следующем открытии кабинета.
+        messages.info(request, "«Тайтл» есть у нас в системе — он остаётся в заявке.")
+        return redirect(_edit_url(transport_request, car))
+    _push_notices(request, [package_actions.delete_doc(transport_request, doc)])
     return redirect(_edit_url(transport_request, car))
-
-
-# Поля, которые принимает окно «Сгенерировать всё».
-_GENERATE_ALL_FIELDS = (
-    "buyer_name_ru",
-    "buyer_address_ru",
-    "buyer_name",
-    "buyer_passport_number",
-    "buyer_birth_date",
-    "buyer_passport_issue_date",
-    "buyer_address",
-    "invoice_number",
-    "invoice_date",
-    "invoice_amount",
-)
-
-
-def _save_upload_doc(request, transport_request, car, doc_type, upload):
-    """Сохранить загруженный файл пакета; для подписи — нормализация."""
-    extension = upload.name.rsplit(".", 1)[-1].lower() if "." in upload.name else ""
-    if extension not in CLIENT_DOCUMENT_ALLOWED_EXTENSIONS:
-        raise PackageDataError(f"Файл {upload.name} — допустимы только PDF, JPG и PNG.")
-    if upload.size > MAX_UPLOAD_SIZE:
-        raise PackageDataError(f"Файл {upload.name} слишком большой (максимум 20 МБ).")
-
-    file_to_save = upload
-    if doc_type == "SIGNATURE" and extension in {"jpg", "jpeg", "png"}:
-        from core.services.signature_normalizer import normalize_signature_image
-
-        normalized = normalize_signature_image(upload.read())
-        upload.seek(0)
-        if normalized:
-            stem = upload.name.rsplit(".", 1)[0] if "." in upload.name else "signature"
-            file_to_save = ContentFile(normalized, name=f"{stem}.png")
-        # Старые сгенерированные «авто»-подписи заменяем.
-        for old in transport_request.documents.filter(car=car, doc_type="SIGNATURE", is_generated=True):
-            old.file.delete(save=False)
-            old.delete()
-
-    return TransportRequestDocument.objects.create(
-        request=transport_request,
-        car=car,
-        doc_type=doc_type,
-        file=file_to_save,
-        uploaded_by=request.user,
-    )
 
 
 @login_required
@@ -888,89 +693,151 @@ def transport_request_generate_all(request, pk):
         return error_response
 
     car = get_object_or_404(transport_request.cars, pk=request.POST.get("car", ""))
-    package, _ = TransportDocumentPackage.objects.get_or_create(request=transport_request, car=car)
-    return_url = _edit_url(transport_request, car)
-
     try:
-        for field in _GENERATE_ALL_FIELDS:
-            if field in request.POST:
-                package.data[field] = request.POST.get(field, "").strip()
-        package.data["invoice_extra_lines"] = docs_service.normalize_invoice_extra_lines_from_post(request.POST)
-        docs_service.parse_date(package.data.get("buyer_birth_date"))
-        docs_service.parse_date(package.data.get("buyer_passport_issue_date"))
-        docs_service.parse_date(package.data.get("invoice_date"))
-        docs_service.parse_amount(package.data.get("invoice_amount"))
-    except PackageDataError as exc:
-        messages.error(request, f"«Сгенерировать всё»: {exc}")
-        return redirect(return_url)
-
-    if not (package.data.get("buyer_address_ru") or "").strip():
-        messages.error(request, "«Сгенерировать всё»: укажите адрес проживания кириллицей.")
-        return redirect(return_url)
-    if not (package.data.get("buyer_name_ru") or "").strip():
-        messages.error(request, "«Сгенерировать всё»: укажите ФИО по-русски.")
-        return redirect(return_url)
-    if docs_service.parse_amount(package.data.get("invoice_amount")) is None:
-        messages.error(request, "«Сгенерировать всё»: укажите цену автомобиля в инвойсе.")
-        return redirect(return_url)
-
-    passport_upload = request.FILES.get("passport")
-    signature_upload = request.FILES.get("signature")
-    has_passport = transport_request.documents.filter(car=car, doc_type="PASSPORT").exists()
-    has_signature = transport_request.documents.filter(car=car, doc_type="SIGNATURE").exists()
-
-    try:
-        saved_passport = []
-        if passport_upload:
-            saved_passport.append(_save_upload_doc(request, transport_request, car, "PASSPORT", passport_upload))
-        elif not has_passport:
-            raise PackageDataError("Загрузите файл паспорта.")
-        if signature_upload:
-            _save_upload_doc(request, transport_request, car, "SIGNATURE", signature_upload)
-        elif not has_signature:
-            raise PackageDataError("Загрузите файл подписи.")
-    except PackageDataError as exc:
-        package.save(update_fields=["data", "updated_at"])
-        messages.error(request, f"«Сгенерировать всё»: {exc}")
-        return redirect(return_url)
-
-    _apply_passport_ai(request, package, saved_passport)
-    # После AI адрес/ФИО латиницей могут появиться; без латиницы инвойс не соберётся.
-    if not (package.data.get("buyer_address") or "").strip() and (package.data.get("buyer_address_ru") or "").strip():
-        from core.services import passport_extractor
-
-        latin = passport_extractor.transliterate_address(package.data["buyer_address_ru"])
-        if latin:
-            package.data["buyer_address"] = latin
-
-    try:
-        results, notices = docs_service.generate_all_documents(
-            transport_request,
-            car,
-            package.data,
-            signature_bytes=_signature_bytes(transport_request, car),
-        )
-    except PackageDataError as exc:
-        package.save(update_fields=["data", "updated_at"])
-        messages.error(request, f"«Сгенерировать всё»: {exc}")
-        return redirect(return_url)
-
-    package.save(update_fields=["data", "updated_at"])
-    for doc_type, filename, pdf_bytes in results:
-        for old in transport_request.documents.filter(car=car, doc_type=doc_type, is_generated=True):
-            old.file.delete(save=False)
-            old.delete()
-        TransportRequestDocument.objects.create(
-            request=transport_request,
+        notices = package_actions.generate_all_for_car(
+            transport_request=transport_request,
             car=car,
-            doc_type=doc_type,
-            file=ContentFile(pdf_bytes, name=filename),
-            is_generated=True,
-            uploaded_by=request.user,
+            post=request.POST,
+            files=request.FILES,
+            user=request.user,
         )
+    except PackageDataError as exc:
+        messages.error(request, str(exc))
+        return redirect(_edit_url(transport_request, car))
+    _push_notices(request, notices)
+    return redirect(_edit_url(transport_request, car))
 
-    labels = ", ".join(_DOC_TYPE_LABELS[dt] for dt, _, _ in results)
-    messages.success(request, f"Пакет сгенерирован: {labels}.")
-    for notice in notices:
-        messages.info(request, notice)
-    return redirect(return_url)
+
+# ---------------------------------------------------------------------------
+# Пакет одним файлом: загрузка и автосортировка
+# ---------------------------------------------------------------------------
+
+
+@login_required
+@require_POST
+def transport_request_bulk_upload(request, pk):
+    """«Одним файлом»: загрузить весь пакет и отдать его на автосортировку."""
+    transport_request, error_response = _get_editable_request(request, pk)
+    if transport_request is None:
+        return error_response
+
+    car = get_object_or_404(transport_request.cars, pk=request.POST.get("car", ""))
+    upload = request.FILES.get("file")
+    if upload is None:
+        messages.error(request, "Выберите файл с пакетом документов.")
+        return redirect(_edit_url(transport_request, car))
+
+    try:
+        bulk_split.queue_upload(transport_request, car, upload, request.user)
+    except bulk_split.BulkSplitError as exc:
+        messages.error(request, str(exc))
+        return redirect(_edit_url(transport_request, car))
+
+    messages.success(
+        request,
+        "Файл принят: разбираем его на документы и раскладываем по типам. "
+        "Это займёт до минуты — обновите страницу, чтобы увидеть результат.",
+    )
+    return redirect(_edit_url(transport_request, car))
+
+
+@login_required
+@require_GET
+def transport_request_bulk_status(request, pk):
+    """Статусы разбора пакетов заявки — для опроса из кабинета."""
+    client = _get_client(request)
+    if client is None:
+        return JsonResponse({"ok": False, "error": "Нет доступа."}, status=403)
+
+    transport_request = get_object_or_404(TransportRequest, pk=pk, client=client)
+    uploads = [
+        {
+            "id": upload.pk,
+            "car_id": upload.car_id,
+            "status": upload.status,
+            "running": upload.is_running,
+            "filename": upload.filename,
+            "sorted": upload.sorted_labels,
+            "error": upload.error_message,
+        }
+        for upload in transport_request.bulk_uploads.all()[:20]
+    ]
+    return JsonResponse({"ok": True, "uploads": uploads, "running": any(u["running"] for u in uploads)})
+
+
+@login_required
+@require_POST
+def transport_request_doc_retype(request, pk, doc_id):
+    """Указать тип документа вручную, если автосортировка не угадала."""
+    transport_request, error_response = _get_editable_request(request, pk)
+    if transport_request is None:
+        return error_response
+
+    doc = get_object_or_404(TransportRequestDocument, pk=doc_id, request=transport_request)
+    try:
+        label = bulk_split.retype_document(doc, request.POST.get("doc_type", ""))
+    except bulk_split.BulkSplitError as exc:
+        messages.error(request, str(exc))
+        return redirect(_edit_url(transport_request, doc.car))
+    messages.success(request, f"Документ перемещён в «{label}».")
+    return redirect(_edit_url(transport_request, doc.car))
+
+
+# ---------------------------------------------------------------------------
+# Переписка с менеджером по заявке
+# ---------------------------------------------------------------------------
+
+
+@login_required
+@require_POST
+def transport_request_message_send(request, pk):
+    """Ответ клиента менеджеру по заявке (AJAX).
+
+    Разрешён в любом статусе, кроме отменённой: переписка нужна и после того,
+    как заявка ушла в работу. Отправка ответа помечает наши сообщения
+    прочитанными — клиент их только что видел.
+    """
+    client = _get_client(request)
+    if client is None:
+        return JsonResponse({"ok": False, "error": "Нет доступа."}, status=403)
+
+    transport_request = get_object_or_404(TransportRequest, pk=pk, client=client)
+    body = (request.POST.get("body") or "").strip()
+    if not body:
+        return JsonResponse({"ok": False, "error": "Пустое сообщение."}, status=400)
+
+    message = TransportRequestMessage.objects.create(
+        request=transport_request,
+        author_kind=TransportRequestMessage.AUTHOR_CLIENT,
+        kind=TransportRequestMessage.KIND_MESSAGE,
+        author=request.user,
+        body=body,
+    )
+    transport_request.messages.filter(author_kind="STAFF", read_by_client_at__isnull=True).update(
+        read_by_client_at=timezone.now()
+    )
+    return JsonResponse(
+        {
+            "ok": True,
+            "message": {
+                "id": message.pk,
+                "body": message.body,
+                "created_at": timezone.localtime(message.created_at).strftime("%d.%m.%Y %H:%M"),
+            },
+        }
+    )
+
+
+@login_required
+@require_POST
+def transport_request_messages_read(request, pk):
+    """Отметить сообщения менеджера прочитанными (клиент открыл переписку)."""
+    client = _get_client(request)
+    if client is None:
+        return JsonResponse({"ok": False, "error": "Нет доступа."}, status=403)
+
+    transport_request = get_object_or_404(TransportRequest, pk=pk, client=client)
+    updated = transport_request.messages.filter(author_kind="STAFF", read_by_client_at__isnull=True).update(
+        read_by_client_at=timezone.now()
+    )
+    return JsonResponse({"ok": True, "updated": updated})

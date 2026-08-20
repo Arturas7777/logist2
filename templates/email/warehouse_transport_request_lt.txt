@@ -1,0 +1,26 @@
+{% load l10n %}Laba diena,
+
+prašome įleisti žemiau nurodytą autovežį į Jūsų sandėlį{% if warehouse.name %} „{{ warehouse.name }}“{% endif %} automobilių pakrovimui ir įforminti reikalingas muitinės deklaracijas.
+
+Užklausos Nr.: {{ request.number }}
+Klientas: {{ request.client.name }}
+{% if country_lt %}Paskirties šalis: {{ country_lt }}
+{% endif %}
+{% if request.carrier_name %}Vežėjas: {{ request.carrier_name }}{% if request.carrier_eori %} (EORI kodas: {{ request.carrier_eori }}){% endif %}
+{% endif %}Vilkikas: {{ request.truck_number|default:"—" }}{% if request.trailer_number %} / priekaba: {{ request.trailer_number }}{% endif %}
+Vairuotojas: {{ request.driver_name|default:"—" }}{% if request.driver_phone %}, tel. {{ request.driver_phone }}{% endif %}
+{% if request.planned_loading_date %}Planuojama krovimo data: {{ request.planned_loading_date|date:"Y-m-d" }}
+{% endif %}{% if request.border_crossing %}Sienos perėjimo punktas: {{ request.border_crossing }}
+{% endif %}
+Reikalingos deklaracijos ({{ declarations|length }}):
+{% for decl in declarations %}{{ decl.index }}. {{ decl.type_lt|default:"deklaracijos tipas bus patikslintas" }} — {{ decl.cars|length }} automobiliui (-iams): {{ decl.vins }}
+{% endfor %}
+Transporto priemonės ({{ cars|length }}):
+{% for row in cars %}{{ forloop.counter }}. {{ row.car.brand }}{% if row.car.year %} {{ row.car.year|unlocalize }}{% endif %} — VIN: {{ row.car.vin }}{% if row.container_number %}, konteineris: {{ row.container_number }}{% endif %}{% if row.site_address %}, aikštelė: {{ row.site_address }}{% endif %}
+   Reikalinga deklaracija: {{ row.declaration_lt|default:"nurodyta atskirai" }}{% if declarations|length > 1 and row.declaration_index %} (deklaracija Nr. {{ row.declaration_index }}){% endif %}
+{% endfor %}
+Prie šio laiško pridedame kiekvienos transporto priemonės dokumentų paketą (PDF).
+
+Prašome patvirtinti pakrovimo datą ir laiką, taip pat informuoti, jei reikia papildomų dokumentų.
+
+Iš anksto dėkojame už bendradarbiavimą.

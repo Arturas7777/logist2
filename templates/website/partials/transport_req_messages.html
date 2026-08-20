@@ -1,0 +1,56 @@
+{% load i18n %}
+{% comment %}
+Переписка клиента с менеджером по одной заявке на автовоз.
+
+Показывает только диалог «мы ↔ клиент»: внутренняя работа со складом
+(письма, warehouse_state) в кабинете не отображается.
+
+Ожидает: req (TransportRequest с полями msg_list / unread_for_client,
+подготовленными во вьюхе portal_transport).
+{% endcomment %}
+
+<details class="req-messages mt-2" data-req-id="{{ req.pk }}" {% if req.unread_for_client %}open{% endif %}>
+    <summary class="small d-flex align-items-center gap-2">
+        <i class="bi bi-chat-dots"></i>
+        <span>{% trans "Переписка с менеджером" %}</span>
+        {% if req.unread_for_client %}
+        <span class="badge bg-danger req-msg-badge">{{ req.unread_for_client }}</span>
+        {% else %}
+        <span class="badge bg-secondary">{{ req.msg_list|length }}</span>
+        {% endif %}
+    </summary>
+
+    <div class="req-msg-thread mt-2">
+        {% for msg in req.msg_list %}
+        <div class="req-msg {% if msg.is_from_staff %}req-msg-staff{% else %}req-msg-client{% endif %}">
+            <div class="req-msg-meta">
+                {% if msg.is_from_staff %}{% trans "Менеджер" %}{% else %}{% trans "Вы" %}{% endif %}
+                · {{ msg.created_at|date:"d.m.Y H:i" }}
+                {% if msg.car %}· {{ msg.car.vin }}{% endif %}
+            </div>
+            {% if msg.body %}<div class="req-msg-body">{{ msg.body }}</div>{% endif %}
+            {% if msg.requested_doc_types %}
+            <div class="req-msg-docs">
+                {% for label in msg.requested_doc_labels %}
+                <span class="badge bg-warning text-dark">{{ label }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% empty %}
+        <p class="text-muted small mb-0 req-msg-empty">{% trans "Сообщений пока нет." %}</p>
+        {% endfor %}
+    </div>
+
+    <form class="req-msg-form mt-2" data-url="{% url 'website:transport_request_message_send' req.pk %}">
+        {% csrf_token %}
+        <div class="input-group input-group-sm">
+            <textarea class="form-control" name="body" rows="2"
+                      placeholder="{% trans 'Ответить менеджеру…' %}"></textarea>
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-send"></i>
+            </button>
+        </div>
+        <div class="req-msg-status small mt-1"></div>
+    </form>
+</details>

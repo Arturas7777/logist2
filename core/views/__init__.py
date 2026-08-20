@@ -72,9 +72,11 @@ from .emails import (  # noqa: F401
     email_mark_car_read,
     email_mark_container_read,
     email_mark_read,
+    email_mark_transportrequest_read,
     email_reply_draft,
     email_reply_send,
     email_set_needs_reply,
+    email_transportrequest_updates,
     email_trigger_sync,
 )
 from .global_search import (  # noqa: F401

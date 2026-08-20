@@ -73,6 +73,21 @@ urlpatterns = [
         name="transport_request_doc_delete",
     ),
     path(
+        "transport-requests/<int:pk>/docs/<int:doc_id>/retype/",
+        views_website.transport_request_doc_retype,
+        name="transport_request_doc_retype",
+    ),
+    path(
+        "transport-requests/<int:pk>/bulk-upload/",
+        views_website.transport_request_bulk_upload,
+        name="transport_request_bulk_upload",
+    ),
+    path(
+        "transport-requests/<int:pk>/bulk-status/",
+        views_website.transport_request_bulk_status,
+        name="transport_request_bulk_status",
+    ),
+    path(
         "transport-requests/<int:pk>/download-packages/",
         views_website.transport_request_download_packages,
         name="transport_request_download_packages",
@@ -81,6 +96,16 @@ urlpatterns = [
         "transport-requests/<int:pk>/generate-all/",
         views_website.transport_request_generate_all,
         name="transport_request_generate_all",
+    ),
+    path(
+        "transport-requests/<int:pk>/messages/",
+        views_website.transport_request_message_send,
+        name="transport_request_message_send",
+    ),
+    path(
+        "transport-requests/<int:pk>/messages/read/",
+        views_website.transport_request_messages_read,
+        name="transport_request_messages_read",
     ),
     # ========== Скачивание фотографий ==========
     path("photo/car/<int:photo_id>/download/", views_website.download_car_photo, name="download_car_photo"),

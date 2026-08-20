@@ -50,6 +50,16 @@ urlpatterns = [
         views.email_autotransport_updates,
         name="email_autotransport_updates",
     ),
+    path(
+        "emails/transport-request/<int:request_id>/mark-all-read/",
+        views.email_mark_transportrequest_read,
+        name="email_mark_transportrequest_read",
+    ),
+    path(
+        "emails/transport-request/<int:request_id>/updates/",
+        views.email_transportrequest_updates,
+        name="email_transportrequest_updates",
+    ),
     path("emails/sync/", views.email_trigger_sync, name="email_trigger_sync"),
     # Phase 2: отправка писем из карточки контейнера
     path("emails/<int:email_id>/reply/draft/", views.email_reply_draft, name="email_reply_draft"),
