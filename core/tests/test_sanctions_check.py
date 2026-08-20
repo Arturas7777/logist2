@@ -15,6 +15,7 @@ from django.urls import reverse
 from core.models import Client
 from core.models.website import ClientUser
 from core.services import sanctions_check as sc
+from core.views_website.errors import csrf_failure
 
 TODAY = date(2026, 8, 20)
 
@@ -286,7 +287,7 @@ def test_vin_lookup_uses_nhtsa(client, by_client, monkeypatch):
         }
 
     monkeypatch.setattr("core.views_website.portal_sanctions.decode_vin_details", fake_details)
-    response = portal.post(reverse("website:sanctions_vin_lookup"), {"vin": "1hgcm82633a004352"})
+    response = portal.get(reverse("website:sanctions_vin_lookup"), {"vin": "1hgcm82633a004352"})
     assert response.status_code == 200
     data = response.json()
     assert data["ok"] is True
@@ -301,12 +302,39 @@ def test_vin_lookup_reports_nhtsa_outage(client, by_client, monkeypatch):
         "core.views_website.portal_sanctions.decode_vin_details",
         lambda vin, **kwargs: {"ok": False, "raw_failed": True},
     )
-    response = portal.post(reverse("website:sanctions_vin_lookup"), {"vin": "1HGCM82633A004352"})
+    response = portal.get(reverse("website:sanctions_vin_lookup"), {"vin": "1HGCM82633A004352"})
     assert response.status_code == 502
     assert response.json()["ok"] is False
 
 
 def test_vin_lookup_closed_for_other_countries(client, kz_client):
     portal = _portal_client(client, kz_client, "kz-vin")
-    response = portal.post(reverse("website:sanctions_vin_lookup"), {"vin": "1HGCM82633A004352"})
+    response = portal.get(reverse("website:sanctions_vin_lookup"), {"vin": "1HGCM82633A004352"})
     assert response.status_code == 403
+
+
+def test_vin_lookup_needs_no_csrf_token(client, by_client, monkeypatch):
+    """Подстановка по VIN — запрос читающий, устаревший токен ей не мешает.
+
+    Из-за CSRF на POST кнопка «Заполнить по VIN» отвечала HTML-страницей
+    403, и скрипт падал на разборе JSON.
+    """
+    portal = _portal_client(client, by_client, "by-vin-nocsrf")
+    monkeypatch.setattr(
+        "core.views_website.portal_sanctions.decode_vin_details",
+        lambda vin, **kwargs: {"ok": True, "raw_failed": False, "make": "FORD", "body_class": "Sedan/Saloon"},
+    )
+    response = portal.get(reverse("website:sanctions_vin_lookup"), {"vin": "1HGCM82633A004352"})
+    assert response.status_code == 200
+    assert response["Content-Type"].startswith("application/json")
+
+
+def test_csrf_failure_answers_json_to_ajax(rf):
+    """AJAX должен получать JSON: на HTML-странице скрипты падали с SyntaxError."""
+    ajax = csrf_failure(rf.post("/x/", HTTP_X_REQUESTED_WITH="XMLHttpRequest"))
+    assert ajax.status_code == 403
+    assert ajax["Content-Type"].startswith("application/json")
+
+    page = csrf_failure(rf.post("/x/"))
+    assert page.status_code == 403
+    assert "text/html" in page["Content-Type"]

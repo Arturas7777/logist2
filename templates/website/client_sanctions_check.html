@@ -220,21 +220,24 @@ NHTSA (core.views_website.portal_sanctions.sanctions_vin_lookup), поля мо�
         source.className = "sc-source mt-1";
         source.textContent = "{% trans 'Запрашиваем NHTSA…' %}";
 
-        var body = new FormData();
-        body.append("vin", vin);
-        body.append("csrfmiddlewaretoken", form.querySelector("[name=csrfmiddlewaretoken]").value);
-
-        fetch("{% url 'website:sanctions_vin_lookup' %}", {
-            method: "POST",
-            body: body,
+        fetch("{% url 'website:sanctions_vin_lookup' %}?vin=" + encodeURIComponent(vin), {
+            headers: { "Accept": "application/json", "X-Requested-With": "XMLHttpRequest" },
             credentials: "same-origin",
         })
-            .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+            .then(function (r) {
+                // Сервер может ответить HTML (страница ошибки, шлюз) — тогда
+                // r.json() падает с SyntaxError, а клиент видит мусор.
+                var type = r.headers.get("content-type") || "";
+                if (type.indexOf("application/json") === -1) {
+                    return { ok: false, data: {} };
+                }
+                return r.json().then(function (d) { return { ok: r.ok, data: d }; });
+            })
             .then(function (res) {
                 button.disabled = false;
                 if (!res.ok || !res.data.ok) {
                     source.className = "sc-source mt-1 text-danger";
-                    source.textContent = res.data.error || "{% trans 'Не удалось получить данные.' %}";
+                    source.textContent = res.data.error || "{% trans 'Не удалось получить данные. Обновите страницу и попробуйте снова.' %}";
                     return;
                 }
                 var fields = res.data.fields || {};
@@ -252,10 +255,10 @@ NHTSA (core.views_website.portal_sanctions.sanctions_vin_lookup), поля мо�
                 source.className = "sc-source mt-1";
                 source.textContent = "NHTSA: " + parts.filter(Boolean).join(" · ");
             })
-            .catch(function (err) {
+            .catch(function () {
                 button.disabled = false;
                 source.className = "sc-source mt-1 text-danger";
-                source.textContent = String(err);
+                source.textContent = "{% trans 'Нет связи с сервером — заполните данные вручную.' %}";
             });
     });
 })();

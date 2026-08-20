@@ -15,7 +15,7 @@ from django import forms
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.shortcuts import render
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET
 
 from core.models.website import ClientUser
 from core.services import sanctions_check
@@ -130,14 +130,19 @@ def sanctions_check_page(request):
 
 
 @login_required
-@require_POST
+@require_GET
 def sanctions_vin_lookup(request):
-    """AJAX: характеристики авто по VIN из NHTSA для подстановки в форму."""
+    """AJAX: характеристики авто по VIN из NHTSA для подстановки в форму.
+
+    Запрос читающий, поэтому GET без CSRF-токена: с POST кнопка ломалась,
+    когда токен на открытой странице успевал устареть (он ротируется при
+    новом входе) — вместо JSON приходила HTML-страница 403.
+    """
     client = _get_client(request)
     if client is None or not client_sees_sanctions_check(client):
         return JsonResponse({"ok": False, "error": "Раздел недоступен."}, status=403)
 
-    vin = (request.POST.get("vin") or "").strip().upper()
+    vin = (request.GET.get("vin") or "").strip().upper()
     if len(vin) != 17:
         return JsonResponse({"ok": False, "error": "VIN должен быть из 17 символов."}, status=400)
 
