@@ -99,6 +99,7 @@ from .monitoring import (  # noqa: E402, F401
     UptimeCheck,
 )
 from .scans import ScanProcessingJob  # noqa: E402, F401
+from .vin_checks import VinCheck  # noqa: E402, F401
 
 __all__ = [
     # constants
@@ -133,4 +134,5 @@ __all__ = [
     'InvoiceAudit', 'SupplierCost',
     'SystemMetric', 'UptimeCheck',
     'ScanProcessingJob',
+    'VinCheck',
 ]

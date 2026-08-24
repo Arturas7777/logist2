@@ -2,6 +2,7 @@ from django import forms
 from django.contrib import admin
 from django.utils.html import format_html
 
+from core.admin.car_forms import VinGuardForm as CarVinGuardForm
 from core.models import (
     Car,
     CarrierDriver,
@@ -365,7 +366,23 @@ class CarInline(admin.TabularInline):
     can_delete = True
     show_change_link = True
     classes = ("collapse",)
-    fields = ("year", "brand", "vehicle_type", "vin", "weight_kg", "client", "total_price", "has_title", "status_tint")
+    # VIN проверяется той же формой, что и в карточке авто: контрольная
+    # цифра, расшифровка NHTSA и поиск похожих номеров (см. car_forms).
+    form = CarVinGuardForm
+    fields = (
+        "year",
+        "brand",
+        "vehicle_type",
+        "vin",
+        # Скрытое поле подтверждения спорного VIN — колонки в таблице не
+        # создаёт, галочку рисует vin_guard.js.
+        "vin_confirmed",
+        "weight_kg",
+        "client",
+        "total_price",
+        "has_title",
+        "status_tint",
+    )
     readonly_fields = ("total_price", "status_tint")
     autocomplete_fields = ["client"]
 

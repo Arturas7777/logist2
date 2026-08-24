@@ -18,6 +18,7 @@
 """
 
 import logging
+import threading
 
 from django.db import transaction
 from django.db.models.signals import post_save, pre_save
@@ -41,6 +42,7 @@ def save_old_car_values(sender, instance, **kwargs):
             instance._pre_save_car_notification = None
             instance._pre_save_status = None
             instance._pre_save_is_important = None
+            instance._pre_save_container_id = None
             return
 
     if instance.pk:
@@ -64,21 +66,27 @@ def save_old_car_values(sender, instance, **kwargs):
                 }
                 instance._pre_save_status = old["status"]
                 instance._pre_save_is_important = old["is_important"]
+                # Нужен сверке: при переносе машины пересчитать надо оба
+                # контейнера — и прежний, и новый.
+                instance._pre_save_container_id = old["container_id"]
             else:
                 instance._pre_save_contractors = None
                 instance._pre_save_car_notification = None
                 instance._pre_save_status = None
                 instance._pre_save_is_important = None
+                instance._pre_save_container_id = None
         except Exception:
             instance._pre_save_contractors = None
             instance._pre_save_car_notification = None
             instance._pre_save_status = None
             instance._pre_save_is_important = None
+            instance._pre_save_container_id = None
     else:
         instance._pre_save_contractors = None
         instance._pre_save_car_notification = None
         instance._pre_save_status = None
         instance._pre_save_is_important = None
+        instance._pre_save_container_id = None
 
 
 def _car_pricing_relevant_changed(instance, created):
@@ -194,6 +202,61 @@ def car_post_save(sender, instance, **kwargs):
     from core.services.car_lifecycle_service import send_car_ws_notification
 
     send_car_ws_notification(instance)
+
+    # --- 8. Итог сверки данных контейнера [COMMAND/denorm] ---
+    _refresh_container_audit_level(instance, update_fields=kwargs.get("update_fields"))
+
+
+# Поля, от которых зависит сверка данных контейнера. Пересчёт по любому
+# сохранению машины был бы расточительным: цены и дни пересчитываются часто
+# и на результат сверки не влияют.
+_AUDIT_RELEVANT_FIELDS = frozenset({"vin", "container", "container_id", "weight_kg", "has_title", "brand", "year"})
+
+# Контейнеры, которым нужен пересчёт, копятся до конца транзакции: при
+# сохранении инлайна контейнера сигнал срабатывает на каждой машине, а
+# сверка у них общая.
+_audit_bucket = threading.local()
+
+
+def _refresh_container_audit_level(car, *, update_fields=None) -> None:
+    """Ставит пересчёт бейджа сверки у контейнеров машины.
+
+    Сверка смотрит на текущее состояние, поэтому её меняет и добавление
+    машины руками уже после применённого Dock Receipt, и правка VIN.
+    """
+    if update_fields is not None and not _AUDIT_RELEVANT_FIELDS.intersection(update_fields):
+        return
+
+    container_ids = {car.container_id, getattr(car, "_pre_save_container_id", None)}
+    container_ids.discard(None)
+    if not container_ids:
+        return
+
+    pending = getattr(_audit_bucket, "ids", None)
+    if pending is None:
+        pending = set()
+        _audit_bucket.ids = pending
+    pending.update(container_ids)
+    # Регистрируем обработчик на каждое сохранение: первый вызов заберёт
+    # накопленное, остальные окажутся пустыми. Флаг «уже запланировано» здесь
+    # был бы хуже — после отката транзакции он остался бы взведённым навсегда.
+    transaction.on_commit(_flush_container_audit)
+
+
+def _flush_container_audit() -> None:
+    container_ids = getattr(_audit_bucket, "ids", None) or set()
+    _audit_bucket.ids = None
+    if not container_ids:
+        return
+
+    from core.models import Container
+    from core.services.container_audit import refresh_container_audit
+
+    for container in Container.objects.filter(pk__in=container_ids):
+        try:
+            refresh_container_audit(container)
+        except Exception:
+            logger.warning("Не удалось пересчитать сверку контейнера #%s", container.pk, exc_info=True)
 
 
 def _handle_car_important_transition(car, *, created: bool):

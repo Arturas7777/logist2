@@ -1,0 +1,348 @@
+{% comment %}
+Отчёт сверки «что в документе ↔ что в системе» по одной задаче обработки скана.
+
+Один и тот же блок показывается в панели карточки контейнера (mode="panel",
+подгружается AJAX'ом) и на странице самой задачи (mode="page"), чтобы
+оператор везде видел одинаковую картину.
+
+Контекст: report (см. core.services.scan_review.build_scan_review), mode,
+resolve_url, action_url, resolve_actions.
+{% endcomment %}
+{% load admin_extras %}
+
+<div class="cm-sr" data-job="{{ report.job_id }}">
+
+  <div class="cm-sr-headline is-{{ report.severity }}">
+    {% if report.severity == "ok" %}
+      <i class="bi bi-check-circle-fill"></i>
+    {% elif report.severity == "error" %}
+      <i class="bi bi-exclamation-octagon-fill"></i>
+    {% else %}
+      <i class="bi bi-exclamation-triangle-fill"></i>
+    {% endif %}
+    <div>
+      {{ report.headline }}
+      {% if report.reason %}<span class="cm-sr-reason">{{ report.reason }}</span>{% endif %}
+      {% for note in report.notes %}<span class="cm-sr-reason">{{ note }}</span>{% endfor %}
+      {% if report.auto_applied and report.auto_apply_reason %}
+        <span class="cm-sr-reason">Применено автоматически: {{ report.auto_apply_reason }}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if report.actions %}
+    <div class="cm-sr-actions">
+      {% for act in report.actions %}
+        {% if mode != "page" or act.action in resolve_actions %}
+          {% include "admin/scan_review/_action.html" %}
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="cm-sr-layout">
+    <div class="cm-sr-main">
+
+      {# ── Предупреждения VIN-валидатора (check digit / NHTSA) ── #}
+      {% for warning in report.warnings %}
+        <div class="cm-sr-warning">
+          <b>Проверка VIN <span class="cm-sr-vin">{{ warning.vin }}</span></b>
+          <ul>
+            {% for message in warning.messages %}<li>{{ message }}</li>{% endfor %}
+          </ul>
+          {% if warning.nhtsa.make or warning.nhtsa.model or warning.nhtsa.year %}
+            <div style="margin-top:6px;">
+              База NHTSA по этому VIN: {{ warning.nhtsa.make|default:"?" }}
+              {{ warning.nhtsa.model|default:"" }}{% if warning.nhtsa.year %} ({{ warning.nhtsa.year }}){% endif %}
+            </div>
+          {% endif %}
+          {% if warning.suggested_vin %}
+            <div style="margin-top:6px;">
+              Вероятно правильный VIN:
+              <span class="cm-sr-vin">{% vin_diff warning.suggested_vin warning.vin %}</span>
+            </div>
+          {% endif %}
+        </div>
+      {% endfor %}
+
+      {# ── Спорные VIN: похожая машина уже есть в базе ── #}
+      {% for conflict in report.conflicts %}
+        <div class="cm-sr-section">
+          <div class="cm-sr-section-title">
+            Спорный VIN {% if report.conflicts|length > 1 %}{{ forloop.counter }} из {{ report.conflicts|length }} {% endif %}— выберите, где ошибка
+          </div>
+          <p style="font-size:.79rem;color:var(--cm-text-secondary,#6b7280);margin:0 0 8px;line-height:1.5;">
+            В документе ({{ conflict.doc_label }}) распознан
+            <span class="cm-sr-vin">{% vin_diff conflict.extracted_vin conflict.candidates.0.vin %}</span>,
+            а в базе есть почти такой же VIN. Жёлтым выделены различающиеся символы —
+            обычно это ошибка распознавания или опечатка (0↔O, 1↔I, 8↔B, 5↔S, 2↔Z, 6↔G).
+          </p>
+          <table class="cm-sr-table">
+            <thead>
+              <tr>
+                <th>VIN в базе</th>
+                <th>Отличие</th>
+                <th>Проверка</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for candidate in conflict.candidates %}
+                <tr class="is-alert">
+                  <td>
+                    {% if candidate.car_url %}
+                      <a href="{{ candidate.car_url }}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">
+                        <span class="cm-sr-vin">{% vin_diff candidate.vin conflict.extracted_vin %}</span>
+                      </a>
+                    {% else %}
+                      <span class="cm-sr-vin">{{ candidate.vin }}</span>
+                    {% endif %}
+                    {% if candidate.brand %}
+                      <div class="cm-sr-hint">{{ candidate.brand }} {{ candidate.year }}</div>
+                    {% endif %}
+                  </td>
+                  <td>{% if candidate.distance %}{{ candidate.distance }} симв.{% else %}—{% endif %}</td>
+                  <td>
+                    {% if candidate.has_validation %}
+                      {% if candidate.validation_ok %}
+                        <span class="cm-sr-mark is-same">подтверждён</span>
+                      {% else %}
+                        <span class="cm-sr-mark is-alert">не подтверждён</span>
+                      {% endif %}
+                      {% if candidate.nhtsa %}<div class="cm-sr-hint">NHTSA: {{ candidate.nhtsa }}</div>{% endif %}
+                    {% else %}
+                      <span class="cm-sr-empty">—</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <div class="cm-sr-rowactions">
+                      {% for act in candidate.actions %}
+                        {% include "admin/scan_review/_action.html" %}
+                      {% endfor %}
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endfor %}
+
+      {# ── Поля документа против карточки ── #}
+      {% if report.fields %}
+        <div class="cm-sr-section">
+          <div class="cm-sr-section-title">{{ report.doc_title }} — документ и карточка</div>
+          <table class="cm-sr-table">
+            <thead>
+              <tr>
+                <th>Поле</th>
+                <th>В документе</th>
+                <th>В системе</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for field in report.fields %}
+                <tr class="{% if field.state == 'diff' %}is-alert{% elif field.state == 'diff_soft' or field.state == 'only_sys' %}is-diff{% endif %}">
+                  <td class="cm-sr-label">
+                    {{ field.label }}
+                    {% if field.hint and field.state == 'diff' %}<span class="cm-sr-hint">{{ field.hint }}</span>{% endif %}
+                  </td>
+                  <td>
+                    {% if field.doc %}
+                      {% if field.state == 'diff' and field.sys %}
+                        <span class="cm-sr-vin">{% vin_diff field.doc field.sys %}</span>
+                      {% else %}
+                        {{ field.doc }}
+                      {% endif %}
+                    {% else %}
+                      <span class="cm-sr-empty">—</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if field.sys %}
+                      {% if field.state == 'diff' %}
+                        <span class="cm-sr-vin">{% vin_diff field.sys field.doc %}</span>
+                      {% else %}
+                        {{ field.sys }}
+                      {% endif %}
+                    {% else %}
+                      <span class="cm-sr-empty">—</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if field.state == 'same' %}
+                      <span class="cm-sr-mark is-same">совпадает</span>
+                    {% elif field.state == 'diff' %}
+                      <span class="cm-sr-mark is-alert">расхождение</span>
+                    {% elif field.state == 'diff_soft' %}
+                      <span class="cm-sr-mark is-diff">записано иначе</span>
+                    {% elif field.state == 'only_doc' %}
+                      <span class="cm-sr-mark is-diff">только в документе</span>
+                    {% elif field.state == 'only_sys' %}
+                      <span class="cm-sr-mark is-diff">только в системе</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+
+      {# ── Машины из Dock Receipt ── #}
+      {% if report.vehicles %}
+        <div class="cm-sr-section">
+          <div class="cm-sr-section-title">Машины в документе ({{ report.vehicles|length }})</div>
+          <table class="cm-sr-table">
+            <thead>
+              <tr>
+                <th>VIN в документе</th>
+                <th>Марка / год</th>
+                <th>Масса, кг</th>
+                <th>В системе</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for vehicle in report.vehicles %}
+                <tr class="{% if vehicle.state == 'fuzzy' or vehicle.state == 'elsewhere' %}is-alert{% elif vehicle.state == 'new' or vehicle.weight_diff %}is-diff{% endif %}">
+                  <td>
+                    {% if vehicle.vin_sys and vehicle.state == 'fuzzy' %}
+                      <span class="cm-sr-vin">{% vin_diff vehicle.vin_doc vehicle.vin_sys %}</span>
+                    {% else %}
+                      <span class="cm-sr-vin">{{ vehicle.vin_doc }}</span>
+                    {% endif %}
+                    {% for note in vehicle.notes %}<div class="cm-sr-note">{{ note }}</div>{% endfor %}
+                    {% if vehicle.confidence_low %}
+                      <div class="cm-sr-note">Уверенность распознавания низкая — стоит сверить с оригиналом.</div>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {{ vehicle.brand_doc|default:"—" }} {{ vehicle.year_doc }}
+                    {% if vehicle.brand_sys and vehicle.brand_sys != vehicle.brand_doc %}
+                      <div class="cm-sr-hint">в карточке: {{ vehicle.brand_sys }} {{ vehicle.year_sys }}</div>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {{ vehicle.weight_doc|default:"—" }}
+                    {% if vehicle.weight_diff %}
+                      <div class="cm-sr-note">в карточке: {{ vehicle.weight_sys }}</div>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if vehicle.state == 'matched' %}
+                      <span class="cm-sr-mark is-same">{{ vehicle.state_label }}</span>
+                    {% elif vehicle.state == 'new' %}
+                      <span class="cm-sr-mark is-diff">{{ vehicle.state_label }}</span>
+                    {% else %}
+                      <span class="cm-sr-mark is-alert">{{ vehicle.state_label }}</span>
+                    {% endif %}
+                    {% if vehicle.vin_sys and vehicle.state != 'matched' %}
+                      <div class="cm-sr-hint">
+                        <a href="{{ vehicle.car_url }}" target="_blank" rel="noopener">{{ vehicle.vin_sys }}</a>
+                      </div>
+                    {% endif %}
+                    {% if vehicle.state == 'matched' and not vehicle.has_title %}
+                      <div class="cm-sr-hint">тайтла ещё нет</div>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+
+      {# ── Машины контейнера, которых в документе нет ── #}
+      {% if report.missing_in_doc %}
+        <div class="cm-sr-section">
+          <div class="cm-sr-section-title">В контейнере есть, а в документе нет ({{ report.missing_in_doc|length }})</div>
+          <table class="cm-sr-table">
+            <tbody>
+              {% for car in report.missing_in_doc %}
+                <tr class="is-diff">
+                  <td>
+                    <a href="{{ car.car_url }}" target="_blank" rel="noopener" class="cm-sr-vin">{{ car.vin }}</a>
+                  </td>
+                  <td>{{ car.brand }} {{ car.year }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+
+      {# ── Машины контейнера: к какой относится тайтл ── #}
+      {% if report.container_cars %}
+        <div class="cm-sr-section">
+          <div class="cm-sr-section-title">
+            {% if report.extracted_vin %}
+              Машины контейнера — насколько VIN похож на тайтл
+            {% else %}
+              Машины контейнера — выберите, к какой относится документ
+            {% endif %}
+          </div>
+          <table class="cm-sr-table">
+            <thead>
+              <tr>
+                <th>VIN в карточке</th>
+                <th>Отличие от тайтла</th>
+                <th>Тайтл</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for car in report.container_cars %}
+                <tr class="{% if car.is_target %}is-diff{% endif %}">
+                  <td>
+                    <a href="{{ car.car_url }}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">
+                      <span class="cm-sr-vin">{% vin_diff car.vin report.extracted_vin %}</span>
+                    </a>
+                    <div class="cm-sr-hint">{{ car.brand }} {{ car.year }}</div>
+                  </td>
+                  <td>
+                    {% if not report.extracted_vin %}
+                      <span class="cm-sr-empty">—</span>
+                    {% elif car.distance == 0 %}
+                      <span class="cm-sr-mark is-same">совпадает</span>
+                    {% elif car.distance %}
+                      <span class="cm-sr-mark is-diff">{{ car.distance }} симв.</span>
+                    {% else %}
+                      <span class="cm-sr-empty">другая длина</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if car.has_title %}
+                      <span class="cm-sr-mark is-same">есть</span>
+                    {% else %}
+                      <span class="cm-sr-empty">нет</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <div class="cm-sr-rowactions">
+                      {% for act in car.actions %}
+                        {% include "admin/scan_review/_action.html" %}
+                      {% endfor %}
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+
+    </div>
+
+    {# ── Сам скан рядом: расхождение проверяется не отходя от таблицы ── #}
+    {% if report.file_url %}
+      <div class="cm-sr-doc">
+        <div class="cm-sr-doc-bar">
+          <span>{{ report.file_name }}</span>
+          <a href="{{ report.file_url }}" target="_blank" rel="noopener">Открыть отдельно</a>
+        </div>
+        <iframe class="cm-sr-doc-frame" src="{{ report.file_url }}" title="Скан документа"></iframe>
+      </div>
+    {% endif %}
+  </div>
+</div>

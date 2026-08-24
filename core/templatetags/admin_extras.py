@@ -18,17 +18,12 @@ def vin_diff(vin: str, reference: str):
     if not vin:
         return ""
     if not reference or len(vin) != len(reference):
-        return format_html('<span style="font-family:monospace;">{}</span>', vin)
+        return format_html('<span class="cm-sr-vin">{}</span>', vin)
     return format_html_join(
         "",
-        '<span style="font-family:monospace;{}">{}</span>',
+        '<span class="{}">{}</span>',
         (
-            (
-                ""
-                if ch_vin == ch_ref
-                else ("background:#ffc107;color:#212529;padding:0 2px;border-radius:2px;font-weight:bold;"),
-                ch_vin,
-            )
+            ("cm-sr-vin" if ch_vin == ch_ref else "cm-sr-vin cm-sr-diffchar", ch_vin)
             for ch_vin, ch_ref in zip(vin, reference, strict=False)
         ),
     )

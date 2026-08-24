@@ -1,0 +1,62 @@
+{% comment %}
+Сверка данных контейнера: расхождения между машинами, Dock Receipt,
+тайтлами и расшифровкой VIN.
+
+В отличие от панели документов ниже, эта считается от текущего состояния
+контейнера, а не от загруженного документа, — поэтому показывает и то, что
+завели руками уже после применения сканов.
+
+Контекст: audit (см. core.services.container_audit.build_audit_report).
+{% endcomment %}
+
+{% if audit %}
+<div class="cm-audit is-{{ audit.level }}">
+  <div class="cm-audit-head">
+    {% if audit.level == "ok" %}
+      <i class="bi bi-shield-check"></i>
+    {% elif audit.level == "error" %}
+      <i class="bi bi-shield-exclamation"></i>
+    {% else %}
+      <i class="bi bi-shield"></i>
+    {% endif %}
+    <span>Сверка данных</span>
+    <span class="cm-audit-headline">{{ audit.headline }}</span>
+  </div>
+
+  {% if audit.findings %}
+    <ul class="cm-audit-list">
+      {% for finding in audit.findings %}
+        <li class="cm-audit-item is-{{ finding.level }}">
+          <div class="cm-audit-msg">
+            {% if finding.car_url %}
+              <a href="{{ finding.car_url }}" target="_blank" rel="noopener">{{ finding.message }}</a>
+            {% else %}
+              {{ finding.message }}
+            {% endif %}
+          </div>
+          {% if finding.hint %}<div class="cm-audit-hint">{{ finding.hint }}</div>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if audit.notes %}
+    <details class="cm-audit-notes">
+      <summary>Справочно: {{ audit.notes|length }}</summary>
+      <ul class="cm-audit-list">
+        {% for note in audit.notes %}
+          <li class="cm-audit-item is-info">
+            <div class="cm-audit-msg">
+              {% if note.car_url %}
+                <a href="{{ note.car_url }}" target="_blank" rel="noopener">{{ note.message }}</a>
+              {% else %}
+                {{ note.message }}
+              {% endif %}
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    </details>
+  {% endif %}
+</div>
+{% endif %}

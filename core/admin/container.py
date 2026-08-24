@@ -4,6 +4,7 @@ import time
 from django.contrib import admin
 from django.contrib.admin import SimpleListFilter
 from django.db import transaction
+from django.shortcuts import render
 from django.utils import timezone
 from django.utils.html import format_html
 
@@ -72,6 +73,28 @@ class HasUnreadEmailsFilter(SimpleListFilter):
         return queryset
 
 
+class DataAuditFilter(SimpleListFilter):
+    """Фильтр по итогу сверки данных (см. core.services.container_audit)."""
+
+    title = "Сверка данных"
+    parameter_name = "data_audit"
+
+    def lookups(self, request, model_admin):
+        return (
+            ("problems", "Есть расхождения или замечания"),
+            (Container.AUDIT_LEVEL_ERROR, "Только расхождения"),
+            (Container.AUDIT_LEVEL_OK, "Всё сходится"),
+        )
+
+    def queryset(self, request, queryset):
+        value = self.value()
+        if value == "problems":
+            return queryset.exclude(data_audit_level=Container.AUDIT_LEVEL_OK)
+        if value in (Container.AUDIT_LEVEL_ERROR, Container.AUDIT_LEVEL_OK):
+            return queryset.filter(data_audit_level=value)
+        return queryset
+
+
 @admin.register(Container)
 class ContainerAdmin(admin.ModelAdmin):
     change_form_template = "admin/core/container/change_form.html"
@@ -86,6 +109,7 @@ class ContainerAdmin(admin.ModelAdmin):
         "warehouse",
         "photos_count_display",
         "labels_printed_display",
+        "data_audit_display",
     )
     list_display_links = ("number_with_unread",)
     list_filter = (
@@ -94,6 +118,7 @@ class ContainerAdmin(admin.ModelAdmin):
         MultiWarehouseFilter,
         LabelsPrintedFilter,
         HasUnreadEmailsFilter,
+        DataAuditFilter,
     )
     search_fields = ("number", "booking_number")
     ordering = ["-unload_date", "-id"]
@@ -134,7 +159,14 @@ class ContainerAdmin(admin.ModelAdmin):
 
     class Media:
         # dashboard_admin.css подключается глобально в base_site.html
-        js = ("js/htmx.min.js", "js/warehouse_address.js?v=2", "js/line_ths.js")
+        css = {"all": ("css/scan_review.css?v=1", "css/vin_guard.css?v=2")}
+        js = (
+            "js/htmx.min.js",
+            "js/warehouse_address.js?v=2",
+            "js/line_ths.js",
+            # Проверка VIN в инлайне машин — те же подсказки, что в карточке авто.
+            "js/vin_guard.js?v=2",
+        )
 
     def get_changeform_initial_data(self, request):
         """Дефолты для формы добавления контейнера.
@@ -440,6 +472,29 @@ class ContainerAdmin(admin.ModelAdmin):
 
     photos_count_display.short_description = "Фото"
     photos_count_display.admin_order_field = "_photos_count"
+
+    def data_audit_display(self, obj):
+        """Бейдж сверки данных: сколько расхождений ждёт разбора.
+
+        Значение денормализовано (пересчитывается при изменении машин и
+        ежедневной задачей) — считать сверку для каждой строки списка
+        было бы слишком дорого.
+        """
+        if obj.data_audit_level == Container.AUDIT_LEVEL_OK or not obj.data_audit_count:
+            return format_html('<span style="color:#10b981;" title="Расхождений нет">&#10003;</span>')
+        is_error = obj.data_audit_level == Container.AUDIT_LEVEL_ERROR
+        bg = "#dc2626" if is_error else "#f59e0b"
+        title = "Расхождения в данных" if is_error else "Замечания по данным"
+        return format_html(
+            '<span title="{}" style="background:{};color:#fff;padding:1px 7px;border-radius:10px;'
+            'font-size:11px;font-weight:700;">{}</span>',
+            title,
+            bg,
+            obj.data_audit_count,
+        )
+
+    data_audit_display.short_description = "Сверка"
+    data_audit_display.admin_order_field = "data_audit_count"
 
     def number_with_unread(self, obj):
         """Номер контейнера с маленьким бейджем непрочитанных писем + флажок.
@@ -818,6 +873,8 @@ class ContainerAdmin(admin.ModelAdmin):
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
         """Override change_view to pass photo data to template"""
+        from core.services.container_audit import build_audit_report, refresh_container_audit
+
         extra_context = extra_context or {}
 
         if object_id:
@@ -827,6 +884,11 @@ class ContainerAdmin(admin.ModelAdmin):
                 # Photo data loaded via AJAX on click
                 extra_context["photos_count"] = obj.photos.count()
                 extra_context["container_id"] = object_id
+                # Сверку считаем на месте: она смотрит на текущее состояние,
+                # а карточка — как раз то место, где его меняют.
+                report = build_audit_report(obj)
+                extra_context["audit"] = report
+                refresh_container_audit(obj, report)
 
         return super().change_view(request, object_id, form_url, extra_context)
 
@@ -851,6 +913,11 @@ class ContainerAdmin(admin.ModelAdmin):
                 "<int:object_id>/scan-jobs/<int:job_id>/action/",
                 self.admin_site.admin_view(self.scan_job_action_view),
                 name="core_container_scan_job_action",
+            ),
+            path(
+                "<int:object_id>/scan-jobs/<int:job_id>/review/",
+                self.admin_site.admin_view(self.scan_job_review_view),
+                name="core_container_scan_job_review",
             ),
         ]
         return custom + urls
@@ -905,6 +972,11 @@ class ContainerAdmin(admin.ModelAdmin):
 
         return JsonResponse({"created": created, "skipped": skipped})
 
+    # Сколько задач на проверке разбираем «по-настоящему» за один запрос
+    # списка: заголовок и счётчик расхождений строятся сверкой с БД, и на
+    # частом опросе гонять её по всем задачам подряд незачем.
+    SCAN_REVIEW_PREVIEW_LIMIT = 10
+
     def scan_jobs_view(self, request, object_id: int):
         """JSON-статусы AI-задач этого контейнера (для панели в карточке)."""
         from django.db.models import Q
@@ -912,15 +984,18 @@ class ContainerAdmin(admin.ModelAdmin):
         from django.urls import reverse
 
         from core.models.scans import ScanProcessingJob
+        from core.services.scan_review import build_scan_review
 
+        container = Container.objects.filter(pk=object_id).first()
         jobs = (
             ScanProcessingJob.objects.filter(Q(target_container_id=object_id) | Q(linked_container_id=object_id))
-            .select_related("linked_car")
+            .select_related("linked_car", "target_container", "linked_container")
             .order_by("-created_at")[:50]
         )
 
         items = []
         has_active = False
+        reviews_built = 0
         for job in jobs:
             data = job.extracted_data or {}
             changes = job.applied_changes or {}
@@ -935,6 +1010,21 @@ class ContainerAdmin(admin.ModelAdmin):
                 n_veh = len(data.get("vehicles") or [])
                 summary = (data.get("container_number") or "—") + (f" ({n_veh} авто)" if n_veh else "")
 
+            needs_attention = job.status in (
+                ScanProcessingJob.STATUS_NEEDS_REVIEW,
+                ScanProcessingJob.STATUS_ERROR,
+            )
+            headline, severity, diff_count = "", "ok", 0
+            if needs_attention and reviews_built < self.SCAN_REVIEW_PREVIEW_LIMIT:
+                review = build_scan_review(job)
+                headline = review["headline"]
+                severity = review["severity"]
+                diff_count = review["diff_count"]
+                reviews_built += 1
+            elif needs_attention:
+                headline = job.error_message or data.get("auto_apply_skipped") or job.get_status_display()
+                severity = "warn"
+
             items.append(
                 {
                     "id": job.id,
@@ -943,22 +1033,85 @@ class ContainerAdmin(admin.ModelAdmin):
                     "status": job.status,
                     "status_label": job.get_status_display(),
                     "summary": summary,
+                    "headline": headline,
+                    "severity": severity,
+                    "diff_count": diff_count,
                     "file_name": (job.original_file.name or "").rsplit("/", 1)[-1] if job.original_file else "",
                     "error_message": job.error_message or "",
                     "auto_applied": bool(changes.get("auto_applied")),
                     "auto_apply_skipped": data.get("auto_apply_skipped") or "",
                     "needs_review": job.status == ScanProcessingJob.STATUS_NEEDS_REVIEW,
-                    "has_vin_conflict": bool(data.get("vin_mismatch_review")),
+                    "has_vin_conflict": bool(data.get("vin_mismatch_review") or data.get("vin_conflicts")),
                     # Для live-синхронизации чекбокса «Т» в инлайне машин:
                     # AI мог поставить has_title, пока карточка открыта, и
                     # сохранение устаревшей формы сбросило бы галочку.
                     "car_vin": job.linked_car.vin if job.linked_car_id and job.linked_car else "",
                     "car_has_title": bool(job.linked_car.has_title) if job.linked_car_id and job.linked_car else False,
                     "admin_url": reverse("admin:core_scanprocessingjob_change", args=[job.id]),
+                    "review_url": reverse("admin:core_container_scan_job_review", args=[object_id, job.id]),
                     "created_at": timezone.localtime(job.created_at).strftime("%d.%m %H:%M"),
                 }
             )
-        return JsonResponse({"jobs": items, "has_active": has_active})
+        return JsonResponse(
+            {
+                "jobs": items,
+                "has_active": has_active,
+                "summary": self._scan_docs_summary(container, items),
+            }
+        )
+
+    @staticmethod
+    def _scan_docs_summary(container, items: list[dict]) -> dict:
+        """Строка состояния документов контейнера над списком задач.
+
+        Отвечает на вопрос «всё ли собрано»: есть ли dock receipt, у скольких
+        машин уже есть тайтл и сколько задач ждут решения оператора.
+        """
+        if container is None:
+            return {}
+        cars = list(container.container_cars.all().only("id", "has_title"))
+        with_title = sum(1 for car in cars if car.has_title)
+        return {
+            "cars_total": len(cars),
+            "cars_with_title": with_title,
+            "cars_without_title": len(cars) - with_title,
+            "dock_receipt": bool(container.dock_receipt_scan),
+            "needs_review": sum(1 for item in items if item["needs_review"]),
+            "errors": sum(1 for item in items if item["status"] == "ERROR"),
+            "processing": sum(1 for item in items if item["status"] in ("PENDING", "PROCESSING")),
+        }
+
+    def scan_job_review_view(self, request, object_id: int, job_id: int):
+        """HTML-фрагмент со сверкой одной задачи (раскрытая карточка в панели).
+
+        Отдаём именно разметку, а не JSON: тот же шаблон рендерится на
+        странице задачи, и держать две реализации одной таблицы незачем.
+        """
+        from django.db.models import Q
+        from django.http import HttpResponseForbidden
+        from django.shortcuts import get_object_or_404
+        from django.urls import reverse
+
+        from core.models.scans import ScanProcessingJob
+        from core.services.scan_review import RESOLVE_ACTIONS, build_scan_review
+
+        if not self.has_change_permission(request):
+            return HttpResponseForbidden("Нет прав")
+
+        job = get_object_or_404(
+            ScanProcessingJob.objects.filter(Q(target_container_id=object_id) | Q(linked_container_id=object_id)),
+            pk=job_id,
+        )
+        return render(
+            request,
+            "admin/scan_review/_report.html",
+            {
+                "report": build_scan_review(job),
+                "mode": "panel",
+                "resolve_actions": list(RESOLVE_ACTIONS),
+                "action_url": reverse("admin:core_container_scan_job_action", args=[object_id, job_id]),
+            },
+        )
 
     def scan_job_action_view(self, request, object_id: int, job_id: int):
         """AJAX-действия над AI-задачей прямо из панели карточки контейнера.
@@ -983,6 +1136,22 @@ class ContainerAdmin(admin.ModelAdmin):
             pk=job_id,
         )
         action = request.POST.get("action", "")
+
+        # Решения по спорному VIN (какая из двух записей верна) закрываются
+        # прямо в панели — уходить на страницу задачи ради двух кнопок
+        # оператору не нужно.
+        from core.services.scan_review import RESOLVE_ACTIONS, resolve_vin_conflict
+
+        if action in RESOLVE_ACTIONS:
+            ok, message = resolve_vin_conflict(
+                job,
+                action,
+                car_id=request.POST.get("car_id"),
+                chosen_vin=request.POST.get("chosen_vin", ""),
+                doc_vin=request.POST.get("doc_vin", ""),
+                user=request.user,
+            )
+            return JsonResponse({"ok": ok, "message": message})
 
         if action in ("apply", "apply_force"):
             if job.status != ScanProcessingJob.STATUS_NEEDS_REVIEW:

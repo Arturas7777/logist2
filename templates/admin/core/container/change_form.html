@@ -269,6 +269,10 @@
 
 {% block after_related_objects %}
   {{ block.super }}
+  {# Сверка данных: расхождения между карточками, Dock Receipt и тайтлами. #}
+  {% if original.pk %}
+  {% include "admin/core/container/_audit_panel.html" %}
+  {% endif %}
   {# Документы (AI): dock receipt + тайтлы — загрузка и статусы обработки. #}
   {% if original.pk %}
   {% include "admin/core/container/_documents_panel.html" %}

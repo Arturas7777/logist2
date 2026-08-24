@@ -1,0 +1,92 @@
+/*
+ * Подсказки проверки VIN под полем ввода — карточка авто и инлайн машин
+ * в контейнере. Панель рисует vin_guard.js, разметка одинаковая в обоих
+ * местах, поэтому стили лежат отдельно от общей формы.
+ */
+
+/* Панель лежит в body и позиционируется фиксированно: она не влияет на высоту
+   строки формы и не режется ячейками табличного инлайна, у которых стоит
+   overflow: hidden. Координаты проставляет vin_guard.js. */
+.cm-vin-panel {
+    position: fixed;
+    z-index: 1200;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    width: 280px;
+    padding: 8px;
+    border: 1px solid var(--cm-border, #e0dcf8);
+    border-radius: 8px;
+    background: var(--cm-card, #fff);
+    box-shadow: 0 6px 18px rgba(26, 26, 46, .14);
+}
+
+.cm-vin-panel[hidden] {
+    display: none;
+}
+
+/* Метка на самом поле: панель уезжает к следующей строке, а неразобранное
+   замечание должно оставаться заметным. */
+input.cm-vin-flag {
+    border-color: var(--cm-red, #dc2626) !important;
+    box-shadow: 0 0 0 2px var(--cm-red-bg, #fee2e2);
+}
+
+.cm-vin-badge {
+    font-size: .72rem;
+    font-weight: 600;
+    line-height: 1.35;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: var(--cm-bg, #f4f2ff);
+    color: var(--cm-text-secondary, #6b7280);
+    border: 1px solid var(--cm-border, #e0dcf8);
+}
+
+.cm-vin-badge.is-ok {
+    background: var(--cm-green-bg, #d1fae5);
+    color: var(--cm-green, #10b981);
+    border-color: transparent;
+}
+
+.cm-vin-issue {
+    font-size: .72rem;
+    line-height: 1.4;
+    padding: 5px 8px;
+    border-radius: 6px;
+    background: var(--cm-red-bg, #fee2e2);
+    color: var(--cm-red, #dc2626);
+}
+
+.cm-vin-fix {
+    display: block;
+    margin-top: 4px;
+    padding: 2px 8px;
+    font-size: .7rem;
+    font-weight: 600;
+    border: 1px solid currentColor;
+    border-radius: 5px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+.cm-vin-fix:hover {
+    background: rgba(255, 255, 255, .55);
+}
+
+.cm-vin-confirm {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    font-size: .72rem;
+    line-height: 1.35;
+    font-weight: 600;
+    color: var(--cm-text, #1a1a2e);
+    cursor: pointer;
+}
+
+.cm-vin-confirm input {
+    margin: 1px 0 0;
+    flex: none;
+}

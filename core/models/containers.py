@@ -172,6 +172,28 @@ class Container(models.Model):
         "Автоматически проставляется при открытии листа печати.",
     )
 
+    # Денормализованный итог сверки данных (см. core.services.container_audit).
+    # Сам аудит считается на лету, но в списке контейнеров считать его для
+    # каждой строки дорого — поэтому уровень и количество находок хранятся
+    # здесь и обновляются после изменения машин и применения сканов.
+    AUDIT_LEVEL_OK = "ok"
+    AUDIT_LEVEL_WARN = "warn"
+    AUDIT_LEVEL_ERROR = "error"
+    AUDIT_LEVEL_CHOICES = [
+        (AUDIT_LEVEL_OK, "Расхождений нет"),
+        (AUDIT_LEVEL_WARN, "Есть замечания"),
+        (AUDIT_LEVEL_ERROR, "Есть расхождения"),
+    ]
+    data_audit_level = models.CharField(
+        max_length=10,
+        choices=AUDIT_LEVEL_CHOICES,
+        default=AUDIT_LEVEL_OK,
+        db_index=True,
+        verbose_name="Сверка данных",
+    )
+    data_audit_count = models.PositiveSmallIntegerField(default=0, verbose_name="Находок сверки")
+    data_audit_checked_at = models.DateTimeField(null=True, blank=True, verbose_name="Сверка выполнена")
+
     objects = OptimizedContainerManager()
 
     @property

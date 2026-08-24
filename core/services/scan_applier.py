@@ -127,6 +127,92 @@ def find_similar_vins(
     return candidates
 
 
+def build_vin_candidate(vin: str, car_id, distance: int) -> dict:
+    """Кандидат для разрешения спорного VIN, вместе с расшифровкой NHTSA.
+
+    Оператору нужно понять, какой из двух почти одинаковых VIN настоящий.
+    Самый надёжный признак — расшифровка: у верного VIN марка и год из
+    NHTSA сходятся с карточкой, у ошибочного нет. Расшифровка берётся из
+    кэша ``VinCheck``, поэтому список кандидатов строится без похода в сеть
+    на каждый вызов.
+    """
+    candidate: dict = {"vin": vin, "car_id": car_id, "hamming_distance": distance}
+    car = Car.objects.filter(pk=car_id).only("brand", "year").first() if car_id else None
+    try:
+        from core.services.vin_gate import check_vin
+
+        verdict = check_vin(
+            vin,
+            brand=car.brand if car else None,
+            year=car.year if car else None,
+            exclude_car_id=car_id,
+            check_duplicates=False,
+        )
+    except Exception:
+        logger.warning("Не удалось проверить кандидата VIN %s", vin, exc_info=True)
+        return candidate
+
+    check = verdict.check
+    candidate["validation"] = {
+        "checksum_ok": bool(check.checksum_ok) if check else False,
+        "warnings_count": len(verdict.issues),
+        "nhtsa_make": check.nhtsa_make if check else "",
+        "nhtsa_model": check.nhtsa_model if check else "",
+        "nhtsa_year": check.nhtsa_year if check else None,
+        "nhtsa_ok": bool(check.nhtsa_ok) if check else False,
+    }
+    return candidate
+
+
+def dock_vin_overrides(data: dict) -> dict[str, str]:
+    """Решения оператора «VIN из документа на самом деле относится к машине X».
+
+    Хранятся в ``extracted_data`` как ``{vin_в_документе: vin_в_базе}``,
+    чтобы повторное применение задачи вело себя так же, как первое.
+    """
+    raw = data.get("vin_overrides") or {}
+    return {_normalize_vin(k): _normalize_vin(v) for k, v in raw.items() if k and v}
+
+
+def detect_dock_vin_conflicts(data: dict, container=None) -> list[dict]:
+    """VIN документа, почти совпадающие с уже заведёнными машинами.
+
+    Ровно та же защита, что давно стоит на тайтлах, но для Dock Receipt.
+    Без неё сценарий «машины завели руками с опечаткой, потом загрузили
+    документ» приводил к тихому созданию второй карточки на ту же машину.
+
+    Возвращает список конфликтов в том же виде, что ``vin_mismatch_review``
+    у тайтлов, плюс ключ ``extracted_vin`` — какой именно VIN документа
+    спорный (в одном документе их может быть несколько).
+    """
+    if data.get("skip_vin_check"):
+        return []
+    overrides = dock_vin_overrides(data)
+    conflicts: list[dict] = []
+    for veh in data.get("vehicles") or []:
+        vin = _normalize_vin(veh.get("vin"))
+        if not vin or len(vin) != 17 or vin in overrides:
+            continue
+        if Car.objects.filter(vin=vin).exists():
+            continue  # точное совпадение — сомнений нет
+        # Машины контейнера — более вероятный источник опечатки, поэтому
+        # сначала ищем среди них и только потом по всей базе.
+        similar = []
+        if container is not None and container.pk:
+            similar = find_similar_vins(vin, queryset=container.container_cars.all())
+        if not similar:
+            similar = find_similar_vins(vin)
+        if not similar:
+            continue
+        conflicts.append(
+            {
+                "extracted_vin": vin,
+                "candidates": [build_vin_candidate(v, cid, d) for v, cid, d in similar[:5]],
+            }
+        )
+    return conflicts
+
+
 # ── Утилиты ────────────────────────────────────────────────────────────────
 
 
@@ -237,41 +323,9 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
         if not data.get("skip_vin_check"):
             similar = find_similar_vins(primary_vin)
             if similar:
-                # Валидируем каждого кандидата через NHTSA, чтобы оператор
-                # сразу видел, какой из двух VIN правильный (тот, у кого
-                # ✓ NHTSA + сходится год с make).
-                from core.services.vin_validator import cross_check_with_ai_data
-
-                candidates_payload = []
-                for v, cid, d in similar[:5]:
-                    candidate = {"vin": v, "car_id": cid, "hamming_distance": d}
-                    try:
-                        cand_car = Car.objects.filter(pk=cid).only("brand", "year").first()
-                        if cand_car:
-                            val = cross_check_with_ai_data(
-                                v,
-                                ai_make=(cand_car.brand or "").split()[0] if cand_car.brand else None,
-                                ai_year=cand_car.year,
-                            )
-                            nhtsa = val.get("nhtsa") or {}
-                            candidate["validation"] = {
-                                "checksum_ok": val.get("checksum_ok"),
-                                "warnings_count": len(val.get("warnings") or []),
-                                "nhtsa_make": nhtsa.get("make"),
-                                "nhtsa_model": nhtsa.get("model"),
-                                "nhtsa_year": nhtsa.get("year"),
-                                "nhtsa_ok": nhtsa.get("ok"),
-                            }
-                    except Exception as e:
-                        logger.warning(
-                            "Candidate VIN validation failed for %s: %s",
-                            v,
-                            e,
-                        )
-                    candidates_payload.append(candidate)
                 data["vin_mismatch_review"] = {
                     "extracted_vin": primary_vin,
-                    "candidates": candidates_payload,
+                    "candidates": [build_vin_candidate(v, cid, d) for v, cid, d in similar[:5]],
                 }
                 job.extracted_data = data
                 job.status = ScanProcessingJob.STATUS_NEEDS_REVIEW
@@ -430,6 +484,27 @@ def apply_dock_receipt_job(job: ScanProcessingJob, *, applied_by=None) -> ScanPr
 
     booking_number = (data.get("booking_number") or "").strip().upper()
 
+    # ── Защита от дублей ──
+    # Проверяем ДО любых изменений: если VIN документа почти совпадает с уже
+    # заведённой машиной, применять нельзя — иначе на ту же машину появится
+    # вторая карточка. Контейнер для поиска берём, не создавая его.
+    lookup_container = target if target is not None else Container.objects.filter(number=container_number).first()
+    conflicts = detect_dock_vin_conflicts(data, lookup_container)
+    if conflicts:
+        data["vin_conflicts"] = conflicts
+        job.extracted_data = data
+        job.status = ScanProcessingJob.STATUS_NEEDS_REVIEW
+        first = conflicts[0]
+        job.error_message = (
+            f"VIN {first['extracted_vin']} похож на существующий "
+            f"{first['candidates'][0]['vin']} (отличие {first['candidates'][0]['hamming_distance']} симв.). "
+            "Выберите, где ошибка." + (f" Спорных VIN всего: {len(conflicts)}." if len(conflicts) > 1 else "")
+        )
+        job.save(update_fields=["extracted_data", "status", "error_message"])
+        logger.warning("DOCK_RECEIPT job #%s отложен: спорных VIN %d", job.pk, len(conflicts))
+        return job
+    data.pop("vin_conflicts", None)
+
     # Авто-определение линии из "Exporting Carrier".
     detected_line = detect_line_from_carrier(data.get("exporting_carrier"))
 
@@ -498,14 +573,18 @@ def apply_dock_receipt_job(job: ScanProcessingJob, *, applied_by=None) -> ScanPr
         container.save(update_fields=list({*update_fields, "dock_receipt_scan"}))
 
     vehicles = data.get("vehicles") or []
+    overrides = dock_vin_overrides(data)
     affected = []
     created_vins = []
     for veh in vehicles:
-        vin = _normalize_vin(veh.get("vin"))
-        if not vin or len(vin) != 17:
+        doc_vin = _normalize_vin(veh.get("vin"))
+        if not doc_vin or len(doc_vin) != 17:
             # Невалидный VIN — пропускаем, но логируем.
-            logger.warning("Job #%s: пропущен невалидный VIN %r", job.pk, vin)
+            logger.warning("Job #%s: пропущен невалидный VIN %r", job.pk, doc_vin)
             continue
+        # Оператор мог решить, что VIN документа относится к уже заведённой
+        # машине (в документе опечатка) — тогда работаем с её VIN.
+        vin = overrides.get(doc_vin, doc_vin)
         weight_kg = _resolve_weight_kg(veh)
         car = Car.objects.filter(vin=vin).first()
         car_created = False
@@ -538,15 +617,18 @@ def apply_dock_receipt_job(job: ScanProcessingJob, *, applied_by=None) -> ScanPr
         if weight_kg is not None:
             car.weight_kg = weight_kg
         car.save(update_fields=["container", "weight_kg"])
-        affected.append(
-            {
-                "vin": vin,
-                "car_id": car.id,
-                "created": car_created,
-                "weight_kg": float(weight_kg) if weight_kg is not None else None,
-            }
-        )
+        record = {
+            "vin": vin,
+            "car_id": car.id,
+            "created": car_created,
+            "weight_kg": float(weight_kg) if weight_kg is not None else None,
+        }
+        if vin != doc_vin:
+            record["vin_in_document"] = doc_vin
+        affected.append(record)
 
+    data.pop("skip_vin_check", None)
+    job.extracted_data = data
     job.linked_container = container
     # Если в Dock Receipt была одна машина — для удобства поставим её в linked_car.
     if len(affected) == 1:
@@ -556,6 +638,7 @@ def apply_dock_receipt_job(job: ScanProcessingJob, *, applied_by=None) -> ScanPr
     job.status = ScanProcessingJob.STATUS_APPLIED
     job.applied_at = timezone.now()
     job.applied_by = applied_by
+    job.error_message = ""
     job.applied_changes = {
         "container_id": container.id,
         "container_number": container.number,
@@ -578,6 +661,8 @@ def apply_dock_receipt_job(job: ScanProcessingJob, *, applied_by=None) -> ScanPr
             "applied_at",
             "applied_by",
             "applied_changes",
+            "extracted_data",
+            "error_message",
         ]
     )
     logger.info(
@@ -689,7 +774,7 @@ def evaluate_auto_apply(job: ScanProcessingJob) -> tuple[bool, str]:
     if job.status != ScanProcessingJob.STATUS_NEEDS_REVIEW:
         return False, f"статус {job.status}, а не NEEDS_REVIEW"
     data = job.extracted_data or {}
-    if data.get("vin_mismatch_review"):
+    if data.get("vin_mismatch_review") or data.get("vin_conflicts"):
         return False, "есть неразрешённый VIN-конфликт"
     target = job.target_container if job.target_container_id else None
 
@@ -736,6 +821,13 @@ def evaluate_auto_apply(job: ScanProcessingJob) -> tuple[bool, str]:
         vehicles = data.get("vehicles") or []
         if not vehicles:
             return False, "AI не нашёл ни одной машины в dock receipt"
+        conflicts = detect_dock_vin_conflicts(data, target)
+        if conflicts:
+            first = conflicts[0]
+            return False, (
+                f"VIN {first['extracted_vin']} похож на существующий "
+                f"{first['candidates'][0]['vin']} — нужно решение оператора"
+            )
         for veh in vehicles:
             vin = _normalize_vin(veh.get("vin"))
             if not vin or len(vin) != 17:

@@ -114,4 +114,11 @@ app.conf.beat_schedule = {
         "task": "core.tasks.update_container_etas_task",
         "schedule": crontab(hour=5, minute=45),
     },
+    # Сверка данных контейнеров: догоняет кэш проверок VIN, пересчитывает
+    # бейджи расхождений и заводит «Дела» по проблемным контейнерам.
+    # Ночью, до утреннего дайджеста — чтобы находки попали в него же.
+    "audit-container-data-daily": {
+        "task": "core.tasks.audit_all_containers",
+        "schedule": crontab(hour=6, minute=30),
+    },
 }

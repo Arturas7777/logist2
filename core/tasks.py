@@ -1,8 +1,10 @@
 import logging
+import time
 from contextlib import contextmanager
 
 from celery import shared_task
 from django.core.cache import cache
+from django.db.models import Q
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -1051,6 +1053,106 @@ def update_container_etas_task():
     summary = {"total": containers.count(), "updated": updated, "unchanged": unchanged, "skipped": skipped}
     logger.info("update_container_etas: %s", summary)
     return summary
+
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=60, time_limit=60)
+def refresh_vin_check_task(self, vin):
+    """Обновить кэш проверки VIN (контрольная цифра + NHTSA).
+
+    Ставится при появлении нового VIN — из формы админки или из применения
+    скана. Сеть здесь не критична: если NHTSA недоступен, снимок сохранится
+    с ``nhtsa_ok=False`` и будет перепроверен позже.
+    """
+    from core.services.vin_gate import refresh_vin_check
+
+    check = refresh_vin_check(vin)
+    if check is None:
+        return {"ok": False, "reason": "bad_length", "vin": vin}
+    return {"ok": True, "vin": check.vin, "nhtsa_ok": check.nhtsa_ok}
+
+
+@shared_task(time_limit=1800)
+def audit_all_containers(days: int = 180, max_vin_checks: int = 300):
+    """Ежедневная сверка данных по активным контейнерам (celery beat).
+
+    Делает три вещи:
+      1. Догоняет кэш ``VinCheck`` по машинам, которых там ещё нет —
+         например, заведённым до появления проверки или пока NHTSA лежал.
+      2. Пересчитывает бейдж сверки у контейнеров.
+      3. Заводит «Дело» по контейнерам с расхождениями, чтобы находка не
+         осталась незамеченной, если карточку никто не открывает.
+
+    ``days`` ограничивает выборку свежими контейнерами: старые переданные
+    контейнеры сверять уже поздно, а гонять по ним NHTSA — расточительно.
+    """
+    from datetime import timedelta
+
+    from core.models import Car, Container, Task, VinCheck
+    from core.services.container_audit import build_audit_report, refresh_container_audit
+    from core.services.vin_gate import refresh_vin_check
+
+    since = timezone.now().date() - timedelta(days=days)
+    containers = Container.objects.filter(
+        Q(unload_date__isnull=True) | Q(unload_date__gte=since),
+    ).order_by("-id")
+
+    # ── 1. Догоняем кэш проверок VIN ──
+    known = set(VinCheck.objects.values_list("vin", flat=True))
+    missing = [
+        vin
+        for vin in Car.objects.filter(container__in=containers).exclude(vin="").values_list("vin", flat=True).distinct()
+        if vin and len(vin) == 17 and vin not in known
+    ][:max_vin_checks]
+    checked = 0
+    for vin in missing:
+        try:
+            refresh_vin_check(vin)
+            checked += 1
+        except Exception:
+            logger.warning("Фоновая проверка VIN %s не удалась", vin, exc_info=True)
+        time.sleep(0.25)  # NHTSA держит ~5 запросов в секунду — не наглеем
+
+    # ── 2 и 3. Сверка и напоминания ──
+    with_problems, tasks_created = 0, 0
+    for container in containers.iterator():
+        try:
+            report = build_audit_report(container)
+            refresh_container_audit(container, report)
+        except Exception:
+            logger.warning("Сверка контейнера #%s не удалась", container.pk, exc_info=True)
+            continue
+        if report["errors"] == 0:
+            continue
+        with_problems += 1
+        if _ensure_audit_task(container, report, Task):
+            tasks_created += 1
+
+    summary = {
+        "containers": containers.count(),
+        "vin_checked": checked,
+        "with_problems": with_problems,
+        "tasks_created": tasks_created,
+    }
+    logger.info("audit_all_containers: %s", summary)
+    return summary
+
+
+def _ensure_audit_task(container, report, task_model) -> bool:
+    """Заводит «Дело» по контейнеру с расхождениями, не плодя дубликаты."""
+    title = f"Сверка данных: контейнер {container.number}"
+    if task_model.objects.filter(container=container, title=title, is_completed=False).exists():
+        return False
+    description = "\n".join(f"• {finding['message']}" for finding in report["findings"] if finding["level"] == "error")
+    task_model.objects.create(
+        title=title,
+        description=description or report["headline"],
+        priority="HIGH",
+        container=container,
+        auto_created=True,
+        origin=task_model.ORIGIN_AUTO_CAR,
+        created_by="Сверка данных",
+    )
+    return True
 
 
 @shared_task(bind=True, max_retries=1, default_retry_delay=600, time_limit=180)

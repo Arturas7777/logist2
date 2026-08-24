@@ -1,0 +1,39 @@
+{% comment %}
+Одна кнопка действия отчёта сверки.
+
+В панели контейнера (mode="panel") это обычная кнопка с data-атрибутами —
+её ловит делегированный обработчик и шлёт AJAX. На странице задачи
+(mode="page") действий-эндпоинтов нет, поэтому кнопка оборачивается в
+POST-форму. Разметка отчёта при этом остаётся одна на оба места.
+
+Контекст: act (dict действия), mode, resolve_url, action_url.
+{% endcomment %}
+{% if mode == "page" %}
+  <form method="post" action="{% if act.action in resolve_actions %}{{ resolve_url }}{% else %}{{ action_url }}{% endif %}" style="display:inline;">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="{{ act.action }}">
+    {% if act.car_id %}<input type="hidden" name="car_id" value="{{ act.car_id }}">{% endif %}
+    {% if act.vin %}<input type="hidden" name="chosen_vin" value="{{ act.vin }}">{% endif %}
+    {% if act.doc_vin %}<input type="hidden" name="doc_vin" value="{{ act.doc_vin }}">{% endif %}
+    <button type="submit"
+            class="cm-sr-btn cm-sr-btn--{{ act.kind }}"
+            {% if act.disabled %}disabled{% endif %}
+            title="{{ act.hint }}"
+            {% if act.confirm %}onclick="return confirm('{{ act.confirm|escapejs }}');"{% endif %}>
+      {{ act.label }}
+    </button>
+  </form>
+{% else %}
+  <button type="button"
+          class="cm-sr-btn cm-sr-btn--{{ act.kind }} js-sr-action"
+          data-action="{{ act.action }}"
+          data-job="{{ report.job_id }}"
+          {% if act.car_id %}data-car="{{ act.car_id }}"{% endif %}
+          {% if act.vin %}data-vin="{{ act.vin }}"{% endif %}
+          {% if act.doc_vin %}data-doc-vin="{{ act.doc_vin }}"{% endif %}
+          data-confirm="{{ act.confirm }}"
+          {% if act.disabled %}disabled{% endif %}
+          title="{{ act.hint }}">
+    {{ act.label }}
+  </button>
+{% endif %}

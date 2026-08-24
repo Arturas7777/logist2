@@ -1,123 +1,212 @@
 {% comment %}
-Панель «Документы (AI)» в карточке контейнера.
+Панель «Документы и сверка» в карточке контейнера.
 
-Загрузка dock receipt и сканов тайтлов прямо из карточки: файлы уходят в
+Dock receipt и тайтлы загружаются прямо отсюда: файлы уходят в
 ScanProcessingJob с target_container = этот контейнер, обрабатываются AI
 (Claude Vision + валидация VIN) и при уверенном результате применяются
-автоматически. Список задач обновляется опросом JSON-эндпоинта.
-{% endcomment %}
-<div class="module" id="container-docs-section"
-     style="margin-top: 20px; border: 1px solid var(--cm-border, #dee2e6); border-radius: 8px; overflow: hidden;">
-  <h2 style="margin: 0; padding: 10px 14px;">📄 Документы (AI-обработка)</h2>
+автоматически.
 
-  <div style="padding: 14px;">
-    <div style="display: flex; gap: 12px; flex-wrap: wrap;">
-      {# ── Dock Receipt ── #}
-      <label id="cm-docs-drop-dock"
-             style="flex: 1; min-width: 240px; display: block; border: 2px dashed #10b981; border-radius: 8px;
-                    padding: 18px 12px; text-align: center; cursor: pointer; transition: background .2s;">
-        <div style="font-weight: 600; color: #10b981;">Dock Receipt</div>
-        <div style="font-size: 12px; color: #6c757d; margin-top: 4px;">
+Задача, которую AI не смог закрыть сам, раскрывается в строке списка:
+рядом показываются таблица расхождений «документ ↔ карточка» и сам скан,
+а решения (прикрепить, исправить VIN, создать машину) принимаются здесь
+же, без ухода на страницу задачи.
+{% endcomment %}
+<div class="cm-docs" id="container-docs-section">
+  <div class="cm-docs-head">
+    <i class="bi bi-file-earmark-check"></i>
+    <span>Документы и сверка</span>
+  </div>
+
+  <div class="cm-docs-body">
+    <div class="cm-docs-summary" id="cm-docs-summary"></div>
+
+    <div class="cm-docs-drops">
+      <label class="cm-docs-drop cm-docs-drop--dock" id="cm-docs-drop-dock">
+        <div class="cm-docs-drop-title">Dock Receipt</div>
+        <div class="cm-docs-drop-hint">
           Перетащите или нажмите (PDF/JPG/PNG).<br>
           Машины из документа добавятся в этот контейнер.
         </div>
-        <input type="file" id="cm-docs-input-dock" multiple
-               accept="application/pdf,image/jpeg,image/png" style="position: absolute; left: -9999px;">
+        <input type="file" id="cm-docs-input-dock" multiple accept="application/pdf,image/jpeg,image/png">
       </label>
 
-      {# ── Тайтлы ── #}
-      <label id="cm-docs-drop-title"
-             style="flex: 1; min-width: 240px; display: block; border: 2px dashed #3b82f6; border-radius: 8px;
-                    padding: 18px 12px; text-align: center; cursor: pointer; transition: background .2s;">
-        <div style="font-weight: 600; color: #3b82f6;">Тайтлы (можно несколько)</div>
-        <div style="font-size: 12px; color: #6c757d; margin-top: 4px;">
+      <label class="cm-docs-drop cm-docs-drop--title" id="cm-docs-drop-title">
+        <div class="cm-docs-drop-title">Тайтлы (можно несколько)</div>
+        <div class="cm-docs-drop-hint">
           Перетащите или нажмите (PDF/JPG/PNG).<br>
           VIN сверяется с машинами контейнера, тайтл прикрепится к нужному авто.
         </div>
-        <input type="file" id="cm-docs-input-title" multiple
-               accept="application/pdf,image/jpeg,image/png" style="position: absolute; left: -9999px;">
+        <input type="file" id="cm-docs-input-title" multiple accept="application/pdf,image/jpeg,image/png">
       </label>
     </div>
 
-    <div id="cm-docs-message" style="margin-top: 10px; font-size: 13px;"></div>
-    <div id="cm-docs-jobs" style="margin-top: 12px;"></div>
+    <div class="cm-docs-message" id="cm-docs-message"></div>
+    <div class="cm-docs-list" id="cm-docs-jobs"></div>
   </div>
 </div>
 
 <script>
 (function () {
+  'use strict';
+
   var uploadUrl = "{% url 'admin:core_container_upload_docs' original.pk %}";
   var jobsUrl = "{% url 'admin:core_container_scan_jobs' original.pk %}";
   var actionUrlTemplate = "{% url 'admin:core_container_scan_job_action' original.pk 0 %}";
   var pollTimer = null;
+  var pollErrors = 0;
+  var openJobs = {};   // id задачи -> true, пока её сверка раскрыта
+  var lastSignature = null;
 
-  var STATUS_COLORS = {
-    PENDING: "#9ca3af",
-    PROCESSING: "#06b6d4",
-    NEEDS_REVIEW: "#f59e0b",
-    APPLIED: "#10b981",
-    ERROR: "#ef4444",
-    IGNORED: "#d1d5db"
+  var STATUS_CLASS = {
+    PENDING: 'cm-tag--pending',
+    PROCESSING: 'cm-tag--processing',
+    NEEDS_REVIEW: 'cm-tag--needs-review',
+    APPLIED: 'cm-tag--applied',
+    ERROR: 'cm-tag--error',
+    IGNORED: 'cm-tag--ignored'
   };
-  var TYPE_COLORS = { TITLE: "#3b82f6", DOCK_RECEIPT: "#10b981" };
 
   function getCsrf() {
     var el = document.querySelector('[name=csrfmiddlewaretoken]');
     return el ? el.value : '';
   }
 
-  function setMessage(text, isError) {
+  function notify(text, kind) {
+    if (window.cmToast) {
+      window.cmToast(text, { kind: kind || 'info' });
+    }
     var box = document.getElementById('cm-docs-message');
     box.textContent = text || '';
-    box.style.color = isError ? '#ef4444' : '#10b981';
+    box.style.color = kind === 'error' ? 'var(--cm-red, #ef4444)' : 'var(--cm-text-secondary, #6b7280)';
   }
 
-  function badge(text, bg, dark) {
-    var s = document.createElement('span');
-    s.textContent = text;
-    s.style.cssText = 'background:' + bg + ';color:' + (dark ? '#212529' : '#fff') +
-      ';padding:2px 8px;border-radius:4px;font-size:11px;white-space:nowrap;';
-    return s;
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = text;
+    return node;
   }
 
-  function actionButton(label, color, onClick) {
-    var b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = label;
-    b.style.cssText = 'background:#fff;border:1px solid ' + color + ';color:' + color +
-      ';padding:2px 10px;border-radius:4px;font-size:12px;cursor:pointer;white-space:nowrap;';
-    b.addEventListener('click', onClick);
-    return b;
+  function tag(text, className) {
+    return el('span', 'cm-tag ' + className, text);
   }
 
-  function postAction(jobId, action, confirmText) {
-    if (confirmText && !window.confirm(confirmText)) return;
-    var fd = new FormData();
-    fd.append('action', action);
-    setMessage('Выполняется…', false);
-    fetch(actionUrlTemplate.replace(/0\/action\/$/, jobId + '/action/'), {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'X-CSRFToken': getCsrf() },
-      body: fd
-    })
-      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
-      .then(function (res) {
-        if (!res.ok) {
-          setMessage('Ошибка: ' + (res.data.error || 'не удалось выполнить'), true);
-        } else if (res.data.ok === false) {
-          setMessage(res.data.message || 'Задача осталась на проверке', true);
-        } else {
-          setMessage(res.data.message || 'Готово', false);
-          // Применение могло добавить машины в контейнер — предложим
-          // обновить страницу, чтобы увидеть их в списке.
-          if (action === 'apply' || action === 'apply_force') {
-            setMessage((res.data.message || 'Готово') + '. Обновите страницу, чтобы увидеть изменения в карточке.', false);
-          }
-        }
-        refreshJobs();
+  // ── Сводка по документам контейнера ──────────────────────────────────
+  function renderSummary(summary) {
+    var box = document.getElementById('cm-docs-summary');
+    box.innerHTML = '';
+    if (!summary || summary.cars_total === undefined) return;
+
+    box.appendChild(el('span', 'cm-docs-stat ' + (summary.dock_receipt ? 'is-ok' : 'is-warn'),
+      summary.dock_receipt ? 'Dock receipt загружен' : 'Dock receipt не загружен'));
+
+    var titlesOk = summary.cars_total > 0 && summary.cars_without_title === 0;
+    box.appendChild(el('span', 'cm-docs-stat ' + (titlesOk ? 'is-ok' : ''),
+      'Тайтлы: ' + summary.cars_with_title + ' из ' + summary.cars_total));
+
+    if (summary.needs_review) {
+      box.appendChild(el('span', 'cm-docs-stat is-warn',
+        'Ждут решения: ' + summary.needs_review));
+    }
+    if (summary.errors) {
+      box.appendChild(el('span', 'cm-docs-stat is-error', 'Ошибок: ' + summary.errors));
+    }
+    if (summary.processing) {
+      box.appendChild(el('span', 'cm-docs-stat', 'AI читает: ' + summary.processing));
+    }
+  }
+
+  // ── Список задач ─────────────────────────────────────────────────────
+  function jobRow(job) {
+    var card = el('div', 'cm-job');
+    if (job.severity === 'error') card.classList.add('is-error');
+    else if (job.severity === 'warn') card.classList.add('is-warn');
+    card.dataset.job = job.id;
+    card.dataset.reviewUrl = job.review_url;
+
+    var row = el('div', 'cm-job-row');
+    row.appendChild(el('i', 'bi bi-chevron-right cm-job-caret'));
+    row.appendChild(tag(job.scan_type_label,
+      job.scan_type === 'TITLE' ? 'cm-tag--type-title' : 'cm-tag--type-dock'));
+    row.appendChild(tag(job.status_label, STATUS_CLASS[job.status] || 'cm-tag--pending'));
+
+    var headline = el('span', 'cm-job-headline', job.headline || job.summary);
+    if (job.headline && job.summary) {
+      headline.appendChild(el('span', 'cm-job-sub', job.summary + ' · ' + job.file_name));
+    }
+    row.appendChild(headline);
+
+    if (job.diff_count) {
+      row.appendChild(tag('расхождений: ' + job.diff_count, 'cm-tag--diff'));
+    }
+    if (job.auto_applied) {
+      row.appendChild(tag('автоматически', 'cm-tag--auto'));
+    }
+    row.appendChild(el('span', 'cm-job-when', job.created_at));
+
+    row.addEventListener('click', function () { toggleJob(card); });
+    card.appendChild(row);
+
+    if (openJobs[job.id]) {
+      card.classList.add('is-open');
+      var detail = el('div', 'cm-job-detail');
+      detail.appendChild(el('div', 'cm-job-loading', 'Загружаем сверку…'));
+      card.appendChild(detail);
+      loadReview(card);
+    }
+    return card;
+  }
+
+  function toggleJob(card) {
+    var id = card.dataset.job;
+    if (openJobs[id]) {
+      delete openJobs[id];
+      card.classList.remove('is-open');
+      var detail = card.querySelector('.cm-job-detail');
+      if (detail) detail.remove();
+      return;
+    }
+    openJobs[id] = true;
+    card.classList.add('is-open');
+    var box = el('div', 'cm-job-detail');
+    box.appendChild(el('div', 'cm-job-loading', 'Загружаем сверку…'));
+    card.appendChild(box);
+    loadReview(card);
+  }
+
+  function loadReview(card) {
+    var detail = card.querySelector('.cm-job-detail');
+    if (!detail) return;
+    fetch(card.dataset.reviewUrl, { credentials: 'same-origin' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
       })
-      .catch(function (e) { setMessage('Ошибка: ' + e, true); });
+      .then(function (html) { detail.innerHTML = html; })
+      .catch(function () {
+        detail.innerHTML = '';
+        detail.appendChild(el('div', 'cm-job-loading', 'Не удалось загрузить сверку. Попробуйте обновить страницу.'));
+      });
+  }
+
+  function renderJobs(data) {
+    var box = document.getElementById('cm-docs-jobs');
+    renderSummary(data.summary);
+
+    // Список перерисовываем только когда что-то изменилось: иначе опрос
+    // раз в 4 секунды схлопывал бы раскрытую сверку под руками оператора.
+    var signature = data.jobs.map(function (j) {
+      return j.id + ':' + j.status + ':' + j.diff_count + ':' + j.severity;
+    }).join('|');
+    if (signature === lastSignature) return;
+    lastSignature = signature;
+
+    box.innerHTML = '';
+    if (!data.jobs.length) {
+      box.appendChild(el('div', 'cm-docs-empty', 'Документы ещё не загружались.'));
+      return;
+    }
+    data.jobs.forEach(function (job) { box.appendChild(jobRow(job)); });
   }
 
   // AI-обработка ставит Car.has_title=True в БД, пока карточка открыта.
@@ -139,87 +228,6 @@ ScanProcessingJob с target_container = этот контейнер, обраб�
       });
     });
   }
-
-  function renderJobs(data) {
-    var box = document.getElementById('cm-docs-jobs');
-    box.innerHTML = '';
-    if (!data.jobs.length) {
-      var empty = document.createElement('div');
-      empty.textContent = 'Документы ещё не загружались.';
-      empty.style.cssText = 'color:#6c757d;font-size:13px;';
-      box.appendChild(empty);
-      return;
-    }
-    data.jobs.forEach(function (job) {
-      var row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;' +
-        'border-top:1px solid var(--cm-border, #f1f3f5);font-size:13px;flex-wrap:wrap;';
-
-      row.appendChild(badge(job.scan_type_label, TYPE_COLORS[job.scan_type] || '#9ca3af'));
-      row.appendChild(badge(job.status_label, STATUS_COLORS[job.status] || '#9ca3af',
-                            job.status === 'NEEDS_REVIEW'));
-
-      var summary = document.createElement('code');
-      summary.textContent = job.summary;
-      summary.style.cssText = 'font-size:12px;';
-      row.appendChild(summary);
-
-      if (job.auto_applied) {
-        row.appendChild(badge('применено автоматически', '#0d6efd'));
-      }
-
-      var hint = job.error_message || job.auto_apply_skipped;
-      if (hint && (job.needs_review || job.status === 'ERROR')) {
-        var hintEl = document.createElement('span');
-        hintEl.textContent = hint;
-        hintEl.style.cssText = 'color:#b45309;font-size:12px;flex-basis:100%;padding-left:4px;';
-        row.appendChild(hintEl);
-      }
-
-      var spacer = document.createElement('span');
-      spacer.style.cssText = 'flex:1;';
-      row.appendChild(spacer);
-
-      if (job.needs_review) {
-        row.appendChild(actionButton('✅ Применить', '#10b981', function () {
-          postAction(job.id, 'apply');
-        }));
-        // Для тайтла, чей VIN не сматчился с машинами: форс-вариант —
-        // поверить скану и создать новую машину с этим VIN.
-        if (job.scan_type === 'TITLE' && (job.has_vin_conflict || job.auto_apply_skipped || job.error_message)) {
-          row.appendChild(actionButton('⚠ Создать новый Car', '#f59e0b', function () {
-            postAction(job.id, 'apply_force',
-              'VIN из скана не совпал с машинами. Создать НОВУЮ машину с этим VIN в контейнере?');
-          }));
-        }
-      }
-      if (job.status === 'ERROR' || job.needs_review) {
-        row.appendChild(actionButton('🔁 Повторить', '#06b6d4', function () {
-          postAction(job.id, 'retry');
-        }));
-        row.appendChild(actionButton('🚫', '#9ca3af', function () {
-          postAction(job.id, 'ignore', 'Игнорировать этот документ?');
-        }));
-      }
-
-      var when = document.createElement('span');
-      when.textContent = job.created_at;
-      when.style.cssText = 'color:#6c757d;font-size:12px;';
-      row.appendChild(when);
-
-      var link = document.createElement('a');
-      link.href = job.admin_url;
-      link.target = '_blank';
-      link.rel = 'noopener';
-      link.textContent = 'Детали';
-      link.style.cssText = 'font-size:12px;color:#6c757d;';
-      row.appendChild(link);
-
-      box.appendChild(row);
-    });
-  }
-
-  var pollErrors = 0;
 
   function refreshJobs() {
     fetch(jobsUrl, { credentials: 'same-origin' })
@@ -243,12 +251,60 @@ ScanProcessingJob с target_container = этот контейнер, обраб�
       });
   }
 
+  // ── Действия из раскрытой сверки ─────────────────────────────────────
+  document.getElementById('cm-docs-jobs').addEventListener('click', function (event) {
+    var btn = event.target.closest('.js-sr-action');
+    if (!btn) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    var confirmText = btn.dataset.confirm;
+    if (confirmText && !window.confirm(confirmText)) return;
+
+    var fd = new FormData();
+    fd.append('action', btn.dataset.action);
+    if (btn.dataset.car) fd.append('car_id', btn.dataset.car);
+    if (btn.dataset.vin) fd.append('chosen_vin', btn.dataset.vin);
+    if (btn.dataset.docVin) fd.append('doc_vin', btn.dataset.docVin);
+
+    var card = btn.closest('.cm-job');
+    btn.disabled = true;
+    notify('Выполняется…');
+
+    fetch(actionUrlTemplate.replace(/0\/action\/$/, btn.dataset.job + '/action/'), {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'X-CSRFToken': getCsrf() },
+      body: fd
+    })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          notify(res.data.error || 'Не удалось выполнить действие', 'error');
+        } else if (res.data.ok === false) {
+          notify(res.data.message || 'Задача осталась на проверке', 'error');
+        } else {
+          notify((res.data.message || 'Готово') +
+                 ' — обновите страницу, чтобы увидеть изменения в списке машин.', 'success');
+        }
+        btn.disabled = false;
+        lastSignature = null;
+        if (card) loadReview(card);
+        refreshJobs();
+      })
+      .catch(function (e) {
+        btn.disabled = false;
+        notify('Ошибка: ' + e, 'error');
+      });
+  });
+
+  // ── Загрузка файлов ──────────────────────────────────────────────────
   function uploadFiles(scanType, files) {
     if (!files || !files.length) return;
     var fd = new FormData();
     fd.append('scan_type', scanType);
-    Array.from(files).forEach(function (f) { fd.append('files', f); });
-    setMessage('Загрузка ' + files.length + ' файла(ов)…', false);
+    Array.prototype.forEach.call(files, function (f) { fd.append('files', f); });
+    notify('Загрузка ' + files.length + ' файла(ов)…');
     fetch(uploadUrl, {
       method: 'POST',
       credentials: 'same-origin',
@@ -258,18 +314,18 @@ ScanProcessingJob с target_container = этот контейнер, обраб�
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
       .then(function (res) {
         if (!res.ok) {
-          setMessage('Ошибка: ' + (res.data.error || 'не удалось загрузить'), true);
+          notify(res.data.error || 'Не удалось загрузить', 'error');
           return;
         }
         var msg = 'Загружено: ' + res.data.created.length;
         if (res.data.skipped.length) {
           msg += '; пропущено (не PDF/JPG/PNG): ' + res.data.skipped.join(', ');
         }
-        msg += '. Обработка AI запущена.';
-        setMessage(msg, false);
+        notify(msg + '. Обработка AI запущена.', 'success');
+        lastSignature = null;
         refreshJobs();
       })
-      .catch(function (e) { setMessage('Ошибка загрузки: ' + e, true); });
+      .catch(function (e) { notify('Ошибка загрузки: ' + e, 'error'); });
   }
 
   function wireDropzone(zoneId, inputId, scanType) {
@@ -284,13 +340,13 @@ ScanProcessingJob с target_container = этот контейнер, обраб�
     ['dragenter', 'dragover'].forEach(function (ev) {
       zone.addEventListener(ev, function (e) {
         e.preventDefault(); e.stopPropagation();
-        zone.style.background = 'rgba(13, 110, 253, .06)';
+        zone.classList.add('is-over');
       });
     });
     ['dragleave', 'drop'].forEach(function (ev) {
       zone.addEventListener(ev, function (e) {
         e.preventDefault(); e.stopPropagation();
-        zone.style.background = '';
+        zone.classList.remove('is-over');
       });
     });
     zone.addEventListener('drop', function (e) {

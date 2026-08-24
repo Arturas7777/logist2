@@ -114,6 +114,24 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
 
     change_form_template = "admin/scan_processing_job/change_form.html"
 
+    class Media:
+        css = {"all": ("css/scan_review.css?v=1",)}
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        """Кладёт в контекст отчёт сверки — его рендерит change_form."""
+        from core.services.scan_review import RESOLVE_ACTIONS, build_scan_review
+
+        extra_context = extra_context or {}
+        job = self.get_object(request, object_id)
+        if job is not None:
+            extra_context["scan_review"] = build_scan_review(job)
+            extra_context["resolve_actions"] = list(RESOLVE_ACTIONS)
+            extra_context["resolve_url"] = reverse(
+                "admin:core_scanprocessingjob_resolve_vin",
+                args=[job.pk],
+            )
+        return super().change_view(request, object_id, form_url, extra_context)
+
     # ── Список ────────────────────────────────────────────────────────────
 
     def scan_type_badge(self, obj):
@@ -396,16 +414,13 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
         return custom + urls
 
     def resolve_vin_view(self, request, job_id: int):
-        """Принимает решение пользователя по VIN-mismatch.
+        """Принимает решение оператора по спорному VIN.
 
-        POST-параметры:
-          * action='attach', chosen_vin=<VIN> — подменить VIN на выбранный
-            из кандидатов, чтобы apply сматчил на существующий Car.
-          * action='force_new' — выставить флаг ``skip_vin_check`` и
-            принудительно создать новый Car, игнорируя похожие.
-        После любого решения немедленно применяет job.
+        Сама логика живёт в ``core.services.scan_review`` — те же действия
+        доступны из панели документов в карточке контейнера, и расходиться
+        поведение двух экранов не должно.
         """
-        from core.services.scan_applier import apply_job
+        from core.services.scan_review import resolve_vin_conflict
 
         if request.method != "POST":
             return redirect("admin:core_scanprocessingjob_change", job_id)
@@ -413,103 +428,18 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
         try:
             job = ScanProcessingJob.objects.get(pk=job_id)
         except ScanProcessingJob.DoesNotExist:
-            messages.error(request, "Job не найден.")
+            messages.error(request, "Задача не найдена.")
             return redirect("admin:core_scanprocessingjob_changelist")
 
-        action = request.POST.get("action", "")
-        data = job.extracted_data or {}
-        mismatch = data.get("vin_mismatch_review") or {}
-        candidate_vins = {c.get("vin") for c in (mismatch.get("candidates") or [])}
-
-        if action == "attach":
-            # ВАРИАНТ 1: AI ошибся в тайтле, dock receipt прав.
-            # Подменяем VIN из тайтла на VIN из БД (кандидата).
-            chosen_vin = (request.POST.get("chosen_vin") or "").strip().upper()
-            if chosen_vin not in candidate_vins:
-                messages.error(request, "Выбранный VIN не из списка кандидатов.")
-                return redirect("admin:core_scanprocessingjob_change", job_id)
-            vins = data.get("vins") or []
-            if vins:
-                vins[0] = chosen_vin
-            else:
-                vins = [chosen_vin]
-            data["vins"] = vins
-            data.pop("vin_mismatch_review", None)
-            job.extracted_data = data
-            job.save(update_fields=["extracted_data"])
-            try:
-                apply_job(job, applied_by=request.user)
-                messages.success(
-                    request,
-                    f"Тайтл прикреплён к существующему авто (VIN={chosen_vin}).",
-                )
-            except Exception:
-                logger.exception("Failed to apply after attach: job #%s", job.pk)
-                messages.error(request, "Ошибка при применении (см. логи).")
-            return redirect("admin:core_scanprocessingjob_change", job_id)
-
-        if action == "fix_existing_car_vin":
-            # ВАРИАНТ 2: AI ошибся в dock receipt, тайтл прав.
-            # Обновляем VIN существующей карточки Car на VIN из тайтла,
-            # затем applier найдёт её и прикрепит тайтл.
-            from core.models import Car
-
-            try:
-                car_id = int(request.POST.get("car_id") or 0)
-            except (TypeError, ValueError):
-                car_id = 0
-            if not any(c.get("car_id") == car_id for c in (mismatch.get("candidates") or [])):
-                messages.error(request, "Car не из списка кандидатов.")
-                return redirect("admin:core_scanprocessingjob_change", job_id)
-            extracted_vin = (mismatch.get("extracted_vin") or "").strip().upper()
-            if not extracted_vin:
-                messages.error(request, "В job отсутствует исходный VIN.")
-                return redirect("admin:core_scanprocessingjob_change", job_id)
-            # Защита от дубликата: вдруг в БД уже есть Car с extracted_vin.
-            collision = Car.objects.filter(vin=extracted_vin).exclude(pk=car_id).first()
-            if collision:
-                messages.error(
-                    request,
-                    f"VIN {extracted_vin} уже занят другой карточкой "
-                    f"(Car #{collision.id}). Конфликт нужно решить вручную.",
-                )
-                return redirect("admin:core_scanprocessingjob_change", job_id)
-            try:
-                car = Car.objects.get(pk=car_id)
-            except Car.DoesNotExist:
-                messages.error(request, "Car не найден.")
-                return redirect("admin:core_scanprocessingjob_change", job_id)
-            old_vin = car.vin
-            car.vin = extracted_vin
-            car.save(update_fields=["vin"])
-            data.pop("vin_mismatch_review", None)
-            job.extracted_data = data
-            job.save(update_fields=["extracted_data"])
-            try:
-                apply_job(job, applied_by=request.user)
-                messages.success(
-                    request,
-                    f"VIN в карточке Car #{car.id} исправлен: {old_vin} → {extracted_vin}. Тайтл прикреплён.",
-                )
-            except Exception:
-                logger.exception("Failed to apply after VIN-fix: job #%s", job.pk)
-                messages.error(request, "Ошибка при применении (см. логи).")
-            return redirect("admin:core_scanprocessingjob_change", job_id)
-
-        if action == "force_new":
-            data["skip_vin_check"] = True
-            data.pop("vin_mismatch_review", None)
-            job.extracted_data = data
-            job.save(update_fields=["extracted_data"])
-            try:
-                apply_job(job, applied_by=request.user)
-                messages.success(request, "Создана новая карточка Car (force).")
-            except Exception:
-                logger.exception("Failed to force-apply: job #%s", job.pk)
-                messages.error(request, "Ошибка при применении (см. логи).")
-            return redirect("admin:core_scanprocessingjob_change", job_id)
-
-        messages.warning(request, f"Неизвестное действие: {action}")
+        ok, message = resolve_vin_conflict(
+            job,
+            request.POST.get("action", ""),
+            car_id=request.POST.get("car_id"),
+            chosen_vin=request.POST.get("chosen_vin", ""),
+            doc_vin=request.POST.get("doc_vin", ""),
+            user=request.user,
+        )
+        messages.add_message(request, messages.SUCCESS if ok else messages.ERROR, message)
         return redirect("admin:core_scanprocessingjob_change", job_id)
 
     def changelist_view(self, request, extra_context=None):

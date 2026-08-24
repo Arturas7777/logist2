@@ -11,6 +11,7 @@ from django.utils import timezone
 from django.utils.html import escape, format_html, format_html_join
 from django.utils.safestring import mark_safe
 
+from core.admin.car_forms import VinGuardForm as CarVinGuardForm
 from core.admin_export import CSVExportMixin
 from core.admin_filters import ClientAutocompleteFilter, MultiStatusFilter, MultiWarehouseFilter
 from core.models import (
@@ -26,6 +27,19 @@ from core.models import (
 logger = logging.getLogger(__name__)
 
 CAR_MODELS_DIR = os.path.join(settings.BASE_DIR, "core", "static", "icons", "car_models")
+
+# Услуги лежат в отдельной таблице и привязаны к машине по FK, поэтому на форме
+# добавления запрашивать их нечем: Django запрещает фильтровать по объекту без
+# pk. Без этой заглушки блоки услуг показывали оператору текст исключения
+# «Model instances passed to related filters must be saved».
+UNSAVED_CAR_SERVICES_NOTE = "Услуги можно будет добавить после сохранения машины."
+
+
+def _safe_year(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 # Кэш списка файлов car_models. Раньше `find_car_image` делал os.listdir на
 # каждый просмотр карточки — при 200+ иконок и 10 операторах это десятки
@@ -345,6 +359,7 @@ class CarModelImageAdmin(admin.ModelAdmin):
 class CarAdmin(CSVExportMixin, admin.ModelAdmin):
     change_form_template = "admin/core/car/change_form.html"
     change_list_template = "admin/core/car/change_list.html"
+    form = CarVinGuardForm
     # Рабочий набор колонок (~10): детали (тип ТС, линия, дата разгрузки,
     # стоимость хранения, наценка) доступны в карточке авто.
     list_display = (
@@ -487,6 +502,9 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             {
                 "fields": (
                     ("year", "brand", "vin", "vehicle_type", "weight_kg", "status"),
+                    # Скрытое поле: видимую галочку рисует vin_guard.js рядом
+                    # с VIN, когда проверка нашла расхождение.
+                    "vin_confirmed",
                     ("client", "warehouse", "unload_site"),
                     ("unload_date", "transfer_date"),
                     ("has_title", "title_link_display", "title_notes"),
@@ -615,8 +633,63 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
                 self.admin_site.admin_view(self.upload_model_image_view),
                 name="core_car_upload_model_image",
             ),
+            path(
+                "vin-check/",
+                self.admin_site.admin_view(self.vin_check_view),
+                name="core_car_vin_check",
+            ),
         ]
         return custom + super().get_urls()
+
+    def vin_check_view(self, request):
+        """Проверка VIN на лету: расшифровка NHTSA и найденные расхождения.
+
+        Дёргается формой при выходе из поля VIN — оператор видит, что за
+        машина стоит за номером, ещё до сохранения. Ошибки сети сюда не
+        доходят: ``check_vin`` в худшем случае вернёт проверку без NHTSA.
+        """
+        from django.http import JsonResponse
+
+        from core.services.vin_gate import check_vin
+
+        if not self.has_view_permission(request):
+            return JsonResponse({"error": "Нет прав"}, status=403)
+
+        vin = request.GET.get("vin", "")
+        exclude_id = request.GET.get("car_id") or None
+        try:
+            exclude_id = int(exclude_id) if exclude_id else None
+        except (TypeError, ValueError):
+            exclude_id = None
+
+        verdict = check_vin(
+            vin,
+            exclude_car_id=exclude_id,
+            brand=request.GET.get("brand") or None,
+            year=_safe_year(request.GET.get("year")),
+        )
+        check = verdict.check
+        return JsonResponse(
+            {
+                "vin": verdict.vin,
+                "ok": verdict.ok,
+                "nhtsa": {
+                    "ok": bool(check.nhtsa_ok) if check else False,
+                    "summary": check.nhtsa_summary if check else "",
+                    "make": check.nhtsa_make if check else "",
+                    "model": check.nhtsa_model if check else "",
+                    "year": check.nhtsa_year if check else None,
+                },
+                "issues": [
+                    {
+                        "code": issue.code,
+                        "message": issue.message,
+                        "suggestion": issue.suggestion,
+                    }
+                    for issue in verdict.issues
+                ],
+            }
+        )
 
     def upload_model_image_view(self, request, object_id):
         """AJAX-загрузка картинки модели прямо из карточки авто.
@@ -743,6 +816,9 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
           3. distributed_markup считается прямо здесь без ещё одного aggregate.
         """
         from core.service_codes import is_ths_service
+
+        if not obj.pk:
+            return UNSAVED_CAR_SERVICES_NOTE
 
         line_services_list: list[tuple[str, Decimal]] = []
         warehouse_services_list: list[tuple[str, Decimal]] = []
@@ -1369,7 +1445,11 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             # на обёртках flex-элементов. CSS-каскад в форме ненадёжен
             # (responsive.css media-queries сжимают поля). См. файл.
             "js/car_form_layout.js?v=12",
+            # Живая проверка VIN: расшифровка NHTSA под полем, автозаполнение
+            # марки и года, галочка подтверждения при спорном VIN.
+            "js/vin_guard.js?v=2",
         )
+        css = {"all": ("css/vin_guard.css?v=2",)}
 
     def save_model(self, request, obj, form, change):
         """Saves model with service field processing (wrapped in transaction)"""
@@ -1416,6 +1496,8 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
 
     def warehouse_services_display(self, obj):
         """Displays editable fields for all warehouse services"""
+        if not obj.pk:
+            return UNSAVED_CAR_SERVICES_NOTE
         try:
             car_services = list(CarService.objects.filter(car=obj, service_type="WAREHOUSE"))
 
@@ -1464,6 +1546,8 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
 
     def line_services_display(self, obj):
         """Displays editable fields for line services"""
+        if not obj.pk:
+            return UNSAVED_CAR_SERVICES_NOTE
         if not obj.line:
             return "Линия не выбрана"
 
@@ -1508,6 +1592,8 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
 
     def carrier_services_display(self, obj):
         """Displays editable fields for carrier services"""
+        if not obj.pk:
+            return UNSAVED_CAR_SERVICES_NOTE
         if not obj.carrier:
             return "Перевозчик не выбран"
 
@@ -1552,6 +1638,8 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
 
     def company_services_display(self, obj):
         """Displays editable fields for company services"""
+        if not obj.pk:
+            return UNSAVED_CAR_SERVICES_NOTE
         try:
             car_services = list(CarService.objects.filter(car=obj, service_type="COMPANY"))
 
