@@ -81,9 +81,23 @@ nav.sticky {
     display: none !important;
 }
 
-/* Hide skip-to-content link */
+/* Ссылка «Перейти к содержимому»: убрана из потока, но доступна с клавиатуры
+   (при Tab всплывает поверх шапки) — WCAG 2.4.1. */
 .skip-to-content-link {
-    display: none !important;
+    position: absolute !important;
+    left: -9999px !important;
+    top: 0;
+    z-index: 1000;
+}
+.skip-to-content-link:focus {
+    left: 12px !important;
+    top: 12px !important;
+    background: var(--cm-purple);
+    color: var(--cm-white);
+    padding: 10px 16px;
+    border-radius: var(--cm-radius-sm);
+    text-decoration: none;
+    font-weight: 600;
 }
 
 /* Hide Django SVGs */
@@ -705,6 +719,46 @@ body.login .submit-row input[type="submit"]:hover {
     color: var(--cm-text);
     letter-spacing: -0.03em;
 }
+
+/* ===== Хлебные крошки в topbar =====
+   Дефолтное содержимое topbar_title: показывают раздел на страницах,
+   которые не задают собственный заголовок. Правила специфичнее, чем
+   `.cm-topbar-center span`, иначе крошки унаследуют размер заголовка. */
+.cm-topbar-center .cm-crumbs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 46vw;
+    overflow: hidden;
+}
+.cm-topbar-center .cm-crumbs .cm-crumb {
+    font-size: .92rem;
+    font-weight: 600;
+    letter-spacing: normal;
+    color: var(--cm-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cm-topbar-center .cm-crumbs .cm-crumb-group i {
+    margin-right: 6px;
+    opacity: .75;
+}
+.cm-topbar-center .cm-crumbs .cm-crumb-link {
+    color: var(--cm-purple);
+    text-decoration: none;
+}
+.cm-topbar-center .cm-crumbs .cm-crumb-link:hover {
+    text-decoration: underline;
+}
+.cm-topbar-center .cm-crumbs .cm-crumb-current {
+    color: var(--cm-text);
+    font-weight: 700;
+}
+.cm-topbar-center .cm-crumbs .cm-crumb-sep {
+    font-size: .7rem;
+    color: var(--cm-text-secondary);
+    opacity: .5;
+}
 .cm-topbar-right {
     display: flex;
     align-items: center;
@@ -1308,6 +1362,44 @@ body:not(.login) .submit-row {
     background: var(--cm-purple) !important;
     color: var(--cm-white) !important;
     border: none !important;
+}
+
+/* Счётчик выбранных строк и ссылки «Выбрать все N» / «Снять выделение».
+   Свойство display здесь не задаётся сознательно: им управляет Django
+   admin actions.js (show/hide), и !important-переопределение его сломает. */
+#cm-unified-toolbar .actions .action-counter,
+#cm-unified-toolbar .actions .all,
+#cm-unified-toolbar .actions .question,
+#cm-unified-toolbar .actions .clear,
+#changelist .actions .action-counter,
+#changelist .actions .all,
+#changelist .actions .question,
+#changelist .actions .clear {
+    font-size: .8rem;
+    color: var(--cm-text-secondary);
+    white-space: nowrap;
+    align-self: center;
+    margin: 0;
+    padding: 0;
+    flex: 0 0 auto;
+}
+/* Когда строки выбраны, Django вешает класс на .actions — подсвечиваем счётчик. */
+#cm-unified-toolbar .actions.selected .action-counter,
+#changelist .actions.selected .action-counter {
+    color: var(--cm-purple);
+    font-weight: 600;
+}
+#cm-unified-toolbar .actions .question a,
+#cm-unified-toolbar .actions .clear a,
+#changelist .actions .question a,
+#changelist .actions .clear a {
+    color: var(--cm-purple);
+    font-weight: 600;
+    text-decoration: underline;
+}
+/* Тулбар узкий — счётчику разрешаем переноситься на свою строку. */
+#cm-unified-toolbar .actions {
+    flex-wrap: wrap !important;
 }
 
 /* ===== CHANGELIST FILTERS (right sidebar) ===== */

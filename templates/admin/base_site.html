@@ -269,10 +269,10 @@ document.addEventListener('DOMContentLoaded', function() {
             lbl.remove();
         }
     });
-    // "Выбрано 0 из 5", etc.
-    document.querySelectorAll('.actions .action-counter, .actions .all, .actions .question, .actions .clear').forEach(function(el) {
-        el.remove();
-    });
+    // Счётчик «Выбрано N из M» и ссылки «Выбрать все» намеренно НЕ удаляются:
+    // перед массовым действием нужно видеть, сколько строк захвачено.
+    // Вид задаётся в dashboard_admin.css — здесь нельзя трогать display,
+    // иначе Django admin actions.js не сможет их скрывать и показывать.
     // Remove stray text nodes from .actions (they create phantom flex gaps)
     document.querySelectorAll('.actions').forEach(function(act) {
         Array.from(act.childNodes).forEach(function(n) {
@@ -399,7 +399,7 @@ document.addEventListener('DOMContentLoaded', function() {
 {# ——— TOPBAR ——— #}
 <header class="cm-topbar">
     <div class="cm-topbar-left">
-        <button class="cm-sidebar-toggle" id="cm-sidebar-toggle" aria-label="Toggle sidebar">
+        <button class="cm-sidebar-toggle" id="cm-sidebar-toggle" aria-label="Открыть меню" aria-expanded="false" aria-controls="cm-sidebar">
             <i class="bi bi-list"></i>
         </button>
         <a href="{% url 'admin:index' %}" style="display:flex; align-items:center; text-decoration:none;">
@@ -407,7 +407,32 @@ document.addEventListener('DOMContentLoaded', function() {
         </a>
     </div>
     <div class="cm-topbar-center">
-        {% block topbar_title %}{% endblock %}
+        {# По умолчанию — крошки «Группа › Раздел › Объект»: стандартные
+           крошки Django скрыты шеллом, а страницы со своим заголовком
+           перекрывают этот блок. #}
+        {% block topbar_title %}
+            {% if current_section %}
+            <nav class="cm-crumbs" aria-label="Хлебные крошки">
+                <span class="cm-crumb cm-crumb-group">
+                    <i class="bi {{ current_section.group_icon }}"></i>{{ current_section.group }}
+                </span>
+                {% if current_section.item_url and current_path != current_section.item_url %}
+                    <i class="bi bi-chevron-right cm-crumb-sep"></i>
+                    <a class="cm-crumb cm-crumb-link" href="{{ current_section.item_url }}">{{ current_section.item }}</a>
+                {% else %}
+                    <i class="bi bi-chevron-right cm-crumb-sep"></i>
+                    <span class="cm-crumb cm-crumb-current" aria-current="page">{{ current_section.item }}</span>
+                {% endif %}
+                {% if original %}
+                    <i class="bi bi-chevron-right cm-crumb-sep"></i>
+                    <span class="cm-crumb cm-crumb-current" aria-current="page">{{ original|truncatechars:40 }}</span>
+                {% elif add %}
+                    <i class="bi bi-chevron-right cm-crumb-sep"></i>
+                    <span class="cm-crumb cm-crumb-current" aria-current="page">Добавление</span>
+                {% endif %}
+            </nav>
+            {% endif %}
+        {% endblock %}
     </div>
     <div class="cm-topbar-right">
         <button type="button" class="cm-gsearch-trigger" id="cm-gsearch-trigger" title="Глобальный поиск (Ctrl+K)">
@@ -502,8 +527,10 @@ document.addEventListener('DOMContentLoaded', function() {
 <script src="{% static 'website/js/ai-chat.js' %}"></script>
 
 {% if user.is_staff and not is_popup %}
+{# — Общие тосты: нужны и live-обновлениям, и обработчику ошибок HTMX — #}
+<script src="{% static 'js/cm_toast.js' %}?v=1"></script>
 {# — Live-обновления по WebSocket (ws/updates/) — только для staff — #}
-<script src="{% static 'js/live_updates.js' %}?v=1"></script>
+<script src="{% static 'js/live_updates.js' %}?v=2"></script>
 {% endif %}
 
 {% if not is_popup %}
@@ -517,13 +544,16 @@ document.addEventListener('DOMContentLoaded', function() {
     var overlay = document.getElementById('cm-sidebar-overlay');
 
     if (toggle && sidebar && overlay) {
+        var setSidebar = function(open) {
+            sidebar.classList.toggle('open', open);
+            overlay.classList.toggle('active', open);
+            toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        };
         toggle.addEventListener('click', function() {
-            sidebar.classList.toggle('open');
-            overlay.classList.toggle('active');
+            setSidebar(!sidebar.classList.contains('open'));
         });
         overlay.addEventListener('click', function() {
-            sidebar.classList.remove('open');
-            overlay.classList.remove('active');
+            setSidebar(false);
         });
     }
 

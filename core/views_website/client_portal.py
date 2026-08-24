@@ -1,5 +1,6 @@
 """Личный кабинет клиента: dashboard, car_detail, container_detail."""
 
+from decimal import Decimal
 from urllib.parse import urlencode
 
 from django.contrib.auth.decorators import login_required
@@ -149,6 +150,12 @@ def client_dashboard(request):
         filter_params += [("status", s) for s in selected_statuses if s in valid_filter_values]
         qs_extra = urlencode(filter_params)
 
+        # В кабинете показываем total_balance, а не поле balance: последнее —
+        # авансовый счёт, который при штатной схеме оплаты (TOPUP + PAYMENT)
+        # всегда в нуле, поэтому клиент с реальным долгом видел бы «0.00».
+        open_debt = client.open_invoices_debt
+        total_balance = client.total_balance
+
         context = {
             "client": client,
             "cars": cars_page,
@@ -157,6 +164,10 @@ def client_dashboard(request):
             "selected_statuses": selected_statuses,
             "car_status_choices": Container.STATUS_CHOICES,
             "qs_extra": qs_extra,
+            "open_invoices_debt": open_debt,
+            "total_balance": total_balance,
+            "amount_due": -total_balance if total_balance < 0 else Decimal("0.00"),
+            "prepaid_amount": total_balance if total_balance > 0 else Decimal("0.00"),
         }
 
         return render(request, "website/client_dashboard.html", context)

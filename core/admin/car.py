@@ -1361,6 +1361,8 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         # Поэтому в Media только JS — CSS приходит из base_site.
         js = (
             "js/htmx.min.js",
+            # cm_toast нужен logist2_htmx: без него сбой запроса остаётся незаметным.
+            "js/cm_toast.js",
             "js/logist2_htmx.js",
             "js/warehouse_address.js?v=2",
             # Раскладка первой строки + рядов «Тайтл / Важно»: inline-style

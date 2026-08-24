@@ -45,53 +45,12 @@
         return ctx.model_name; // 'car', 'container', ...
     }
 
-    // ── Toast-уведомления (DS-стиль) ────────────────────────────────────
-    var toastWrap = null;
-
-    function ensureToastWrap() {
-        if (toastWrap) return toastWrap;
-        toastWrap = document.createElement('div');
-        toastWrap.id = 'cm-live-toasts';
-        toastWrap.setAttribute('aria-live', 'polite');
-        toastWrap.style.cssText =
-            'position:fixed;right:20px;bottom:20px;z-index:10050;' +
-            'display:flex;flex-direction:column;gap:8px;pointer-events:none;';
-        document.body.appendChild(toastWrap);
-        return toastWrap;
-    }
-
+    // ── Toast-уведомления ───────────────────────────────────────────────
+    // Реализация общая для всей админки — cm_toast.js.
     function showToast(text) {
-        var wrap = ensureToastWrap();
-        // Не копим больше 4 тостов
-        while (wrap.children.length >= 4) wrap.removeChild(wrap.firstChild);
-
-        var toast = document.createElement('div');
-        toast.style.cssText =
-            'background:#fff;color:#1a1a2e;border:1px solid #e0dcf8;' +
-            'border-left:4px solid #6c5ce7;border-radius:10px;' +
-            'box-shadow:0 6px 18px rgba(30,20,60,.12),0 2px 6px rgba(30,20,60,.08);' +
-            'padding:10px 14px;font-size:13px;font-weight:500;max-width:340px;' +
-            'display:flex;align-items:center;gap:8px;pointer-events:auto;' +
-            'opacity:0;transform:translateY(8px);transition:opacity .25s,transform .25s;';
-
-        var icon = document.createElement('i');
-        icon.className = 'bi bi-arrow-repeat';
-        icon.style.cssText = 'color:#6c5ce7;font-size:15px;flex-shrink:0;';
-        toast.appendChild(icon);
-        toast.appendChild(document.createTextNode(text));
-        wrap.appendChild(toast);
-
-        requestAnimationFrame(function () {
-            toast.style.opacity = '1';
-            toast.style.transform = 'translateY(0)';
-        });
-        setTimeout(function () {
-            toast.style.opacity = '0';
-            toast.style.transform = 'translateY(8px)';
-            setTimeout(function () {
-                if (toast.parentNode) toast.parentNode.removeChild(toast);
-            }, 300);
-        }, TOAST_LIFETIME_MS);
+        if (window.cmToast) {
+            window.cmToast(text, {icon: 'bi-arrow-repeat', timeout: TOAST_LIFETIME_MS});
+        }
     }
 
     function describeEvents(events) {

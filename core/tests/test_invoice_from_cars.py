@@ -160,3 +160,72 @@ class TestRegenerateItemsFromCars:
         inv.regenerate_items_from_cars()
         inv.refresh_from_db()
         assert inv.total == Decimal("80.00")
+
+
+@pytest.mark.django_db
+class TestStorageMarkupInInvoice:
+    """Наценка на хранении: счёт клиенту должен сходиться с ``Car.total_price``.
+
+    ``Car._update_storage_service_price`` пересчитывает у услуги хранения
+    только ``custom_price`` и намеренно не трогает ``markup_amount``.
+    Позиция «Хран» считается заново по актуальным дням, поэтому наценку
+    нужно добавить к ней явно — иначе сумма счёта окажется меньше цены авто.
+    """
+
+    def _car_on_storage(self, warehouse, days_stored=3):
+        container = Container.objects.create(number="INV-STOR-MK", status="FLOATING")
+        return Car.objects.create(
+            year=2023,
+            brand="Toyota",
+            vin="INVSTORMARKUP0001",
+            status="FLOATING",
+            container=container,
+            warehouse=warehouse,
+            unload_date=timezone.now().date() - timezone.timedelta(days=days_stored - 1),
+        )
+
+    def test_company_invoice_includes_storage_markup(self, company, warehouse):
+        car = self._car_on_storage(warehouse)
+        storage = _wh_service(warehouse, "Хранение", "Хран", 5)
+        _add(car, storage, custom_price=15, markup=20)
+        inv = _company_draft_invoice(company, car)
+
+        inv.regenerate_items_from_cars()
+
+        item = inv.items.get(description="Хран")
+        # 3 платных дня × 5 = 15 базы + 20 наценки
+        assert item.unit_price == Decimal("35.00")
+
+    def test_invoice_total_matches_car_total_price(self, company, warehouse):
+        car = self._car_on_storage(warehouse)
+        storage = _wh_service(warehouse, "Хранение", "Хран", 5)
+        _add(car, storage, custom_price=15, markup=20)
+        _add(car, _wh_service(warehouse, "Разгрузка", "Порт", 50), custom_price=50, markup=10)
+        inv = _company_draft_invoice(company, car)
+
+        inv.regenerate_items_from_cars()
+
+        inv.refresh_from_db()
+        # Регенерация считает дни и цену авто в памяти, не записывая их в БД,
+        # поэтому для сравнения пересчитываем на свежем объекте.
+        fresh = Car.objects.get(pk=car.pk)
+        assert inv.total == fresh.calculate_total_price()
+
+    def test_incoming_warehouse_invoice_excludes_markup(self, warehouse):
+        """Входящий счёт склада — себестоимость, как и по остальным услугам."""
+        car = self._car_on_storage(warehouse)
+        storage = _wh_service(warehouse, "Хранение", "Хран", 5)
+        _add(car, storage, custom_price=15, markup=20)
+        company = Company.objects.create(name="Recipient Co")
+        inv = NewInvoice.objects.create(
+            issuer_warehouse=warehouse,
+            recipient_company=company,
+            date=timezone.now().date(),
+            status="DRAFT",
+        )
+        inv.cars.add(car)
+
+        inv.regenerate_items_from_cars()
+
+        item = inv.items.get(description="Хран")
+        assert item.unit_price == Decimal("15.00")

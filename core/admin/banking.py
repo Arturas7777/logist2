@@ -203,28 +203,37 @@ class BankConnectionAdmin(admin.ModelAdmin):
 
     @admin.action(description="Синхронизировать сейчас")
     def sync_now(self, request, queryset):
-        from ..services.revolut_service import RevolutService
+        """Ставит синхронизацию в очередь.
 
-        total = 0
-        errors = 0
+        Синхронный вызов Revolut API упирался в таймаут gunicorn, поэтому
+        работу делает Celery, а админка сразу отдаёт ответ. Результат виден
+        в колонках «Последняя синхронизация» и «Ошибка» после обновления.
+        """
+        from core.tasks import sync_bank_connections_task
+
+        revolut_ids = []
         for conn in queryset.filter(is_active=True):
             if conn.bank_type == "REVOLUT":
-                service = RevolutService(conn)
-                result = service.sync_all()
-                if result["error"]:
-                    errors += 1
-                    messages.error(request, f"{conn}: {result['error']}")
-                else:
-                    total += len(result["accounts"])
-                    messages.success(
-                        request,
-                        f"{conn}: {len(result['accounts'])} счетов, {len(result['transactions'])} транзакций обновлено",
-                    )
+                revolut_ids.append(conn.pk)
             else:
                 messages.warning(request, f"{conn}: тип банка не поддерживается")
 
-        if not errors:
-            messages.info(request, f"Синхронизация завершена: {total} счетов обновлено")
+        if not revolut_ids:
+            messages.warning(request, "Не выбрано ни одного активного Revolut-подключения.")
+            return
+
+        try:
+            sync_bank_connections_task.delay(revolut_ids)
+        except Exception as exc:
+            logger.error("Не удалось поставить синхронизацию банка в очередь: %s", exc, exc_info=True)
+            messages.error(request, f"Не удалось поставить задачу в очередь: {exc}")
+            return
+
+        messages.info(
+            request,
+            f"Синхронизация {len(revolut_ids)} подключений запущена в фоне. "
+            f"Обновите страницу через минуту — результат появится в колонках «Последняя синхронизация» и «Ошибка».",
+        )
 
     @admin.action(description="Перегенерировать JWT (Revolut, +90 дней)")
     def regenerate_jwt_action(self, request, queryset):
@@ -1040,49 +1049,35 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
 
     @admin.action(description="Подгрузить чеки из Revolut")
     def download_revolut_receipts(self, request, queryset):
-        """Массово подтягивает expenses/чеки из Revolut для выбранных транзакций."""
-        from core.services.revolut_service import RevolutAPIError, RevolutService
+        """Ставит подгрузку expenses/чеков из Revolut в очередь.
 
-        connections = {}
+        Раньше выполнялось синхронно: Expenses API плюс скачивание файлов —
+        десятки сетевых запросов прямо в HTTP-ответе админки.
+        """
+        from core.tasks import download_revolut_receipts_task
+
+        connection_ids = set()
         for bt in queryset.select_related("connection"):
             if bt.connection.bank_type == "REVOLUT" and bt.connection.is_active:
-                connections.setdefault(bt.connection.pk, bt.connection)
+                connection_ids.add(bt.connection.pk)
 
-        if not connections:
+        if not connection_ids:
             messages.warning(request, "Среди выбранных транзакций нет активных Revolut-подключений.")
             return None
 
-        total_downloaded = 0
-        total_updated = 0
-        errors = 0
+        try:
+            download_revolut_receipts_task.delay(sorted(connection_ids))
+        except Exception as exc:
+            logger.error("Не удалось поставить загрузку чеков в очередь: %s", exc, exc_info=True)
+            messages.error(request, f"Не удалось поставить задачу в очередь: {exc}")
+            return None
 
-        for conn in connections.values():
-            service = RevolutService(conn)
-            try:
-                updated = service.fetch_expenses(days=90)
-                total_updated += updated
-                downloaded = service.fetch_receipts_for_existing()
-                total_downloaded += downloaded
-            except RevolutAPIError as e:
-                errors += 1
-                if e.status_code == 403:
-                    messages.error(
-                        request,
-                        f"{conn}: Expenses API недоступен (403). Проверьте, что план Grow/Scale/Enterprise.",
-                    )
-                else:
-                    messages.error(request, f"{conn}: {e}")
-            except Exception as e:
-                errors += 1
-                messages.error(request, f"{conn}: {e}")
-
-        if total_downloaded or total_updated:
-            messages.success(
-                request,
-                f"Revolut: обновлено {total_updated} expenses, скачано {total_downloaded} чеков.",
-            )
-        elif not errors:
-            messages.info(request, "Новых чеков из Revolut не найдено.")
+        messages.info(
+            request,
+            f"Загрузка чеков по {len(connection_ids)} подключениям запущена в фоне. "
+            f"Обновите страницу через минуту — колонка с чеком заполнится.",
+        )
+        return None
 
     @admin.action(description="Создать расходы (массово)")
     def create_expenses_bulk(self, request, queryset):

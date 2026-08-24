@@ -248,6 +248,8 @@ class ContainerAdmin(admin.ModelAdmin):
 
         logger.info(f"[TIMING] Processing {len(instances)} changed instances")
 
+        saved_car_ids = []
+
         for obj in instances:
             if isinstance(obj, Car):
                 # Bind to container
@@ -279,8 +281,13 @@ class ContainerAdmin(admin.ModelAdmin):
                 # Recalculate before saving
                 obj.update_days_and_storage()
 
-                # Save object - post_save signal handles calculate_total_price
+                # Флаг ставим ДО save (как в CarAdmin._save_model_inner): иначе
+                # каждая машина формсета ставит свою Celery-задачу пересчёта
+                # цены, а при 20 машинах это 20 каскадов. Итоговый пересчёт
+                # делается одним bulk_update в конце метода.
+                obj._bulk_updating = True
                 obj.save()
+                saved_car_ids.append(obj.pk)
 
                 logger.debug(f"Saved Car {obj.vin} (creating={creating}, has_title={obj.has_title})")
 
@@ -344,6 +351,10 @@ class ContainerAdmin(admin.ModelAdmin):
         logger.info(f"[FORMSET] instances count: {len(instances)}, cars_changed: {cars_changed}")
         logger.info(f"[FORMSET] parent.line: {parent.line}, parent.ths: {parent.ths}")
 
+        # Пересчитала ли THS-ветка цены всех машин контейнера — тогда
+        # отдельный пересчёт изменённых машин уже не нужен.
+        prices_recalculated = False
+
         # Recalculate THS only when cars changed (added/removed/deleted)
         # to avoid wiping manual THS edits on unrelated container saves
         if cars_changed and parent.line and parent.ths:
@@ -378,11 +389,23 @@ class ContainerAdmin(admin.ModelAdmin):
                         for car in cars_in_container:
                             car.calculate_total_price()
                         Car.objects.bulk_update(cars_in_container, ["total_price", "storage_cost", "days"])
+                        prices_recalculated = True
                         logger.info(f"[FORMSET] Recalculated prices for all {len(cars_in_container)} cars")
                     else:
                         logger.info(f"[FORMSET] No cars left in container {parent.number}")
             except Exception as e:
                 logger.error(f"Failed to create THS services in formset for container {parent.id}: {e}", exc_info=True)
+
+        # Без THS-ветки цены изменённых машин остались бы старыми: в цикле
+        # выше per-car пересчёт намеренно заглушен флагом _bulk_updating.
+        if not prices_recalculated and saved_car_ids:
+            cars_to_price = list(
+                Car.objects.filter(pk__in=saved_car_ids).select_related("warehouse").prefetch_related("car_services")
+            )
+            for car in cars_to_price:
+                car.calculate_total_price()
+            Car.objects.bulk_update(cars_to_price, ["total_price", "storage_cost", "days"])
+            logger.info(f"[FORMSET] Recalculated prices for {len(cars_to_price)} changed cars")
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)

@@ -39,6 +39,9 @@ urlpatterns = [
     path("documents/upload/", views_website.upload_document, name="upload_document"),
     path("documents/declaration/create/", views_website.create_declaration_request, name="create_declaration"),
     path("documents/declaration/<int:pk>/print/", views_website.declaration_print, name="declaration_print"),
+    # ========== Счета клиента ==========
+    path("invoices/", views_website.client_invoices, name="invoices"),
+    path("invoices/<int:pk>/download/", views_website.client_invoice_download, name="invoice_download"),
     # ========== Заявки на автовоз ==========
     path("transport-requests/", views_website.transport_requests, name="transport_requests"),
     path("transport-requests/<int:pk>/edit/", views_website.transport_request_edit, name="transport_request_edit"),

@@ -1,0 +1,122 @@
+/* portal.css — общие стили личного кабинета клиента.
+ *
+ * Раньше .portal-hero, .status-badge и .empty-state дублировались inline
+ * в каждом шаблоне кабинета, расходясь в деталях. Здесь — один источник.
+ *
+ * Отдельный блок в конце — мобильная раскладка: клиенты заходят в кабинет
+ * преимущественно с телефона, а таблицы на 10 колонок там нечитаемы.
+ */
+
+.portal-hero {
+    background: linear-gradient(135deg, var(--primary-color, #2c3e50) 0%, #34495e 100%);
+    color: #fff;
+    padding: 2rem 0;
+    margin-bottom: 2rem;
+}
+
+.portal-hero a {
+    color: rgba(255, 255, 255, .75);
+}
+
+.status-badge {
+    display: inline-block;
+    padding: .35em .6em;
+    font-weight: 500;
+    font-size: .8rem;
+    border-radius: 10px;
+    white-space: nowrap;
+}
+
+/* Заявки и документы */
+.status-NEW { background: #fff3cd; color: #856404; }
+.status-ACCEPTED, .status-READY { background: #d4edda; color: #155724; }
+.status-REJECTED { background: #f8d7da; color: #721c24; }
+.status-IN_PROGRESS { background: #d1ecf1; color: #0c5460; }
+
+/* Авто */
+.status-FLOATING { background: #d1ecf1; color: #0c5460; }
+.status-IN_PORT { background: #f8d7da; color: #721c24; }
+.status-UNLOADED { background: #d4edda; color: #155724; }
+.status-TRANSFERRED { background: #e2d9f3; color: #4b2e83; }
+.status-PENDING { background: #fff3cd; color: #856404; }
+
+/* Счета */
+.status-ISSUED { background: #d1ecf1; color: #0c5460; }
+.status-PARTIALLY_PAID { background: #fff3cd; color: #856404; }
+.status-PAID, .status-LINKED_PAID { background: #d4edda; color: #155724; }
+.status-OVERDUE { background: #f8d7da; color: #721c24; }
+
+.empty-state {
+    text-align: center;
+    padding: 2.5rem 1rem;
+    color: #7b8794;
+}
+
+.empty-state i {
+    font-size: 2.5rem;
+    opacity: .35;
+}
+
+/* ===== Мобильная раскладка =====
+   Таблицы кабинета превращаются в карточки: каждая ячейка получает
+   подпись из data-label, горизонтальный скролл больше не нужен. */
+@media (max-width: 767.98px) {
+    .portal-hero {
+        padding: 1.25rem 0;
+        margin-bottom: 1.25rem;
+    }
+
+    .portal-table thead {
+        display: none;
+    }
+
+    .portal-table,
+    .portal-table tbody,
+    .portal-table tr,
+    .portal-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .portal-table tr {
+        border: 1px solid #e6e9ef;
+        border-radius: 12px;
+        margin-bottom: .75rem;
+        padding: .5rem .25rem;
+        background: #fff;
+    }
+
+    .portal-table td {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        border: none;
+        padding: .4rem .75rem;
+        text-align: right;
+    }
+
+    .portal-table td::before {
+        content: attr(data-label);
+        font-size: .75rem;
+        font-weight: 600;
+        color: #7b8794;
+        text-align: left;
+        flex-shrink: 0;
+    }
+
+    /* Ячейки без подписи (например с кнопками) занимают строку целиком. */
+    .portal-table td:not([data-label]) {
+        justify-content: flex-end;
+    }
+
+    /* Управляющие элементы на телефоне — во всю ширину. */
+    .portal-stack-sm {
+        flex-direction: column !important;
+        align-items: stretch !important;
+    }
+
+    .portal-stack-sm > * {
+        width: 100%;
+    }
+}

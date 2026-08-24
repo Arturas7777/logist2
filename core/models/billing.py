@@ -828,6 +828,7 @@ class NewInvoice(models.Model):
             # === Группируем услуги по short_name ===
             # OrderedDict сохраняет порядок добавления
             groups = OrderedDict()
+            storage_markup = Decimal("0")
 
             for service in services:
                 service_name = service.get_service_name()
@@ -837,6 +838,11 @@ class NewInvoice(models.Model):
                     continue
 
                 if is_storage_service(service):
+                    # Саму сумму хранения считаем ниже по актуальным дням, но
+                    # наценку забираем отсюда: Car._update_storage_service_price
+                    # обновляет только custom_price и не трогает markup_amount,
+                    # поэтому иначе позиция «Хран» разошлась бы с Car.total_price.
+                    storage_markup += service.markup_amount or Decimal("0")
                     continue
 
                 short = service.get_service_short_name()
@@ -861,6 +867,10 @@ class NewInvoice(models.Model):
                 if car.storage_cost and car.storage_cost > 0 and car.days and car.days > 0:
                     daily_rate = car._get_storage_daily_rate() if car.warehouse else Decimal("0")
                     storage_total = daily_rate * car.days
+                    # Наценка идёт только в счёт клиенту. Во входящем счёте
+                    # склада, как и по остальным услугам, — себестоимость.
+                    if is_company:
+                        storage_total += storage_markup
                     groups["Хран"] = storage_total
 
             # === Создаём InvoiceItem для каждой группы ===

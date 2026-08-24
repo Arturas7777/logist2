@@ -780,9 +780,7 @@ class TransportDocumentRule(models.Model):
     набор по умолчанию (см. ``core.services.transport_request_check``).
     """
 
-    country = models.CharField(
-        max_length=2, choices=TRANSPORT_DESTINATION_COUNTRIES, verbose_name="Страна назначения"
-    )
+    country = models.CharField(max_length=2, choices=TRANSPORT_DESTINATION_COUNTRIES, verbose_name="Страна назначения")
     procedure = models.CharField(
         max_length=10, choices=TRANSPORT_DECLARATION_TYPES, verbose_name="Таможенная процедура"
     )
@@ -798,9 +796,7 @@ class TransportDocumentRule(models.Model):
         help_text="Выключено — для этой пары берётся набор по умолчанию.",
     )
     note = models.CharField(max_length=255, blank=True, verbose_name="Примечание")
-    updated_by = models.ForeignKey(
-        User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Изменил"
-    )
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Изменил")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Дата изменения")
 
     class Meta:
@@ -953,6 +949,8 @@ class TransportRequest(models.Model):
         indexes = [
             models.Index(fields=["client", "-created_at"], name="transreq_client_idx"),
             models.Index(fields=["status"], name="transreq_status_idx"),
+            # Табы доски «У склада» / «Подтверждены складом» фильтруют по нему.
+            models.Index(fields=["warehouse_state", "-created_at"], name="transreq_whstate_idx"),
         ]
 
     def __str__(self):

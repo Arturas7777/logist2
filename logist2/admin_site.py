@@ -249,9 +249,30 @@ class LogistAdminSite(BaseAdminSite):
     # ────────────────────────────────────────────────────────────────────────
     def each_context(self, request):
         context = super().each_context(request)
-        context["sidebar_nav"] = self._build_sidebar_nav(request)
+        nav = self._build_sidebar_nav(request)
+        context["sidebar_nav"] = nav
         context["current_path"] = request.path
+        context["current_section"] = self._current_section(nav)
         return context
+
+    # ────────────────────────────────────────────────────────────────────────
+    @staticmethod
+    def _current_section(nav):
+        """Активная группа и пункт меню — для хлебных крошек в topbar.
+
+        Стандартные крошки Django скрыты кастомным шеллом, из-за чего на
+        списках и карточках не видно, в каком разделе находишься.
+        """
+        for group in nav:
+            for item in group["items"]:
+                if item["active"]:
+                    return {
+                        "group": group["name"],
+                        "group_icon": group["icon"],
+                        "item": item["name"],
+                        "item_url": item["url"],
+                    }
+        return None
 
     # ────────────────────────────────────────────────────────────────────────
     def _collect_model_index(self, request):

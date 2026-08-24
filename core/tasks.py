@@ -615,6 +615,90 @@ def _sync_bank_and_reconcile_inner():
     }
 
 
+@shared_task(bind=True, max_retries=1, default_retry_delay=120, time_limit=600)
+def sync_bank_connections_task(self, connection_ids=None):
+    """Ручная синхронизация Revolut-подключений (admin action «Синхронизировать сейчас»).
+
+    Раньше вызывалась прямо в HTTP-запросе: при нескольких подключениях
+    сетевые вызовы Revolut упирались в таймаут gunicorn.
+
+    Тот же лок, что и у периодической ``sync_bank_and_reconcile``:
+    параллельный прогон способен оставить осиротевший BALANCE_TOPUP
+    (пара TOPUP+PAYMENT не атомарна относительно конкурента).
+    """
+    from core.models_banking import BankConnection
+    from core.services.revolut_service import RevolutService
+
+    with task_lock("lock:sync_bank", ttl=900) as acquired:
+        if not acquired:
+            logger.warning("[sync_bank_manual] Другой прогон ещё выполняется — skip")
+            return {"status": "locked"}
+
+        qs = BankConnection.objects.filter(is_active=True, bank_type="REVOLUT")
+        if connection_ids:
+            qs = qs.filter(pk__in=connection_ids)
+
+        synced = 0
+        accounts = 0
+        transactions = 0
+        errors = []
+        for conn in qs:
+            try:
+                result = RevolutService(conn).sync_all()
+            except Exception as exc:
+                logger.error("[sync_bank_manual] %s failed: %s", conn, exc, exc_info=True)
+                errors.append(f"{conn}: {exc}")
+                continue
+            if result["error"]:
+                errors.append(f"{conn}: {result['error']}")
+                continue
+            synced += 1
+            accounts += len(result["accounts"])
+            transactions += len(result["transactions"])
+
+        logger.info(
+            "[sync_bank_manual] %d подключений, %d счетов, %d транзакций, ошибок: %d",
+            synced,
+            accounts,
+            transactions,
+            len(errors),
+        )
+        return {"connections": synced, "accounts": accounts, "transactions": transactions, "errors": errors}
+
+
+@shared_task(bind=True, max_retries=1, default_retry_delay=120, time_limit=900)
+def download_revolut_receipts_task(self, connection_ids, days=90):
+    """Подгрузка expenses и чеков из Revolut (admin action).
+
+    Вынесена из request-цикла: Expenses API + скачивание файлов по каждому
+    чеку — это десятки сетевых запросов, в админке они выглядели как зависание.
+    """
+    from core.models_banking import BankConnection
+    from core.services.revolut_service import RevolutAPIError, RevolutService
+
+    updated = 0
+    downloaded = 0
+    errors = []
+    for conn in BankConnection.objects.filter(pk__in=connection_ids, is_active=True, bank_type="REVOLUT"):
+        service = RevolutService(conn)
+        try:
+            updated += service.fetch_expenses(days=days)
+            downloaded += service.fetch_receipts_for_existing()
+        except RevolutAPIError as exc:
+            if exc.status_code == 403:
+                errors.append(f"{conn}: Expenses API недоступен (403) — нужен план Grow/Scale/Enterprise")
+            else:
+                errors.append(f"{conn}: {exc}")
+        except Exception as exc:
+            logger.error("[revolut_receipts] %s failed: %s", conn, exc, exc_info=True)
+            errors.append(f"{conn}: {exc}")
+
+    logger.info(
+        "[revolut_receipts] expenses обновлено: %d, чеков скачано: %d, ошибок: %d", updated, downloaded, len(errors)
+    )
+    return {"expenses_updated": updated, "receipts_downloaded": downloaded, "errors": errors}
+
+
 @shared_task(bind=True, max_retries=2, default_retry_delay=60, time_limit=120)
 def parse_receipt_task(self, transaction_id):
     """Parse receipt image attached to a personal expense transaction via Claude Vision."""

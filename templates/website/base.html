@@ -92,6 +92,9 @@
                                 <li><a class="dropdown-item" href="{% url 'website:transport_requests' %}">
                                     <i class="bi bi-truck"></i> {% trans "Заявки на вывоз авто" %}
                                 </a></li>
+                                <li><a class="dropdown-item" href="{% url 'website:invoices' %}">
+                                    <i class="bi bi-receipt"></i> {% trans "Мои счета" %}
+                                </a></li>
                                 {# Памятка таможни — про транзит через Литву, поэтому раздел #}
                                 {# только у клиентов из Беларуси (Client.country). #}
                                 {% if user.clientuser.client.sees_sanctions_check %}

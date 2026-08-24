@@ -1,9 +1,10 @@
 {% extends "website/base.html" %}
-{% load i18n %}
+{% load i18n static %}
 
 {% block title %}{% trans "Личный кабинет" %} - {{ client.name }}{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="{% static 'website/css/portal.css' %}">
 <style>
     .dashboard-hero {
         background: linear-gradient(135deg, var(--primary-color, #2c3e50) 0%, #34495e 100%);
@@ -118,20 +119,34 @@
                 <h1 class="h3 mb-0">{{ client.name }}</h1>
             </div>
             <div class="text-end">
-                <div class="text-white-50 small">{% trans "Баланс" %}</div>
-                <div class="h4 mb-0 {% if client.balance and client.balance < 0 %}text-warning{% else %}text-white{% endif %}">
-                    {{ client.balance|default:"0.00" }} EUR
-                </div>
-                {% if client.balance and client.balance < 0 %}
-                    <small class="text-warning">{% trans "Задолженность" %}</small>
-                {% elif client.balance and client.balance > 0 %}
-                    <small class="text-white-50">{% trans "Переплата" %}</small>
+                {% if amount_due > 0 %}
+                    <div class="text-white-50 small">{% trans "К оплате" %}</div>
+                    <div class="h4 mb-0 text-warning">{{ amount_due|floatformat:2 }} EUR</div>
+                    <small class="text-warning">{% trans "Задолженность по счетам" %}</small>
+                {% elif prepaid_amount > 0 %}
+                    <div class="text-white-50 small">{% trans "Аванс на счету" %}</div>
+                    <div class="h4 mb-0 text-white">{{ prepaid_amount|floatformat:2 }} EUR</div>
+                    {% if open_invoices_debt > 0 %}
+                        <small class="text-white-50">
+                            {% blocktrans with debt=open_invoices_debt|floatformat:2 %}в т.ч. по счетам: {{ debt }} EUR{% endblocktrans %}
+                        </small>
+                    {% else %}
+                        <small class="text-white-50">{% trans "Переплата" %}</small>
+                    {% endif %}
+                {% else %}
+                    <div class="text-white-50 small">{% trans "Баланс" %}</div>
+                    <div class="h4 mb-0 text-white">0.00 EUR</div>
+                    <small class="text-white-50">{% trans "Задолженности нет" %}</small>
                 {% endif %}
             </div>
         </div>
         <div class="d-flex flex-wrap gap-2 mt-3">
             <a href="{% url 'website:transport_requests' %}" class="btn btn-sm btn-light">
                 <i class="bi bi-truck"></i> {% trans "Мои заявки" %}
+            </a>
+            <a href="{% url 'website:invoices' %}{% if amount_due > 0 %}?filter=unpaid{% endif %}"
+               class="btn btn-sm {% if amount_due > 0 %}btn-warning{% else %}btn-light{% endif %}">
+                <i class="bi bi-receipt"></i> {% trans "Мои счета" %}
             </a>
         </div>
     </div>
@@ -205,7 +220,7 @@
                 </button>
             </div>
             <div class="table-responsive">
-                <table class="table table-cars table-hover mb-0 align-middle">
+                <table class="table table-cars table-hover mb-0 align-middle portal-table">
                     <thead class="table-light">
                         <tr>
                             <th style="width:36px;">
@@ -225,12 +240,12 @@
                     <tbody>
                         {% for car in cars %}
                         <tr>
-                            <td>
+                            <td data-label="{% trans 'Выбрать' %}">
                                 {% if car.status != "TRANSFERRED" and car.status != "FLOATING" and not car.is_important and not car.in_active_request %}
                                 <input type="checkbox" class="form-check-input car-select" name="cars" value="{{ car.id }}">
                                 {% endif %}
                             </td>
-                            <td style="width:76px;">
+                            <td data-label="{% trans 'Фото' %}" style="width:76px;">
                                 {% with first_photo=car.photos.all|first %}
                                     {% if first_photo %}
                                         <img src="{{ first_photo.photo.url }}" alt="" loading="lazy" style="width:64px;height:36px;object-fit:cover;border-radius:6px;">
@@ -244,11 +259,11 @@
                                     {% endif %}
                                 {% endwith %}
                             </td>
-                            <td>
+                            <td data-label="{% trans 'Марка' %}">
                                 <a class="fw-semibold text-decoration-none" href="{% url 'website:car_detail' car.id %}">{{ car.brand|default:"—" }}</a>
                             </td>
-                            <td><code>{{ car.vin }}</code></td>
-                            <td class="title-cell">
+                            <td data-label="VIN"><code>{{ car.vin }}</code></td>
+                            <td class="title-cell" data-label="{% trans 'Тайтл' %}">
                                 {% if car.title_scan %}
                                 <button type="button"
                                         class="title-tile doc-preview-btn"
@@ -268,7 +283,7 @@
                                 </span>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td data-label="{% trans 'Контейнер' %}">
                                 {% if car.container %}
                                     <span class="text-monospace">{{ car.container.number }}</span>
                                     {% if car.container_photos_count %}
@@ -282,20 +297,20 @@
                                     <span class="text-muted">—</span>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td data-label="{% trans 'Разгружен' %}">
                                 {% if car.unload_date %}
                                     {{ car.unload_date|date:"d.m.Y" }}
                                 {% else %}
                                     <span class="text-muted">—</span>
                                 {% endif %}
                             </td>
-                            <td>{{ car.warehouse.name|default:"—" }}</td>
-                            <td>
+                            <td data-label="{% trans 'Склад' %}">{{ car.warehouse.name|default:"—" }}</td>
+                            <td data-label="{% trans 'Статус' %}">
                                 <span class="status-badge status-{{ car.status }}">
                                     {{ car.get_status_display }}
                                 </span>
                             </td>
-                            <td>
+                            <td data-label="{% trans 'Заявка' %}">
                                 {% if car.in_active_request %}
                                 <span class="badge rounded-pill text-bg-warning text-nowrap">
                                     <i class="bi bi-truck"></i> {% trans "В заявке" %}

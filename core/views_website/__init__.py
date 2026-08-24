@@ -27,6 +27,8 @@ URL-конфиг работал без изменений.
   ``serve_signed_photo``.
 * :mod:`.portal_sanctions` — «Проверка на санкции» для клиентов из Беларуси
   (``sanctions_check_page``, ``sanctions_vin_lookup``).
+* :mod:`.portal_invoices` — раздел «Мои счета» (``client_invoices``,
+  ``client_invoice_download``).
 """
 
 from .ai_chat import (
@@ -62,6 +64,10 @@ from .portal_docs import (
     create_declaration_request,
     declaration_print,
     upload_document,
+)
+from .portal_invoices import (
+    client_invoice_download,
+    client_invoices,
 )
 from .portal_sanctions import (
     client_sees_sanctions_check,
@@ -123,6 +129,9 @@ __all__ = [  # noqa: RUF022
     "upload_document",
     "create_declaration_request",
     "declaration_print",
+    # portal_invoices
+    "client_invoices",
+    "client_invoice_download",
     # portal_transport
     "transport_requests",
     "transport_request_edit",

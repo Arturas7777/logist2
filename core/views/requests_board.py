@@ -105,15 +105,40 @@ PACKAGE_FIELD_LABELS = {
 def _base_queryset():
     return (
         TransportRequest.objects.select_related("client", "warehouse", "auto_transport")
-        .prefetch_related("cars__warehouse", "cars__container", "documents", "doc_packages", "bulk_uploads")
+        .prefetch_related(
+            "cars__warehouse",
+            "cars__container",
+            "documents",
+            "doc_packages",
+            "bulk_uploads",
+            "declaration_groups__cars",
+        )
         .annotate(
             unread_client_msgs=Count(
                 "messages",
                 filter=Q(messages__author_kind="CLIENT", messages__read_by_staff_at__isnull=True),
                 distinct=True,
             ),
+            # distinct обязателен: два Count по разным связям в одном запросе
+            # перемножают строки JOIN'ов.
+            unread_email_links=Count(
+                "email_links",
+                filter=Q(email_links__is_read=False),
+                distinct=True,
+            ),
         )
     )
+
+
+def _tab_counts() -> dict[str, int]:
+    """Счётчики всех табов одним запросом вместо отдельного COUNT на каждый."""
+    aggregates = {
+        # Пустой Q («Все») в filter= не сужает выборку, поэтому считаем без него.
+        f"tab_{code}": (Count("id", filter=flt) if flt else Count("id"))
+        for code, _label, flt in BOARD_TABS
+    }
+    row = TransportRequest.objects.aggregate(**aggregates)
+    return {code: row.get(f"tab_{code}", 0) or 0 for code, _label, _flt in BOARD_TABS}
 
 
 def _admin_context(request: HttpRequest, **extra):
@@ -150,9 +175,7 @@ def requests_board_page(request: HttpRequest):
             | Q(cars__vin__icontains=search)
         ).distinct()
 
-    counts = {}
-    for code, _label, flt in BOARD_TABS:
-        counts[code] = _base_queryset().filter(flt).count()
+    counts = _tab_counts()
 
     # Лимит намеренно небольшой: на каждую карточку считается полнота пакета
     # документов (несколько запросов), а работают с доской через табы и поиск.
@@ -213,7 +236,7 @@ def _board_card(transport_request) -> dict:
         "declarations": blocks,
         "readiness": readiness,
         "unread": getattr(transport_request, "unread_client_msgs", 0) or 0,
-        "unread_emails": transport_request.email_links.filter(is_read=False).count(),
+        "unread_emails": getattr(transport_request, "unread_email_links", 0) or 0,
         "url": reverse("admin_request_card", args=[transport_request.pk]),
     }
 
