@@ -407,9 +407,11 @@ document.addEventListener('DOMContentLoaded', function() {
         </a>
     </div>
     <div class="cm-topbar-center">
-        {# По умолчанию — крошки «Группа › Раздел › Объект»: стандартные
-           крошки Django скрыты шеллом, а страницы со своим заголовком
-           перекрывают этот блок. #}
+        {% comment %}
+        По умолчанию — крошки «Группа › Раздел › Объект»: стандартные крошки
+        Django скрыты шеллом, а страницы со своим заголовком перекрывают
+        этот блок.
+        {% endcomment %}
         {% block topbar_title %}
             {% if current_section %}
             <nav class="cm-crumbs" aria-label="Хлебные крошки">
