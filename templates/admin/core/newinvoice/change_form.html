@@ -413,8 +413,9 @@
 {% endblock %}
 
 {% block topbar_title %}
+  {% include "admin/includes/topbar_crumbs.html" %}
   <img src="{% static 'icons/invoice.png' %}" class="cm-page-icon" alt="">
-  <span>{% if add %}Новый инвойс{% else %}Инвойс {{ original.number }}{% endif %}</span>
+  <span class="cm-topbar-object">{% if add %}Новый инвойс{% else %}Инвойс {{ original.number }}{% endif %}</span>
 {% endblock %}
 
 {% block content_title %}{% endblock %}

@@ -20,7 +20,7 @@
 {# — Icons — #}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
 {# — Design System — #}
-<link rel="stylesheet" type="text/css" href="{% static 'css/dashboard_admin.css' %}?v=72">
+<link rel="stylesheet" type="text/css" href="{% static 'css/dashboard_admin.css' %}?v=73">
 <style>
 /* Sticky first columns for wide changelists so VIN/status don't scroll out of view */
 #result_list.cm-sticky-cols thead th:nth-child(1),
@@ -408,32 +408,12 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
     <div class="cm-topbar-center">
         {% comment %}
-        По умолчанию — крошки «Группа › Раздел › Объект»: стандартные крошки
-        Django скрыты шеллом, а страницы со своим заголовком перекрывают
-        этот блок.
+        По умолчанию — крошки «Dashboard › Группа › Раздел › Объект».
+        Страницы с собственным заголовком перекрывают блок, но включают
+        admin/includes/topbar_crumbs.html сами, чтобы навигация не пропадала.
         {% endcomment %}
         {% block topbar_title %}
-            {% if current_section %}
-            <nav class="cm-crumbs" aria-label="Хлебные крошки">
-                <span class="cm-crumb cm-crumb-group">
-                    <i class="bi {{ current_section.group_icon }}"></i>{{ current_section.group }}
-                </span>
-                {% if current_section.item_url and current_path != current_section.item_url %}
-                    <i class="bi bi-chevron-right cm-crumb-sep"></i>
-                    <a class="cm-crumb cm-crumb-link" href="{{ current_section.item_url }}">{{ current_section.item }}</a>
-                {% else %}
-                    <i class="bi bi-chevron-right cm-crumb-sep"></i>
-                    <span class="cm-crumb cm-crumb-current" aria-current="page">{{ current_section.item }}</span>
-                {% endif %}
-                {% if original %}
-                    <i class="bi bi-chevron-right cm-crumb-sep"></i>
-                    <span class="cm-crumb cm-crumb-current" aria-current="page">{{ original|truncatechars:40 }}</span>
-                {% elif add %}
-                    <i class="bi bi-chevron-right cm-crumb-sep"></i>
-                    <span class="cm-crumb cm-crumb-current" aria-current="page">Добавление</span>
-                {% endif %}
-            </nav>
-            {% endif %}
+            {% include "admin/includes/topbar_crumbs.html" with object_crumb=1 %}
         {% endblock %}
     </div>
     <div class="cm-topbar-right">
@@ -584,6 +564,33 @@ document.addEventListener('DOMContentLoaded', function() {
             btn.setAttribute('aria-expanded', open ? 'true' : 'false');
             navState[name] = open;
             try { localStorage.setItem(NAV_KEY, JSON.stringify(navState)); } catch (e) {}
+        });
+    });
+
+    // Крошка с названием группы: своей страницы у группы нет, поэтому клик
+    // раскрывает её в сайдбаре и подсвечивает — видно все соседние разделы.
+    document.querySelectorAll('[data-crumb-group]').forEach(function(crumb) {
+        crumb.addEventListener('click', function() {
+            var name = crumb.getAttribute('data-crumb-group');
+            var group = document.querySelector('.cm-nav-group[data-nav-group="' + name + '"]');
+            if (!group) return;
+
+            if (window.matchMedia('(max-width: 991px)').matches) {
+                var toggle = document.getElementById('cm-sidebar-toggle');
+                if (toggle && !document.getElementById('cm-sidebar').classList.contains('open')) {
+                    toggle.click();
+                }
+            }
+
+            group.classList.add('open');
+            var groupToggle = group.querySelector('.cm-nav-group-toggle');
+            if (groupToggle) groupToggle.setAttribute('aria-expanded', 'true');
+            navState[name] = true;
+            try { localStorage.setItem(NAV_KEY, JSON.stringify(navState)); } catch (e) {}
+
+            group.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+            group.classList.add('cm-nav-group-flash');
+            setTimeout(function() { group.classList.remove('cm-nav-group-flash'); }, 1200);
         });
     });
 

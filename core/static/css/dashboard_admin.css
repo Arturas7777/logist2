@@ -429,6 +429,15 @@ body.login .submit-row input[type="submit"]:hover {
 .cm-nav-group.no-anim .cm-nav-group-items {
     transition: none;
 }
+/* Кратковременная подсветка группы после перехода из хлебных крошек. */
+.cm-nav-group-flash {
+    animation: cm-nav-flash 1.2s ease;
+    border-radius: var(--cm-radius-sm);
+}
+@keyframes cm-nav-flash {
+    0%, 60% { background: rgba(124, 92, 255, .18); }
+    100% { background: transparent; }
+}
 
 /* Sidebar sub-items */
 .cm-sidebar-subnav {
@@ -706,6 +715,12 @@ body.login .submit-row input[type="submit"]:hover {
 .cm-topbar-center:empty {
     display: none;
 }
+/* Блок центрирован через absolute, поэтому растёт в обе стороны и без
+   ограничения наезжает на логотип слева и на поиск справа. */
+.cm-topbar-center {
+    max-width: 52vw;
+    overflow: hidden;
+}
 .cm-topbar-center .cm-page-icon {
     width: 120px;
     height: 120px;
@@ -739,6 +754,22 @@ body.login .submit-row input[type="submit"]:hover {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+/* Группа — button, а не ссылка: своей страницы у неё нет, клик раскрывает
+   её в сайдбаре. Сбрасываем браузерный вид кнопки до вида крошки. */
+.cm-topbar-center .cm-crumbs .cm-crumb-group {
+    display: inline-flex;
+    align-items: center;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: .92rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.cm-topbar-center .cm-crumbs .cm-crumb-group:hover {
+    color: var(--cm-purple);
+}
 .cm-topbar-center .cm-crumbs .cm-crumb-group i {
     margin-right: 6px;
     opacity: .75;
@@ -749,6 +780,28 @@ body.login .submit-row input[type="submit"]:hover {
 }
 .cm-topbar-center .cm-crumbs .cm-crumb-link:hover {
     text-decoration: underline;
+}
+.cm-topbar-center .cm-crumbs .cm-crumb-home {
+    display: inline-flex;
+    align-items: center;
+    font-size: 1rem;
+}
+/* Крошки не должны схлопываться в пользу длинного заголовка объекта. */
+.cm-topbar-center .cm-crumbs {
+    flex-shrink: 0;
+}
+.cm-topbar-center .cm-topbar-object {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* На узких экранах место нужнее названию объекта: оставляем только
+   ближайший уровень — ссылку на список. */
+@media (max-width: 1250px) {
+    .cm-topbar-center .cm-crumbs .cm-crumb-home,
+    .cm-topbar-center .cm-crumbs .cm-crumb-group,
+    .cm-topbar-center .cm-crumbs .cm-crumb-sep:nth-of-type(-n+2) {
+        display: none;
+    }
 }
 .cm-topbar-center .cm-crumbs .cm-crumb-current {
     color: var(--cm-text);
