@@ -20,7 +20,7 @@
 {# — Icons — #}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
 {# — Design System — #}
-<link rel="stylesheet" type="text/css" href="{% static 'css/dashboard_admin.css' %}?v=73">
+<link rel="stylesheet" type="text/css" href="{% static 'css/dashboard_admin.css' %}?v=74">
 <style>
 /* Sticky first columns for wide changelists so VIN/status don't scroll out of view */
 #result_list.cm-sticky-cols thead th:nth-child(1),
@@ -407,14 +407,7 @@ document.addEventListener('DOMContentLoaded', function() {
         </a>
     </div>
     <div class="cm-topbar-center">
-        {% comment %}
-        По умолчанию — крошки «Dashboard › Группа › Раздел › Объект».
-        Страницы с собственным заголовком перекрывают блок, но включают
-        admin/includes/topbar_crumbs.html сами, чтобы навигация не пропадала.
-        {% endcomment %}
-        {% block topbar_title %}
-            {% include "admin/includes/topbar_crumbs.html" with object_crumb=1 %}
-        {% endblock %}
+        {% block topbar_title %}{% endblock %}
     </div>
     <div class="cm-topbar-right">
         <button type="button" class="cm-gsearch-trigger" id="cm-gsearch-trigger" title="Глобальный поиск (Ctrl+K)">
@@ -462,8 +455,14 @@ document.addEventListener('DOMContentLoaded', function() {
 {# Hide default Django nav sidebar — we use cm-sidebar #}
 {% block nav-sidebar %}{% endblock %}
 
-{# Hide breadcrumbs — replaced by topbar title #}
+{# Стандартные крошки Django не вписываются в шелл — свои рисуем в pretitle #}
 {% block nav-breadcrumbs %}{% endblock %}
+
+{% block pretitle %}
+{% if not is_popup and user.is_staff %}
+    {% include "admin/includes/crumbs.html" %}
+{% endif %}
+{% endblock %}
 
 {# ============================================================
    FOOTER — AI Chat widget + page context

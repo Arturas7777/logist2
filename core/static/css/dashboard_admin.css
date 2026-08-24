@@ -715,12 +715,6 @@ body.login .submit-row input[type="submit"]:hover {
 .cm-topbar-center:empty {
     display: none;
 }
-/* Блок центрирован через absolute, поэтому растёт в обе стороны и без
-   ограничения наезжает на логотип слева и на поиск справа. */
-.cm-topbar-center {
-    max-width: 52vw;
-    overflow: hidden;
-}
 .cm-topbar-center .cm-page-icon {
     width: 120px;
     height: 120px;
@@ -735,82 +729,69 @@ body.login .submit-row input[type="submit"]:hover {
     letter-spacing: -0.03em;
 }
 
-/* ===== Хлебные крошки в topbar =====
-   Дефолтное содержимое topbar_title: показывают раздел на страницах,
-   которые не задают собственный заголовок. Правила специфичнее, чем
-   `.cm-topbar-center span`, иначе крошки унаследуют размер заголовка. */
-.cm-topbar-center .cm-crumbs {
+/* ===== Хлебные крошки =====
+   Тонкая строка над содержимым страницы (блок pretitle). В топбаре они
+   конкурировали с логотипом и заголовком объекта, поэтому живут здесь. */
+.cm-crumbs {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 6px;
-    max-width: 46vw;
-    overflow: hidden;
+    margin: -6px 0 14px;
+    line-height: 1.4;
 }
-.cm-topbar-center .cm-crumbs .cm-crumb {
-    font-size: .92rem;
-    font-weight: 600;
+.cm-crumbs .cm-crumb {
+    font-size: .82rem;
+    font-weight: 500;
     letter-spacing: normal;
     color: var(--cm-text-secondary);
+    max-width: 320px;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
 }
 /* Группа — button, а не ссылка: своей страницы у неё нет, клик раскрывает
    её в сайдбаре. Сбрасываем браузерный вид кнопки до вида крошки. */
-.cm-topbar-center .cm-crumbs .cm-crumb-group {
+.cm-crumbs .cm-crumb-group {
     display: inline-flex;
     align-items: center;
     padding: 0;
     border: 0;
     background: none;
     font: inherit;
-    font-size: .92rem;
-    font-weight: 600;
+    font-size: .82rem;
+    font-weight: 500;
+    color: var(--cm-text-secondary);
     cursor: pointer;
 }
-.cm-topbar-center .cm-crumbs .cm-crumb-group:hover {
+.cm-crumbs .cm-crumb-group:hover {
     color: var(--cm-purple);
 }
-.cm-topbar-center .cm-crumbs .cm-crumb-group i {
-    margin-right: 6px;
-    opacity: .75;
+.cm-crumbs .cm-crumb-group i {
+    margin-right: 5px;
+    opacity: .7;
 }
-.cm-topbar-center .cm-crumbs .cm-crumb-link {
-    color: var(--cm-purple);
+.cm-crumbs .cm-crumb-link {
+    color: var(--cm-text-secondary);
     text-decoration: none;
 }
-.cm-topbar-center .cm-crumbs .cm-crumb-link:hover {
+.cm-crumbs .cm-crumb-link:hover {
+    color: var(--cm-purple);
     text-decoration: underline;
 }
-.cm-topbar-center .cm-crumbs .cm-crumb-home {
+.cm-crumbs .cm-crumb-home {
     display: inline-flex;
     align-items: center;
-    font-size: 1rem;
+    font-size: .9rem;
 }
-/* Крошки не должны схлопываться в пользу длинного заголовка объекта. */
-.cm-topbar-center .cm-crumbs {
-    flex-shrink: 0;
-}
-.cm-topbar-center .cm-topbar-object {
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-/* На узких экранах место нужнее названию объекта: оставляем только
-   ближайший уровень — ссылку на список. */
-@media (max-width: 1250px) {
-    .cm-topbar-center .cm-crumbs .cm-crumb-home,
-    .cm-topbar-center .cm-crumbs .cm-crumb-group,
-    .cm-topbar-center .cm-crumbs .cm-crumb-sep:nth-of-type(-n+2) {
-        display: none;
-    }
-}
-.cm-topbar-center .cm-crumbs .cm-crumb-current {
+.cm-crumbs .cm-crumb-current {
     color: var(--cm-text);
-    font-weight: 700;
+    font-weight: 600;
 }
-.cm-topbar-center .cm-crumbs .cm-crumb-sep {
-    font-size: .7rem;
+.cm-crumbs .cm-crumb-sep {
+    font-size: .62rem;
     color: var(--cm-text-secondary);
-    opacity: .5;
+    opacity: .45;
 }
 .cm-topbar-right {
     display: flex;

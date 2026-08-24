@@ -6,8 +6,7 @@
 {% endblock %}
 
 {% block topbar_title %}
-  {% include "admin/includes/topbar_crumbs.html" %}
-  <span class="cm-topbar-object">{% if original %}{{ original.number }}{% else %}Новый контейнер{% endif %}</span>
+  <span>{% if original %}{{ original.number }}{% else %}Новый контейнер{% endif %}</span>
 {% endblock %}
 
 {% block content_title %}{% endblock %}

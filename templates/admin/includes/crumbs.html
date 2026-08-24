@@ -1,0 +1,38 @@
+{% comment %}
+Хлебные крошки «Dashboard › Группа › Раздел [› Объект]».
+
+Живут тонкой строкой над содержимым страницы (блок pretitle), а не в
+топбаре: там они конкурировали с логотипом и заголовком объекта.
+Стандартные крошки Django скрыты кастомным шеллом.
+
+Кликабельно всё, что ведёт хоть куда-то:
+  * домик — главная админки;
+  * группа — кнопка: своей страницы у группы нет, но она раскрывает и
+    подсвечивает соответствующий раздел в сайдбаре;
+  * раздел — список объектов, кроме случая, когда мы уже на нём.
+{% endcomment %}
+{% if current_section %}
+<nav class="cm-crumbs" aria-label="Хлебные крошки">
+    <a class="cm-crumb cm-crumb-link cm-crumb-home" href="{% url 'admin:index' %}" title="Главная">
+        <i class="bi bi-house-door"></i>
+    </a>
+    <i class="bi bi-chevron-right cm-crumb-sep"></i>
+    <button type="button" class="cm-crumb cm-crumb-group" data-crumb-group="{{ current_section.group }}"
+            title="Показать раздел «{{ current_section.group }}» в меню">
+        <i class="bi {{ current_section.group_icon }}"></i>{{ current_section.group }}
+    </button>
+    <i class="bi bi-chevron-right cm-crumb-sep"></i>
+    {% if current_section.item_url and current_path != current_section.item_url %}
+        <a class="cm-crumb cm-crumb-link" href="{{ current_section.item_url }}">{{ current_section.item }}</a>
+    {% else %}
+        <span class="cm-crumb cm-crumb-current" aria-current="page">{{ current_section.item }}</span>
+    {% endif %}
+    {% if original %}
+        <i class="bi bi-chevron-right cm-crumb-sep"></i>
+        <span class="cm-crumb cm-crumb-current" aria-current="page">{{ original|truncatechars:40 }}</span>
+    {% elif add %}
+        <i class="bi bi-chevron-right cm-crumb-sep"></i>
+        <span class="cm-crumb cm-crumb-current" aria-current="page">Добавление</span>
+    {% endif %}
+</nav>
+{% endif %}
