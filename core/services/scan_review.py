@@ -243,7 +243,6 @@ def _title_fields(data: dict, car, extracted_vin: str) -> list[dict]:
             compare=False,
             hint="Если в тайтле указан залог — машину нельзя выдавать без снятия обременения.",
         ),
-        _field("Примечания AI", data.get("notes"), "", compare=False),
     ]
     return [row for row in rows if row]
 
@@ -637,6 +636,10 @@ def build_scan_review(job: ScanProcessingJob) -> dict:
         "file_url": job.original_file.url if job.original_file else "",
         "file_name": (job.original_file.name or "").rsplit("/", 1)[-1] if job.original_file else "",
         "file_kind": _file_kind(job.original_file.name if job.original_file else ""),
+        # Свободный комментарий модели к документу. В таблице сверки ему не
+        # место: длинный текст в узкой ячейке вытягивал таблицу и отжимал
+        # предпросмотр, поэтому показываем его отдельным блоком.
+        "ai_notes": _clean(data.get("notes")),
         "created_at": job.created_at,
         "fields": [],
         "vehicles": [],

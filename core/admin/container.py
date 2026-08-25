@@ -159,7 +159,7 @@ class ContainerAdmin(admin.ModelAdmin):
 
     class Media:
         # dashboard_admin.css подключается глобально в base_site.html
-        css = {"all": ("css/scan_review.css?v=2", "css/vin_guard.css?v=2")}
+        css = {"all": ("css/scan_review.css?v=3", "css/vin_guard.css?v=2")}
         js = (
             "js/htmx.min.js",
             "js/warehouse_address.js?v=2",
@@ -167,7 +167,7 @@ class ContainerAdmin(admin.ModelAdmin):
             # Проверка VIN в инлайне машин — те же подсказки, что в карточке авто.
             "js/vin_guard.js?v=2",
             # Зум и перетаскивание скана в панели «Документы и сверка».
-            "js/scan_doc_viewer.js?v=1",
+            "js/scan_doc_viewer.js?v=2",
         )
 
     def get_changeform_initial_data(self, request):

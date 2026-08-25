@@ -316,21 +316,32 @@
     opacity: .9;
 }
 
+/* Раскладка зависит от ширины самой панели, а не окна: панель живёт и в
+   карточке контейнера (там рядом ещё две колонки), и на странице задачи. */
+.cm-sr {
+    container-type: inline-size;
+}
+
 .cm-sr-layout {
     display: flex;
     gap: 14px;
     align-items: flex-start;
 }
 
+/* Таблице нужно место на два VIN и статус, скану — вдвое больше прежнего.
+   Если и то и другое рядом не помещается, колонки встают друг под друга
+   (см. @container ниже) — там скан получает всю ширину панели. */
 .cm-sr-main {
-    flex: 1 1 460px;
-    min-width: 0;
+    flex: 1 1 560px;
+    min-width: 520px;
 }
 
-/* Скан рядом с таблицей: расхождение проверяется без ухода со страницы. */
+/* Скан рядом с таблицей: расхождение проверяется без ухода со страницы.
+   Колонка широкая — тайтл читается без зума; таблица слева не должна её
+   отжимать, поэтому длинный текст в ячейках переносится (см. .cm-sr-table td). */
 .cm-sr-doc {
-    flex: 0 1 420px;
-    min-width: 260px;
+    flex: 1 1 840px;
+    min-width: 560px;
     position: sticky;
     top: 12px;
 }
@@ -414,7 +425,9 @@
 
 /* Окно просмотра: содержимое сдвигается transform'ом, поэтому всё, что
    вылезло за границы, режем. touch-action отключаем — иначе на тачпаде и
-   планшете жест утащит страницу вместо скана. */
+   планшете жест утащит страницу вместо скана.
+   Высоту при открытии подгоняет scan_doc_viewer.js — под верхнюю треть
+   страницы; 520px здесь на случай, если скрипт не сработал. */
 .cm-sr-doc-view {
     position: relative;
 }
@@ -467,6 +480,26 @@
     opacity: 1;
 }
 
+/* Пока на две колонки не хватает, скан уходит под таблицу во всю ширину —
+   так он всё равно шире, чем в зажатой колонке. */
+@container (max-width: 1400px) {
+    .cm-sr-layout {
+        flex-direction: column;
+    }
+
+    .cm-sr-doc {
+        position: static;
+        flex-basis: auto;
+        min-width: 0;
+        width: 100%;
+    }
+
+    .cm-sr-doc-frame {
+        height: 420px;
+    }
+}
+
+/* Тот же перенос для браузеров без @container. */
 @media (max-width: 1100px) {
     .cm-sr-layout {
         flex-direction: column;
@@ -475,11 +508,11 @@
     .cm-sr-doc {
         position: static;
         flex-basis: auto;
+        min-width: 0;
         width: 100%;
     }
 
-    .cm-sr-doc-frame,
-    .cm-sr-doc-stage {
+    .cm-sr-doc-frame {
         height: 420px;
     }
 }
@@ -519,11 +552,15 @@
     white-space: nowrap;
 }
 
+/* Длинные значения (имя владельца, залогодержатель) переносим по словам:
+   иначе одна такая строка растягивает таблицу и отжимает предпросмотр. */
 .cm-sr-table td {
     padding: 7px 10px;
     border-top: 1px solid var(--cm-border, #eee);
     vertical-align: top;
     color: var(--cm-text, #1a1a2e);
+    white-space: normal;
+    overflow-wrap: break-word;
 }
 
 .cm-sr-table tr.is-diff td {
@@ -539,6 +576,19 @@
     white-space: nowrap;
 }
 
+/* Комментарий модели к документу: свободный текст на всю ширину колонки. */
+.cm-sr-notes {
+    padding: 8px 10px;
+    border: 1px solid var(--cm-border, #e0dcf8);
+    border-radius: var(--cm-radius-sm, 10px);
+    background: #fff;
+    font-size: .79rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--cm-text, #1a1a2e);
+}
+
 .cm-sr-hint {
     display: block;
     font-size: .72rem;
@@ -547,10 +597,12 @@
     white-space: normal;
 }
 
+/* VIN не переносим: его сверяют посимвольно, разрыв посреди номера мешает. */
 .cm-sr-vin {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     letter-spacing: .5px;
     font-size: .8rem;
+    white-space: nowrap;
 }
 
 .cm-sr-empty {

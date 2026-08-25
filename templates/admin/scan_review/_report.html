@@ -272,6 +272,14 @@ resolve_url, action_url, resolve_actions.
         </div>
       {% endif %}
 
+      {# ── Свободный комментарий модели: полная ширина, с переносом строк ── #}
+      {% if report.ai_notes %}
+        <div class="cm-sr-section">
+          <div class="cm-sr-section-title">Примечания AI</div>
+          <div class="cm-sr-notes">{{ report.ai_notes }}</div>
+        </div>
+      {% endif %}
+
       {# ── Машины контейнера: к какой относится тайтл ── #}
       {% if report.container_cars %}
         <div class="cm-sr-section">

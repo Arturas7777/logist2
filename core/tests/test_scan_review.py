@@ -599,6 +599,21 @@ def test_report_marks_file_kind(file_name, expected):
     assert build_scan_review(job)["file_kind"] == expected
 
 
+def test_ai_notes_go_outside_the_comparison_table(container):
+    """Длинный комментарий модели — отдельным блоком, а не строкой таблицы.
+
+    В ячейке он растягивал таблицу и отжимал предпросмотр скана.
+    """
+    car = _make_car("AAA11111111111111", container)
+    note = "Подпись владельца перекрывает поле одометра, штамп штата смазан."
+    job = _title_job([car.vin], target=container, extra={"notes": note})
+
+    report = build_scan_review(job)
+
+    assert report["ai_notes"] == note
+    assert "Примечания AI" not in [row["label"] for row in report["fields"]]
+
+
 def test_job_page_renders_zoomable_doc_viewer(admin_client):
     """Скан отдаётся просмотрщику с зумом, а не голому iframe."""
     job = _title_job(["AAA11111111111111"])

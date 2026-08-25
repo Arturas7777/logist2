@@ -101,7 +101,7 @@
         var pageLabel = el('span', 'cm-sr-doc-page-label');
         var outBtn = iconButton('bi-dash-lg', 'Уменьшить');
         var inBtn = iconButton('bi-plus-lg', 'Увеличить');
-        var resetBtn = iconButton('bi-arrows-angle-contract', 'Показать страницу целиком');
+        var resetBtn = iconButton('bi-arrows-angle-contract', 'Сбросить: страница по ширине, сверху');
         var zoomLabel = el('span', 'cm-sr-doc-zoom', '100%');
 
         if (pages > 1) {
@@ -118,6 +118,18 @@
 
         function stageSize() {
             return { w: stage.clientWidth || 1, h: stage.clientHeight || 1 };
+        }
+
+        // Окно по высоте — треть страницы: при открытии видна верхняя часть
+        // документа, где стоят VIN и номер тайтла, а до низа оператор
+        // дотягивает мышью. Зависит только от ширины окна, поэтому зум
+        // высоту не дёргает.
+        function syncStageHeight() {
+            if (!baseH) return;
+            var target = Math.max(320, Math.min(640, Math.round(baseH / 3)));
+            if (Math.abs(stage.clientHeight - target) > 2) {
+                stage.style.height = target + 'px';
+            }
         }
 
         function clampPan() {
@@ -179,6 +191,7 @@
                     layer.innerHTML = '';
                     layer.appendChild(canvas);
                     drawnZoom = targetZoom;
+                    syncStageHeight();
                     clampPan();
                     applyTransform();
                     updateLabels();
@@ -208,9 +221,9 @@
             scheduleRender();
         }
 
-        function fitPage() {
-            var size = stageSize();
-            zoom = baseH > 0 ? Math.max(MIN_ZOOM, Math.min(1, size.h / baseH)) : 1;
+        // Возврат к стартовому виду: страница по ширине окна, верхний край.
+        function resetView() {
+            zoom = 1;
             panX = 0;
             panY = 0;
             clampPan();
@@ -277,7 +290,7 @@
 
         outBtn.addEventListener('click', function () { setZoom(zoom / 1.4); });
         inBtn.addEventListener('click', function () { setZoom(zoom * 1.4); });
-        resetBtn.addEventListener('click', fitPage);
+        resetBtn.addEventListener('click', resetView);
         prevBtn.addEventListener('click', function () { goToPage(page - 1); });
         nextBtn.addEventListener('click', function () { goToPage(page + 1); });
 
@@ -305,6 +318,7 @@
             baseH = img.naturalWidth ? size.w * (img.naturalHeight / img.naturalWidth) : size.h;
             img.style.width = baseW + 'px';
             img.style.height = baseH + 'px';
+            syncStageHeight();
             clampPan();
             applyTransform();
             updateLabels();
