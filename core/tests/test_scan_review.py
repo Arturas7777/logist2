@@ -578,6 +578,43 @@ def test_job_page_renders_review_block(admin_client, container):
     assert "Верен VIN в базе" in html
 
 
+@pytest.mark.parametrize(
+    "file_name,expected",
+    [
+        ("scans/title.pdf", "pdf"),
+        ("scans/TITLE.PDF", "pdf"),
+        ("scans/photo.jpg", "image"),
+        ("scans/photo.PNG", "image"),
+        ("scans/doc.docx", "other"),
+        ("", "other"),
+    ],
+)
+def test_report_marks_file_kind(file_name, expected):
+    """Просмотрщику нужно заранее знать, чем открывать скан."""
+    job = _title_job(["AAA11111111111111"])
+    if file_name:
+        job.original_file.name = file_name
+        job.save(update_fields=["original_file"])
+
+    assert build_scan_review(job)["file_kind"] == expected
+
+
+def test_job_page_renders_zoomable_doc_viewer(admin_client):
+    """Скан отдаётся просмотрщику с зумом, а не голому iframe."""
+    job = _title_job(["AAA11111111111111"])
+    job.original_file.name = "scans/title.pdf"
+    job.save(update_fields=["original_file"])
+
+    html = admin_client.get(f"/admin/core/scanprocessingjob/{job.pk}/change/").content.decode()
+
+    assert "js-sr-doc" in html
+    assert 'data-file-kind="pdf"' in html
+    assert "scan_doc_viewer.js" in html
+    # iframe остаётся только как запасной вариант для браузера без JS.
+    assert html.count("cm-sr-doc-frame") == 1
+    assert "<noscript>" in html
+
+
 def test_panel_resolve_action_applies_job(admin_client, container):
     car = _make_car("AAA11111111111111", container)
     job = _title_job(["AAA11111111111112"], target=container)

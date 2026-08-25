@@ -95,6 +95,21 @@ def _car_url(car_id) -> str:
     return reverse("admin:core_car_change", args=[car_id])
 
 
+def _file_kind(file_name: str) -> str:
+    """Чем открывать скан в предпросмотре: ``pdf``, ``image`` или ``other``.
+
+    Просмотрщику в панели нужно знать это заранее: PDF он рисует через
+    pdf.js на canvas, картинку — тегом ``img``, а всё остальное отдаёт
+    браузеру в iframe.
+    """
+    ext = (file_name or "").rsplit(".", 1)[-1].lower()
+    if ext == "pdf":
+        return "pdf"
+    if ext in {"jpg", "jpeg", "png", "webp", "gif", "bmp", "tif", "tiff"}:
+        return "image"
+    return "other"
+
+
 def _field(label, doc, sys_value, *, hint: str = "", compare: bool = True, soft: bool = False) -> dict | None:
     """Строка сравнения одного поля. ``None``, если сравнивать нечего.
 
@@ -621,6 +636,7 @@ def build_scan_review(job: ScanProcessingJob) -> dict:
         "auto_apply_reason": (job.applied_changes or {}).get("auto_apply_reason") or "",
         "file_url": job.original_file.url if job.original_file else "",
         "file_name": (job.original_file.name or "").rsplit("/", 1)[-1] if job.original_file else "",
+        "file_kind": _file_kind(job.original_file.name if job.original_file else ""),
         "created_at": job.created_at,
         "fields": [],
         "vehicles": [],

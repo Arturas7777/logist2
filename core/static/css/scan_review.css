@@ -353,6 +353,120 @@
     color: var(--cm-text-secondary, #6b7280);
 }
 
+.cm-sr-doc-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cm-sr-doc-bar > a {
+    white-space: nowrap;
+}
+
+/* Панель масштаба и страниц — её собирает scan_doc_viewer.js. */
+.cm-sr-doc-tools {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.cm-sr-doc-pages {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-right: 6px;
+}
+
+.cm-sr-doc-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid var(--cm-border, #e0dcf8);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--cm-text, #1f2937);
+    font-size: .7rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.cm-sr-doc-btn:hover:not(:disabled) {
+    background: var(--cm-purple-bg, #f2effe);
+    border-color: var(--cm-purple, #6c5ce7);
+    color: var(--cm-purple, #6c5ce7);
+}
+
+.cm-sr-doc-btn:disabled {
+    opacity: .4;
+    cursor: default;
+}
+
+.cm-sr-doc-zoom,
+.cm-sr-doc-page-label {
+    min-width: 38px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Окно просмотра: содержимое сдвигается transform'ом, поэтому всё, что
+   вылезло за границы, режем. touch-action отключаем — иначе на тачпаде и
+   планшете жест утащит страницу вместо скана. */
+.cm-sr-doc-view {
+    position: relative;
+}
+
+.cm-sr-doc-stage {
+    position: relative;
+    height: 520px;
+    overflow: hidden;
+    border: 1px solid var(--cm-border, #e0dcf8);
+    border-radius: var(--cm-radius-sm, 10px);
+    background: #f7f6fd;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+
+.cm-sr-doc-stage.is-dragging {
+    cursor: grabbing;
+}
+
+.cm-sr-doc-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+}
+
+.cm-sr-doc-canvas,
+.cm-sr-doc-image {
+    display: block;
+    background: #fff;
+    box-shadow: 0 1px 6px rgba(31, 41, 55, .12);
+}
+
+.cm-sr-doc-hint {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    padding: 3px 7px;
+    border-radius: 6px;
+    background: rgba(31, 41, 55, .62);
+    color: #fff;
+    font-size: .66rem;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .15s;
+}
+
+.cm-sr-doc-stage:hover .cm-sr-doc-hint {
+    opacity: 1;
+}
+
 @media (max-width: 1100px) {
     .cm-sr-layout {
         flex-direction: column;
@@ -364,7 +478,8 @@
         width: 100%;
     }
 
-    .cm-sr-doc-frame {
+    .cm-sr-doc-frame,
+    .cm-sr-doc-stage {
         height: 420px;
     }
 }

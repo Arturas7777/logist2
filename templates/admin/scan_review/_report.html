@@ -334,14 +334,25 @@ resolve_url, action_url, resolve_actions.
 
     </div>
 
-    {# ── Сам скан рядом: расхождение проверяется не отходя от таблицы ── #}
+    {% comment %}
+    Сам скан рядом: расхождение проверяется не отходя от таблицы. Окно узкое,
+    а сверять приходится мелкий текст, поэтому вместо iframe здесь
+    просмотрщик с зумом колесом и перетаскиванием (scan_doc_viewer.js).
+    Без JS остаётся iframe из noscript ниже.
+    {% endcomment %}
     {% if report.file_url %}
       <div class="cm-sr-doc">
         <div class="cm-sr-doc-bar">
-          <span>{{ report.file_name }}</span>
+          <span class="cm-sr-doc-name" title="{{ report.file_name }}">{{ report.file_name }}</span>
           <a href="{{ report.file_url }}" target="_blank" rel="noopener">Открыть отдельно</a>
         </div>
-        <iframe class="cm-sr-doc-frame" src="{{ report.file_url }}" title="Скан документа"></iframe>
+        <div class="cm-sr-doc-view js-sr-doc"
+             data-file-url="{{ report.file_url }}"
+             data-file-kind="{{ report.file_kind|default:'other' }}">
+          <noscript>
+            <iframe class="cm-sr-doc-frame" src="{{ report.file_url }}" title="Скан документа"></iframe>
+          </noscript>
+        </div>
       </div>
     {% endif %}
   </div>

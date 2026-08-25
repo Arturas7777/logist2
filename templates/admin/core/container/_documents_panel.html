@@ -182,7 +182,12 @@ ScanProcessingJob с target_container = этот контейнер, обраб�
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.text();
       })
-      .then(function (html) { detail.innerHTML = html; })
+      .then(function (html) {
+        detail.innerHTML = html;
+        // Скрипты из innerHTML не выполняются — просмотрщик скана
+        // (зум колесом, перетаскивание) поднимаем вручную.
+        if (window.cmScanDocViewer) window.cmScanDocViewer.init(detail);
+      })
       .catch(function () {
         detail.innerHTML = '';
         detail.appendChild(el('div', 'cm-job-loading', 'Не удалось загрузить сверку. Попробуйте обновить страницу.'));

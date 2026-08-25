@@ -115,7 +115,8 @@ class ScanProcessingJobAdmin(admin.ModelAdmin):
     change_form_template = "admin/scan_processing_job/change_form.html"
 
     class Media:
-        css = {"all": ("css/scan_review.css?v=1",)}
+        css = {"all": ("css/scan_review.css?v=2",)}
+        js = ("js/scan_doc_viewer.js?v=1",)
 
     def change_view(self, request, object_id, form_url="", extra_context=None):
         """Кладёт в контекст отчёт сверки — его рендерит change_form."""
