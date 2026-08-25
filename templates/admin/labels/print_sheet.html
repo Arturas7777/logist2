@@ -9,6 +9,8 @@
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
         @page {
+            /* Именованный A4, а не «210×297 custom»: иначе диалог Chrome
+               часто подставляет Letter (короче на ~18 мм) и сжимает лист. */
             size: A4 portrait;
             margin: 0;
         }
@@ -21,15 +23,24 @@
             print-color-adjust: exact;
         }
 
+        /* Панель не в потоке документа: иначе Chrome считает высоту
+           «панель + 297 мм», сжимает лист под A4 и все наклейки уезжают вверх. */
+        body {
+            padding-top: 52px;
+        }
+
         .screen-toolbar {
-            position: sticky;
+            position: fixed;
             top: 0;
+            left: 0;
+            right: 0;
             background: #1a1a2e;
             color: #fff;
             padding: 10px 16px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 12px;
             z-index: 100;
             box-shadow: 0 2px 8px rgba(0,0,0,.2);
         }
@@ -193,14 +204,34 @@
         .sheet[data-compact="2"] .checkbox { width: 2.2mm; height: 2.2mm; border-width: 0.3mm; }
 
         @media print {
-            html, body { background: #fff; }
-            .screen-toolbar { display: none !important; }
+            html, body {
+                background: #fff !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 210mm;
+            }
+            .screen-toolbar {
+                display: none !important;
+                position: static !important;
+                height: 0 !important;
+                overflow: hidden !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
             .sheet {
                 margin: 0 !important;
                 box-shadow: none !important;
+                width: 210mm;
+                height: 297mm;
                 page-break-after: always;
+                break-after: page;
+                page-break-inside: avoid;
+                break-inside: avoid;
             }
-            .sheet:last-child { page-break-after: auto; }
+            .sheet:last-child {
+                page-break-after: auto;
+                break-after: auto;
+            }
         }
     </style>
 </head>
@@ -209,6 +240,7 @@
 <div class="screen-toolbar">
     <div class="info">
         Формат: <b>{{ fmt.name }}</b> · Наклеек: <b>{{ labels_count }}</b> · Листов: <b>{{ pages_positioned|length }}</b>
+        <span style="opacity:.75; margin-left:10px; font-size:12px;">Бумага A4 (не Letter) · поля «Нет» · масштаб 100%</span>
     </div>
     <div>
         <button type="button" class="secondary" onclick="window.close()">Закрыть</button>
