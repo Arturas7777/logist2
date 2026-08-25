@@ -92,6 +92,32 @@ def test_title_report_compares_fields_with_matched_car(container):
     assert report["diff_count"] == 1
 
 
+def test_title_report_treats_nhtsa_model_as_reference(container):
+    car = _make_car("AAA11111111111111", container, year=2022, brand="CHEVROLET Equinox")
+    job = _title_job(
+        [car.vin],
+        target=container,
+        extra={
+            "year": 2022,
+            "make": "CHEVY",
+            "model": "EQUINOX LT",
+            "vin_validations": [
+                {
+                    "vin": car.vin,
+                    "nhtsa": {"ok": True, "make": "CHEVROLET", "model": "Equinox", "year": 2022},
+                    "warnings": [],
+                }
+            ],
+        },
+    )
+
+    report = build_scan_review(job)
+
+    assert _field(report, "Марка / модель")["state"] == "info"
+    assert _field(report, "NHTSA")["sys"] == "CHEVROLET Equinox (2022)"
+    assert report["diff_count"] == 0
+
+
 def test_title_report_lists_container_cars_by_similarity(container):
     close = _make_car("AAA11111111111111", container)
     far = _make_car("ZZZ99999999999999", container)

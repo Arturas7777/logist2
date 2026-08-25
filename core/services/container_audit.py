@@ -25,7 +25,7 @@ from django.urls import reverse
 from core.models.scans import ScanProcessingJob
 from core.models.vin_checks import VinCheck
 from core.services.vin_corrector import hamming_distance
-from core.services.vin_gate import makes_match
+from core.services.vin_gate import extracted_make_agrees, makes_match
 
 logger = logging.getLogger(__name__)
 
@@ -443,12 +443,16 @@ def _title_mismatch(car, data: dict) -> Finding | None:
     if car.year and doc_year and int(car.year) != doc_year:
         parts.append(f"год {car.year} против {doc_year} в тайтле")
 
-    # Сравниваем только марку: модель в тайтлах сокращается как попало
-    # («CHEV CORVETTE Z» вместо «CHEVROLET CORVETTE Z06»), и придираться к
-    # ней значит сделать панель бесполезной от шума.
+    # Модель в тайтлах сокращается как попало («EQUINOX LT» вместо
+    # «Equinox») — источник правды по VIN это NHTSA. Марку сверяем, только
+    # если OCR назвал совсем другого производителя (TOYOTA против CHEVROLET).
     doc_make = data.get("make")
     if doc_make and not makes_match(car.brand, doc_make):
-        parts.append(f"марка {car.brand} против {doc_make} в тайтле")
+        check = VinCheck.objects.filter(vin=car.vin).first()
+        n_make = check.nhtsa_make if check else ""
+        n_model = (check.nhtsa_model if check else "") or (data.get("model") or "")
+        if not extracted_make_agrees(doc_make, n_make or car.brand, n_model):
+            parts.append(f"марка {car.brand} против {doc_make} в тайтле")
 
     if not parts:
         return None

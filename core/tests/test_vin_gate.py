@@ -154,6 +154,16 @@ def test_brand_written_differently_is_not_a_mismatch():
     assert verdict.ok
 
 
+def test_chevy_nickname_is_not_a_make_mismatch():
+    from core.services.vin_gate import extracted_make_agrees, makes_match
+
+    assert makes_match("CHEVY EQUINOX", "CHEVROLET")
+    assert makes_match("CHEVROLET Equinox", "CHEVY")
+    assert extracted_make_agrees("EQUINOX", "CHEVROLET", "Equinox")
+    assert extracted_make_agrees("CHEV EQUINOX LT", "CHEVROLET", "Equinox")
+    assert not extracted_make_agrees("TOYOTA", "CHEVROLET", "Equinox")
+
+
 def test_vin_unknown_to_nhtsa_is_reported():
     VinCheck.objects.create(
         vin=VALID_NA_VIN,

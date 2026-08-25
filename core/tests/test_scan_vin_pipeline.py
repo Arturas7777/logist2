@@ -128,8 +128,19 @@ def test_confidence_low_on_blocking_warning():
 
 
 def test_confidence_low_on_second_pass_disagreement():
-    res = assess_vin_confidence(_validation(), second_pass_agrees=False)
+    res = assess_vin_confidence(
+        _validation(
+            nhtsa={"raw_failed": True, "make": None, "year": None},
+            warnings=["NHTSA API недоступен — пропустили проверку."],
+        ),
+        second_pass_agrees=False,
+    )
     assert res["level"] == "low"
+
+
+def test_confidence_medium_when_second_pass_disagrees_but_nhtsa_confirms():
+    res = assess_vin_confidence(_validation(), second_pass_agrees=False)
+    assert res["level"] == "medium"
 
 
 def test_confidence_corrected_vin_requires_nhtsa_for_high():
@@ -173,6 +184,49 @@ def test_process_extracted_vin_second_pass_agreement():
     assert res["second_pass_agrees"] is True
     res2 = process_extracted_vin(valid, second_pass_vin="9" + valid[1:], use_nhtsa=False)
     assert res2["second_pass_agrees"] is False
+
+
+def _nhtsa_chevrolet_equinox(vin, *, timeout=5):
+    return {
+        "ok": True,
+        "make": "CHEVROLET",
+        "model": "Equinox",
+        "year": 2022,
+        "error_code": "0",
+        "error_text": "",
+        "suggested_vin": "",
+        "raw_failed": False,
+    }
+
+
+def test_chevy_ocr_does_not_lower_vin_confidence(monkeypatch):
+    monkeypatch.setattr("core.services.vin_validator.decode_vin_nhtsa", _nhtsa_chevrolet_equinox)
+    from core.services.vin_validator import cross_check_with_ai_data
+
+    result = cross_check_with_ai_data(
+        "2GNAXKEV7N6140570",
+        ai_make="CHEVY",
+        ai_model="EQUINOX LT",
+        ai_year=2022,
+    )
+    assert result["warnings"] == []
+    assert assess_vin_confidence(result)["level"] == "high"
+
+
+def test_model_in_make_field_does_not_count_as_mismatch(monkeypatch):
+    monkeypatch.setattr("core.services.vin_validator.decode_vin_nhtsa", _nhtsa_chevrolet_equinox)
+    from core.services.vin_validator import cross_check_with_ai_data
+
+    result = cross_check_with_ai_data("2GNAXKEV7N6140570", ai_make="EQUINOX", ai_year=2022)
+    assert result["warnings"] == []
+
+
+def test_real_make_mismatch_is_still_reported(monkeypatch):
+    monkeypatch.setattr("core.services.vin_validator.decode_vin_nhtsa", _nhtsa_chevrolet_equinox)
+    from core.services.vin_validator import cross_check_with_ai_data
+
+    result = cross_check_with_ai_data("2GNAXKEV7N6140570", ai_make="TOYOTA", ai_year=2022)
+    assert any("Производитель не совпадает" in w for w in result["warnings"])
 
 
 # ── Хелперы для DB-тестов ──────────────────────────────────────────────────
@@ -260,6 +314,30 @@ def test_title_force_new_creates_car_in_target_container(db, container):
     assert new_car.container_id == container.id
 
 
+def test_title_new_car_uses_nhtsa_brand_over_ocr(db):
+    job = _make_title_job(
+        ["ZZZ99999999999999"],
+        extra={
+            "skip_vin_check": True,
+            "make": "CHEVY",
+            "model": "EQUINOX LT",
+            "year": 2021,
+            "vin_validations": [
+                {
+                    "vin": "ZZZ99999999999999",
+                    "nhtsa": {"ok": True, "make": "CHEVROLET", "model": "Equinox", "year": 2022},
+                }
+            ],
+        },
+    )
+
+    apply_title_job(job)
+
+    car = Car.objects.get(vin="ZZZ99999999999999")
+    assert car.brand == "CHEVROLET Equinox"
+    assert car.year == 2022
+
+
 def test_title_apply_does_not_touch_title_notes(db, container):
     # title_notes — поле только для ручных заметок оператора: применение
     # тайтла ставит has_title, но ничего не дописывает в заметку.
@@ -309,6 +387,35 @@ def test_auto_apply_title_rejects_low_confidence(db, container):
     )
     ok, _ = evaluate_auto_apply(job)
     assert ok is False
+
+
+def test_auto_apply_title_low_confidence_ok_when_nhtsa_confirms(db, container):
+    car = _make_car("2GNAXKEV7N6140570", container, brand="CHEVROLET EQUINOX", year=2022)
+    job = _make_title_job(
+        [car.vin],
+        target=container,
+        extra={
+            "make": "CHEVROLET",
+            "model": "EQUINOX LT",
+            "year": 2022,
+            "vin_confidences": [
+                {
+                    "vin": car.vin,
+                    "level": "low",
+                    "reasons": ["повторное посимвольное чтение дало другой VIN"],
+                }
+            ],
+            "vin_validations": [
+                {
+                    "vin": car.vin,
+                    "nhtsa": {"ok": True, "make": "CHEVROLET", "model": "Equinox", "year": 2022},
+                }
+            ],
+        },
+    )
+    ok, reason = evaluate_auto_apply(job)
+    assert ok is True
+    assert car.vin in reason
 
 
 def test_auto_apply_title_rejects_car_from_other_container(db, container):

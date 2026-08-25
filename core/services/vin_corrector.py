@@ -142,19 +142,37 @@ def assess_vin_confidence(
         не считается — только checksum-коррекция).
 
     Правила:
-      * low — любое расхождение: невалидная длина, blocking-warnings
-        (checksum NA, NHTSA invalid, mismatch make/year), несовпадение
-        повторного чтения.
+      * low — невалидная длина, blocking-warnings (checksum NA, NHTSA
+        invalid, чужой производитель / год), несовпадение повторного
+        чтения без независимого подтверждения VIN.
       * high — подтверждение NHTSA (декод make+year) И, для NA-VIN,
         валидная контрольная цифра. Автокоррекция требует NHTSA-подтверждения.
       * medium — всё, что подтверждено лишь частично (например NHTSA
-        недоступен, но checksum сходится).
+        недоступен, но checksum сходится); либо повторное чтение
+        разошлось, но NHTSA уже опознал этот VIN.
     """
     if not validation:
         return {"level": "low", "reasons": ["нет данных валидации VIN"]}
     if not validation.get("length_ok"):
         return {"level": "low", "reasons": ["VIN не 17-символьный"]}
+
+    nhtsa = validation.get("nhtsa") or {}
+    is_na = bool(validation.get("region_north_american"))
+    checksum_ok = bool(validation.get("checksum_ok"))
+    nhtsa_confirmed = bool(nhtsa) and not nhtsa.get("raw_failed") and bool(nhtsa.get("make") and nhtsa.get("year"))
+    checksum_confirmed = checksum_ok
+
     if second_pass_agrees is False:
+        if nhtsa_confirmed and (checksum_confirmed or not is_na):
+            # Первый проход подтверждён NHTSA — второй проход OCR шумит,
+            # это не повод считать VIN неверным и блокировать тайтл.
+            return {
+                "level": "medium",
+                "reasons": [
+                    "повторное посимвольное чтение дало другой VIN",
+                    f"NHTSA декодировал VIN: {nhtsa.get('make')} {nhtsa.get('year')}",
+                ],
+            }
         return {"level": "low", "reasons": ["повторное посимвольное чтение дало другой VIN"]}
 
     warnings = validation.get("warnings") or []
@@ -162,13 +180,6 @@ def assess_vin_confidence(
     blocking = [w for w in warnings if "недоступен" not in w]
     if blocking:
         return {"level": "low", "reasons": blocking}
-
-    nhtsa = validation.get("nhtsa") or {}
-    is_na = bool(validation.get("region_north_american"))
-    checksum_ok = bool(validation.get("checksum_ok"))
-
-    nhtsa_confirmed = bool(nhtsa) and not nhtsa.get("raw_failed") and bool(nhtsa.get("make") and nhtsa.get("year"))
-    checksum_confirmed = checksum_ok  # для non-NA сходится редко, но если сошлось — плюс
 
     reasons: list[str] = []
     if nhtsa_confirmed:

@@ -261,6 +261,7 @@ def test_title_matching_card_produces_no_finding(container):
     ("card_brand", "title_make"),
     [
         ("CHEVROLET MALIBU", "CHEV"),
+        ("CHEVROLET EQUINOX", "CHEVY"),
         ("TOYOTA C-HR LE", "TOYOTA"),
         ("VOLKSWAGEN TAOS", "VOLKSWAGEN"),
     ],
@@ -275,6 +276,16 @@ def test_abbreviated_make_in_title_is_not_a_mismatch(container, card_brand, titl
     codes = _codes(container)
     assert TITLE_DATA_MISMATCH not in codes
     assert VIN_SPEC_MISMATCH not in codes
+
+
+def test_title_model_written_as_make_is_not_a_mismatch(container):
+    """OCR тайтла часто ставит модель в поле марки — NHTSA это не опровергает."""
+    car = _make_car(VIN_A, container, has_title=True, brand="CHEVROLET EQUINOX")
+    _ok_check(VIN_A, make="CHEVROLET", model="Equinox")
+    _applied_dock_receipt(container, [car.vin])
+    _applied_title(car, make="EQUINOX", model="LT")
+
+    assert TITLE_DATA_MISMATCH not in _codes(container)
 
 
 def test_different_make_in_title_is_still_a_mismatch(container):

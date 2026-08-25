@@ -365,8 +365,10 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
         # Создаём новую карточку Car с минимальным набором полей.
         # Статус FLOATING — чтобы потом юзер привязал контейнер вручную
         # (или сразу в контейнер, если скан загружен из его карточки).
-        year = _safe_int(data.get("year"))
-        brand_full = _build_brand(data)
+        # Марка и год — из NHTSA, если VIN расшифровался: OCR тайтла пишет
+        # «CHEV EQUINOX LT», а каноническое имя одно — «CHEVROLET Equinox».
+        year = _preferred_year(data)
+        brand_full = _preferred_brand(data)
         create_kwargs = {
             "vin": primary_vin,
             "year": year or 0,
@@ -386,7 +388,11 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
     car.has_title = True
     # title_notes НЕ трогаем — это поле только для ручных заметок оператора.
     # Что именно AI прочитал (номер тайтла, штат, дата) — в applied_changes.
-    car.save(update_fields=["title_scan", "has_title"])
+    update_fields = ["title_scan", "has_title"]
+    if not created_new:
+        filled = _fill_blank_spec_from_nhtsa(car, data)
+        update_fields.extend(filled)
+    car.save(update_fields=update_fields)
 
     _attach_title_to_transport_requests(car)
 
@@ -437,6 +443,51 @@ def _build_brand(data: dict) -> str:
     if make and model:
         return f"{make} {model}"
     return make or model or ""
+
+
+def _nhtsa_payload(source: dict) -> dict:
+    """Расшифровка NHTSA из результата обработки VIN (тайтл или строка DR)."""
+    direct = (source.get("vin_validation") or {}).get("nhtsa") or {}
+    if direct.get("make") or direct.get("model"):
+        return direct
+    for item in source.get("vin_validations") or []:
+        nhtsa = (item or {}).get("nhtsa") or {}
+        if nhtsa.get("make") or nhtsa.get("model"):
+            return nhtsa
+    return {}
+
+
+def _preferred_brand(source: dict) -> str:
+    """Марка карточки: NHTSA важнее OCR документа."""
+    from core.services.vin_gate import brand_from_nhtsa
+
+    nhtsa = _nhtsa_payload(source)
+    return brand_from_nhtsa(nhtsa.get("make"), nhtsa.get("model")) or _build_brand(source)
+
+
+def _preferred_year(source: dict):
+    nhtsa = _nhtsa_payload(source)
+    year = nhtsa.get("year")
+    if year:
+        try:
+            return int(year)
+        except (TypeError, ValueError):
+            pass
+    return _safe_int(source.get("year"))
+
+
+def _fill_blank_spec_from_nhtsa(car, source: dict) -> list[str]:
+    """Подставляет марку и год из NHTSA, только если в карточке пусто."""
+    changed: list[str] = []
+    brand = _preferred_brand(source)
+    if brand and (not (car.brand or "").strip() or car.brand.strip().lower() == "unknown"):
+        car.brand = brand
+        changed.append("brand")
+    year = _preferred_year(source)
+    if year and not car.year:
+        car.year = year
+        changed.append("year")
+    return changed
 
 
 def _build_title_note(data: dict) -> str:
@@ -589,8 +640,8 @@ def apply_dock_receipt_job(job: ScanProcessingJob, *, applied_by=None) -> ScanPr
         car = Car.objects.filter(vin=vin).first()
         car_created = False
         if car is None:
-            year = _safe_int(veh.get("year"))
-            brand_full = _build_brand(veh)
+            year = _preferred_year(veh)
+            brand_full = _preferred_brand(veh)
             create_kwargs = {
                 "vin": vin,
                 "year": year or 0,
@@ -754,6 +805,19 @@ def _vin_confidence_level(data: dict, vin: str) -> str | None:
     return None
 
 
+def _nhtsa_confirms_vin(data: dict, vin: str) -> bool:
+    """NHTSA расшифровал этот VIN — марка и год известны, VIN настоящий."""
+    vin = _normalize_vin(vin)
+    for item in data.get("vin_validations") or []:
+        if _normalize_vin(item.get("vin")) != vin:
+            continue
+        nhtsa = item.get("nhtsa") or {}
+        if nhtsa.get("raw_failed"):
+            return False
+        return bool(nhtsa.get("make") and nhtsa.get("year"))
+    return False
+
+
 def evaluate_auto_apply(job: ScanProcessingJob) -> tuple[bool, str]:
     """Решает, можно ли применить job автоматически, без ручного review.
 
@@ -789,7 +853,8 @@ def evaluate_auto_apply(job: ScanProcessingJob) -> tuple[bool, str]:
 
         exact = Car.objects.filter(vin=vin).first()
         if exact is not None:
-            if level not in _AUTO_APPLY_DB_MATCH_LEVELS:
+            nhtsa_ok = _nhtsa_confirms_vin(data, vin)
+            if level not in _AUTO_APPLY_DB_MATCH_LEVELS and not nhtsa_ok:
                 return False, f"уверенность распознавания VIN: {level or 'нет данных'}"
             if target is not None and exact.container_id != target.id:
                 return False, (f"VIN {vin} принадлежит машине вне контейнера {target.number} — нужно подтверждение")

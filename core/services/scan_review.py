@@ -198,10 +198,21 @@ def _title_target_car(job: ScanProcessingJob, data: dict, extracted_vin: str):
 
 
 def _title_fields(data: dict, car, extracted_vin: str) -> list[dict]:
+    nhtsa_label = _nhtsa_label(data)
+    # Когда NHTSA расшифровал VIN, написание марки в тайтле — справка, а не
+    # сверка: «CHEV EQUINOX LT» против «CHEVROLET Equinox» не расхождение.
+    brand_compare = not bool(nhtsa_label)
     rows = [
         _field("VIN", extracted_vin, car.vin if car else ""),
         _field("Год выпуска", data.get("year"), car.year if car and car.year else ""),
-        _field("Марка / модель", _brand_from(data), car.brand if car else "", soft=True),
+        _field(
+            "Марка / модель",
+            _brand_from(data),
+            car.brand if car else "",
+            soft=True,
+            compare=brand_compare,
+        ),
+        _field("NHTSA", "", nhtsa_label, compare=False) if nhtsa_label else None,
         _field("Скан тайтла в карточке", "", "прикреплён" if car and car.title_scan else "", compare=False),
         _field("Отметка «тайтл есть»", "", "да" if car and car.has_title else "", compare=False),
         _field("Номер тайтла", data.get("title_number"), "", compare=False),
@@ -220,6 +231,17 @@ def _title_fields(data: dict, car, extracted_vin: str) -> list[dict]:
         _field("Примечания AI", data.get("notes"), "", compare=False),
     ]
     return [row for row in rows if row]
+
+
+def _nhtsa_label(data: dict) -> str:
+    for item in data.get("vin_validations") or []:
+        nhtsa = (item or {}).get("nhtsa") or {}
+        make = (nhtsa.get("make") or "").strip()
+        model = (nhtsa.get("model") or "").strip()
+        year = nhtsa.get("year")
+        if make or model or year:
+            return " ".join(str(part) for part in (make, model, f"({year})" if year else "") if part)
+    return ""
 
 
 def _brand_from(source: dict) -> str:

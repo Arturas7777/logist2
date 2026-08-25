@@ -49,6 +49,18 @@ SEVERITY_WARN = "warn"
 # оператору, а не автозамена: в ручном вводе менять набранное молча нельзя.
 _FORBIDDEN_HINT = {"I": "1", "O": "0", "Q": "0"}
 
+# Разговорные и сокращённые марки с тайтлов / dock receipt. Сравниваем
+# каноническую форму, иначе «CHEVY» против «CHEVROLET» выглядит как
+# чужой производитель и валит сверку ложным расхождением.
+_MAKE_ALIASES = {
+    "CHEVY": "CHEVROLET",
+    "CHEV": "CHEVROLET",
+    "VW": "VOLKSWAGEN",
+    "VOLKS": "VOLKSWAGEN",
+    "MB": "MERCEDES",
+    "MERC": "MERCEDES",
+}
+
 # Отличие в 1-2 символа — типичная опечатка или OCR-ошибка.
 _NEAR_DUPLICATE_MAX_DISTANCE = 2
 
@@ -99,21 +111,48 @@ class VinVerdict:
 
 
 def makes_match(left, right) -> bool:
-    """Сравнивает марки, прощая сокращения: CHEV ↔ CHEVROLET.
+    """Сравнивает марки, прощая сокращения: CHEV ↔ CHEVROLET, CHEVY ↔ CHEVROLET.
 
     В документах марка почти всегда сокращена («CHEV MALIBU»), а в карточке
     записана целиком («CHEVROLET MALIBU») — считать это расхождением значит
     завалить оператора ложными срабатываниями. Поэтому сравниваем только
-    первое слово и признаём совпадением, если одно является началом
-    другого. «TOYOTA» против «VOLKSWAGEN» расхождением остаётся — а это
-    как раз тот случай, когда VIN, скорее всего, введён не тот.
+    первое слово (после раскрытия псевдонимов) и признаём совпадением, если
+    одно является началом другого. «TOYOTA» против «VOLKSWAGEN» расхождением
+    остаётся — а это как раз тот случай, когда VIN, скорее всего, не тот.
     """
-    first = _first_word(left)
-    second = _first_word(right)
+    first = _canonical_make(_first_word(left))
+    second = _canonical_make(_first_word(right))
     # Слишком короткий огрызок ничего не доказывает — не спорим.
     if len(first) < 3 or len(second) < 3:
         return True
     return first.startswith(second) or second.startswith(first)
+
+
+def extracted_make_agrees(extracted, nhtsa_make, nhtsa_model=None) -> bool:
+    """OCR-марка из документа не противоречит расшифровке NHTSA.
+
+    На тайтлах марка сокращается (CHEVY), пишется вместе с моделью
+    (CHEV EQUINOX) или вместо марки попадает сама модель (EQUINOX). Это не
+    ошибка VIN: NHTSA по нему уже сказал, какая это машина. Чужой
+    производитель («TOYOTA» против «CHEVROLET») по-прежнему не сходится.
+    """
+    if not (extracted or "").strip():
+        return True
+    if nhtsa_make and makes_match(extracted, nhtsa_make):
+        return True
+    if nhtsa_model and makes_match(extracted, nhtsa_model):
+        return True
+    return not (nhtsa_make or "").strip() and not (nhtsa_model or "").strip()
+
+
+def brand_from_nhtsa(make, model, *, max_length: int = 50) -> str:
+    """«CHEVROLET Equinox» — каноническая марка+модель из расшифровки VIN."""
+    label = " ".join(part.strip() for part in (make, model) if part and str(part).strip())
+    return label[:max_length]
+
+
+def _canonical_make(word: str) -> str:
+    return _MAKE_ALIASES.get(word, word)
 
 
 def _first_word(value) -> str:

@@ -339,14 +339,19 @@ def cross_check_with_ai_data(
         return result  # сравнивать не с чем
 
     n_year = nhtsa.get("year")
-    n_make = (nhtsa.get("make") or "").strip().upper()
-    (nhtsa.get("model") or "").strip().upper()
+    n_make = nhtsa.get("make") or ""
+    n_model = nhtsa.get("model") or ""
 
     if ai_year and n_year and int(ai_year) != int(n_year):
         result["warnings"].append(
             f"Год не совпадает: AI прочитал в документе {ai_year}, "
             f"но VIN декодируется как {n_year}-й год. Возможна ошибка в VIN."
         )
-    if ai_make and n_make and ai_make.strip().upper() not in n_make and n_make not in ai_make.strip().upper():
+    # Модель с тайтла не сверяем: «EQUINOX LT» против «Equinox» — шум.
+    # Марку сверяем через makes_match, чтобы CHEVY/CHEV/модель-в-поле-марки
+    # не роняли уверенность VIN и не блокировали авто-применение.
+    from core.services.vin_gate import extracted_make_agrees
+
+    if ai_make and n_make and not extracted_make_agrees(ai_make, n_make, n_model):
         result["warnings"].append(f"Производитель не совпадает: AI={ai_make}, VIN→NHTSA={n_make}.")
     return result
