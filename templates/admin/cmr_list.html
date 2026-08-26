@@ -1,0 +1,61 @@
+{% extends "admin/custom_page_base.html" %}
+
+{% comment %}
+Список CMR по машинам заявки — /admin/requests/<pk>/cmr/.
+Каждая машина — отдельный бланк. Первый вход создаёт черновик с автополями.
+{% endcomment %}
+
+{% block page_style %}
+<style>
+.cmr-list-top { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.cmr-list-top h1 { margin: 0; font-size: 1.15rem; }
+.cmr-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; }
+.cmr-table th, .cmr-table td { text-align: left; padding: 10px 14px; border-bottom: 1px solid #eee; font-size: .9rem; }
+.cmr-table th { background: #f4f4f7; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; }
+.cmr-table tr:last-child td { border-bottom: 0; }
+.cmr-empty { padding: 28px; color: #6b7280; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="cm-page wide">
+    <div class="cmr-list-top">
+        <a class="pc-action outline" href="{{ card_url }}">← Заявка {{ transport_request.number }}</a>
+        <h1>Редактор CMR</h1>
+        <span style="color:#6b7280;font-size:.9rem;">{{ transport_request.client.name }}</span>
+    </div>
+
+    {% if rows %}
+    <table class="cmr-table">
+        <thead>
+            <tr>
+                <th>VIN</th>
+                <th>Авто</th>
+                <th>Склад</th>
+                <th>Черновик</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            <tr>
+                <td><code>{{ row.car.vin }}</code></td>
+                <td>{{ row.car.brand }}{% if row.car.year %} {{ row.car.year }}{% endif %}</td>
+                <td>{% if row.car.warehouse %}{{ row.car.warehouse.name }}{% else %}—{% endif %}</td>
+                <td>
+                    {% if row.cmr %}
+                    сохранён {{ row.cmr.updated_at|date:"d.m.Y H:i" }}
+                    {% else %}
+                    ещё не открывали — поля подставятся из заявки
+                    {% endif %}
+                </td>
+                <td><a class="pc-action primary" href="{% url 'admin_request_cmr_editor' transport_request.pk row.car.pk %}">Открыть бланк</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="cmr-empty">В заявке нет автомобилей — добавьте машины на карточке заявки, затем откройте редактор CMR.</div>
+    {% endif %}
+</div>
+{% endblock %}

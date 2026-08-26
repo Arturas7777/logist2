@@ -65,6 +65,7 @@ from core.views_invoice_audit import (
     supplier_cost_link,
     supplier_cost_car_services,
 )
+from core.views import cmr as cmr_views
 from core.views import requests_board
 from core.views.labels import print_labels_settings, print_labels_sheet
 from core.views.agent_board import (
@@ -233,6 +234,8 @@ urlpatterns = [
         requests_board.request_create_autotransport,
         name="admin_request_create_autotransport",
     ),
+    path("admin/requests/<int:pk>/cmr/", cmr_views.cmr_list, name="admin_request_cmr_list"),
+    path("admin/requests/<int:pk>/cmr/<int:car_id>/", cmr_views.cmr_editor, name="admin_request_cmr_editor"),
     # ── Мониторинг системы (CPU/RAM/Disk/Services/Postgres/Redis) ────────────
     path("admin/system-monitor/", system_monitor_page, name="system_monitor"),
     path("admin/system-monitor/snapshot/", system_monitor_snapshot, name="system_monitor_snapshot"),

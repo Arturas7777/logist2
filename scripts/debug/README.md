@@ -26,5 +26,10 @@ python scripts/debug/_server_check.py
 | `_check_cats.py` | Проверка категорий расходов |
 | `_cleanup_av.py` | Массовая очистка AVBLC-инвойсов |
 | `_gen_malibu_spec.py` | Генерация спецификации для Malibu |
+| `crop_cmr.py` | Нарезка эталонного скана бланка CMR на увеличенные фрагменты |
+| `render_cmr.py` | Рендер `admin/cmr_editor.html` в PNG и сравнение с эталонным бланком (нужен Chrome) |
+| `diff_cmr.py` | Замер линий и габаритов на эталоне и рендере CMR, сравнение в мм |
+| `print_cmr.py` | Печать бланка CMR в PDF и подсчёт линовки: браузер не печатает фон |
+| `preview_xlsx.py` | Отрисовка `docs/cmr_blank.xlsx` в PNG для сверки выгрузки с рендером бланка |
 
 Если скрипт перестал быть актуален — удаляй. Если нужен постоянно — переноси в `core/management/commands/`.

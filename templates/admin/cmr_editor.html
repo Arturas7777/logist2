@@ -1,0 +1,939 @@
+{% comment %}
+Бланк CMR (литовский образец) — интерактивная реплика.
+
+Геометрия снята с эталонного скана: рамка 184.2×275.5 мм, вертикальный
+раздел колонок на 48.5 %, все внутренние делители заданы процентами ширины
+рамки, высоты блоков — в миллиметрах. Разметка на CSS Grid + Flexbox,
+таблиц нет. Каждая графа 1–29 — <input> или <textarea>, имена совпадают
+с ключами core.services.cmr.CMR_KEYS.
+{% endcomment %}<!DOCTYPE html>
+<html lang="lt">
+<head>
+    <meta charset="UTF-8">
+    <title>CMR {{ car.vin }} — {{ transport_request.number }}</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; }
+        body { background: #c8c8c8; color: #000; }
+
+        /* ---------- панель редактора (не печатается) ---------- */
+        .cmr-toolbar {
+            position: sticky; top: 0; z-index: 30;
+            display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+            padding: 10px 16px; background: #1f2937; color: #fff;
+            font: 13px/1.4 system-ui, "Segoe UI", Arial, sans-serif;
+        }
+        .cmr-toolbar a, .cmr-toolbar button {
+            display: inline-block; padding: 6px 12px; border-radius: 6px;
+            border: 0; font: inherit; cursor: pointer; text-decoration: none;
+        }
+        .cmr-toolbar .ghost { background: transparent; color: #fff; border: 1px solid #9ca3af; }
+        .cmr-toolbar .save { background: #2563eb; color: #fff; }
+        .cmr-toolbar .prefill { background: #0f766e; color: #fff; }
+        .cmr-toolbar .print { background: #fff; color: #111; }
+        .cmr-toolbar .meta { margin-left: auto; font-size: 12px; opacity: .85; }
+        .cmr-flash { background: #065f46; color: #fff; padding: 8px 16px; font: 13px/1.4 system-ui, Arial, sans-serif; }
+        .cmr-hint { font-size: 12px; opacity: .8; }
+        .cmr-wrap { padding: 16px 0 40px; }
+
+        /* ---------- лист ---------- */
+        .cmr-sheet {
+            /* Толщины линий бланка. Их ровно три; замер эталона — по «массе
+               чернил» в поперечном профиле линии (см. scripts/debug):
+               0.09 / 0.39 / 0.58 мм. Пороговый замер тут не годится: сканер
+               размывает линию, и тонкая чёрная выглядит как широкая серая.
+
+               На экране эти значения задать нельзя: при 96 dpi 0.25pt и 1.1pt
+               округляются в один и тот же пиксель, и три градации схлопываются
+               в две — рамки перестают читаться жирными. Поэтому на экране
+               толщины целочисленные (соотношение жирной к базовой то же, 3:2),
+               а точные значения бланка включаются в @media print. */
+            --rule: 2px;            /* фоновая: линовка и строки внутри граф */
+            --base: 4px;            /* базовая: рамка бланка и рамки граф */
+            --bold: 6px;            /* жирная: рамка 16-18, графа 19, графа 23 */
+            --rule-ink: #b4b4b4;    /* фоновая линия светлее рамок, как в бланке */
+
+            /* вертикальные делители в процентах ширины рамки */
+            --split: 49.68%;        /* левая / правая колонка (91.5 мм) */
+
+            /* Рамка 184.2 x 275.5 мм; слева и справа — поля с боковыми
+               надписями, как на оригинале (5 + 7.8 + 184.2 + 11 + 2 = 210). */
+            width: 210mm; height: 297mm;
+            margin: 0 auto;
+            padding: 10.75mm 12.9mm;
+            background: #fff; color: #000;
+            box-shadow: 0 2px 18px rgba(0, 0, 0, .28);
+            overflow: hidden;
+            font-family: Arial, Helvetica, sans-serif;
+        }
+        .cmr-page { width: 184.2mm; height: 100%; }
+
+        /* ---------- рамка бланка ---------- */
+        .cmr-frame {
+            border: var(--base) solid #000;
+            display: flex; flex-direction: column;
+            height: 100%;
+        }
+        /* min-height: 0 обязателен: суммарная высота полос чуть больше рамки, и
+           без него часть полос упирается в min-content и не ужимается. Тогда
+           недостаток высоты выбирают только соседи, и графы разъезжаются
+           неравномерно. С min-height: 0 усадка одинакова для всех полос. */
+        .band { display: grid; min-height: 0; }
+        /* grid-template-rows: 100% для всех строк-сеток: иначе неявная строка
+           тянется по max-content вложенных полей (textarea по умолчанию две
+           строки), высоты перестают быть заданными и линовка вылезает за графу. */
+        .band, .goods-row, .pay-row, .pay-duo, .t27-row, .tar-row, .tar-cur-row, .strip21 {
+            grid-template-rows: 100%;
+        }
+        .band + .band { border-top: var(--base) solid #000; }
+        /* Ширина левой колонки в верхней полосе чуть больше: там делителем
+           служит внешний контур рамки перевозчика (91.65 мм по эталону). */
+        .band.band-top { grid-template-columns: 49.65% 1fr; height: 98.41mm; }
+        .band.band-goods { height: 44.33mm; }
+        .band.band-mid { grid-template-columns: var(--split) 1fr; height: 37.17mm; }
+        .band.band-cod { height: 4.57mm; }
+        .band.band-terms { grid-template-columns: var(--split) 1fr; height: 12.99mm; }
+        .band.band-sign { grid-template-columns: 68.58% 1fr; height: 30.28mm; }
+        .band.band-veh {
+            grid-template-columns: 24.54% 24.49% 1fr; height: 23.25mm;
+            border-top-width: var(--bold);
+        }
+        .band.band-tar { flex: 1 1 auto; border-top-width: var(--bold); }
+
+        .stack { display: flex; flex-direction: column; min-width: 0; }
+        .cell { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+        .vsplit { border-left: var(--base) solid #000; }
+        .vsplit.bold { border-left-width: var(--bold); }
+
+        /* Графы 16-18 обведены жирным контуром со всех четырёх сторон; шапка
+           бланка над ними в контур не входит — слева от неё делитель базовый.
+           Внутренние делители 16/17 и 17/18 тоже базовые. */
+        .carrier { position: relative; }
+        .carrier > * { border-left: var(--base) solid #000; }
+        .carrier > * + * { border-left-width: var(--bold); border-top: var(--base) solid #000; }
+        .carrier > :nth-child(2) { border-top-width: var(--bold); }
+        /* Справа контур замыкает край бланка, снизу — делитель полос. Своих
+           рамок тут дать нельзя: линии сложились бы в двойную толщину, поэтому
+           жирные накладки перекрывают базовые линии. 24.15 мм — высота шапки.
+           Накладки нарисованы рамкой, а не заливкой: фон браузер не печатает. */
+        .carrier::before {
+            content: ""; position: absolute; top: 24.15mm;
+            right: calc(-1 * var(--base)); bottom: calc(-1 * var(--base));
+            width: 0; border-right: var(--bold) solid #000;
+        }
+        .carrier::after {
+            content: ""; position: absolute; left: 0; right: calc(-1 * var(--base));
+            bottom: calc(-1 * var(--base)); height: 0;
+            border-bottom: var(--bold) solid #000;
+        }
+
+        /* ---------- подписи граф ---------- */
+        /* Номер графы — 9 pt bold в колонке шириной 6.1 мм с выключкой вправо,
+           текст подписи — 6 pt обычного начертания в две строки с шагом 1.85 мм.
+           Интерлиньяж меньше кегля: в бланке строки подписи почти касаются,
+           иначе шапка не влезает в строку линовки (4 мм). */
+        .lab {
+            display: flex; align-items: flex-start; gap: 1.65mm;
+            padding: 0.1mm 0.8mm 0 0; font-size: 6pt; line-height: 1.85mm;
+        }
+        /* Номер опущен на 0.75 мм: в бланке он оптически центрирован по двум
+           строкам подписи, но не должен растягивать однострочные шапки. */
+        .lab .n { flex: 0 0 6.1mm; text-align: right; padding-top: 0.75mm; font: 700 10.3pt/2.25mm Arial, Helvetica, sans-serif; }
+        .lab .en { display: block; }
+        .lab.ul { border-bottom: var(--rule) solid var(--rule-ink); }
+        .sl { font-size: 5.7pt; line-height: 1.15; white-space: nowrap; }
+        .sl b { font-weight: 700; }
+
+        /* ---------- поля ввода ---------- */
+        .in, .ta {
+            width: 100%; min-width: 0;
+            border: 0; background: transparent; color: #000;
+            font: 7.4pt/1.1 Arial, Helvetica, sans-serif;
+            padding: 0; margin: 0; resize: none; outline: none;
+            overflow: hidden;
+        }
+        .ta { flex: 1 1 auto; padding: 0 0.8mm; }
+        .in:focus, .ta:focus { background: #e8eef7; }
+
+        /* ---------- линованная область ----------
+           Линовку рисуем настоящими элементами, а не фоновым градиентом:
+           браузер по умолчанию не печатает фоновые картинки, и на бумаге
+           линовка пропадала целиком.
+
+           Каждый <i> внутри .rules — одна строка письма, все они делят высоту
+           графы поровну (flex: 1 1 0), линия — низ строки. У последней строки
+           линии нет: там уже рамка графы. Число <i> и задаёт число строк,
+           поэтому строки всегда равной высоты, без обрезанной снизу.
+
+           --pitch = высота строки; задаётся вручную, чтобы вводимый текст
+           ложился на линовку. Значение = высота линованной области / число <i>. */
+        .ruled { position: relative; flex: 1 1 auto; display: flex; min-width: 0; min-height: 0; }
+        .rules {
+            position: absolute; inset: 0; z-index: 0; pointer-events: none;
+            display: flex; flex-direction: column;
+        }
+        .rules > i { flex: 1 1 0; border-bottom: var(--rule) solid var(--rule-ink); }
+        /* У последней строки линия не нужна — там рамка графы. Рамку оставляем,
+           но прозрачной: иначе последняя строка была бы на пиксель ниже прочих. */
+        .rules > i:last-child { border-bottom-color: transparent; }
+        .ruled .ta { position: relative; z-index: 1; line-height: var(--pitch); }
+        /* строка-линейка: подпись слева, ввод по остатку, снизу линия */
+        .row { display: flex; align-items: baseline; gap: 1mm; min-height: 0; }
+        .row + .row { border-top: var(--rule) solid var(--rule-ink); }
+        .row > .sl { flex: 0 0 auto; }
+        .row > .in { flex: 1 1 auto; }
+        /* Линии-заполнители в графах 22-23 фоновыми не считаются: в бланке они
+           чёрные, светлее только линовка граф. */
+        .under { border-bottom: var(--rule) solid #000; }
+
+        /* ---------- шапка ----------
+           Овал CMR выведен из потока: в бланке он стоит над английской
+           колонкой преамбулы, а не занимает отдельный столбец по всей высоте. */
+        .head { position: relative; height: 100%; padding: 1.2mm 0 0; }
+        .head-t1 { font-size: 9pt; font-weight: 700; line-height: 3.35mm; }
+        .head-t2 { font-size: 9pt; font-weight: 700; line-height: 3.35mm; margin: 0.9mm 0 0; }
+        .head-legal {
+            display: grid; grid-template-columns: 42mm 1fr; gap: 0 3.2mm;
+            margin-top: 1.3mm; font-size: 5.9pt; line-height: 2.19mm;
+            text-align: justify;
+        }
+        /* Английская колонка в бланке набрана плотнее — иначе строки
+           переносятся не по тем словам. */
+        .head-legal .en2 { letter-spacing: -0.2pt; }
+        .oval {
+            position: absolute; right: 0mm; top: 1.3mm;
+            width: 15.8mm; height: 10.34mm;
+            border: 2.1pt solid #000; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16pt; font-weight: 700;
+        }
+
+        /* ---------- графы 6-12 ---------- */
+        .goods { display: grid; grid-template-rows: 4.33mm minmax(0, 1fr); height: 100%; position: relative; }
+        .goods-row {
+            display: grid;
+            grid-template-columns: 14.73% 14.65% 13.03% 19.26% 12.51% 12.63% 1fr;
+        }
+        .goods-row > * { border-right: var(--base) solid #000; min-width: 0; }
+        /* графы 6-9 в бланке не разделены вертикальными линиями */
+        .goods-row > :nth-child(1), .goods-row > :nth-child(2), .goods-row > :nth-child(3),
+        .goods-row > :nth-child(7) { border-right: 0; }
+        /* В узких колонках 6-12 подписи те же 6 pt, но отбивка номера меньше. */
+        .goods-head .lab { gap: 0.9mm; padding: 0.15mm 0.3mm 0 0; font-size: 5.5pt; line-height: 2.05mm; }
+        .goods-head .lab .n { flex: 0 0 5.6mm; }
+        .goods-body { border-top: var(--rule) solid var(--rule-ink); }
+        .goods-body .ta { padding: 0 0.6mm; }
+        .goods-row { position: relative; z-index: 1; }
+        .watermark {
+            position: absolute; left: 48.05%; top: 43.3%; transform: translate(-50%, -50%);
+            width: 74mm; height: 30.5mm; border: 4.15mm solid #000; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 44pt; font-weight: 700; letter-spacing: 7.5pt;
+            -webkit-text-stroke: 0.3mm #000;
+            color: #000; opacity: .23; pointer-events: none; z-index: 0;
+        }
+
+        /* ---------- полоса ADR над графой 13 ---------- */
+        .adr {
+            flex: 0 0 4.51mm; min-height: 0;
+            display: grid; grid-template-columns: 23.46mm 24.51mm 31.41mm 1fr;
+            border-bottom: var(--base) solid #000;
+        }
+        .adr > * { display: flex; align-items: flex-start; gap: 0.8mm; min-width: 0; }
+        /* Двухстрочная подпись должна уложиться в 4.5 мм полосы. */
+        .adr .sl { line-height: 2.05mm; }
+        .adr > :first-child { padding-left: 1.3mm; }
+        .adr .in { align-self: stretch; }
+
+        /* ---------- графа 19 ---------- */
+        /* Первая строка пустая: она приходится на полосу ADR в графе 13, и линия
+           под ней в бланке общая на обе колонки. Дальше шапка, шесть строк
+           платежей и итог. */
+        /* Сетка строк повторяет графу 13 деление в деление: пустая строка =
+           полоса ADR, шапка = подпись графы, пять строк платежей = линовка,
+           шестая = строка заявленной стоимости, итог = нижняя строка. Доли
+           гибких строк тогда считаются из одного и того же остатка, и линовка
+           обеих граф идёт на одних уровнях — полоса не расслаивается на
+           ступеньки даже при смене толщин линий. */
+        .pay {
+            display: grid;
+            grid-template-rows: 4.51mm 4.3mm repeat(5, minmax(0, 1fr)) 4.05mm 4.17mm;
+            height: 100%; position: relative;
+        }
+        /* Графа 19 обведена жирным с трёх сторон: слева, справа по краю бланка
+           и снизу под строкой итога (сверху жирная линия приходит от шапки).
+           По всем трём координатам уже идут базовые линии — делитель колонок,
+           край рамки, граница полосы, — поэтому контур рисуем накладкой поверх
+           них: свои рамки сложились бы с ними в двойную толщину. Пустая строка
+           над шапкой в контур не входит, отсюда top. */
+        /* Верх контура — отдельная накладка, центрированная по базовой линии под
+           полосой ADR в графе 13: жирная толще, и если совместить кромки, вторая
+           кромка даёт на стыке колонок ступеньку. В бланке эта линия тоже идёт по
+           центру соседней — на 0.13 мм выше и на 0.26 мм ниже её кромок. Своя
+           рамка у шапки так лечь не может: она росла бы вниз от границы строки. */
+        .pay::before {
+            content: ""; position: absolute; pointer-events: none;
+            left: calc(-1 * var(--base)); right: calc(-1 * var(--base));
+            top: calc(4.51mm - (var(--base) + var(--bold)) / 2);
+            border-top: var(--bold) solid #000;
+        }
+        .pay::after {
+            content: ""; position: absolute; pointer-events: none;
+            top: 4.51mm; bottom: calc(-1 * var(--base));
+            left: calc(-1 * var(--base)); right: calc(-1 * var(--base));
+            border-left: var(--bold) solid #000;
+            border-right: var(--bold) solid #000;
+            border-bottom: var(--bold) solid #000;
+        }
+        .pay-row { display: grid; grid-template-columns: 23.61% 25.05% 25.14% 1fr; }
+        .pay-row > * { border-right: var(--base) solid #000; }
+        .pay-row > :last-child { border-right: 0; }
+        /* Интерлиньяж подобран так, чтобы две строки шапки легли в 4.3 мм. */
+        .pay-head > * { display: flex; align-items: center; justify-content: center; text-align: center; font-size: 5.7pt; line-height: 2.05mm; }
+        .pay-head > :first-child { justify-content: flex-start; }
+        /* В графе 19 номер стоит вровень с первой строкой подписи. */
+        .pay-head .lab { gap: 0.6mm; }
+        .pay-head .lab .n { padding-top: 0; }
+        .pay-name { font-size: 5.1pt; line-height: 1.95mm; padding: 0.05mm 0 0 0.6mm; }
+        .pay-name .en { display: block; }
+        .pay-name .sign { float: right; padding-right: 1.2mm; }
+        .pay-duo { display: grid; }
+        .pay-duo.sender { grid-template-columns: 72.74% 1fr; }
+        .pay-duo.cur { grid-template-columns: 48.7% 1fr; }
+        .pay-duo.cons { grid-template-columns: 48.4% 1fr; }
+        .pay-duo > * + * { border-left: var(--rule) solid var(--rule-ink); }
+        .pay-duo.cur > * + * { border-left: var(--bold) solid #000; }
+        .pay-cell { display: flex; align-items: center; padding: 0 0.5mm; }
+        .pay-cell .in { font-size: 6.4pt; text-align: center; }
+        /* Фоновый разделитель строк рисуем на ячейках значений, а не на самой
+           строке. Рамка строки лежит выше её содержимого, чёрные вертикали в
+           эту полосу не заходят — и светлая линия резала бы их насквозь.
+           Заодно колонка с названиями платежей остаётся без линовки, как в
+           бланке: там подписи идут сплошным столбцом. */
+        .pay-row + .pay-row .pay-duo > * { border-top: var(--rule) solid var(--rule-ink); }
+        /* Сверху шапку обводит накладка .pay::before, поэтому своей рамки у неё
+           нет. Снизу шапка отбита базовой линией, итог — жирной; строка
+           «Nuolaida» отделена базовой, остальные — фоновой. */
+        .pay-head + .pay-row { border-top: var(--base) solid #000; }
+        .pay-row.pay-strong { border-bottom: var(--base) solid #000; }
+        .pay-head + .pay-row .pay-duo > *,
+        .pay-strong + .pay-row .pay-duo > *,
+        .pay-total .pay-duo > * { border-top: 0; }
+        .pay-row.pay-total { border-top: var(--bold) solid #000; }
+        .pay-total .pay-name { text-align: center; padding-right: 1mm; }
+
+        /* ---------- графы 21-24 ---------- */
+        .sign-cap { margin-top: auto; font-size: 5.4pt; line-height: 2.15mm; padding-bottom: 0.5mm; }
+        .sign-cap .en { display: block; }
+        .strip21 { display: grid; grid-template-columns: 46.4% 1fr; height: 4.84mm; }
+        .strip21.ul { border-bottom: var(--base) solid #000; }
+        .strip21 > * { display: flex; align-items: baseline; gap: 1mm; padding: 0.2mm 0.8mm 0; }
+        /* Двухстрочная подпись «Data/on» должна уложиться в строку графы 21. */
+        .strip21 .sl { line-height: 1.95mm; }
+        .strip21 .in { font-size: 7.4pt; }
+        .times { font-size: 5.7pt; line-height: 2.15mm; margin-top: 1mm; }
+        .trow { display: grid; grid-template-columns: 1fr auto auto auto auto; gap: 0 0.7mm; align-items: baseline; margin-bottom: 0.2mm; }
+        .trow .in { width: 11mm; font-size: 7.4pt; text-align: center; border-bottom: var(--rule) solid #000; }
+        .trow .u { text-align: left; white-space: nowrap; }
+        .trow .u span { display: block; }
+        /* Графа 23 обведена жирным, но справа её замыкает делитель графы 24, а
+           снизу — линия над полосой 25-27; свои рамки там дали бы двойную
+           толщину. Сверху по той же координате идёт базовая линия строки 21,
+           поэтому её перекрывает жирная накладка. */
+        .b23 {
+            display: flex; flex-direction: column; padding: 0.7mm 1.2mm 0;
+            position: relative; border-left: var(--bold) solid #000;
+        }
+        .b23::before {
+            content: ""; position: absolute; right: 0; left: calc(-1 * var(--bold));
+            top: calc(-1 * var(--base)); height: 0;
+            border-top: var(--bold) solid #000;
+        }
+        .r23 { display: flex; align-items: baseline; gap: 0.9mm; font-size: 5.7pt; margin-bottom: 1.6mm; white-space: nowrap; }
+        .r23 .n { font: 700 9pt/1 Arial, Helvetica, sans-serif; }
+        .r23 .in { flex: 1 1 auto; font-size: 7.4pt; }
+        .r23 .yrin { flex: 0 0 4mm; }
+
+        /* ---------- графы 25-27 ----------
+           Шапка графы (две строки подписи) и под ней четыре строки линовки.
+           Сетка строк одна на все три графы, поэтому и линия под шапкой, и вся
+           линовка идут через всю ширину бланка. */
+        .veh { display: grid; grid-template-rows: 4.95mm minmax(0, 1fr); height: 100%; }
+        .veh-head { border-bottom: var(--rule) solid var(--rule-ink); }
+        /* В графах 25/26 подпись набрана мельче — иначе не влезает в графу. */
+        .veh-head .lab { font-size: 5.6pt; letter-spacing: -0.05pt; }
+        /* Тягач и полуприцеп — два поля на первой строке линовки, без делителя:
+           в бланке они пишутся в одну строку через дробь. */
+        .veh-duo { display: flex; position: relative; z-index: 1; flex: 1 1 auto; min-width: 0; }
+        .veh-duo > * { flex: 1 1 0; min-width: 0; }
+        .t27 { display: grid; grid-template-rows: 4.95mm minmax(0, 1fr); height: 100%; }
+        .t27-row { display: grid; grid-template-columns: 15.75% 15.15% 19.09% 15.15% 15.45% 1fr; }
+        .t27-head { border-bottom: var(--rule) solid var(--rule-ink); }
+        .t27-head > * {
+            border-right: var(--rule) solid var(--rule-ink); padding: 0.3mm 0.5mm 0;
+            font-size: 5.2pt; line-height: 2.05mm; text-align: center;
+        }
+        .t27-head > :last-child { border-right: 0; }
+        .t27-head .n { font: 700 9pt/2.05mm Arial, Helvetica, sans-serif; }
+        .t27-body .ta { padding: 0 0.5mm; text-align: center; }
+
+        /* ---------- графы 28-29 ---------- */
+        /* 4.7 = 5.24 мм по эталону минус жирная линия над полосой. */
+        /* Столбец с номерами 28/29 в бланке сквозной: клетка «28» захватывает и
+           строку заголовка, поэтому он вынесен из сетки строк. */
+        .tar { display: flex; height: 100%; }
+        .tar-left {
+            flex: 0 0 9.25mm; display: grid; grid-template-rows: 13.73mm minmax(0, 1fr);
+            position: relative;
+        }
+        /* Делитель столбца с номерами в графе 28 начинается с середины строки —
+           как и остальные вертикали полосы. Поэтому он собран из двух отрезков:
+           по шапке и от середины графы 28 до низа бланка. 4.71 — высота шапки,
+           4.51 — половина строки графы 28. */
+        .tar-left::before, .tar-left::after {
+            content: ""; position: absolute; pointer-events: none; right: 0;
+            border-right: var(--rule) solid var(--rule-ink);
+        }
+        .tar-left::before { top: 0; height: 4.71mm; }
+        .tar-left::after { top: calc(4.71mm + 4.51mm); bottom: 0; }
+        .tar-left > * + * { border-top: var(--base) solid #000; }
+        .tar-main {
+            flex: 1 1 auto; min-width: 0;
+            display: grid; grid-template-rows: 4.71mm 9.02mm minmax(0, 1fr);
+        }
+        .tar-row {
+            display: grid;
+            grid-template-columns: 9.68% 5.47% 8.5% 8.66% 8.62% 8.69% 8.51% 14.47% 1fr;
+        }
+        .tar-row > * { border-right: var(--rule) solid var(--rule-ink); min-width: 0; position: relative; }
+        /* На границах перед «Apmokėjimui» и «Atskaitymai» вертикали жирные, и их
+           протяжённость в шапке и графах разная, поэтому фоновых рамок здесь
+           нет — эти две границы задаются ниже поштучно. */
+        .tar-row > :nth-child(n+7) { border-right: 0; }
+        .tar-head > :nth-child(8) { border-left: var(--rule) solid var(--rule-ink); }
+        .tar-head > :nth-child(9), .tar-28 > :nth-child(9) { border-left: var(--bold) solid #000; }
+        .tar-29 > :nth-child(9) { border-left: var(--rule) solid var(--rule-ink); }
+        /* В графе 28 с середины строки начинаются все вертикали, в графе 29 —
+           только жирные. Рамка занимает всю высоту ячейки, поэтому половинные
+           отрезки рисуем накладками. */
+        .tar-28 > :nth-child(-n+6) { border-right: 0; }
+        .tar-28 > :nth-child(-n+6)::after {
+            content: ""; position: absolute; pointer-events: none;
+            right: 0; top: 50%; bottom: 0;
+            border-right: var(--rule) solid var(--rule-ink);
+        }
+        .tar-28 > :nth-child(8)::before,
+        .tar-29 > :nth-child(8)::before,
+        .tar-29 > :nth-child(9)::before {
+            content: ""; position: absolute; pointer-events: none;
+            top: 50%; bottom: 0;
+            border-left: var(--bold) solid #000;
+        }
+        .tar-28 > :nth-child(8)::before, .tar-29 > :nth-child(8)::before { left: 0; }
+        .tar-29 > :nth-child(9)::before { left: calc(-1 * var(--rule)); }
+        /* Шапка отбита от графы 28 фоновой линией. Графы 28 и 29 разделены
+           базовой линией, а правее жирного делителя — жирной, поэтому она задана
+           на ячейках, а не на строке. */
+        .tar-head + .tar-row { border-top: var(--rule) solid var(--rule-ink); }
+        .tar-29 > * { border-top: var(--base) solid #000; }
+        .tar-29 > :nth-child(n+8) { border-top: var(--bold) solid #000; }
+        .tar-head > * { font-size: 5.2pt; line-height: 2.05mm; text-align: center; padding: 0.35mm 0.3mm 0; }
+        .tar-head > :last-child { text-align: left; padding-left: 0.6mm; }
+        .tar-num { line-height: 1; padding: 0.3mm 0 0 0.6mm; }
+        .tar-num .n { flex: none; padding: 0; text-align: left; font: 700 10pt/1 Arial, Helvetica, sans-serif; }
+        .tar-num small { display: block; font-size: 5.2pt; line-height: 2.05mm; }
+        .tar-cell { display: flex; align-items: center; padding: 0 0.5mm; }
+        .tar-cell .in { font-size: 6.6pt; text-align: center; }
+        .tar-side { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+        .tar-side > * + * { border-top: var(--rule) solid var(--rule-ink); }
+        .tar-side .row2 { display: flex; align-items: center; gap: 0.8mm; padding: 0 0.6mm; }
+        .tar-side .sl { flex: 0 0 auto; }
+        .tar-side .in { font-size: 6.4pt; }
+        .tar-cur { display: grid; grid-template-rows: 3.48mm minmax(0, 1fr); }
+        .tar-cur-row { display: grid; grid-template-columns: 21.5% 1fr; }
+        .tar-cur-row > * + * { border-left: var(--rule) solid var(--rule-ink); }
+        .tar-cur > * + * { border-top: var(--rule) solid var(--rule-ink); }
+        .tar-cur .sl { padding: 0.25mm 0 0 0.6mm; }
+
+        /* ---------- печать ---------- */
+        @page { size: A4 portrait; margin: 0; }
+        @media print {
+            html, body, form {
+                margin: 0 !important; padding: 0 !important;
+                width: 210mm; height: 297mm; overflow: hidden; background: #fff;
+            }
+            .cmr-toolbar, .cmr-flash, .cmr-hint { display: none !important; }
+            .cmr-wrap { padding: 0 !important; margin: 0 !important; height: 297mm; overflow: hidden; }
+            .cmr-sheet {
+                position: absolute; top: 0; left: 0; margin: 0;
+                box-shadow: none; page-break-inside: avoid;
+                /* Базовая и жирная — пропорции бланка (0.39 / 0.58 мм),
+                   увеличенные в 1.5 раза: в точный размер печатать нельзя,
+                   там жирная отличается от базовой на 0.19 мм и перестаёт
+                   читаться жирной. Фоновую, наоборот, не увеличиваем и берём
+                   серой: она должна лишь намечать строку письма.
+                   Значения целочисленные в px (0.26 / 0.53 / 0.79 мм) — ровно
+                   те, что и так получались: толщину рамки браузер округляет до
+                   целых пикселей, а смещения в calc() считает по дробному
+                   значению, и накладки контура уезжали на разницу толщин. */
+                --rule: 1px; --base: 2px; --bold: 3px;
+                --rule-ink: #b8b8b8;
+            }
+            .in:focus, .ta:focus { background: transparent; }
+        }
+    </style>
+</head>
+<body>
+<form method="post">
+    {% csrf_token %}
+    <div class="cmr-toolbar">
+        <a class="ghost" href="{{ list_url }}">← К списку CMR</a>
+        <a class="ghost" href="{{ card_url }}">Заявка {{ transport_request.number }}</a>
+        <button type="submit" name="action" value="save" class="save">Сохранить</button>
+        <button type="submit" name="action" value="prefill" class="prefill"
+                onclick="return confirm('Подставить автополя из заявки заново? Ручные графы сохранятся.');">
+            Подставить из заявки
+        </button>
+        <button type="button" class="print" onclick="window.print()">Печать</button>
+        <span class="cmr-hint">A4, поля принтера «Нет», без колонтитулов</span>
+        <span class="meta">{{ car.brand }} · {{ car.vin }}</span>
+    </div>
+    {% if messages %}{% for message in messages %}
+    <div class="cmr-flash">{{ message }}</div>
+    {% endfor %}{% endif %}
+
+    <div class="cmr-wrap">
+    <div class="cmr-sheet">
+    <div class="cmr-page">
+
+        <div class="cmr-frame">
+
+            <!-- ======== графы 1-5 / шапка / 16-18 ======== -->
+            <div class="band band-top">
+                <div class="stack">
+                    <!-- 1 -->
+                    <div class="cell" style="flex: 0 0 24.16mm; --pitch: 4mm;">
+                        <div class="lab ul" style="height: 4.33mm;"><span class="n">1</span><span>Siuntėjas (pavadinimas, adresas, šalis)<span class="en">Sender (name, address, country)</span></span></div>
+                        <div class="ruled">
+                            <div class="rules"><i></i><i></i><i></i><i></i><i></i></div>
+                            <textarea class="ta" name="sender" spellcheck="false">{{ d.sender }}</textarea>
+                        </div>
+                    </div>
+                    <!-- 2 -->
+                    <div class="cell" style="flex: 0 0 24.31mm; --pitch: 4mm; border-top: var(--base) solid #000;">
+                        <div class="lab ul" style="height: 4.14mm;"><span class="n">2</span><span>Gavėjas (pavadinimas, adresas, šalis)<span class="en">Consignee (name, address, country)</span></span></div>
+                        <div class="ruled">
+                            <div class="rules"><i></i><i></i><i></i><i></i><i></i></div>
+                            <textarea class="ta" name="consignee" spellcheck="false">{{ d.consignee }}</textarea>
+                        </div>
+                    </div>
+                    <!-- 3 -->
+                    <div class="cell" style="flex: 0 0 16.57mm; border-top: var(--base) solid #000;">
+                        <div class="lab ul" style="height: 4.34mm;"><span class="n">3</span><span>Krovinio iškrovimo vieta<span class="en">Place of delivery of the goods</span></span></div>
+                        <div class="row" style="flex: 1 1 0; padding: 0 0.8mm;">
+                            <span class="sl">Vieta/Place</span>
+                            <input class="in" name="delivery_place" value="{{ d.delivery_place }}">
+                        </div>
+                        <div class="row" style="flex: 1 1 0; padding: 0 0.8mm;">
+                            <span class="sl">Šalis/Country</span>
+                            <input class="in" name="delivery_country" value="{{ d.delivery_country }}">
+                        </div>
+                        <div class="row" style="flex: 1 1 0; padding: 0 0.8mm;">
+                            <input class="in" name="delivery_extra" value="{{ d.delivery_extra }}">
+                        </div>
+                    </div>
+                    <!-- 4 -->
+                    <div class="cell" style="flex: 0 0 16.76mm; border-top: var(--base) solid #000;">
+                        <div class="lab ul" style="height: 4.34mm;"><span class="n">4</span><span>Krovinio pakrovimo vieta ir data<span class="en">Place and date of taking over the goods</span></span></div>
+                        <div class="row" style="flex: 1 1 0; padding: 0 0.8mm;">
+                            <span class="sl">Vieta/Place</span>
+                            <input class="in" name="takeover_place" value="{{ d.takeover_place }}">
+                        </div>
+                        <div class="row" style="flex: 1 1 0; padding: 0 0.8mm;">
+                            <span class="sl">Šalis/Country</span>
+                            <input class="in" name="takeover_country" value="{{ d.takeover_country }}">
+                        </div>
+                        <div class="row" style="flex: 1 1 0; padding: 0 0.8mm;">
+                            <span class="sl">Data/Date</span>
+                            <input class="in" name="takeover_date" value="{{ d.takeover_date }}">
+                        </div>
+                    </div>
+                    <!-- 5 -->
+                    <div class="cell" style="flex: 1 1 auto; --pitch: 4.02mm; border-top: var(--base) solid #000;">
+                        <div class="lab ul" style="height: 4.42mm;"><span class="n">5</span><span>Pridedami dokumentai<span class="en">Documents attached</span></span></div>
+                        <div class="ruled">
+                            <div class="rules"><i></i><i></i><i></i></div>
+                            <textarea class="ta" name="annexed_docs" spellcheck="false">{{ d.annexed_docs }}</textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stack carrier">
+                    <!-- шапка -->
+                    <div class="cell" style="flex: 0 0 24.15mm; padding: 0 6mm 0 1.1mm;">
+                        <div class="head">
+                            <div class="head-t1">TARPTAUTINIS KROVINIŲ TRANSPORTAVIMO<br>VAŽTARAŠTIS</div>
+                            <div class="head-t2">INTERNATIONAL CONSIGNMENT NOTE</div>
+                            <div class="head-legal">
+                                <span>Šis pervežimas vykdomas, neatsižvelgiant į kitus susitarimus, pagal Tarptautinių krovinių pervežimo sutarčių konvenciją (CMR)</span>
+                                <span class="en2">This carriage is subject, notwithstanding any clause to the contrary, to the Convention on the Contract for the International Carriage of goods by road (CMR)</span>
+                            </div>
+                            <div class="oval">CMR</div>
+                        </div>
+                    </div>
+                    <!-- 16 -->
+                    <div class="cell" style="flex: 0 0 24.24mm; --pitch: 4mm;">
+                        <div class="lab ul" style="height: 3.79mm;"><span class="n">16</span><span>Vežėjas (pavadinimas, adresas, šalis)<span class="en">Carrier (name, address, country)</span></span></div>
+                        <div class="ruled">
+                            <div class="rules"><i></i><i></i><i></i><i></i><i></i></div>
+                            <textarea class="ta" name="carrier" spellcheck="false">{{ d.carrier }}</textarea>
+                        </div>
+                    </div>
+                    <!-- 17 -->
+                    <div class="cell" style="flex: 0 0 24.52mm; --pitch: 3.99mm;">
+                        <div class="lab ul" style="height: 4.24mm;"><span class="n">17</span><span>Sekantis vežėjas (pavadinimas, adresas, šalis)<span class="en">Successive carriers (name, address, country)</span></span></div>
+                        <div class="ruled">
+                            <div class="rules"><i></i><i></i><i></i><i></i><i></i></div>
+                            <textarea class="ta" name="following_carrier" spellcheck="false">{{ d.following_carrier }}</textarea>
+                        </div>
+                    </div>
+                    <!-- 18 -->
+                    <div class="cell" style="flex: 1 1 auto; --pitch: 3.97mm;">
+                        <div class="lab ul" style="height: 5.36mm;"><span class="n">18</span><span>Vežėjo sąlygos ir pastabos<span class="en">Carrier’s reservations and observations</span></span></div>
+                        <div class="ruled">
+                            <div class="rules"><i></i><i></i><i></i><i></i><i></i></div>
+                            <textarea class="ta" name="carrier_reservations" spellcheck="false">{{ d.carrier_reservations }}</textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ======== графы 6-12 ======== -->
+            <div class="band band-goods">
+                <div class="goods" style="--pitch: 3.944mm;">
+                    <div class="watermark">CMR</div>
+                    <div class="goods-row goods-head">
+                        <div><div class="lab"><span class="n">6</span><span>Ženklai ir numeriai<span class="en">Marks and Nos</span></span></div></div>
+                        <div><div class="lab"><span class="n">7</span><span>Vietų skaičius<span class="en">Number of packages</span></span></div></div>
+                        <div><div class="lab"><span class="n">8</span><span>Įpakavimo būdas<span class="en">Method of packing</span></span></div></div>
+                        <div><div class="lab"><span class="n">9</span><span>Krovinio pavadinimas*<span class="en">Nature of the goods*</span></span></div></div>
+                        <div><div class="lab"><span class="n">10</span><span>Statistinis Nr.<span class="en">Statist. number</span></span></div></div>
+                        <div><div class="lab"><span class="n">11</span><span>Svoris bruto, kg<span class="en">Gross weight in kg</span></span></div></div>
+                        <div><div class="lab"><span class="n">12</span><span>Tūris, m³<span class="en">Volume in m³</span></span></div></div>
+                    </div>
+                    <div class="goods-row goods-body">
+                        <div class="ruled">{% include "admin/_cmr_rules10.html" %}<textarea class="ta" name="marks" spellcheck="false">{{ d.marks }}</textarea></div>
+                        <div class="ruled">{% include "admin/_cmr_rules10.html" %}<textarea class="ta" name="packages" spellcheck="false">{{ d.packages }}</textarea></div>
+                        <div class="ruled">{% include "admin/_cmr_rules10.html" %}<textarea class="ta" name="packing" spellcheck="false">{{ d.packing }}</textarea></div>
+                        <div class="ruled">{% include "admin/_cmr_rules10.html" %}<textarea class="ta" name="goods_nature" spellcheck="false">{{ d.goods_nature }}</textarea></div>
+                        <div class="ruled">{% include "admin/_cmr_rules10.html" %}<textarea class="ta" name="stat_no" spellcheck="false">{{ d.stat_no }}</textarea></div>
+                        <div class="ruled">{% include "admin/_cmr_rules10.html" %}<textarea class="ta" name="weight_kg" spellcheck="false">{{ d.weight_kg }}</textarea></div>
+                        <div class="ruled">{% include "admin/_cmr_rules10.html" %}<textarea class="ta" name="volume_m3" spellcheck="false">{{ d.volume_m3 }}</textarea></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ======== графы 13 / 19 ======== -->
+            <div class="band band-mid">
+                <div class="cell">
+                    <div class="adr">
+                        <div><span class="sl">Klasė<br>Class</span><input class="in" name="adr_class" value="{{ d.adr_class }}"></div>
+                        <div><span class="sl">Skaičius<br>Number</span><input class="in" name="adr_number" value="{{ d.adr_number }}"></div>
+                        <div><span class="sl">Raidė<br>Letter</span><input class="in" name="adr_letter" value="{{ d.adr_letter }}"></div>
+                        <div><span class="sl">Sutartis<br>(ADR)</span><input class="in" name="adr_agreement" value="{{ d.adr_agreement }}"></div>
+                    </div>
+                    <div class="lab ul" style="height: 4.3mm;"><span class="n">13</span><span>Siuntėjo nurodymai (muitinės ir kita informacija)<span class="en">Sender’s instructions (custom’s and another information)</span></span></div>
+                    <div class="ruled" style="--pitch: 4.01mm;">
+                        <div class="rules"><i></i><i></i><i></i><i></i><i></i></div>
+                        <textarea class="ta" name="sender_instructions" spellcheck="false">{{ d.sender_instructions }}</textarea>
+                    </div>
+                    <!-- Заявленная стоимость: в бланке это предпоследняя строка графы 13,
+                         подпись слева, значение на той же строке. -->
+                    <div class="row" style="flex: 0 0 4.05mm; padding: 0 0.8mm; align-items: flex-start; border-top: var(--rule) solid var(--rule-ink);">
+                        <span class="sl" style="line-height: 1.9mm;">Pareikštoji krovinio vertė<br>Stated value of the goods</span>
+                        <input class="in" name="declared_value" value="{{ d.declared_value }}">
+                    </div>
+                    <div style="flex: 0 0 4.17mm; border-top: var(--rule) solid var(--rule-ink);"></div>
+                </div>
+
+                <div class="pay vsplit">
+                    <div class="pay-row"><div></div><div></div><div></div><div></div></div>
+                    <div class="pay-row pay-head">
+                        <div class="lab"><span class="n">19</span><span>Apmokėjimui:<span class="en">To be paid by:</span></span></div>
+                        <div>Siuntėjas<br>Sender</div>
+                        <div>Valiuta<br>Currency</div>
+                        <div>Gavėjas<br>Consignee</div>
+                    </div>
+                    {% for r in pay_rows %}
+                    <div class="pay-row{% if r.strong %} pay-strong{% endif %}">
+                        <div class="pay-name">{{ r.lt }}<span class="en">{% if r.sign %}<span class="sign">{{ r.sign }}</span>{% endif %}{{ r.en }}</span></div>
+                        <div class="pay-duo sender">
+                            <div class="pay-cell"><input class="in" name="pay_{{ r.key }}_sender" value="{{ r.sender }}"></div>
+                            <div class="pay-cell"><input class="in" name="pay_{{ r.key }}_sender_c" value="{{ r.sender_c }}"></div>
+                        </div>
+                        <div class="pay-duo cur">
+                            <div class="pay-cell"><input class="in" name="pay_{{ r.key }}_currency" value="{{ r.currency }}"></div>
+                            <div class="pay-cell"><input class="in" name="pay_{{ r.key }}_currency_2" value="{{ r.currency_2 }}"></div>
+                        </div>
+                        <div class="pay-duo cons">
+                            <div class="pay-cell"><input class="in" name="pay_{{ r.key }}_consignee" value="{{ r.consignee }}"></div>
+                            <div class="pay-cell"><input class="in" name="pay_{{ r.key }}_consignee_c" value="{{ r.consignee_c }}"></div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    <!-- Колонка валюты и в строке итога разделена жирной линией:
+                         в бланке этот делитель идёт насквозь до низа графы. -->
+                    <div class="pay-row pay-total">
+                        <div class="pay-name">Viso apmokėjimui<span class="en">Total</span></div>
+                        <div class="pay-cell"><input class="in" name="pay_total_sender" value="{{ d.pay_total_sender }}"></div>
+                        <div class="pay-duo cur">
+                            <div class="pay-cell"><input class="in" name="pay_total_currency" value="{{ d.pay_total_currency }}"></div>
+                            <div class="pay-cell"></div>
+                        </div>
+                        <div class="pay-cell"><input class="in" name="pay_total_consignee" value="{{ d.pay_total_consignee }}"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ======== графа 14 (во всю ширину) ======== -->
+            <div class="band band-cod">
+                <div class="row" style="border: 0;">
+                    <span class="lab" style="flex: 0 0 auto;"><span class="n">14</span><span>Grąžinimas<span class="en">Restitution</span></span></span>
+                    <input class="in" name="cod" value="{{ d.cod }}" style="padding-right: 0.8mm;">
+                </div>
+            </div>
+
+            <!-- ======== графы 15 / 20 ======== -->
+            <div class="band band-terms">
+                <div class="cell" style="--pitch: 4.03mm;">
+                    <div class="lab ul" style="height: 4.66mm;"><span class="n">15</span><span>Apmokėjimo sąlygos<span class="en">Instructions as to payment for carriage</span></span></div>
+                    <div class="ruled">
+                        <div class="rules"><i></i><i></i></div>
+                        <textarea class="ta" name="freight_payment" spellcheck="false">{{ d.freight_payment }}</textarea>
+                    </div>
+                </div>
+                <div class="cell vsplit" style="--pitch: 4.03mm;">
+                    <div class="lab ul" style="height: 4.66mm;"><span class="n">20</span><span>Ypatingos suderintos sąlygos<span class="en">Special agreements</span></span></div>
+                    <div class="ruled">
+                        <div class="rules"><i></i><i></i></div>
+                        <textarea class="ta" name="special_agreements" spellcheck="false">{{ d.special_agreements }}</textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ======== графы 21-24 ======== -->
+            <div class="band band-sign">
+                <div class="stack">
+                    <!-- 21 -->
+                    <div class="strip21 ul">
+                        <div>
+                            <span class="lab" style="flex: 0 0 auto; padding: 0;"><span class="n">21</span><span>Surašyta<span class="en">Established in</span></span></span>
+                            <input class="in" name="established_place" value="{{ d.established_place }}">
+                        </div>
+                        <div>
+                            <span class="sl">Data<br>on</span>
+                            <input class="in" name="established_date" value="{{ d.established_date }}">
+                        </div>
+                    </div>
+                    <div style="flex: 1 1 auto; display: grid; grid-template-columns: 46.15% 1fr; min-height: 0;">
+                        <!-- 22 -->
+                        <div class="cell" style="padding: 0.5mm 1mm 0;">
+                            <div class="lab"><span class="n">22</span></div>
+                            <div class="times">
+                                <div class="trow">
+                                    <span>Atvykimas pakrovimui<br>Arrival for loading</span>
+                                    <input class="in" name="load_arrival_h" value="{{ d.load_arrival_h }}">
+                                    <span class="u"><span>val.</span><span>h.</span></span>
+                                    <input class="in" name="load_arrival_m" value="{{ d.load_arrival_m }}">
+                                    <span class="u"><span>min.</span><span>min.</span></span>
+                                </div>
+                                <div class="trow">
+                                    <span>Išvykimas<br>Departure</span>
+                                    <input class="in" name="load_departure_h" value="{{ d.load_departure_h }}">
+                                    <span class="u"><span>val.</span><span>h.</span></span>
+                                    <input class="in" name="load_departure_m" value="{{ d.load_departure_m }}">
+                                    <span class="u"><span>min.</span><span>min.</span></span>
+                                </div>
+                            </div>
+                            <div class="sign-cap">Siuntėjo parašas ir spaudas<span class="en">Signature and stamp of the sender</span></div>
+                        </div>
+                        <!-- 23 -->
+                        <div class="b23">
+                            <div class="r23">
+                                <span class="n">23</span><span>Kelionės lapas</span>
+                                <input class="in under" name="journey_sheet" value="{{ d.journey_sheet }}">
+                                <span class="yr">20</span>
+                                <input class="in under yrin" name="journey_sheet_year" value="{{ d.journey_sheet_year }}">
+                            </div>
+                            <div class="r23" style="padding-left: 4.6mm;">
+                                <span>Vairuotojų</span>
+                                <input class="in under" name="drivers" value="{{ d.drivers }}">
+                            </div>
+                            <div class="r23" style="padding-left: 4.6mm;">
+                                <span>pavardės</span>
+                                <input class="in under" name="drivers_2" value="{{ d.drivers_2 }}">
+                            </div>
+                            <div class="sign-cap">Vežėjo parašas ir spaudas<span class="en">Signature and stamp of the carrier</span></div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 24 -->
+                <div class="cell vsplit bold">
+                    <div class="strip21" style="grid-template-columns: 58% 1fr;">
+                        <div>
+                            <span class="lab" style="flex: 0 0 auto; padding: 0;"><span class="n">24</span><span>Krovinys gautas<span class="en">Goods received</span></span></span>
+                            <input class="in" name="goods_received_place" value="{{ d.goods_received_place }}">
+                        </div>
+                        <div>
+                            <span class="sl">Data<br>Date</span>
+                            <input class="in" name="goods_received_date" value="{{ d.goods_received_date }}">
+                        </div>
+                    </div>
+                    <div class="cell" style="flex: 1 1 auto; padding: 1.4mm 1mm 0;">
+                        <div class="r23" style="justify-content: flex-end;">
+                            <span>on</span>
+                            <input class="in under" name="goods_received_on" value="{{ d.goods_received_on }}" style="flex: 0 1 26mm;">
+                            <span class="yr">20</span>
+                            <input class="in under yrin" name="goods_received_year" value="{{ d.goods_received_year }}">
+                        </div>
+                        <div class="times" style="margin-top: 0.6mm;">
+                            <div class="trow">
+                                <span>Atvykimas iškrovimui<br>Arrival for unloading</span>
+                                <input class="in" name="unload_arrival_h" value="{{ d.unload_arrival_h }}">
+                                <span class="u"><span>val.</span><span>h.</span></span>
+                                <input class="in" name="unload_arrival_m" value="{{ d.unload_arrival_m }}">
+                                <span class="u"><span>min.</span><span>min.</span></span>
+                            </div>
+                            <div class="trow">
+                                <span>Išvykimas<br>Departure</span>
+                                <input class="in" name="unload_departure_h" value="{{ d.unload_departure_h }}">
+                                <span class="u"><span>val.</span><span>h.</span></span>
+                                <input class="in" name="unload_departure_m" value="{{ d.unload_departure_m }}">
+                                <span class="u"><span>min.</span><span>min.</span></span>
+                            </div>
+                        </div>
+                        <div class="sign-cap">Gavėjo parašas ir spaudas<span class="en">Signature and stamp of the consignee</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ======== графы 25-27 ======== -->
+            <div class="band band-veh">
+                <div class="veh" style="--pitch: 4.6mm;">
+                    <div class="veh-head">
+                        <div class="lab"><span class="n">25</span><span>Registracinis nr./Vehicle reg. no.<span class="en">Vilkikas/Tow Puspriek./Semitrailer</span></span></div>
+                    </div>
+                    <div class="ruled">
+                        {% include "admin/_cmr_rules4.html" %}
+                        <div class="veh-duo">
+                            <textarea class="ta" name="truck_reg" spellcheck="false">{{ d.truck_reg }}</textarea>
+                            <textarea class="ta" name="trailer_reg" spellcheck="false">{{ d.trailer_reg }}</textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="veh vsplit" style="--pitch: 4.6mm;">
+                    <div class="veh-head">
+                        <div class="lab"><span class="n">26</span><span>Markė/Type<span class="en">Vilkikas/Tow Puspriek./Semitrailer</span></span></div>
+                    </div>
+                    <div class="ruled">
+                        {% include "admin/_cmr_rules4.html" %}
+                        <div class="veh-duo">
+                            <textarea class="ta" name="truck_type" spellcheck="false">{{ d.truck_type }}</textarea>
+                            <textarea class="ta" name="trailer_type" spellcheck="false">{{ d.trailer_type }}</textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="t27 vsplit" style="--pitch: 4.6mm;">
+                    <div class="t27-row t27-head">
+                        <div><span class="n">27</span> Tarifas I<br>už 1 km</div>
+                        <div>Tarifinis<br>atstumas</div>
+                        <div>% už naudojimąsi<br>vilkiku/puspriek.</div>
+                        <div>Zonos<br>koef.</div>
+                        <div>Kiti<br>mokėjimai</div>
+                        <div>VISO</div>
+                    </div>
+                    <div class="t27-row t27-body">
+                        <div class="ruled">{% include "admin/_cmr_rules4.html" %}<textarea class="ta" name="t1_rate_km" spellcheck="false">{{ d.t1_rate_km }}</textarea></div>
+                        <div class="ruled">{% include "admin/_cmr_rules4.html" %}<textarea class="ta" name="t1_distance" spellcheck="false">{{ d.t1_distance }}</textarea></div>
+                        <div class="ruled">{% include "admin/_cmr_rules4.html" %}<textarea class="ta" name="t1_usage_pct" spellcheck="false">{{ d.t1_usage_pct }}</textarea></div>
+                        <div class="ruled">{% include "admin/_cmr_rules4.html" %}<textarea class="ta" name="t1_zone" spellcheck="false">{{ d.t1_zone }}</textarea></div>
+                        <div class="ruled">{% include "admin/_cmr_rules4.html" %}<textarea class="ta" name="t1_other" spellcheck="false">{{ d.t1_other }}</textarea></div>
+                        <div class="ruled">{% include "admin/_cmr_rules4.html" %}<textarea class="ta" name="t1_total" spellcheck="false">{{ d.t1_total }}</textarea></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ======== графы 28-29 ======== -->
+            <div class="band band-tar">
+                <div class="tar">
+                    <div class="tar-left">
+                        <div class="tar-num"><span class="n">28</span><small>Tarifas<br>II</small></div>
+                        <div class="tar-num"><span class="n">29</span><small>Tarifas<br>III</small></div>
+                    </div>
+                    <div class="tar-main">
+                        <div class="tar-row tar-head">
+                            <div>Tarifinis<br>atstumas, km</div>
+                            <div>Schema</div>
+                            <div>Tarifinis<br>svoris, t</div>
+                            <div>Tarifas<br>už 1 t</div>
+                            <div>Priedai</div>
+                            <div>Nuolaidos</div>
+                            <div>Kiti<br>mokėjimai</div>
+                            <div style="display: flex; align-items: center; justify-content: center;">Apmokėjimui</div>
+                            <div>Atskaitymai</div>
+                        </div>
+                        <div class="tar-row tar-28">
+                            <div class="tar-cell"><input class="in" name="t2_distance" value="{{ d.t2_distance }}"></div>
+                            <div class="tar-cell"><input class="in" name="t2_schema" value="{{ d.t2_schema }}"></div>
+                            <div class="tar-cell"><input class="in" name="t2_weight" value="{{ d.t2_weight }}"></div>
+                            <div class="tar-cell"><input class="in" name="t2_rate" value="{{ d.t2_rate }}"></div>
+                            <div class="tar-cell"><input class="in" name="t2_surcharge" value="{{ d.t2_surcharge }}"></div>
+                            <div class="tar-cell"><input class="in" name="t2_discount" value="{{ d.t2_discount }}"></div>
+                            <div class="tar-cell"><input class="in" name="t2_other" value="{{ d.t2_other }}"></div>
+                            <div class="tar-cell"><input class="in" name="t2_payable" value="{{ d.t2_payable }}"></div>
+                            <div class="tar-side">
+                                <div class="row2">
+                                    <span class="sl" style="font-size: 5pt; line-height: 1.9mm;">Apmokėta<br>užsakovo</span>
+                                    <input class="in" name="t2_paid_customer" value="{{ d.t2_paid_customer }}">
+                                </div>
+                                <div class="row2">
+                                    <span class="sl">Apmokėjimui</span>
+                                    <input class="in" name="t2_deductions" value="{{ d.t2_deductions }}">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tar-row tar-29">
+                            <div class="tar-cell"><input class="in" name="t3_distance" value="{{ d.t3_distance }}"></div>
+                            <div class="tar-cell"><input class="in" name="t3_schema" value="{{ d.t3_schema }}"></div>
+                            <div class="tar-cell"><input class="in" name="t3_weight" value="{{ d.t3_weight }}"></div>
+                            <div class="tar-cell"><input class="in" name="t3_rate" value="{{ d.t3_rate }}"></div>
+                            <div class="tar-cell"><input class="in" name="t3_surcharge" value="{{ d.t3_surcharge }}"></div>
+                            <div class="tar-cell"><input class="in" name="t3_discount" value="{{ d.t3_discount }}"></div>
+                            <div class="tar-cell"><input class="in" name="t3_other" value="{{ d.t3_other }}"></div>
+                            <div class="tar-cell"><input class="in" name="t3_payable" value="{{ d.t3_payable }}"></div>
+                            <div class="tar-cur">
+                                <div class="tar-cur-row">
+                                    <span class="sl">Valiuta</span>
+                                    <span class="sl">Mokėtojo kodas</span>
+                                </div>
+                                <div class="tar-cur-row">
+                                    <div class="tar-cell"><input class="in" name="currency_code" value="{{ d.currency_code }}"></div>
+                                    <div class="tar-cell"><input class="in" name="payer_code" value="{{ d.payer_code }}"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+    </div>
+    </div>
+</form>
+{% if auto_print %}
+<script>window.addEventListener("load", function () { window.print(); });</script>
+{% endif %}
+</body>
+</html>

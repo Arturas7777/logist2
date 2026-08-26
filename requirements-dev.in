@@ -21,5 +21,8 @@ ruff==0.9.10
 bandit>=1.8
 pip-audit>=2.7
 
+# Выгрузка бланка CMR в XLSX: scripts/export_cmr_xlsx.py
+openpyxl>=3.1
+
 # Компиляция локов
 pip-tools>=7.4

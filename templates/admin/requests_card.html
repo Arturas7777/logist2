@@ -443,6 +443,7 @@ core.services.transport_package_actions), переписка с клиентом
 
         <span class="rc-spacer"></span>
 
+        <a class="pc-action outline" href="{% url 'admin_request_cmr_list' transport_request.pk %}">Редактор CMR</a>
         <a class="pc-action primary" href="{% url 'admin_request_warehouse_letter' transport_request.pk %}">✉ Письмо складу (LT)</a>
         {% if transport_request.auto_transport_id %}
         <a class="pc-action green" href="{% url 'admin:core_autotransport_change' transport_request.auto_transport_id %}">
@@ -609,6 +610,8 @@ core.services.transport_package_actions), переписка с клиентом
                                href="#rc-declarations" title="Декларация, в которую входит это авто">
                                 {{ block.declaration_label|default:"декларация не задана" }}
                             </a>
+                            <a class="rc-icon-btn" title="Редактор CMR"
+                               href="{% url 'admin_request_cmr_editor' transport_request.pk block.car.pk %}">CMR</a>
                             <a class="rc-icon-btn" title="Скачать склеенный PDF-пакет"
                                href="{% url 'admin_request_package_download' transport_request.pk block.car.pk %}">⤓</a>
                             <form method="post" action="{% url 'admin_request_car_toggle' transport_request.pk %}" class="rc-inline-form"

@@ -1330,3 +1330,34 @@ class TransportRequestMessage(models.Model):
             elif self.author_kind == self.AUTHOR_CLIENT and self.read_by_client_at is None:
                 self.read_by_client_at = now
         super().save(*args, **kwargs)
+
+
+class TransportCmr(models.Model):
+    """Черновик CMR по одной машине заявки на автовоз.
+
+    На заявку — по одному бланку на каждое авто. Значения граф хранятся
+    JSON-ом: автоподстановка из заявки заполняет то, что есть в системе,
+    остальное сотрудник дописывает в редакторе и печатает A4-бланк.
+    """
+
+    request = models.ForeignKey(
+        TransportRequest, on_delete=models.CASCADE, related_name="cmr_documents", verbose_name="Заявка"
+    )
+    car = models.ForeignKey(Car, on_delete=models.CASCADE, related_name="cmr_documents", verbose_name="Автомобиль")
+    data = models.JSONField(default=dict, blank=True, verbose_name="Графы CMR")
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Кто правил")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создан")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлён")
+
+    class Meta:
+        verbose_name = "CMR заявки"
+        verbose_name_plural = "CMR заявок"
+        constraints = [
+            models.UniqueConstraint(fields=["request", "car"], name="uniq_cmr_request_car"),
+        ]
+        indexes = [
+            models.Index(fields=["request"], name="cmr_request_idx"),
+        ]
+
+    def __str__(self):
+        return f"CMR {self.request.number} — {self.car.vin}"
