@@ -180,6 +180,7 @@ class TransportRequestForm(forms.ModelForm):
             exclude_request_pk=self.instance.pk if self.instance.pk else None,
             extra_cars=extra,
         )
+        self.fields["cars"].error_messages["required"] = "Выберите хотя бы один автомобиль."
         # Перевозчик и его EORI обязательны для оформления.
         self.fields["carrier_name"].required = True
         self.fields["carrier_eori"].required = True

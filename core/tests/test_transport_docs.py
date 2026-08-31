@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime
 import io
+import re
 from decimal import Decimal
 
 import pytest
@@ -408,13 +409,62 @@ def test_transport_requests_page_hides_floating_cars(logged_client, portal_clien
     unloaded = Car.objects.create(
         year=2023, brand="Audi", vin="UNLOADPAGEVIN0001", status="UNLOADED", client=portal_client
     )
-    response = logged_client.get(
-        reverse("website:transport_requests"), {"cars": [floating.pk, unloaded.pk]}
-    )
+    response = logged_client.get(reverse("website:transport_requests"), {"cars": [floating.pk, unloaded.pk]})
     assert response.status_code == 200
     html = response.content.decode()
     assert "UNLOADPAGEVIN0001" in html
     assert "FLOATPAGEVIN00001" not in html
+
+
+def _draft_post(**extra):
+    data = {
+        "save_draft": "1",
+        "destination_country": "BY",
+        "declaration_type": "TRANSIT",
+        "carrier_name": "Test Carrier",
+        "carrier_eori": "LT123456789",
+        "truck_number": "ABC123",
+        "driver_name": "Иванов Иван",
+    }
+    data.update(extra)
+    return data
+
+
+def test_dashboard_preselect_checks_car_checkbox(logged_client, portal_client):
+    car = Car.objects.create(year=2023, brand="Audi", vin="PRESELECTVIN00001", status="UNLOADED", client=portal_client)
+    response = logged_client.get(reverse("website:transport_requests"), {"cars": [car.pk]})
+    html = response.content.decode()
+    tag = re.search(rf'<input[^>]*name="cars"[^>]*value="{car.pk}"[^>]*>', html)
+    assert tag, html
+    assert "checked" in tag.group(0)
+
+
+def test_create_draft_saves_preselected_cars(logged_client, portal_client):
+    car = Car.objects.create(year=2023, brand="BMW", vin="DRAFTCARSVIN00001", status="UNLOADED", client=portal_client)
+    url = reverse("website:transport_requests")
+    response = logged_client.post(f"{url}?cars={car.pk}", _draft_post(cars=[car.pk]))
+    assert response.status_code == 302
+    tr = TransportRequest.objects.get(client=portal_client)
+    assert tr.status == "DRAFT"
+    assert list(tr.cars.values_list("pk", flat=True)) == [car.pk]
+
+
+def test_create_draft_keeps_cars_from_query_if_checkboxes_missing(logged_client, portal_client):
+    """Дашборд передаёт авто в query string; чекбоксы могут не попасть в POST."""
+    car = Car.objects.create(year=2023, brand="Kia", vin="QUERYONLYVIN00001", status="UNLOADED", client=portal_client)
+    url = reverse("website:transport_requests")
+    response = logged_client.post(f"{url}?cars={car.pk}", _draft_post())
+    assert response.status_code == 302, response.content.decode()
+    tr = TransportRequest.objects.get(client=portal_client)
+    assert list(tr.cars.values_list("pk", flat=True)) == [car.pk]
+
+
+def test_create_draft_requires_cars_without_query(logged_client, portal_client):
+    Car.objects.create(year=2023, brand="Audi", vin="NEEDCARSVIN000001", status="UNLOADED", client=portal_client)
+    response = logged_client.post(reverse("website:transport_requests"), _draft_post())
+    assert response.status_code == 200
+    assert not TransportRequest.objects.filter(client=portal_client).exists()
+    assert "Выберите хотя бы один автомобиль." in response.content.decode()
 
 
 def test_passport_requires_address(logged_client, transport_request, car):

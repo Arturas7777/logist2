@@ -273,6 +273,25 @@ def _docs_map_context(transport_requests):
     }
 
 
+def _request_form_data(request):
+    """Данные POST для формы заявки.
+
+    С дашборда авто приходят в query string (``/transport-requests/?cars=1&cars=2``)
+    и рисуются галочками через ``initial``. Само поле формы читает только тело
+    POST: если браузер не отправил чекбоксы, без этого слияния форма считает,
+    что автомобили не выбраны.
+    """
+    data = request.POST
+    if data.getlist("cars"):
+        return data
+    from_query = [pk for pk in request.GET.getlist("cars") if str(pk).isdigit()]
+    if not from_query:
+        return data
+    data = data.copy()
+    data.setlist("cars", from_query)
+    return data
+
+
 def _save_request(request, form, client, *, instance=None):
     """Сохранить заявку из формы и вернуть её. Логика статусов:
 
@@ -304,7 +323,7 @@ def transport_requests(request):
         return render(request, "website/not_authorized.html", status=403)
 
     if request.method == "POST":
-        form = TransportRequestForm(request.POST, client=client)
+        form = TransportRequestForm(_request_form_data(request), client=client)
         if form.is_valid():
             transport_request = _save_request(request, form, client)
             # Клик по кнопке документа на форме создания: сохраняем черновик
