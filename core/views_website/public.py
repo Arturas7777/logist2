@@ -12,8 +12,11 @@ from django.views.decorators.http import require_GET
 
 from core.models_website import NewsPost
 
+# Смена этого префикса сбрасывает HTML-кэш публичных страниц (футер общий).
+_PUBLIC_CACHE = "site-v34"
 
-@cache_page(60 * 15)
+
+@cache_page(60 * 15, key_prefix=_PUBLIC_CACHE)
 def website_home(request):
     """Главная страница сайта."""
     latest_news = NewsPost.objects.filter(published=True).order_by("-published_at")[:3]
@@ -25,7 +28,7 @@ def website_home(request):
     return render(request, "website/home.html", context)
 
 
-@cache_page(60 * 60)
+@cache_page(60 * 60, key_prefix=_PUBLIC_CACHE)
 def about_page(request):
     context = {
         "company_name": "Caromoto Lithuania",
@@ -33,17 +36,17 @@ def about_page(request):
     return render(request, "website/about.html", context)
 
 
-@cache_page(60 * 60, key_prefix="services-v33")
+@cache_page(60 * 60, key_prefix=_PUBLIC_CACHE)
 def services_page(request):
     return render(request, "website/services.html")
 
 
-@cache_page(60 * 60)
+@cache_page(60 * 60, key_prefix=_PUBLIC_CACHE)
 def contact_page(request):
     return render(request, "website/contact.html")
 
 
-@cache_page(60 * 15)
+@cache_page(60 * 15, key_prefix=_PUBLIC_CACHE)
 def news_list(request):
     news = NewsPost.objects.filter(published=True).order_by("-published_at")
     return render(request, "website/news_list.html", {"news": news})
