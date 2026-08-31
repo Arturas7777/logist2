@@ -51,9 +51,11 @@ msgstr "Caromoto Lithuania - Car Delivery from USA"
 
 #: .\templates\website\about.html:22
 msgid ""
-"Мы специализируемся на доставке автомобилей из США в Казахстан и страны СНГ "
-"с 2013 года."
+"Мы с 2013 года специализируемся на организации доставки автомобилей из США в "
+"страны Европейского союза и на сопровождении таможенных процедур."
 msgstr ""
+"Since 2013 we have specialized in arranging car delivery from the USA to EU "
+"countries and in assisting with customs procedures."
 
 #: .\templates\website\about.html:25
 msgid ""
@@ -64,9 +66,12 @@ msgstr ""
 
 #: .\templates\website\about.html:28
 msgid ""
-"Наша команда обеспечивает полный цикл логистических услуг: от выкупа "
-"автомобиля на аукционе до доставки в ваш город с полным пакетом документов."
+"Наша команда обеспечивает полный цикл логистических услуг: организацию "
+"доставки, таможенное оформление и передачу автомобиля с полным пакетом "
+"документов."
 msgstr ""
+"Our team provides a full cycle of logistics: arranging delivery, customs "
+"clearance, and handing over the car with a complete set of documents."
 
 #: .\templates\website\about.html:36
 msgid "лет на рынке"
@@ -134,14 +139,16 @@ msgid ""
 msgstr ""
 
 #: .\templates\website\about.html:137
-msgid "Выкуп и отправка"
-msgstr "Purchase and Shipping"
+msgid "Организация доставки"
+msgstr "Arranging delivery"
 
 #: .\templates\website\about.html:139
 msgid ""
-"Выкупаем автомобиль на аукционе, оформляем документы и организуем доставку "
+"Организуем доставку автомобиля, оформляем документы и сопровождаем груз "
 "до порта."
 msgstr ""
+"We arrange car delivery, prepare the documents, and accompany the shipment "
+"to the port."
 
 #: .\templates\website\about.html:153 .\templates\website\services.html:150
 #: .\templates\website\services.html:175 .\templates\website\services.html:199
@@ -210,8 +217,12 @@ msgid "Введите ваш вопрос..."
 msgstr "Enter your question..."
 
 #: .\templates\website\base.html:166
-msgid "Профессиональная доставка автомобилей из США в Казахстан и страны СНГ."
-msgstr "Professional car delivery from the USA to Kazakhstan and CIS countries."
+msgid ""
+"Организация доставки автомобилей из США в Европейский союз и сопровождение "
+"таможенных процедур."
+msgstr ""
+"Arranging car delivery from the USA to the European Union and assistance "
+"with customs procedures."
 
 #: .\templates\website\base.html:167
 msgid "Надежно, быстро, выгодно."
@@ -299,12 +310,12 @@ msgid "Часы работы:"
 msgstr "Working Hours:"
 
 #: .\templates\website\contact.html:96
-msgid "Пн-Пт: 9:00 - 18:00"
-msgstr "Mon-Fri: 9:00 - 18:00"
+msgid "Пн-Пт: 8:00 - 18:00"
+msgstr "Mon-Fri: 8:00 - 18:00"
 
 #: .\templates\website\contact.html:97
-msgid "Сб-Вс: 10:00 - 15:00"
-msgstr "Sat-Sun: 10:00 - 15:00"
+msgid "Сб-Вс: выходные"
+msgstr "Sat-Sun: closed"
 
 #: .\templates\website\contact.html:106
 msgid "Нужна помощь?"
@@ -470,9 +481,11 @@ msgstr "Ocean Shipping"
 
 #: .\templates\website\services.html:27
 msgid ""
-"Контейнерная доставка автомобилей из портов США в порты Европы и СНГ. "
+"Контейнерная доставка автомобилей из портов США в порты Европы. "
 "Работаем с ведущими морскими линиями."
 msgstr ""
+"Container shipping of cars from US ports to European ports. We work with "
+"leading ocean carriers."
 
 #: .\templates\website\services.html:30
 msgid "Полное страхование груза"
@@ -514,8 +527,8 @@ msgid "Складское хранение"
 msgstr "Warehouse Storage"
 
 #: .\templates\website\services.html:65
-msgid "Охраняемые склады в Литве и Казахстане. Первые дни хранения бесплатно."
-msgstr "Secure warehouses in Lithuania and Kazakhstan. First days of storage free."
+msgid "Охраняемые склады в Литве. Первые дни хранения бесплатно."
+msgstr "Secure warehouses in Lithuania. First days of storage are free."
 
 #: .\templates\website\services.html:68
 msgid "Видеонаблюдение 24/7"
@@ -534,14 +547,12 @@ msgid "Наземная доставка"
 msgstr "Ground Delivery"
 
 #: .\templates\website\services.html:84
-msgid ""
-"Перевозка автомобилей автовозами по территории Казахстана и СНГ в ваш город."
-msgstr ""
+msgid "Перевозка автомобилей автовозами по территории Европейского союза."
+msgstr "Car transporter delivery across the European Union."
 
 #: .\templates\website\services.html:87
-#| msgid "Доставка автомобилей"
-msgid "Доставка в любой город"
-msgstr "Car Delivery"
+msgid "Доставка по городам ЕС"
+msgstr "Delivery to EU cities"
 
 #: .\templates\website\services.html:88
 msgid "Надежные перевозчики"

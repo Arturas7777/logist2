@@ -51,9 +51,11 @@ msgstr "Caromoto Lithuania - Automobilių pristatymas iš JAV"
 
 #: .\templates\website\about.html:22
 msgid ""
-"Мы специализируемся на доставке автомобилей из США в Казахстан и страны СНГ "
-"с 2013 года."
+"Мы с 2013 года специализируемся на организации доставки автомобилей из США в "
+"страны Европейского союза и на сопровождении таможенных процедур."
 msgstr ""
+"Nuo 2013 m. specializuojamės automobilių pristatymo iš JAV į Europos Sąjungos "
+"šalis organizavimu ir muitinės procedūrų palydėjimu."
 
 #: .\templates\website\about.html:25
 msgid ""
@@ -64,9 +66,12 @@ msgstr ""
 
 #: .\templates\website\about.html:28
 msgid ""
-"Наша команда обеспечивает полный цикл логистических услуг: от выкупа "
-"автомобиля на аукционе до доставки в ваш город с полным пакетом документов."
+"Наша команда обеспечивает полный цикл логистических услуг: организацию "
+"доставки, таможенное оформление и передачу автомобиля с полным пакетом "
+"документов."
 msgstr ""
+"Mūsų komanda teikia visą logistikos ciklą: pristatymo organizavimą, "
+"muitinės įforminimą ir automobilio perdavimą su visais dokumentais."
 
 #: .\templates\website\about.html:36
 msgid "лет на рынке"
@@ -134,14 +139,16 @@ msgid ""
 msgstr ""
 
 #: .\templates\website\about.html:137
-msgid "Выкуп и отправка"
-msgstr "Pirkimas ir siuntimas"
+msgid "Организация доставки"
+msgstr "Pristatymo organizavimas"
 
 #: .\templates\website\about.html:139
 msgid ""
-"Выкупаем автомобиль на аукционе, оформляем документы и организуем доставку "
+"Организуем доставку автомобиля, оформляем документы и сопровождаем груз "
 "до порта."
 msgstr ""
+"Organizuoja automobilių pristatymą, įforminame dokumentus ir palydime "
+"krovinį iki uosto."
 
 #: .\templates\website\about.html:153 .\templates\website\services.html:150
 #: .\templates\website\services.html:175 .\templates\website\services.html:199
@@ -210,8 +217,12 @@ msgid "Введите ваш вопрос..."
 msgstr "Įveskite savo klausimą..."
 
 #: .\templates\website\base.html:166
-msgid "Профессиональная доставка автомобилей из США в Казахстан и страны СНГ."
-msgstr "Profesionalus automobilių pristatymas iš JAV į Kazachstaną ir NVS šalis."
+msgid ""
+"Организация доставки автомобилей из США в Европейский союз и сопровождение "
+"таможенных процедур."
+msgstr ""
+"Automobilių pristatymo iš JAV į Europos Sąjungą organizavimas ir muitinės "
+"procedūrų palydėjimas."
 
 #: .\templates\website\base.html:167
 msgid "Надежно, быстро, выгодно."
@@ -299,12 +310,12 @@ msgid "Часы работы:"
 msgstr "Darbo valandos:"
 
 #: .\templates\website\contact.html:96
-msgid "Пн-Пт: 9:00 - 18:00"
-msgstr "Pr-Pn: 9:00 - 18:00"
+msgid "Пн-Пт: 8:00 - 18:00"
+msgstr "Pr-Pn: 8:00 - 18:00"
 
 #: .\templates\website\contact.html:97
-msgid "Сб-Вс: 10:00 - 15:00"
-msgstr "Št-Sk: 10:00 - 15:00"
+msgid "Сб-Вс: выходные"
+msgstr "Št-Sk: nedirbame"
 
 #: .\templates\website\contact.html:106
 msgid "Нужна помощь?"
@@ -470,9 +481,11 @@ msgstr "Jūrų pervežimai"
 
 #: .\templates\website\services.html:27
 msgid ""
-"Контейнерная доставка автомобилей из портов США в порты Европы и СНГ. "
+"Контейнерная доставка автомобилей из портов США в порты Европы. "
 "Работаем с ведущими морскими линиями."
 msgstr ""
+"Konteinerinis automobilių pristatymas iš JAV uostų į Europos uostus. "
+"Dirbame su pirmaujančiomis jūrų linijomis."
 
 #: .\templates\website\services.html:30
 msgid "Полное страхование груза"
@@ -514,8 +527,8 @@ msgid "Складское хранение"
 msgstr "Sandėliavimas"
 
 #: .\templates\website\services.html:65
-msgid "Охраняемые склады в Литве и Казахстане. Первые дни хранения бесплатно."
-msgstr "Saugomi sandėliai Lietuvoje ir Kazachstane. Pirmosios saugojimo dienos nemokamai."
+msgid "Охраняемые склады в Литве. Первые дни хранения бесплатно."
+msgstr "Saugomi sandėliai Lietuvoje. Pirmosios saugojimo dienos nemokamai."
 
 #: .\templates\website\services.html:68
 msgid "Видеонаблюдение 24/7"
@@ -534,14 +547,12 @@ msgid "Наземная доставка"
 msgstr "Sausumos pristatymas"
 
 #: .\templates\website\services.html:84
-msgid ""
-"Перевозка автомобилей автовозами по территории Казахстана и СНГ в ваш город."
-msgstr ""
+msgid "Перевозка автомобилей автовозами по территории Европейского союза."
+msgstr "Automobilių pervežimas autotraukiais Europos Sąjungos teritorijoje."
 
 #: .\templates\website\services.html:87
-#| msgid "Доставка автомобилей"
-msgid "Доставка в любой город"
-msgstr "Automobilių pristatymas"
+msgid "Доставка по городам ЕС"
+msgstr "Pristatymas ES miestuose"
 
 #: .\templates\website\services.html:88
 msgid "Надежные перевозчики"

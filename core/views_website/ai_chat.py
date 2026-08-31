@@ -93,8 +93,9 @@ def get_ai_response(message, user=None, client=None):
         response = (
             f"Вы можете связаться с нами:\n"
             f"📞 Телефон: {getattr(settings, 'COMPANY_PHONE', '+37068830450')}\n"
-            f"📧 Email: {getattr(settings, 'COMPANY_EMAIL', 'info@caromoto-lt.com')}\n"
-            f"🏢 Офис: Вильнюс, Литва\n\n"
+            f"📧 Email: {getattr(settings, 'COMPANY_EMAIL', 'lithuania@caromoto.com')}\n"
+            f"🏢 Офис: Klaipėda, Šilutės pl. 105A\n"
+            f"🕒 Пн–Пт: 8:00–18:00, сб–вс — выходные\n\n"
             "Также вы можете оставить сообщение через форму обратной связи на сайте."
         )
 
@@ -117,7 +118,7 @@ def get_ai_response(message, user=None, client=None):
 
     elif any(word in message_lower for word in ["склад", "хранение", "хранить"]):
         response = (
-            "Мы предоставляем услуги хранения на наших складах в Литве и Казахстане. "
+            "Мы предоставляем услуги хранения на наших складах в Литве. "
             "Первые 3-7 дней хранения (в зависимости от тарифа) бесплатно. "
             "Далее стоимость хранения рассчитывается посуточно. "
             "Подробнее о тарифах вы можете узнать у вашего менеджера."
@@ -144,7 +145,7 @@ def get_ai_response(message, user=None, client=None):
             "Вы можете:\n"
             "• Написать в форму обратной связи\n"
             f"• Позвонить по телефону: {getattr(settings, 'COMPANY_PHONE', '+37068830450')}\n"
-            f"• Написать на email: {getattr(settings, 'COMPANY_EMAIL', 'info@caromoto-lt.com')}\n\n"
+            f"• Написать на email: {getattr(settings, 'COMPANY_EMAIL', 'lithuania@caromoto.com')}\n\n"
             "Чем еще я могу помочь?"
         )
 

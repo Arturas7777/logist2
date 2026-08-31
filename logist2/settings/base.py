@@ -667,7 +667,7 @@ GOOGLE_DRIVE_API_KEY = os.getenv("GOOGLE_DRIVE_API_KEY", "").strip()
 
 COMPANY_NAME = "Caromoto Lithuania, MB"
 COMPANY_PHONE = "+37068830450"
-COMPANY_EMAIL = os.getenv("COMPANY_EMAIL", "info@caromoto-lt.com")
+COMPANY_EMAIL = os.getenv("COMPANY_EMAIL", "lithuania@caromoto.com")
 COMPANY_WEBSITE = "https://caromoto-lt.com"
 
 # ---------------------------------------------------------------------------
