@@ -535,7 +535,10 @@ a.cm-back-link:hover { text-decoration: underline; }
 .rc-page.is-COMPLETED .rc-topbar,
 .rc-page.is-CANCELLED .rc-topbar {
     background: var(--tr-head);
-    border-bottom-color: var(--tr-accent);
+    border-color: color-mix(in srgb, var(--tr-accent) 35%, transparent);
+    box-shadow:
+        inset 5px 0 0 var(--tr-accent),
+        var(--cm-shadow-card, 0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08));
 }
 .rc-page .rc-state-card {
     box-shadow:

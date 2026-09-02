@@ -21,22 +21,24 @@ core.services.transport_package_actions), переписка с клиентом
 
 {% block page_style %}
 <style>
-.rc-page { padding-top: 0; }
+.rc-page { padding-top: 12px; }
 
 /* ── Шапка ──────────────────────────────────────────────────────────── */
 .rc-topbar {
     position: sticky;
     /* Ниже липкой шапки админки (.cm-topbar), иначе уезжает под неё. */
-    top: var(--cm-topbar-h, 60px);
+    top: calc(var(--cm-topbar-h, 60px) + 8px);
     z-index: 30;
     display: flex;
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
-    padding: 14px 0 12px;
+    padding: 14px 20px;
     margin-bottom: 14px;
     background: var(--cm-bg, #f4f2ff);
-    border-bottom: 1px solid rgba(108,92,231,.12);
+    border: 1px solid rgba(0, 0, 0, .06);
+    border-radius: var(--cm-radius, 14px);
+    box-shadow: var(--cm-shadow-card, 0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08));
 }
 .rc-topbar h1 { margin: 0; font-size: 1.25rem; }
 .rc-topbar .rc-spacer { flex: 1 1 auto; }
@@ -76,7 +78,7 @@ core.services.transport_package_actions), переписка с клиентом
 }
 .rc-side {
     position: sticky;
-    top: calc(var(--cm-topbar-h, 60px) + 62px);
+    top: calc(var(--cm-topbar-h, 60px) + 78px);
     display: flex;
     flex-direction: column;
     gap: 14px;
