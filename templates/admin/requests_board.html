@@ -53,7 +53,7 @@
     transition: box-shadow .15s ease, transform .15s ease;
 }
 .rb-card:hover {
-    box-shadow: 0 6px 20px rgba(0,0,0,.10);
+    box-shadow: inset 6px 0 0 var(--tr-accent, transparent), 0 6px 20px rgba(0,0,0,.10);
     transform: translateY(-1px);
 }
 .rb-card-head {
@@ -185,7 +185,7 @@
     <div class="rb-grid">
         {% for card in cards %}
         {% with tr=card.request %}
-        <div class="rb-card">
+        <div class="rb-card is-{{ tr.status }}">
             <div class="rb-card-head">
                 <a class="rb-num" href="{{ card.url }}">{{ tr.number }}</a>
                 <span class="rb-client">{{ tr.client.name }}</span>
@@ -196,7 +196,7 @@
                     <span class="rb-chip sep">деклараций: {{ card.declarations|length }}</span>
                     {% endif %}
                     {% if tr.destination_country %}<span class="rb-chip muted">{{ tr.get_destination_country_display }}</span>{% endif %}
-                    <span class="rb-chip muted">{{ tr.get_status_display }}</span>
+                    <span class="rb-chip status is-{{ tr.status }}">{{ tr.get_status_display }}</span>
                     {% if tr.warehouse_state != "NOT_SENT" %}
                     <span class="rb-chip {% if tr.warehouse_state == 'CONFIRMED' %}ok{% elif tr.warehouse_state == 'REJECTED' %}alert{% else %}info{% endif %}">
                         {{ tr.get_warehouse_state_display }}

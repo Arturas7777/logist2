@@ -422,7 +422,7 @@ core.services.transport_package_actions), переписка с клиентом
 {% endblock %}
 
 {% block content %}
-<div class="cm-page wide rc-page">
+<div class="cm-page wide rc-page is-{{ transport_request.status }}" id="rc-page" data-status="{{ transport_request.status }}">
     <div class="rc-topbar">
         <a class="rc-back" href="{% url 'admin_requests_board' %}">← Доска</a>
         <h1>{{ transport_request.number }}</h1>
@@ -430,7 +430,7 @@ core.services.transport_package_actions), переписка с клиентом
         <span class="rc-chip {% if transport_request.destination_country %}muted{% else %}alert{% endif %}">
             {% if transport_request.destination_country %}{{ transport_request.get_destination_country_display }}{% else %}страна не выбрана{% endif %}
         </span>
-        <span class="rc-chip info" id="rc-status-chip">{{ transport_request.get_status_display }}</span>
+        <span class="rc-chip status" id="rc-status-chip">{{ transport_request.get_status_display }}</span>
         <span class="rc-chip {% if transport_request.warehouse_state == 'CONFIRMED' %}ok{% elif transport_request.warehouse_state == 'REJECTED' %}alert{% elif transport_request.warehouse_state == 'SENT' %}info{% else %}muted{% endif %}"
               id="rc-wh-state-chip">
             склад: {{ transport_request.get_warehouse_state_display }}
@@ -809,7 +809,7 @@ core.services.transport_package_actions), переписка с клиентом
 
         {# ── Правая колонка: состояние и данные ──────────────────────── #}
         <aside class="rc-side">
-            <div class="rc-card">
+            <div class="rc-card rc-state-card">
                 <h2>Состояние</h2>
                 <div class="rc-inner">
                     <div class="rc-fields">
@@ -1173,6 +1173,13 @@ core.services.transport_package_actions), переписка с клиентом
             post('{% url "admin_request_status_set" transport_request.pk %}', body)
                 .then(function(res) {
                     if (res.ok && res.data.ok) {
+                        var STATUS_CODES = ['DRAFT','SUBMITTED','ACCEPTED','IN_PROGRESS','COMPLETED','CANCELLED'];
+                        var page = document.getElementById('rc-page');
+                        if (page && res.data.status) {
+                            STATUS_CODES.forEach(function(code) { page.classList.remove('is-' + code); });
+                            page.classList.add('is-' + res.data.status);
+                            page.setAttribute('data-status', res.data.status);
+                        }
                         var whChip = document.getElementById('rc-wh-state-chip');
                         if (whChip) whChip.textContent = 'склад: ' + res.data.warehouse_state_display;
                         var stChip = document.getElementById('rc-status-chip');

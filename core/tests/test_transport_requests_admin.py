@@ -124,6 +124,27 @@ def test_board_available_for_staff(staff_client, transport_request):
     assert transport_request.number in response.content.decode()
 
 
+def test_board_card_uses_status_color_class(staff_client, transport_request):
+    transport_request.status = "SUBMITTED"
+    transport_request.save(update_fields=["status"])
+    body = staff_client.get(reverse("admin_requests_board")).content.decode()
+
+    assert "rb-card is-SUBMITTED" in body
+    assert "rb-chip status is-SUBMITTED" in body
+
+
+def test_card_page_uses_status_color_class(staff_client, transport_request):
+    transport_request.status = "IN_PROGRESS"
+    transport_request.save(update_fields=["status"])
+    body = staff_client.get(reverse("admin_request_card", args=[transport_request.pk])).content.decode()
+
+    assert 'id="rc-page"' in body
+    assert "rc-page is-IN_PROGRESS" in body
+    assert 'id="rc-status-chip"' in body
+    assert "rc-chip status" in body
+    assert "rc-state-card" in body
+
+
 def test_board_search_by_vin(staff_client, transport_request, car):
     response = staff_client.get(reverse("admin_requests_board"), {"tab": "all", "q": car.vin})
     assert response.status_code == 200

@@ -460,6 +460,92 @@ a.cm-back-link:hover { text-decoration: underline; }
 .amount-in  { color: #16a34a; font-weight: 700; }
 .amount-out { color: #dc2626; font-weight: 700; }
 
+/* ---------- Статусы заявок на автовоз (доска + карточка) ---------- */
+/* Те же роли, что в кабинете клиента, но насыщеннее: на доске рядом
+   лежат разные статусы, серые пастели сливаются. */
+.rb-card.is-DRAFT, .rc-page.is-DRAFT {
+    --tr-accent: #5c6370;
+    --tr-bg: #e9ecef;
+    --tr-head: #ced4da;
+}
+.rb-card.is-SUBMITTED, .rc-page.is-SUBMITTED {
+    --tr-accent: #e8590c;
+    --tr-bg: #ffe066;
+    --tr-head: #fcc419;
+}
+.rb-card.is-ACCEPTED, .rc-page.is-ACCEPTED {
+    --tr-accent: #2b8a3e;
+    --tr-bg: #8ce99a;
+    --tr-head: #51cf66;
+}
+.rb-card.is-IN_PROGRESS, .rc-page.is-IN_PROGRESS {
+    --tr-accent: #0b7285;
+    --tr-bg: #66d9e8;
+    --tr-head: #3bc9db;
+}
+.rb-card.is-COMPLETED, .rc-page.is-COMPLETED {
+    --tr-accent: #5f3dc4;
+    --tr-bg: #b197fc;
+    --tr-head: #9775fa;
+}
+.rb-card.is-CANCELLED, .rc-page.is-CANCELLED {
+    --tr-accent: #c92a2a;
+    --tr-bg: #ffa8a8;
+    --tr-head: #ff8787;
+}
+
+.rb-card.is-DRAFT,
+.rb-card.is-SUBMITTED,
+.rb-card.is-ACCEPTED,
+.rb-card.is-IN_PROGRESS,
+.rb-card.is-COMPLETED,
+.rb-card.is-CANCELLED {
+    background: var(--tr-bg);
+    box-shadow:
+        inset 6px 0 0 var(--tr-accent),
+        var(--cm-shadow-card, 0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08));
+}
+.rb-card.is-DRAFT .rb-card-head,
+.rb-card.is-SUBMITTED .rb-card-head,
+.rb-card.is-ACCEPTED .rb-card-head,
+.rb-card.is-IN_PROGRESS .rb-card-head,
+.rb-card.is-COMPLETED .rb-card-head,
+.rb-card.is-CANCELLED .rb-card-head {
+    background: var(--tr-head);
+    border-bottom-color: color-mix(in srgb, var(--tr-accent) 35%, transparent);
+}
+.rb-card.is-DRAFT .rb-car,
+.rb-card.is-SUBMITTED .rb-car,
+.rb-card.is-ACCEPTED .rb-car,
+.rb-card.is-IN_PROGRESS .rb-car,
+.rb-card.is-COMPLETED .rb-car,
+.rb-card.is-CANCELLED .rb-car {
+    background: rgba(255, 255, 255, .88);
+}
+.rb-chip.status,
+.rc-chip.status {
+    background: var(--tr-accent, #5c6370);
+    color: #fff;
+}
+
+.rc-page.is-DRAFT .rc-topbar,
+.rc-page.is-SUBMITTED .rc-topbar,
+.rc-page.is-ACCEPTED .rc-topbar,
+.rc-page.is-IN_PROGRESS .rc-topbar,
+.rc-page.is-COMPLETED .rc-topbar,
+.rc-page.is-CANCELLED .rc-topbar {
+    background: var(--tr-head);
+    border-bottom-color: var(--tr-accent);
+}
+.rc-page .rc-state-card {
+    box-shadow:
+        inset 5px 0 0 var(--tr-accent, transparent),
+        var(--cm-shadow-card, 0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08));
+}
+.rc-page .rc-state-card > h2 {
+    background: var(--tr-head, #ededf2);
+}
+
 /* ---------- Бейджи типов операций ---------- */
 .badge-type {
     display: inline-block;

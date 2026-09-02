@@ -384,12 +384,12 @@ class TransportRequestAdmin(admin.ModelAdmin):
 
     def status_display(self, obj):
         colors = {
-            "DRAFT": "#9e9e9e",
-            "SUBMITTED": "#f0ad4e",
-            "ACCEPTED": "#4CAF50",
-            "IN_PROGRESS": "#2196F3",
-            "COMPLETED": "#6a1b9a",
-            "CANCELLED": "#d9534f",
+            "DRAFT": "#5c6370",
+            "SUBMITTED": "#e8590c",
+            "ACCEPTED": "#2b8a3e",
+            "IN_PROGRESS": "#0b7285",
+            "COMPLETED": "#5f3dc4",
+            "CANCELLED": "#c92a2a",
         }
         return format_html(
             '<span style="background-color: {}; color: white; padding: 3px 8px; border-radius: 3px;">{}</span>',
