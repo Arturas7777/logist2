@@ -124,6 +124,40 @@ def test_board_available_for_staff(staff_client, transport_request):
     assert transport_request.number in response.content.decode()
 
 
+def test_board_default_tab_hides_drafts_and_completed(staff_client, transport_request):
+    transport_request.status = "DRAFT"
+    transport_request.save(update_fields=["status"])
+    completed = TransportRequest.objects.create(
+        client=transport_request.client,
+        carrier_name="Done Carrier",
+        truck_number="DONE1",
+        driver_name="Петров",
+        status="COMPLETED",
+    )
+    submitted = TransportRequest.objects.create(
+        client=transport_request.client,
+        carrier_name="Sent Carrier",
+        truck_number="SENT1",
+        driver_name="Сидоров",
+        status="SUBMITTED",
+    )
+
+    default_body = staff_client.get(reverse("admin_requests_board")).content.decode()
+    assert submitted.number in default_body
+    assert transport_request.number not in default_body
+    assert completed.number not in default_body
+    assert "Черновики" in default_body
+    assert "Оформленные" in default_body
+
+    drafts_body = staff_client.get(reverse("admin_requests_board"), {"tab": "drafts"}).content.decode()
+    assert transport_request.number in drafts_body
+    assert submitted.number not in drafts_body
+
+    done_body = staff_client.get(reverse("admin_requests_board"), {"tab": "done"}).content.decode()
+    assert completed.number in done_body
+    assert submitted.number not in done_body
+
+
 def test_board_card_uses_status_color_class(staff_client, transport_request):
     transport_request.status = "SUBMITTED"
     transport_request.save(update_fields=["status"])

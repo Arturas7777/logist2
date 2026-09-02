@@ -52,8 +52,11 @@ _DECLARATION_LABELS = dict(TRANSPORT_DECLARATION_TYPES)
 _COUNTRY_LABELS = dict(TRANSPORT_DESTINATION_COUNTRIES)
 
 # Табы доски: код → (подпись, фильтр по queryset).
+# «Новые» — только поданные: черновики и оформленные на главной шумят,
+# их смотрят отдельными вкладками.
 BOARD_TABS = [
-    ("new", "Новые", Q(status__in=["DRAFT", "SUBMITTED"])),
+    ("new", "Новые", Q(status="SUBMITTED")),
+    ("drafts", "Черновики", Q(status="DRAFT")),
     ("accepted", "Принятые", Q(status="ACCEPTED")),
     ("sent", "У склада", Q(warehouse_state="SENT")),
     ("confirmed", "Подтверждены складом", Q(warehouse_state="CONFIRMED")),
