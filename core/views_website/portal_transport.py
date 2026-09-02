@@ -6,11 +6,13 @@ from urllib.parse import quote
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db.models import Case, IntegerField, When
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_GET, require_POST
 
 from core.models.website import (
@@ -46,13 +48,91 @@ _ICON_PASSPORT_SVG = """
 """
 
 
+# Дефолтная вкладка кабинета: черновики сверху, затем поданные / принятые / в работе.
+PORTAL_CURRENT_STATUSES = ("DRAFT", "SUBMITTED", "ACCEPTED", "IN_PROGRESS")
+PORTAL_TAB_DEFS = (
+    ("current", _("Текущие"), PORTAL_CURRENT_STATUSES),
+    ("DRAFT", _("Черновики"), ("DRAFT",)),
+    ("SUBMITTED", _("Подана"), ("SUBMITTED",)),
+    ("ACCEPTED", _("Принята"), ("ACCEPTED",)),
+    ("IN_PROGRESS", _("В процессе"), ("IN_PROGRESS",)),
+    ("COMPLETED", _("Оформлена"), ("COMPLETED",)),
+)
+_PORTAL_TAB_CODES = {code for code, _label, _statuses in PORTAL_TAB_DEFS}
+_PORTAL_TAB_STATUSES = {code: statuses for code, _label, statuses in PORTAL_TAB_DEFS}
+
+
 def _client_requests(client):
-    """Заявки клиента для списка в кабинете (отменённые скрыты)."""
+    """Заявки клиента для списка в кабинете (отменённые скрыты).
+
+    Порядок: черновики, затем «Подана» / «Принята» / «В процессе»,
+    в конце «Оформлена». Внутри статуса — свежие сверху.
+    """
+    status_rank = Case(
+        When(status="DRAFT", then=0),
+        When(status="SUBMITTED", then=1),
+        When(status="ACCEPTED", then=2),
+        When(status="IN_PROGRESS", then=3),
+        When(status="COMPLETED", then=4),
+        default=5,
+        output_field=IntegerField(),
+    )
     return (
         TransportRequest.objects.filter(client=client)
         .exclude(status="CANCELLED")
         .prefetch_related("cars", "documents", "doc_packages", "messages__car", "bulk_uploads")
+        .annotate(_status_rank=status_rank)
+        .order_by("_status_rank", "-created_at")
     )
+
+
+def _portal_tab_query_extra(request):
+    """Прочие GET-параметры, чтобы вкладки не теряли предвыбор авто и т.п."""
+    query = request.GET.copy()
+    query.pop("tab", None)
+    encoded = query.urlencode()
+    return f"&{encoded}" if encoded else ""
+
+
+def _resolve_portal_tab(request, transport_requests, editing=None):
+    """Активная вкладка: явный ``?tab=``, иначе текущие или «Оформлена»."""
+    raw = (request.GET.get("tab") or "").strip()
+    if raw in _PORTAL_TAB_CODES:
+        return raw
+    focus = editing
+    if focus is None:
+        pk = request.GET.get("docs_req", "")
+        if pk.isdigit():
+            focus = next((item for item in transport_requests if item.pk == int(pk)), None)
+    if focus is not None and focus.status == "COMPLETED":
+        return "COMPLETED"
+    return "current"
+
+
+def _portal_tabs_context(request, transport_requests, editing=None):
+    """Вкладки статусов и набор статусов активной вкладки для шаблона."""
+    active_tab = _resolve_portal_tab(request, transport_requests, editing)
+    active_statuses = set(_PORTAL_TAB_STATUSES[active_tab])
+    counts = {}
+    for item in transport_requests:
+        counts[item.status] = counts.get(item.status, 0) + 1
+    tabs = []
+    for code, label, statuses in PORTAL_TAB_DEFS:
+        tabs.append(
+            {
+                "code": code,
+                "label": label,
+                "count": sum(counts.get(status, 0) for status in statuses),
+                "active": code == active_tab,
+            }
+        )
+    return {
+        "active_tab": active_tab,
+        "active_tab_statuses": active_statuses,
+        "visible_count": sum(1 for item in transport_requests if item.status in active_statuses),
+        "request_tabs": tabs,
+        "tab_query_extra": _portal_tab_query_extra(request),
+    }
 
 
 def _attach_messages(transport_requests):
@@ -359,6 +439,7 @@ def transport_requests(request):
             "docs_req": request.GET.get("docs_req", ""),
             "docs_car": request.GET.get("docs_car", ""),
             "open_doc": request.GET.get("open_doc", ""),
+            **_portal_tabs_context(request, transport_requests),
             **_docs_map_context(transport_requests),
         },
     )
@@ -411,6 +492,7 @@ def transport_request_edit(request, pk):
             "docs_req": request.GET.get("docs_req", ""),
             "docs_car": request.GET.get("docs_car", "") or request.GET.get("car", ""),
             "open_doc": request.GET.get("open_doc", ""),
+            **_portal_tabs_context(request, transport_requests, editing=transport_request),
             **_docs_map_context(transport_requests),
         },
     )

@@ -383,6 +383,74 @@ def test_number_hidden_on_portal(logged_client, transport_request):
     assert transport_request.number not in response.content.decode()
 
 
+def _portal_request(portal_client, status, carrier_name):
+    return TransportRequest.objects.create(
+        client=portal_client,
+        carrier_name=carrier_name,
+        truck_number="ABC123",
+        driver_name="Иванов Иван",
+        status=status,
+    )
+
+
+def _req_card_class(html, pk):
+    match = re.search(rf'<div class="([^"]+)"[^>]*id="req-{pk}"', html)
+    assert match, html
+    return match.group(1)
+
+
+def test_portal_requests_default_tab_sorts_drafts_first(logged_client, portal_client):
+    completed = _portal_request(portal_client, "COMPLETED", "Done Carrier")
+    submitted = _portal_request(portal_client, "SUBMITTED", "Sent Carrier")
+    accepted = _portal_request(portal_client, "ACCEPTED", "Ok Carrier")
+    in_progress = _portal_request(portal_client, "IN_PROGRESS", "Work Carrier")
+    draft = _portal_request(portal_client, "DRAFT", "Draft Carrier")
+    cancelled = _portal_request(portal_client, "CANCELLED", "Gone Carrier")
+
+    response = logged_client.get(reverse("website:transport_requests"))
+    assert response.status_code == 200
+    html = response.content.decode()
+
+    assert response.context["active_tab"] == "current"
+    assert 'data-tab="current"' in html
+    assert "req-status-tabs" in html
+
+    ids = re.findall(r'id="req-(\d+)"', html)
+    assert ids == [str(draft.pk), str(submitted.pk), str(accepted.pk), str(in_progress.pk), str(completed.pk)]
+    assert str(cancelled.pk) not in ids
+
+    assert "d-none" not in _req_card_class(html, draft.pk)
+    assert "d-none" not in _req_card_class(html, submitted.pk)
+    assert "d-none" in _req_card_class(html, completed.pk)
+    assert "request-card-DRAFT" in _req_card_class(html, draft.pk)
+    assert "request-card-SUBMITTED" in _req_card_class(html, submitted.pk)
+    assert "request-card-ACCEPTED" in _req_card_class(html, accepted.pk)
+    assert "request-card-IN_PROGRESS" in _req_card_class(html, in_progress.pk)
+    assert "request-card-COMPLETED" in _req_card_class(html, completed.pk)
+
+
+def test_portal_requests_status_tab_hides_other_cards(logged_client, portal_client):
+    draft = _portal_request(portal_client, "DRAFT", "Draft Carrier")
+    submitted = _portal_request(portal_client, "SUBMITTED", "Sent Carrier")
+
+    response = logged_client.get(reverse("website:transport_requests"), {"tab": "SUBMITTED"})
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert response.context["active_tab"] == "SUBMITTED"
+    assert "d-none" in _req_card_class(html, draft.pk)
+    assert "d-none" not in _req_card_class(html, submitted.pk)
+    assert 'data-tab="SUBMITTED"' in html
+    assert "is-active" in html
+
+
+def test_portal_requests_completed_docs_open_completed_tab(logged_client, portal_client):
+    completed = _portal_request(portal_client, "COMPLETED", "Done Carrier")
+    response = logged_client.get(reverse("website:transport_requests"), {"docs_req": completed.pk})
+    assert response.status_code == 200
+    assert response.context["active_tab"] == "COMPLETED"
+    assert "d-none" not in _req_card_class(response.content.decode(), completed.pk)
+
+
 def test_request_form_omits_floating_cars(portal_client):
     from core.views_website.forms import TransportRequestForm
 

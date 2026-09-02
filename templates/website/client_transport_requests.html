@@ -17,8 +17,13 @@
     .status-ACCEPTED { background:#d4edda; color:#155724; }
     .status-IN_PROGRESS { background:#d1ecf1; color:#0c5460; }
     .status-COMPLETED { background:#e2d9f3; color:#4b2e83; }
-    .request-card-DRAFT { background:#e9ecef; }
-    .request-card-editing { background:#fff3cd; }
+    /* Фон карточки совпадает со статусом; цветная полоса слева — якорь взгляда. */
+    .request-card-DRAFT { background:#eef1f4; }
+    .request-card-SUBMITTED { background:#fff6e0; }
+    .request-card-ACCEPTED { background:#e7f7ec; }
+    .request-card-IN_PROGRESS { background:#e4f4f8; }
+    .request-card-COMPLETED { background:#f3eefc; }
+    .request-card-editing { box-shadow: 0 0 0 2px #fcc419 inset; }
     /* Приподнятые карточки формы и заявок */
     .portal-elevated-card {
         box-shadow:
@@ -28,12 +33,72 @@
         border-radius: .65rem;
     }
     .portal-elevated-card.request-card-DRAFT,
-    .portal-elevated-card.request-card-editing {
+    .portal-elevated-card.request-card-SUBMITTED,
+    .portal-elevated-card.request-card-ACCEPTED,
+    .portal-elevated-card.request-card-IN_PROGRESS,
+    .portal-elevated-card.request-card-COMPLETED {
         box-shadow:
+            inset 5px 0 0 var(--req-status-bar, #868e96),
             0 2px 4px rgba(0, 0, 0, .05),
             0 10px 24px rgba(0, 0, 0, .12),
             0 20px 44px rgba(0, 0, 0, .08) !important;
     }
+    .request-card-DRAFT { --req-status-bar: #868e96; }
+    .request-card-SUBMITTED { --req-status-bar: #f59f00; }
+    .request-card-ACCEPTED { --req-status-bar: #2f9e44; }
+    .request-card-IN_PROGRESS { --req-status-bar: #0c8599; }
+    .request-card-COMPLETED { --req-status-bar: #7048e8; }
+    .portal-elevated-card.request-card-editing {
+        box-shadow:
+            inset 5px 0 0 var(--req-status-bar, #fcc419),
+            0 0 0 2px #fcc419,
+            0 10px 24px rgba(0, 0, 0, .12),
+            0 20px 44px rgba(0, 0, 0, .08) !important;
+    }
+    .req-status-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .4rem;
+        margin-bottom: .9rem;
+    }
+    .req-status-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        padding: .32rem .7rem;
+        border-radius: 999px;
+        border: 1.5px solid #dee2e6;
+        background: #fff;
+        color: #495057;
+        text-decoration: none;
+        font-size: .78rem;
+        font-weight: 600;
+        line-height: 1.2;
+        transition: background .15s ease, border-color .15s ease, color .15s ease;
+    }
+    .req-status-tab:hover { text-decoration: none; color: #212529; border-color: #adb5bd; }
+    .req-status-tab-count {
+        min-width: 1.2rem;
+        padding: .05rem .35rem;
+        border-radius: 999px;
+        background: rgba(0, 0, 0, .08);
+        font-size: .7rem;
+        text-align: center;
+    }
+    .req-status-tab.is-current { background: #f8f9fa; }
+    .req-status-tab.is-DRAFT { background: #f1f3f5; border-color: #ced4da; }
+    .req-status-tab.is-SUBMITTED { background: #fff8e1; border-color: #ffe08a; color: #856404; }
+    .req-status-tab.is-ACCEPTED { background: #e8f8ee; border-color: #b2e2c3; color: #155724; }
+    .req-status-tab.is-IN_PROGRESS { background: #e3f6f9; border-color: #a5d8e6; color: #0c5460; }
+    .req-status-tab.is-COMPLETED { background: #f3eefc; border-color: #d0bfff; color: #4b2e83; }
+    .req-status-tab.is-active { color: #fff; border-color: transparent; }
+    .req-status-tab.is-active .req-status-tab-count { background: rgba(255, 255, 255, .22); }
+    .req-status-tab.is-current.is-active { background: #495057; }
+    .req-status-tab.is-DRAFT.is-active { background: #6c757d; }
+    .req-status-tab.is-SUBMITTED.is-active { background: #f59f00; }
+    .req-status-tab.is-ACCEPTED.is-active { background: #2f9e44; }
+    .req-status-tab.is-IN_PROGRESS.is-active { background: #0c8599; }
+    .req-status-tab.is-COMPLETED.is-active { background: #7048e8; }
     .empty-state { text-align:center; padding: 2.5rem 1rem; color:#7b8794; }
     .empty-state i { font-size: 2.5rem; opacity:.35; }
     .cars-checkboxes {
@@ -502,12 +567,24 @@
         <!-- Список заявок -->
         <div class="col-lg-7">
             <h5 class="mb-3"><i class="bi bi-list-check text-success"></i> {% trans "Мои заявки" %}</h5>
-            {% if transport_requests %}
-            <div class="d-flex flex-column gap-2">
+            <div class="req-status-tabs" role="tablist" aria-label="{% trans 'Фильтр заявок по статусу' %}">
+                {% for tab in request_tabs %}
+                <a class="req-status-tab is-{{ tab.code }}{% if tab.active %} is-active{% endif %}"
+                   role="tab"
+                   data-tab="{{ tab.code }}"
+                   aria-selected="{% if tab.active %}true{% else %}false{% endif %}"
+                   href="?tab={{ tab.code }}{{ tab_query_extra }}">
+                    <span class="req-status-tab-label">{{ tab.label }}</span>
+                    <span class="req-status-tab-count">{{ tab.count }}</span>
+                </a>
+                {% endfor %}
+            </div>
+            <div id="reqCardsList" class="d-flex flex-column gap-2">
                 {% for req in transport_requests %}
-                <div class="card border-0 portal-elevated-card request-card-{{ req.status }}{% if editing and editing.pk == req.pk %} request-card-editing{% endif %}"
+                <div class="card border-0 portal-elevated-card request-card-{{ req.status }}{% if editing and editing.pk == req.pk %} request-card-editing{% endif %}{% if req.status not in active_tab_statuses %} d-none{% endif %}"
                      id="req-{{ req.pk }}"
                      data-req-id="{{ req.pk }}"
+                     data-req-status="{{ req.status }}"
                      data-carrier-name="{{ req.carrier_name }}">
                     <div class="card-body py-2 ps-3 pe-2">
                         <div class="d-flex justify-content-between align-items-start gap-2">
@@ -589,16 +666,18 @@
                 </div>
                 {% endfor %}
             </div>
-            {% else %}
-            <div class="card border-0 portal-elevated-card">
+            <div id="reqTabEmpty" class="card border-0 portal-elevated-card{% if transport_requests and visible_count %} d-none{% endif %}">
                 <div class="card-body">
                     <div class="empty-state">
                         <i class="bi bi-truck"></i>
+                        {% if transport_requests %}
+                        <p class="mt-2 mb-0">{% trans "Нет заявок в этом статусе." %}</p>
+                        {% else %}
                         <p class="mt-2 mb-0">{% trans "Заявок пока нет." %}</p>
+                        {% endif %}
                     </div>
                 </div>
             </div>
-            {% endif %}
         </div>
     </div>
 </div>
@@ -1114,6 +1193,44 @@
 
 {% block extra_js %}
 <script>
+(function () {
+    var CURRENT = ["DRAFT", "SUBMITTED", "ACCEPTED", "IN_PROGRESS"];
+    var tabs = document.querySelectorAll(".req-status-tab");
+    var list = document.getElementById("reqCardsList");
+    var empty = document.getElementById("reqTabEmpty");
+    if (!tabs.length || !list) return;
+
+    function applyTab(tab) {
+        var shown = 0;
+        list.querySelectorAll("[data-req-status]").forEach(function (card) {
+            var status = card.getAttribute("data-req-status");
+            var match = tab === "current" ? CURRENT.indexOf(status) >= 0 : status === tab;
+            card.classList.toggle("d-none", !match);
+            if (match) shown += 1;
+        });
+        if (empty) empty.classList.toggle("d-none", shown > 0);
+        tabs.forEach(function (el) {
+            var active = el.getAttribute("data-tab") === tab;
+            el.classList.toggle("is-active", active);
+            el.setAttribute("aria-selected", active ? "true" : "false");
+        });
+    }
+
+    tabs.forEach(function (el) {
+        el.addEventListener("click", function (e) {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            e.preventDefault();
+            var tab = el.getAttribute("data-tab") || "current";
+            applyTab(tab);
+            try {
+                var url = new URL(window.location.href);
+                url.searchParams.set("tab", tab);
+                history.replaceState(null, "", url.pathname + url.search + url.hash);
+            } catch (err) { /* старые браузеры просто останутся на текущем URL */ }
+        });
+    });
+})();
+
 (function () {
     var clearBtn = document.getElementById("btnClearRequestForm");
     var form = document.getElementById("requestForm");
