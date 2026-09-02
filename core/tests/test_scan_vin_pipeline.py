@@ -4,6 +4,7 @@
 Покрывают:
 - нормализацию запрещённых символов I/O/Q;
 - автокоррекцию VIN по контрольной цифре (таблица OCR-путаниц);
+- восстановление выпавшего символа (16→17) по второму проходу;
 - скоринг уверенности high/medium/low;
 - матчинг тайтла по машинам контейнера (target_container);
 - решение об авто-применении (evaluate_auto_apply).
@@ -20,13 +21,15 @@ import pytest
 
 from core.models import Car, Container
 from core.models.scans import ScanProcessingJob
-from core.services.scan_applier import apply_title_job, evaluate_auto_apply, find_similar_vins
+from core.services.scan_applier import apply_job, apply_title_job, evaluate_auto_apply, find_similar_vins
 from core.services.vin_corrector import (
     assess_vin_confidence,
     correct_vin_by_checksum,
     hamming_distance,
     normalize_vin,
+    one_char_insertion,
     process_extracted_vin,
+    vin_read_distance,
 )
 from core.services.vin_validator import is_vin_checksum_valid, vin_check_digit
 
@@ -59,6 +62,22 @@ def test_hamming_distance():
     assert hamming_distance("ABC", "ABD") == 1
     assert hamming_distance("ABC", "AB") is None
     assert hamming_distance("ABC", "ABC") == 0
+
+
+def test_one_char_insertion():
+    assert one_char_insertion("WBXHT3C3J5K24918", "WBXHT3C3XJ5K24918")
+    assert one_char_insertion("ABCD", "ABXCD")
+    assert one_char_insertion("ABCD", "XABCD")
+    assert one_char_insertion("ABCD", "ABCDX")
+    assert not one_char_insertion("ABCD", "ABCD")
+    assert not one_char_insertion("ABCD", "ABXYCD")
+    assert not one_char_insertion("ABCD", "ABXD")
+
+
+def test_vin_read_distance_allows_dropped_character():
+    assert vin_read_distance("WBXHT3C3J5K24918", "WBXHT3C3XJ5K24918") == 1
+    assert vin_read_distance("ABC", "ABD") == 1
+    assert vin_read_distance("ABC", "ABXY") is None
 
 
 # ── correct_vin_by_checksum ────────────────────────────────────────────────
@@ -184,6 +203,16 @@ def test_process_extracted_vin_second_pass_agreement():
     assert res["second_pass_agrees"] is True
     res2 = process_extracted_vin(valid, second_pass_vin="9" + valid[1:], use_nhtsa=False)
     assert res2["second_pass_agrees"] is False
+
+
+def test_process_extracted_vin_recovers_dropped_character():
+    full = "WBXHT3C3XJ5K24918"
+    partial = "WBXHT3C3J5K24918"
+    res = process_extracted_vin(partial, second_pass_vin=full, use_nhtsa=False)
+    assert res["vin"] == full
+    assert res["was_corrected"] is True
+    assert res["second_pass_agrees"] is True
+    assert any("повторному чтению" in change for change in res["changes"])
 
 
 def _nhtsa_chevrolet_equinox(vin, *, timeout=5):
@@ -580,3 +609,95 @@ def test_panel_action_rejects_applied_job(admin_client, container):
     resp = admin_client.post(_action_url(container, job), {"action": "apply"})
 
     assert resp.status_code == 400
+
+
+def test_auto_apply_dock_receipt_skips_vehicle_without_vin(db, container):
+    vehicles = [
+        {"vin": "AAA11111111111111", "vin_confidence": {"level": "high"}},
+        {"vin": None, "make": "BMW", "model": "X1"},
+    ]
+    job = _make_dock_job(vehicles, target=container)
+    ok, reason = evaluate_auto_apply(job)
+    assert ok is True
+    assert "пропущено" in reason
+
+
+def test_auto_apply_dock_receipt_rejects_when_all_vins_invalid(db, container):
+    job = _make_dock_job([{"vin": None, "make": "BMW"}], target=container)
+    ok, reason = evaluate_auto_apply(job)
+    assert ok is False
+    assert "валидным VIN" in reason
+
+
+def test_dock_apply_retries_sibling_titles(db, container):
+    vin = "AAA11111111111111"
+    title = _make_title_job(
+        [vin],
+        target=container,
+        extra={"vin_confidences": [{"vin": vin, "level": "high", "reasons": []}]},
+    )
+    dock = _make_dock_job(
+        [{"vin": vin, "year": 2020, "make": "BMW", "model": "X5", "vin_confidence": {"level": "high"}}],
+        target=container,
+    )
+
+    apply_job(dock)
+
+    title.refresh_from_db()
+    assert title.status == ScanProcessingJob.STATUS_APPLIED
+    assert Car.objects.get(vin=vin).has_title is True
+
+
+def test_extract_vin_like_tokens_from_ai_notes():
+    from core.services.scan_extractor import extract_vin_like_tokens
+
+    notes = "VIN as printed 'WBXHT3C3J5K24918' has only 16 characters; unable to confirm missing digit"
+    assert extract_vin_like_tokens(notes) == ["WBXHT3C3J5K24918"]
+
+
+def test_match_second_pass_recovers_16_char_vin():
+    from core.services.scan_extractor import _match_second_pass
+
+    got = _match_second_pass("WBXHT3C3J5K24918", ["5XXG14J23NG151018", "WBXHT3C3XJ5K24918"])
+    assert got == "WBXHT3C3XJ5K24918"
+
+
+def test_dock_postprocess_recovers_null_vin_from_notes(monkeypatch):
+    from core.services.scan_extractor import _postprocess_dock_receipt_vins
+
+    data = {
+        "vehicles": [
+            {"vin": "5XXG14J23NG151018", "make": "KIA", "year": 2022, "model": "K5"},
+            {
+                "vin": None,
+                "make": "BMW",
+                "year": 2018,
+                "model": "X1",
+                "notes": "VIN as printed 'WBXHT3C3J5K24918' has only 16 characters",
+            },
+        ]
+    }
+    monkeypatch.setattr(
+        "core.services.scan_extractor._second_pass_read_vins",
+        lambda path: ["5XXG14J23NG151018", "WBXHT3C3XJ5K24918"],
+    )
+    _postprocess_dock_receipt_vins(data, "dummy.pdf", use_second_pass=True, use_nhtsa=False)
+    assert data["vehicles"][1]["vin"] == "WBXHT3C3XJ5K24918"
+
+
+def test_dock_postprocess_assigns_leftover_second_pass_vin(monkeypatch):
+    from core.services.scan_extractor import _postprocess_dock_receipt_vins
+
+    data = {
+        "vehicles": [
+            {"vin": "5XXG14J23NG151018", "make": "KIA", "year": 2022, "model": "K5"},
+            {"vin": None, "make": "BMW", "year": 2018, "model": "X1"},
+        ]
+    }
+    monkeypatch.setattr(
+        "core.services.scan_extractor._second_pass_read_vins",
+        lambda path: ["5XXG14J23NG151018", "WBXHT3C3XJ5K24918"],
+    )
+    _postprocess_dock_receipt_vins(data, "dummy.pdf", use_second_pass=True, use_nhtsa=False)
+    assert data["vehicles"][1]["vin"] == "WBXHT3C3XJ5K24918"
+    assert data["vehicles"][1]["vin_processing"]["filled_from_second_pass"] is True

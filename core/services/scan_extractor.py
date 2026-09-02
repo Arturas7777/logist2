@@ -12,9 +12,11 @@ AI-извлечение данных из отсканированных док�
      ужимает изображения до ~1568 px по длинной стороне, поэтому «просто
      повысить DPI» не работает — а 4 тайла дают ~2x эффективное разрешение),
      и Claude читает VIN ПОСИМВОЛЬНО. Расхождение с первым проходом —
-     сигнал низкой уверенности.
+     сигнал низкой уверенности. Пустые VIN у отдельных машин заполняются
+     «лишними» VIN второго прохода (те, что не совпали ни с одной строкой).
   3. Детерминированная пост-обработка (core.services.vin_corrector):
-     нормализация запрещённых I/O/Q, автокоррекция по контрольной цифре,
+     нормализация запрещённых I/O/Q, восстановление выпавшего символа
+     (16→17 по второму проходу), автокоррекция по контрольной цифре,
      валидация NHTSA, итоговый уровень уверенности high/medium/low.
 
 Важно про рендер: Claude API режет картинки больше 5 MB (base64), а всё,
@@ -29,6 +31,7 @@ import io
 import json
 import logging
 import os
+import re
 from typing import Any, Iterable
 
 logger = logging.getLogger(__name__)
@@ -169,8 +172,10 @@ _VIN_OCR_HINTS = """Про VIN:
   это 1/0/0.
 - Типичные путаницы на сканах: 0/D, 1/L, 5/S, 8/B, 2/Z, 6/G, 4/A.
   Вглядывайся в каждый символ.
-- Извлекай ТОЧНО как видишь, НЕ выдумывай. Если символ не читается —
-  лучше верни null вместо всего VIN, чем угадывай."""
+- Извлекай ТОЧНО как видишь, НЕ выдумывай недостающие символы.
+  Если насчитал 15–17 символов — всё равно верни прочитанную строку
+  в поле vin (не обнуляй). Пометку «не 17 символов» пиши в notes.
+  null ставь только если VIN на документе совсем не читается."""
 
 TITLE_SCHEMA = """
 {
@@ -278,13 +283,14 @@ DOCK_RECEIPT_PROMPT = f"""Ты — система обработки Dock Receip
 
 VIN_VERIFY_PROMPT = f"""Ты — верификатор VIN-кодов на отсканированных документах.
 Тебе дают увеличенные фрагменты ОДНОГО документа (перекрывающиеся части страниц).
-Найди все VIN-коды (17 символов) и прочитай каждый ПОСИМВОЛЬНО, максимально внимательно.
+Найди все VIN-коды и прочитай каждый ПОСИМВОЛЬНО, максимально внимательно.
 
 {_VIN_OCR_HINTS}
 
 - Один и тот же VIN может попасть в несколько фрагментов — верни его ОДИН раз.
 - Сначала выпиши VIN по символам в массив "characters" (это заставляет
   вглядеться в каждый символ), затем собери строку.
+- Если последовательность похожа на VIN, но символов 15–16 — всё равно верни её.
 
 Верни ТОЛЬКО валидный JSON (без markdown):
 {{
@@ -406,18 +412,19 @@ def _match_second_pass(vin: str, second_pass_vins: list[str] | None) -> str | No
     """Подбирает к VIN первого прохода ближайший VIN второго прохода.
 
     Возвращает None, если второй проход не выполнялся или не нашёл ни одного
-    похожего VIN (расстояние Хэмминга > 5 — это уже другой VIN, а не
-    расхождение чтения).
+    похожего VIN (расстояние > 5 — это уже другой VIN, а не расхождение
+    чтения). Учитывает и выпавший символ: 16-символьное чтение матчится
+    с 17-символьным, если второе получается вставкой одного символа.
     """
     if not second_pass_vins:
         return None
-    from core.services.vin_corrector import hamming_distance, normalize_vin
+    from core.services.vin_corrector import normalize_vin, vin_read_distance
 
     target, _ = normalize_vin(vin)
     best: tuple[int, str] | None = None
     for candidate in second_pass_vins:
         cand_norm, _ = normalize_vin(candidate)
-        dist = hamming_distance(target, cand_norm)
+        dist = vin_read_distance(target, cand_norm)
         if dist is None:
             continue
         if best is None or dist < best[0]:
@@ -521,37 +528,143 @@ def _postprocess_title_vins(data: dict[str, Any], path: str, *, use_second_pass:
     data["vin_confidences"] = confidences
 
 
-def _postprocess_dock_receipt_vins(data: dict[str, Any], path: str, *, use_second_pass: bool) -> None:
-    """Прогоняет VIN каждого vehicle через vin_corrector, обновляет in-place."""
+def _postprocess_dock_receipt_vins(
+    data: dict[str, Any],
+    path: str,
+    *,
+    use_second_pass: bool,
+    use_nhtsa: bool = True,
+) -> None:
+    """Прогоняет VIN каждого vehicle через vin_corrector, обновляет in-place.
+
+    Если AI обнулил VIN (насчитал не 17 символов) — пробуем достать строку
+    из notes и сопоставить со вторым проходом. Оставшиеся пустые строки
+    заполняются VIN второго прохода, которые не пригодились другим машинам.
+    """
     from core.services.vin_corrector import process_extracted_vin
 
     vehicles = data.get("vehicles") or []
     if not isinstance(vehicles, list):
         return
-    has_vins = any(isinstance(v, dict) and v.get("vin") for v in vehicles)
-    second_pass_vins = _second_pass_read_vins(path) if (use_second_pass and has_vins) else None
+
+    second_pass_vins = _second_pass_read_vins(path) if use_second_pass else None
 
     for veh in vehicles:
-        if not isinstance(veh, dict) or not veh.get("vin"):
+        if not isinstance(veh, dict):
+            continue
+        raw = (veh.get("vin") or "").strip() if isinstance(veh.get("vin"), str) else ""
+        if not raw:
+            tokens = extract_vin_like_tokens(veh.get("notes") or "")
+            if len(tokens) == 1:
+                raw = tokens[0]
+        if not raw:
             continue
         res = process_extracted_vin(
-            veh["vin"],
+            raw,
             ai_make=veh.get("make") or "",
             ai_model=veh.get("model") or "",
             ai_year=veh.get("year"),
-            second_pass_vin=_match_second_pass(veh["vin"], second_pass_vins),
+            second_pass_vin=_match_second_pass(raw, second_pass_vins),
+            use_nhtsa=use_nhtsa,
         )
-        veh["vin"] = res["vin"]
-        veh["vin_processing"] = {
-            "original": res["original"],
-            "changes": res["changes"],
-            "was_corrected": res["was_corrected"],
-            "checksum_candidates": res["checksum_candidates"],
-            "second_pass_agrees": res["second_pass_agrees"],
-        }
-        if res["validation"]:
-            veh["vin_validation"] = res["validation"]
-        veh["vin_confidence"] = res["confidence"]
+        _write_vehicle_vin(veh, res)
+
+    _fill_missing_vins_from_second_pass(vehicles, second_pass_vins, use_nhtsa=use_nhtsa)
+
+
+_VIN_LIKE = re.compile(r"[A-HJ-NPR-Z0-9]{15,17}")
+
+
+def extract_vin_like_tokens(text: str) -> list[str]:
+    """VIN-подобные токены из произвольного текста (notes AI)."""
+    if not text:
+        return []
+    return [m.group(0) for m in _VIN_LIKE.finditer(str(text).upper())]
+
+
+def _write_vehicle_vin(veh: dict[str, Any], res: dict[str, Any]) -> None:
+    veh["vin"] = res["vin"]
+    veh["vin_processing"] = {
+        "original": res["original"],
+        "changes": res["changes"],
+        "was_corrected": res["was_corrected"],
+        "checksum_candidates": res["checksum_candidates"],
+        "second_pass_agrees": res["second_pass_agrees"],
+    }
+    if res["validation"]:
+        veh["vin_validation"] = res["validation"]
+    veh["vin_confidence"] = res["confidence"]
+
+
+def _norm17(value) -> str:
+    from core.services.vin_corrector import normalize_vin
+
+    normalized, _ = normalize_vin(value or "")
+    return normalized if len(normalized) == 17 else ""
+
+
+def _fill_missing_vins_from_second_pass(
+    vehicles: list,
+    second_pass_vins: list[str] | None,
+    *,
+    use_nhtsa: bool,
+) -> None:
+    """Присваивает пустым строкам VIN, которые второй проход нашёл «лишними»."""
+    if not second_pass_vins:
+        return
+    from core.services.vin_corrector import (
+        hamming_distance,
+        normalize_vin,
+        one_char_insertion,
+        process_extracted_vin,
+    )
+
+    used = {_norm17(v.get("vin")) for v in vehicles if isinstance(v, dict) and _norm17(v.get("vin"))}
+    unused: list[str] = []
+    seen: set[str] = set()
+    for sp in second_pass_vins:
+        candidate, _ = normalize_vin(sp)
+        if len(candidate) != 17 or candidate in used or candidate in seen:
+            continue
+        if any((dist := hamming_distance(candidate, already)) is not None and dist <= 2 for already in used):
+            continue
+        seen.add(candidate)
+        unused.append(candidate)
+
+    empties = [v for v in vehicles if isinstance(v, dict) and not _norm17(v.get("vin"))]
+    if not empties or not unused:
+        return
+
+    def _assign(veh: dict, vin: str) -> None:
+        res = process_extracted_vin(
+            vin,
+            ai_make=veh.get("make") or "",
+            ai_model=veh.get("model") or "",
+            ai_year=veh.get("year"),
+            second_pass_vin=vin,
+            use_nhtsa=use_nhtsa,
+        )
+        _write_vehicle_vin(veh, res)
+        veh.setdefault("vin_processing", {})["filled_from_second_pass"] = True
+        unused.remove(vin)
+        used.add(vin)
+
+    still = list(empties)
+    for veh in list(still):
+        partial, _ = normalize_vin(veh.get("vin") or "")
+        if len(partial) not in {15, 16}:
+            tokens = extract_vin_like_tokens(veh.get("notes") or "")
+            partial = tokens[0] if len(tokens) == 1 else partial
+        if len(partial) not in {15, 16}:
+            continue
+        matches = [u for u in unused if one_char_insertion(partial, u)]
+        if len(matches) == 1:
+            _assign(veh, matches[0])
+            still.remove(veh)
+
+    still = [v for v in still if not _norm17(v.get("vin"))]
+    if len(still) == 1 and len(unused) == 1:
+        _assign(still[0], unused[0])
 
 
 # Хелпер конвертации lbs → kg, чтобы scan_applier и admin использовали

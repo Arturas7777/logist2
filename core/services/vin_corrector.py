@@ -87,6 +87,42 @@ def hamming_distance(a: str, b: str) -> int | None:
     return sum(1 for x, y in zip(a, b, strict=True) if x != y)
 
 
+def one_char_insertion(short: str, long: str) -> bool:
+    """True, если ``long`` — это ``short`` с ровно одним вставленным символом.
+
+    Типичный сбой OCR на dock receipt: контрольная цифра (часто ``X``) выпадает,
+    и первый проход отдаёт 16 символов вместо 17.
+    """
+    if not short or not long or len(long) != len(short) + 1:
+        return False
+    i = 0
+    skipped = False
+    for ch in long:
+        if i < len(short) and ch == short[i]:
+            i += 1
+        elif skipped:
+            return False
+        else:
+            skipped = True
+    return i == len(short)
+
+
+def vin_read_distance(a: str, b: str) -> int | None:
+    """Расстояние между двумя прочтениями одного VIN.
+
+    Одинаковая длина — Хэмминг. Длина отличается на 1 — ``1``, если более
+    длинная строка получается вставкой одного символа, иначе ``None``.
+    """
+    if not a or not b:
+        return None
+    if len(a) == len(b):
+        return hamming_distance(a, b)
+    short, long_ = (a, b) if len(a) < len(b) else (b, a)
+    if len(long_) - len(short) != 1:
+        return None
+    return 1 if one_char_insertion(short, long_) else None
+
+
 def correct_vin_by_checksum(vin: str) -> dict[str, Any]:
     """Пытается исправить NA-VIN с невалидной контрольной цифрой.
 
@@ -221,7 +257,9 @@ def process_extracted_vin(
     NHTSA + cross-check с make/year из документа) → оценка уверенности.
 
     ``second_pass_vin`` — VIN из повторного посимвольного чтения (если было);
-    сравнивается после такой же нормализации.
+    сравнивается после такой же нормализации. Если первый проход отдал
+    15–16 символов, а второй — 17 с одним вставленным символом, берём
+    чтение второго прохода.
 
     Возвращает dict:
       * vin — итоговый (исправленный) VIN,
@@ -240,24 +278,37 @@ def process_extracted_vin(
     was_corrected = False
     checksum_candidates: list[str] = []
     final_vin = normalized
-    if len(normalized) == 17:
-        correction = correct_vin_by_checksum(normalized)
+    second_pass_agrees: bool | None = None
+    second_normalized = ""
+    if second_pass_vin:
+        second_normalized, _ = normalize_vin(second_pass_vin)
+        if (
+            len(normalized) < 17
+            and len(second_normalized) == 17
+            and one_char_insertion(normalized, second_normalized)
+        ):
+            final_vin = second_normalized
+            was_corrected = True
+            second_pass_agrees = True
+            changes.append(f"восстановлен пропущенный символ по повторному чтению: {normalized} → {final_vin}")
+
+    if len(final_vin) == 17:
+        correction = correct_vin_by_checksum(final_vin)
         checksum_candidates = correction["candidates"]
         if correction["corrected"]:
+            before = final_vin
             final_vin = correction["corrected"]
             was_corrected = True
             diff_pos = next(
-                (i for i, (a, b) in enumerate(zip(normalized, final_vin, strict=True)) if a != b),
+                (i for i, (a, b) in enumerate(zip(before, final_vin, strict=True)) if a != b),
                 None,
             )
             if diff_pos is not None:
                 changes.append(
-                    f"поз. {diff_pos + 1}: {normalized[diff_pos]} → {final_vin[diff_pos]} (по контрольной цифре)"
+                    f"поз. {diff_pos + 1}: {before[diff_pos]} → {final_vin[diff_pos]} (по контрольной цифре)"
                 )
 
-    second_pass_agrees: bool | None = None
-    if second_pass_vin:
-        second_normalized, _ = normalize_vin(second_pass_vin)
+    if second_pass_vin and second_pass_agrees is None:
         # Если автокоррекция изменила VIN, сравниваем со ВТОРЫМ прочтением
         # оба варианта: совпадение с любым из них — согласие.
         second_pass_agrees = second_normalized in (final_vin, normalized)

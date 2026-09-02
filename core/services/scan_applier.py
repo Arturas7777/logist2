@@ -627,10 +627,12 @@ def apply_dock_receipt_job(job: ScanProcessingJob, *, applied_by=None) -> ScanPr
     overrides = dock_vin_overrides(data)
     affected = []
     created_vins = []
+    skipped_invalid = 0
     for veh in vehicles:
         doc_vin = _normalize_vin(veh.get("vin"))
         if not doc_vin or len(doc_vin) != 17:
             # Невалидный VIN — пропускаем, но логируем.
+            skipped_invalid += 1
             logger.warning("Job #%s: пропущен невалидный VIN %r", job.pk, doc_vin)
             continue
         # Оператор мог решить, что VIN документа относится к уже заведённой
@@ -699,6 +701,7 @@ def apply_dock_receipt_job(job: ScanProcessingJob, *, applied_by=None) -> ScanPr
         "detected_line": detected_line.name if detected_line else None,
         "exporting_carrier": data.get("exporting_carrier"),
         "vehicles": affected,
+        "skipped_invalid_vins": skipped_invalid,
     }
     if number_mismatch:
         job.applied_changes["container_number_mismatch"] = number_mismatch
@@ -726,7 +729,11 @@ def apply_dock_receipt_job(job: ScanProcessingJob, *, applied_by=None) -> ScanPr
     )
     # Номер контейнера и линия теперь известны — запрашиваем ETA у линии
     # (после коммита, чтобы не ходить в сеть внутри транзакции).
-    transaction.on_commit(lambda: _schedule_eta_update(container.pk))
+    container_id = container.pk
+    transaction.on_commit(lambda: _schedule_eta_update(container_id))
+    # Тайтлы часто разбираются параллельно с dock receipt и остаются на
+    # проверке только потому, что машин в контейнере ещё не было.
+    _retry_container_title_jobs(container_id, skip_job_id=job.pk)
     return job
 
 
@@ -741,6 +748,27 @@ def _schedule_eta_update(container_id: int) -> None:
             update_container_eta_task(container_id)  # type: ignore[call-arg]
         except Exception:
             logger.exception("ETA update failed for container #%s", container_id)
+
+
+def _retry_container_title_jobs(container_id: int, *, skip_job_id=None) -> None:
+    """После применения dock receipt повторно пытаемся автоприменить тайтлы.
+
+    Тайтлы обрабатываются параллельно с dock receipt и остаются на проверке
+    только потому, что машин в контейнере ещё не было. Когда машины уже
+    созданы, те же VIN совпадают точно — подтверждать вручную незачем.
+    """
+    qs = ScanProcessingJob.objects.filter(
+        target_container_id=container_id,
+        scan_type=ScanProcessingJob.SCAN_TYPE_TITLE,
+        status=ScanProcessingJob.STATUS_NEEDS_REVIEW,
+    )
+    if skip_job_id:
+        qs = qs.exclude(pk=skip_job_id)
+    for title_job in qs:
+        try:
+            maybe_auto_apply(title_job)
+        except Exception:
+            logger.exception("Повторное авто-применение тайтла job #%s не удалось", title_job.pk)
 
 
 def _resolve_weight_kg(veh: dict) -> Decimal | None:
@@ -831,7 +859,9 @@ def evaluate_auto_apply(job: ScanProcessingJob) -> tuple[bool, str]:
         новых Car из титула всегда требует подтверждения.
       * DOCK_RECEIPT применяем сам только при загрузке из карточки
         контейнера: номер в документе не противоречит карточке, и каждый
-        VIN либо уже есть в базе, либо распознан с уверенностью high.
+        валидный VIN либо уже есть в базе, либо распознан с уверенностью
+        high. Строка без VIN остальные машины не блокирует — её
+        пропускаем, как при ручном «Применить».
     """
     from core.services.vin_validator import is_north_american_vin, is_vin_checksum_valid
 
@@ -884,8 +914,16 @@ def evaluate_auto_apply(job: ScanProcessingJob) -> tuple[bool, str]:
                 f"номер контейнера в документе ({container_number}) не совпадает с карточкой ({target.number})"
             )
         vehicles = data.get("vehicles") or []
-        if not vehicles:
-            return False, "AI не нашёл ни одной машины в dock receipt"
+        valid_vehicles = []
+        skipped_invalid = 0
+        for veh in vehicles:
+            vin = _normalize_vin(veh.get("vin"))
+            if not vin or len(vin) != 17:
+                skipped_invalid += 1
+                continue
+            valid_vehicles.append(veh)
+        if not valid_vehicles:
+            return False, "AI не нашёл ни одной машины с валидным VIN в dock receipt"
         conflicts = detect_dock_vin_conflicts(data, target)
         if conflicts:
             first = conflicts[0]
@@ -893,10 +931,8 @@ def evaluate_auto_apply(job: ScanProcessingJob) -> tuple[bool, str]:
                 f"VIN {first['extracted_vin']} похож на существующий "
                 f"{first['candidates'][0]['vin']} — нужно решение оператора"
             )
-        for veh in vehicles:
+        for veh in valid_vehicles:
             vin = _normalize_vin(veh.get("vin"))
-            if not vin or len(vin) != 17:
-                return False, f"невалидный VIN в списке машин: {vin or '—'}"
             level = (veh.get("vin_confidence") or {}).get("level")
             if Car.objects.filter(vin=vin).exists():
                 # Машина уже в базе — VIN подтверждён записью; блокируем
@@ -907,7 +943,11 @@ def evaluate_auto_apply(job: ScanProcessingJob) -> tuple[bool, str]:
                 continue
             if level != "high":
                 return False, f"новая машина {vin}: уверенность {level or 'нет данных'} (нужна high)"
-        return True, f"все {len(vehicles)} VIN уверенно распознаны, контейнер {target.number} из контекста"
+        skipped_note = f", без VIN пропущено: {skipped_invalid}" if skipped_invalid else ""
+        return True, (
+            f"все {len(valid_vehicles)} VIN уверенно распознаны, "
+            f"контейнер {target.number} из контекста{skipped_note}"
+        )
 
     return False, f"неизвестный scan_type {job.scan_type}"
 
