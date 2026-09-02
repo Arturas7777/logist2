@@ -109,6 +109,7 @@ def decode_vin_nhtsa(vin: str, *, timeout: int = _NHTSA_TIMEOUT) -> dict[str, An
         "make": None,
         "model": None,
         "year": None,
+        "vehicle_type": "",
         "error_code": "",
         "error_text": "",
         "suggested_vin": "",
@@ -144,6 +145,7 @@ def decode_vin_nhtsa(vin: str, *, timeout: int = _NHTSA_TIMEOUT) -> dict[str, An
     except ValueError:
         result["year"] = None
     result["suggested_vin"] = fields.get("Suggested VIN") or ""
+    result["vehicle_type"] = (fields.get("Vehicle Type") or fields.get("VehicleType") or "") or ""
     # ErrorCode '0' = no error. '1','2','3'... = разные виды проблем.
     # Также приемлем '6' (incomplete) — частично декодировано но make/model есть.
     # Считаем VIN "ok" только если error_code == '0'.

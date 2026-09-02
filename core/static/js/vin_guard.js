@@ -158,6 +158,11 @@
     if (year && !year.value.trim() && data.nhtsa.year) {
       year.value = data.nhtsa.year;
     }
+    var typeField = siblingField(input, 'vehicle_type');
+    if (typeField && data.nhtsa.vehicle_type) {
+      var current = (typeField.value || 'SEDAN').trim() || 'SEDAN';
+      if (current === 'SEDAN') typeField.value = data.nhtsa.vehicle_type;
+    }
   }
 
   function check(input) {

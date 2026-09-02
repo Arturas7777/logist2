@@ -375,6 +375,9 @@ def apply_title_job(job: ScanProcessingJob, *, applied_by=None) -> ScanProcessin
             "brand": brand_full or "Unknown",
             "status": "FLOATING",
         }
+        vtype = _preferred_vehicle_type(data)
+        if vtype:
+            create_kwargs["vehicle_type"] = vtype
         if target is not None:
             create_kwargs["container"] = target
             create_kwargs["status"] = target.status
@@ -476,8 +479,18 @@ def _preferred_year(source: dict):
     return _safe_int(source.get("year"))
 
 
+def _preferred_vehicle_type(source: dict) -> str | None:
+    """Тип ТС карточки: мотоцикл/квадроцикл по NHTSA, иначе None."""
+    from core.services.vin_gate import vehicle_type_from_nhtsa
+
+    nhtsa = _nhtsa_payload(source)
+    return vehicle_type_from_nhtsa(nhtsa.get("vehicle_type") or "", nhtsa.get("body_class") or "")
+
+
 def _fill_blank_spec_from_nhtsa(car, source: dict) -> list[str]:
-    """Подставляет марку и год из NHTSA, только если в карточке пусто."""
+    """Подставляет марку, год и тип ТС из NHTSA, только если в карточке пусто."""
+    from core.services.vin_gate import apply_nhtsa_vehicle_type
+
     changed: list[str] = []
     brand = _preferred_brand(source)
     if brand and (not (car.brand or "").strip() or car.brand.strip().lower() == "unknown"):
@@ -487,6 +500,9 @@ def _fill_blank_spec_from_nhtsa(car, source: dict) -> list[str]:
     if year and not car.year:
         car.year = year
         changed.append("year")
+    nhtsa = _nhtsa_payload(source)
+    if apply_nhtsa_vehicle_type(car, nhtsa.get("vehicle_type") or "", body_class=nhtsa.get("body_class") or ""):
+        changed.append("vehicle_type")
     return changed
 
 
@@ -641,6 +657,7 @@ def apply_dock_receipt_job(job: ScanProcessingJob, *, applied_by=None) -> ScanPr
         weight_kg = _resolve_weight_kg(veh)
         car = Car.objects.filter(vin=vin).first()
         car_created = False
+        filled = []
         if car is None:
             year = _preferred_year(veh)
             brand_full = _preferred_brand(veh)
@@ -651,6 +668,9 @@ def apply_dock_receipt_job(job: ScanProcessingJob, *, applied_by=None) -> ScanPr
                 "status": container.status,  # обычно FLOATING
                 "container": container,
             }
+            vtype = _preferred_vehicle_type(veh)
+            if vtype:
+                create_kwargs["vehicle_type"] = vtype
             # Наследуем поля контейнера — так же, как это делает ручное
             # добавление машины в inline контейнера (save_formset).
             if container.warehouse_id:
@@ -667,9 +687,13 @@ def apply_dock_receipt_job(job: ScanProcessingJob, *, applied_by=None) -> ScanPr
         else:
             if car.container_id != container.id:
                 car.container = container
+            filled = _fill_blank_spec_from_nhtsa(car, veh)
         if weight_kg is not None:
             car.weight_kg = weight_kg
-        car.save(update_fields=["container", "weight_kg"])
+        update_fields = ["container", "weight_kg"]
+        if not car_created:
+            update_fields.extend(filled)
+        car.save(update_fields=list(dict.fromkeys(update_fields)))
         record = {
             "vin": vin,
             "car_id": car.id,

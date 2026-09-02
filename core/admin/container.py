@@ -165,7 +165,7 @@ class ContainerAdmin(admin.ModelAdmin):
             "js/warehouse_address.js?v=2",
             "js/line_ths.js",
             # Проверка VIN в инлайне машин — те же подсказки, что в карточке авто.
-            "js/vin_guard.js?v=2",
+            "js/vin_guard.js?v=3",
             # Зум и перетаскивание скана в панели «Документы и сверка».
             "js/scan_doc_viewer.js?v=2",
         )

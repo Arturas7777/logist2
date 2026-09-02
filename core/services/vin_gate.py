@@ -151,6 +151,48 @@ def brand_from_nhtsa(make, model, *, max_length: int = 50) -> str:
     return label[:max_length]
 
 
+# Дефолт карточки Car — «Легковой». Подставляем мотоцикл/квадроцикл только
+# поверх него, уже выбранный оператором тип не трогаем.
+_DEFAULT_CAR_VEHICLE_TYPE = "SEDAN"
+
+
+def vehicle_type_from_nhtsa(vehicle_type: str = "", body_class: str = "") -> str | None:
+    """Код типа ТС карточки по сырому Vehicle Type / Body Class NHTSA.
+
+    Легковые кузова не мапим: «MPV» и «SUV» в NHTSA слишком грубые, чтобы
+    выбирать между легковым, кроссовером и джипом. Мотоцикл и квадроцикл
+    NHTSA называет однозначно.
+    """
+    vt = (vehicle_type or "").strip().lower()
+    body = (body_class or "").strip().lower()
+    blob = f"{vt} {body}"
+    if any(
+        token in blob
+        for token in ("atv", "all terrain", "all-terrain", "utv", "side by side", "quadricycle", "buggy")
+    ):
+        return "ATV"
+    if "off road vehicle" in vt or "off-road vehicle" in vt:
+        return "ATV"
+    if "motorcycle" in vt or "motorcycle" in body or "moped" in body or "motor scooter" in body:
+        return "MOTO"
+    return None
+
+
+def apply_nhtsa_vehicle_type(car, nhtsa_vehicle_type: str, *, body_class: str = "") -> bool:
+    """Ставит тип ТС с NHTSA, если в карточке ещё дефолтный легковой.
+
+    Возвращает True, если поле изменилось.
+    """
+    mapped = vehicle_type_from_nhtsa(nhtsa_vehicle_type, body_class)
+    if not mapped:
+        return False
+    current = (getattr(car, "vehicle_type", None) or _DEFAULT_CAR_VEHICLE_TYPE).strip() or _DEFAULT_CAR_VEHICLE_TYPE
+    if current != _DEFAULT_CAR_VEHICLE_TYPE:
+        return False
+    car.vehicle_type = mapped
+    return True
+
+
 def _canonical_make(word: str) -> str:
     return _MAKE_ALIASES.get(word, word)
 
@@ -192,6 +234,7 @@ def refresh_vin_check(vin: str, *, timeout: int = _NHTSA_TIMEOUT, use_nhtsa: boo
         "nhtsa_make": "",
         "nhtsa_model": "",
         "nhtsa_year": None,
+        "nhtsa_vehicle_type": "",
         "error_text": "",
     }
 
@@ -203,6 +246,7 @@ def refresh_vin_check(vin: str, *, timeout: int = _NHTSA_TIMEOUT, use_nhtsa: boo
             defaults["nhtsa_make"] = (decoded.get("make") or "")[:100]
             defaults["nhtsa_model"] = (decoded.get("model") or "")[:100]
             defaults["nhtsa_year"] = decoded.get("year")
+            defaults["nhtsa_vehicle_type"] = (decoded.get("vehicle_type") or "")[:100]
             defaults["error_text"] = (decoded.get("error_text") or "")[:255]
             # Для европейских и азиатских VIN контрольная цифра по ISO не
             # обязана сходиться, и NHTSA честно возвращает ошибку. Если при
@@ -217,6 +261,26 @@ def refresh_vin_check(vin: str, *, timeout: int = _NHTSA_TIMEOUT, use_nhtsa: boo
     return obj
 
 
+def _fill_nhtsa_vehicle_type(check: VinCheck, *, timeout: int = _NHTSA_TIMEOUT) -> None:
+    """Догоняет тип ТС у старых снимков, где поля ещё не было.
+
+    Не перезаписывает весь снимок: если NHTSA сейчас недоступен, марка и год
+    в кэше остаются как были.
+    """
+    try:
+        decoded = decode_vin_nhtsa(check.vin, timeout=timeout)
+    except Exception:
+        logger.warning("Не удалось добрать Vehicle Type для %s", check.vin, exc_info=True)
+        return
+    if decoded.get("raw_failed"):
+        return
+    value = (decoded.get("vehicle_type") or "").strip()[:100]
+    if not value:
+        return
+    check.nhtsa_vehicle_type = value
+    check.save(update_fields=["nhtsa_vehicle_type"])
+
+
 def get_vin_check(vin: str, *, allow_network: bool = True, timeout: int = _NHTSA_TIMEOUT) -> VinCheck | None:
     """Отдаёт снимок проверки из кэша, при необходимости обновляя его.
 
@@ -228,6 +292,8 @@ def get_vin_check(vin: str, *, allow_network: bool = True, timeout: int = _NHTSA
         return None
     existing = VinCheck.objects.filter(vin=vin_norm).first()
     if existing is not None and not existing.is_stale:
+        if existing.nhtsa_ok and not existing.nhtsa_vehicle_type and allow_network:
+            _fill_nhtsa_vehicle_type(existing, timeout=timeout)
         return existing
     if not allow_network:
         return existing

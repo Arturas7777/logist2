@@ -650,7 +650,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         """
         from django.http import JsonResponse
 
-        from core.services.vin_gate import check_vin
+        from core.services.vin_gate import check_vin, vehicle_type_from_nhtsa
 
         if not self.has_view_permission(request):
             return JsonResponse({"error": "Нет прав"}, status=403)
@@ -679,6 +679,9 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
                     "make": check.nhtsa_make if check else "",
                     "model": check.nhtsa_model if check else "",
                     "year": check.nhtsa_year if check else None,
+                    "vehicle_type": (
+                        vehicle_type_from_nhtsa(check.nhtsa_vehicle_type) if check else None
+                    ),
                 },
                 "issues": [
                     {
@@ -1447,7 +1450,7 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
             "js/car_form_layout.js?v=12",
             # Живая проверка VIN: расшифровка NHTSA под полем, автозаполнение
             # марки и года, галочка подтверждения при спорном VIN.
-            "js/vin_guard.js?v=2",
+            "js/vin_guard.js?v=3",
         )
         css = {"all": ("css/vin_guard.css?v=2",)}
 

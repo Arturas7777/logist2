@@ -36,6 +36,13 @@ class VinCheck(models.Model):
     nhtsa_make = models.CharField(max_length=100, blank=True, default="", verbose_name="Марка (NHTSA)")
     nhtsa_model = models.CharField(max_length=100, blank=True, default="", verbose_name="Модель (NHTSA)")
     nhtsa_year = models.PositiveIntegerField(null=True, blank=True, verbose_name="Год (NHTSA)")
+    nhtsa_vehicle_type = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Тип ТС (NHTSA)",
+        help_text="Сырое значение Vehicle Type из NHTSA, например MOTORCYCLE.",
+    )
     error_text = models.CharField(max_length=255, blank=True, default="", verbose_name="Ответ NHTSA")
 
     checked_at = models.DateTimeField(default=timezone.now, verbose_name="Проверено")

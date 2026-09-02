@@ -367,6 +367,36 @@ def test_title_new_car_uses_nhtsa_brand_over_ocr(db):
     assert car.year == 2022
 
 
+def test_title_new_car_sets_motorcycle_type_from_nhtsa(db):
+    job = _make_title_job(
+        ["ZZZ99999999999999"],
+        extra={
+            "skip_vin_check": True,
+            "make": "HARLEY",
+            "model": "SPORTSTER",
+            "year": 2018,
+            "vin_validations": [
+                {
+                    "vin": "ZZZ99999999999999",
+                    "nhtsa": {
+                        "ok": True,
+                        "make": "HARLEY-DAVIDSON",
+                        "model": "Sportster",
+                        "year": 2018,
+                        "vehicle_type": "MOTORCYCLE",
+                    },
+                }
+            ],
+        },
+    )
+
+    apply_title_job(job)
+
+    car = Car.objects.get(vin="ZZZ99999999999999")
+    assert car.vehicle_type == "MOTO"
+    assert car.brand == "HARLEY-DAVIDSON Sportster"
+
+
 def test_title_apply_does_not_touch_title_notes(db, container):
     # title_notes — поле только для ручных заметок оператора: применение
     # тайтла ставит has_title, но ничего не дописывает в заметку.

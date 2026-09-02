@@ -28,10 +28,12 @@ from core.services.vin_gate import (
     ISSUE_NEAR_DUPLICATE,
     ISSUE_NHTSA_UNKNOWN,
     ISSUE_SPEC_MISMATCH,
+    apply_nhtsa_vehicle_type,
     check_vin,
     get_vin_check,
     normalize_vin_input,
     refresh_vin_check,
+    vehicle_type_from_nhtsa,
 )
 
 pytestmark = pytest.mark.django_db
@@ -56,7 +58,7 @@ def _make_car(vin, **kwargs):
     return Car.objects.create(vin=vin, **defaults)
 
 
-def _nhtsa(vin, *, make="TOYOTA", model="CAMRY", year=2012, ok=True):
+def _nhtsa(vin, *, make="TOYOTA", model="CAMRY", year=2012, ok=True, vehicle_type="PASSENGER CAR"):
     return VinCheck.objects.create(
         vin=vin,
         length_ok=True,
@@ -66,6 +68,7 @@ def _nhtsa(vin, *, make="TOYOTA", model="CAMRY", year=2012, ok=True):
         nhtsa_make=make,
         nhtsa_model=model,
         nhtsa_year=year,
+        nhtsa_vehicle_type=vehicle_type if ok else "",
     )
 
 
@@ -212,6 +215,7 @@ def test_refresh_vin_check_stores_snapshot(monkeypatch):
     assert check.nhtsa_ok is True
     assert check.nhtsa_summary == "TOYOTA CAMRY 2012"
     assert check.checksum_ok is True
+    assert check.nhtsa_vehicle_type == ""
 
 
 def test_successful_check_is_not_refetched(monkeypatch):
@@ -305,3 +309,34 @@ def test_form_saves_car_and_schedules_check(monkeypatch):
 
     assert car.vin == VALID_NA_VIN
     assert scheduled == [VALID_NA_VIN]
+
+
+def test_vehicle_type_from_nhtsa_motorcycle_and_atv():
+    assert vehicle_type_from_nhtsa("MOTORCYCLE") == "MOTO"
+    assert vehicle_type_from_nhtsa("MOTORCYCLE", "Street") == "MOTO"
+    assert vehicle_type_from_nhtsa("", "Motorcycle") == "MOTO"
+    assert vehicle_type_from_nhtsa("OFF ROAD VEHICLE") == "ATV"
+    assert vehicle_type_from_nhtsa("", "All-Terrain Vehicle") == "ATV"
+    assert vehicle_type_from_nhtsa("PASSENGER CAR") is None
+    assert vehicle_type_from_nhtsa("MULTIPURPOSE PASSENGER VEHICLE (MPV)", "Sport Utility Vehicle") is None
+
+
+def test_apply_nhtsa_vehicle_type_only_overrides_default_sedan():
+    car = _make_car(VALID_NA_VIN)
+    assert car.vehicle_type == "SEDAN"
+    assert apply_nhtsa_vehicle_type(car, "MOTORCYCLE") is True
+    assert car.vehicle_type == "MOTO"
+
+    car.vehicle_type = "SUV"
+    assert apply_nhtsa_vehicle_type(car, "MOTORCYCLE") is False
+    assert car.vehicle_type == "SUV"
+
+
+def test_form_sets_motorcycle_type_from_nhtsa():
+    _nhtsa(VALID_NA_VIN, make="HARLEY-DAVIDSON", model="SPORTSTER", vehicle_type="MOTORCYCLE")
+    MotoForm = modelform_factory(
+        Car, form=VinGuardForm, fields=["vin", "year", "brand", "vehicle_type", "container", "vin_confirmed"]
+    )
+    form = MotoForm(data=_form_data(VALID_NA_VIN, brand="HARLEY-DAVIDSON SPORTSTER", vehicle_type="SEDAN"))
+    assert form.is_valid(), form.errors
+    assert form.cleaned_data["vehicle_type"] == "MOTO"

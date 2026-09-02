@@ -22,7 +22,7 @@ import logging
 from django import forms
 
 from core.models import Car
-from core.services.vin_gate import check_vin, normalize_vin_input, schedule_vin_check
+from core.services.vin_gate import check_vin, normalize_vin_input, schedule_vin_check, vehicle_type_from_nhtsa
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +66,12 @@ class VinGuardForm(forms.ModelForm):
             year=cleaned.get("year"),
         )
         self.vin_verdict = verdict
+        check = verdict.check
+        if check is not None:
+            mapped = vehicle_type_from_nhtsa(check.nhtsa_vehicle_type)
+            current = (cleaned.get("vehicle_type") or "SEDAN").strip() or "SEDAN"
+            if mapped and current == "SEDAN":
+                cleaned["vehicle_type"] = mapped
         if verdict.ok:
             return cleaned
 
