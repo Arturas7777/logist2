@@ -200,6 +200,14 @@
     .req-car-row.is-adding {
         animation: reqCarRowIn .32s ease;
     }
+    .req-car-row.is-just-updated .dropdown-toggle {
+        animation: reqCarFlash 1.2s ease;
+    }
+    @keyframes reqCarFlash {
+        0% { box-shadow: 0 0 0 0 rgba(13, 110, 253, .45); }
+        40% { box-shadow: 0 0 0 4px rgba(13, 110, 253, .22); }
+        100% { box-shadow: none; }
+    }
     @keyframes reqCarRowIn {
         from { opacity: 0; transform: translateX(-10px); }
         to { opacity: 1; transform: translateX(0); }
@@ -1845,18 +1853,31 @@
     function scrollToRequestCard(reqId) {
         if (!reqId) return;
         var card = document.getElementById("req-" + reqId);
-        if (card) card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        if (card) card.scrollIntoView({ behavior: "auto", block: "nearest" });
+    }
+
+    function clearDocsReturnParams() {
+        try {
+            var url = new URL(window.location.href);
+            ["docs_req", "docs_car", "open_doc", "car"].forEach(function (key) {
+                url.searchParams.delete(key);
+            });
+            var next = url.pathname + url.search + url.hash;
+            if (next !== window.location.pathname + window.location.search + window.location.hash) {
+                history.replaceState(null, "", next);
+            }
+        } catch (e) { /* старый браузер — параметры просто останутся */ }
     }
 
     if (docsReq) {
         scrollToRequestCard(docsReq);
-        // Меню документов открываем только если явно указана машина
-        // (возврат после действия с документами), не при входе в редактирование.
-        if (docsCar && !autoOpen) {
-            var toggle = document.querySelector(
-                '.req-car-row[data-req-car="' + docsReq + '"][data-car-id="' + docsCar + '"] .dropdown-toggle'
+        // Меню документов не открываем: Popper + прокрутка ставили его
+        // в случайное место экрана. Подсветка строки авто достаточна.
+        if (docsCar) {
+            var row = document.querySelector(
+                '.req-car-row[data-req-car="' + docsReq + '"][data-car-id="' + docsCar + '"]'
             );
-            if (toggle) bootstrap.Dropdown.getOrCreateInstance(toggle).show();
+            if (row) row.classList.add("is-just-updated");
         }
         if (autoOpen) {
             if (!docsCar) {
@@ -1865,6 +1886,7 @@
             }
             if (docsCar) openDoc(docsReq, autoOpen, docsCar);
         }
+        clearDocsReturnParams();
     } else if (editingReq) {
         scrollToRequestCard(editingReq);
     }

@@ -770,6 +770,18 @@ def test_car_row_shows_edit_pencil(logged_client, transport_request, car):
     assert not re.search(r'data-doc-type="TITLE"[^>]*doc-edit-btn', html)
 
 
+def test_docs_return_does_not_auto_open_dropdown(logged_client, transport_request, car):
+    """После сохранения документов меню не открывается само (Popper прыгал по экрану)."""
+    response = logged_client.get(
+        reverse("website:transport_requests"),
+        {"docs_req": transport_request.pk, "docs_car": car.pk},
+    )
+    html = response.content.decode()
+    assert "Dropdown.getOrCreateInstance(toggle).show()" not in html
+    assert "is-just-updated" in html
+    assert "data-bs-popper-config" not in html
+
+
 def test_preview_url_busts_cache_after_regenerate(logged_client, transport_request, car, settings, tmp_path):
     """После перегенерации путь файла тот же — предпросмотр идёт с новым ?v=pk."""
     settings.MEDIA_ROOT = str(tmp_path)

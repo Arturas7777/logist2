@@ -196,7 +196,11 @@ _DOC_TYPE_ICONS = {
 
 
 def _docs_return_url(transport_request, car=None, *, open_doc=""):
-    """Вернуться к списку заявок с раскрытой карточкой / авто / окном документа."""
+    """Вернуться к списку заявок с прокруткой к карточке (и опционально окну документа).
+
+    ``docs_car`` нужен только чтобы подсветить строку авто. Меню документов
+    клиент открывает сам — автопоказ после сохранения прыгал по экрану.
+    """
     url = reverse("website:transport_requests")
     params = [f"docs_req={transport_request.pk}"]
     if car is not None:
@@ -488,9 +492,9 @@ def transport_request_edit(request, pk):
             "doc_types": TRANSPORT_DOCUMENT_TYPES,
             # docs_req/docs_car/open_doc — только из GET (возврат после работы с документами).
             # Не подставляем pk заявки автоматически: иначе при клике на карандаш
-            # JS сам открывает dropdown документов у первой машины.
+            # карточки JS скроллил к заявке с параметрами документов.
             "docs_req": request.GET.get("docs_req", ""),
-            "docs_car": request.GET.get("docs_car", "") or request.GET.get("car", ""),
+            "docs_car": request.GET.get("docs_car", ""),
             "open_doc": request.GET.get("open_doc", ""),
             **_portal_tabs_context(request, transport_requests, editing=transport_request),
             **_docs_map_context(transport_requests),
