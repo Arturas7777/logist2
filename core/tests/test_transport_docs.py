@@ -770,6 +770,44 @@ def test_car_row_shows_edit_pencil(logged_client, transport_request, car):
     assert not re.search(r'data-doc-type="TITLE"[^>]*doc-edit-btn', html)
 
 
+def test_preview_url_busts_cache_after_regenerate(logged_client, transport_request, car, settings, tmp_path):
+    """После перегенерации путь файла тот же — предпросмотр идёт с новым ?v=pk."""
+    settings.MEDIA_ROOT = str(tmp_path)
+    logged_client.post(
+        _doc_url(transport_request), {"doc_type": "PASSPORT", "car": car.pk, "action": "save", **BUYER_DATA}
+    )
+    logged_client.post(
+        _doc_url(transport_request),
+        {
+            "doc_type": "INVOICE",
+            "car": car.pk,
+            "action": "generate",
+            "invoice_amount": "2850",
+            "invoice_date": "2026-08-12",
+        },
+    )
+    first = transport_request.documents.get(doc_type="INVOICE")
+    first_url = first.preview_url
+    assert f"v={first.pk}" in first_url
+
+    logged_client.post(
+        _doc_url(transport_request),
+        {
+            "doc_type": "INVOICE",
+            "car": car.pk,
+            "action": "generate",
+            "invoice_amount": "4000",
+            "invoice_date": "2026-08-12",
+        },
+    )
+    second = transport_request.documents.get(doc_type="INVOICE")
+    assert second.pk != first.pk
+    assert second.preview_url != first_url
+    assert f"v={second.pk}" in second.preview_url
+    html = logged_client.get(reverse("website:transport_requests")).content.decode()
+    assert second.preview_url in html
+
+
 def test_extract_passport_normalizes(monkeypatch):
     from core.services import passport_extractor as pe
 

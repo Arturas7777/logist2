@@ -1228,6 +1228,20 @@ class TransportRequestDocument(models.Model):
     def filename(self):
         return os.path.basename(self.file.name)
 
+    @property
+    def preview_url(self) -> str:
+        """URL файла с cache-buster.
+
+        Перегенерация пишет PDF/подпись в тот же путь (``OBLIGATION MALIBU
+        1248.pdf``), и браузер показывает закэшированную копию. pk записи
+        меняется — ``?v=`` делает предпросмотр актуальным.
+        """
+        url = self.file.url
+        if not url or not self.pk:
+            return url
+        sep = "&" if "?" in url else "?"
+        return f"{url}{sep}v={self.pk}"
+
 
 class TransportRequestMessage(models.Model):
     """Сообщение в переписке по заявке на автовоз (мы ↔ клиент).

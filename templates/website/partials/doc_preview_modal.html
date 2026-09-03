@@ -40,7 +40,8 @@
 <script>
 (function () {
     function isImageName(name) {
-        return /\.(jpe?g|png|gif|webp)$/i.test(name || "");
+        var clean = (name || "").split("?")[0];
+        return /\.(jpe?g|png|gif|webp)$/i.test(clean);
     }
 
     var previewObjectUrl = null;
@@ -95,7 +96,7 @@
 
         showPreviewParts("pdf");
         frame.removeAttribute("src");
-        fetch(url, { credentials: "same-origin" })
+        fetch(url, { credentials: "same-origin", cache: "no-store" })
             .then(function (resp) {
                 if (!resp.ok) throw new Error("HTTP " + resp.status);
                 return resp.blob();

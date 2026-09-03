@@ -242,7 +242,7 @@ class TransportRequestDocumentInline(admin.TabularInline):
 
     def file_link(self, obj):
         if obj.pk and obj.file:
-            return format_html('<a href="{}" target="_blank">{}</a>', obj.file.url, obj.filename)
+            return format_html('<a href="{}" target="_blank">{}</a>', obj.preview_url, obj.filename)
         return "—"
 
     file_link.short_description = "Файл"

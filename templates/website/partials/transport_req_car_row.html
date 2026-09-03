@@ -64,7 +64,7 @@
                             <i class="bi {{ slot.icon }} doc-type-ico" aria-hidden="true"></i>
                             {% endif %}
                             <button type="button" class="doc-chip-name doc-preview-btn"
-                                    data-url="{{ row.doc.file.url }}"
+                                    data-url="{{ row.doc.preview_url }}"
                                     data-title="{{ row.display_name }}"
                                     data-filename="{{ row.doc.filename }}"
                                     title="{{ row.doc.filename }}">{{ row.display_name }}</button>

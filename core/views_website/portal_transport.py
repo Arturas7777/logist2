@@ -302,7 +302,7 @@ def _docs_context(transport_request):
                         "icon_data": icon_data,
                         "icon_is_flag": icon_is_flag,
                         "icon_color": color,
-                        "file_url": latest.file.url,
+                        "file_url": latest.preview_url,
                         "filename": latest.filename,
                         "is_image": name.endswith((".jpg", ".jpeg", ".png", ".gif", ".webp")),
                     }

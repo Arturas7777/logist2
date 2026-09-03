@@ -1378,7 +1378,8 @@
     var BULK_STATUS_URLS = {{ bulk_status_urls_json|default:"{}"|safe }};
 
     function isImageName(name) {
-        return /\.(jpe?g|png|gif|webp)$/i.test(name || "");
+        var clean = (name || "").split("?")[0];
+        return /\.(jpe?g|png|gif|webp)$/i.test(clean);
     }
 
     var previewObjectUrl = null;
@@ -1435,7 +1436,7 @@
         // PDF через blob: иначе X-Frame-Options: DENY блокирует iframe /media/...
         showPreviewParts(modalEl, "pdf");
         frame.removeAttribute("src");
-        fetch(url, { credentials: "same-origin" })
+        fetch(url, { credentials: "same-origin", cache: "no-store" })
             .then(function (resp) {
                 if (!resp.ok) throw new Error("HTTP " + resp.status);
                 return resp.blob();

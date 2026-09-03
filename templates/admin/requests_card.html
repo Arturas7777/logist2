@@ -676,13 +676,13 @@ core.services.transport_package_actions), переписка с клиентом
                             {% for doc in slot.docs %}
                             <span class="rc-file">
                                 <button type="button" class="rc-file-open"
-                                        data-file-url="{{ doc.file.url }}"
+                                        data-file-url="{{ doc.preview_url }}"
                                         data-file-name="{{ doc.filename }}"
                                         data-file-label="{{ slot.label }} · {{ block.car.vin }}">
                                     <span>{% if doc.is_generated %}🤖{% else %}📄{% endif %}</span>
                                     <span class="rc-file-name">{{ doc.filename }}</span>
                                 </button>
-                                <a class="rc-file-act" href="{{ doc.file.url }}" download title="Скачать">⤓</a>
+                                <a class="rc-file-act" href="{{ doc.preview_url }}" download="{{ doc.filename }}" title="Скачать">⤓</a>
                                 {% if not doc.is_generated %}
                                 <form method="post" action="{% url 'admin_request_doc_retype' transport_request.pk doc.pk %}"
                                       class="rc-inline-form">
@@ -1093,7 +1093,7 @@ core.services.transport_package_actions), переписка с клиентом
         // прямой src в iframe браузер блокирует.
         renderFallback(file, 'Загрузка…');
         var requested = file.url;
-        fetch(file.url, {credentials: 'same-origin'})
+        fetch(file.url, {credentials: 'same-origin', cache: 'no-store'})
             .then(function(r) { return r.ok ? r.blob() : Promise.reject(r.status); })
             .then(function(blob) {
                 if (files[index].url !== requested) return;
