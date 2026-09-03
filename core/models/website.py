@@ -761,6 +761,13 @@ TRANSPORT_DESTINATION_COUNTRIES = [
     ("UA", "Украина"),
 ]
 
+# Статика флажков для карточек заявок в админке (угол карточки).
+DESTINATION_FLAG_STATIC = {
+    "BY": "website/images/flag-by.svg",
+    "MD": "website/images/flag-md.svg",
+    "UA": "website/images/flag-ua.svg",
+}
+
 # Процедура, которая подставляется клиенту по умолчанию при выборе страны.
 # Клиент может её изменить — это только подсказка под типовой сценарий.
 DEFAULT_PROCEDURE_BY_COUNTRY = {
@@ -967,6 +974,11 @@ class TransportRequest(models.Model):
         if self.status == "CANCELLED":
             return False
         return self.status in self.CLIENT_EDITABLE_STATUSES or self.awaiting_client_docs
+
+    @property
+    def destination_flag_static(self) -> str:
+        """Путь к SVG-флагу страны назначения для карточек в админке."""
+        return DESTINATION_FLAG_STATIC.get((self.destination_country or "").upper(), "")
 
     def emails_for_panel(self):
         """Переписка со складом для панели в карточке заявки.

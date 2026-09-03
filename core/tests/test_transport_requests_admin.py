@@ -179,6 +179,41 @@ def test_card_page_uses_status_color_class(staff_client, transport_request):
     assert "rc-state-card" in body
 
 
+def test_board_card_shows_country_flag_instead_of_name(staff_client, transport_request):
+    body = staff_client.get(reverse("admin_requests_board")).content.decode()
+    assert "flag-by.svg" in body
+    assert "rb-country-flag" in body
+    # Название страны остаётся только в alt/title флажка, текстового чипа нет.
+    assert 'alt="Беларусь"' in body
+    assert ">Беларусь<" not in body
+
+
+def test_open_card_shows_country_flag_instead_of_name(staff_client, transport_request):
+    body = staff_client.get(reverse("admin_request_card", args=[transport_request.pk])).content.decode()
+    assert "flag-by.svg" in body
+    assert "rc-country-flag" in body
+    assert "страна не выбрана" not in body
+    # В шапке текстового чипа страны нет; название остаётся в select формы.
+    assert ">Беларусь</span>" not in body
+
+
+def test_board_card_hides_flag_when_country_missing(staff_client, transport_request):
+    transport_request.destination_country = ""
+    transport_request.save(update_fields=["destination_country"])
+    body = staff_client.get(reverse("admin_requests_board")).content.decode()
+    assert "flag-by.svg" not in body
+    assert 'class="rb-country-flag"' not in body
+
+
+def test_open_card_shows_alert_when_country_missing(staff_client, transport_request):
+    transport_request.destination_country = ""
+    transport_request.save(update_fields=["destination_country"])
+    body = staff_client.get(reverse("admin_request_card", args=[transport_request.pk])).content.decode()
+    assert "flag-by.svg" not in body
+    assert 'class="rc-country-flag"' not in body
+    assert "страна не выбрана" in body
+
+
 def test_board_search_by_vin(staff_client, transport_request, car):
     response = staff_client.get(reverse("admin_requests_board"), {"tab": "all", "q": car.vin})
     assert response.status_code == 200

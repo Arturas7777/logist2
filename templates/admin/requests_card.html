@@ -33,7 +33,7 @@ core.services.transport_package_actions), переписка с клиентом
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
-    padding: 14px 20px;
+    padding: 14px 58px 14px 20px;
     margin-bottom: 14px;
     background: var(--cm-bg, #f4f2ff);
     border: 1px solid rgba(0, 0, 0, .06);
@@ -64,6 +64,16 @@ core.services.transport_package_actions), переписка с клиентом
 .rc-chip.info { background: rgba(108,92,231,.12); color: #4c3dcc; }
 .rc-chip.muted { background: rgba(148,163,184,.18); color: #475569; }
 .rc-chip.alert { background: rgba(239,68,68,.14); color: #b91c1c; }
+.rc-country-flag {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    width: 36px;
+    height: 22px;
+    object-fit: cover;
+    border-radius: 3px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.14), 0 1px 2px rgba(0,0,0,.12);
+}
 
 /* ── Каркас: работа слева, состояние справа ─────────────────────────── */
 .rc-grid {
@@ -426,12 +436,13 @@ core.services.transport_package_actions), переписка с клиентом
 {% block content %}
 <div class="cm-page wide rc-page is-{{ transport_request.status }}" id="rc-page" data-status="{{ transport_request.status }}">
     <div class="rc-topbar">
+        {% include "admin/_request_country_flag.html" with tr=transport_request css_class="rc-country-flag" %}
         <a class="rc-back" href="{% url 'admin_requests_board' %}">← Доска</a>
         <h1>{{ transport_request.number }}</h1>
         <span class="rc-chip muted">{{ transport_request.client.name }}</span>
-        <span class="rc-chip {% if transport_request.destination_country %}muted{% else %}alert{% endif %}">
-            {% if transport_request.destination_country %}{{ transport_request.get_destination_country_display }}{% else %}страна не выбрана{% endif %}
-        </span>
+        {% if not transport_request.destination_country %}
+        <span class="rc-chip alert">страна не выбрана</span>
+        {% endif %}
         <span class="rc-chip status" id="rc-status-chip">{{ transport_request.get_status_display }}</span>
         <span class="rc-chip {% if transport_request.warehouse_state == 'CONFIRMED' %}ok{% elif transport_request.warehouse_state == 'REJECTED' %}alert{% elif transport_request.warehouse_state == 'SENT' %}info{% else %}muted{% endif %}"
               id="rc-wh-state-chip">

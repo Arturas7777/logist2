@@ -1,0 +1,8 @@
+{% load static %}
+{% if tr.destination_flag_static %}
+<img class="{{ css_class }}"
+     src="{% static tr.destination_flag_static %}"
+     width="32" height="20"
+     alt="{{ tr.get_destination_country_display }}"
+     title="{{ tr.get_destination_country_display }}">
+{% endif %}

@@ -50,6 +50,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    position: relative;
     transition: box-shadow .15s ease, transform .15s ease;
 }
 .rb-card:hover {
@@ -57,13 +58,23 @@
     transform: translateY(-1px);
 }
 .rb-card-head {
-    padding: 14px 18px;
+    padding: 14px 52px 14px 18px;
     background: #ededf2;
     border-bottom: 1px solid rgba(0,0,0,.06);
     display: flex;
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
+}
+.rb-country-flag {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    width: 32px;
+    height: 20px;
+    object-fit: cover;
+    border-radius: 3px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.14), 0 1px 2px rgba(0,0,0,.12);
 }
 .rb-num {
     font-weight: 700;
@@ -229,6 +240,7 @@
         {% for card in cards %}
         {% with tr=card.request %}
         <div class="rb-card is-{{ tr.status }}">
+            {% include "admin/_request_country_flag.html" with tr=tr css_class="rb-country-flag" %}
             <div class="rb-card-head">
                 <a class="rb-num" href="{{ card.url }}">{{ tr.number }}</a>
                 <span class="rb-client">{{ tr.client.name }}</span>
@@ -238,7 +250,6 @@
                     {% if card.declarations|length > 1 %}
                     <span class="rb-chip sep">деклараций: {{ card.declarations|length }}</span>
                     {% endif %}
-                    {% if tr.destination_country %}<span class="rb-chip muted">{{ tr.get_destination_country_display }}</span>{% endif %}
                     <span class="rb-chip status is-{{ tr.status }}">{{ tr.get_status_display }}</span>
                     {% if tr.warehouse_state != "NOT_SENT" %}
                     <span class="rb-chip {% if tr.warehouse_state == 'CONFIRMED' %}ok{% elif tr.warehouse_state == 'REJECTED' %}alert{% else %}info{% endif %}">
