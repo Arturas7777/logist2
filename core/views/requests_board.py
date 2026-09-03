@@ -12,7 +12,9 @@
     (отдельная страница, а не модалка: в админке нет Bootstrap JS).
 
 POST-экшены возвращают JSON (инлайн-правка, сообщения) либо redirect на
-карточку с ``django.contrib.messages`` — как в остальных админ-досках.
+карточку / доску с ``django.contrib.messages`` — как в остальных админ-досках.
+Корзина на карточке доски возвращает заявку в черновик, если рейс ещё не
+оформлен.
 """
 
 from __future__ import annotations
@@ -234,6 +236,8 @@ def _board_card(transport_request) -> dict:
         for index, line in enumerate(plan, start=1)
     ]
 
+    from core.services.transport_request_autotransport import can_revert_to_draft
+
     return {
         "request": transport_request,
         "declarations": blocks,
@@ -241,6 +245,7 @@ def _board_card(transport_request) -> dict:
         "unread": getattr(transport_request, "unread_client_msgs", 0) or 0,
         "unread_emails": getattr(transport_request, "unread_email_links", 0) or 0,
         "url": reverse("admin_request_card", args=[transport_request.pk]),
+        "can_revert_to_draft": can_revert_to_draft(transport_request),
     }
 
 
@@ -419,6 +424,40 @@ def request_update(request: HttpRequest, pk: int):
     if updated:
         transport_request.save(update_fields=[*updated, "updated_at"])
     return JsonResponse({"ok": True, "updated": updated})
+
+
+def _board_next_url(request: HttpRequest) -> str:
+    """Куда вернуться после действия с доски (тот же таб и поиск)."""
+    board = reverse("admin_requests_board")
+    nxt = (request.POST.get("next") or "").strip()
+    path = nxt.split("?", 1)[0]
+    if nxt.startswith(board) and "://" not in path:
+        return nxt
+    return board
+
+
+@staff_member_required
+@require_POST
+def request_revert_to_draft(request: HttpRequest, pk: int):
+    """Корзина на карточке доски: заявка снова черновик, если рейс не оформлен."""
+    from core.services.transport_request_autotransport import (
+        RevertToDraftError,
+        revert_to_draft,
+    )
+
+    transport_request = get_object_or_404(TransportRequest, pk=pk)
+    next_url = _board_next_url(request)
+    try:
+        changed = revert_to_draft(transport_request)
+    except RevertToDraftError as exc:
+        messages.error(request, str(exc))
+        return redirect(next_url)
+
+    if changed:
+        messages.success(request, f"Заявка {transport_request.number} возвращена в черновик.")
+    else:
+        messages.info(request, f"Заявка {transport_request.number} уже в черновиках.")
+    return redirect(next_url)
 
 
 @staff_member_required

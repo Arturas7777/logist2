@@ -777,3 +777,81 @@ def test_create_autotransport_requires_confirmation_for_new_carrier(transport_re
 
     auto_transport = create_autotransport(transport_request, create_carrier=True)
     assert auto_transport.carrier.eori_code == "PL123456789"
+
+
+# ---------------------------------------------------------------------------
+# Возврат в черновик с доски
+# ---------------------------------------------------------------------------
+
+
+def test_board_card_has_trash_button(staff_client, transport_request):
+    body = staff_client.get(reverse("admin_requests_board")).content.decode()
+
+    assert "rb-trash-btn" in body
+    assert reverse("admin_request_revert_to_draft", args=[transport_request.pk]) in body
+    assert "bi-trash" in body
+
+
+def test_revert_to_draft_from_board(staff_client, transport_request):
+    url = reverse("admin_request_revert_to_draft", args=[transport_request.pk])
+    response = staff_client.post(url, {"next": reverse("admin_requests_board") + "?tab=new"})
+
+    assert response.status_code == 302
+    transport_request.refresh_from_db()
+    assert transport_request.status == "DRAFT"
+    assert transport_request.warehouse_state == TransportRequest.WAREHOUSE_NOT_SENT
+
+    board = staff_client.get(reverse("admin_requests_board")).content.decode()
+    assert f">{transport_request.number}</a>" not in board
+    drafts = staff_client.get(reverse("admin_requests_board"), {"tab": "drafts"}).content.decode()
+    assert f">{transport_request.number}</a>" in drafts
+
+
+def test_revert_to_draft_unlinks_draft_autotransport(staff_client, transport_request, car):
+    from core.services.transport_request_autotransport import create_autotransport
+
+    carrier = Carrier.objects.create(name="Maxer Transport", eori_code="PL123456789")
+    trip = create_autotransport(transport_request, carrier=carrier)
+    assert trip.status == "DRAFT"
+    assert car in trip.cars.all()
+
+    staff_client.post(reverse("admin_request_revert_to_draft", args=[transport_request.pk]))
+
+    transport_request.refresh_from_db()
+    trip.refresh_from_db()
+    assert transport_request.status == "DRAFT"
+    assert transport_request.auto_transport_id is None
+    assert car not in trip.cars.all()
+
+
+def test_revert_to_draft_blocked_when_trip_is_formed(staff_client, transport_request):
+    from core.services.transport_request_autotransport import create_autotransport
+
+    carrier = Carrier.objects.create(name="Maxer Transport", eori_code="PL123456789")
+    trip = create_autotransport(transport_request, carrier=carrier)
+    trip.status = "FORMED"
+    trip.save(update_fields=["status"])
+
+    response = staff_client.post(reverse("admin_request_revert_to_draft", args=[transport_request.pk]))
+    assert response.status_code == 302
+
+    transport_request.refresh_from_db()
+    assert transport_request.status == "SUBMITTED"
+    assert transport_request.auto_transport_id == trip.pk
+
+
+def test_revert_to_draft_blocked_when_request_completed(staff_client, transport_request):
+    transport_request.status = "COMPLETED"
+    transport_request.save(update_fields=["status"])
+
+    staff_client.post(reverse("admin_request_revert_to_draft", args=[transport_request.pk]))
+
+    transport_request.refresh_from_db()
+    assert transport_request.status == "COMPLETED"
+
+
+def test_revert_to_draft_closed_for_client(logged_client, transport_request):
+    response = logged_client.post(reverse("admin_request_revert_to_draft", args=[transport_request.pk]))
+    assert response.status_code in (302, 403)
+    transport_request.refresh_from_db()
+    assert transport_request.status == "SUBMITTED"

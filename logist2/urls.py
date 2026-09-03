@@ -234,6 +234,11 @@ urlpatterns = [
         requests_board.request_create_autotransport,
         name="admin_request_create_autotransport",
     ),
+    path(
+        "admin/requests/<int:pk>/revert-draft/",
+        requests_board.request_revert_to_draft,
+        name="admin_request_revert_to_draft",
+    ),
     path("admin/requests/<int:pk>/cmr/", cmr_views.cmr_list, name="admin_request_cmr_list"),
     path("admin/requests/<int:pk>/cmr/<int:car_id>/", cmr_views.cmr_editor, name="admin_request_cmr_editor"),
     # ── Мониторинг системы (CPU/RAM/Disk/Services/Postgres/Redis) ────────────

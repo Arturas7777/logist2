@@ -145,6 +145,41 @@
     border-radius: var(--cm-radius, 14px);
 }
 .rb-missing { font-size: .74rem; color: #b45309; }
+.rb-footer {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 2px;
+}
+.rb-footer .pc-actions { margin-bottom: 0; }
+.rb-trash {
+    margin-left: auto;
+    flex-shrink: 0;
+}
+.rb-trash-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: #64748b;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1.05rem;
+}
+.rb-trash-btn:hover:not(.is-disabled) {
+    color: #dc2626;
+    background: rgba(239, 68, 68, .1);
+}
+.rb-trash-btn.is-disabled {
+    color: #cbd5e1;
+    cursor: not-allowed;
+    background: transparent;
+}
 </style>
 {% endblock %}
 
@@ -169,6 +204,14 @@
             {% if search %}<a class="pc-action outline" href="?tab={{ active_tab }}">Сброс</a>{% endif %}
         </form>
     </div>
+
+    {% if messages %}
+    <div class="summary-strip">
+        {% for message in messages %}
+        <span class="summary-chip">{{ message }}</span>
+        {% endfor %}
+    </div>
+    {% endif %}
 
     {% if total_unread %}
     <div class="summary-strip">
@@ -267,9 +310,25 @@
                 <div class="rb-missing">⚠ {{ card.readiness.blockers|join:" " }}</div>
                 {% endif %}
 
-                <div class="pc-actions">
-                    <a class="pc-action primary" href="{{ card.url }}">Открыть карточку</a>
-                    <a class="pc-action outline" href="{% url 'admin:core_transportrequest_change' tr.pk %}">В админке</a>
+                <div class="rb-footer">
+                    <div class="pc-actions">
+                        <a class="pc-action primary" href="{{ card.url }}">Открыть карточку</a>
+                        <a class="pc-action outline" href="{% url 'admin:core_transportrequest_change' tr.pk %}">В админке</a>
+                    </div>
+                    {% if card.can_revert_to_draft %}
+                    <form method="post" action="{% url 'admin_request_revert_to_draft' tr.pk %}" class="rb-trash"
+                          onsubmit="return confirm('Удалить заявку {{ tr.number }} с доски? Если рейс ещё не оформлен, заявка станет черновиком.');">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{% url 'admin_requests_board' %}?tab={{ active_tab }}{% if search %}&q={{ search|urlencode }}{% endif %}">
+                        <button type="submit" class="rb-trash-btn" title="Удалить заявку (вернуть в черновик)">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </form>
+                    {% else %}
+                    <span class="rb-trash rb-trash-btn is-disabled" title="Автовоз уже оформлен — заявку нельзя вернуть в черновик">
+                        <i class="bi bi-trash"></i>
+                    </span>
+                    {% endif %}
                 </div>
             </div>
         </div>

@@ -127,3 +127,69 @@ def create_autotransport(transport_request, *, user=None, carrier=None, create_c
         len(cars),
     )
     return auto_transport
+
+
+class RevertToDraftError(Exception):
+    """Заявку нельзя вернуть в черновик: рейс уже оформлен."""
+
+
+# Рейс «оформлен», когда вышел из черновика. CANCELLED не блокирует возврат —
+# отменённый рейс заявку не держит.
+_FORMED_TRIP_STATUSES = frozenset({"FORMED", "LOADED", "IN_TRANSIT", "DELIVERED"})
+
+
+def can_revert_to_draft(transport_request) -> bool:
+    """Можно ли кнопкой «корзина» вернуть заявку в черновик."""
+    if transport_request.status in ("COMPLETED", "CANCELLED"):
+        return False
+    auto = transport_request.auto_transport
+    if auto is not None and auto.status in _FORMED_TRIP_STATUSES:
+        return False
+    return True
+
+
+def revert_to_draft(transport_request) -> bool:
+    """Мягкое «удаление» с доски: заявка снова черновик, запись не стираем.
+
+    Если связанный рейс ещё черновик — отвязываем его и снимаем машины заявки.
+    Оформленный рейс (сформирован и дальше) или заявка «Оформлена» — ошибка.
+
+    Возвращает ``False``, если заявка уже была черновиком без рейса.
+    """
+    from core.models.website import TransportRequest
+
+    if not can_revert_to_draft(transport_request):
+        raise RevertToDraftError(
+            "Нельзя вернуть в черновик: автовоз уже оформлен."
+        )
+
+    already_draft = transport_request.status == "DRAFT" and not transport_request.auto_transport_id
+    if already_draft and transport_request.warehouse_state == TransportRequest.WAREHOUSE_NOT_SENT:
+        return False
+
+    fields = ["status"]
+    transport_request.status = "DRAFT"
+
+    auto = transport_request.auto_transport
+    if auto is not None and auto.status not in _FORMED_TRIP_STATUSES:
+        if auto.status == "DRAFT":
+            car_ids = list(transport_request.cars.values_list("pk", flat=True))
+            if car_ids:
+                auto.cars.remove(*car_ids)
+        transport_request.auto_transport = None
+        fields.append("auto_transport")
+
+    if transport_request.warehouse_state != TransportRequest.WAREHOUSE_NOT_SENT:
+        transport_request.warehouse_state = TransportRequest.WAREHOUSE_NOT_SENT
+        fields.append("warehouse_state")
+
+    if transport_request.awaiting_client_docs:
+        transport_request.awaiting_client_docs = False
+        fields.append("awaiting_client_docs")
+
+    transport_request.save(update_fields=[*fields, "updated_at"])
+    logger.info(
+        "[autotransport] заявка %s возвращена в черновик",
+        transport_request.number,
+    )
+    return True
