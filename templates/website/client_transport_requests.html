@@ -286,6 +286,26 @@
     .req-car-dd .doc-chip-add:hover {
         border-color: #0d6efd; background: #e7f1ff; transform: scale(1.05);
     }
+    .req-car-dd .doc-chip-edit,
+    .req-car-dd .doc-slot-edit {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 1.5rem; height: 1.5rem; padding: 0; flex-shrink: 0;
+        border: 1px dashed rgba(253, 126, 20, .45);
+        border-radius: 50%; background: #fff8f1; color: #fd7e14; font-size: .78rem; line-height: 1;
+        transition: background .12s ease, border-color .12s ease, transform .12s ease;
+    }
+    .req-car-dd .doc-chip-edit:hover,
+    .req-car-dd .doc-slot-edit:hover {
+        border-color: #fd7e14; background: #ffe8cc; transform: scale(1.05);
+    }
+    .req-car-dd .doc-slot-line {
+        display: flex; align-items: center; gap: .15rem; padding-right: .45rem;
+    }
+    .req-car-dd .doc-slot-line .dropdown-item { flex: 1 1 auto; }
+    .doc-edit-only, .doc-edit-label { display: none !important; }
+    .modal.is-doc-edit .doc-edit-only { display: block !important; }
+    .modal.is-doc-edit .doc-edit-label { display: inline !important; }
+    .modal.is-doc-edit .doc-add-label { display: none !important; }
     /* Иконки + крестик одной группой сразу после поля авто */
     .req-car-trailing {
         display: inline-flex; align-items: center; flex-wrap: wrap;
@@ -753,13 +773,19 @@
         {% csrf_token %}
         <input type="hidden" name="doc_type" value="PASSPORT">
         <input type="hidden" name="car" value="" class="doc-car-input">
+        <input type="hidden" name="cascade" value="" class="doc-cascade-input">
         <div class="modal-header">
           <h6 class="modal-title"><i class="bi bi-person-vcard"></i> {% trans "Паспорт покупателя" %}</h6>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
+          <div class="alert alert-light border small mb-3 doc-edit-only">
+            <i class="bi bi-pencil text-warning"></i>
+            {% trans "Изменения данных или файла паспорта сразу попадут в уже сгенерированные инвойс, платёжку и обязательство. Заново заполнять весь пакет не нужно." %}
+          </div>
           <div class="mb-3">
-            <label class="form-label small fw-semibold">{% trans "Файл паспорта (PDF/JPG/PNG)" %}</label>
+            <label class="form-label small fw-semibold doc-add-label">{% trans "Файл паспорта (PDF/JPG/PNG)" %}</label>
+            <label class="form-label small fw-semibold doc-edit-label">{% trans "Новый файл паспорта (заменит текущий)" %}</label>
             <input type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm">
             <div class="form-text">{% trans "Паспорт нельзя сгенерировать — нужен реальный документ. После загрузки номер, ФИО латиницей и даты распознаются автоматически." %}</div>
           </div>
@@ -818,11 +844,16 @@
         {% csrf_token %}
         <input type="hidden" name="doc_type" value="INVOICE">
         <input type="hidden" name="car" value="" class="doc-car-input">
+        <input type="hidden" name="cascade" value="" class="doc-cascade-input">
         <div class="modal-header">
           <h6 class="modal-title"><i class="bi bi-receipt"></i> {% trans "Инвойс" %}</h6>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
+          <div class="alert alert-light border small mb-3 doc-edit-only">
+            <i class="bi bi-pencil text-warning"></i>
+            {% trans "Новая сумма, дата или строки инвойса обновят и сам инвойс, и платёжку. Остальные документы пакета пересобирать не нужно." %}
+          </div>
           <div class="mb-3">
             <label class="form-label small fw-semibold">{% trans "Файл инвойса (если уже есть)" %}</label>
             <input type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm">
@@ -966,13 +997,19 @@
         {% csrf_token %}
         <input type="hidden" name="doc_type" value="SIGNATURE">
         <input type="hidden" name="car" value="" class="doc-car-input">
+        <input type="hidden" name="cascade" value="" class="doc-cascade-input">
         <div class="modal-header">
           <h6 class="modal-title"><i class="bi bi-pen"></i> {% trans "Подпись покупателя" %}</h6>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
+          <div class="alert alert-light border small mb-3 doc-edit-only">
+            <i class="bi bi-pencil text-warning"></i>
+            {% trans "Новая подпись заменит текущую и сразу проставится в обязательстве. На платёжку — если включена галочка в окне «Платёжка»." %}
+          </div>
           <div class="mb-1">
-            <label class="form-label small fw-semibold">{% trans "Файл подписи (JPG/PNG)" %}</label>
+            <label class="form-label small fw-semibold doc-add-label">{% trans "Файл подписи (JPG/PNG)" %}</label>
+            <label class="form-label small fw-semibold doc-edit-label">{% trans "Новый файл подписи (заменит текущий)" %}</label>
             <input type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm">
             <div class="form-text">
               {% trans "Подпись нельзя сгенерировать — нужна реальная. Загрузите фото на белом фоне (JPG/PNG): система уберёт фон, сделает штрихи синими «как от ручки», обрежет поля и уменьшит размер. Готовый файл проставится в обязательство; на платёжку — только если включить галочку в окне «Платёжка»." %}
@@ -996,11 +1033,16 @@
         {% csrf_token %}
         <input type="hidden" name="doc_type" value="PAYMENT_ORDER">
         <input type="hidden" name="car" value="" class="doc-car-input">
+        <input type="hidden" name="cascade" value="" class="doc-cascade-input">
         <div class="modal-header">
           <h6 class="modal-title"><i class="bi bi-cash-stack"></i> {% trans "Платёжка (платёжное поручение)" %}</h6>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
+          <div class="alert alert-light border small mb-3 doc-edit-only">
+            <i class="bi bi-pencil text-warning"></i>
+            {% trans "Галочка подписи применится к уже сгенерированной платёжке. Сумму меняйте в окне «Инвойс» — платёжка обновится сама." %}
+          </div>
           <div class="mb-3">
             <label class="form-label small fw-semibold">{% trans "Файл платёжки (если уже есть)" %}</label>
             <input type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm">
@@ -1034,6 +1076,7 @@
         {% csrf_token %}
         <input type="hidden" name="doc_type" value="LETTER_USA">
         <input type="hidden" name="car" value="" class="doc-car-input">
+        <input type="hidden" name="cascade" value="" class="doc-cascade-input">
         <div class="modal-header">
           <h6 class="modal-title"><i class="bi bi-envelope-paper"></i> {% trans "Письмо USA (гарантийное письмо продавца)" %}</h6>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -1065,6 +1108,7 @@
         {% csrf_token %}
         <input type="hidden" name="doc_type" value="OBLIGATION">
         <input type="hidden" name="car" value="" class="doc-car-input">
+        <input type="hidden" name="cascade" value="" class="doc-cascade-input">
         <div class="modal-header">
           <h6 class="modal-title"><i class="bi bi-file-earmark-text"></i> {% trans "Обязательство клиента" %}</h6>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -1096,6 +1140,7 @@
         {% csrf_token %}
         <input type="hidden" name="doc_type" value="CONTRACT">
         <input type="hidden" name="car" value="" class="doc-car-input">
+        <input type="hidden" name="cascade" value="" class="doc-cascade-input">
         <div class="modal-header">
           <h6 class="modal-title"><i class="bi bi-file-earmark-ruled"></i> {% trans "Договор на перевозку" %}</h6>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -1547,7 +1592,15 @@
         });
     }
 
-    function openDoc(reqId, docType, carId) {
+    function setDocModalMode(modal, isEdit) {
+        modal.classList.toggle("is-doc-edit", !!isEdit);
+        modal.querySelectorAll(".doc-cascade-input").forEach(function (input) {
+            input.value = isEdit ? "1" : "";
+        });
+        modal.querySelectorAll('input[type="file"]').forEach(function (input) { input.value = ""; });
+    }
+
+    function openDoc(reqId, docType, carId, isEdit) {
         var modal = document.getElementById("docModal-" + docType);
         if (!modal) return;
         var action = ACTION_URLS[String(reqId)];
@@ -1557,6 +1610,7 @@
         modal.querySelectorAll(".doc-car-input").forEach(function (input) { input.value = carId; });
         var data = (PKG_BY_REQ[String(reqId)] || {})[String(carId)] || {};
         fillPkgFields(modal, data, reqId);
+        setDocModalMode(modal, !!isEdit);
         if (docType === "INVOICE") {
             fillInvoiceExtraLines(modal, data.invoice_extra_lines || []);
         }
@@ -1701,9 +1755,14 @@
     }
 
     document.addEventListener("click", function (e) {
+        var editBtn = e.target.closest(".doc-edit-btn[data-req]");
+        if (editBtn) {
+            openDoc(editBtn.dataset.req, editBtn.dataset.docType, editBtn.dataset.car, true);
+            return;
+        }
         var openBtn = e.target.closest(".doc-open-btn[data-req]");
         if (openBtn) {
-            openDoc(openBtn.dataset.req, openBtn.dataset.docType, openBtn.dataset.car);
+            openDoc(openBtn.dataset.req, openBtn.dataset.docType, openBtn.dataset.car, false);
             return;
         }
         var bulkBtn = e.target.closest(".doc-bulk-btn[data-req]");
@@ -1727,6 +1786,13 @@
     });
 
     document.addEventListener("change", function (e) {
+        if (e.target.matches("#docModal-PASSPORT.is-doc-edit input[type=file]")) {
+            if (!e.target.files || !e.target.files.length) return;
+            ["buyer_name", "buyer_passport_number", "buyer_birth_date", "buyer_passport_issue_date"].forEach(function (name) {
+                var input = document.querySelector('#docModal-PASSPORT [name="' + name + '"]');
+                if (input) input.value = "";
+            });
+        }
         var cb = e.target.closest('#carsCheckboxes input[type="checkbox"]');
         if (!cb) return;
         syncCarsCheckRow(cb.closest(".cars-check-row"));

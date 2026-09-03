@@ -10,12 +10,17 @@ JSON или те же messages.
 Функции ничего не знают о ``HttpRequest`` и возвращают список замечаний
 ``[(level, text), …]``, где level — ``success`` / ``info`` / ``warning`` /
 ``error`` (совпадает с уровнями messages).
+
+Правка паспорта, подписи или инвойса пересобирает уже сгенерированные
+связанные PDF (инвойс / платёжка / обязательство), чтобы не заполнять
+весь пакет заново. Загруженные вручную файлы не заменяются.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from copy import deepcopy
 
 from django.core.files.base import ContentFile
 
@@ -88,6 +93,88 @@ _PASSPORT_FIELD_LABELS = {
     "buyer_birth_date": "дата рождения",
     "buyer_passport_issue_date": "дата выдачи",
 }
+
+# Сгенерированные PDF, которые нужно пересобрать при правке исходного слота.
+# Письмо USA и договор не зависят от паспорта/суммы/подписи — их не трогаем.
+_CASCADE_DEPENDENTS: dict[str, tuple[str, ...]] = {
+    "PASSPORT": ("INVOICE", "PAYMENT_ORDER", "OBLIGATION"),
+    "SIGNATURE": ("OBLIGATION", "PAYMENT_ORDER"),
+    "INVOICE": ("PAYMENT_ORDER",),
+}
+
+
+def _flag_on(value) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _delete_docs_of_type(transport_request, car, doc_type) -> None:
+    """Удалить все файлы слота у авто (и сгенерированные, и загруженные)."""
+    for old in transport_request.documents.filter(car=car, doc_type=doc_type):
+        old.file.delete(save=False)
+        old.delete()
+
+
+def _generated_doc_types(transport_request, car) -> set[str]:
+    return set(transport_request.documents.filter(car=car, is_generated=True).values_list("doc_type", flat=True))
+
+
+def refresh_related_documents(
+    *,
+    transport_request,
+    car,
+    package,
+    source_type: str,
+    user,
+    notices: list[Notice],
+    skip_types: set[str] | frozenset[str] = frozenset(),
+    include_self: bool = False,
+) -> None:
+    """Пересобрать уже существующие сгенерированные PDF, связанные со слотом.
+
+    Загруженные вручную файлы не заменяются. Если связанного документа ещё нет,
+    он не создаётся — только обновление того, что клиент уже сгенерировал.
+    """
+    wanted: list[str] = []
+    if include_self and source_type not in TRANSPORT_UPLOAD_ONLY_TYPES:
+        wanted.append(source_type)
+    wanted.extend(_CASCADE_DEPENDENTS.get(source_type, ()))
+
+    existing = _generated_doc_types(transport_request, car)
+    payment_wants_signature = _flag_on(package.data.get("payment_include_signature"))
+    types: list[str] = []
+    seen: set[str] = set()
+    for doc_type in wanted:
+        if doc_type in skip_types or doc_type in seen or doc_type not in existing:
+            continue
+        if source_type == "SIGNATURE" and doc_type == "PAYMENT_ORDER" and not payment_wants_signature:
+            continue
+        seen.add(doc_type)
+        types.append(doc_type)
+    if not types:
+        return
+
+    sig = signature_bytes(transport_request, car)
+    refreshed: list[str] = []
+    for doc_type in types:
+        label = DOC_TYPE_LABELS[doc_type]
+        try:
+            filename, pdf_bytes, gen_notices = docs_service.generate_document(
+                transport_request,
+                car,
+                package.data,
+                doc_type,
+                signature_bytes=sig,
+            )
+        except PackageDataError as exc:
+            notices.append(("warning", f"«{label}» не удалось обновить: {exc}"))
+            continue
+        _replace_generated(transport_request, car, doc_type, filename, pdf_bytes, user)
+        refreshed.append(label)
+        notices.extend(("info", f"«{label}»: {notice}") for notice in gen_notices)
+
+    package.save(update_fields=["data", "updated_at"])
+    if refreshed:
+        notices.append(("success", f"Обновлены связанные документы: {', '.join(refreshed)}."))
 
 
 class DocActionError(PackageDataError):
@@ -179,13 +266,20 @@ def apply_passport_ai(package, saved_docs, notices: list[Notice]) -> None:
             notices.append(("success", f"«Паспорт»: адрес транслитерирован — {latin}"))
 
 
-def save_upload_doc(transport_request, car, doc_type, upload, user):
-    """Сохранить загруженный файл пакета; для подписи — нормализация."""
+def save_upload_doc(transport_request, car, doc_type, upload, user, *, replace_existing=False):
+    """Сохранить загруженный файл пакета; для подписи — нормализация.
+
+    ``replace_existing`` удаляет прежние файлы слота до записи нового
+    (смена подписи / паспорта из режима редактирования).
+    """
     extension = upload.name.rsplit(".", 1)[-1].lower() if "." in upload.name else ""
     if extension not in CLIENT_DOCUMENT_ALLOWED_EXTENSIONS:
         raise DocActionError(f"Файл {upload.name} — допустимы только PDF, JPG и PNG.")
     if upload.size > MAX_UPLOAD_SIZE:
         raise DocActionError(f"Файл {upload.name} слишком большой (максимум 20 МБ).")
+
+    if replace_existing:
+        _delete_docs_of_type(transport_request, car, doc_type)
 
     file_to_save = upload
     if doc_type == "SIGNATURE" and extension in {"jpg", "jpeg", "png"}:
@@ -196,10 +290,6 @@ def save_upload_doc(transport_request, car, doc_type, upload, user):
         if normalized:
             stem = upload.name.rsplit(".", 1)[0] if "." in upload.name else "signature"
             file_to_save = ContentFile(normalized, name=f"{stem}.png")
-        # Старые сгенерированные «авто»-подписи заменяем.
-        for old in transport_request.documents.filter(car=car, doc_type="SIGNATURE", is_generated=True):
-            old.file.delete(save=False)
-            old.delete()
 
     return TransportRequestDocument.objects.create(
         request=transport_request,
@@ -281,6 +371,8 @@ def apply_doc_action(*, transport_request, car, doc_type, post, files, user) -> 
     package, _ = TransportDocumentPackage.objects.get_or_create(request=transport_request, car=car)
     label = DOC_TYPE_LABELS[doc_type]
     notices: list[Notice] = []
+    data_before = deepcopy(package.data)
+    cascade = _flag_on(post.get("cascade"))
 
     # Валидация вводимых значений (дат/сумм) до сохранения.
     try:
@@ -298,6 +390,15 @@ def apply_doc_action(*, transport_request, car, doc_type, post, files, user) -> 
             docs_service.parse_amount(package.data.get("invoice_amount"))
     except PackageDataError as exc:
         raise DocActionError(f"«{label}»: {exc}") from exc
+
+    cascade_kwargs = {
+        "transport_request": transport_request,
+        "car": car,
+        "package": package,
+        "source_type": doc_type,
+        "user": user,
+        "notices": notices,
+    }
 
     if post.get("action") == "generate":
         if doc_type in TRANSPORT_UPLOAD_ONLY_TYPES:
@@ -317,13 +418,24 @@ def apply_doc_action(*, transport_request, car, doc_type, post, files, user) -> 
         _replace_generated(transport_request, car, doc_type, filename, pdf_bytes, user)
         notices.append(("success", f"«{label}» сгенерирован."))
         notices += [("info", f"«{label}»: {notice}") for notice in gen_notices]
+        refresh_related_documents(**cascade_kwargs, skip_types={doc_type})
         return notices
 
     # Сохранение данных + загрузка файлов.
     saved_docs = []
-    for upload in files:
+    replace_existing = doc_type == "SIGNATURE" or (cascade and doc_type == "PASSPORT")
+    for index, upload in enumerate(files):
         try:
-            saved_docs.append(save_upload_doc(transport_request, car, doc_type, upload, user))
+            saved_docs.append(
+                save_upload_doc(
+                    transport_request,
+                    car,
+                    doc_type,
+                    upload,
+                    user,
+                    replace_existing=(replace_existing and index == 0),
+                )
+            )
         except DocActionError as exc:
             notices.append(("error", f"«{label}»: {exc}"))
 
@@ -343,6 +455,8 @@ def apply_doc_action(*, transport_request, car, doc_type, post, files, user) -> 
         notices.append(("success", f"«{label}»: файлы добавлены ({len(saved_docs)} шт.)."))
     else:
         notices.append(("success", f"«{label}»: данные сохранены."))
+    if saved_docs or package.data != data_before:
+        refresh_related_documents(**cascade_kwargs, include_self=True)
     return notices
 
 
@@ -383,11 +497,13 @@ def generate_all_for_car(*, transport_request, car, post, files, user) -> list[N
     try:
         saved_passport = []
         if passport_upload:
-            saved_passport.append(save_upload_doc(transport_request, car, "PASSPORT", passport_upload, user))
+            saved_passport.append(
+                save_upload_doc(transport_request, car, "PASSPORT", passport_upload, user, replace_existing=True)
+            )
         elif not has_passport:
             raise DocActionError("Загрузите файл паспорта.")
         if signature_upload:
-            save_upload_doc(transport_request, car, "SIGNATURE", signature_upload, user)
+            save_upload_doc(transport_request, car, "SIGNATURE", signature_upload, user, replace_existing=True)
         elif not has_signature:
             raise DocActionError("Загрузите файл подписи.")
     except PackageDataError as exc:

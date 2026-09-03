@@ -590,6 +590,186 @@ def test_generate_invoice_via_view(logged_client, transport_request, car, settin
     assert transport_request.documents.filter(doc_type="INVOICE").count() == 1
 
 
+def _pdf_text(doc) -> str:
+    import fitz
+
+    with doc.file.open("rb") as fh:
+        return fitz.open(stream=fh.read(), filetype="pdf")[0].get_text()
+
+
+def _signature_upload(name="sign.jpg"):
+    from PIL import Image
+
+    img = Image.new("RGB", (300, 150), (255, 255, 255))
+    for x in range(30, 270):
+        for y in range(60, 80):
+            img.putpixel((x, y), (10, 10, 10))
+    raw = io.BytesIO()
+    img.save(raw, format="JPEG")
+    return SimpleUploadedFile(name, raw.getvalue(), content_type="image/jpeg")
+
+
+def _seed_generated_package(logged_client, transport_request, car):
+    """Паспорт + инвойс + платёжка + обязательство — типичный пакет после «Сгенерировать всё»."""
+    logged_client.post(
+        _doc_url(transport_request), {"doc_type": "PASSPORT", "car": car.pk, "action": "save", **BUYER_DATA}
+    )
+    logged_client.post(
+        _doc_url(transport_request),
+        {
+            "doc_type": "INVOICE",
+            "car": car.pk,
+            "action": "generate",
+            "invoice_amount": "2850",
+            "invoice_date": "2026-08-12",
+        },
+    )
+    logged_client.post(_doc_url(transport_request), {"doc_type": "PAYMENT_ORDER", "car": car.pk, "action": "generate"})
+    logged_client.post(_doc_url(transport_request), {"doc_type": "OBLIGATION", "car": car.pk, "action": "generate"})
+    return {
+        "invoice": transport_request.documents.get(doc_type="INVOICE"),
+        "payment": transport_request.documents.get(doc_type="PAYMENT_ORDER"),
+        "obligation": transport_request.documents.get(doc_type="OBLIGATION"),
+    }
+
+
+def test_invoice_amount_change_refreshes_payment(logged_client, transport_request, car, settings, tmp_path):
+    settings.MEDIA_ROOT = str(tmp_path)
+    seeded = _seed_generated_package(logged_client, transport_request, car)
+    old_payment_pk = seeded["payment"].pk
+    old_obligation_pk = seeded["obligation"].pk
+
+    logged_client.post(
+        _doc_url(transport_request),
+        {
+            "doc_type": "INVOICE",
+            "car": car.pk,
+            "action": "generate",
+            "invoice_amount": "9999",
+            "invoice_date": "2026-08-12",
+        },
+    )
+    invoice = transport_request.documents.get(doc_type="INVOICE")
+    payment = transport_request.documents.get(doc_type="PAYMENT_ORDER")
+    assert payment.pk != old_payment_pk
+    assert payment.is_generated
+    assert "9,999" in _pdf_text(invoice) or "9999" in _pdf_text(invoice)
+    assert "Девять тысяч" in _pdf_text(payment)
+    # Сумма инвойса в обязательстве не фигурирует — его не пересобираем.
+    assert transport_request.documents.get(doc_type="OBLIGATION").pk == old_obligation_pk
+
+
+def test_passport_change_refreshes_related_generated_docs(logged_client, transport_request, car, settings, tmp_path):
+    settings.MEDIA_ROOT = str(tmp_path)
+    seeded = _seed_generated_package(logged_client, transport_request, car)
+    old = {key: doc.pk for key, doc in seeded.items()}
+
+    logged_client.post(
+        _doc_url(transport_request),
+        {
+            "doc_type": "PASSPORT",
+            "car": car.pk,
+            "action": "save",
+            "cascade": "1",
+            **{**BUYER_DATA, "buyer_name": "IVAN IVANOV", "buyer_name_ru": "Иванов Иван Иванович"},
+        },
+    )
+    invoice = transport_request.documents.get(doc_type="INVOICE")
+    payment = transport_request.documents.get(doc_type="PAYMENT_ORDER")
+    obligation = transport_request.documents.get(doc_type="OBLIGATION")
+    assert invoice.pk != old["invoice"]
+    assert payment.pk != old["payment"]
+    assert obligation.pk != old["obligation"]
+    assert "IVAN IVANOV" in _pdf_text(invoice)
+    assert "IVAN IVANOV" in _pdf_text(payment)
+    assert "Иванов Иван Иванович" in _pdf_text(obligation)
+    assert not transport_request.documents.filter(doc_type="LETTER_USA").exists()
+
+
+def test_uploaded_payment_not_replaced_on_invoice_change(logged_client, transport_request, car, settings, tmp_path):
+    settings.MEDIA_ROOT = str(tmp_path)
+    logged_client.post(
+        _doc_url(transport_request), {"doc_type": "PASSPORT", "car": car.pk, "action": "save", **BUYER_DATA}
+    )
+    logged_client.post(
+        _doc_url(transport_request),
+        {
+            "doc_type": "INVOICE",
+            "car": car.pk,
+            "action": "generate",
+            "invoice_amount": "2850",
+            "invoice_date": "2026-08-12",
+        },
+    )
+    uploaded = TransportRequestDocument.objects.create(
+        request=transport_request,
+        car=car,
+        doc_type="PAYMENT_ORDER",
+        file=SimpleUploadedFile("payment.pdf", _tiny_pdf("manual-payment"), content_type="application/pdf"),
+        is_generated=False,
+    )
+    logged_client.post(
+        _doc_url(transport_request),
+        {
+            "doc_type": "INVOICE",
+            "car": car.pk,
+            "action": "generate",
+            "invoice_amount": "4000",
+            "invoice_date": "2026-08-12",
+        },
+    )
+    payment = transport_request.documents.get(doc_type="PAYMENT_ORDER")
+    assert payment.pk == uploaded.pk
+    assert not payment.is_generated
+
+
+def test_new_signature_replaces_old_and_refreshes_obligation(logged_client, transport_request, car, settings, tmp_path):
+    settings.MEDIA_ROOT = str(tmp_path)
+    logged_client.post(
+        _doc_url(transport_request), {"doc_type": "PASSPORT", "car": car.pk, "action": "save", **BUYER_DATA}
+    )
+    logged_client.post(
+        _doc_url(transport_request),
+        {"doc_type": "SIGNATURE", "car": car.pk, "action": "save", "files": _signature_upload("first.jpg")},
+    )
+    logged_client.post(
+        _doc_url(transport_request),
+        {
+            "doc_type": "INVOICE",
+            "car": car.pk,
+            "action": "generate",
+            "invoice_amount": "2850",
+            "invoice_date": "2026-08-12",
+        },
+    )
+    logged_client.post(_doc_url(transport_request), {"doc_type": "OBLIGATION", "car": car.pk, "action": "generate"})
+    old_obligation_pk = transport_request.documents.get(doc_type="OBLIGATION").pk
+    first_sign_pk = transport_request.documents.get(doc_type="SIGNATURE").pk
+
+    logged_client.post(
+        _doc_url(transport_request),
+        {"doc_type": "SIGNATURE", "car": car.pk, "action": "save", "files": _signature_upload("second.jpg")},
+    )
+    assert transport_request.documents.filter(doc_type="SIGNATURE").count() == 1
+    assert transport_request.documents.get(doc_type="SIGNATURE").pk != first_sign_pk
+    obligation = transport_request.documents.get(doc_type="OBLIGATION")
+    assert obligation.pk != old_obligation_pk
+    assert obligation.is_generated
+    # Платёжка без галочки подписи не пересобирается.
+    assert not transport_request.documents.filter(doc_type="PAYMENT_ORDER").exists()
+
+
+def test_car_row_shows_edit_pencil(logged_client, transport_request, car):
+    response = logged_client.get(reverse("website:transport_requests"))
+    html = response.content.decode()
+    assert 'class="doc-slot-edit doc-edit-btn"' in html
+    assert 'data-doc-type="PASSPORT"' in html
+    assert "bi-pencil" in html
+    # Тайтл только загружается — карандаша у пустого слота нет.
+    assert not re.search(r'doc-edit-btn"[^>]*data-doc-type="TITLE"', html)
+    assert not re.search(r'data-doc-type="TITLE"[^>]*doc-edit-btn', html)
+
+
 def test_extract_passport_normalizes(monkeypatch):
     from core.services import passport_extractor as pe
 

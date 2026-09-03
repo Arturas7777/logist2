@@ -23,7 +23,7 @@
             {# отдельный пункт «Одним файлом» ниже, а сюда падает нераспознанное. #}
             {% if not slot.doc_rows %}
             {% if not slot.is_bulk %}
-            <li>
+            <li class="doc-slot-line">
                 {% if req.is_client_editable %}
                 <button type="button" class="dropdown-item doc-add-item doc-open-btn"
                         data-doc-type="{{ slot.type }}"
@@ -32,6 +32,16 @@
                     <i class="bi bi-plus-lg" aria-hidden="true"></i>{{ slot.label }}
                     {% if slot.is_missing %}<span class="doc-required-mark" title="{% trans 'Обязательный документ' %}">*</span>{% endif %}
                 </button>
+                {% if slot.type != "TITLE" %}
+                <button type="button" class="doc-slot-edit doc-edit-btn"
+                        title="{% trans 'Редактировать документ' %}"
+                        aria-label="{% trans 'Редактировать документ' %}"
+                        data-doc-type="{{ slot.type }}"
+                        data-car="{{ section.car.pk }}"
+                        data-req="{{ req.pk }}">
+                    <i class="bi bi-pencil" aria-hidden="true"></i>
+                </button>
+                {% endif %}
                 {% else %}
                 <span class="dropdown-item-text text-muted">{{ slot.label }}</span>
                 {% endif %}
@@ -86,13 +96,23 @@
                     {% endfor %}
                     {% if req.is_client_editable and not slot.is_bulk %}
                     <button type="button" class="doc-chip-add doc-open-btn"
-                            title="{% trans 'Добавить / изменить' %}"
-                            aria-label="{% trans 'Добавить / изменить' %}"
+                            title="{% trans 'Добавить файл' %}"
+                            aria-label="{% trans 'Добавить файл' %}"
                             data-doc-type="{{ slot.type }}"
                             data-car="{{ section.car.pk }}"
                             data-req="{{ req.pk }}">
                         <i class="bi bi-plus-lg" aria-hidden="true"></i>
                     </button>
+                    {% if slot.type != "TITLE" %}
+                    <button type="button" class="doc-chip-edit doc-edit-btn"
+                            title="{% trans 'Редактировать документ' %}"
+                            aria-label="{% trans 'Редактировать документ' %}"
+                            data-doc-type="{{ slot.type }}"
+                            data-car="{{ section.car.pk }}"
+                            data-req="{{ req.pk }}">
+                        <i class="bi bi-pencil" aria-hidden="true"></i>
+                    </button>
+                    {% endif %}
                     {% endif %}
                 </div>
             </li>
