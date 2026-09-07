@@ -23,6 +23,7 @@ from core.models import (
     LineService,
     WarehouseService,
 )
+from core.services.car_model_image import find_car_model_image_url, select_car_model_image
 
 logger = logging.getLogger(__name__)
 
@@ -212,9 +213,10 @@ def _services_panel_html(kind, cards, *, modal_id, add_title, add_label, empty_n
 
 
 def find_car_image(year, brand):
-    """Find best matching image for a car by year+brand.
+    """Find best matching static PNG for a car by year+brand.
 
-    Priority: exact match "2018 BMW 430I.png" > brand-only match > fallback.
+    Имена файлов вида ``2018 BMW 430I.png``. Год в имени — поколение:
+    более новый файл не показывается на более старой машине.
     Matching is case-insensitive. Использует кэшированный индекс файлов.
     """
     if not brand:
@@ -224,69 +226,29 @@ def find_car_image(year, brand):
     if not files_lower:
         return None
 
-    exact = f"{year} {brand}.png".lower()
-    if exact in files_lower:
-        return f"icons/car_models/{files_lower[exact]}"
+    class _IconRec:
+        __slots__ = ("brand", "year", "fname")
 
-    brand_lower = brand.lower()
+        def __init__(self, rec_brand, rec_year, fname):
+            self.brand = rec_brand
+            self.year = rec_year
+            self.fname = fname
+
+    records = []
     for fname_lower, fname in files_lower.items():
         name = fname_lower.rsplit(".", 1)[0]
         parts = name.split(" ", 1)
-        if len(parts) == 2 and parts[1] == brand_lower:
-            return f"icons/car_models/{fname}"
+        if len(parts) == 2:
+            try:
+                records.append(_IconRec(parts[1], int(parts[0]), fname))
+                continue
+            except ValueError:
+                pass
+        records.append(_IconRec(name, None, fname))
 
-    for fname_lower, fname in files_lower.items():
-        name = fname_lower.rsplit(".", 1)[0]
-        if brand_lower in name:
-            return f"icons/car_models/{fname}"
-
-    return None
-
-
-def find_car_model_image_url(year, brand):
-    """Ищет картинку модели в БД (CarModelImage). Возвращает MEDIA-URL или None.
-
-    Приоритет: точное совпадение brand+год > brand без года > частичное
-    (brand записи — начало brand авто, напр. «BMW» ⊂ «BMW 430I»; берётся
-    самая специфичная запись)."""
-    if not brand:
-        return None
-    from core.models import CarModelImage
-
-    brand = brand.strip()
-    qs = CarModelImage.objects.filter(is_active=True).exclude(image="")
-
-    match = qs.filter(brand__iexact=brand, year=year).first()
-    if not match:
-        match = qs.filter(brand__iexact=brand, year__isnull=True).first()
-    if not match:
-        # Частичное совпадение: brand записи — префикс brand авто
-        # («BMW» ⊂ «BMW 430I»). Раньше для этого грузились ВСЕ записи
-        # CarModelImage в память; теперь сравнение делает БД:
-        # LOWER(LEFT(<brand авто>, LENGTH(brand))) = LOWER(TRIM(brand)).
-        from django.db.models import Case, F, IntegerField, Value, When
-        from django.db.models.functions import Length, Lower, Substr, Trim
-
-        match = (
-            qs.annotate(_brand_norm=Lower(Trim("brand")))
-            .annotate(_prefix=Lower(Substr(Value(brand), 1, Length("_brand_norm"))))
-            .filter(_prefix=F("_brand_norm"))
-            .annotate(_year_match=Case(When(year=year, then=1), default=0, output_field=IntegerField()))
-            .order_by(Length("_brand_norm").desc(), "-_year_match")
-            .first()
-        )
-
-    if match and match.image:
-        try:
-            url = match.image.url
-        except ValueError:
-            return None
-        # Сброс кэша: имя файла при перезаливке не меняется (.webp под тем же
-        # brand), поэтому добавляем версию по времени обновления — иначе
-        # браузер показывал бы старую версию картинки.
-        if match.updated_at:
-            url = f"{url}?v={int(match.updated_at.timestamp())}"
-        return url
+    match = select_car_model_image(records, year, brand)
+    if match:
+        return f"icons/car_models/{match.fname}"
     return None
 
 
@@ -698,8 +660,10 @@ class CarAdmin(CSVExportMixin, admin.ModelAdmin):
         """AJAX-загрузка картинки модели прямо из карточки авто.
 
         Файл привязывается к CarModelImage по марке+году ТЕКУЩЕГО авто
-        (год/марка подхватываются автоматически), нормализуется под единый
-        канвас и возвращается URL для мгновенного обновления картинки.
+        (год/марка подхватываются автоматически) как поколение с этого года:
+        более новые фото не затирают и не показываются на более старых
+        машинах той же марки. Нормализуется под единый канвас и возвращается
+        URL для мгновенного обновления картинки.
         """
         from django.core.files.base import ContentFile
         from django.http import JsonResponse

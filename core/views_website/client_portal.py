@@ -10,6 +10,7 @@ from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404, render
 
 from core.models import Car, CarModelImage, Container
+from core.services.car_model_image import car_model_image_media_url, select_car_model_image
 from core.models.website import TransportRequest
 from core.models_website import CarPhoto, ClientUser, ContainerPhoto
 
@@ -23,45 +24,21 @@ def _attach_model_images(cars):
     """Проставляет каждому авто картинку модели: ``model_image_url``
     (мини-версия для списков) и ``model_image_full_url`` (полная, для карточки).
 
-    Повторяет логику подбора ``find_car_model_image_url`` (админка), но одним
-    запросом на страницу вместо 2–3 запросов на каждое авто: записей
-    CarModelImage мало (десятки), подбор делается в памяти.
+    Та же логика поколений, что у ``find_car_model_image_url``: одним
+    запросом на страницу, подбор в памяти (записей CarModelImage мало).
     """
     records = list(CarModelImage.objects.filter(is_active=True).exclude(image=""))
     if not records:
         return
-    recs = [((r.brand or "").strip().lower(), r) for r in records]
-
-    def _url(image_field, version_ts):
-        if not image_field:
-            return None
-        try:
-            url = image_field.url
-        except ValueError:
-            return None
-        return f"{url}?v={version_ts}" if version_ts else url
 
     for car in cars:
         car.model_image_url = None
         car.model_image_full_url = None
-        brand = (car.brand or "").strip().lower()
-        if not brand:
+        match = select_car_model_image(records, car.year, car.brand)
+        if match is None:
             continue
-        best = None
-        best_score = None
-        for brand_norm, rec in recs:
-            if brand_norm != brand and not brand.startswith(brand_norm):
-                continue
-            # Длиннее совпадение по названию > точный год > запись «на все годы».
-            year_score = 2 if rec.year == car.year else (1 if rec.year is None else 0)
-            score = (len(brand_norm), year_score)
-            if best_score is None or score > best_score:
-                best, best_score = rec, score
-        if best is None:
-            continue
-        version_ts = int(best.updated_at.timestamp()) if best.updated_at else None
-        full_url = _url(best.image, version_ts)
-        car.model_image_url = _url(best.thumbnail, version_ts) or full_url
+        full_url = car_model_image_media_url(match)
+        car.model_image_url = car_model_image_media_url(match, thumbnail=True) or full_url
         car.model_image_full_url = full_url
 
 
