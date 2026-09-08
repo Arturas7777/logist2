@@ -221,6 +221,59 @@ def signature_bytes(transport_request, car):
     return normalize_signature_image(raw) or raw
 
 
+def _doc_needs_signature(doc_type: str, data: dict) -> bool:
+    """Нужна ли подпись клиента этому генерируемому документу."""
+    if doc_type == "OBLIGATION":
+        return True
+    return doc_type == "PAYMENT_ORDER" and _flag_on(data.get("payment_include_signature"))
+
+
+def auto_signature_from_passport(transport_request, car, user, notices: list[Notice]) -> bytes | None:
+    """Вытянуть подпись со скана паспорта, когда слот «Подпись» пуст.
+
+    Успешный результат сохраняется в слот «Подпись» (``is_generated=True``):
+    клиент видит, что именно проставлено в документы, может удалить или
+    заменить файл своим фото, а каскадные пересборки используют ту же
+    подпись без повторных обращений к AI.
+    """
+    passport = transport_request.documents.filter(car=car, doc_type="PASSPORT").order_by("-created_at").first()
+    if passport is None:
+        return None
+    from core.services import passport_signature
+
+    if not passport_signature.ai_available():
+        return None
+    try:
+        png = passport_signature.extract_signature_from_passport(passport.file.path)
+    except Exception:
+        logger.exception("Авто-извлечение подписи из паспорта не удалось (документ %s)", passport.pk)
+        png = None
+    if not png:
+        notices.append(
+            (
+                "warning",
+                "«Подпись»: не удалось автоматически вытянуть подпись из паспорта — загрузите фото подписи вручную.",
+            )
+        )
+        return None
+    TransportRequestDocument.objects.create(
+        request=transport_request,
+        car=car,
+        doc_type="SIGNATURE",
+        file=ContentFile(png, name="signature_auto.png"),
+        is_generated=True,
+        uploaded_by=user if (user and getattr(user, "is_authenticated", False)) else None,
+    )
+    notices.append(
+        (
+            "success",
+            "«Подпись»: вытянута из паспорта автоматически — проверьте её в слоте «Подпись», "
+            "при необходимости замените своим фото.",
+        )
+    )
+    return png
+
+
 def apply_passport_ai(package, saved_docs, notices: list[Notice]) -> None:
     """Автозаполнение данных пакета после загрузки паспорта.
 
@@ -230,8 +283,8 @@ def apply_passport_ai(package, saved_docs, notices: list[Notice]) -> None:
     * Адрес, введённый кириллицей, транслитерируется в латиницу для
       инвойса и платёжки, если латинский вариант ещё не заполнен.
 
-    Подпись из паспорта не вырезаем — качество crop слишком низкое;
-    нужна отдельная загрузка в слот «Подпись».
+    Подпись здесь не трогаем: если слот «Подпись» пуст, она вытягивается
+    из паспорта при генерации документов (``auto_signature_from_passport``).
     """
     from core.services import passport_extractor
 
@@ -403,13 +456,18 @@ def apply_doc_action(*, transport_request, car, doc_type, post, files, user) -> 
     if post.get("action") == "generate":
         if doc_type in TRANSPORT_UPLOAD_ONLY_TYPES:
             raise DocActionError(f"«{label}» нельзя сгенерировать — загрузите реальный файл.")
+        sig = signature_bytes(transport_request, car)
+        auto_signature = False
+        if sig is None and _doc_needs_signature(doc_type, package.data):
+            sig = auto_signature_from_passport(transport_request, car, user, notices)
+            auto_signature = sig is not None
         try:
             filename, pdf_bytes, gen_notices = docs_service.generate_document(
                 transport_request,
                 car,
                 package.data,
                 doc_type,
-                signature_bytes=signature_bytes(transport_request, car),
+                signature_bytes=sig,
             )
         except PackageDataError as exc:
             package.save(update_fields=["data", "updated_at"])
@@ -418,6 +476,9 @@ def apply_doc_action(*, transport_request, car, doc_type, post, files, user) -> 
         _replace_generated(transport_request, car, doc_type, filename, pdf_bytes, user)
         notices.append(("success", f"«{label}» сгенерирован."))
         notices += [("info", f"«{label}»: {notice}") for notice in gen_notices]
+        if auto_signature:
+            # Новая подпись должна попасть и в другие уже сгенерированные PDF.
+            cascade_kwargs["source_type"] = "SIGNATURE"
         refresh_related_documents(**cascade_kwargs, skip_types={doc_type})
         return notices
 
@@ -492,7 +553,6 @@ def generate_all_for_car(*, transport_request, car, post, files, user) -> list[N
     passport_upload = files.get("passport")
     signature_upload = files.get("signature")
     has_passport = transport_request.documents.filter(car=car, doc_type="PASSPORT").exists()
-    has_signature = transport_request.documents.filter(car=car, doc_type="SIGNATURE").exists()
 
     try:
         saved_passport = []
@@ -504,8 +564,6 @@ def generate_all_for_car(*, transport_request, car, post, files, user) -> list[N
             raise DocActionError("Загрузите файл паспорта.")
         if signature_upload:
             save_upload_doc(transport_request, car, "SIGNATURE", signature_upload, user, replace_existing=True)
-        elif not has_signature:
-            raise DocActionError("Загрузите файл подписи.")
     except PackageDataError as exc:
         package.save(update_fields=["data", "updated_at"])
         raise DocActionError(f"{prefix}: {exc}") from exc
@@ -519,12 +577,23 @@ def generate_all_for_car(*, transport_request, car, post, files, user) -> list[N
         if latin:
             package.data["buyer_address"] = latin
 
+    # Подпись: загруженная, иначе авто-извлечение из паспорта. Без подписи
+    # пакет не собираем — обязательство без подписи складу не нужно.
+    sig = signature_bytes(transport_request, car)
+    if sig is None:
+        sig = auto_signature_from_passport(transport_request, car, user, notices)
+    if sig is None:
+        package.save(update_fields=["data", "updated_at"])
+        raise DocActionError(
+            f"{prefix}: подпись не загружена, и вытянуть её из паспорта не удалось — приложите фото подписи."
+        )
+
     try:
         results, gen_notices = docs_service.generate_all_documents(
             transport_request,
             car,
             package.data,
-            signature_bytes=signature_bytes(transport_request, car),
+            signature_bytes=sig,
         )
     except PackageDataError as exc:
         package.save(update_fields=["data", "updated_at"])
