@@ -22,8 +22,11 @@ import pytest
 from core.models import (
     Car,
     CarService,
+    Client,
+    ClientTariffRate,
     Container,
     DeletedCarService,
+    Line,
     Warehouse,
     WarehouseService,
 )
@@ -209,3 +212,73 @@ class TestProcessRemovedServices:
         removed = process_removed_services(car, {f"remove_warehouse_service_{svc.id}": "1"})
         assert removed == {f"warehouse_{svc.id}"}
         assert not CarService.objects.filter(car=car, service_id=svc.id).exists()
+
+
+@pytest.mark.django_db
+class TestTransferredCarClientAssignCreatesThs:
+    def test_assigns_warehouse_ths_on_client_change(self, warehouse):
+        from django.utils import timezone
+
+        from core.service_codes import is_ths_service
+
+        line = Line.objects.create(name="MSC-ADM")
+        WarehouseService.objects.create(
+            warehouse=warehouse,
+            name="THS NETO",
+            code="ths",
+            short_name="THS",
+            default_price=Decimal("0"),
+            is_active=True,
+            add_by_default=False,
+        )
+        WarehouseService.objects.create(
+            warehouse=warehouse,
+            name="Разгрузка/ Погрузка / Декларация",
+            short_name="Порт",
+            default_price=Decimal("160"),
+            is_active=True,
+            add_by_default=True,
+        )
+        container = Container.objects.create(
+            number="ADMSVC-THS",
+            status="FLOATING",
+            line=line,
+            warehouse=warehouse,
+            ths=Decimal("250.00"),
+            ths_payer="WAREHOUSE",
+        )
+        client = Client.objects.create(name="THS Client", tariff_type="FIXED")
+        ClientTariffRate.objects.create(
+            client=client,
+            vehicle_type="SEDAN",
+            min_cars=1,
+            agreed_total_price=Decimal("300.00"),
+        )
+        car = Car.objects.create(
+            year=2022,
+            brand="BMW",
+            vin="5UX43EX03S9Y59415",
+            status="TRANSFERRED",
+            transfer_date=timezone.now().date(),
+            container=container,
+            warehouse=warehouse,
+            vehicle_type="SEDAN",
+        )
+        car._bulk_updating = True
+        car.client = client
+        car.save()
+        car._bulk_updating = True
+
+        apply_car_service_edits(car, post={}, changed_data=["client"], is_change=True)
+
+        ths_services = [cs for cs in car.car_services.all() if is_ths_service(cs)]
+        assert len(ths_services) == 1
+        assert ths_services[0].custom_price == Decimal("250.00")
+        port = next(cs for cs in car.car_services.all() if cs.get_service_short_name() == "Порт")
+        package = (
+            (port.custom_price or 0)
+            + (port.markup_amount or 0)
+            + ths_services[0].custom_price
+            + (ths_services[0].markup_amount or 0)
+        )
+        assert package == Decimal("300.00")

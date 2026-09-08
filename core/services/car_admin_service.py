@@ -272,26 +272,41 @@ def apply_car_service_edits(car, *, post, changed_data, is_change) -> None:
 
     # Тариф клиента (FIXED / FLEXIBLE) — только когда реально изменилось что-то,
     # влияющее на распределение, или правились сами услуги.
+    # TRANSFERRED раньше полностью блокировал тариф: постфактум (назначили
+    # клиента уже переданному авто) THS не создавался и наценка не считалась.
+    # Теперь: недостающий THS контейнера собираем всегда, если у авто есть
+    # клиент; тариф на переданных — только при смене клиента или только что
+    # созданном THS (чтобы не затирать исторические суммы при обычном save).
     client_cleared = is_change and "client" in changed_data and not car.client
+    client_changed = (not is_change) or "client" in changed_data or client_cleared
     deps_touched = (
         not is_change
         or any(f in changed_data for f in ("client", "warehouse", "line", "carrier"))
         or services_touched(post)
         or client_cleared
     )
-    if car.status != "TRANSFERRED" and deps_touched:
-        client = car.client
-        try:
-            from core.services.car_service_manager import apply_client_tariff_for_car
+    ths_created = False
+    try:
+        from core.services.car_service_manager import (
+            apply_client_tariff_for_car,
+            ensure_ths_and_tariffs_for_car,
+        )
 
-            if (client and client.tariff_type in ("FIXED", "FLEXIBLE")) or client_cleared:
-                apply_client_tariff_for_car(car)
-                car.calculate_total_price()
-                Car.objects.filter(pk=car.pk).update(total_price=car.total_price)
-        except Exception:
-            # B4: сбой применения тарифа = неверные клиентские цены — пробрасываем.
-            logger.exception("Ошибка при пересчете тарифа клиента для car=%s", car.pk)
-            raise
+        if car.client_id:
+            ths_created = ensure_ths_and_tariffs_for_car(car)
+
+        if not ths_created:
+            allow_tariff = car.status != "TRANSFERRED" or client_changed
+            if deps_touched and allow_tariff:
+                client = car.client
+                if (client and client.tariff_type in ("FIXED", "FLEXIBLE")) or client_cleared:
+                    apply_client_tariff_for_car(car)
+                    car.calculate_total_price()
+                    Car.objects.filter(pk=car.pk).update(total_price=car.total_price)
+    except Exception:
+        # B4: сбой применения тарифа = неверные клиентские цены — пробрасываем.
+        logger.exception("Ошибка при пересчете тарифа клиента для car=%s", car.pk)
+        raise
 
     # Финальный пересчёт цены авто после всех манипуляций с CarService.
     car._bulk_updating = False

@@ -11,7 +11,7 @@ from django.db import models as db_models
 from django.db import transaction
 from django.db.models import Q
 
-from core.service_codes import ServiceCode, is_storage_service
+from core.service_codes import ServiceCode, is_storage_service, is_ths_service
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +200,66 @@ def create_ths_services_for_container(container):
                 created_count += 1
 
     return created_count
+
+
+def _car_missing_ths_service(car) -> bool:
+    return not any(is_ths_service(cs) for cs in car.car_services.all())
+
+
+def ensure_ths_for_car_container(car) -> bool:
+    """Создать пропорциональный THS по контейнеру, если у любой машины его нет.
+
+    Назначение клиента и оформление автовоза постфактум не запускали
+    ``create_ths_services_for_container`` — машины оставались без услуги THS,
+    и она не попадала в инвойс. Возвращает True, если THS пересобран.
+    """
+    if not car or not car.container_id:
+        return False
+
+    container = getattr(car, "container", None)
+    if container is None or container.pk != car.container_id:
+        from core.models import Container
+
+        try:
+            container = Container.objects.select_related("line", "warehouse").get(pk=car.container_id)
+        except Container.DoesNotExist:
+            return False
+
+    if not container.line_id or not container.ths:
+        return False
+
+    from core.models import Car
+
+    siblings = list(Car.objects.filter(container_id=container.pk).prefetch_related("car_services"))
+    if not siblings or not any(_car_missing_ths_service(c) for c in siblings):
+        return False
+
+    return create_ths_services_for_container(container) > 0
+
+
+def ensure_ths_and_tariffs_for_car(car) -> bool:
+    """Пересобрать THS контейнера при пробеле и заново разложить тарифы.
+
+    После ``create_ths_services_for_container`` старые THS-услуги удалены,
+    наценки на них сброшены — тариф нужно применить ко всем авто контейнера.
+    """
+    if not ensure_ths_for_car_container(car):
+        return False
+
+    container = car.container
+    apply_client_tariffs_for_container(container)
+
+    from core.models import Car
+
+    for sibling in Car.objects.filter(container_id=container.pk):
+        sibling.calculate_total_price()
+        Car.objects.filter(pk=sibling.pk).update(
+            total_price=sibling.total_price,
+            days=sibling.days,
+            storage_cost=sibling.storage_cost,
+        )
+    car.refresh_from_db(fields=["total_price", "days", "storage_cost"])
+    return True
 
 
 # Типы ТС, которые считаются мотоциклами. Мотоциклы НЕ участвуют в подсчёте

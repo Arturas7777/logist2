@@ -193,3 +193,84 @@ class CreateTHSServicesTest(TestCase):
         count = create_ths_services_for_container(container)
         self.assertEqual(count, 2)
         self.assertEqual(CarService.objects.filter(service_type="LINE").count(), 2)
+
+
+class EnsureThsForTransferredCarTest(TestCase):
+    """Постфактум: переданному авто без THS услуга появляется при ensure."""
+
+    def setUp(self):
+        self.line = Line.objects.create(name="MSC-THS")
+        self.warehouse = Warehouse.objects.create(name="NETO-THS")
+        WarehouseService.objects.create(
+            warehouse=self.warehouse,
+            name="THS NETO",
+            code="ths",
+            short_name="THS",
+            default_price=Decimal("0"),
+            is_active=True,
+            add_by_default=False,
+        )
+        self.container = Container.objects.create(
+            number="MISS-THS-001",
+            status="FLOATING",
+            line=self.line,
+            warehouse=self.warehouse,
+            ths=Decimal("250.00"),
+            ths_payer="WAREHOUSE",
+        )
+        self.car = Car.objects.create(
+            year=2022,
+            brand="Audi",
+            vin="WA1FECF38L1035831",
+            status="TRANSFERRED",
+            container=self.container,
+            warehouse=self.warehouse,
+            vehicle_type="SEDAN",
+        )
+
+    def test_creates_warehouse_ths_when_missing(self):
+        from core.services.car_service_manager import ensure_ths_and_tariffs_for_car
+        from core.service_codes import is_ths_service
+
+        self.assertFalse(any(is_ths_service(cs) for cs in self.car.car_services.all()))
+
+        created = ensure_ths_and_tariffs_for_car(self.car)
+
+        self.assertTrue(created)
+        ths_services = [cs for cs in self.car.car_services.all() if is_ths_service(cs)]
+        self.assertEqual(len(ths_services), 1)
+        self.assertEqual(ths_services[0].service_type, "WAREHOUSE")
+        self.assertEqual(ths_services[0].custom_price, Decimal("250.00"))
+
+    def test_noop_when_ths_already_present(self):
+        from core.services.car_service_manager import (
+            create_ths_services_for_container,
+            ensure_ths_and_tariffs_for_car,
+        )
+
+        create_ths_services_for_container(self.container)
+        self.assertFalse(ensure_ths_and_tariffs_for_car(self.car))
+
+    def test_generate_invoices_fills_missing_ths(self):
+        from django.conf import settings
+
+        from core.models import AutoTransport, Carrier, Client, Company
+        from core.models_billing import InvoiceItem
+        from core.service_codes import is_ths_service
+
+        Company.objects.create(name=getattr(settings, "COMPANY_NAME", "Caromoto Lithuania"))
+        client = Client.objects.create(name="THS Invoice Client")
+        self.car.client = client
+        self.car.save(update_fields=["client"])
+        carrier = Carrier.objects.create(name="THS Carrier")
+        trip = AutoTransport.objects.create(carrier=carrier, status="FORMED")
+        trip.cars.add(self.car)
+
+        invoices = trip.generate_invoices()
+        self.assertEqual(len(invoices), 1)
+        self.car.refresh_from_db()
+        self.assertTrue(any(is_ths_service(cs) for cs in self.car.car_services.all()))
+        descriptions = list(
+            InvoiceItem.objects.filter(invoice=invoices[0], car=self.car).values_list("description", flat=True)
+        )
+        self.assertIn("THS", descriptions)

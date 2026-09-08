@@ -218,8 +218,19 @@ class AutoTransport(models.Model):
         from django.utils import timezone
 
         from core.models_billing import NewInvoice
+        from core.services.car_service_manager import ensure_ths_and_tariffs_for_car
 
         from .company import Company
+
+        # Постфактум в рейс попадают уже переданные авто без услуги THS
+        # (клиент назначили позже, контейнер не пересохраняли). Без этого
+        # шага generate_invoices копирует пустой набор услуг — в инвойсе нет THC.
+        seen_containers = set()
+        for car in self.cars.select_related("container", "client"):
+            if not car.container_id or car.container_id in seen_containers:
+                continue
+            seen_containers.add(car.container_id)
+            ensure_ths_and_tariffs_for_car(car)
 
         clients = self.get_clients()
         created_invoices = []
