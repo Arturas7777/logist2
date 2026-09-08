@@ -1586,12 +1586,57 @@ class AutoTransportAdmin(admin.ModelAdmin):
     def get_urls(self):
         custom_urls = [
             path(
+                "cars-autocomplete/",
+                self.admin_site.admin_view(self.cars_autocomplete_view),
+                name="core_autotransport_cars_autocomplete",
+            ),
+            path(
                 "<int:pk>/mark-loaded/",
                 self.admin_site.admin_view(self.mark_loaded_view),
                 name="core_autotransport_mark_loaded",
             ),
         ]
         return custom_urls + super().get_urls()
+
+    def cars_autocomplete_view(self, request):
+        """Server-side поиск машин для Select2 на форме автовоза.
+
+        Раньше change_form отдавал 200 авто статусов UNLOADED/IN_PORT/FLOATING
+        и Select2 фильтровал локально — уже переданные машины не находились,
+        а при редактировании рейса пропадали из выбранных. Теперь поиск
+        по VIN/марке/клиенту, включая TRANSFERRED (оформление постфактум).
+        Авто с пометкой «Важное» не предлагаем — m2m-сигнал их всё равно
+        отклонит.
+        """
+        from django.db.models import Case, IntegerField, Q, When
+
+        term = (request.GET.get("term") or "").strip()
+        qs = (
+            Car.objects.filter(is_important=False)
+            .select_related("client")
+            .only("id", "vin", "brand", "year", "status", "client__name")
+        )
+        if term:
+            qs = qs.filter(Q(vin__icontains=term) | Q(brand__icontains=term) | Q(client__name__icontains=term))
+        qs = qs.annotate(
+            _transferred=Case(
+                When(status="TRANSFERRED", then=1),
+                default=0,
+                output_field=IntegerField(),
+            )
+        ).order_by("_transferred", "-id")[:20]
+
+        def _text(car):
+            label = f"{car.brand or ''} {car.year or ''} ({car.vin})".strip()
+            if car.client_id:
+                label += f" - {car.client.name}"
+            return label
+
+        return JsonResponse(
+            {
+                "results": [{"id": c.pk, "text": _text(c), "status": c.status} for c in qs],
+            }
+        )
 
     def mark_loaded_view(self, request, pk):
         """AJAX endpoint: пометить автовоз как Загружен, авто → Передан"""
@@ -1867,34 +1912,36 @@ class AutoTransportAdmin(admin.ModelAdmin):
         return super().change_view(request, object_id, form_url, extra_context)
 
     def _get_extra_context(self, object_id, extra_context=None):
-        """Get context for template"""
+        """Контекст для кастомного шаблона: только уже выбранные машины.
+
+        Поиск новых авто идёт через ``cars-autocomplete/`` (включая
+        TRANSFERRED). В HTML кладём лишь текущий состав рейса, иначе
+        переданные машины пропадали из select при открытии формы.
+        """
         extra_context = extra_context or {}
 
         from core.models import Car
 
-        # Авто с пометкой «Важное» исключаем из списка доступных для
-        # добавления в автовоз (см. m2m_changed pre_add в core/signals.py
-        # — там аналогичный запрет на уровне БД на случай, если кто-то
-        # обойдёт UI).
-        extra_context["cars"] = (
-            Car.objects.filter(
-                status__in=["UNLOADED", "IN_PORT", "FLOATING"],
-                is_important=False,
-            )
-            .select_related("client")
-            .order_by("-id")[:200]
-        )
-
-        # If editing existing auto-transport - pass selected IDs
+        selected_car_ids = []
         if object_id:
             try:
                 autotransport = self.get_object(None, object_id)
-                extra_context["selected_car_ids"] = list(autotransport.cars.values_list("pk", flat=True))
+                if autotransport:
+                    selected_car_ids = list(autotransport.cars.values_list("pk", flat=True))
             except Exception:
                 logger.exception("Failed to load selected car ids for autotransport %s", object_id)
-                extra_context["selected_car_ids"] = []
+                selected_car_ids = []
+
+        extra_context["selected_car_ids"] = selected_car_ids
+        if selected_car_ids:
+            extra_context["cars"] = (
+                Car.objects.filter(pk__in=selected_car_ids)
+                .select_related("client")
+                .only("id", "vin", "brand", "year", "status", "client__name")
+                .order_by("-id")
+            )
         else:
-            extra_context["selected_car_ids"] = []
+            extra_context["cars"] = Car.objects.none()
 
         return extra_context
 

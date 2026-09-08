@@ -153,7 +153,7 @@
             </div>
             <div class="card-body">
                 <div class="cars-hint">
-                    💡 Начните вводить VIN или марку - автомобили появятся автоматически. После формирования создадутся инвойсы!
+                    💡 Начните вводить VIN или марку — поиск включает и уже переданные авто (оформление постфактум). После формирования создадутся инвойсы!
                 </div>
                 <select name="cars" id="cars_select" multiple="multiple" style="width: 100%;">
                     {% for car in cars %}
@@ -403,16 +403,31 @@ console.log('✅ jQuery мост установлен, версия:', window.jQ
         }
 
         // ============================================
-        // 5. ИНИЦИАЛИЗАЦИЯ SELECT2 ДЛЯ АВТОМОБИЛЕЙ (БЕЗ AJAX, КАК В ИНВОЙСАХ)
+        // 5. ИНИЦИАЛИЗАЦИЯ SELECT2 ДЛЯ АВТОМОБИЛЕЙ (AJAX, КАК В ИНВОЙСАХ)
         // ============================================
         var carAdminBaseUrl = '/admin/core/car/';
         
         $('#cars_select').select2({
             placeholder: 'Введите VIN или марку для поиска...',
             allowClear: true,
+            minimumInputLength: 1,
+            ajax: {
+                url: '{% url "admin:core_autotransport_cars_autocomplete" %}',
+                dataType: 'json',
+                delay: 200,
+                data: function(params) { return { term: params.term || '' }; },
+                processResults: function(data) {
+                    return {
+                        results: (data.results || []).map(function(c) {
+                            return { id: c.id, text: c.text, status: c.status };
+                        })
+                    };
+                },
+                cache: true
+            },
             templateResult: function(state) {
                 if (!state.id) return state.text;
-                var status = $(state.element).data('status');
+                var status = state.status || ($(state.element).data('status') || '');
                 var statusLabels = {
                     'FLOATING': '🚢 В пути',
                     'IN_PORT': '⚓ В порту',
@@ -424,7 +439,7 @@ console.log('✅ jQuery мост установлен, версия:', window.jQ
             },
             templateSelection: function(state) {
                 if (!state.id) return state.text;
-                var status = $(state.element).data('status');
+                var status = state.status || ($(state.element).data('status') || '');
                 var link = carAdminBaseUrl + state.id + '/change/';
                 return $('<a href="' + link + '" target="_blank" data-status="' + status + '" ' +
                     'onclick="event.stopPropagation();" ' +

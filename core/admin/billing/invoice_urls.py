@@ -52,26 +52,32 @@ class NewInvoiceUrlsMixin:
 
         Query params:
           term — подстрока для поиска (VIN / brand / client name);
-                 пустая → 20 последних созданных активных машин.
+                 пустая → 20 последних созданных машин (активные выше
+                 переданных).
 
         Response (Select2-совместимый):
           {"results": [{"id": int, "text": str, "status": str}, ...]}
         """
-        from django.db.models import Q
+        from django.db.models import Case, IntegerField, Q, When
 
         from core.models import Car
 
         term = (request.GET.get("term") or "").strip()
-        # Машины, уже находящиеся в TRANSFERRED, скрываем — соответствует
-        # старой логике `cars_qs.exclude(status="TRANSFERRED")`.
-        qs = (
-            Car.objects.exclude(status="TRANSFERRED")
-            .select_related("client")
-            .only("id", "vin", "brand", "year", "status", "client__name")
+        # TRANSFERRED не скрываем: инвойсы часто оформляют постфактум,
+        # когда машины уже переданы. Активные (не переданные) всё равно
+        # выше в выдаче, чтобы повседневный поиск не утопал в истории.
+        qs = Car.objects.select_related("client").only(
+            "id", "vin", "brand", "year", "status", "client__name"
         )
         if term:
             qs = qs.filter(Q(vin__icontains=term) | Q(brand__icontains=term) | Q(client__name__icontains=term))
-        qs = qs.order_by("-id")[:20]
+        qs = qs.annotate(
+            _transferred=Case(
+                When(status="TRANSFERRED", then=1),
+                default=0,
+                output_field=IntegerField(),
+            )
+        ).order_by("_transferred", "-id")[:20]
 
         def _text(car):
             label = f"{car.brand or ''} {car.year or ''} ({car.vin})".strip()
