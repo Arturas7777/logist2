@@ -144,10 +144,17 @@ def _adaptive_haze_cutoff(alpha) -> int:
     return max(_HAZE_CUTOFF, min(190, int(p10) - 15))
 
 
-def _crop_to_content(img, pad_ratio: float = 0.06):
-    """Обрезает пустые поля вокруг штрихов; None если контента нет."""
+def _crop_to_content(img, pad_ratio: float = 0.08, alpha_min: int = 72):
+    """Обрезает пустые поля вокруг штрихов; None если контента нет.
+
+    В рамку идут только достаточно плотные пиксели (``alpha >= alpha_min``).
+    Иначе полупрозрачный туман и пылинки раздувают картинку — в PDF подпись
+    оказывается крошечной внутри большого прозрачного прямоугольника, и
+    размер «скачет» от файла к файлу.
+    """
     alpha = img.split()[-1]
-    bbox = alpha.getbbox()
+    dense = alpha.point(lambda a, m=alpha_min: 255 if a >= m else 0)
+    bbox = dense.getbbox() or alpha.getbbox()
     if not bbox:
         return None
     left, top, right, bottom = bbox

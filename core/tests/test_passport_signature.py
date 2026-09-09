@@ -27,7 +27,10 @@ from core.services.passport_signature import (
     _clean_signature_crop,
     _filter_components,
     _otsu_threshold,
+    _parse_enhance_response,
     _parse_locate_response,
+    _rasterize_strokes,
+    _signature_quality_ok,
 )
 
 pytestmark = pytest.mark.django_db
@@ -131,15 +134,20 @@ def test_parse_locate_response_validates_garbage():
     assert _parse_locate_response({"found": False}, page_count=1) is None
     assert _parse_locate_response({}, page_count=1) is None
     assert _parse_locate_response("не json", page_count=1) is None
-    # Рамка вывернута / вне страницы / нереального размера.
+    # Рамка вывернута / нереального размера.
     bad_boxes = [
         {"left": 0.9, "top": 0.6, "right": 0.5, "bottom": 0.75},
-        {"left": -0.1, "top": 0.6, "right": 0.9, "bottom": 0.75},
         {"left": 0.0, "top": 0.0, "right": 1.0, "bottom": 1.0},
         {"left": 0.5, "top": 0.6, "right": 0.505, "bottom": 0.75},
     ]
     for box in bad_boxes:
         assert _parse_locate_response({"found": True, "page_index": 0, **box}, page_count=1) is None
+    # Чуть вылезла за край — зажимаем, не отбрасываем.
+    clamped = _parse_locate_response(
+        {"found": True, "page_index": 0, "left": -0.02, "top": 0.6, "right": 0.4, "bottom": 0.75},
+        page_count=1,
+    )
+    assert clamped == (0, (0.0, 0.6, 0.4, 0.75))
     # Страница за пределами присланных.
     assert (
         _parse_locate_response(
@@ -212,6 +220,123 @@ def test_extract_returns_none_when_not_found(tmp_path, monkeypatch):
         lambda images, system_prompt, user_text: {"found": False},
     )
     assert passport_signature.extract_signature_from_passport(_passport_page_file(tmp_path)) is None
+
+
+def test_parse_enhance_response_validates_garbage():
+    ok = _parse_enhance_response(
+        {
+            "ok": True,
+            "view_width": 200,
+            "view_height": 80,
+            "stroke_width": 8,
+            "strokes": [{"points": [[10, 40], [40, 20], [80, 50], [120, 30], [160, 45], [190, 38]]}],
+        }
+    )
+    assert ok is not None
+    assert len(ok["strokes"][0]["points"]) == 6
+    assert _parse_enhance_response({"ok": False}) is None
+    assert _parse_enhance_response({}) is None
+    assert _parse_enhance_response({"ok": True, "strokes": []}) is None
+    # Слишком мало точек / нулевой размах — не подпись.
+    assert (
+        _parse_enhance_response(
+            {"ok": True, "strokes": [{"points": [[1, 1], [2, 1]]}]}
+        )
+        is None
+    )
+
+
+def test_rasterize_strokes_draws_dark_ink_on_white():
+    import numpy as np
+
+    parsed = _parse_enhance_response(
+        {
+            "ok": True,
+            "view_width": 200,
+            "view_height": 80,
+            "stroke_width": 8,
+            "strokes": [{"points": [[20, 40], [50, 20], [90, 55], [140, 25], [180, 45]]}],
+        }
+    )
+    img = _rasterize_strokes(parsed)
+    assert img is not None
+    arr = np.asarray(img, dtype=np.uint8)
+    assert (arr < 80).sum() > 50
+    assert arr[0, 0] > 240
+
+
+def test_signature_quality_ok_rejects_empty_and_accepts_clean_crop():
+    from PIL import Image
+
+    assert _signature_quality_ok(None) is False
+    assert _signature_quality_ok(Image.new("L", (400, 160), 255)) is False
+    cleaned = _clean_signature_crop(_signature_crop())
+    assert _signature_quality_ok(cleaned) is True
+
+
+def test_extract_enhances_when_clean_finds_no_ink(tmp_path, monkeypatch):
+    """Бледный кроп без чернил после Оцу — модель обводит то, что видно."""
+    from PIL import Image
+
+    from core.services import scan_extractor
+
+    calls = []
+
+    def fake_claude(images, system_prompt, user_text):
+        calls.append(system_prompt)
+        if "восстанавливаешь" in system_prompt:
+            return {
+                "ok": True,
+                "view_width": 200,
+                "view_height": 80,
+                "stroke_width": 8,
+                "strokes": [{"points": [[10, 40], [40, 20], [80, 50], [120, 30], [160, 45], [190, 38]]}],
+            }
+        return {
+            "found": True,
+            "page_index": 0,
+            "left": 0.55,
+            "top": 0.62,
+            "right": 0.92,
+            "bottom": 0.80,
+        }
+
+    monkeypatch.setattr(scan_extractor, "_call_claude_vision", fake_claude)
+
+    img = Image.new("RGB", (1200, 800), _PAPER)
+    _draw_guilloche(img)
+    path = tmp_path / "passport.jpg"
+    img.save(path, format="JPEG", quality=70)
+
+    png = passport_signature.extract_signature_from_passport(str(path))
+    assert png and png[:4] == b"\x89PNG"
+    assert len(calls) == 2
+    assert any("восстанавливаешь" in prompt for prompt in calls)
+
+
+def test_extract_returns_none_when_enhance_also_fails(tmp_path, monkeypatch):
+    from PIL import Image
+
+    from core.services import scan_extractor
+
+    def fake_claude(images, system_prompt, user_text):
+        if "восстанавливаешь" in system_prompt:
+            return {"ok": False}
+        return {
+            "found": True,
+            "page_index": 0,
+            "left": 0.55,
+            "top": 0.62,
+            "right": 0.92,
+            "bottom": 0.80,
+        }
+
+    monkeypatch.setattr(scan_extractor, "_call_claude_vision", fake_claude)
+    img = Image.new("RGB", (1200, 800), _PAPER)
+    _draw_guilloche(img)
+    path = tmp_path / "empty.jpg"
+    img.save(path, format="JPEG", quality=70)
+    assert passport_signature.extract_signature_from_passport(str(path)) is None
 
 
 # ---------------------------------------------------------------------------

@@ -1234,3 +1234,38 @@ def test_signature_flowable_respects_max_box():
     assert wide.drawHeight <= 1.8 * 28.35 + 0.01
     assert tall.drawWidth <= 5.2 * 28.35 + 0.01
     assert tall.drawHeight <= 1.8 * 28.35 + 0.01
+
+
+def test_signature_flowable_wide_image_not_tiny():
+    """Очень широкая картинка не сжимается в миллиметровую полоску на обязательстве."""
+    from PIL import Image
+    from reportlab.lib.units import cm
+
+    from core.services.transport_docs_pdf import _signature_flowable
+
+    img = Image.new("RGBA", (900, 70), (25, 55, 160, 255))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    wide = _signature_flowable(buf.getvalue(), max_height=1.6 * cm, max_width=4.6 * cm)
+    assert wide is not None
+    assert wide.drawHeight >= 1.6 * cm * 0.72 - 0.05
+    assert wide.drawWidth <= 4.6 * cm + 0.01
+
+
+def test_normalize_signature_crops_low_alpha_haze():
+    """Пылинки с низкой альфой не раздувают рамку — иначе подпись в PDF крошечная."""
+    from PIL import Image
+
+    from core.services.signature_normalizer import _crop_to_content
+
+    img = Image.new("RGBA", (800, 400), (25, 55, 160, 0))
+    for x in range(300, 500):
+        for y in range(170, 230):
+            img.putpixel((x, y), (25, 55, 160, 255))
+    img.putpixel((5, 5), (25, 55, 160, 40))
+    img.putpixel((794, 394), (25, 55, 160, 50))
+    cropped = _crop_to_content(img)
+    assert cropped is not None
+    w, h = cropped.size
+    assert w < 280
+    assert h < 120

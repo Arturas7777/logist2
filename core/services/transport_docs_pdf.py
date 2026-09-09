@@ -229,11 +229,17 @@ def _signature_flowable(
     *,
     max_height: float = 1.5 * cm,
     max_width: float = 4.8 * cm,
+    min_height: float | None = None,
 ):
-    """Картинка подписи с вписыванием в max_height × max_width (пропорции сохранены).
+    """Картинка подписи с вписыванием в max_height × max_width.
 
-    Раньше фиксировали только высоту — широкая подпись раздувалась на полстраницы
-    в платёжке, а узкая/высокая становилась крошечной в обязательстве.
+    Чистый contain-fit даёт скачок размеров: квадратный кроп заполняет всю
+    высоту (~1.6 см), а широкий плоский (поле паспорта, росчерк без хвостов)
+    сжимается в миллиметровую полоску. Нижняя граница ``min_height``
+    (по умолчанию 72% max_height) не даёт подписи «пропасть». Если ширина
+    уже упёрлась в max_width, высота всё равно поднимается до минимума —
+    это лёгкое вертикальное масштабирование только для экстремально
+    широких картинок, не новая подпись.
     """
     if not signature_bytes:
         return None
@@ -244,11 +250,16 @@ def _signature_flowable(
         return None
     if not width_px or not height_px:
         return None
-    width = max_height * width_px / height_px
+    aspect = width_px / height_px
+    width = max_height * aspect
     height = max_height
     if width > max_width:
-        height = max_width * height_px / width_px
+        height = max_width / aspect
         width = max_width
+    floor = min_height if min_height is not None else max_height * 0.72
+    if height < floor:
+        height = floor
+        width = min(max_width, floor * aspect)
     image = Image(io.BytesIO(signature_bytes), width=width, height=height, mask="auto")
     image.hAlign = "LEFT"
     return image
@@ -957,7 +968,7 @@ def generate_obligation_pdf(car, *, date: datetime.date, buyer: dict, signature_
         "России, не буду."
     )
 
-    signature = _signature_flowable(signature_bytes, max_height=1.6 * cm, max_width=4.6 * cm)
+    signature = _signature_flowable(signature_bytes, max_height=1.75 * cm, max_width=4.8 * cm)
     sign_row = Table(
         [
             [

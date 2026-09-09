@@ -16,9 +16,12 @@
    * порог Оцу отделяет штрихи от остатков сетки;
    * фильтр связных компонент убирает брызги и обрезанный рамкой чужой
      текст/линии.
-4. Очищенный фрагмент проходит общий :func:`normalize_signature_image` —
-   штрихи становятся синими «как от ручки», фон прозрачным, поля обрезаются.
-   Результат неотличим от вручную загруженной подписи.
+4. Если очистка не дала внятного росчерка (смазанное/тёмное фото, бледные
+   чернила) — Claude по тому же кропу обводит видимые штрихи и слегка
+   смыкает очевидные разрывы. Новую подпись он не придумывает: только то,
+   что читается на исходнике.
+5. Результат проходит общий :func:`normalize_signature_image` — штрихи
+   становятся синими «как от ручки», фон прозрачным, поля обрезаются.
 
 Ошибки любого шага дают ``None`` — вызывающий код просит клиента загрузить
 подпись вручную, как раньше.
@@ -67,10 +70,42 @@ SIGNATURE_LOCATE_PROMPT = """Ты находишь рукописную подп
   изображения (числа от 0 до 1), начало координат — левый верхний угол.
 - Рамка должна включать росчерк ЦЕЛИКОМ с небольшим запасом, но не
   захватывать соседний печатный текст и фото.
-- Если подписи на страницах нет — верни {"found": false}.
+- Фото часто смазанные и тёмные: даже бледный, рваный или частично
+  читаемый росчерк — это found=true. Верни рамку вокруг ВСЕХ различимых
+  рукописных штрихов в поле подписи.
+- found: false — только если в поле подписи нет вообще никаких
+  рукописных следов.
 
 Верни ТОЛЬКО валидный JSON (без markdown):
 {"found": true, "page_index": 0, "left": 0.55, "top": 0.60, "right": 0.92, "bottom": 0.74}
+"""
+
+SIGNATURE_ENHANCE_PROMPT = """Ты восстанавливаешь рукописную подпись владельца по кропу
+с фото/скана паспорта. Качество исходника часто плохое: смаз, JPEG, тени.
+
+Тебе дано одно или два изображения:
+1) исходный кроп поля «Подпись владельца»;
+2) опционально — детерминированная очистка (может быть дырявой или почти пустой).
+
+Задача: обвести ВИДИМЫЕ рукописные штрихи и слегка сомкнуть очевидные
+разрывы одного и того же росчерка (как будто шариковая ручка не оторвалась
+на миллиметр-два). Результат должен быть похож на обычную человеческую
+подпись, но это тот же росчерк, что на фото, а не новый.
+
+Строго нельзя:
+- придумывать новую подпись, другие буквы, завитки, дату, ФИО;
+- добавлять элементы, которых нет даже намёком на исходнике;
+- обводить печатный текст, рамку поля, MRZ, гильошную сетку паспорта.
+
+Если рукописных штрихов совсем не видно — верни {"ok": false}.
+
+Координаты — в viewBox (view_width × view_height), начало слева сверху.
+Каждый stroke — одно непрерывное движение пера. Точек должно быть достаточно
+часто (шаг примерно 1–3% ширины), чтобы линия выглядела гладкой.
+
+Верни ТОЛЬКО валидный JSON (без markdown):
+{"ok": true, "view_width": 1000, "view_height": 400, "stroke_width": 10,
+ "strokes": [{"points": [[x, y], [x, y], ...]}]}
 """
 
 
@@ -100,12 +135,20 @@ def extract_signature_from_passport(path: str) -> bytes | None:
     if crop is None:
         return None
     cleaned = _clean_signature_crop(crop)
-    if cleaned is None:
-        logger.info("passport_signature: очистка фрагмента не дала штрихов (%s)", path)
+    source = cleaned
+    if not _signature_quality_ok(cleaned):
+        logger.info("passport_signature: очистка слабая или пустая — пробуем дорисовку по кропу (%s)", path)
+        enhanced = _enhance_signature_with_ai(crop, cleaned)
+        if enhanced is not None:
+            source = enhanced
+        elif cleaned is None:
+            logger.info("passport_signature: ни очистка, ни дорисовка не дали штрихов (%s)", path)
+            return None
+    if source is None:
         return None
 
     buf = io.BytesIO()
-    cleaned.save(buf, format="PNG")
+    source.save(buf, format="PNG")
     return normalize_signature_image(buf.getvalue())
 
 
@@ -143,7 +186,12 @@ def _parse_locate_response(data, *, page_count: int) -> tuple[int, tuple[float, 
         return None
     if not 0 <= page_index < page_count:
         return None
-    if not (0.0 <= left < right <= 1.0 and 0.0 <= top < bottom <= 1.0):
+    # Модель иногда отдаёт −0.01 / 1.02 — чуть вылезает за край, не мусор.
+    left = min(max(0.0, left), 1.0)
+    top = min(max(0.0, top), 1.0)
+    right = min(max(0.0, right), 1.0)
+    bottom = min(max(0.0, bottom), 1.0)
+    if not (left < right and top < bottom):
         return None
     if not (_MIN_BBOX_W <= right - left <= _MAX_BBOX_W):
         return None
@@ -167,6 +215,161 @@ def _crop_with_margin(page, bbox: tuple[float, float, float, float]):
     if box[2] - box[0] < _MIN_CROP_SIDE or box[3] - box[1] < _MIN_CROP_SIDE:
         return None
     return page.crop(box)
+
+
+# ── Дорисовка бледного кропа (Claude Vision → полилинии) ─────────────────────
+
+
+def _signature_quality_ok(cleaned) -> bool:
+    """Хватает ли детерминированной очистки, или нужна дорисовка по кропу."""
+    if cleaned is None:
+        return False
+    import numpy as np
+    from scipy import ndimage
+
+    arr = np.asarray(cleaned.convert("L"), dtype=np.uint8)
+    ink = arr < 200
+    total = int(arr.size)
+    ink_count = int(ink.sum())
+    if ink_count < max(80, total * 0.003):
+        return False
+    labels, count = ndimage.label(ink)
+    if count == 0 or count > 35:
+        return False
+    sizes = ndimage.sum_labels(ink, labels, index=np.arange(1, count + 1))
+    largest = float(sizes.max())
+    if largest < 40 or largest / ink_count < 0.25:
+        return False
+    if min(cleaned.size) < 24:
+        return False
+    return True
+
+
+def _enhance_signature_with_ai(crop, cleaned=None):
+    """Обводит видимые штрихи на кропе. None если модель не смогла."""
+    from core.services import scan_extractor
+
+    try:
+        prepared = _prepare_crop_for_vision(crop)
+        images = [scan_extractor._encode_jpeg_under_limit(prepared)]
+        if cleaned is not None:
+            images.append(scan_extractor._encode_jpeg_under_limit(cleaned.convert("RGB")))
+        data = scan_extractor._call_claude_vision(
+            images,
+            system_prompt=SIGNATURE_ENHANCE_PROMPT,
+            user_text=(
+                "Восстанови подпись по кропу. Не выдумывай новый росчерк — "
+                "только видимые штрихи и очевидные склейки разрывов."
+            ),
+        )
+    except Exception as exc:
+        logger.warning("passport_signature: дорисовка подписи не удалась: %s", exc)
+        return None
+    parsed = _parse_enhance_response(data)
+    if parsed is None:
+        return None
+    return _rasterize_strokes(parsed)
+
+
+def _prepare_crop_for_vision(crop):
+    """Контраст + лёгкий апскейл, чтобы модели было проще увидеть бледные штрихи."""
+    from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+
+    img = crop.convert("RGB")
+    img = img.filter(ImageFilter.GaussianBlur(radius=0.4))
+    img = ImageOps.autocontrast(img, cutoff=1)
+    img = ImageEnhance.Contrast(img).enhance(1.3)
+    w, h = img.size
+    long_side = max(w, h)
+    if long_side < 480:
+        scale = 480 / long_side
+        img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
+    return img
+
+
+def _parse_enhance_response(data) -> dict | None:
+    """Валидация JSON дорисовки: набор полилиний разумного размера."""
+    if not isinstance(data, dict) or not data.get("ok"):
+        return None
+    raw_strokes = data.get("strokes")
+    if not isinstance(raw_strokes, list | tuple) or not raw_strokes:
+        return None
+    strokes = []
+    for stroke in raw_strokes:
+        pts = stroke.get("points") if isinstance(stroke, dict) else stroke
+        if not isinstance(pts, list | tuple):
+            continue
+        clean = []
+        for point in pts:
+            if not isinstance(point, list | tuple) or len(point) < 2:
+                continue
+            try:
+                clean.append((float(point[0]), float(point[1])))
+            except (TypeError, ValueError):
+                continue
+        if len(clean) >= 2:
+            strokes.append({"points": clean})
+    if not strokes:
+        return None
+    xs = [p[0] for s in strokes for p in s["points"]]
+    ys = [p[1] for s in strokes for p in s["points"]]
+    if len(xs) < 5:
+        return None
+    span_x = max(xs) - min(xs)
+    span_y = max(ys) - min(ys)
+    if span_x < 8 or span_y < 3:
+        return None
+    try:
+        view_width = float(data.get("view_width") or (max(xs) + 24))
+        view_height = float(data.get("view_height") or (max(ys) + 24))
+        stroke_width = float(data.get("stroke_width") or 10)
+    except (TypeError, ValueError):
+        return None
+    view_width = max(120.0, min(2000.0, view_width))
+    view_height = max(60.0, min(1200.0, view_height))
+    stroke_width = max(6.0, min(22.0, stroke_width))
+    return {
+        "view_width": view_width,
+        "view_height": view_height,
+        "stroke_width": stroke_width,
+        "strokes": strokes,
+    }
+
+
+def _rasterize_strokes(parsed: dict):
+    """Полилинии модели → PIL L (белый фон, тёмные штрихи), обрезка полей."""
+    from PIL import Image, ImageDraw
+
+    vw = max(1, int(round(parsed["view_width"])))
+    vh = max(1, int(round(parsed["view_height"])))
+    stroke_w = int(round(parsed["stroke_width"]))
+    img = Image.new("RGB", (vw, vh), (255, 255, 255))
+    draw = ImageDraw.Draw(img)
+    ink = (25, 30, 40)
+    radius = max(1.0, parsed["stroke_width"] / 2.0)
+    for stroke in parsed["strokes"]:
+        pts = [(p[0], p[1]) for p in stroke["points"]]
+        try:
+            draw.line(pts, fill=ink, width=stroke_w, joint="curve")
+        except TypeError:
+            draw.line(pts, fill=ink, width=stroke_w)
+        for x, y in (pts[0], pts[-1]):
+            draw.ellipse([x - radius, y - radius, x + radius, y + radius], fill=ink)
+    gray = img.convert("L")
+    mask = gray.point(lambda v: 0 if v > 240 else 255)
+    bbox = mask.getbbox()
+    if not bbox:
+        return None
+    left, top, right, bottom = bbox
+    pad_x = max(6, int((right - left) * 0.08))
+    pad_y = max(6, int((bottom - top) * 0.08))
+    box = (
+        max(0, left - pad_x),
+        max(0, top - pad_y),
+        min(vw, right + pad_x),
+        min(vh, bottom + pad_y),
+    )
+    return gray.crop(box)
 
 
 # ── Очистка фона паспорта (numpy + scipy, без AI) ───────────────────────────
