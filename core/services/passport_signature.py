@@ -383,10 +383,10 @@ def _mask_is_speckled(mask) -> bool:
 # ── Мягкое хрома-извлечение (смазанные фото) ─────────────────────────────────
 #
 # Принцип: человек видит подпись на смазе за счёт полутонов и синего цвета.
-# Поэтому НЕ бинаризуем: строим непрерывную карту «чернильности» (насколько
-# пиксель синее и темнее локальной бумаги) и отдаём её прямо в альфа-канал.
-# Бинарные маски используются только для решений (гистерезис, фильтр
-# компонент), но не для отрисовки штрихов.
+# Поэтому вместо порога Оцу строится непрерывная карта «чернильности»
+# (насколько пиксель синее и темнее локальной бумаги), линии усиливаются
+# вдоль своего направления (разрывы смыкаются), и штрих рендерится тонкой
+# лентой вокруг связного скелета — как перо, а не как кляксы бинаризации.
 
 
 def _extract_soft_chroma(crop) -> bytes | None:
@@ -501,27 +501,95 @@ def _suppress_field_rule_soft(score, blueness, darkness):
     return out
 
 
-def _soft_alpha(score):
-    """Карта чернильности → альфа 0..1: гистерезис + мягкий стретч.
+def _oriented_enhance(score, *, sig_along=8.0, sig_across=1.4, n_orient=12):
+    """Усиление линий вдоль их направления: max по банку вытянутых гауссиан.
 
-    Гистерезис (как в Canny): бледный пиксель живёт, только если его
-    связный регион содержит уверенно тёмный. Так бледные участки штриха
-    сохраняются за счёт связности, а шум бумаги без «якоря» отпадает.
+    Смыкает разрывы смазанного штриха (энергия копится вдоль линии),
+    не усиливая изотропные кляксы и зерно бумаги. Затем вычитается
+    локальный изотропный фон — иначе низкочастотный «подъём» вокруг
+    тёмных пятен прячет соседние бледные штрихи под глобальным порогом.
+    """
+    import numpy as np
+    from scipy import ndimage, signal
+
+    r = int(2.5 * sig_along)
+    yy, xx = np.mgrid[-r : r + 1, -r : r + 1]
+    best = np.full(score.shape, -1e9, dtype=np.float32)
+    for k in range(n_orient):
+        th = np.pi * k / n_orient
+        u = xx * np.cos(th) + yy * np.sin(th)
+        v = -xx * np.sin(th) + yy * np.cos(th)
+        g = np.exp(-(u**2 / (2 * sig_along**2) + v**2 / (2 * sig_across**2)))
+        g /= g.sum()
+        resp = signal.fftconvolve(score, g, mode="same").astype(np.float32)
+        np.maximum(best, resp, out=best)
+    return np.clip(best - 0.55 * ndimage.gaussian_filter(best, sigma=5.0), 0.0, None)
+
+
+def _zhang_suen_thin(mask, max_iter=60):
+    """Скелет Чжана–Суэна: связная осевая, петли сохраняются (нет в scipy)."""
+    import numpy as np
+
+    img = mask.astype(np.uint8)
+
+    def neighbors(a):
+        p2 = np.roll(a, -1, axis=0)
+        p3 = np.roll(np.roll(a, -1, axis=0), 1, axis=1)
+        p4 = np.roll(a, 1, axis=1)
+        p5 = np.roll(np.roll(a, 1, axis=0), 1, axis=1)
+        p6 = np.roll(a, 1, axis=0)
+        p7 = np.roll(np.roll(a, 1, axis=0), -1, axis=1)
+        p8 = np.roll(a, -1, axis=1)
+        p9 = np.roll(np.roll(a, -1, axis=0), -1, axis=1)
+        return p2, p3, p4, p5, p6, p7, p8, p9
+
+    for _ in range(max_iter):
+        changed = False
+        for step in (0, 1):
+            p2, p3, p4, p5, p6, p7, p8, p9 = neighbors(img)
+            ring = [p2, p3, p4, p5, p6, p7, p8, p9, p2]
+            b = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9
+            a = np.zeros_like(img)
+            for i in range(8):
+                a += ((ring[i] == 0) & (ring[i + 1] == 1)).astype(np.uint8)
+            if step == 0:
+                cond = (p2 * p4 * p6 == 0) & (p4 * p6 * p8 == 0)
+            else:
+                cond = (p2 * p4 * p8 == 0) & (p2 * p6 * p8 == 0)
+            remove = (img == 1) & (b >= 2) & (b <= 6) & (a == 1) & cond
+            if remove.any():
+                img[remove] = 0
+                changed = True
+        if not changed:
+            break
+    return img.astype(bool)
+
+
+def _soft_alpha(score):
+    """Карта чернильности → альфа 0..1: тонкие сплошные штрихи.
+
+    1. Ориентированное усиление смыкает разрывы смазанной линии.
+    2. Гистерезис (как в Canny): бледный пиксель живёт, только если его
+       связный регион содержит уверенно тёмный.
+    3. Скелет Чжана–Суэна — связная осевая с петлями; «лента» ±2 px вокруг
+       него ограничивает ширину штриха до пера, тело чернил внутри ленты
+       даёт честную форму и нажим.
+
     None — если сигнала нет (пустое поле).
     """
     import numpy as np
     from scipy import ndimage
 
-    smooth = ndimage.gaussian_filter(score, sigma=0.9)
-    flat = smooth.ravel()
+    enh = _oriented_enhance(score)
+    flat = enh.ravel()
     noise = float(np.quantile(flat, 0.90))
     ink = float(np.quantile(flat, 0.997))
     span = ink - noise
     if span < 3.0:
         return None  # нет контраста — на кропе нечего извлекать
 
-    weak = smooth > noise + 0.06 * span
-    strong = smooth > noise + 0.35 * span
+    weak = enh > noise + 0.05 * span
+    strong = enh > noise + 0.30 * span
     labels, n = ndimage.label(weak)
     if n:
         has_strong = ndimage.maximum(
@@ -530,14 +598,20 @@ def _soft_alpha(score):
         hyst = np.isin(labels, np.flatnonzero(has_strong > 0) + 1)
     else:
         hyst = weak
+    if not hyst.any():
+        return None
 
-    lo = noise + 0.06 * span
-    hi = noise + 0.50 * span
-    alpha01 = np.clip((smooth - lo) / (hi - lo), 0.0, 1.0) ** 0.6
-    alpha01 = np.where(hyst, alpha01, 0.0)
-    # Нерезкое маскирование: утончает разбухшие от блюра штрихи, убирает ореол.
-    halo = ndimage.gaussian_filter(alpha01, sigma=4.5)
-    return np.clip((alpha01 - 0.55 * halo) / 0.55, 0.0, 1.0)
+    skeleton = _zhang_suen_thin(hyst)
+    ribbon = ndimage.binary_dilation(skeleton, iterations=2)
+    ribbon_soft = ndimage.gaussian_filter(ribbon.astype(np.float32), sigma=1.0)
+
+    body = np.clip((enh - (noise + 0.05 * span)) / (0.42 * span), 0.0, 1.0) ** 0.65
+    line = np.clip((enh - (noise + 0.05 * span)) / (0.38 * span), 0.0, 1.0) ** 0.7
+    spine = np.where(skeleton, np.maximum(line, 0.5), 0.0)
+    spine = ndimage.grey_dilation(spine, size=(3, 3))
+
+    alpha01 = np.maximum(body * ribbon_soft, spine * 0.9)
+    return np.clip(ndimage.gaussian_filter(alpha01, sigma=0.7) * 1.15, 0.0, 1.0)
 
 
 def _filter_soft_components(alpha01, blueness, darkness):
@@ -578,7 +652,9 @@ def _filter_soft_components(alpha01, blueness, darkness):
         in_corner = (cy < h * 0.22 or cy > h * 0.78) and (cx < w * 0.22 or cx > w * 0.78)
         if sizes[i] < max(40.0, biggest * 0.01):
             continue  # брызги
-        if ratio < 0.15 and sizes[i] < biggest:
+        # Порог низкий: усиление размазывает темноту и разбавляет хрому даже
+        # у настоящей синей пасты (у печати/штампов ratio 0.00–0.09).
+        if ratio < 0.10 and sizes[i] < biggest:
             continue  # печатный текст, чёрный штамп
         if bw >= 0.15 * w and bw / max(bh, 1) >= 3.5 and cy > h * 0.62 and ratio < 0.35:
             continue  # уцелевший сегмент линейки поля
