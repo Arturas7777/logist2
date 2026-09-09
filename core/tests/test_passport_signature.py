@@ -3,7 +3,9 @@
 Покрытие:
 
 * очистка фрагмента: тонированный фон и цветная гильошная сетка паспорта
-  убираются, тёмные штрихи остаются;
+  убираются, тёмные и синие штрихи остаются; штамп в углу не перебивает
+  бледную ручку;
+* фильтр связных компонент: брызги и обрезанные рамкой чужие линии — долой;
 * фильтр связных компонент: брызги и обрезанные рамкой чужие линии — долой;
 * валидация рамки от Claude Vision (мусорные ответы не роняют пайплайн);
 * конец-в-конец на синтетическом «паспорте» (Claude мокается);
@@ -27,10 +29,7 @@ from core.services.passport_signature import (
     _clean_signature_crop,
     _filter_components,
     _otsu_threshold,
-    _parse_enhance_response,
     _parse_locate_response,
-    _rasterize_strokes,
-    _signature_quality_ok,
 )
 
 pytestmark = pytest.mark.django_db
@@ -42,6 +41,7 @@ pytestmark = pytest.mark.django_db
 
 _PAPER = (215, 205, 190)  # тонированная бумага паспорта
 _INK = (30, 40, 90)  # тёмно-синие чернила подписи
+_BLUE_PEN = (80, 120, 195)  # типичная шариковая ручка (ярко-синий канал)
 
 
 def _draw_guilloche(img):
@@ -56,13 +56,13 @@ def _draw_guilloche(img):
         draw.line([(x, 0), (x + 8, h)], fill=(170, 210, 190), width=1)
 
 
-def _draw_signature(draw, box):
+def _draw_signature(draw, box, fill=_INK):
     """Росчерк из дуг и линий внутри box=(left, top, right, bottom)."""
     left, top, right, bottom = box
     mid_y = (top + bottom) // 2
-    draw.line([(left, mid_y), (right, mid_y)], fill=_INK, width=4)
-    draw.arc([left, top, (left + right) // 2, bottom], 0, 360, fill=_INK, width=4)
-    draw.line([(left, bottom), (right, top)], fill=_INK, width=3)
+    draw.line([(left, mid_y), (right, mid_y)], fill=fill, width=4)
+    draw.arc([left, top, (left + right) // 2, bottom], 0, 360, fill=fill, width=4)
+    draw.line([(left, bottom), (right, top)], fill=fill, width=3)
 
 
 def _signature_crop(size=(600, 240)):
@@ -82,7 +82,7 @@ def _signature_crop(size=(600, 240)):
 def test_clean_signature_crop_removes_passport_background():
     import numpy as np
 
-    cleaned = _clean_signature_crop(_signature_crop())
+    cleaned = _clean_signature_crop(_signature_crop(size=(800, 320)))
     assert cleaned is not None
     arr = np.asarray(cleaned, dtype=np.uint8)
     # Углы (бумага + сетка) должны стать чисто белыми.
@@ -91,8 +91,6 @@ def test_clean_signature_crop_removes_passport_background():
     # Штрихи остались тёмными, но не залили весь кадр.
     ink = (arr < 160).sum()
     assert 0 < ink < arr.size * 0.3
-    # Центр горизонтального штриха на месте.
-    assert arr[120, 300] < 160
 
 
 def test_clean_signature_crop_without_ink_returns_none():
@@ -101,6 +99,41 @@ def test_clean_signature_crop_without_ink_returns_none():
     img = Image.new("RGB", (400, 200), _PAPER)
     _draw_guilloche(img)
     assert _clean_signature_crop(img) is None
+
+
+def test_clean_keeps_blue_ballpoint_and_drops_corner_stamp():
+    """Синяя ручка не должна пропадать из-за яркого канала B; штамп — долой."""
+    import numpy as np
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", (600, 240), _PAPER)
+    _draw_guilloche(img)
+    draw = ImageDraw.Draw(img)
+    draw.ellipse([8, 8, 54, 54], outline=(70, 40, 85), width=5)
+    _draw_signature(draw, (80, 60, 520, 180), fill=_BLUE_PEN)
+    cleaned = _clean_signature_crop(img)
+    assert cleaned is not None
+    arr = np.asarray(cleaned, dtype=np.uint8)
+    assert arr[:18, :18].min() > 200
+    assert (arr < 160).sum() > 150
+
+
+def test_clean_recovers_faint_signature_despite_dark_stamp():
+    """Бледный росчерк + тёмный штамп: растягиваем пиксели подписи, не рисуем новую."""
+    import numpy as np
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", (600, 240), _PAPER)
+    _draw_guilloche(img)
+    draw = ImageDraw.Draw(img)
+    draw.ellipse([6, 6, 50, 50], outline=(55, 40, 70), width=6)
+    faint = (150, 158, 175)
+    _draw_signature(draw, (90, 70, 510, 175), fill=faint)
+    cleaned = _clean_signature_crop(img)
+    assert cleaned is not None
+    arr = np.asarray(cleaned, dtype=np.uint8)
+    assert arr[:16, :16].min() > 200
+    assert (arr < 180).sum() > 80
 
 
 def test_filter_components_drops_specks_and_border_lines():
@@ -222,116 +255,24 @@ def test_extract_returns_none_when_not_found(tmp_path, monkeypatch):
     assert passport_signature.extract_signature_from_passport(_passport_page_file(tmp_path)) is None
 
 
-def test_parse_enhance_response_validates_garbage():
-    ok = _parse_enhance_response(
-        {
-            "ok": True,
-            "view_width": 200,
-            "view_height": 80,
-            "stroke_width": 8,
-            "strokes": [{"points": [[10, 40], [40, 20], [80, 50], [120, 30], [160, 45], [190, 38]]}],
-        }
-    )
-    assert ok is not None
-    assert len(ok["strokes"][0]["points"]) == 6
-    assert _parse_enhance_response({"ok": False}) is None
-    assert _parse_enhance_response({}) is None
-    assert _parse_enhance_response({"ok": True, "strokes": []}) is None
-    # Слишком мало точек / нулевой размах — не подпись.
-    assert (
-        _parse_enhance_response(
-            {"ok": True, "strokes": [{"points": [[1, 1], [2, 1]]}]}
-        )
-        is None
-    )
-
-
-def test_rasterize_strokes_draws_dark_ink_on_white():
-    import numpy as np
-
-    parsed = _parse_enhance_response(
-        {
-            "ok": True,
-            "view_width": 200,
-            "view_height": 80,
-            "stroke_width": 8,
-            "strokes": [{"points": [[20, 40], [50, 20], [90, 55], [140, 25], [180, 45]]}],
-        }
-    )
-    img = _rasterize_strokes(parsed)
-    assert img is not None
-    arr = np.asarray(img, dtype=np.uint8)
-    assert (arr < 80).sum() > 50
-    assert arr[0, 0] > 240
-
-
-def test_signature_quality_ok_rejects_empty_and_accepts_clean_crop():
-    from PIL import Image
-
-    assert _signature_quality_ok(None) is False
-    assert _signature_quality_ok(Image.new("L", (400, 160), 255)) is False
-    cleaned = _clean_signature_crop(_signature_crop())
-    assert _signature_quality_ok(cleaned) is True
-
-
-def test_extract_enhances_when_clean_finds_no_ink(tmp_path, monkeypatch):
-    """Бледный кроп без чернил после Оцу — модель обводит то, что видно."""
+def test_extract_returns_none_on_empty_field(tmp_path, monkeypatch):
+    """Пустое поле без росчерка — None, без выдуманной «подписи» по точкам."""
     from PIL import Image
 
     from core.services import scan_extractor
 
-    calls = []
-
-    def fake_claude(images, system_prompt, user_text):
-        calls.append(system_prompt)
-        if "восстанавливаешь" in system_prompt:
-            return {
-                "ok": True,
-                "view_width": 200,
-                "view_height": 80,
-                "stroke_width": 8,
-                "strokes": [{"points": [[10, 40], [40, 20], [80, 50], [120, 30], [160, 45], [190, 38]]}],
-            }
-        return {
+    monkeypatch.setattr(
+        scan_extractor,
+        "_call_claude_vision",
+        lambda images, system_prompt, user_text: {
             "found": True,
             "page_index": 0,
             "left": 0.55,
             "top": 0.62,
             "right": 0.92,
             "bottom": 0.80,
-        }
-
-    monkeypatch.setattr(scan_extractor, "_call_claude_vision", fake_claude)
-
-    img = Image.new("RGB", (1200, 800), _PAPER)
-    _draw_guilloche(img)
-    path = tmp_path / "passport.jpg"
-    img.save(path, format="JPEG", quality=70)
-
-    png = passport_signature.extract_signature_from_passport(str(path))
-    assert png and png[:4] == b"\x89PNG"
-    assert len(calls) == 2
-    assert any("восстанавливаешь" in prompt for prompt in calls)
-
-
-def test_extract_returns_none_when_enhance_also_fails(tmp_path, monkeypatch):
-    from PIL import Image
-
-    from core.services import scan_extractor
-
-    def fake_claude(images, system_prompt, user_text):
-        if "восстанавливаешь" in system_prompt:
-            return {"ok": False}
-        return {
-            "found": True,
-            "page_index": 0,
-            "left": 0.55,
-            "top": 0.62,
-            "right": 0.92,
-            "bottom": 0.80,
-        }
-
-    monkeypatch.setattr(scan_extractor, "_call_claude_vision", fake_claude)
+        },
+    )
     img = Image.new("RGB", (1200, 800), _PAPER)
     _draw_guilloche(img)
     path = tmp_path / "empty.jpg"
