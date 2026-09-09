@@ -1215,6 +1215,49 @@ def test_generate_all_package(logged_client, transport_request, car, settings, t
     assert package.data["invoice_extra_lines"] == [{"description": "Fee", "amount": "150"}]
 
 
+def test_generate_all_requires_uploaded_signature(transport_request, car, settings, tmp_path):
+    """Без фото подписи пакет не собирается — авто-извлечение из паспорта отключено."""
+    from PIL import Image
+
+    from core.services import transport_package_actions as actions
+
+    settings.MEDIA_ROOT = str(tmp_path)
+    buf = io.BytesIO()
+    Image.new("RGB", (200, 120), (240, 240, 240)).save(buf, format="JPEG")
+    TransportRequestDocument.objects.create(
+        request=transport_request,
+        car=car,
+        doc_type="PASSPORT",
+        file=SimpleUploadedFile("passport.jpg", buf.getvalue(), content_type="image/jpeg"),
+    )
+    from django.http import QueryDict
+
+    post = QueryDict("", mutable=True)
+    post.update(
+        {
+            "buyer_name": BUYER_DATA["buyer_name"],
+            "buyer_name_ru": BUYER_DATA["buyer_name_ru"],
+            "buyer_passport_number": BUYER_DATA["buyer_passport_number"],
+            "buyer_address": BUYER_DATA["buyer_address"],
+            "buyer_address_ru": BUYER_DATA["buyer_address_ru"],
+            "buyer_birth_date": BUYER_DATA["buyer_birth_date"],
+            "buyer_passport_issue_date": BUYER_DATA["buyer_passport_issue_date"],
+            "invoice_amount": "2850",
+            "invoice_date": "2026-06-10",
+        }
+    )
+    with pytest.raises(PackageDataError, match="загрузите фото подписи"):
+        actions.generate_all_for_car(
+            transport_request=transport_request,
+            car=car,
+            post=post,
+            files={},
+            user=None,
+        )
+    assert not transport_request.documents.filter(car=car, doc_type="SIGNATURE").exists()
+    assert not transport_request.documents.filter(car=car, doc_type="OBLIGATION").exists()
+
+
 def test_signature_flowable_respects_max_box():
     """Широкая и высокая подписи вписываются в один и тот же max box."""
     from PIL import Image
