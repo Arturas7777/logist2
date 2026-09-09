@@ -7,19 +7,17 @@
    печатную подпись поля). Координаты — доли страницы 0..1.
 2. Фрагмент вырезается с запасом из рендера 300 dpi; мелкий кроп
    увеличивается, чтобы смазанные штрихи не схлопнулись в точку.
-3. Фон паспорта убирается детерминированно, без перерисовки:
-   * канал чернил — гибрид: синяя шариковая ручка по min(R,G), остальное
-     по max RGB (цветная гильошная сетка уходит к фону);
-   * выравнивание освещения; штампы и жирная печать (намного темнее
-     бледной ручки) стираются, чтобы порог не «залипал» на номере страницы;
-   * слабый росчерк растягивается по контрасту — это те же пиксели, не
-     новая подпись.
-4. Результат проходит :func:`normalize_signature_image` (синие штрихи,
-   прозрачный фон).
+3. Фон паспорта убирается детерминированно. Если от смазанной ручки
+   остались только «точки», штрихи смыкаются по самому фото (морфология
+   по бледной карте чернил) — это всё ещё те же линии, что на паспорте.
+4. Если точки так и не складываются в росчерк, Claude Vision (он линии
+   видит, порог — нет) проводит тонкую осевую по центру видимых штрихов.
+   Результат обрезается по карте чернил с фото: нарисовать «другую»
+   подпись модель не может.
+5. :func:`normalize_signature_image` — синие штрихи, прозрачный фон.
 
 Ошибки любого шага дают ``None`` — вызывающий код просит загрузить
-подпись вручную. Модель не рисует росчерк заново по точкам: такой
-контур не похож на подпись в паспорте.
+подпись вручную.
 """
 
 from __future__ import annotations
@@ -75,6 +73,28 @@ SIGNATURE_LOCATE_PROMPT = """Ты находишь рукописную подп
 {"found": true, "page_index": 0, "left": 0.55, "top": 0.60, "right": 0.92, "bottom": 0.74}
 """
 
+SIGNATURE_TRACE_PROMPT = """Ты трассируешь рукописную подпись по кропу поля паспорта.
+
+Человек на этом фото видит непрерывные линии ручки (часто синяя шариковая),
+даже если снимок смазан и «шумный». Твоя задача — провести ОСЕВУЮ линию
+по центру каждого видимого штриха, а не упростить росчерк до трёх клякс.
+
+Правила:
+- Следуй фото: тот же старт, те же петли, тот же финальный росчерк.
+  Не придумывай буквы, завитки, дату и ФИО, которых нет даже намёком.
+- Не обводи штамп, номер страницы, печатный текст и линейку поля.
+- Точек должно быть МНОГО: шаг примерно 1% ширины кадра, чтобы линия
+  была гладкой. Одна дуга — десятки точек, не 4.
+- stroke_width — тонкая шариковая (4–8 в координатах viewBox шириной ~1000).
+- view_width/view_height совпадают с пропорциями картинки.
+
+Если рукописных штрихов не видно — {"ok": false}.
+
+Верни ТОЛЬКО JSON:
+{"ok": true, "view_width": 1000, "view_height": 400, "stroke_width": 6,
+ "strokes": [{"points": [[x, y], [x, y], ...]}]}
+"""
+
 
 def ai_available() -> bool:
     return bool(os.getenv("ANTHROPIC_API_KEY", ""))
@@ -102,6 +122,9 @@ def extract_signature_from_passport(path: str) -> bytes | None:
     if crop is None:
         return None
     cleaned = _clean_signature_crop(crop)
+    if cleaned is not None and _image_is_speckled(cleaned):
+        logger.info("passport_signature: порог дал точки — смыкаем штрихи и трассируем (%s)", path)
+        cleaned = _recover_strokes(crop, cleaned)
     if cleaned is None:
         logger.info("passport_signature: очистка фрагмента не дала штрихов (%s)", path)
         return None
@@ -291,6 +314,222 @@ def _clean_signature_crop(crop):
     out[halo] = np.minimum(255.0, stretched[halo] + 45.0)
     out[mask] = stretched[mask]
     return Image.fromarray(out.astype("uint8"), mode="L")
+
+
+def _image_is_speckled(img) -> bool:
+    """True если «подпись» — россыпь точек, а не связные штрихи."""
+    import numpy as np
+
+    arr = np.asarray(img.convert("L"), dtype=np.uint8)
+    return _mask_is_speckled(arr < 200)
+
+
+def _mask_is_speckled(mask) -> bool:
+    import numpy as np
+    from scipy import ndimage
+
+    ink = int(mask.sum())
+    if ink < 40:
+        return True
+    labels, count = ndimage.label(mask)
+    if count <= 3:
+        return False
+    sizes = ndimage.sum_labels(mask, labels, index=np.arange(1, count + 1))
+    if float(sizes.max()) / ink > 0.55:
+        return False
+    return count >= 6
+
+
+def _flatten_crop(crop):
+    """Подготовленный кроп + выровненная яркость чернил (бумага ~255)."""
+    import numpy as np
+    from scipy import ndimage
+
+    img = _prepare_crop(crop)
+    if img is None:
+        return None, None
+    rgb = np.asarray(img, dtype=np.float32)
+    gray = _ink_luma(rgb)
+    sigma = max(gray.shape) / 25.0
+    background = ndimage.gaussian_filter(gray, sigma=sigma)
+    rel = np.clip(gray / np.maximum(background, 1.0) * 255.0, 0.0, 255.0)
+    rel = _drop_corner_stamps(rel)
+    return img, rel
+
+
+def _render_from_mask(rel, mask):
+    import numpy as np
+    from PIL import Image
+    from scipy import ndimage
+
+    vals = rel[mask]
+    if vals.size < 20:
+        return None
+    ink_lo = float(np.quantile(vals, 0.10))
+    ink_hi = float(np.quantile(vals, 0.82))
+    ink_hi = max(ink_hi, ink_lo + 6.0)
+    stretched = np.clip((rel - ink_lo) / (ink_hi - ink_lo) * 200.0, 0.0, 255.0)
+    halo = ndimage.binary_dilation(mask, iterations=1)
+    out = np.full(rel.shape, 255.0, dtype=np.float32)
+    out[halo] = np.minimum(255.0, stretched[halo] + 45.0)
+    out[mask] = stretched[mask]
+    return Image.fromarray(out.astype("uint8"), mode="L")
+
+
+def _reconnect_from_photo(crop):
+    """Смыкает смазанную ручку в непрерывные штрихи по карте чернил с фото."""
+    from scipy import ndimage
+
+    _img, rel = _flatten_crop(crop)
+    if rel is None:
+        return None
+    generous = rel < 249.0
+    if generous.mean() < _MIN_INK_FRACTION:
+        return None
+    gap = max(2, min(rel.shape) // 70)
+    closed = ndimage.binary_closing(generous, iterations=gap)
+    if closed.mean() > _MAX_INK_FRACTION:
+        closed = ndimage.binary_closing(generous, iterations=max(2, gap // 2))
+    mask = _filter_components(closed)
+    if mask is None or mask.mean() > _MAX_INK_FRACTION:
+        return None
+    return _render_from_mask(rel, mask)
+
+
+def _recover_strokes(crop, speckled):
+    """Точки порога → связный росчерк с фото, иначе тонкая трассировка Vision."""
+    reconnected = _reconnect_from_photo(crop)
+    if reconnected is not None and not _image_is_speckled(reconnected):
+        return reconnected
+    traced = _trace_centerlines_with_ai(crop, reconnected or speckled)
+    if traced is not None and not _image_is_speckled(traced):
+        return traced
+    return reconnected
+
+
+def _trace_centerlines_with_ai(crop, hint=None):
+    """Claude проводит осевые по видимым штрихам; обрезка по чернилам фото."""
+    from core.services import scan_extractor
+
+    prepared = _prepare_crop(crop)
+    if prepared is None:
+        return None
+    _img, rel = _flatten_crop(crop)
+    ink_map = None
+    if rel is not None:
+        ink_map = rel < 249.0
+        from scipy import ndimage
+
+        ink_map = ndimage.binary_dilation(ink_map, iterations=max(3, min(ink_map.shape) // 40))
+    try:
+        images = [scan_extractor._encode_jpeg_under_limit(prepared)]
+        if hint is not None:
+            images.append(scan_extractor._encode_jpeg_under_limit(hint.convert("RGB")))
+        data = scan_extractor._call_claude_vision(
+            images,
+            system_prompt=SIGNATURE_TRACE_PROMPT,
+            user_text=(
+                "Проведи осевые по центру видимых штрихов ручки. Много точек, "
+                "тонкая линия, только то что есть на фото."
+            ),
+            max_tokens=8000,
+        )
+    except Exception as exc:
+        logger.warning("passport_signature: трассировка подписи не удалась: %s", exc)
+        return None
+    parsed = _parse_trace_response(data)
+    if parsed is None:
+        return None
+    drawn = _rasterize_trace(parsed, canvas_size=prepared.size)
+    if drawn is None:
+        return None
+    if ink_map is not None:
+        drawn = _clip_to_ink_map(drawn, ink_map)
+    return drawn
+
+
+def _parse_trace_response(data) -> dict | None:
+    if not isinstance(data, dict) or not data.get("ok"):
+        return None
+    raw_strokes = data.get("strokes")
+    if not isinstance(raw_strokes, list | tuple) or not raw_strokes:
+        return None
+    strokes = []
+    for stroke in raw_strokes:
+        pts = stroke.get("points") if isinstance(stroke, dict) else stroke
+        if not isinstance(pts, list | tuple):
+            continue
+        clean = []
+        for point in pts:
+            if not isinstance(point, list | tuple) or len(point) < 2:
+                continue
+            try:
+                clean.append((float(point[0]), float(point[1])))
+            except (TypeError, ValueError):
+                continue
+        if len(clean) >= 4:
+            strokes.append({"points": clean})
+    if not strokes:
+        return None
+    total_pts = sum(len(s["points"]) for s in strokes)
+    if total_pts < 16:
+        return None
+    xs = [p[0] for s in strokes for p in s["points"]]
+    ys = [p[1] for s in strokes for p in s["points"]]
+    if max(xs) - min(xs) < 12 or max(ys) - min(ys) < 4:
+        return None
+    try:
+        view_width = float(data.get("view_width") or (max(xs) + 24))
+        view_height = float(data.get("view_height") or (max(ys) + 24))
+        stroke_width = float(data.get("stroke_width") or 6)
+    except (TypeError, ValueError):
+        return None
+    return {
+        "view_width": max(120.0, min(2000.0, view_width)),
+        "view_height": max(60.0, min(1200.0, view_height)),
+        "stroke_width": max(4.0, min(10.0, stroke_width)),
+        "strokes": strokes,
+    }
+
+
+def _rasterize_trace(parsed: dict, canvas_size: tuple[int, int]):
+    from PIL import Image, ImageDraw
+
+    cw, ch = canvas_size
+    vw = parsed["view_width"]
+    vh = parsed["view_height"]
+    sx, sy = cw / vw, ch / vh
+    stroke_w = max(2, int(round(parsed["stroke_width"] * min(sx, sy))))
+    img = Image.new("RGB", (cw, ch), (255, 255, 255))
+    draw = ImageDraw.Draw(img)
+    ink = (25, 30, 40)
+    radius = stroke_w / 2.0
+    for stroke in parsed["strokes"]:
+        pts = [(p[0] * sx, p[1] * sy) for p in stroke["points"]]
+        try:
+            draw.line(pts, fill=ink, width=stroke_w, joint="curve")
+        except TypeError:
+            draw.line(pts, fill=ink, width=stroke_w)
+        for x, y in (pts[0], pts[-1]):
+            draw.ellipse([x - radius, y - radius, x + radius, y + radius], fill=ink)
+    return img.convert("L")
+
+
+def _clip_to_ink_map(drawn, ink_map):
+    """Оставляет только штрихи, попавшие на чернила с фото."""
+    import numpy as np
+    from PIL import Image
+
+    mask_img = Image.fromarray((ink_map.astype("uint8") * 255), mode="L")
+    if mask_img.size != drawn.size:
+        mask_img = mask_img.resize(drawn.size, Image.BILINEAR)
+    ink = np.asarray(mask_img, dtype=np.uint8) > 40
+    arr = np.asarray(drawn.convert("L"), dtype=np.uint8)
+    out = np.full(arr.shape, 255, dtype=np.uint8)
+    out[ink] = arr[ink]
+    if (out < 200).sum() < 40:
+        return None
+    return Image.fromarray(out, mode="L")
 
 
 def _filter_components(mask):

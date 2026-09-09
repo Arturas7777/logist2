@@ -6,7 +6,6 @@
   убираются, тёмные и синие штрихи остаются; штамп в углу не перебивает
   бледную ручку;
 * фильтр связных компонент: брызги и обрезанные рамкой чужие линии — долой;
-* фильтр связных компонент: брызги и обрезанные рамкой чужие линии — долой;
 * валидация рамки от Claude Vision (мусорные ответы не роняют пайплайн);
 * конец-в-конец на синтетическом «паспорте» (Claude мокается);
 * интеграция: генерация документов без загруженной подписи вытягивает её
@@ -28,8 +27,11 @@ from core.services import passport_signature
 from core.services.passport_signature import (
     _clean_signature_crop,
     _filter_components,
+    _mask_is_speckled,
     _otsu_threshold,
     _parse_locate_response,
+    _parse_trace_response,
+    _rasterize_trace,
 )
 
 pytestmark = pytest.mark.django_db
@@ -156,6 +158,86 @@ def test_otsu_threshold_separates_clusters():
     values = np.concatenate([np.full(500, 90.0), np.full(9500, 250.0)])
     threshold = _otsu_threshold(values)
     assert 90.0 < threshold < 250.0
+
+
+def test_mask_is_speckled_detects_dots_not_stroke():
+    import numpy as np
+
+    stroke = np.zeros((80, 200), dtype=bool)
+    stroke[30:50, 20:180] = True
+    assert _mask_is_speckled(stroke) is False
+    dots = np.zeros((80, 200), dtype=bool)
+    for x, y in ((20, 40), (40, 30), (70, 50), (110, 35), (140, 45), (170, 40)):
+        dots[y - 1 : y + 2, x - 1 : x + 2] = True
+    assert _mask_is_speckled(dots) is True
+
+
+def test_parse_trace_requires_dense_stroke():
+    sparse = {
+        "ok": True,
+        "view_width": 200,
+        "view_height": 80,
+        "stroke_width": 6,
+        "strokes": [{"points": [[10, 40], [80, 40], [150, 40]]}],
+    }
+    assert _parse_trace_response(sparse) is None
+    dense_pts = [[10 + i * 8, 40 + (i % 5) * 2] for i in range(20)]
+    ok = _parse_trace_response(
+        {"ok": True, "view_width": 200, "view_height": 80, "stroke_width": 6, "strokes": [{"points": dense_pts}]}
+    )
+    assert ok is not None
+    img = _rasterize_trace(ok, canvas_size=(200, 80))
+    import numpy as np
+
+    arr = np.asarray(img, dtype=np.uint8)
+    assert (arr < 80).sum() > 80
+
+
+def test_extract_traces_lines_when_pixels_are_specks(tmp_path, monkeypatch):
+    """ИИ проводит осевые, если порог оставил точки."""
+    from PIL import Image, ImageDraw
+
+    from core.services import scan_extractor
+
+    speckle = Image.new("L", (400, 150), 255)
+    draw = ImageDraw.Draw(speckle)
+    for x, y in ((30, 70), (50, 60), (80, 75), (200, 40), (230, 55), (260, 70), (340, 50)):
+        draw.ellipse([x - 4, y - 4, x + 4, y + 4], fill=25)
+
+    monkeypatch.setattr(passport_signature, "_clean_signature_crop", lambda crop: speckle)
+    monkeypatch.setattr(passport_signature, "_reconnect_from_photo", lambda crop: speckle)
+    monkeypatch.setattr(passport_signature, "_clip_to_ink_map", lambda drawn, ink_map: drawn)
+
+    dense_pts = [[20 + i * 45, 40 + (i % 4) * 8] for i in range(20)]
+
+    def fake_claude(images, system_prompt, user_text, **_kwargs):
+        if "трассируешь" in system_prompt:
+            return {
+                "ok": True,
+                "view_width": 400,
+                "view_height": 150,
+                "stroke_width": 6,
+                "strokes": [{"points": dense_pts}],
+            }
+        return {
+            "found": True,
+            "page_index": 0,
+            "left": 0.55,
+            "top": 0.62,
+            "right": 0.92,
+            "bottom": 0.80,
+        }
+
+    monkeypatch.setattr(scan_extractor, "_call_claude_vision", fake_claude)
+    img = Image.new("RGB", (1200, 800), _PAPER)
+    _draw_guilloche(img)
+    path = tmp_path / "passport.jpg"
+    img.save(path, format="JPEG", quality=80)
+    png = passport_signature.extract_signature_from_passport(str(path))
+    assert png and png[:4] == b"\x89PNG"
+    out = Image.open(io.BytesIO(png)).convert("RGBA")
+    ink = sum(1 for px in out.getdata() if px[3] > 180)
+    assert ink > 200
 
 
 def test_parse_locate_response_validates_garbage():

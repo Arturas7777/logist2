@@ -319,6 +319,8 @@ def _call_claude_vision(
     images: Iterable[tuple[str, str]],
     system_prompt: str,
     user_text: str,
+    *,
+    max_tokens: int = 4000,
 ) -> dict[str, Any]:
     """Отправляет изображения в Claude Vision и парсит JSON-ответ.
 
@@ -358,7 +360,7 @@ def _call_claude_vision(
     # бюджет токенов — при 2000 текст ответа может обрезаться.
     response = client.messages.create(
         model=_get_model_name(),
-        max_tokens=4000,
+        max_tokens=max_tokens,
         system=system_prompt,
         messages=[{"role": "user", "content": content_blocks}],
     )
