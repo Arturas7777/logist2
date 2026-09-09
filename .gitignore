@@ -138,3 +138,6 @@ analysis/IV_*.pdf
 
 # Temp PowerShell scripts
 ps-script-*.ps1
+
+# Кропы паспорта клиента для handoff (ПДн) — только локально, не в git.
+docs/handoff_assets/

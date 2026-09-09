@@ -7,16 +7,17 @@
    печатную подпись поля). Координаты — доли страницы 0..1.
 2. Фрагмент вырезается с запасом из рендера 300 dpi; мелкий кроп
    увеличивается, чтобы смазанные штрихи не схлопнулись в точку.
-3. Фон паспорта убирается детерминированно. Печатная линейка поля
-   (черта под росчерком) вычитается до порога, чтобы не стать «подписью».
-4. Если от смазанной ручки остались точки, Claude проводит тонкую осевую
-   по центру видимых штрихов. Клип — сплошная оболочка вокруг чернил
-   (без дыр и без линейки): чужой росчерк нарисовать нельзя, свои линии
-   не рвутся. Морфология — запасной путь и только с тонким пером.
-5. :func:`normalize_signature_image` — синие штрихи, прозрачный фон.
-
-Ошибки любого шага дают ``None`` — вызывающий код просит загрузить
-подпись вручную.
+3. Чёткий скан: фон паспорта убирается детерминированно (порог Оцу,
+   фильтр компонент), результат идёт в :func:`normalize_signature_image`.
+4. Смазанное фото (порог даёт крап): мягкое хрома-извлечение
+   (:func:`_extract_soft_chroma`) — карта «чернильности» по отклонению
+   от цвета бумаги идёт прямо в альфа-канал, БЕЗ бинаризации и без
+   перерисовки. Полутона сохраняются, штрихи остаются сплошными —
+   картинка та же, что видит человек на фото. Линейка поля вычитается
+   подгонкой прямой (фото бывает под углом), печать/штампы — фильтром
+   компонент по хроме и геометрии.
+5. Если и мягкий путь не дал росчерка — честный ``None``: вызывающий
+   код просит загрузить фото подписи. Никакой дорисовки «по мотивам».
 """
 
 from __future__ import annotations
@@ -49,6 +50,8 @@ _THRESHOLD_CAP = 205.0
 _MIN_PROCESS_SIDE = 360
 # Мелкие компоненты (брызги, обрывки сетки) отбрасываются.
 _MIN_COMPONENT_PX = 25
+# Мягкое хрома-извлечение: рабочая длинная сторона кропа.
+_SOFT_PROCESS_SIDE = 800
 
 SIGNATURE_LOCATE_PROMPT = """Ты находишь рукописную подпись владельца на фото/скане
 главной страницы паспорта гражданина Республики Беларусь.
@@ -71,30 +74,6 @@ SIGNATURE_LOCATE_PROMPT = """Ты находишь рукописную подп
 Верни ТОЛЬКО валидный JSON (без markdown):
 {"found": true, "page_index": 0, "left": 0.55, "top": 0.60, "right": 0.92, "bottom": 0.74}
 """
-
-SIGNATURE_TRACE_PROMPT = """Ты трассируешь рукописную подпись по кропу поля паспорта.
-
-Человек на этом фото видит непрерывные линии ручки (часто синяя шариковая),
-даже если снимок смазан и «шумный». Твоя задача — провести ОСЕВУЮ линию
-по центру каждого видимого штриха, а не упростить росчерк до трёх клякс.
-
-Правила:
-- Следуй фото: тот же старт, те же петли, тот же финальный росчерк.
-  Не придумывай буквы, завитки, дату и ФИО, которых нет даже намёком.
-- Не обводи штамп, номер страницы, печатный текст.
-- Горизонтальную линейку поля ПОД подписью не трассируй — это не росчерк.
-- Точек должно быть МНОГО: шаг примерно 1% ширины кадра, чтобы линия
-  была гладкой. Одна дуга — десятки точек, не 4.
-- stroke_width — тонкая шариковая (3–5 в координатах viewBox шириной ~1000).
-- view_width/view_height совпадают с пропорциями картинки.
-
-Если рукописных штрихов не видно — {"ok": false}.
-
-Верни ТОЛЬКО JSON:
-{"ok": true, "view_width": 1000, "view_height": 400, "stroke_width": 4,
- "strokes": [{"points": [[x, y], [x, y], ...]}]}
-"""
-
 
 def ai_available() -> bool:
     return bool(os.getenv("ANTHROPIC_API_KEY", ""))
@@ -124,10 +103,13 @@ def extract_signature_from_passport(path: str) -> bytes | None:
     cleaned = _clean_signature_crop(crop)
     if cleaned is not None:
         cleaned = _strip_rules_from_image(cleaned)
-    if cleaned is not None and _image_is_speckled(cleaned):
-        logger.info("passport_signature: порог дал точки — трассируем осевые (%s)", path)
-        cleaned = _recover_strokes(crop, cleaned)
-    if cleaned is None:
+    if cleaned is None or _image_is_speckled(cleaned):
+        # Смазанное фото: бинаризация рвёт штрихи. Мягкое хрома-извлечение
+        # отдаёт готовый PNG (полутона в альфе, нормализатор не нужен).
+        logger.info("passport_signature: порог не дал штрихов — мягкий хрома-путь (%s)", path)
+        soft = _extract_soft_chroma(crop)
+        if soft is not None:
+            return soft
         logger.info("passport_signature: очистка фрагмента не дала штрихов (%s)", path)
         return None
     cleaned = _strip_rules_from_image(cleaned)
@@ -298,10 +280,6 @@ def _horizontal_rule_mask(mask):
     return keep
 
 
-def _drop_horizontal_rules(mask):
-    return mask & ~_horizontal_rule_mask(mask)
-
-
 def _erase_bottom_rules(rel):
     """Закрашивает линейку поля белым, чтобы порог и клип её не видели."""
     from scipy import ndimage
@@ -402,249 +380,236 @@ def _mask_is_speckled(mask) -> bool:
     return count >= 6
 
 
-def _flatten_crop(crop):
-    """Подготовленный кроп + выровненная яркость чернил (бумага ~255)."""
-    import numpy as np
-    from scipy import ndimage
-
-    img = _prepare_crop(crop)
-    if img is None:
-        return None, None
-    rgb = np.asarray(img, dtype=np.float32)
-    gray = _ink_luma(rgb)
-    sigma = max(gray.shape) / 25.0
-    background = ndimage.gaussian_filter(gray, sigma=sigma)
-    rel = np.clip(gray / np.maximum(background, 1.0) * 255.0, 0.0, 255.0)
-    rel = _drop_corner_stamps(rel)
-    rel = _erase_bottom_rules(rel)
-    return img, rel
+# ── Мягкое хрома-извлечение (смазанные фото) ─────────────────────────────────
+#
+# Принцип: человек видит подпись на смазе за счёт полутонов и синего цвета.
+# Поэтому НЕ бинаризуем: строим непрерывную карту «чернильности» (насколько
+# пиксель синее и темнее локальной бумаги) и отдаём её прямо в альфа-канал.
+# Бинарные маски используются только для решений (гистерезис, фильтр
+# компонент), но не для отрисовки штрихов.
 
 
-def _render_from_mask(rel, mask):
+def _extract_soft_chroma(crop) -> bytes | None:
+    """Смазанное фото → готовый PNG (синие штрихи, прозрачный фон) или None.
+
+    Нормализатор (:func:`normalize_signature_image`) не вызывается: его
+    haze-cutoff и dilate заточены под чёткое фото на белом и съедают
+    полутона, ради которых этот путь и существует.
+    """
     import numpy as np
     from PIL import Image
     from scipy import ndimage
 
-    vals = rel[mask]
-    if vals.size < 20:
+    from core.services.signature_normalizer import _INK_RGB, _fit_max_side
+
+    img = crop.convert("RGB")
+    if min(img.size) < _MIN_CROP_SIDE:
         return None
-    ink_lo = float(np.quantile(vals, 0.10))
-    ink_hi = float(np.quantile(vals, 0.82))
-    ink_hi = max(ink_hi, ink_lo + 6.0)
-    stretched = np.clip((rel - ink_lo) / (ink_hi - ink_lo) * 200.0, 0.0, 255.0)
-    halo = ndimage.binary_dilation(mask, iterations=1)
-    out = np.full(rel.shape, 255.0, dtype=np.float32)
-    out[halo] = np.minimum(255.0, stretched[halo] + 45.0)
-    out[mask] = stretched[mask]
-    return Image.fromarray(out.astype("uint8"), mode="L")
+    # Фиксированный рабочий масштаб: параметры сглаживания/фильтров стабильны.
+    scale = _SOFT_PROCESS_SIDE / max(img.size)
+    if scale != 1.0:
+        img = img.resize(
+            (max(1, round(img.width * scale)), max(1, round(img.height * scale))),
+            Image.LANCZOS,
+        )
+    rgb = np.asarray(img, dtype=np.float32)
+    h, w = rgb.shape[:2]
+
+    # Цвет бумаги — локально, по каждому каналу (фон паспорта неоднородный).
+    sigma = max(h, w) / 12.0
+    paper = np.stack(
+        [ndimage.gaussian_filter(rgb[:, :, c], sigma=sigma) for c in range(3)], axis=2
+    )
+    diff = paper - rgb  # положительное = темнее бумаги
+    # «Синева»: R и G упали заметно сильнее, чем B (профиль синей пасты).
+    blueness = np.clip(np.minimum(diff[:, :, 0], diff[:, :, 1]) - diff[:, :, 2], 0.0, None)
+    darkness = np.clip(diff.mean(axis=2), 0.0, None)
+    # Пиксельный гейт по хроме не делаем: на смазе синева слабеет именно в
+    # размытых участках штриха. Хрома решает на уровне компонент (ниже).
+    score = 0.65 * blueness + 0.35 * darkness
+
+    score = _suppress_field_rule_soft(score, blueness, darkness)
+    alpha01 = _soft_alpha(score)
+    if alpha01 is None:
+        return None
+    alpha01 = _filter_soft_components(alpha01, blueness, darkness)
+    if alpha01 is None:
+        return None
+
+    ink_fraction = float((alpha01 > 0.25).mean())
+    if not (_MIN_INK_FRACTION <= ink_fraction <= _MAX_INK_FRACTION):
+        return None
+
+    alpha = (alpha01 * 255.0).astype(np.uint8)
+    out = np.zeros((h, w, 4), dtype=np.uint8)
+    out[:, :, 0], out[:, :, 1], out[:, :, 2] = _INK_RGB
+    out[:, :, 3] = alpha
+    result = Image.fromarray(out, mode="RGBA")
+
+    dense = Image.fromarray((alpha >= 60).astype(np.uint8) * 255, mode="L")
+    bbox = dense.getbbox()
+    if bbox is None:
+        return None
+    left, top, right, bottom = bbox
+    if right - left < 24 or bottom - top < 10:
+        return None
+    pad = 12
+    result = result.crop(
+        (max(0, left - pad), max(0, top - pad), min(w, right + pad), min(h, bottom + pad))
+    )
+    result = _fit_max_side(result, 900)
+
+    import io as _io
+
+    buf = _io.BytesIO()
+    result.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
 
 
-def _to_thin_strokes(mask):
-    """Толстые кляксы → перо ~2–3 px, без большого смыкания."""
+def _suppress_field_rule_soft(score, blueness, darkness):
+    """Гасит печатную линейку поля на карте чернильности.
+
+    Фото бывает под углом, линейка идёт по диагонали — горизонтальный
+    opening её целиком не ловит. Поэтому: находим короткие горизонтальные
+    сегменты ахроматичной (не синей) черноты, подгоняем по ним прямую и
+    гасим узкую полосу вдоль неё. Явно синие пиксели (росчерк поверх
+    линейки) не трогаем.
+    """
     import numpy as np
     from scipy import ndimage
 
-    if mask.sum() < 20:
-        return mask
-    dist = ndimage.distance_transform_edt(mask)
-    med = float(np.median(dist[mask]))
-    if med > 2.0:
-        eroded = ndimage.binary_erosion(mask, iterations=max(1, int(round(med)) - 1))
-        if eroded.sum() >= 20:
-            mask = eroded
-    mask = ndimage.binary_closing(mask, iterations=2)
-    return ndimage.binary_dilation(mask, iterations=1)
-
-
-def _stroke_envelope(rel):
-    """Сплошная зона вокруг чернил: клип не дырявит осевые и не держит линейку."""
-    from scipy import ndimage
-
-    generous = rel < 249.0
-    closed = ndimage.binary_closing(generous, iterations=2)
-    dil = max(8, min(rel.shape) // 25)
-    env = ndimage.binary_dilation(closed, iterations=dil)
-    return _drop_horizontal_rules(env)
-
-
-def _reconnect_from_photo(crop):
-    """Запасной путь: тонкие штрихи по карте чернил, без жирного closing."""
-    from scipy import ndimage
-
-    _img, rel = _flatten_crop(crop)
-    if rel is None:
-        return None
-    generous = rel < 249.0
-    if generous.mean() < _MIN_INK_FRACTION:
-        return None
-    closed = ndimage.binary_closing(generous, iterations=2)
-    closed = _drop_horizontal_rules(closed)
-    mask = _filter_components(closed)
-    if mask is None or mask.mean() > _MAX_INK_FRACTION:
-        return None
-    mask = _to_thin_strokes(mask)
-    mask = _drop_horizontal_rules(mask)
-    if mask.sum() < 20:
-        return None
-    rendered = _render_from_mask(rel, mask)
-    if rendered is None:
-        return None
-    return _strip_rules_from_image(rendered)
-
-
-def _recover_strokes(crop, speckled):
-    """Точки порога → тонкая осевая по фото; морфология только как запас."""
-    traced = _trace_centerlines_with_ai(crop, speckled)
-    if traced is not None and not _image_is_speckled(traced):
-        return _strip_rules_from_image(traced)
-    reconnected = _reconnect_from_photo(crop)
-    if reconnected is not None and not _image_is_speckled(reconnected):
-        return reconnected
-    if traced is not None:
-        return _strip_rules_from_image(traced)
-    return reconnected
-
-
-def _trace_centerlines_with_ai(crop, hint=None):
-    """Claude проводит осевые по видимым штрихам; клип по сплошной оболочке."""
-    from core.services import scan_extractor
-
-    prepared = _prepare_crop(crop)
-    if prepared is None:
-        return None
-    _img, rel = _flatten_crop(crop)
-    envelope = _stroke_envelope(rel) if rel is not None else None
-    try:
-        images = [scan_extractor._encode_jpeg_under_limit(prepared)]
-        if hint is not None:
-            images.append(scan_extractor._encode_jpeg_under_limit(hint.convert("RGB")))
-        data = scan_extractor._call_claude_vision(
-            images,
-            system_prompt=SIGNATURE_TRACE_PROMPT,
-            user_text=(
-                "Проведи осевые по центру видимых штрихов ручки. Много точек, "
-                "тонкая сплошная линия. Линейку поля под росчерком не обводи."
-            ),
-            max_tokens=8000,
-        )
-    except Exception as exc:
-        logger.warning("passport_signature: трассировка подписи не удалась: %s", exc)
-        return None
-    parsed = _parse_trace_response(data)
-    if parsed is None:
-        return None
-    drawn = _rasterize_trace(parsed, canvas_size=prepared.size)
-    if drawn is None:
-        return None
-    drawn = _strip_rules_from_image(drawn)
-    if envelope is not None:
-        clipped = _clip_to_ink_map(drawn, envelope)
-        # Дырявый клип хуже непрерывных осевых: оболочка уже без линейки.
-        if clipped is not None and not _image_is_speckled(clipped):
-            drawn = clipped
-        elif clipped is not None and _image_is_speckled(drawn):
-            drawn = clipped
-    return drawn
-
-
-def _parse_trace_response(data) -> dict | None:
-    if not isinstance(data, dict) or not data.get("ok"):
-        return None
-    raw_strokes = data.get("strokes")
-    if not isinstance(raw_strokes, list | tuple) or not raw_strokes:
-        return None
-    strokes = []
-    for stroke in raw_strokes:
-        pts = stroke.get("points") if isinstance(stroke, dict) else stroke
-        if not isinstance(pts, list | tuple):
-            continue
-        clean = []
-        for point in pts:
-            if not isinstance(point, list | tuple) or len(point) < 2:
-                continue
-            try:
-                clean.append((float(point[0]), float(point[1])))
-            except (TypeError, ValueError):
-                continue
-        if len(clean) >= 4:
-            strokes.append({"points": clean})
-    if not strokes:
-        return None
-    total_pts = sum(len(s["points"]) for s in strokes)
-    if total_pts < 16:
-        return None
-    xs = [p[0] for s in strokes for p in s["points"]]
-    ys = [p[1] for s in strokes for p in s["points"]]
-    if max(xs) - min(xs) < 12 or max(ys) - min(ys) < 4:
-        return None
-    try:
-        view_width = float(data.get("view_width") or (max(xs) + 24))
-        view_height = float(data.get("view_height") or (max(ys) + 24))
-        stroke_width = float(data.get("stroke_width") or 4)
-    except (TypeError, ValueError):
-        return None
-    return {
-        "view_width": max(120.0, min(2000.0, view_width)),
-        "view_height": max(60.0, min(1200.0, view_height)),
-        "stroke_width": max(3.0, min(5.0, stroke_width)),
-        "strokes": strokes,
-    }
-
-
-def _densify_polyline(pts, max_gap: float = 3.0):
-    """Промежуточные точки, чтобы дуга не рвалась на длинных сегментах."""
-    if len(pts) < 2:
-        return pts
-    out = [pts[0]]
-    for a, b in zip(pts, pts[1:]):
-        dx, dy = b[0] - a[0], b[1] - a[1]
-        dist = (dx * dx + dy * dy) ** 0.5
-        n = int(dist / max_gap)
-        for i in range(1, n):
-            t = i / n
-            out.append((a[0] + dx * t, a[1] + dy * t))
-        out.append(b)
+    h, w = score.shape
+    achromatic = (darkness > 12.0) & (blueness < 0.35 * darkness)
+    lower = np.zeros_like(achromatic)
+    lower[int(h * 0.45) :, :] = True
+    seg_k = max(20, w // 18)
+    segments = ndimage.binary_opening(
+        ndimage.binary_closing(achromatic & lower, structure=np.ones((3, 3), dtype=bool)),
+        structure=np.ones((3, seg_k), dtype=bool),
+    )
+    out = score.copy()
+    keep_blue = blueness > 0.55 * np.maximum(darkness, 1.0)
+    ys, xs = np.nonzero(segments)
+    if xs.size > 50 and np.ptp(xs) > 0.35 * w:
+        slope, intercept = np.polyfit(xs, ys, 1)
+        yy, xx = np.mgrid[0:h, 0:w]
+        band = np.abs(yy - (slope * xx + intercept)) <= max(5.0, h * 0.015)
+        out[band & ~keep_blue] = 0.0
+    if segments.any():
+        seg_zone = ndimage.binary_dilation(segments, iterations=3)
+        out[seg_zone & ~keep_blue] = 0.0
     return out
 
 
-def _rasterize_trace(parsed: dict, canvas_size: tuple[int, int]):
-    from PIL import Image, ImageDraw
+def _soft_alpha(score):
+    """Карта чернильности → альфа 0..1: гистерезис + мягкий стретч.
 
-    cw, ch = canvas_size
-    vw = parsed["view_width"]
-    vh = parsed["view_height"]
-    sx, sy = cw / vw, ch / vh
-    stroke_w = max(2, min(4, int(round(parsed["stroke_width"] * min(sx, sy)))))
-    img = Image.new("RGB", (cw, ch), (255, 255, 255))
-    draw = ImageDraw.Draw(img)
-    ink = (25, 30, 40)
-    radius = stroke_w / 2.0
-    for stroke in parsed["strokes"]:
-        pts = _densify_polyline([(p[0] * sx, p[1] * sy) for p in stroke["points"]])
-        try:
-            draw.line(pts, fill=ink, width=stroke_w, joint="curve")
-        except TypeError:
-            draw.line(pts, fill=ink, width=stroke_w)
-        for x, y in (pts[0], pts[-1]):
-            draw.ellipse([x - radius, y - radius, x + radius, y + radius], fill=ink)
-    return img.convert("L")
-
-
-def _clip_to_ink_map(drawn, ink_map):
-    """Оставляет только штрихи, попавшие на чернила с фото."""
+    Гистерезис (как в Canny): бледный пиксель живёт, только если его
+    связный регион содержит уверенно тёмный. Так бледные участки штриха
+    сохраняются за счёт связности, а шум бумаги без «якоря» отпадает.
+    None — если сигнала нет (пустое поле).
+    """
     import numpy as np
-    from PIL import Image
+    from scipy import ndimage
 
-    mask_img = Image.fromarray((ink_map.astype("uint8") * 255), mode="L")
-    if mask_img.size != drawn.size:
-        mask_img = mask_img.resize(drawn.size, Image.BILINEAR)
-    ink = np.asarray(mask_img, dtype=np.uint8) > 40
-    arr = np.asarray(drawn.convert("L"), dtype=np.uint8)
-    out = np.full(arr.shape, 255, dtype=np.uint8)
-    out[ink] = arr[ink]
-    if (out < 200).sum() < 40:
+    smooth = ndimage.gaussian_filter(score, sigma=0.9)
+    flat = smooth.ravel()
+    noise = float(np.quantile(flat, 0.90))
+    ink = float(np.quantile(flat, 0.997))
+    span = ink - noise
+    if span < 3.0:
+        return None  # нет контраста — на кропе нечего извлекать
+
+    weak = smooth > noise + 0.06 * span
+    strong = smooth > noise + 0.35 * span
+    labels, n = ndimage.label(weak)
+    if n:
+        has_strong = ndimage.maximum(
+            strong.astype(np.uint8), labels, index=np.arange(1, n + 1)
+        )
+        hyst = np.isin(labels, np.flatnonzero(has_strong > 0) + 1)
+    else:
+        hyst = weak
+
+    lo = noise + 0.06 * span
+    hi = noise + 0.50 * span
+    alpha01 = np.clip((smooth - lo) / (hi - lo), 0.0, 1.0) ** 0.6
+    alpha01 = np.where(hyst, alpha01, 0.0)
+    # Нерезкое маскирование: утончает разбухшие от блюра штрихи, убирает ореол.
+    halo = ndimage.gaussian_filter(alpha01, sigma=4.5)
+    return np.clip((alpha01 - 0.55 * halo) / 0.55, 0.0, 1.0)
+
+
+def _filter_soft_components(alpha01, blueness, darkness):
+    """Отбрасывает мусорные регионы целиком, не трогая полутона штрихов.
+
+    Правила по компонентам поддержки (alpha > 0.30, слегка расширенной):
+
+    * мелкие брызги — долой;
+    * ахроматичные (чёрный печатный текст, тёмный штамп) — долой,
+      кроме крупнейшего (подпись может быть и не синей);
+    * широкий плоский регион в нижней части — сегмент линейки поля;
+    * компактное пятно в углу с низкой синевой — штамп / номер страницы;
+    * мелочь далеко от bbox основных штрихов — брызги и обрезки кромки.
+    """
+    import numpy as np
+    from scipy import ndimage
+
+    h, w = alpha01.shape
+    support = alpha01 > 0.30
+    labels, count = ndimage.label(ndimage.binary_dilation(support, iterations=2))
+    if not count:
         return None
-    return Image.fromarray(out, mode="L")
+    idx = np.arange(1, count + 1)
+    sizes = ndimage.sum_labels(support, labels, index=idx)
+    mean_blue = ndimage.mean(blueness, labels, index=idx)
+    mean_dark = ndimage.mean(darkness, labels, index=idx)
+    biggest = float(sizes.max())
+    boxes = ndimage.find_objects(labels)
+
+    keep = np.zeros(count + 1, dtype=bool)
+    for i in range(count):
+        ratio = float(mean_blue[i]) / max(float(mean_dark[i]), 1.0)
+        sl = boxes[i]
+        bh = sl[0].stop - sl[0].start
+        bw = sl[1].stop - sl[1].start
+        cy = (sl[0].start + sl[0].stop) / 2.0
+        cx = (sl[1].start + sl[1].stop) / 2.0
+        in_corner = (cy < h * 0.22 or cy > h * 0.78) and (cx < w * 0.22 or cx > w * 0.78)
+        if sizes[i] < max(40.0, biggest * 0.01):
+            continue  # брызги
+        if ratio < 0.15 and sizes[i] < biggest:
+            continue  # печатный текст, чёрный штамп
+        if bw >= 0.15 * w and bw / max(bh, 1) >= 3.5 and cy > h * 0.62 and ratio < 0.35:
+            continue  # уцелевший сегмент линейки поля
+        if in_corner and max(bw, bh) < 0.28 * min(h, w) and ratio < 0.28:
+            continue  # штамп в углу
+        keep[i + 1] = True
+
+    # Близость: мелочь живёт только рядом с bbox основных штрихов.
+    main_ids = [i for i in range(count) if keep[i + 1] and sizes[i] >= biggest * 0.2]
+    if main_ids:
+        top = min(boxes[i][0].start for i in main_ids)
+        bottom = max(boxes[i][0].stop for i in main_ids)
+        left = min(boxes[i][1].start for i in main_ids)
+        right = max(boxes[i][1].stop for i in main_ids)
+        pad_y, pad_x = int(h * 0.08), int(w * 0.08)
+        for i in range(count):
+            if not keep[i + 1] or sizes[i] >= biggest * 0.2:
+                continue
+            sl = boxes[i]
+            if (
+                sl[0].stop < top - pad_y
+                or sl[0].start > bottom + pad_y
+                or sl[1].stop < left - pad_x
+                or sl[1].start > right + pad_x
+            ):
+                keep[i + 1] = False
+
+    if not keep.any():
+        return None
+    zone = ndimage.binary_dilation(keep[labels], iterations=8)
+    return np.where(zone, alpha01, 0.0)
 
 
 def _filter_components(mask):
