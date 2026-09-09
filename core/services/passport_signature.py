@@ -7,13 +7,12 @@
    печатную подпись поля). Координаты — доли страницы 0..1.
 2. Фрагмент вырезается с запасом из рендера 300 dpi; мелкий кроп
    увеличивается, чтобы смазанные штрихи не схлопнулись в точку.
-3. Фон паспорта убирается детерминированно. Если от смазанной ручки
-   остались только «точки», штрихи смыкаются по самому фото (морфология
-   по бледной карте чернил) — это всё ещё те же линии, что на паспорте.
-4. Если точки так и не складываются в росчерк, Claude Vision (он линии
-   видит, порог — нет) проводит тонкую осевую по центру видимых штрихов.
-   Результат обрезается по карте чернил с фото: нарисовать «другую»
-   подпись модель не может.
+3. Фон паспорта убирается детерминированно. Печатная линейка поля
+   (черта под росчерком) вычитается до порога, чтобы не стать «подписью».
+4. Если от смазанной ручки остались точки, Claude проводит тонкую осевую
+   по центру видимых штрихов. Клип — сплошная оболочка вокруг чернил
+   (без дыр и без линейки): чужой росчерк нарисовать нельзя, свои линии
+   не рвутся. Морфология — запасной путь и только с тонким пером.
 5. :func:`normalize_signature_image` — синие штрихи, прозрачный фон.
 
 Ошибки любого шага дают ``None`` — вызывающий код просит загрузить
@@ -65,7 +64,7 @@ SIGNATURE_LOCATE_PROMPT = """Ты находишь рукописную подп
 - Рамка должна включать росчерк ЦЕЛИКОМ с небольшим запасом.
 - НЕ включай в рамку: фото владельца, MRZ, печатную подпись поля
   («Подпись владельца» / «Signature of bearer»), горизонтальную линейку
-  поля, штамп, номер страницы, печати должностных лиц.
+  поля (чёрная/серая черта ПОД росчерком), штамп, номер страницы.
 - Фото часто смазанные: даже бледный росчерк — это found=true.
 - found: false — только если рукописных следов нет совсем.
 
@@ -82,16 +81,17 @@ SIGNATURE_TRACE_PROMPT = """Ты трассируешь рукописную п�
 Правила:
 - Следуй фото: тот же старт, те же петли, тот же финальный росчерк.
   Не придумывай буквы, завитки, дату и ФИО, которых нет даже намёком.
-- Не обводи штамп, номер страницы, печатный текст и линейку поля.
+- Не обводи штамп, номер страницы, печатный текст.
+- Горизонтальную линейку поля ПОД подписью не трассируй — это не росчерк.
 - Точек должно быть МНОГО: шаг примерно 1% ширины кадра, чтобы линия
   была гладкой. Одна дуга — десятки точек, не 4.
-- stroke_width — тонкая шариковая (4–8 в координатах viewBox шириной ~1000).
+- stroke_width — тонкая шариковая (3–5 в координатах viewBox шириной ~1000).
 - view_width/view_height совпадают с пропорциями картинки.
 
 Если рукописных штрихов не видно — {"ok": false}.
 
 Верни ТОЛЬКО JSON:
-{"ok": true, "view_width": 1000, "view_height": 400, "stroke_width": 6,
+{"ok": true, "view_width": 1000, "view_height": 400, "stroke_width": 4,
  "strokes": [{"points": [[x, y], [x, y], ...]}]}
 """
 
@@ -122,12 +122,15 @@ def extract_signature_from_passport(path: str) -> bytes | None:
     if crop is None:
         return None
     cleaned = _clean_signature_crop(crop)
+    if cleaned is not None:
+        cleaned = _strip_rules_from_image(cleaned)
     if cleaned is not None and _image_is_speckled(cleaned):
-        logger.info("passport_signature: порог дал точки — смыкаем штрихи и трассируем (%s)", path)
+        logger.info("passport_signature: порог дал точки — трассируем осевые (%s)", path)
         cleaned = _recover_strokes(crop, cleaned)
     if cleaned is None:
         logger.info("passport_signature: очистка фрагмента не дала штрихов (%s)", path)
         return None
+    cleaned = _strip_rules_from_image(cleaned)
 
     buf = io.BytesIO()
     cleaned.save(buf, format="PNG")
@@ -148,7 +151,7 @@ def _locate_signature(pages) -> tuple[int, tuple[float, float, float, float]] | 
             system_prompt=SIGNATURE_LOCATE_PROMPT,
             user_text=(
                 "Найди рукописную подпись владельца. Рамка только вокруг "
-                "росчерка, без штампа и печатного текста поля."
+                "росчерка, без штампа, без печатного текста и без линейки под ним."
             ),
         )
     except Exception as exc:
@@ -191,11 +194,12 @@ def _crop_with_margin(page, bbox: tuple[float, float, float, float]):
     left, top, right, bottom = bbox
     margin_x = (right - left) * w * _MARGIN_RATIO
     margin_y = (bottom - top) * h * _MARGIN_RATIO
+    # Снизу почти не расширяем — иначе в кадр попадает линейка поля.
     box = (
         max(0, int(left * w - margin_x)),
         max(0, int(top * h - margin_y)),
         min(w, int(right * w + margin_x)),
-        min(h, int(bottom * h + margin_y)),
+        min(h, int(bottom * h + margin_y * 0.2)),
     )
     if box[2] - box[0] < _MIN_CROP_SIDE or box[3] - box[1] < _MIN_CROP_SIDE:
         return None
@@ -267,6 +271,63 @@ def _drop_corner_stamps(rel):
     return out
 
 
+def _horizontal_rule_mask(mask):
+    """Печатная линейка поля: широкая тонкая полоса в нижней части кадра."""
+    import numpy as np
+    from scipy import ndimage
+
+    h, w = mask.shape
+    if h < 16 or w < 40:
+        return np.zeros_like(mask, dtype=bool)
+    search = np.zeros_like(mask, dtype=bool)
+    search[int(h * 0.55) :, :] = True
+    k = max(25, w // 5)
+    opened = ndimage.binary_opening(mask & search, structure=np.ones((3, k), dtype=bool))
+    if not opened.any():
+        opened = ndimage.binary_opening(mask & search, structure=np.ones((1, k), dtype=bool))
+    labels, n = ndimage.label(opened)
+    keep = np.zeros_like(mask, dtype=bool)
+    for i in range(1, n + 1):
+        ys, xs = np.nonzero(labels == i)
+        bw = int(xs.max() - xs.min()) + 1
+        bh = int(ys.max() - ys.min()) + 1
+        if bw >= 0.45 * w and bh <= max(8, int(h * 0.12)):
+            keep[labels == i] = True
+    if keep.any():
+        keep = ndimage.binary_dilation(keep, iterations=2)
+    return keep
+
+
+def _drop_horizontal_rules(mask):
+    return mask & ~_horizontal_rule_mask(mask)
+
+
+def _erase_bottom_rules(rel):
+    """Закрашивает линейку поля белым, чтобы порог и клип её не видели."""
+    from scipy import ndimage
+
+    rules = _horizontal_rule_mask(rel < 249.0)
+    if not rules.any():
+        return rel
+    out = rel.copy()
+    out[ndimage.binary_dilation(rules, iterations=3)] = 255.0
+    return out
+
+
+def _strip_rules_from_image(img):
+    """Убирает горизонтальную линейку из уже отрисованной подписи."""
+    import numpy as np
+    from PIL import Image
+
+    arr = np.asarray(img.convert("L"), dtype=np.uint8)
+    rules = _horizontal_rule_mask(arr < 200)
+    if not rules.any():
+        return img
+    out = arr.copy()
+    out[rules] = 255
+    return Image.fromarray(out, mode="L")
+
+
 def _clean_signature_crop(crop):
     """Фрагмент паспорта → PIL-«скан» подписи: белый фон, тёмные штрихи.
 
@@ -288,6 +349,7 @@ def _clean_signature_crop(crop):
     background = ndimage.gaussian_filter(gray, sigma=sigma)
     rel = np.clip(gray / np.maximum(background, 1.0) * 255.0, 0.0, 255.0)
     rel = _drop_corner_stamps(rel)
+    rel = _erase_bottom_rules(rel)
 
     total = rel.size
     threshold = min(_otsu_threshold(rel), _THRESHOLD_CAP)
@@ -354,6 +416,7 @@ def _flatten_crop(crop):
     background = ndimage.gaussian_filter(gray, sigma=sigma)
     rel = np.clip(gray / np.maximum(background, 1.0) * 255.0, 0.0, 255.0)
     rel = _drop_corner_stamps(rel)
+    rel = _erase_bottom_rules(rel)
     return img, rel
 
 
@@ -376,8 +439,36 @@ def _render_from_mask(rel, mask):
     return Image.fromarray(out.astype("uint8"), mode="L")
 
 
+def _to_thin_strokes(mask):
+    """Толстые кляксы → перо ~2–3 px, без большого смыкания."""
+    import numpy as np
+    from scipy import ndimage
+
+    if mask.sum() < 20:
+        return mask
+    dist = ndimage.distance_transform_edt(mask)
+    med = float(np.median(dist[mask]))
+    if med > 2.0:
+        eroded = ndimage.binary_erosion(mask, iterations=max(1, int(round(med)) - 1))
+        if eroded.sum() >= 20:
+            mask = eroded
+    mask = ndimage.binary_closing(mask, iterations=2)
+    return ndimage.binary_dilation(mask, iterations=1)
+
+
+def _stroke_envelope(rel):
+    """Сплошная зона вокруг чернил: клип не дырявит осевые и не держит линейку."""
+    from scipy import ndimage
+
+    generous = rel < 249.0
+    closed = ndimage.binary_closing(generous, iterations=2)
+    dil = max(8, min(rel.shape) // 25)
+    env = ndimage.binary_dilation(closed, iterations=dil)
+    return _drop_horizontal_rules(env)
+
+
 def _reconnect_from_photo(crop):
-    """Смыкает смазанную ручку в непрерывные штрихи по карте чернил с фото."""
+    """Запасной путь: тонкие штрихи по карте чернил, без жирного closing."""
     from scipy import ndimage
 
     _img, rel = _flatten_crop(crop)
@@ -386,41 +477,43 @@ def _reconnect_from_photo(crop):
     generous = rel < 249.0
     if generous.mean() < _MIN_INK_FRACTION:
         return None
-    gap = max(2, min(rel.shape) // 70)
-    closed = ndimage.binary_closing(generous, iterations=gap)
-    if closed.mean() > _MAX_INK_FRACTION:
-        closed = ndimage.binary_closing(generous, iterations=max(2, gap // 2))
+    closed = ndimage.binary_closing(generous, iterations=2)
+    closed = _drop_horizontal_rules(closed)
     mask = _filter_components(closed)
     if mask is None or mask.mean() > _MAX_INK_FRACTION:
         return None
-    return _render_from_mask(rel, mask)
+    mask = _to_thin_strokes(mask)
+    mask = _drop_horizontal_rules(mask)
+    if mask.sum() < 20:
+        return None
+    rendered = _render_from_mask(rel, mask)
+    if rendered is None:
+        return None
+    return _strip_rules_from_image(rendered)
 
 
 def _recover_strokes(crop, speckled):
-    """Точки порога → связный росчерк с фото, иначе тонкая трассировка Vision."""
+    """Точки порога → тонкая осевая по фото; морфология только как запас."""
+    traced = _trace_centerlines_with_ai(crop, speckled)
+    if traced is not None and not _image_is_speckled(traced):
+        return _strip_rules_from_image(traced)
     reconnected = _reconnect_from_photo(crop)
     if reconnected is not None and not _image_is_speckled(reconnected):
         return reconnected
-    traced = _trace_centerlines_with_ai(crop, reconnected or speckled)
-    if traced is not None and not _image_is_speckled(traced):
-        return traced
+    if traced is not None:
+        return _strip_rules_from_image(traced)
     return reconnected
 
 
 def _trace_centerlines_with_ai(crop, hint=None):
-    """Claude проводит осевые по видимым штрихам; обрезка по чернилам фото."""
+    """Claude проводит осевые по видимым штрихам; клип по сплошной оболочке."""
     from core.services import scan_extractor
 
     prepared = _prepare_crop(crop)
     if prepared is None:
         return None
     _img, rel = _flatten_crop(crop)
-    ink_map = None
-    if rel is not None:
-        ink_map = rel < 249.0
-        from scipy import ndimage
-
-        ink_map = ndimage.binary_dilation(ink_map, iterations=max(3, min(ink_map.shape) // 40))
+    envelope = _stroke_envelope(rel) if rel is not None else None
     try:
         images = [scan_extractor._encode_jpeg_under_limit(prepared)]
         if hint is not None:
@@ -430,7 +523,7 @@ def _trace_centerlines_with_ai(crop, hint=None):
             system_prompt=SIGNATURE_TRACE_PROMPT,
             user_text=(
                 "Проведи осевые по центру видимых штрихов ручки. Много точек, "
-                "тонкая линия, только то что есть на фото."
+                "тонкая сплошная линия. Линейку поля под росчерком не обводи."
             ),
             max_tokens=8000,
         )
@@ -443,8 +536,14 @@ def _trace_centerlines_with_ai(crop, hint=None):
     drawn = _rasterize_trace(parsed, canvas_size=prepared.size)
     if drawn is None:
         return None
-    if ink_map is not None:
-        drawn = _clip_to_ink_map(drawn, ink_map)
+    drawn = _strip_rules_from_image(drawn)
+    if envelope is not None:
+        clipped = _clip_to_ink_map(drawn, envelope)
+        # Дырявый клип хуже непрерывных осевых: оболочка уже без линейки.
+        if clipped is not None and not _image_is_speckled(clipped):
+            drawn = clipped
+        elif clipped is not None and _image_is_speckled(drawn):
+            drawn = clipped
     return drawn
 
 
@@ -481,15 +580,31 @@ def _parse_trace_response(data) -> dict | None:
     try:
         view_width = float(data.get("view_width") or (max(xs) + 24))
         view_height = float(data.get("view_height") or (max(ys) + 24))
-        stroke_width = float(data.get("stroke_width") or 6)
+        stroke_width = float(data.get("stroke_width") or 4)
     except (TypeError, ValueError):
         return None
     return {
         "view_width": max(120.0, min(2000.0, view_width)),
         "view_height": max(60.0, min(1200.0, view_height)),
-        "stroke_width": max(4.0, min(10.0, stroke_width)),
+        "stroke_width": max(3.0, min(5.0, stroke_width)),
         "strokes": strokes,
     }
+
+
+def _densify_polyline(pts, max_gap: float = 3.0):
+    """Промежуточные точки, чтобы дуга не рвалась на длинных сегментах."""
+    if len(pts) < 2:
+        return pts
+    out = [pts[0]]
+    for a, b in zip(pts, pts[1:]):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        dist = (dx * dx + dy * dy) ** 0.5
+        n = int(dist / max_gap)
+        for i in range(1, n):
+            t = i / n
+            out.append((a[0] + dx * t, a[1] + dy * t))
+        out.append(b)
+    return out
 
 
 def _rasterize_trace(parsed: dict, canvas_size: tuple[int, int]):
@@ -499,13 +614,13 @@ def _rasterize_trace(parsed: dict, canvas_size: tuple[int, int]):
     vw = parsed["view_width"]
     vh = parsed["view_height"]
     sx, sy = cw / vw, ch / vh
-    stroke_w = max(2, int(round(parsed["stroke_width"] * min(sx, sy))))
+    stroke_w = max(2, min(4, int(round(parsed["stroke_width"] * min(sx, sy)))))
     img = Image.new("RGB", (cw, ch), (255, 255, 255))
     draw = ImageDraw.Draw(img)
     ink = (25, 30, 40)
     radius = stroke_w / 2.0
     for stroke in parsed["strokes"]:
-        pts = [(p[0] * sx, p[1] * sy) for p in stroke["points"]]
+        pts = _densify_polyline([(p[0] * sx, p[1] * sy) for p in stroke["points"]])
         try:
             draw.line(pts, fill=ink, width=stroke_w, joint="curve")
         except TypeError:
@@ -564,13 +679,25 @@ def _filter_components(mask):
             keep[label - 1] = False
 
     for i, lab in enumerate(range(1, count + 1)):
-        if not keep[i] or lab == largest_label:
+        if not keep[i]:
             continue
         ys, xs = np.nonzero(labels == lab)
         if xs.size == 0:
             continue
         bw = int(xs.max() - xs.min()) + 1
         bh = int(ys.max() - ys.min()) + 1
+        cy = float(ys.mean())
+        # Линейка поля — даже если это крупнейший компонент.
+        if (
+            bw >= w * 0.45
+            and bh <= max(6, int(h * 0.10))
+            and bw / max(bh, 1) >= 6
+            and cy >= h * 0.55
+        ):
+            keep[i] = False
+            continue
+        if lab == largest_label:
+            continue
         if bw >= w * 0.5 and bh <= max(4, int(h * 0.07)):
             keep[i] = False
 

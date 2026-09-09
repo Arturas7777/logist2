@@ -152,6 +152,61 @@ def test_filter_components_drops_specks_and_border_lines():
     assert not out[0, 40]
 
 
+def test_filter_drops_bottom_rule_even_if_largest():
+    import numpy as np
+
+    mask = np.zeros((100, 200), dtype=bool)
+    mask[40:55, 70:110] = True  # подпись меньше линейки
+    mask[90:93, 5:195] = True  # линейка поля
+    out = _filter_components(mask)
+    assert out is not None
+    assert out[48, 90]
+    assert not out[91, 100]
+
+
+def test_clean_drops_passport_field_line():
+    """Черта под росчерком не должна стать частью подписи."""
+    import numpy as np
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", (600, 240), _PAPER)
+    _draw_guilloche(img)
+    draw = ImageDraw.Draw(img)
+    _draw_signature(draw, (80, 40, 520, 140))
+    draw.line([(15, 222), (585, 222)], fill=(25, 25, 25), width=5)
+    cleaned = _clean_signature_crop(img)
+    assert cleaned is not None
+    arr = np.asarray(cleaned, dtype=np.uint8)
+    bottom = arr[int(arr.shape[0] * 0.88) :]
+    assert (bottom < 160).sum() < bottom.size * 0.02
+    assert (arr[: int(arr.shape[0] * 0.7)] < 160).sum() > 150
+
+
+def test_rasterize_keeps_thin_continuous_stroke():
+    import numpy as np
+
+    dense_pts = [[10 + i * 8, 40 + (i % 5) * 2] for i in range(20)]
+    parsed = _parse_trace_response(
+        {
+            "ok": True,
+            "view_width": 200,
+            "view_height": 80,
+            "stroke_width": 10,
+            "strokes": [{"points": dense_pts}],
+        }
+    )
+    assert parsed is not None
+    assert parsed["stroke_width"] <= 5
+    img = _rasterize_trace(parsed, canvas_size=(200, 80))
+    arr = np.asarray(img, dtype=np.uint8)
+    ink = arr < 80
+    col = ink[:, 100]
+    thickness = int(col.sum())
+    assert 2 <= thickness <= 10
+    # линия не рвётся на середине
+    assert ink[38:50, 40:160].any(axis=0).mean() > 0.9
+
+
 def test_otsu_threshold_separates_clusters():
     import numpy as np
 
