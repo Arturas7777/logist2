@@ -224,17 +224,16 @@ def _build_pdf(story, *, margins=(2 * cm, 2 * cm, 2 * cm, 2 * cm)) -> bytes:
     return buffer.getvalue()
 
 
-# Целевая высота рукописной подписи на A4: как росчерк ручкой в строке,
-# не миниатюра и не полкарточки. Пропорции сохраняем всегда.
-SIGNATURE_TARGET_HEIGHT = 1.7 * cm
-SIGNATURE_MIN_HEIGHT = 1.3 * cm
+# Целевая высота рукописной подписи на A4: росчерк шариковой, не маркер.
+SIGNATURE_TARGET_HEIGHT = 1.45 * cm
+SIGNATURE_MIN_HEIGHT = 1.15 * cm
 
 
 def _signature_flowable(
     signature_bytes: bytes | None,
     *,
-    max_height: float = 2.0 * cm,
-    max_width: float = 5.2 * cm,
+    max_height: float = 1.75 * cm,
+    max_width: float = 4.8 * cm,
     min_height: float | None = None,
     target_height: float | None = None,
 ):
@@ -242,9 +241,9 @@ def _signature_flowable(
 
     Клиенты шлют кадры разного разрешения и кропа. Алгоритм:
 
-    1. масштабируем к ``target_height`` (по умолчанию 1.7 см);
+    1. масштабируем к ``target_height`` (по умолчанию 1.45 см);
     2. если не влезает в рамку ``max_width`` × ``max_height`` — contain-fit;
-    3. если после этого высота меньше ``min_height`` (1.3 см) — чуть
+    3. если после этого высота меньше ``min_height`` (1.15 см) — чуть
        увеличиваем, не выходя за рамку.
 
     Пропорции не ломаем: широкая подпись становится шире, высокая — выше,
@@ -971,8 +970,8 @@ def generate_letter_usa_pdf(car, *, date: datetime.date) -> bytes:
 
 # Стандартная клетка подписи на обязательстве: влезает любой кроп,
 # визуально как росчерк в строке ФИО / подпись / дата.
-OBLIGATION_SIGNATURE_MAX_HEIGHT = 2.0 * cm
-OBLIGATION_SIGNATURE_MAX_WIDTH = 5.2 * cm
+OBLIGATION_SIGNATURE_MAX_HEIGHT = 1.75 * cm
+OBLIGATION_SIGNATURE_MAX_WIDTH = 4.8 * cm
 
 
 def generate_obligation_pdf(car, *, date: datetime.date, buyer: dict, signature_bytes: bytes | None = None) -> bytes:
@@ -1007,7 +1006,7 @@ def generate_obligation_pdf(car, *, date: datetime.date, buyer: dict, signature_
                 Paragraph(_date_ru(date), _style("d", fontSize=11, alignment=TA_RIGHT)),
             ]
         ],
-        colWidths=[7.3 * cm, OBLIGATION_SIGNATURE_MAX_WIDTH, 4.5 * cm],
+        colWidths=[7.7 * cm, OBLIGATION_SIGNATURE_MAX_WIDTH, 4.5 * cm],
     )
     sign_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
 

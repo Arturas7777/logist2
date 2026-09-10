@@ -939,6 +939,33 @@ def test_normalize_signature_keeps_thin_stroke_continuous():
     assert ink_cols / w > 0.55
 
 
+def test_normalize_signature_stroke_stays_thin():
+    """4-пиксельная линия не раздувается dilate'ом в «маркер»."""
+    from PIL import Image
+
+    from core.services.signature_normalizer import normalize_signature_image
+
+    img = Image.new("RGB", (400, 160), (255, 255, 255))
+    for x in range(30, 370):
+        for y in range(78, 82):
+            img.putpixel((x, y), (25, 25, 25))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=95)
+    png = normalize_signature_image(buf.getvalue())
+    assert png
+    out = Image.open(io.BytesIO(png)).convert("RGBA")
+    alpha = out.split()[-1]
+    w, h = out.size
+    thicknesses = []
+    for x in range(w):
+        rows = [y for y in range(h) if alpha.getpixel((x, y)) > 160]
+        if rows:
+            thicknesses.append(max(rows) - min(rows) + 1)
+    assert thicknesses
+    median = sorted(thicknesses)[len(thicknesses) // 2]
+    assert median <= 7
+
+
 def test_normalize_signature_rerun_on_rgba_keeps_transparency():
     from PIL import Image
 
@@ -1314,8 +1341,8 @@ def test_obligation_signature_uses_standard_box():
         max_width=OBLIGATION_SIGNATURE_MAX_WIDTH,
     )
     assert typical is not None and wide is not None and tall is not None
-    assert abs(OBLIGATION_SIGNATURE_MAX_HEIGHT - 2.0 * cm) < 0.05 * cm
-    assert abs(OBLIGATION_SIGNATURE_MAX_WIDTH - 5.2 * cm) < 0.05 * cm
+    assert abs(OBLIGATION_SIGNATURE_MAX_HEIGHT - 1.75 * cm) < 0.05 * cm
+    assert abs(OBLIGATION_SIGNATURE_MAX_WIDTH - 4.8 * cm) < 0.05 * cm
     for flow in (typical, wide, tall):
         assert SIGNATURE_MIN_HEIGHT - 0.05 * cm <= flow.drawHeight <= OBLIGATION_SIGNATURE_MAX_HEIGHT + 0.01
         assert flow.drawWidth <= OBLIGATION_SIGNATURE_MAX_WIDTH + 0.01
@@ -1333,10 +1360,10 @@ def test_signature_flowable_wide_image_not_tiny():
     img = Image.new("RGBA", (900, 70), (25, 55, 160, 255))
     buf = io.BytesIO()
     img.save(buf, format="PNG")
-    wide = _signature_flowable(buf.getvalue(), max_height=2.0 * cm, max_width=5.2 * cm)
+    wide = _signature_flowable(buf.getvalue(), max_height=1.75 * cm, max_width=4.8 * cm)
     assert wide is not None
     assert wide.drawHeight >= SIGNATURE_MIN_HEIGHT - 0.05 * cm
-    assert wide.drawWidth <= 5.2 * cm + 0.01
+    assert wide.drawWidth <= 4.8 * cm + 0.01
 
 
 def test_normalize_signature_crops_low_alpha_haze():

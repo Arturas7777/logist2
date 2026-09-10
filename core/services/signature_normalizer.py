@@ -4,9 +4,9 @@
 прозрачный фон, синие штрихи «как от шариковой ручки», обрезка полей,
 разумный размер в пикселях.
 
-Важно: не используем морфологический opening (Min→Max) — он рвёт тонкие
-штрихи и даёт «пробелы» в подписи. Вместо этого мягкий blur + лёгкое
-утолщение (dilate), чтобы сомкнуть микроразрывы.
+Важно: не используем opening (Min→Max) и не делаем dilate — opening
+рвёт тонкие штрихи, а MaxFilter рисует «маркер». Микроразрывы смыкает
+только лёгкий blur.
 """
 
 from __future__ import annotations
@@ -25,11 +25,10 @@ _PROCESS_MAX_SIDE = 1600
 # Макс. размер готовой подписи (длинная сторона).
 _MAX_SIDE = 900
 _MIN_SIDE = 120
-# Полупрозрачный «туман» от бумаги: порог мягче прежнего (165), чтобы не
-# выедать полутона тонких штрихов.
-_HAZE_CUTOFF = 110
-# Штрих должен быть темнее бумаги; меньший gap сохраняет бледные линии ручки.
-_INK_LUMA_GAP = 28
+# Ореол вокруг штриха (JPEG/тень) отсекаем жёстче — иначе линия как маркер.
+_HAZE_CUTOFF = 145
+# Штрих должен быть заметно темнее бумаги; больший gap режет серую кайму.
+_INK_LUMA_GAP = 36
 
 
 def normalize_signature_image(
@@ -60,15 +59,13 @@ def normalize_signature_image(
         img = img.copy()
         img.thumbnail((_PROCESS_MAX_SIDE, _PROCESS_MAX_SIDE), Image.LANCZOS)
 
-    # Лёгкий blur сглаживает JPEG-шум, не разрывая тонкие штрихи (в отличие от Median).
-    gray = img.convert("L").filter(ImageFilter.GaussianBlur(radius=0.6))
+    # Слабый blur сглаживает JPEG-шум, не раздувая штрих.
+    gray = img.convert("L").filter(ImageFilter.GaussianBlur(radius=0.35))
     bg_luma = _estimate_bg_luma(gray)
     alpha = gray.point(lambda luma, t=bg_luma: _luma_to_alpha(luma, t))
     # Срезаем слабую альфу — иначе в PDF виден серый прямоугольник фона.
     cutoff = _adaptive_haze_cutoff(alpha)
     alpha = alpha.point(lambda a, c=cutoff: 0 if a < c else a)
-    # Лёгкое утолщение (dilate) смыкает микроразрывы; opening здесь НЕ делаем.
-    alpha = alpha.filter(ImageFilter.MaxFilter(3))
 
     ink = ink_rgb or _INK_RGB
     out = Image.new("RGBA", gray.size, (*ink, 0))
