@@ -4,15 +4,17 @@
 прозрачный фон, синие штрихи «как от шариковой ручки», обрезка полей,
 разумный размер в пикселях.
 
-Важно: не используем opening (Min→Max) и не делаем dilate — opening
-рвёт тонкие штрихи, а MaxFilter рисует «маркер». Микроразрывы смыкает
-только лёгкий blur.
+Разрывы после порога восстанавливаем closing'ом и тонкими перемычками
+между близкими обрывками — это их штрих, не новый автограф. Dilate
+без erode не делаем: он рисует «маркер». Claude/полилинии не используем:
+модель дорисовывает чужую геометрию.
 """
 
 from __future__ import annotations
 
 import io
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +27,12 @@ _PROCESS_MAX_SIDE = 1600
 # Макс. размер готовой подписи (длинная сторона).
 _MAX_SIDE = 900
 _MIN_SIDE = 120
-# Ореол вокруг штриха (JPEG/тень) отсекаем жёстче — иначе линия как маркер.
-_HAZE_CUTOFF = 145
-# Штрих должен быть заметно темнее бумаги; больший gap режет серую кайму.
-_INK_LUMA_GAP = 36
+# Ореол срезаем, но не настолько жёстко, чтобы съесть тонкие связки росчерка.
+_HAZE_CUTOFF = 128
+_INK_LUMA_GAP = 32
+# Соединяем обрывки, если разрыв не больше этого (в пикселях после ужима).
+_BRIDGE_MAX_GAP = 40
+_BRIDGE_MIN_COMPONENT = 8
 
 
 def normalize_signature_image(
@@ -66,6 +70,7 @@ def normalize_signature_image(
     # Срезаем слабую альфу — иначе в PDF виден серый прямоугольник фона.
     cutoff = _adaptive_haze_cutoff(alpha)
     alpha = alpha.point(lambda a, c=cutoff: 0 if a < c else a)
+    alpha = _reconnect_broken_strokes(alpha)
 
     ink = ink_rgb or _INK_RGB
     out = Image.new("RGBA", gray.size, (*ink, 0))
@@ -163,6 +168,102 @@ def _crop_to_content(img, pad_ratio: float = 0.08, alpha_min: int = 72):
     right = min(w, right + pad_x)
     bottom = min(h, bottom + pad_y)
     return img.crop((left, top, right, bottom))
+
+
+def _reconnect_broken_strokes(alpha):
+    """Смыть мелкие дыры и тонко соединить близкие обрывки одного штриха."""
+    from PIL import ImageFilter
+
+    bbox = alpha.getbbox()
+    if bbox is None:
+        return alpha
+    piece = alpha.crop(bbox)
+    closed = piece.filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.MinFilter(5))
+    closed = _bridge_nearby_fragments(closed)
+    restored = alpha.copy()
+    restored.paste(closed, (bbox[0], bbox[1]))
+    return restored
+
+
+def _bridge_nearby_fragments(alpha):
+    """Краскал: перемычка 2 px только между ближайшими обрывками (разрыв ≤ 40 px)."""
+    from PIL import ImageDraw
+
+    components = _ink_components(alpha)
+    if len(components) < 2:
+        return alpha
+    parent = list(range(len(components)))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    edges = []
+    samples = [_sample_points(pts) for pts in components]
+    for i in range(len(samples)):
+        for j in range(i + 1, len(samples)):
+            dist, p1, p2 = _nearest_pair(samples[i], samples[j])
+            if 2 < dist <= _BRIDGE_MAX_GAP:
+                edges.append((dist, i, j, p1, p2))
+    edges.sort(key=lambda item: item[0])
+    draw = ImageDraw.Draw(alpha)
+    for _dist, i, j, p1, p2 in edges:
+        a, b = find(i), find(j)
+        if a == b:
+            continue
+        parent[a] = b
+        draw.line([p1, p2], fill=230, width=2)
+    return alpha
+
+
+def _ink_components(alpha, threshold: int = 80) -> list[list[tuple[int, int]]]:
+    w, h = alpha.size
+    pix = alpha.load()
+    seen = bytearray(w * h)
+    components = []
+    for y in range(h):
+        row = y * w
+        for x in range(w):
+            idx = row + x
+            if seen[idx] or pix[x, y] < threshold:
+                continue
+            stack = [(x, y)]
+            seen[idx] = 1
+            pts = []
+            while stack:
+                cx, cy = stack.pop()
+                pts.append((cx, cy))
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)):
+                    nx, ny = cx + dx, cy + dy
+                    if 0 <= nx < w and 0 <= ny < h:
+                        nidx = ny * w + nx
+                        if not seen[nidx] and pix[nx, ny] >= threshold:
+                            seen[nidx] = 1
+                            stack.append((nx, ny))
+            if len(pts) >= _BRIDGE_MIN_COMPONENT:
+                components.append(pts)
+    return components
+
+
+def _sample_points(pts: list[tuple[int, int]], limit: int = 80) -> list[tuple[int, int]]:
+    if len(pts) <= limit:
+        return pts
+    step = max(1, len(pts) // limit)
+    return pts[::step][:limit]
+
+
+def _nearest_pair(
+    a: list[tuple[int, int]], b: list[tuple[int, int]]
+) -> tuple[float, tuple[int, int], tuple[int, int]]:
+    best = (1e9, a[0], b[0])
+    for x1, y1 in a:
+        for x2, y2 in b:
+            dist = math.hypot(x1 - x2, y1 - y2)
+            if dist < best[0]:
+                best = (dist, (x1, y1), (x2, y2))
+    return best
 
 
 def _fit_max_side(img, max_side: int):

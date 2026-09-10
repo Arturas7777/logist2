@@ -966,6 +966,30 @@ def test_normalize_signature_stroke_stays_thin():
     assert median <= 7
 
 
+def test_normalize_signature_reconnects_gap():
+    """Разрыв ~18 px в линии должен срастись тонкой перемычкой."""
+    from PIL import Image
+
+    from core.services.signature_normalizer import normalize_signature_image
+
+    img = Image.new("RGB", (500, 160), (255, 255, 255))
+    for x in range(30, 220):
+        for y in range(78, 82):
+            img.putpixel((x, y), (20, 20, 20))
+    for x in range(238, 470):
+        for y in range(78, 82):
+            img.putpixel((x, y), (20, 20, 20))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=95)
+    png = normalize_signature_image(buf.getvalue())
+    assert png
+    out = Image.open(io.BytesIO(png)).convert("RGBA")
+    alpha = out.split()[-1]
+    w, h = out.size
+    ink_cols = sum(1 for x in range(w) if any(alpha.getpixel((x, y)) > 120 for y in range(h)))
+    assert ink_cols / w > 0.75
+
+
 def test_normalize_signature_rerun_on_rgba_keeps_transparency():
     from PIL import Image
 
