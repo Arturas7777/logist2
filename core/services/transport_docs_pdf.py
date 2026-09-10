@@ -948,6 +948,10 @@ def generate_letter_usa_pdf(car, *, date: datetime.date) -> bytes:
 # Обязательство клиента
 # ---------------------------------------------------------------------------
 
+# Рамка подписи в 1.5 раза больше прежней (1.75×4.8 см).
+OBLIGATION_SIGNATURE_MAX_HEIGHT = 1.75 * cm * 1.5
+OBLIGATION_SIGNATURE_MAX_WIDTH = 4.8 * cm * 1.5
+
 
 def generate_obligation_pdf(car, *, date: datetime.date, buyer: dict, signature_bytes: bytes | None = None) -> bytes:
     name = buyer.get("name_ru") or buyer["name"]
@@ -968,7 +972,11 @@ def generate_obligation_pdf(car, *, date: datetime.date, buyer: dict, signature_
         "России, не буду."
     )
 
-    signature = _signature_flowable(signature_bytes, max_height=1.75 * cm, max_width=4.8 * cm)
+    signature = _signature_flowable(
+        signature_bytes,
+        max_height=OBLIGATION_SIGNATURE_MAX_HEIGHT,
+        max_width=OBLIGATION_SIGNATURE_MAX_WIDTH,
+    )
     sign_row = Table(
         [
             [
@@ -977,7 +985,7 @@ def generate_obligation_pdf(car, *, date: datetime.date, buyer: dict, signature_
                 Paragraph(_date_ru(date), _style("d", fontSize=11, alignment=TA_RIGHT)),
             ]
         ],
-        colWidths=[8 * cm, 5 * cm, 4 * cm],
+        colWidths=[6.3 * cm, OBLIGATION_SIGNATURE_MAX_WIDTH, 3.5 * cm],
     )
     sign_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
 

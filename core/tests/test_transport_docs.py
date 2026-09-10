@@ -1279,6 +1279,31 @@ def test_signature_flowable_respects_max_box():
     assert tall.drawHeight <= 1.8 * 28.35 + 0.01
 
 
+def test_obligation_signature_is_one_and_half_times_former_box():
+    """На обязательстве рамка подписи в 1.5 раза больше прежних 1.75×4.8 см."""
+    from reportlab.lib.units import cm
+
+    from core.services.transport_docs_pdf import (
+        OBLIGATION_SIGNATURE_MAX_HEIGHT,
+        OBLIGATION_SIGNATURE_MAX_WIDTH,
+        _signature_flowable,
+    )
+    from PIL import Image
+
+    img = Image.new("RGBA", (360, 180), (25, 55, 160, 255))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    flow = _signature_flowable(
+        buf.getvalue(),
+        max_height=OBLIGATION_SIGNATURE_MAX_HEIGHT,
+        max_width=OBLIGATION_SIGNATURE_MAX_WIDTH,
+    )
+    assert flow is not None
+    assert abs(OBLIGATION_SIGNATURE_MAX_HEIGHT - 1.75 * cm * 1.5) < 0.15 * cm
+    assert abs(OBLIGATION_SIGNATURE_MAX_WIDTH - 4.8 * cm * 1.5) < 0.05 * cm
+    assert flow.drawHeight >= 1.75 * cm * 1.5 - 0.2 * cm
+
+
 def test_signature_flowable_wide_image_not_tiny():
     """Очень широкая картинка не сжимается в миллиметровую полоску на обязательстве."""
     from PIL import Image
