@@ -471,6 +471,7 @@ document.addEventListener('DOMContentLoaded', function() {
 {{ block.super }}
 {% if not is_popup and user.is_staff %}
 <div id="ai-chat-widget">
+    {% csrf_token %}
     <button class="ai-chat-button" id="ai-chat-toggle" title="AI помощник">AI</button>
     <div class="ai-chat-window" id="ai-chat-window" style="display: none;">
         <div class="ai-chat-header">

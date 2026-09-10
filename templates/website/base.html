@@ -132,6 +132,7 @@
 
     <!-- ИИ-помощник (чат-кнопка) -->
     <div id="ai-chat-widget">
+        {% csrf_token %}
         <button class="ai-chat-button" id="ai-chat-toggle" title="{% trans 'Задать вопрос ИИ-помощнику' %}">
             <i class="bi bi-chat-dots fs-3"></i>
         </button>

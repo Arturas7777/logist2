@@ -28,15 +28,16 @@ const adminPageContext = window.__adminPageContext || null;
 if (!chatToggle || !chatWindow || !chatClose || !chatMessages || !chatInput || !chatSend) {
     console.warn('AI chat widget elements not found on this page');
 } else {
-// CSRF helper for Django
-function getCookie(name) {
+// CSRF: на проде cookie HttpOnly, JS её не читает. Берём токен из hidden input.
+function getCsrfToken() {
+    const input = document.querySelector('#ai-chat-widget [name=csrfmiddlewaretoken]')
+        || document.querySelector('[name=csrfmiddlewaretoken]');
+    if (input && input.value) return input.value;
     const value = `; ${document.cookie}`;
-    const parts = value.split(`; ${name}=`);
+    const parts = value.split(`; csrftoken=`);
     if (parts.length === 2) return parts.pop().split(';').shift();
     return '';
 }
-
-const csrfToken = getCookie('csrftoken');
 
 function getAdminUiContext() {
     if (!isAdminPage && !adminPageContext) return null;
@@ -189,9 +190,10 @@ async function sendMessage() {
     try {
         const response = await fetch('/api/ai-chat/', {
             method: 'POST',
+            credentials: 'same-origin',
             headers: {
                 'Content-Type': 'application/json',
-                'X-CSRFToken': csrfToken,
+                'X-CSRFToken': getCsrfToken(),
                 'X-Admin-Chat': isAdminPage ? '1' : '0'
             },
             body: JSON.stringify({
@@ -228,7 +230,11 @@ async function sendMessage() {
                 addMessage('⚠️ Включен резервный режим ИИ (см. консоль).', false);
             }
         } else {
-            addMessage('Извините, произошла ошибка. Попробуйте еще раз.', false);
+            if (response.status === 403) {
+                addMessage('Сессия устарела. Обновите страницу (F5) и отправьте вопрос ещё раз.', false);
+            } else {
+                addMessage(data.error || data.detail || 'Извините, произошла ошибка. Попробуйте еще раз.', false);
+            }
         }
     } catch (error) {
         loadingDiv.remove();
