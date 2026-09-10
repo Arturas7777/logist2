@@ -1279,45 +1279,64 @@ def test_signature_flowable_respects_max_box():
     assert tall.drawHeight <= 1.8 * 28.35 + 0.01
 
 
-def test_obligation_signature_is_one_and_half_times_former_box():
-    """На обязательстве рамка подписи в 1.5 раза больше прежних 1.75×4.8 см."""
+def test_obligation_signature_uses_standard_box():
+    """Разная геометрия кропа даёт близкую высоту, не гигант и не полоску."""
+    from PIL import Image
     from reportlab.lib.units import cm
 
     from core.services.transport_docs_pdf import (
         OBLIGATION_SIGNATURE_MAX_HEIGHT,
         OBLIGATION_SIGNATURE_MAX_WIDTH,
+        SIGNATURE_MIN_HEIGHT,
+        SIGNATURE_TARGET_HEIGHT,
         _signature_flowable,
     )
-    from PIL import Image
 
-    img = Image.new("RGBA", (360, 180), (25, 55, 160, 255))
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    flow = _signature_flowable(
-        buf.getvalue(),
+    def _png(size):
+        img = Image.new("RGBA", size, (25, 55, 160, 255))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    typical = _signature_flowable(
+        _png((360, 180)),
         max_height=OBLIGATION_SIGNATURE_MAX_HEIGHT,
         max_width=OBLIGATION_SIGNATURE_MAX_WIDTH,
     )
-    assert flow is not None
-    assert abs(OBLIGATION_SIGNATURE_MAX_HEIGHT - 1.75 * cm * 1.5) < 0.15 * cm
-    assert abs(OBLIGATION_SIGNATURE_MAX_WIDTH - 4.8 * cm * 1.5) < 0.05 * cm
-    assert flow.drawHeight >= 1.75 * cm * 1.5 - 0.2 * cm
+    wide = _signature_flowable(
+        _png((900, 80)),
+        max_height=OBLIGATION_SIGNATURE_MAX_HEIGHT,
+        max_width=OBLIGATION_SIGNATURE_MAX_WIDTH,
+    )
+    tall = _signature_flowable(
+        _png((160, 400)),
+        max_height=OBLIGATION_SIGNATURE_MAX_HEIGHT,
+        max_width=OBLIGATION_SIGNATURE_MAX_WIDTH,
+    )
+    assert typical is not None and wide is not None and tall is not None
+    assert abs(OBLIGATION_SIGNATURE_MAX_HEIGHT - 2.0 * cm) < 0.05 * cm
+    assert abs(OBLIGATION_SIGNATURE_MAX_WIDTH - 5.2 * cm) < 0.05 * cm
+    for flow in (typical, wide, tall):
+        assert SIGNATURE_MIN_HEIGHT - 0.05 * cm <= flow.drawHeight <= OBLIGATION_SIGNATURE_MAX_HEIGHT + 0.01
+        assert flow.drawWidth <= OBLIGATION_SIGNATURE_MAX_WIDTH + 0.01
+    assert abs(typical.drawHeight - SIGNATURE_TARGET_HEIGHT) < 0.15 * cm
+    assert typical.drawHeight < 1.75 * cm * 1.5 - 0.3 * cm
 
 
 def test_signature_flowable_wide_image_not_tiny():
-    """Очень широкая картинка не сжимается в миллиметровую полоску на обязательстве."""
+    """Очень широкая картинка не сжимается в миллиметровую полоску."""
     from PIL import Image
     from reportlab.lib.units import cm
 
-    from core.services.transport_docs_pdf import _signature_flowable
+    from core.services.transport_docs_pdf import SIGNATURE_MIN_HEIGHT, _signature_flowable
 
     img = Image.new("RGBA", (900, 70), (25, 55, 160, 255))
     buf = io.BytesIO()
     img.save(buf, format="PNG")
-    wide = _signature_flowable(buf.getvalue(), max_height=1.6 * cm, max_width=4.6 * cm)
+    wide = _signature_flowable(buf.getvalue(), max_height=2.0 * cm, max_width=5.2 * cm)
     assert wide is not None
-    assert wide.drawHeight >= 1.6 * cm * 0.72 - 0.05
-    assert wide.drawWidth <= 4.6 * cm + 0.01
+    assert wide.drawHeight >= SIGNATURE_MIN_HEIGHT - 0.05 * cm
+    assert wide.drawWidth <= 5.2 * cm + 0.01
 
 
 def test_normalize_signature_crops_low_alpha_haze():

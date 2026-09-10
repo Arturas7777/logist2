@@ -224,22 +224,31 @@ def _build_pdf(story, *, margins=(2 * cm, 2 * cm, 2 * cm, 2 * cm)) -> bytes:
     return buffer.getvalue()
 
 
+# Целевая высота рукописной подписи на A4: как росчерк ручкой в строке,
+# не миниатюра и не полкарточки. Пропорции сохраняем всегда.
+SIGNATURE_TARGET_HEIGHT = 1.7 * cm
+SIGNATURE_MIN_HEIGHT = 1.3 * cm
+
+
 def _signature_flowable(
     signature_bytes: bytes | None,
     *,
-    max_height: float = 1.5 * cm,
-    max_width: float = 4.8 * cm,
+    max_height: float = 2.0 * cm,
+    max_width: float = 5.2 * cm,
     min_height: float | None = None,
+    target_height: float | None = None,
 ):
-    """Картинка подписи с вписыванием в max_height × max_width.
+    """Картинка подписи одного визуального размера на любом фото.
 
-    Чистый contain-fit даёт скачок размеров: квадратный кроп заполняет всю
-    высоту (~1.6 см), а широкий плоский (поле паспорта, росчерк без хвостов)
-    сжимается в миллиметровую полоску. Нижняя граница ``min_height``
-    (по умолчанию 72% max_height) не даёт подписи «пропасть». Если ширина
-    уже упёрлась в max_width, высота всё равно поднимается до минимума —
-    это лёгкое вертикальное масштабирование только для экстремально
-    широких картинок, не новая подпись.
+    Клиенты шлют кадры разного разрешения и кропа. Алгоритм:
+
+    1. масштабируем к ``target_height`` (по умолчанию 1.7 см);
+    2. если не влезает в рамку ``max_width`` × ``max_height`` — contain-fit;
+    3. если после этого высота меньше ``min_height`` (1.3 см) — чуть
+       увеличиваем, не выходя за рамку.
+
+    Пропорции не ломаем: широкая подпись становится шире, высокая — выше,
+    но обе остаются в одной «клетке».
     """
     if not signature_bytes:
         return None
@@ -251,15 +260,27 @@ def _signature_flowable(
     if not width_px or not height_px:
         return None
     aspect = width_px / height_px
-    width = max_height * aspect
-    height = max_height
+    aim = min(target_height if target_height is not None else SIGNATURE_TARGET_HEIGHT, max_height)
+    floor = min_height if min_height is not None else SIGNATURE_MIN_HEIGHT
+
+    height = aim
+    width = aim * aspect
     if width > max_width:
-        height = max_width / aspect
         width = max_width
-    floor = min_height if min_height is not None else max_height * 0.72
+        height = max_width / aspect
+    if height > max_height:
+        height = max_height
+        width = max_height * aspect
     if height < floor:
-        height = floor
-        width = min(max_width, floor * aspect)
+        height = min(max_height, floor)
+        proposed_width = height * aspect
+        if proposed_width > max_width:
+            # Экстремально широкий кроп: иначе полоска в миллиметры.
+            # Чуть тянем по вертикали, ширину оставляем в рамке.
+            width = max_width
+        else:
+            width = proposed_width
+
     image = Image(io.BytesIO(signature_bytes), width=width, height=height, mask="auto")
     image.hAlign = "LEFT"
     return image
@@ -948,9 +969,10 @@ def generate_letter_usa_pdf(car, *, date: datetime.date) -> bytes:
 # Обязательство клиента
 # ---------------------------------------------------------------------------
 
-# Рамка подписи в 1.5 раза больше прежней (1.75×4.8 см).
-OBLIGATION_SIGNATURE_MAX_HEIGHT = 1.75 * cm * 1.5
-OBLIGATION_SIGNATURE_MAX_WIDTH = 4.8 * cm * 1.5
+# Стандартная клетка подписи на обязательстве: влезает любой кроп,
+# визуально как росчерк в строке ФИО / подпись / дата.
+OBLIGATION_SIGNATURE_MAX_HEIGHT = 2.0 * cm
+OBLIGATION_SIGNATURE_MAX_WIDTH = 5.2 * cm
 
 
 def generate_obligation_pdf(car, *, date: datetime.date, buyer: dict, signature_bytes: bytes | None = None) -> bytes:
@@ -985,7 +1007,7 @@ def generate_obligation_pdf(car, *, date: datetime.date, buyer: dict, signature_
                 Paragraph(_date_ru(date), _style("d", fontSize=11, alignment=TA_RIGHT)),
             ]
         ],
-        colWidths=[6.3 * cm, OBLIGATION_SIGNATURE_MAX_WIDTH, 3.5 * cm],
+        colWidths=[7.3 * cm, OBLIGATION_SIGNATURE_MAX_WIDTH, 4.5 * cm],
     )
     sign_row.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
 
