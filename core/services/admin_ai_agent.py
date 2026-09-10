@@ -1,13 +1,17 @@
+import json
 import logging
+import os
 import re
 from decimal import Decimal
+from functools import lru_cache
 
 from django.conf import settings
 
 from core.models import Car, Carrier, CarService, Company, Container, Line, Warehouse, WarehouseService
 from core.models_billing import NewInvoice
-from core.models_website import CarPhoto, ContainerPhoto
-from core.services.ai_chat_service import AIServiceError, _call_ai_api
+from core.models_website import AIChat, CarPhoto, ContainerPhoto
+from core.services.admin_ai_tools import TOOL_SPECS, execute_admin_tool, parse_tool_arguments
+from core.services.ai_provider import AIServiceError, chat_completion, openai_tools_from_specs
 from core.services.ai_rag import build_rag_snippets
 
 logger = logging.getLogger(__name__)
@@ -38,7 +42,7 @@ def _summarize_container(container: Container) -> str:
 
 def _summarize_car(car: Car) -> str:
     return (
-        f"Авто VIN {car.vin}: статус {car.get_status_display()}, "
+        f"Авто VIN {car.vin} ({car.brand or '—'} {car.year or ''}): статус {car.get_status_display()}, "
         f"контейнер {car.container.number if car.container else '—'}, "
         f"склад {car.warehouse.name if car.warehouse else '—'}, "
         f"линия {car.line.name if car.line else '—'}, "
@@ -316,6 +320,66 @@ def _run_diagnostics(page_context: dict) -> str:
     return "Потенциальные проблемы: " + " ".join(diagnostics)
 
 
+def _load_business_context() -> str:
+    path = os.path.join(settings.BASE_DIR, "docs", "AI_BUSINESS_CONTEXT.md")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read()[:8000]
+    except OSError:
+        return ""
+
+
+@lru_cache(maxsize=1)
+def _business_context_cached(mtime: float) -> str:
+    return _load_business_context()
+
+
+def _business_context() -> str:
+    path = os.path.join(settings.BASE_DIR, "docs", "AI_BUSINESS_CONTEXT.md")
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return ""
+    return _business_context_cached(mtime)
+
+
+def _admin_history(session_id: str | None, user) -> list[dict]:
+    if not session_id or not user:
+        return []
+    chats = AIChat.objects.filter(session_id=session_id, user=user).order_by("-created_at")[:6]
+    messages = []
+    for chat in reversed(list(chats)):
+        messages.append({"role": "user", "content": chat.message})
+        messages.append({"role": "assistant", "content": chat.response})
+    return messages
+
+
+def _admin_system_prompt(language_name: str) -> str:
+    business = _business_context()
+    return (
+        "Ты Grok — операционный ассистент владельца CRM Logist2 (Caromoto Lithuania). "
+        "Помогаешь вести бизнес и работать в Django-админке.\n"
+        "Правила:\n"
+        "- Не выдумывай факты. Если данных нет — вызови инструмент поиска.\n"
+        "- Финансы в админке можно обсуждать (балансы, инвойсы, хранение), "
+        "но НЕ создавай платежи, не меняй балансы и не удаляй данные.\n"
+        "- Статусы контейнеров/авто не меняй сам: дай точные шаги в админке.\n"
+        "- Дело создавай через create_task только если сотрудник явно просит.\n"
+        "- Отвечай кратко, по-деловому, со ссылками вида /admin/core/car/123/change/.\n"
+        f"Язык ответа: {language_name}.\n\n"
+        "Карта админки:\n"
+        "- Контейнеры: /admin/core/container/\n"
+        "- Авто: /admin/core/car/\n"
+        "- Клиенты: /admin/core/client/\n"
+        "- Инвойсы: /admin/core/newinvoice/\n"
+        "- Дела + ИИ: /admin/tasks-board/\n"
+        "- Письма контейнеров: карточка контейнера → блок переписки.\n"
+        "- THS: карточка линии, кнопка «Пересчитать THS».\n"
+        "- Хранение: платные дни × ставка услуги склада «Хранение».\n\n"
+        f"Бизнес-контекст:\n{business}"
+    )
+
+
 def generate_admin_ai_response(
     message: str,
     user,
@@ -337,38 +401,66 @@ def generate_admin_ai_response(
             if car:
                 price_context = _build_price_context(car)
 
-    system_prompt = (
-        "Ты AI-ассистент администратора проекта Logist2. "
-        "Ты знаешь бизнес-логику, модели и правила админки. "
-        "Отвечай кратко и по делу. Если данных недостаточно — уточни. "
-        "Финансовые вопросы в админке разрешены. "
-        "Если спрашивают про действие в админке — дай точные шаги."
-    )
-
     language_map = {"ru": "Русский", "en": "English", "lt": "Lietuvių"}
     language_name = language_map.get(language_code, "Русский")
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "system", "content": f"Язык ответа: {language_name}."},
+    messages: list[dict] = [
+        {"role": "system", "content": _admin_system_prompt(language_name)},
     ]
     if page_context:
-        messages.append({"role": "system", "content": f"Контекст страницы: {page_context}"})
+        messages.append({"role": "system", "content": f"Открытая страница админки: {page_context}"})
     if db_context:
-        messages.append({"role": "system", "content": f"Данные из БД: {db_context}"})
+        messages.append({"role": "system", "content": f"Данные по текущей странице / идентификаторам: {db_context}"})
     if ui_guidance:
         messages.append({"role": "system", "content": f"Подсказка действий: {ui_guidance}"})
     if diagnostics:
-        messages.append({"role": "system", "content": f"Диагностика: {diagnostics}"})
+        messages.append({"role": "system", "content": f"Диагностика открытой карточки: {diagnostics}"})
     if price_context:
         messages.append({"role": "system", "content": f"Цена по открытому авто: {price_context}"})
     if rag_context:
-        messages.append({"role": "system", "content": f"Контекст проекта:\n{rag_context}"})
+        messages.append({"role": "system", "content": f"Фрагменты документации:\n{rag_context}"})
+    messages.extend(_admin_history(session_id, user))
     messages.append({"role": "user", "content": message})
 
+    tools = openai_tools_from_specs(TOOL_SPECS)
+    tool_context = {"page_context": page_context, "user": user}
+    max_rounds = int(getattr(settings, "AI_ADMIN_TOOL_ROUNDS", 6))
+    model = getattr(settings, "AI_ADMIN_MODEL", None) or settings.AI_MODEL
+    max_tokens = int(getattr(settings, "AI_ADMIN_MAX_TOKENS", 2500))
+
     try:
-        response_text = _call_ai_api(messages)
-        return {"response": response_text, "used_fallback": False, "fallback_reason": None}
+        for _round in range(max_rounds):
+            result = chat_completion(
+                messages,
+                tools=tools,
+                model=model,
+                max_tokens=max_tokens,
+            )
+            if not result.has_tool_calls:
+                text = result.content or "Не хватает данных. Уточните VIN, контейнер или клиента."
+                return {"response": text, "used_fallback": False, "fallback_reason": None}
+
+            messages.append(result.raw_message)
+            for call in result.tool_calls:
+                args = parse_tool_arguments(call.arguments)
+                try:
+                    payload = execute_admin_tool(call.name, args, context=tool_context)
+                except Exception:
+                    logger.exception("Admin AI tool %s failed", call.name)
+                    payload = {"error": f"Инструмент {call.name} завершился ошибкой"}
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "content": json.dumps(payload, ensure_ascii=False, default=str)[:8000],
+                    }
+                )
+
+        return {
+            "response": "Слишком длинная цепочка поиска. Уточните объект (VIN, контейнер, инвойс).",
+            "used_fallback": True,
+            "fallback_reason": "tool_round_limit",
+        }
     except AIServiceError as exc:
         logger.warning("Admin AI failed: %s", exc)
         fallback = ui_guidance or "Не хватает данных. Уточните VIN, номер контейнера или ссылку на страницу."

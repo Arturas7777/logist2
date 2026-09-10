@@ -1,17 +1,14 @@
 import logging
 import re
 
-import requests
-from django.conf import settings
-
 from core.models import Car, Container
 from core.models_website import AIChat, CarPhoto, ContainerPhoto
+from core.services.ai_provider import AIServiceError, chat_completion
 
 logger = logging.getLogger(__name__)
 
-
-class AIServiceError(Exception):
-    pass
+# Реэкспорт: старые импорты ``from core.services.ai_chat_service import AIServiceError``.
+__all__ = ["AIServiceError", "generate_ai_response"]
 
 
 def _get_recent_messages(session_id: str | None, user) -> list[dict]:
@@ -221,50 +218,8 @@ def _build_tracking_context(message: str, user=None, client=None) -> str:
 
 
 def _call_ai_api(messages: list[dict]) -> str:
-    if not settings.AI_CHAT_ENABLED:
-        raise AIServiceError("AI chat is disabled")
-
-    api_key = settings.AI_API_KEY
-    if not api_key:
-        raise AIServiceError("AI API key is missing")
-
-    base_url = settings.AI_API_BASE_URL.rstrip("/")
-    url = f"{base_url}/chat/completions"
-
-    payload = {
-        "model": settings.AI_MODEL,
-        "messages": messages,
-        "temperature": settings.AI_TEMPERATURE,
-        "max_tokens": settings.AI_MAX_TOKENS,
-    }
-
-    try:
-        session = requests.Session()
-        session.trust_env = False
-        response = session.post(
-            url,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=settings.AI_REQUEST_TIMEOUT,
-        )
-    except requests.RequestException as exc:
-        logger.exception("AI API request failed")
-        raise AIServiceError(f"AI API request failed: {exc.__class__.__name__}: {exc}") from exc
-
-    if not response.ok:
-        error_text = response.text[:500] if response.text else ""
-        logger.error("AI API error: %s - %s", response.status_code, error_text)
-        raise AIServiceError(f"AI API returned error ({response.status_code}): {error_text}")
-
-    data = response.json()
-    try:
-        return data["choices"][0]["message"]["content"].strip()
-    except (KeyError, IndexError, TypeError) as exc:
-        logger.error("AI API response parsing error: %s", data)
-        raise AIServiceError("AI API response parsing error") from exc
+    """Совместимая обёртка: один ответ без tool-use (клиентский чат)."""
+    return chat_completion(messages).content
 
 
 def generate_ai_response(

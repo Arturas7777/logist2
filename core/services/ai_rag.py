@@ -109,7 +109,7 @@ def _call_embeddings_api(text: str, *, use_cache: bool = True) -> list[float] | 
     но даже тогда Redis сильно сэкономит время на дубликатах чанков
     после повторного rebuild.
     """
-    api_key = settings.AI_API_KEY
+    api_key = getattr(settings, "AI_EMBEDDINGS_API_KEY", "") or ""
     if not api_key:
         return None
     model = getattr(settings, "AI_EMBEDDINGS_MODEL", "")
@@ -123,7 +123,7 @@ def _call_embeddings_api(text: str, *, use_cache: bool = True) -> list[float] | 
         if cached is not None:
             return list(cached) if isinstance(cached, list | tuple) else cached
 
-    base_url = settings.AI_API_BASE_URL.rstrip("/")
+    base_url = getattr(settings, "AI_EMBEDDINGS_BASE_URL", "https://api.openai.com/v1").rstrip("/")
     url = f"{base_url}/embeddings"
     payload = {"model": model, "input": text_clipped}
     try:
@@ -268,15 +268,13 @@ def build_rag_snippets(query: str, top_k: int = 4) -> str:
 def get_default_rag_sources() -> list[str]:
     base_dir = settings.BASE_DIR
     return [
-        os.path.join(base_dir, "LOGIST2_PROGRESS_REPORT.md"),
-        os.path.join(base_dir, "AI_PROJECT_CONTEXT.md"),
-        os.path.join(base_dir, "PROMT_LOGIST2.md"),
-        os.path.join(base_dir, "core", "models.py"),
-        os.path.join(base_dir, "core", "admin.py"),
-        os.path.join(base_dir, "core", "signals.py"),
-        os.path.join(base_dir, "core", "views.py"),
-        os.path.join(base_dir, "core", "models_billing.py"),
+        os.path.join(base_dir, "docs", "AI_BUSINESS_CONTEXT.md"),
+        os.path.join(base_dir, "docs", "AI_AGENT_PLAN.md"),
+        os.path.join(base_dir, ".cursor", "rules", "accounting-context.mdc"),
+        os.path.join(base_dir, ".cursor", "rules", "project-overview.mdc"),
+        os.path.join(base_dir, "CHANGELOG.md"),
         os.path.join(base_dir, "core", "services", "ai_chat_service.py"),
+        os.path.join(base_dir, "core", "services", "admin_ai_agent.py"),
     ]
 
 

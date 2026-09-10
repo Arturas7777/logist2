@@ -152,35 +152,8 @@ def get_ai_response(message, user=None, client=None):
     return response
 
 
-# ====== ИНТЕГРАЦИЯ С OPENAI (опционально) ======
-# Раскомментируйте и настройте, если хотите использовать GPT-4 напрямую.
-# В проде сейчас используется core.services.ai_chat_service.generate_ai_response —
-# он сам выбирает провайдера и держит ретраи.
-"""
-import openai
-from django.conf import settings
-
-
-def get_ai_response_openai(message, user=None, client=None):
-    openai.api_key = settings.OPENAI_API_KEY
-
-    company_context = "..."  # Контекст о компании
-    client_context = "..."   # Контекст о клиенте
-
-    messages = [
-        {"role": "system", "content": company_context + client_context},
-        {"role": "user", "content": message},
-    ]
-
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=messages,
-        temperature=0.7,
-        max_tokens=500,
-    )
-
-    return response.choices[0].message.content
-"""
+# Клиентский чат: core.services.ai_chat_service.generate_ai_response (xAI Grok).
+# Админка: core.services.admin_ai_agent.generate_admin_ai_response (Grok + CRM tools).
 
 
 def _resolve_client(user):

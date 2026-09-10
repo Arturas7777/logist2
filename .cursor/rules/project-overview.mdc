@@ -29,7 +29,7 @@ globs:
 - **Celery + Redis** (фоновые задачи, beat-расписание в `logist2/celery.py`)
 - **PostgreSQL** (psycopg2-binary; креды из `.env`), **WhiteNoise** (статика)
 - **DRF** (`core/api.py` — CarViewSet, InvoiceViewSet)
-- Интеграции: **Revolut Business API** (банк), **site.pro** (бухгалтерия), **Gmail API** (письма контейнеров), **Google Drive** (фото), **Anthropic Claude** (аудит счетов), **OpenAI** (AI-чат/RAG), **Telegram** (уведомления)
+- Интеграции: **Revolut Business API** (банк), **site.pro** (бухгалтерия), **Gmail API** (письма контейнеров), **Google Drive** (фото), **Anthropic Claude** (аудит счетов / агент дел), **xAI Grok** (клиентский чат + помощник админки), **OpenAI** (embeddings/RAG), **Telegram** (уведомления)
 - **cryptography/Fernet** — шифрование API-токенов (`core/encryption.py`, `ENCRYPTION_KEY_REQUIRED=true` на проде)
 - **Sentry** (`sentry-sdk[django,celery]`), мониторинг бэкапов и uptime
 - Frontend админки: HTMX + jQuery 3.6 + Select2 (vendor)

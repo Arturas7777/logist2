@@ -541,16 +541,35 @@ TELEGRAM_NOTIFICATIONS_ENABLED = str(os.getenv("TELEGRAM_NOTIFICATIONS_ENABLED",
 TELEGRAM_API_TIMEOUT = int(os.getenv("TELEGRAM_API_TIMEOUT", "10"))
 
 # ---------------------------------------------------------------------------
-# AI Chat
+# AI Chat — xAI Grok (клиентский портал + помощник админки)
+# Embeddings / RAG остаются на OpenAI (у xAI другой embeddings API).
+# Если XAI_API_KEY задан — чат идёт в Grok. Иначе остаётся прежний OpenAI,
+# чтобы прод не молчал до появления ключа xAI.
 # ---------------------------------------------------------------------------
 
 AI_CHAT_ENABLED = os.getenv("AI_CHAT_ENABLED", "False").lower() == "true"
-AI_API_KEY = os.getenv("AI_API_KEY", os.getenv("OPENAI_API_KEY", ""))
-AI_API_BASE_URL = os.getenv("AI_API_BASE_URL", "https://api.openai.com/v1")
-AI_MODEL = os.getenv("AI_MODEL", "gpt-4o-mini")
-AI_MAX_TOKENS = int(os.getenv("AI_MAX_TOKENS", "400"))
+XAI_API_KEY = os.getenv("XAI_API_KEY", "").strip()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+_legacy_ai_key = os.getenv("AI_API_KEY", "").strip()
+
+if XAI_API_KEY:
+    AI_API_KEY = XAI_API_KEY
+    AI_API_BASE_URL = os.getenv("AI_API_BASE_URL", "https://api.x.ai/v1")
+    AI_MODEL = os.getenv("AI_MODEL", "grok-4.6")
+else:
+    AI_API_KEY = _legacy_ai_key or OPENAI_API_KEY
+    AI_API_BASE_URL = os.getenv("AI_API_BASE_URL", "https://api.openai.com/v1")
+    AI_MODEL = os.getenv("AI_MODEL", "gpt-4o-mini")
+
+AI_ADMIN_MODEL = os.getenv("AI_ADMIN_MODEL", AI_MODEL)
+AI_MAX_TOKENS = int(os.getenv("AI_MAX_TOKENS", "800"))
+AI_ADMIN_MAX_TOKENS = int(os.getenv("AI_ADMIN_MAX_TOKENS", "2500"))
 AI_TEMPERATURE = float(os.getenv("AI_TEMPERATURE", "0.2"))
-AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", "40"))
+AI_REQUEST_TIMEOUT = int(os.getenv("AI_REQUEST_TIMEOUT", "60"))
+AI_ADMIN_TOOL_ROUNDS = int(os.getenv("AI_ADMIN_TOOL_ROUNDS", "6"))
+
+AI_EMBEDDINGS_API_KEY = os.getenv("AI_EMBEDDINGS_API_KEY", "").strip() or OPENAI_API_KEY or _legacy_ai_key
+AI_EMBEDDINGS_BASE_URL = os.getenv("AI_EMBEDDINGS_BASE_URL", "https://api.openai.com/v1")
 AI_EMBEDDINGS_MODEL = os.getenv("AI_EMBEDDINGS_MODEL", "text-embedding-3-small")
 AI_RAG_INDEX_PATH = os.getenv("AI_RAG_INDEX_PATH", os.path.join(BASE_DIR, "data", "ai_rag_index.json"))
 AI_RAG_TOP_K = int(os.getenv("AI_RAG_TOP_K", "4"))
