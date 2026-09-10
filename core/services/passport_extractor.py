@@ -1,10 +1,12 @@
-"""AI-распознавание паспорта РБ и транслитерация адреса (пакет автовоза).
+"""AI-распознавание паспорта РБ / ID-карты и транслитерация адреса.
 
-После загрузки фото/скана главной страницы белорусского паспорта Claude Vision
-извлекает номер паспорта, ФИО латиницей и даты (рождения/выдачи) — они всегда
-хорошо читаются, в том числе из MRZ-строки внизу страницы. Вручную клиент
-вводит только ФИО и адрес кириллицей; латинский вариант адреса для инвойса
-и платёжки транслитерируется автоматически.
+После загрузки фото/скана Claude Vision извлекает номер документа, ФИО
+латиницей и кириллицей, даты рождения и выдачи. Паспорт и ID-карта
+(идентификационная карта РБ и похожие пластиковые удостоверения) идут
+в один слот пакета: номер ID подставляется вместо номера паспорта.
+
+Адрес с фото не читаем — клиент вводит его кириллицей, латинский вариант
+для инвойса и платёжки транслитерируется автоматически.
 
 Переиспользует рендер и вызов Claude Vision из :mod:`.scan_extractor`.
 """
@@ -21,28 +23,47 @@ from core.services.scan_extractor import _call_claude_vision, render_document_im
 
 logger = logging.getLogger(__name__)
 
-PASSPORT_PROMPT = """Ты — система распознавания главной страницы паспорта гражданина
-Республики Беларусь (фото или скан).
+PASSPORT_PROMPT = """Ты — система распознавания удостоверения личности.
+На фото/скане может быть ОДНО из двух:
+
+1) Главная страница паспорта гражданина Республики Беларусь
+   (книжка, MRZ вида P<BLR...).
+2) Пластиковая ID-карта / идентификационная карта
+   (РБ: «ИДЕНТИФИКАЦИОННАЯ КАРТА / IDENTITY CARD», или похожая карта
+   другой страны — литовская asmens tapatybės kortelė и т.п.).
 
 Правила:
-- passport_number: серия и номер паспорта — 2 латинские буквы + 7 цифр
-  (например MC3902087). Он напечатан в правом верхнем углу страницы и
-  продублирован в MRZ-строке внизу. Сверь оба места.
-- surname_latin / given_name_latin: фамилия и имя ЛАТИНИЦЕЙ — в паспорте РБ
-  они напечатаны под кириллическим вариантом и продублированы в MRZ-строке
-  (формат P<BLRSURNAME<<GIVENNAME<...). MRZ — самый надёжный источник.
-- birth_date: дата рождения в формате YYYY-MM-DD.
-- issue_date: дата выдачи паспорта в формате YYYY-MM-DD (поле «Дата выдачи /
-  Date of issue»). Не путай с датой окончания срока действия.
+- document_kind: "passport" или "id_card". Определи по виду документа.
+- document_number: НОМЕР ДОКУМЕНТА, не личный/идентификационный номер.
+  * Паспорт РБ: 2 латинские буквы + 7 цифр (MC3902087) — правый верх
+    и дубль в MRZ.
+  * ID-карта РБ: поле «НОМЕР КАРТЫ / DOCUMENT NUMBER». НЕ бери поле
+    «ИДЕНТИФИКАЦИОННЫЙ № / IDENTIFICATION No» (это личный номер вида
+    3121073A013PB2) — он не подходит вместо паспорта.
+  * Другая ID-карта: номер карты / document number / kortelės numeris.
+- surname_latin / given_name_latin: фамилия и имя ЛАТИНИЦЕЙ
+  (в паспорте РБ — под кириллицей и в MRZ P<BLRSURNAME<<GIVEN...).
+- surname_cyrillic / given_name_cyrillic / patronymic_cyrillic:
+  ФИО КИРИЛЛИЦЕЙ (белорусский или русский текст на документе).
+  Если на карте несколько кириллических вариантов — бери русский.
+  Отчество — если напечатано, иначе null.
+  Если кириллицы нет (европейская карта) — все три поля null.
+- birth_date: дата рождения YYYY-MM-DD.
+- issue_date: дата выдачи YYYY-MM-DD (Date of issue / Дата выдачи).
+  Не путай со сроком действия.
 - Если поле не читается — ставь null, НЕ выдумывай.
 
 Верни ТОЛЬКО валидный JSON (без markdown):
 {
-  "passport_number": "MC3902087",
-  "surname_latin": "ZIZIKA",
-  "given_name_latin": "ULADZIMIR",
-  "birth_date": "1967-01-29",
-  "issue_date": "2025-10-22"
+  "document_kind": "id_card",
+  "document_number": "KH1234567",
+  "surname_latin": "VISLOBOKOV",
+  "given_name_latin": "VALERY",
+  "surname_cyrillic": "Вислобоков",
+  "given_name_cyrillic": "Валерий",
+  "patronymic_cyrillic": "Иванович",
+  "birth_date": "1985-03-12",
+  "issue_date": "2023-06-01"
 }
 """
 
@@ -62,7 +83,15 @@ TRANSLIT_PROMPT = """Ты транслитерируешь белорусски�
 Выход: ul. Gaya 5, d.Bolshaya lysitsa, Nesvizhskiy r-on, Belarus
 """
 
+# Паспорт РБ: две латинские буквы + 7 цифр.
 _PASSPORT_NUMBER_RE = re.compile(r"^[A-Z]{2}\d{7}$")
+# Номер пластиковой ID-карты (РБ / LT / похожие): не путать с личным номером.
+_ID_CARD_NUMBER_RE = re.compile(r"^(?:[A-Z]{1,3}\d{5,9}|\d{8,10})$")
+# Личный номер РБ (идентификационный №) — в документы не подставляем.
+_PERSONAL_NUMBER_RE = re.compile(r"^\d{7}[A-Z]\d{3}[A-Z]{2}\d$")
+
+_KIND_PASSPORT = "passport"
+_KIND_ID_CARD = "id_card"
 
 
 def ai_available() -> bool:
@@ -79,13 +108,39 @@ def _clean_date(value: Any) -> str:
         return ""
 
 
+def _clean_number(value: Any) -> str:
+    """Нормализовать номер документа; пусто если это не номер карты/паспорта."""
+    raw = str(value or "").replace(" ", "").replace("-", "").upper()
+    if not raw or _PERSONAL_NUMBER_RE.match(raw):
+        return ""
+    if _PASSPORT_NUMBER_RE.match(raw) or _ID_CARD_NUMBER_RE.match(raw):
+        return raw
+    return ""
+
+
+def _cyrillic_word(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text or text.lower() == "null":
+        return ""
+    if text.isupper():
+        return text.capitalize()
+    return text
+
+
+def _latin_word(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text or text.lower() == "null":
+        return ""
+    return text.upper()
+
+
 def extract_passport(path: str) -> dict[str, str]:
-    """Распознать главную страницу паспорта РБ.
+    """Распознать паспорт РБ или ID-карту.
 
     Возвращает dict с ключами данных пакета (``buyer_name``,
-    ``buyer_passport_number``, ``buyer_birth_date``,
-    ``buyer_passport_issue_date``); нечитаемые поля опущены.
-    Пустой dict — распознать не удалось.
+    ``buyer_name_ru``, ``buyer_passport_number``, ``buyer_birth_date``,
+    ``buyer_passport_issue_date``, ``buyer_id_kind``); нечитаемые поля
+    опущены. Пустой dict — распознать не удалось.
     """
     images = render_document_images(path)
     if not images:
@@ -93,21 +148,36 @@ def extract_passport(path: str) -> dict[str, str]:
     data = _call_claude_vision(
         images,
         system_prompt=PASSPORT_PROMPT,
-        user_text="Это главная страница паспорта гражданина Республики Беларусь. Извлеки данные по схеме.",
+        user_text="Это паспорт или ID-карта. Извлеки данные по схеме.",
     )
     if not isinstance(data, dict):
         return {}
 
     result: dict[str, str] = {}
 
-    number = str(data.get("passport_number") or "").replace(" ", "").upper()
-    if _PASSPORT_NUMBER_RE.match(number):
+    number = _clean_number(data.get("document_number") or data.get("passport_number"))
+    if number:
         result["buyer_passport_number"] = number
 
-    surname = str(data.get("surname_latin") or "").strip().upper()
-    given = str(data.get("given_name_latin") or "").strip().upper()
+    kind = str(data.get("document_kind") or "").strip().lower()
+    if kind == _KIND_ID_CARD or (kind != _KIND_PASSPORT and number and not _PASSPORT_NUMBER_RE.match(number)):
+        result["buyer_id_kind"] = _KIND_ID_CARD
+    elif number or kind == _KIND_PASSPORT:
+        result["buyer_id_kind"] = _KIND_PASSPORT
+
+    surname = _latin_word(data.get("surname_latin"))
+    given = _latin_word(data.get("given_name_latin"))
     if surname or given:
         result["buyer_name"] = " ".join(filter(None, (surname, given)))
+
+    cyr = [
+        _cyrillic_word(data.get("surname_cyrillic")),
+        _cyrillic_word(data.get("given_name_cyrillic")),
+        _cyrillic_word(data.get("patronymic_cyrillic")),
+    ]
+    name_ru = " ".join(part for part in cyr if part)
+    if name_ru:
+        result["buyer_name_ru"] = name_ru
 
     birth = _clean_date(data.get("birth_date"))
     if birth:

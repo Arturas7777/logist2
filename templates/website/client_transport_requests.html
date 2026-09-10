@@ -783,7 +783,7 @@
         <input type="hidden" name="car" value="" class="doc-car-input">
         <input type="hidden" name="cascade" value="" class="doc-cascade-input">
         <div class="modal-header">
-          <h6 class="modal-title"><i class="bi bi-person-vcard"></i> {% trans "Паспорт покупателя" %}</h6>
+          <h6 class="modal-title"><i class="bi bi-person-vcard"></i> {% trans "Паспорт / ID-карта покупателя" %}</h6>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
@@ -792,29 +792,30 @@
             {% trans "Изменения данных или файла паспорта сразу попадут в уже сгенерированные инвойс, платёжку и обязательство. Заново заполнять весь пакет не нужно." %}
           </div>
           <div class="mb-3">
-            <label class="form-label small fw-semibold doc-add-label">{% trans "Файл паспорта (PDF/JPG/PNG)" %}</label>
-            <label class="form-label small fw-semibold doc-edit-label">{% trans "Новый файл паспорта (заменит текущий)" %}</label>
+            <label class="form-label small fw-semibold doc-add-label">{% trans "Файл паспорта или ID-карты (PDF/JPG/PNG)" %}</label>
+            <label class="form-label small fw-semibold doc-edit-label">{% trans "Новый файл паспорта или ID-карты (заменит текущий)" %}</label>
             <input type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm">
-            <div class="form-text">{% trans "Паспорт нельзя сгенерировать — нужен реальный документ. После загрузки номер, ФИО латиницей и даты распознаются автоматически." %}</div>
+            <div class="form-text">{% trans "Нужен реальный документ. После загрузки номер, ФИО латиницей и кириллицей и даты распознаются автоматически." %}</div>
           </div>
           <div class="mb-2">
-            <label class="form-label small fw-semibold">{% trans "ФИО по-русски (введите вручную)" %} *</label>
+            <label class="form-label small fw-semibold">{% trans "ФИО по-русски" %}</label>
             <input type="text" name="buyer_name_ru" class="form-control form-control-sm pkg-field" placeholder="Зизико Владимир Константинович">
+            <div class="form-text">{% trans "С ID-карты и паспорта подставляется само; поправьте, если распозналось неверно." %}</div>
           </div>
           <div class="mb-3">
             <label class="form-label small fw-semibold">{% trans "Адрес проживания по-русски (введите вручную)" %} *</label>
             <textarea name="buyer_address_ru" rows="2" class="form-control form-control-sm pkg-field"
                       placeholder="д. Большая Лысица, Несвижского р-на, ул. Гая 5"></textarea>
-            <div class="form-text">{% trans "Рукописный адрес в паспорте плохо распознаётся — введите его кириллицей, латинский вариант подставится автоматически." %}</div>
+            <div class="form-text">{% trans "Адрес на фото плохо распознаётся — введите его кириллицей, латинский вариант подставится автоматически." %}</div>
           </div>
-          <div class="text-muted small mb-1"><i class="bi bi-magic"></i> {% trans "Поля ниже распознаются с фото паспорта — проверьте и поправьте при необходимости." %}</div>
+          <div class="text-muted small mb-1"><i class="bi bi-magic"></i> {% trans "Поля ниже распознаются с фото — проверьте и поправьте при необходимости." %}</div>
           <div class="row g-2 mb-2">
             <div class="col-md-6">
-              <label class="form-label small">{% trans "ФИО латиницей (как в паспорте)" %}</label>
+              <label class="form-label small">{% trans "ФИО латиницей" %}</label>
               <input type="text" name="buyer_name" class="form-control form-control-sm pkg-field" placeholder="ZIZIKA ULADZIMIR">
             </div>
             <div class="col-md-6">
-              <label class="form-label small">{% trans "Номер паспорта" %}</label>
+              <label class="form-label small">{% trans "Номер паспорта / ID-карты" %}</label>
               <input type="text" name="buyer_passport_number" class="form-control form-control-sm pkg-field" placeholder="MC3902087">
             </div>
           </div>
@@ -921,9 +922,9 @@
           </p>
           <div class="row g-2 mb-3">
             <div class="col-md-6">
-              <label class="form-label small fw-semibold">{% trans "Паспорт (PDF/JPG/PNG)" %} *</label>
+              <label class="form-label small fw-semibold">{% trans "Паспорт или ID-карта (PDF/JPG/PNG)" %} *</label>
               <input type="file" name="passport" accept=".pdf,.jpg,.jpeg,.png" class="form-control form-control-sm">
-              <div class="form-text">{% trans "Если паспорт уже загружен для этого авто — можно не прикладывать снова. ФИО и даты распознаются автоматически." %}</div>
+              <div class="form-text">{% trans "Если документ уже загружен для этого авто — можно не прикладывать снова. Номер и ФИО распознаются автоматически." %}</div>
             </div>
             <div class="col-md-6">
               <label class="form-label small fw-semibold">{% trans "Подпись (JPG/PNG)" %} *</label>
@@ -932,8 +933,9 @@
             </div>
           </div>
           <div class="mb-2">
-            <label class="form-label small fw-semibold">{% trans "ФИО по-русски" %} *</label>
+            <label class="form-label small fw-semibold">{% trans "ФИО по-русски" %}</label>
             <input type="text" name="buyer_name_ru" class="form-control form-control-sm pkg-field" placeholder="Зизико Владимир Константинович">
+            <div class="form-text">{% trans "С паспорта и ID-карты подставляется само. Если не распозналось — введите вручную." %}</div>
           </div>
           <div class="mb-3">
             <label class="form-label small fw-semibold">{% trans "Адрес проживания кириллицей" %} *</label>
@@ -946,7 +948,7 @@
               <input type="text" name="buyer_name" class="form-control form-control-sm pkg-field" placeholder="ZIZIKA ULADZIMIR">
             </div>
             <div class="col-md-6">
-              <label class="form-label small">{% trans "Номер паспорта" %}</label>
+              <label class="form-label small">{% trans "Номер паспорта / ID-карты" %}</label>
               <input type="text" name="buyer_passport_number" class="form-control form-control-sm pkg-field" placeholder="MC3902087">
             </div>
           </div>
@@ -1797,7 +1799,7 @@
     document.addEventListener("change", function (e) {
         if (e.target.matches("#docModal-PASSPORT.is-doc-edit input[type=file]")) {
             if (!e.target.files || !e.target.files.length) return;
-            ["buyer_name", "buyer_passport_number", "buyer_birth_date", "buyer_passport_issue_date"].forEach(function (name) {
+            ["buyer_name", "buyer_name_ru", "buyer_passport_number", "buyer_birth_date", "buyer_passport_issue_date"].forEach(function (name) {
                 var input = document.querySelector('#docModal-PASSPORT [name="' + name + '"]');
                 if (input) input.value = "";
             });

@@ -726,7 +726,7 @@ class DeclarationRequest(models.Model):
 # Порядок = порядок кнопок в кабинете клиента.
 TRANSPORT_DOCUMENT_TYPES = [
     ("TITLE", "Тайтл"),
-    ("PASSPORT", "Паспорт"),
+    ("PASSPORT", "Паспорт / ID-карта"),
     ("INVOICE", "Инвойс"),
     ("SIGNATURE", "Подпись"),
     ("PAYMENT_ORDER", "Платёжка"),

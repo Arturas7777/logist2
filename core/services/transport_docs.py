@@ -319,10 +319,12 @@ def document_filename(doc_type: str, car) -> str:
 
 
 def _buyer_from(data: dict) -> dict:
+    kind = (data.get("buyer_id_kind") or "").strip().lower()
     return {
         "name": (data.get("buyer_name") or "").strip(),
         "name_ru": (data.get("buyer_name_ru") or "").strip(),
         "passport_number": (data.get("buyer_passport_number") or "").strip(),
+        "id_kind": kind if kind in {"passport", "id_card"} else "passport",
         "birth_date": parse_date(data.get("buyer_birth_date")),
         "passport_issue_date": parse_date(data.get("buyer_passport_issue_date")),
         "address": (data.get("buyer_address") or "").strip(),
@@ -454,7 +456,7 @@ def generate_document(
         require(
             data,
             "buyer_passport_number",
-            "Сначала заполните данные покупателя в окне «Паспорт» (номер паспорта).",
+            "Сначала заполните данные покупателя в окне «Паспорт» (номер паспорта или ID-карты).",
         )
         if not (data.get("buyer_name_ru") or data.get("buyer_name")):
             raise PackageDataError("Сначала заполните ФИО покупателя в окне «Паспорт».")

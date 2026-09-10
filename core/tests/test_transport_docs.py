@@ -332,6 +332,21 @@ def test_pick_obligation_date_last_three_weeks():
         assert docs.is_business_day(day, ("BY",))
 
 
+def test_obligation_says_id_card_when_kind_set(transport_request, car):
+    import fitz
+
+    data = {
+        **BUYER_DATA,
+        "buyer_id_kind": "id_card",
+        "buyer_passport_number": "KH1234567",
+        "invoice_date": "2026-08-12",
+    }
+    _, pdf_bytes, _ = docs.generate_document(transport_request, car, dict(data), "OBLIGATION")
+    text = fitz.open(stream=pdf_bytes, filetype="pdf")[0].get_text()
+    assert "ID-карта KH1234567" in text.replace("\n", " ")
+    assert "паспорт KH1234567" not in text
+
+
 def test_generate_letter_obligation_contract(transport_request, car):
     # Письмо USA требует «зрелый» инвойс (≥4 недель до сегодня).
     old_invoice = (datetime.date.today() - datetime.timedelta(days=60)).isoformat()
@@ -837,9 +852,59 @@ def test_extract_passport_normalizes(monkeypatch):
     )
     assert pe.extract_passport("x.jpg") == {
         "buyer_passport_number": "MC3902087",
+        "buyer_id_kind": "passport",
         "buyer_name": "ZIZIKA ULADZIMIR",
         "buyer_birth_date": "1967-01-29",
     }
+
+
+def test_extract_id_card_fills_cyrillic_and_number(monkeypatch):
+    from core.services import passport_extractor as pe
+
+    monkeypatch.setattr(pe, "render_document_images", lambda path: [("image/jpeg", "stub")])
+    monkeypatch.setattr(
+        pe,
+        "_call_claude_vision",
+        lambda images, system_prompt, user_text: {
+            "document_kind": "id_card",
+            "document_number": "kh 1234567",
+            "surname_latin": "Vislobokov",
+            "given_name_latin": "Valery",
+            "surname_cyrillic": "ВИСЛОБОКОВ",
+            "given_name_cyrillic": "ВАЛЕРИЙ",
+            "patronymic_cyrillic": "ИВАНОВИЧ",
+            "birth_date": "1985-03-12",
+            "issue_date": "2023-06-01",
+        },
+    )
+    assert pe.extract_passport("id.jpg") == {
+        "buyer_passport_number": "KH1234567",
+        "buyer_id_kind": "id_card",
+        "buyer_name": "VISLOBOKOV VALERY",
+        "buyer_name_ru": "Вислобоков Валерий Иванович",
+        "buyer_birth_date": "1985-03-12",
+        "buyer_passport_issue_date": "2023-06-01",
+    }
+
+
+def test_extract_id_card_rejects_personal_number(monkeypatch):
+    from core.services import passport_extractor as pe
+
+    monkeypatch.setattr(pe, "render_document_images", lambda path: [("image/jpeg", "stub")])
+    monkeypatch.setattr(
+        pe,
+        "_call_claude_vision",
+        lambda images, system_prompt, user_text: {
+            "document_kind": "id_card",
+            "document_number": "3121073A013PB2",
+            "surname_latin": "IVANOU",
+            "given_name_latin": "IVAN",
+        },
+    )
+    result = pe.extract_passport("id.jpg")
+    assert "buyer_passport_number" not in result
+    assert result["buyer_name"] == "IVANOU IVAN"
+    assert result["buyer_id_kind"] == "id_card"
 
 
 def test_passport_ai_autofill(logged_client, transport_request, car, settings, tmp_path, monkeypatch):
@@ -852,7 +917,9 @@ def test_passport_ai_autofill(logged_client, transport_request, car, settings, t
         "extract_passport",
         lambda path: {
             "buyer_name": "ZIZIKA ULADZIMIR",
+            "buyer_name_ru": "Зизико Владимир",
             "buyer_passport_number": "MC3902087",
+            "buyer_id_kind": "passport",
             "buyer_birth_date": "1967-01-29",
             "buyer_passport_issue_date": "2025-10-22",
         },
@@ -882,8 +949,48 @@ def test_passport_ai_autofill(logged_client, transport_request, car, settings, t
     assert package.data["buyer_birth_date"] == "1967-01-29"
     assert package.data["buyer_passport_issue_date"] == "2025-10-22"
     assert package.data["buyer_passport_number"] == "AB1234567"
+    assert package.data["buyer_id_kind"] == "passport"
     assert package.data["buyer_address"].startswith("ul. Gaya 5")
     assert not transport_request.documents.filter(doc_type="SIGNATURE").exists()
+
+
+def test_passport_ai_autofill_id_card_name_ru(logged_client, transport_request, car, settings, tmp_path, monkeypatch):
+    settings.MEDIA_ROOT = str(tmp_path)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    from core.services import passport_extractor
+
+    monkeypatch.setattr(
+        passport_extractor,
+        "extract_passport",
+        lambda path: {
+            "buyer_name": "VISLOBOKOV VALERY",
+            "buyer_name_ru": "Вислобоков Валерий Иванович",
+            "buyer_passport_number": "KH1234567",
+            "buyer_id_kind": "id_card",
+            "buyer_birth_date": "1985-03-12",
+            "buyer_passport_issue_date": "2023-06-01",
+        },
+    )
+    monkeypatch.setattr(passport_extractor, "transliterate_address", lambda ru: "ul. Test 1, Belarus")
+    upload = SimpleUploadedFile("id-card.jpg", b"fake-jpg", content_type="image/jpeg")
+    post = {
+        "doc_type": "PASSPORT",
+        "car": car.pk,
+        "action": "save",
+        "files": upload,
+        "buyer_name_ru": "",
+        "buyer_address_ru": "ул. Тестовая 1",
+        "buyer_name": "",
+        "buyer_address": "",
+        "buyer_passport_number": "",
+    }
+    response = logged_client.post(_doc_url(transport_request), post)
+    assert response.status_code == 302
+    package = transport_request.doc_packages.get(car=car)
+    assert package.data["buyer_name"] == "VISLOBOKOV VALERY"
+    assert package.data["buyer_name_ru"] == "Вислобоков Валерий Иванович"
+    assert package.data["buyer_passport_number"] == "KH1234567"
+    assert package.data["buyer_id_kind"] == "id_card"
 
 
 def test_normalize_signature_removes_bg_and_tints_blue():
@@ -1307,6 +1414,63 @@ def test_generate_all_requires_uploaded_signature(transport_request, car, settin
         )
     assert not transport_request.documents.filter(car=car, doc_type="SIGNATURE").exists()
     assert not transport_request.documents.filter(car=car, doc_type="OBLIGATION").exists()
+
+
+def test_generate_all_id_card_fills_name_ru(transport_request, car, settings, tmp_path, monkeypatch):
+    """С ID-карты ФИО кириллицей не нужно вводить — достаточно адреса и инвойса."""
+    from PIL import Image
+
+    from core.services import passport_extractor, transport_package_actions as actions
+
+    settings.MEDIA_ROOT = str(tmp_path)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(
+        passport_extractor,
+        "extract_passport",
+        lambda path: {
+            "buyer_name": "VISLOBOKOV VALERY",
+            "buyer_name_ru": "Вислобоков Валерий Иванович",
+            "buyer_passport_number": "KH1234567",
+            "buyer_id_kind": "id_card",
+            "buyer_birth_date": "1985-03-12",
+            "buyer_passport_issue_date": "2023-06-01",
+        },
+    )
+    monkeypatch.setattr(passport_extractor, "transliterate_address", lambda ru: BUYER_DATA["buyer_address"])
+
+    sign = Image.new("RGB", (300, 120), (255, 255, 255))
+    for x in range(30, 270):
+        for y in range(55, 75):
+            sign.putpixel((x, y), (10, 10, 10))
+    sign_buf = io.BytesIO()
+    sign.save(sign_buf, format="JPEG")
+    from django.http import QueryDict
+
+    post = QueryDict("", mutable=True)
+    post.update(
+        {
+            "buyer_name_ru": "",
+            "buyer_address_ru": BUYER_DATA["buyer_address_ru"],
+            "invoice_amount": "2850",
+            "invoice_date": "2026-06-10",
+        }
+    )
+    notices = actions.generate_all_for_car(
+        transport_request=transport_request,
+        car=car,
+        post=post,
+        files={
+            "passport": SimpleUploadedFile("id.jpg", b"fake-id", content_type="image/jpeg"),
+            "signature": SimpleUploadedFile("sign.jpg", sign_buf.getvalue(), content_type="image/jpeg"),
+        },
+        user=None,
+    )
+    assert any(level == "success" for level, _ in notices)
+    package = transport_request.doc_packages.get(car=car)
+    assert package.data["buyer_name_ru"] == "Вислобоков Валерий Иванович"
+    assert package.data["buyer_passport_number"] == "KH1234567"
+    assert package.data["buyer_id_kind"] == "id_card"
+    assert transport_request.documents.filter(car=car, doc_type="OBLIGATION").exists()
 
 
 def test_signature_flowable_respects_max_box():

@@ -89,10 +89,13 @@ GENERATE_ALL_FIELDS = (
 # Подписи полей паспорта для сообщения «распознано автоматически».
 _PASSPORT_FIELD_LABELS = {
     "buyer_name": "ФИО латиницей",
-    "buyer_passport_number": "номер паспорта",
+    "buyer_name_ru": "ФИО кириллицей",
+    "buyer_passport_number": "номер документа",
     "buyer_birth_date": "дата рождения",
     "buyer_passport_issue_date": "дата выдачи",
+    "buyer_id_kind": "тип документа",
 }
+_ID_KIND_KEY = "buyer_id_kind"
 
 # Сгенерированные PDF, которые нужно пересобрать при правке исходного слота.
 # Письмо USA и договор не зависят от паспорта/суммы/подписи — их не трогаем.
@@ -222,11 +225,11 @@ def signature_bytes(transport_request, car):
 
 
 def apply_passport_ai(package, saved_docs, notices: list[Notice]) -> None:
-    """Автозаполнение данных пакета после загрузки паспорта.
+    """Автозаполнение данных пакета после загрузки паспорта или ID-карты.
 
-    * Из фото/скана главной страницы паспорта РБ распознаются номер,
-      ФИО латиницей и даты (заполняются только пустые поля — ручной
-      ввод не перетирается).
+    * С фото распознаются номер, ФИО латиницей и кириллицей, даты
+      (заполняются только пустые поля — ручной ввод не перетирается,
+      кроме типа документа: его берём с нового файла).
     * Адрес, введённый кириллицей, транслитерируется в латиницу для
       инвойса и платёжки, если латинский вариант ещё не заполнен.
     """
@@ -235,7 +238,11 @@ def apply_passport_ai(package, saved_docs, notices: list[Notice]) -> None:
     if not passport_extractor.ai_available():
         if saved_docs:
             notices.append(
-                ("info", "«Паспорт»: автораспознавание сейчас недоступно — проверьте и заполните поля вручную.")
+                (
+                    "info",
+                    "«Паспорт / ID-карта»: автораспознавание сейчас недоступно — "
+                    "проверьте и заполните поля вручную.",
+                )
             )
         return
     data = package.data
@@ -244,23 +251,32 @@ def apply_passport_ai(package, saved_docs, notices: list[Notice]) -> None:
         try:
             extracted = passport_extractor.extract_passport(saved_docs[0].file.path)
         except Exception:
-            logger.exception("Распознавание паспорта не удалось (документ %s)", saved_docs[0].pk)
+            logger.exception("Распознавание паспорта/ID-карты не удалось (документ %s)", saved_docs[0].pk)
             extracted = {}
         filled = []
         for key, value in extracted.items():
-            if not (data.get(key) or "").strip():
+            current = (data.get(key) or "").strip()
+            # Тип документа всегда с нового файла: паспорт могли сменить на ID-карту.
+            if key == _ID_KIND_KEY:
+                if current != value:
+                    data[key] = value
+                    filled.append(_PASSPORT_FIELD_LABELS.get(key, key))
+                continue
+            if not current:
                 data[key] = value
                 filled.append(_PASSPORT_FIELD_LABELS.get(key, key))
         if filled:
-            notices.append(("success", f"«Паспорт»: распознано автоматически — {', '.join(filled)}."))
+            notices.append(("success", f"«Паспорт / ID-карта»: распознано автоматически — {', '.join(filled)}."))
         elif not extracted:
-            notices.append(("warning", "«Паспорт»: не удалось распознать данные с фото — заполните поля вручную."))
+            notices.append(
+                ("warning", "«Паспорт / ID-карта»: не удалось распознать данные с фото — заполните поля вручную.")
+            )
 
     if not (data.get("buyer_address") or "").strip() and (data.get("buyer_address_ru") or "").strip():
         latin = passport_extractor.transliterate_address(data["buyer_address_ru"])
         if latin:
             data["buyer_address"] = latin
-            notices.append(("success", f"«Паспорт»: адрес транслитерирован — {latin}"))
+            notices.append(("success", f"«Паспорт / ID-карта»: адрес транслитерирован — {latin}"))
 
 
 def save_upload_doc(transport_request, car, doc_type, upload, user, *, replace_existing=False):
@@ -443,8 +459,8 @@ def apply_doc_action(*, transport_request, car, doc_type, post, files, user) -> 
             notices.append(
                 (
                     "warning",
-                    "«Паспорт»: введите адрес проживания кириллицей — рукописный адрес в паспорте "
-                    "плохо читается автоматикой, а латинский вариант подставится сам.",
+                    "«Паспорт / ID-карта»: введите адрес проживания кириллицей — "
+                    "на фото он плохо читается, а латинский вариант подставится сам.",
                 )
             )
 
@@ -461,8 +477,9 @@ def apply_doc_action(*, transport_request, car, doc_type, post, files, user) -> 
 def generate_all_for_car(*, transport_request, car, post, files, user) -> list[Notice]:
     """Сгенерировать полный пакет по авто (без договора на перевозку).
 
-    Принимает паспорт, адрес кириллицей, подпись и данные инвойса; сохраняет
-    файлы, распознаёт паспорт и создаёт INVOICE / PAYMENT / LETTER / OBLIGATION.
+    Принимает паспорт или ID-карту, адрес кириллицей, подпись и данные
+    инвойса; сохраняет файлы, распознаёт документ и создаёт INVOICE /
+    PAYMENT / LETTER / OBLIGATION.
     """
     package, _ = TransportDocumentPackage.objects.get_or_create(request=transport_request, car=car)
     notices: list[Notice] = []
@@ -482,8 +499,6 @@ def generate_all_for_car(*, transport_request, car, post, files, user) -> list[N
 
     if not (package.data.get("buyer_address_ru") or "").strip():
         raise DocActionError(f"{prefix}: укажите адрес проживания кириллицей.")
-    if not (package.data.get("buyer_name_ru") or "").strip():
-        raise DocActionError(f"{prefix}: укажите ФИО по-русски.")
     if docs_service.parse_amount(package.data.get("invoice_amount")) is None:
         raise DocActionError(f"{prefix}: укажите цену автомобиля в инвойсе.")
 
@@ -498,7 +513,7 @@ def generate_all_for_car(*, transport_request, car, post, files, user) -> list[N
                 save_upload_doc(transport_request, car, "PASSPORT", passport_upload, user, replace_existing=True)
             )
         elif not has_passport:
-            raise DocActionError("Загрузите файл паспорта.")
+            raise DocActionError("Загрузите файл паспорта или ID-карты.")
         if signature_upload:
             save_upload_doc(transport_request, car, "SIGNATURE", signature_upload, user, replace_existing=True)
     except PackageDataError as exc:
@@ -506,6 +521,9 @@ def generate_all_for_car(*, transport_request, car, post, files, user) -> list[N
         raise DocActionError(f"{prefix}: {exc}") from exc
 
     apply_passport_ai(package, saved_passport, notices)
+    if not (package.data.get("buyer_name_ru") or "").strip():
+        package.save(update_fields=["data", "updated_at"])
+        raise DocActionError(f"{prefix}: укажите ФИО по-русски — с фото не распозналось.")
     # После AI адрес/ФИО латиницей могут появиться; без латиницы инвойс не соберётся.
     if not (package.data.get("buyer_address") or "").strip() and (package.data.get("buyer_address_ru") or "").strip():
         from core.services import passport_extractor

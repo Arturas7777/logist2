@@ -982,7 +982,8 @@ def generate_obligation_pdf(car, *, date: datetime.date, buyer: dict, signature_
     birth = buyer.get("birth_date")
     if birth:
         intro += f", {_date_ru(birth)} года рождения"
-    intro += f", паспорт {buyer['passport_number']}"
+    id_label = "ID-карта" if buyer.get("id_kind") == "id_card" else "паспорт"
+    intro += f", {id_label} {buyer['passport_number']}"
     issue = buyer.get("passport_issue_date")
     if issue:
         intro += f" от {_date_ru(issue)}"
