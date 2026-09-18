@@ -6,9 +6,9 @@
 
 Компоновка: слева рабочая область с табами (документы / переписка с клиентом /
 почта склада), справа закреплённая колонка со состоянием и данными автовоза.
-Пакет документов свёрнут в плитки по типам: слот раскрывается по клику, файлы
-открываются в просмотрщике (PDF через blob — /media/ отдаётся с
-X-Frame-Options: DENY, в iframe напрямую не открывается).
+Пакет документов свёрнут в плитки по типам: клик по плитке с файлом открывает
+тот же оконный предпросмотр, что в кабинете клиента (PDF через blob —
+/media/ отдаётся с X-Frame-Options: DENY, в iframe напрямую не открывается).
 
 Права сотрудника максимальные: правка данных автовоза, состав машин, пакет
 документов с генерацией PDF за клиента (та же логика, что в кабинете —
@@ -251,7 +251,7 @@ core.services.transport_package_actions), переписка с клиентом
     cursor: pointer;
 }
 .rc-tile:hover { border-color: var(--cm-purple, #6c5ce7); }
-.rc-tile.has { border-color: rgba(16,185,129,.45); background: rgba(16,185,129,.06); }
+.rc-tile.has { border-color: rgba(16,185,129,.45); background: rgba(16,185,129,.06); cursor: zoom-in; }
 .rc-tile.missing { border-color: rgba(245,158,11,.55); background: rgba(245,158,11,.07); }
 .rc-tile.active { border-color: var(--cm-purple, #6c5ce7); box-shadow: 0 0 0 2px rgba(108,92,231,.18); }
 .rc-bulk {
@@ -378,58 +378,91 @@ core.services.transport_package_actions), переписка с клиентом
     font-size: 13px;
 }
 
-/* ── Просмотрщик файлов ─────────────────────────────────────────────── */
-.rc-viewer {
+/* ── Предпросмотр документа (как модалка в кабинете клиента) ────────── */
+.rc-doc-modal {
     position: fixed;
     inset: 0;
     z-index: 2000;
-    background: rgba(15,23,42,.95);
-    backdrop-filter: blur(3px);
     display: none;
-    flex-direction: column;
-}
-.rc-viewer.open { display: flex; }
-.rc-viewer-bar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    padding: 10px 14px;
-    color: #fff;
-}
-.rc-viewer-title { font-size: .86rem; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rc-viewer-sub { font-size: .74rem; opacity: .75; }
-.rc-viewer-bar .rc-spacer { flex: 1 1 auto; }
-.rc-viewer-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 5px 11px;
-    border: 1px solid rgba(255,255,255,.35);
-    border-radius: 8px;
-    background: rgba(255,255,255,.08);
-    color: #fff;
-    font: inherit;
-    font-size: .78rem;
-    cursor: pointer;
-    text-decoration: none;
-}
-.rc-viewer-btn:hover { background: rgba(255,255,255,.2); color: #fff; }
-.rc-viewer-btn[disabled] { opacity: .35; cursor: default; }
-.rc-viewer-stage {
-    flex: 1;
-    min-height: 0;
-    margin: 0 14px 14px;
-    border-radius: 12px;
-    background: #fff;
-    display: flex;
     align-items: center;
     justify-content: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, .5);
+}
+.rc-doc-modal.open { display: flex; }
+.rc-doc-modal-dialog {
+    width: min(1140px, 100%);
+    max-height: calc(100vh - 32px);
+}
+.rc-doc-modal-content {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .15);
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 32px);
+    overflow: hidden;
+}
+.rc-doc-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 16px;
+    border-bottom: 1px solid #dee2e6;
+}
+.rc-doc-modal-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.rc-doc-modal-close {
+    border: 0;
+    background: none;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    color: #6c757d;
+    padding: 0 4px;
+}
+.rc-doc-modal-close:hover { color: #1a1a2e; }
+.rc-doc-modal-body {
+    padding: .5rem;
+    background: #f1f3f5;
     overflow: auto;
 }
-.rc-viewer-stage iframe { width: 100%; height: 100%; border: 0; border-radius: 12px; }
-.rc-viewer-stage img { max-width: 100%; max-height: 100%; object-fit: contain; }
-.rc-viewer-fallback { padding: 40px 20px; text-align: center; color: #475569; font-size: .88rem; }
+.rc-doc-preview-frame {
+    width: 100%;
+    height: min(78vh, 820px);
+    border: 0;
+    background: #fff;
+    border-radius: 4px;
+}
+.rc-doc-preview-img {
+    display: block;
+    max-width: 100%;
+    max-height: min(78vh, 820px);
+    margin: 0 auto;
+    border-radius: 4px;
+}
+.rc-doc-preview-fallback {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: #6c757d;
+    font-size: .88rem;
+}
+.rc-doc-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 8px 16px;
+    border-top: 1px solid #dee2e6;
+    background: #fff;
+}
 </style>
 {% endblock %}
 
@@ -641,7 +674,13 @@ core.services.transport_package_actions), переписка с клиентом
                         {% for slot in block.slots %}
                         <button type="button"
                                 class="rc-tile {% if slot.docs %}has{% elif slot.is_missing %}missing{% endif %}"
-                                data-slot-btn="{{ block.car.pk }}-{{ slot.type }}">
+                                data-slot-btn="{{ block.car.pk }}-{{ slot.type }}"
+                                {% if slot.docs %}
+                                title="Открыть предпросмотр: {{ slot.label }}"
+                                data-url="{{ slot.docs.0.preview_url }}"
+                                data-title="{{ slot.label }}"
+                                data-filename="{{ slot.docs.0.filename }}"
+                                {% endif %}>
                             <span class="rc-tile-label">{{ slot.label }}</span>
                             <span class="rc-tile-meta">
                                 {% if slot.docs %}✓ {{ slot.docs|length }} файл(ов)
@@ -954,21 +993,28 @@ core.services.transport_package_actions), переписка с клиентом
     </div>
 </div>
 
-{# ── Просмотрщик файлов ──────────────────────────────────────────────── #}
-<div class="rc-viewer" id="rc-viewer" role="dialog" aria-modal="true" aria-label="Просмотр документа">
-    <div class="rc-viewer-bar">
-        <div style="min-width:0;">
-            <div class="rc-viewer-title" id="rc-viewer-title">—</div>
-            <div class="rc-viewer-sub" id="rc-viewer-sub"></div>
+{# ── Предпросмотр документа (как в кабинете клиента) ─────────────────── #}
+<div class="rc-doc-modal" id="rc-doc-modal" role="dialog" aria-modal="true" aria-labelledby="rc-doc-modal-title">
+    <div class="rc-doc-modal-dialog">
+        <div class="rc-doc-modal-content">
+            <div class="rc-doc-modal-header">
+                <h6 class="rc-doc-modal-title" id="rc-doc-modal-title">Документ</h6>
+                <button type="button" class="rc-doc-modal-close" id="rc-doc-modal-close" aria-label="Закрыть" title="Закрыть (Esc)">×</button>
+            </div>
+            <div class="rc-doc-modal-body">
+                <iframe class="rc-doc-preview-frame" id="rc-doc-preview-frame" title="Просмотр документа" hidden></iframe>
+                <img class="rc-doc-preview-img" id="rc-doc-preview-img" alt="" hidden>
+                <div class="rc-doc-preview-fallback" id="rc-doc-preview-fallback" hidden>
+                    <p>Предпросмотр недоступен для этого файла.</p>
+                    <a class="pc-action primary rc-doc-preview-download" href="#" download>Скачать</a>
+                </div>
+            </div>
+            <div class="rc-doc-modal-footer">
+                <a class="pc-action outline rc-doc-preview-download" href="#" download>Скачать</a>
+                <button type="button" class="pc-action outline" id="rc-doc-modal-dismiss">Закрыть</button>
+            </div>
         </div>
-        <span class="rc-spacer"></span>
-        <button type="button" class="rc-viewer-btn" id="rc-viewer-prev" title="Предыдущий файл (←)">←</button>
-        <button type="button" class="rc-viewer-btn" id="rc-viewer-next" title="Следующий файл (→)">→</button>
-        <a class="rc-viewer-btn" id="rc-viewer-download" href="#" download>⤓ Скачать</a>
-        <a class="rc-viewer-btn" id="rc-viewer-tab" href="#" target="_blank" rel="noopener">↗ В новой вкладке</a>
-        <button type="button" class="rc-viewer-btn" id="rc-viewer-close" title="Закрыть (Esc)">✕</button>
     </div>
-    <div class="rc-viewer-stage" id="rc-viewer-stage"></div>
 </div>
 
 <script>
@@ -1027,132 +1073,125 @@ core.services.transport_package_actions), переписка с клиентом
         carEl.querySelectorAll('.rc-slot').forEach(function(slot) { slot.hidden = true; });
         carEl.querySelectorAll('.rc-tile').forEach(function(tile) { tile.classList.remove('active'); });
     }
-    function openSlot(key) {
+    function openSlot(key, opts) {
+        opts = opts || {};
         var slot = document.querySelector('.rc-slot[data-slot="' + key + '"]');
-        if (!slot) return;
+        if (!slot) return null;
         var carEl = slot.closest('.rc-car');
         var wasOpen = !slot.hidden;
         closeSlots(carEl);
-        if (wasOpen) return;
+        if (wasOpen && !opts.forceOpen) return slot;
         slot.hidden = false;
         var tile = carEl.querySelector('.rc-tile[data-slot-btn="' + key + '"]');
         if (tile) tile.classList.add('active');
-        slot.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+        if (!opts.silent) {
+            slot.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+        }
+        return slot;
     }
-    document.addEventListener('click', function(e) {
-        var tile = e.target.closest('.rc-tile[data-slot-btn]');
-        if (tile) { openSlot(tile.dataset.slotBtn); return; }
-        var closeBtn = e.target.closest('[data-slot-close]');
-        if (closeBtn) closeSlots(closeBtn.closest('.rc-car'));
-    });
 
-    // ── Просмотрщик файлов ─────────────────────────────────────────────
-    var viewer = document.getElementById('rc-viewer');
+    // ── Предпросмотр документа (как модалка в кабинете клиента) ────────
+    var modalEl = document.getElementById('rc-doc-modal');
     // Переносим в body: внутри #content он попадает в чужой контекст
     // наложения и оказывается под липкой шапкой админки.
-    document.body.appendChild(viewer);
-    var stage = document.getElementById('rc-viewer-stage');
-    var vTitle = document.getElementById('rc-viewer-title');
-    var vSub = document.getElementById('rc-viewer-sub');
-    var vPrev = document.getElementById('rc-viewer-prev');
-    var vNext = document.getElementById('rc-viewer-next');
-    var vDownload = document.getElementById('rc-viewer-download');
-    var vTab = document.getElementById('rc-viewer-tab');
-    var files = [];
-    var index = 0;
-    var objectUrl = null;
+    document.body.appendChild(modalEl);
+    var frameEl = document.getElementById('rc-doc-preview-frame');
+    var imgEl = document.getElementById('rc-doc-preview-img');
+    var fallbackEl = document.getElementById('rc-doc-preview-fallback');
+    var titleEl = document.getElementById('rc-doc-modal-title');
+    var previewObjectUrl = null;
 
-    function releaseObjectUrl() {
-        if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
+    function revokePreviewObjectUrl() {
+        if (previewObjectUrl) { URL.revokeObjectURL(previewObjectUrl); previewObjectUrl = null; }
     }
-    function extensionOf(name) {
-        var match = /\.([a-z0-9]+)(?:$|\?)/i.exec(name || '');
-        return match ? match[1].toLowerCase() : '';
+    function isImageName(name) {
+        var clean = (name || '').split('?')[0];
+        return /\.(jpe?g|png|gif|webp)$/i.test(clean);
     }
-    function renderFallback(file, note) {
-        stage.innerHTML = '';
-        var box = document.createElement('div');
-        box.className = 'rc-viewer-fallback';
-        box.textContent = note || ('Файл «' + file.name + '» нельзя показать в браузере — скачайте его.');
-        stage.appendChild(box);
+    function showPreviewParts(mode) {
+        frameEl.hidden = mode !== 'pdf';
+        imgEl.hidden = mode !== 'image';
+        fallbackEl.hidden = mode !== 'fallback';
+        if (mode !== 'pdf') frameEl.removeAttribute('src');
+        if (mode !== 'image') imgEl.removeAttribute('src');
     }
-    function renderFile(i) {
-        if (!files.length) return;
-        index = (i + files.length) % files.length;
-        var file = files[index];
-        releaseObjectUrl();
-        stage.innerHTML = '';
-        vTitle.textContent = file.name;
-        vSub.textContent = file.label + ' · ' + (index + 1) + ' из ' + files.length;
-        vDownload.href = file.url;
-        vTab.href = file.url;
-        vPrev.disabled = vNext.disabled = files.length < 2;
-
-        var ext = extensionOf(file.name) || extensionOf(file.url);
-        if (['jpg', 'jpeg', 'png', 'gif', 'webp'].indexOf(ext) !== -1) {
-            var img = document.createElement('img');
-            img.alt = file.name;
-            img.src = file.url;
-            stage.appendChild(img);
-            return;
-        }
-        if (ext !== 'pdf') {
-            renderFallback(file);
-            return;
-        }
-        // PDF грузим как blob: /media/ отдаётся с X-Frame-Options: DENY,
-        // прямой src в iframe браузер блокирует.
-        renderFallback(file, 'Загрузка…');
-        var requested = file.url;
-        fetch(file.url, {credentials: 'same-origin', cache: 'no-store'})
-            .then(function(r) { return r.ok ? r.blob() : Promise.reject(r.status); })
-            .then(function(blob) {
-                if (files[index].url !== requested) return;
-                stage.innerHTML = '';
-                objectUrl = URL.createObjectURL(blob);
-                var frame = document.createElement('iframe');
-                frame.title = file.name;
-                frame.src = objectUrl;
-                stage.appendChild(frame);
-            })
-            .catch(function() { renderFallback(file); });
-    }
-    function openViewer(list, start) {
-        files = list;
-        viewer.classList.add('open');
+    function openDocPreview(url, title, filename) {
+        if (!url) return;
+        var name = filename || url.split('/').pop() || '';
+        titleEl.textContent = title || name || 'Документ';
+        modalEl.querySelectorAll('.rc-doc-preview-download').forEach(function(a) {
+            a.href = url;
+            a.setAttribute('download', name);
+        });
+        revokePreviewObjectUrl();
+        modalEl.classList.add('open');
         document.body.style.overflow = 'hidden';
-        renderFile(start);
+
+        if (isImageName(name) || isImageName(url)) {
+            showPreviewParts('image');
+            imgEl.src = url;
+            imgEl.alt = name;
+            return;
+        }
+        if (!(/\.pdf($|\?)/i.test(name) || /\.pdf($|\?)/i.test(url))) {
+            showPreviewParts('fallback');
+            return;
+        }
+        // PDF через blob: иначе X-Frame-Options: DENY блокирует iframe /media/...
+        showPreviewParts('pdf');
+        frameEl.removeAttribute('src');
+        fetch(url, {credentials: 'same-origin', cache: 'no-store'})
+            .then(function(resp) {
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                return resp.blob();
+            })
+            .then(function(blob) {
+                var pdfBlob = blob.type === 'application/pdf'
+                    ? blob
+                    : new Blob([blob], {type: 'application/pdf'});
+                previewObjectUrl = URL.createObjectURL(pdfBlob);
+                frameEl.src = previewObjectUrl;
+            })
+            .catch(function() { showPreviewParts('fallback'); });
     }
-    function closeViewer() {
-        viewer.classList.remove('open');
+    function closeDocPreview() {
+        modalEl.classList.remove('open');
         document.body.style.overflow = '';
-        releaseObjectUrl();
-        stage.innerHTML = '';
-        files = [];
+        revokePreviewObjectUrl();
+        frameEl.removeAttribute('src');
+        imgEl.removeAttribute('src');
+        showPreviewParts('fallback');
+        fallbackEl.hidden = true;
     }
+    document.getElementById('rc-doc-modal-close').addEventListener('click', closeDocPreview);
+    document.getElementById('rc-doc-modal-dismiss').addEventListener('click', closeDocPreview);
+    modalEl.addEventListener('click', function(e) {
+        if (e.target === modalEl) closeDocPreview();
+    });
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && modalEl.classList.contains('open')) closeDocPreview();
+    });
     document.addEventListener('click', function(e) {
+        var closeBtn = e.target.closest('[data-slot-close]');
+        if (closeBtn) {
+            closeSlots(closeBtn.closest('.rc-car'));
+            return;
+        }
+        var tile = e.target.closest('.rc-tile[data-slot-btn]');
+        if (tile) {
+            var key = tile.dataset.slotBtn;
+            if (tile.classList.contains('has')) {
+                openSlot(key, {forceOpen: true, silent: true});
+                openDocPreview(tile.dataset.url, tile.dataset.title, tile.dataset.filename);
+            } else {
+                openSlot(key);
+            }
+            return;
+        }
         var btn = e.target.closest('.rc-file-open');
         if (!btn) return;
         e.preventDefault();
-        // Листаем по всем файлам этого авто, а не только текущего слота.
-        var scope = btn.closest('.rc-car') || document;
-        var buttons = Array.prototype.slice.call(scope.querySelectorAll('.rc-file-open'));
-        var list = buttons.map(function(node) {
-            return {url: node.dataset.fileUrl, name: node.dataset.fileName, label: node.dataset.fileLabel || ''};
-        });
-        openViewer(list, buttons.indexOf(btn));
-    });
-    document.getElementById('rc-viewer-close').addEventListener('click', closeViewer);
-    viewer.addEventListener('click', function(e) {
-        if (e.target === viewer) closeViewer();
-    });
-    vPrev.addEventListener('click', function() { renderFile(index - 1); });
-    vNext.addEventListener('click', function() { renderFile(index + 1); });
-    document.addEventListener('keydown', function(e) {
-        if (!viewer.classList.contains('open')) return;
-        if (e.key === 'Escape') closeViewer();
-        else if (e.key === 'ArrowLeft') renderFile(index - 1);
-        else if (e.key === 'ArrowRight') renderFile(index + 1);
+        openDocPreview(btn.dataset.fileUrl, btn.dataset.fileLabel || btn.dataset.fileName, btn.dataset.fileName);
     });
 
     // ── Правка полей заявки ────────────────────────────────────────────

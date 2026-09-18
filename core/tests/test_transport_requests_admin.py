@@ -21,11 +21,12 @@ import datetime
 
 import pytest
 from django.contrib.auth.models import User
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
 from core.models import Car, Client
 from core.models.carriers import Carrier
-from core.models.website import ClientUser, TransportRequest, TransportRequestMessage
+from core.models.website import ClientUser, TransportRequest, TransportRequestDocument, TransportRequestMessage
 
 pytestmark = pytest.mark.django_db
 
@@ -259,6 +260,25 @@ def test_card_available_for_staff(staff_client, transport_request):
     assert "Страна назначения" in body
     # Пакет одним файлом разбирается AI прямо из карточки.
     assert "Разобрать AI" in body
+
+
+def test_card_tile_with_docs_opens_preview(staff_client, transport_request, car):
+    TransportRequestDocument.objects.create(
+        request=transport_request,
+        car=car,
+        doc_type="PASSPORT",
+        file=SimpleUploadedFile("passport.jpg", b"jpeg-bytes", content_type="image/jpeg"),
+        is_generated=False,
+    )
+    body = staff_client.get(reverse("admin_request_card", args=[transport_request.pk])).content.decode()
+
+    assert "✓ 1 файл(ов)" in body
+    assert 'title="Открыть предпросмотр: Паспорт / ID-карта"' in body
+    assert 'id="rc-doc-modal"' in body
+    assert 'data-title="Паспорт / ID-карта"' in body
+    assert "openDocPreview(tile.dataset.url" in body
+    assert 'class="rc-file-open"' in body
+    assert "rc-viewer" not in body
 
 
 def test_card_shows_separate_declaration(staff_client, transport_request, car, second_car):
