@@ -29,7 +29,7 @@ INK_SOFT = HexColor("#333333")
 INK_CLIENT = HexColor("#444444")
 RULE = HexColor("#666666")
 
-# Размеры как в templates/admin/labels/print_sheet.html (мм).
+# Типографика ячейки (мм), уровни compact 0/1/2.
 _SIZES = {
     0: {
         "num": 5.2,

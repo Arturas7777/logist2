@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pypdfium2 as pdfium
 import pytest
 from django.contrib.auth.models import User
@@ -122,8 +124,22 @@ def test_print_sheet_returns_pdf(client):
     )
     assert response.status_code == 200
     assert response["Content-Type"] == "application/pdf"
-    assert response.content.startswith(b"%PDF")
+    assert "text/html" not in response["Content-Type"]
+    body = response.content.lstrip()
+    assert body.startswith(b"%PDF")
+    assert not body.startswith(b"<!DOCTYPE")
+    assert not body.startswith(b"<html")
     assert b"/PrintScaling /None" in response.content
     assert "MRSU0000001" in _pdf_text(response.content)
     container.refresh_from_db()
     assert container.labels_printed_at is not None
+
+
+def test_labels_print_view_stays_on_pdf_path():
+    """Регрессия: нельзя снова отдать HTML-лист в Chrome.print()."""
+    source = Path("core/views/labels.py").read_text(encoding="utf-8")
+    assert "render_labels_pdf" in source
+    assert "print_sheet.html" not in source
+    assert "window.print" not in source
+    templates_dir = Path("templates/admin/labels")
+    assert not (templates_dir / "print_sheet.html").exists()

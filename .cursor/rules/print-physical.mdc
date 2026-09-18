@@ -1,0 +1,32 @@
+---
+description: Печать на физический бланк или лист наклеек — только PDF
+globs: core/views/labels.py,core/services/labels_pdf.py,core/services/transport_docs_pdf.py,templates/admin/labels/**,templates/admin/cmr_editor.html,templates/website/declaration_print.html
+alwaysApply: false
+---
+
+# Печать на физическую бумагу
+
+Если отпечаток должен попасть в высечку, наклейку Forpus или бланк с миллиметровой сеткой — **отдавать PDF**. Не HTML + `window.print()`.
+
+Chrome сжимает HTML-лист (Letter, поля принтера, «вписать в область», лишняя панель над страницей). Нижние ряды уезжают вверх, слева растёт отступ. CSS-калибровка это не лечит — уже ломалось дважды.
+
+## Наклейки
+
+- Единственный путь: `print_labels_sheet` → `render_labels_pdf`.
+- Страница A4, координаты в мм, `PrintScaling=None`.
+- Не подключать `print_sheet.html` и не возвращать `text/html`.
+- `offset` / `row_gap` / `inset` — только калибровка конкретного принтера, не замена масштаба.
+
+## Нельзя
+
+```python
+# плохо — снова сломается после обновления Chrome
+return render(request, "admin/labels/print_sheet.html", context)
+```
+
+```python
+# хорошо
+return HttpResponse(render_labels_pdf(...), content_type="application/pdf")
+```
+
+CMR и другие бланки с точной сеткой при доработках тоже переводить на PDF, не чинить HTML-печать.
