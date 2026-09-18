@@ -19,6 +19,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from core.models import Container
+from core.services.labels_pdf import render_labels_pdf
 
 # A4 размеры (мм)
 PAGE_WIDTH_MM = 210.0
@@ -233,8 +234,6 @@ def print_labels_sheet(request) -> HttpResponse:
         if token.isdigit():
             skipped.add(int(token))
 
-    auto_print = src.get("auto_print") != "0"
-
     # Безопасный отступ от края листа (мм). Пользователь может подстроить.
     try:
         safe_margin = float(src.get("safe_margin", DEFAULT_SAFE_MARGIN_MM))
@@ -337,18 +336,9 @@ def print_labels_sheet(request) -> HttpResponse:
             right = left + width
             bottom = top + height
 
-            style_parts = [
-                f"left: {left:.3f}mm",
-                f"top: {top:.3f}mm",
-                f"width: {width:.3f}mm",
-                f"height: {height:.3f}mm",
-            ]
-
-            # Базовый padding задаётся CSS (padding: 1.2mm 3.2mm).
-            # Считаем эффективный padding на каждую сторону с учётом:
-            #   - inset_h / inset_v применяются ко всем ячейкам;
-            #   - safe_margin применяется только к ячейкам у внешнего края листа.
-            base_h = 3.2  # мм, синхронно с CSS .cell
+            # Базовый padding как в прежнем HTML (1.2mm 3.2mm).
+            # inset — ко всем ячейкам; safe_margin — только у края листа.
+            base_h = 3.2
             base_v = 1.2
             pad_left = base_h + inset_h
             pad_right = base_h + inset_h
@@ -365,31 +355,28 @@ def print_labels_sheet(request) -> HttpResponse:
                 if bottom > PAGE_HEIGHT_MM - eps:
                     pad_bottom = max(pad_bottom, safe_margin)
 
-            style_parts.append(f"padding: {pad_top:.2f}mm {pad_right:.2f}mm {pad_bottom:.2f}mm {pad_left:.2f}mm")
-
             items.append(
                 {
                     "label": label,
-                    "style": "; ".join(style_parts) + ";",
+                    "box": {
+                        "left": left,
+                        "top": top,
+                        "width": width,
+                        "height": height,
+                        "pad_left": pad_left,
+                        "pad_right": pad_right,
+                        "pad_top": pad_top,
+                        "pad_bottom": pad_bottom,
+                    },
                 }
             )
         pages_positioned.append(items)
 
-    context = {
-        "title": "Наклейки — печать",
-        "fmt": fmt,
-        "pages_positioned": pages_positioned,
-        "auto_print": auto_print,
-        "labels_count": len(labels),
-        "safe_margin": safe_margin,
-        "offset_x": offset_x,
-        "offset_y": offset_y,
-        "inset_h": inset_h,
-        "inset_v": inset_v,
-        "row_gap": row_gap,
-        "col_gap": col_gap,
-    }
-    return render(request, "admin/labels/print_sheet.html", context)
+    pdf_bytes = render_labels_pdf(pages_positioned, fmt)
+    filename = f"labels-{fmt['code']}.pdf"
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'inline; filename="{filename}"'
+    return response
 
 
 def redirect_to_print_settings(container_ids: list[int]) -> HttpResponseRedirect:
