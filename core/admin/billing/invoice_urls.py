@@ -16,6 +16,7 @@ from django.shortcuts import redirect, render
 from django.urls import path
 
 from core.models_billing import NewInvoice
+from core.search_query import normalize_search_query
 from core.services.billing_service import BillingService
 
 
@@ -62,7 +63,7 @@ class NewInvoiceUrlsMixin:
 
         from core.models import Car
 
-        term = (request.GET.get("term") or "").strip()
+        term = normalize_search_query(request.GET.get("term"))
         # TRANSFERRED не скрываем: инвойсы часто оформляют постфактум,
         # когда машины уже переданы. Активные (не переданные) всё равно
         # выше в выдаче, чтобы повседневный поиск не утопал в истории.

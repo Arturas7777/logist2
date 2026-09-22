@@ -660,6 +660,8 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
         function gsSearch(q) {
+            q = String(q || '').replace(/[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g, '').replace(/[\u00A0\u202F\u2007\u2009]/g, ' ').trim();
+            if (q.length < 2) return;
             if (gsController) gsController.abort();
             gsController = new AbortController();
             fetch('/admin/global-search/?q=' + encodeURIComponent(q), {signal: gsController.signal})
@@ -690,8 +692,10 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
         gsInput.addEventListener('input', function() {
+            var cleaned = gsInput.value.replace(/[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g, '').replace(/[\u00A0\u202F\u2007\u2009]/g, ' ');
+            if (cleaned !== gsInput.value) gsInput.value = cleaned;
             clearTimeout(gsTimer);
-            var q = gsInput.value.trim();
+            var q = cleaned.trim();
             if (q.length < 2) {
                 gsResults.innerHTML = '<div class="cm-gsearch-hint">Начните вводить — минимум 2 символа</div>';
                 return;
@@ -699,6 +703,13 @@ document.addEventListener('DOMContentLoaded', function() {
             gsTimer = setTimeout(function() { gsSearch(q); }, 250);
         });
     }
+
+    document.querySelectorAll('#searchbar, input[type="search"][name="q"]').forEach(function(el) {
+        el.addEventListener('input', function() {
+            var cleaned = el.value.replace(/[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/g, '').replace(/[\u00A0\u202F\u2007\u2009]/g, ' ');
+            if (cleaned !== el.value) el.value = cleaned;
+        });
+    });
 
     // Mark body as loaded (enable transitions)
     document.body.classList.add('loaded');

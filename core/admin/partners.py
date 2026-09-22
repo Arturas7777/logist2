@@ -41,6 +41,7 @@ from core.models import (
     WarehouseService,
 )
 from core.models_billing import NewInvoice
+from core.search_query import normalize_search_query
 
 logger = logging.getLogger(__name__)
 
@@ -1610,7 +1611,7 @@ class AutoTransportAdmin(admin.ModelAdmin):
         """
         from django.db.models import Case, IntegerField, Q, When
 
-        term = (request.GET.get("term") or "").strip()
+        term = normalize_search_query(request.GET.get("term"))
         qs = (
             Car.objects.filter(is_important=False)
             .select_related("client")

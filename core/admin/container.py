@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 
 from core.admin.inlines import CarInline
+from core.admin.mixins import NormalizeSearchMixin
 from core.admin_filters import ClientAutocompleteFilter, MultiStatusFilter, MultiWarehouseFilter
 from core.models import (
     Car,
@@ -96,7 +97,7 @@ class DataAuditFilter(SimpleListFilter):
 
 
 @admin.register(Container)
-class ContainerAdmin(admin.ModelAdmin):
+class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
     change_form_template = "admin/core/container/change_form.html"
     list_display = (
         "number_with_unread",

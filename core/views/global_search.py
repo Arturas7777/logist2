@@ -13,13 +13,14 @@ from django.urls import reverse
 
 from core.models import Car, Client, Container
 from core.models.billing import NewInvoice
+from core.search_query import normalize_search_query
 
 RESULTS_PER_GROUP = 5
 
 
 @staff_member_required
 def global_search(request):
-    query = (request.GET.get("q") or "").strip()
+    query = normalize_search_query(request.GET.get("q"))
     if len(query) < 2:
         return JsonResponse({"groups": []})
 

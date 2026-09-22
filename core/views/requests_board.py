@@ -40,6 +40,7 @@ from core.models.website import (
     TransportRequestDocument,
     TransportRequestMessage,
 )
+from core.search_query import normalize_search_query
 from core.services import transport_bulk_split as bulk_split
 from core.services import transport_declarations as declarations
 from core.services import transport_package_actions as package_actions
@@ -163,7 +164,7 @@ def _admin_context(request: HttpRequest, **extra):
 def requests_board_page(request: HttpRequest):
     """Доска заявок: табы по состоянию, поиск, карточки со сводкой."""
     tab = request.GET.get("tab", "new")
-    search = (request.GET.get("q", "") or "").strip()
+    search = normalize_search_query(request.GET.get("q"))
 
     tab_filters = {code: flt for code, _label, flt in BOARD_TABS}
     if tab not in tab_filters:

@@ -12,6 +12,7 @@ from django.utils.html import escape, format_html, format_html_join
 from django.utils.safestring import mark_safe
 
 from core.admin.car_forms import VinGuardForm as CarVinGuardForm
+from core.admin.mixins import NormalizeSearchMixin
 from core.admin_export import CSVExportMixin
 from core.admin_filters import ClientAutocompleteFilter, MultiStatusFilter, MultiWarehouseFilter
 from core.models import (
@@ -318,7 +319,7 @@ class CarModelImageAdmin(admin.ModelAdmin):
 
 
 @admin.register(Car)
-class CarAdmin(CSVExportMixin, admin.ModelAdmin):
+class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
     change_form_template = "admin/core/car/change_form.html"
     change_list_template = "admin/core/car/change_list.html"
     form = CarVinGuardForm
