@@ -95,6 +95,22 @@ def test_short_vin_reported_once():
     assert "17" in verdict.issues[0].message
 
 
+def test_short_number_ok_for_jetski_and_snowmobile():
+    for vehicle_type in ("JETSKI", "SNOWMOBILE"):
+        verdict = check_vin("YDV12345A424", vehicle_type=vehicle_type, allow_network=False)
+        assert verdict.ok, verdict.issues
+
+
+def test_too_short_number_still_rejected_for_jetski():
+    verdict = check_vin("ABC123", vehicle_type="JETSKI", allow_network=False)
+    assert _codes(verdict) == [ISSUE_LENGTH]
+
+
+def test_seventeen_char_jetski_vin_keeps_checksum_check():
+    verdict = check_vin(BROKEN_NA_VIN, vehicle_type="JETSKI", allow_network=False, check_duplicates=False)
+    assert ISSUE_CHECKSUM in _codes(verdict)
+
+
 def test_forbidden_letters_suggest_visual_twins():
     # I, O и Q в VIN по ISO 3779 не используются вовсе.
     verdict = check_vin("4T1BF1FKOCU5I1111", allow_network=False)
@@ -330,6 +346,26 @@ def test_apply_nhtsa_vehicle_type_only_overrides_default_sedan():
     car.vehicle_type = "SUV"
     assert apply_nhtsa_vehicle_type(car, "MOTORCYCLE") is False
     assert car.vehicle_type == "SUV"
+
+
+def test_form_accepts_short_number_for_jetski_and_snowmobile():
+    ShortForm = modelform_factory(
+        Car, form=VinGuardForm, fields=["vin", "year", "brand", "vehicle_type", "container", "vin_confirmed"]
+    )
+    for vehicle_type in ("JETSKI", "SNOWMOBILE"):
+        form = ShortForm(data=_form_data("ydv12345a424", vehicle_type=vehicle_type))
+        assert form.is_valid(), form.errors
+        assert form.cleaned_data["vin"] == "YDV12345A424"
+        assert form.cleaned_data["vehicle_type"] == vehicle_type
+
+
+def test_form_rejects_short_vin_for_regular_car():
+    ShortForm = modelform_factory(
+        Car, form=VinGuardForm, fields=["vin", "year", "brand", "vehicle_type", "container", "vin_confirmed"]
+    )
+    form = ShortForm(data=_form_data("YDV12345A424", vehicle_type="SEDAN"))
+    assert not form.is_valid()
+    assert "17" in " ".join(form.errors["vin"])
 
 
 def test_form_sets_motorcycle_type_from_nhtsa():

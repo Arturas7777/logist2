@@ -329,6 +329,7 @@ def check_vin(
     exclude_car_id: int | None = None,
     brand: str | None = None,
     year: int | None = None,
+    vehicle_type: str | None = None,
     allow_network: bool = True,
     check_duplicates: bool = True,
 ) -> VinVerdict:
@@ -347,13 +348,19 @@ def check_vin(
         return verdict
 
     if len(vin_norm) != 17:
-        verdict.issues.append(
-            VinIssue(
-                code=ISSUE_LENGTH,
-                severity=SEVERITY_ERROR,
-                message=f"VIN содержит {len(vin_norm)} символов вместо 17.",
+        from core.models._vehicle_types import vin_length_error
+
+        # Для гидроцикла и снегохода короткий номер (HIN / серийный) — норма.
+        # Ровно 17 символов дальше проверяются как обычный VIN.
+        length_error = vin_length_error(vin_norm, vehicle_type)
+        if length_error:
+            verdict.issues.append(
+                VinIssue(
+                    code=ISSUE_LENGTH,
+                    severity=SEVERITY_ERROR,
+                    message=length_error,
+                )
             )
-        )
         return verdict
 
     forbidden = _forbidden_chars(vin_norm)

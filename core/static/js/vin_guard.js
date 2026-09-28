@@ -25,6 +25,9 @@
   'use strict';
 
   var ENDPOINT = '/admin/core/car/vin-check/';
+  // Гидроцикл (HIN) и снегоход: номер короче 17 — норма, от 8 символов.
+  var SHORT_VIN_TYPES = { JETSKI: true, SNOWMOBILE: true };
+  var SHORT_VIN_MIN = 8;
   var PANEL_WIDTH = 280;
   var cache = new Map();
   var panel = null;
@@ -174,7 +177,19 @@
       return;
     }
     if (vin.length !== 17) {
-      render(input, { issues: [{ message: 'VIN содержит ' + vin.length + ' символов вместо 17.' }] });
+      var typeField = siblingField(input, 'vehicle_type');
+      var shortOk = typeField && SHORT_VIN_TYPES[typeField.value];
+      if (shortOk && vin.length >= SHORT_VIN_MIN) {
+        markField(input, false, false);
+        var confirm = confirmField(input);
+        if (confirm) confirm.value = '';
+        if (anchorInput === input) hide();
+        return;
+      }
+      var message = shortOk
+        ? 'Номер содержит ' + vin.length + ' символов. Для гидроцикла и снегохода нужно от 8 до 17.'
+        : 'VIN содержит ' + vin.length + ' символов вместо 17.';
+      render(input, { issues: [{ message: message }] });
       return;
     }
 
@@ -210,6 +225,13 @@
   function isVinField(node) {
     return node && node.matches && node.matches('[data-vin-guard]');
   }
+
+  document.addEventListener('change', function (event) {
+    var target = event.target;
+    if (!target || !target.name || !/(^|-)vehicle_type$/.test(target.name)) return;
+    var vin = siblingField(target, 'vin');
+    if (isVinField(vin)) check(vin);
+  }, true);
 
   document.addEventListener('blur', function (event) {
     // Уход в саму панель (клик по галочке или кнопке подстановки) закрывать

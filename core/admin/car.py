@@ -1415,7 +1415,7 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
             "js/car_form_layout.js?v=12",
             # Живая проверка VIN: расшифровка NHTSA под полем, автозаполнение
             # марки и года, галочка подтверждения при спорном VIN.
-            "js/vin_guard.js?v=3",
+            "js/vin_guard.js?v=4",
         )
         css = {"all": ("css/vin_guard.css?v=2",)}
 

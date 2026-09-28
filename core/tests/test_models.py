@@ -181,6 +181,30 @@ class CarModelTest(TestCase):
             car.clean()
         self.assertIn("vin", ctx.exception.message_dict)
 
+    def test_clean_accepts_short_number_for_jetski_and_snowmobile(self):
+        """HIN гидроцикла и серийный номер снегохода короче 17 символов."""
+        for vehicle_type in ("JETSKI", "SNOWMOBILE"):
+            car = Car(
+                year=2024,
+                brand="Yamaha",
+                vin="YDV12345A424",
+                vehicle_type=vehicle_type,
+                status="FLOATING",
+            )
+            car.clean()
+
+    def test_clean_rejects_too_short_number_for_jetski(self):
+        car = Car(
+            year=2024,
+            brand="Yamaha",
+            vin="ABC123",
+            vehicle_type="JETSKI",
+            status="FLOATING",
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            car.clean()
+        self.assertIn("vin", ctx.exception.message_dict)
+
     def test_clean_validation_year_range(self):
         """clean() проверяет диапазон года"""
         car = Car(
@@ -202,10 +226,12 @@ class VehicleTypeChoicesTest(TestCase):
     """Проверяет единый набор типов ТС"""
 
     def test_all_choices_present(self):
-        """Все 11 типов ТС присутствуют"""
-        self.assertEqual(len(VEHICLE_TYPE_CHOICES), 11)
+        """Все типы ТС присутствуют"""
+        self.assertEqual(len(VEHICLE_TYPE_CHOICES), 13)
         codes = [code for code, _ in VEHICLE_TYPE_CHOICES]
         self.assertIn("SEDAN", codes)
         self.assertIn("MOTO", codes)
         self.assertIn("SUV", codes)
+        self.assertIn("JETSKI", codes)
+        self.assertIn("SNOWMOBILE", codes)
         self.assertIn("CONSTRUCTION", codes)

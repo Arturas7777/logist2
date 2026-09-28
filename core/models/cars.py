@@ -12,7 +12,7 @@ from core.constants import STATUS_COLORS
 from core.managers import OptimizedCarManager
 from core.service_codes import is_storage_service, storage_service_q
 
-from ._vehicle_types import VEHICLE_TYPE_CHOICES
+from ._vehicle_types import VEHICLE_TYPE_CHOICES, vin_length_error
 from .containers import Container
 from .warehouses import Warehouse
 
@@ -585,8 +585,9 @@ class Car(models.Model):
         from django.core.exceptions import ValidationError
 
         errors = {}
-        if self.vin and len(self.vin) != 17:
-            errors["vin"] = "VIN должен содержать ровно 17 символов."
+        length_error = vin_length_error(self.vin, self.vehicle_type)
+        if length_error:
+            errors["vin"] = length_error
         if self.year and (self.year < 1900 or self.year > timezone.now().year + 2):
             errors["year"] = f"Год выпуска должен быть между 1900 и {timezone.now().year + 2}."
         if self.transfer_date and self.unload_date and self.transfer_date < self.unload_date:

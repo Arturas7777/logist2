@@ -59,11 +59,13 @@ class VinGuardForm(forms.ModelForm):
         if not vin or "vin" in self.errors:
             return cleaned
 
+        vehicle_type = cleaned.get("vehicle_type") or getattr(self.instance, "vehicle_type", None)
         verdict = check_vin(
             vin,
             exclude_car_id=self.instance.pk,
             brand=cleaned.get("brand"),
             year=cleaned.get("year"),
+            vehicle_type=vehicle_type,
         )
         self.vin_verdict = verdict
         check = verdict.check
