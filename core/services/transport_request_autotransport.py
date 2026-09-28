@@ -82,6 +82,13 @@ def create_autotransport(transport_request, *, user=None, carrier=None, create_c
     cars = list(transport_request.cars.all())
     if not cars:
         raise AutoTransportBuildError("В заявке нет автомобилей — рейс создавать не из чего.")
+    important = [car.vin for car in cars if car.is_important]
+    if important:
+        raise AutoTransportBuildError(
+            "Нельзя создать рейс: в заявке есть авто с пометкой «Важное»: "
+            + ", ".join(important)
+            + ". Сначала снимите галочку в карточке авто."
+        )
 
     if carrier is None:
         match = match_carrier(transport_request)
@@ -159,9 +166,7 @@ def revert_to_draft(transport_request) -> bool:
     from core.models.website import TransportRequest
 
     if not can_revert_to_draft(transport_request):
-        raise RevertToDraftError(
-            "Нельзя вернуть в черновик: автовоз уже оформлен."
-        )
+        raise RevertToDraftError("Нельзя вернуть в черновик: автовоз уже оформлен.")
 
     already_draft = transport_request.status == "DRAFT" and not transport_request.auto_transport_id
     if already_draft and transport_request.warehouse_state == TransportRequest.WAREHOUSE_NOT_SENT:

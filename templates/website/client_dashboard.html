@@ -241,7 +241,7 @@
                         {% for car in cars %}
                         <tr>
                             <td data-label="{% trans 'Выбрать' %}">
-                                {% if car.status != "TRANSFERRED" and car.status != "FLOATING" and not car.is_important and not car.in_active_request %}
+                                {% if car.status != "TRANSFERRED" and car.status != "FLOATING" and not car.in_active_request %}
                                 <input type="checkbox" class="form-check-input car-select" name="cars" value="{{ car.id }}">
                                 {% endif %}
                             </td>

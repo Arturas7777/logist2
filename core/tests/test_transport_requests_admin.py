@@ -821,6 +821,25 @@ def test_create_autotransport_transfers_data(transport_request, car):
     assert list(auto_transport.cars.all()) == [car]
 
 
+def test_create_autotransport_refuses_important_car(transport_request, car):
+    from core.models import AutoTransport
+    from core.services.transport_request_autotransport import (
+        AutoTransportBuildError,
+        create_autotransport,
+    )
+
+    car.is_important = True
+    car.save(update_fields=["is_important"])
+    carrier = Carrier.objects.create(name="Maxer Transport", eori_code="PL999000111")
+
+    with pytest.raises(AutoTransportBuildError, match="Важное"):
+        create_autotransport(transport_request, carrier=carrier)
+
+    transport_request.refresh_from_db()
+    assert transport_request.auto_transport_id is None
+    assert not AutoTransport.objects.exists()
+
+
 def test_create_autotransport_requires_confirmation_for_new_carrier(transport_request):
     from core.services.transport_request_autotransport import (
         AutoTransportBuildError,

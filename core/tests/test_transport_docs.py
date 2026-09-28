@@ -485,6 +485,44 @@ def test_request_form_omits_floating_cars(portal_client):
     assert unloaded.pk in pks
 
 
+def test_important_car_stays_requestable(portal_client):
+    """Пометка «Важное» не прячет авто из заявки клиента."""
+    from core.views_website.forms import TransportRequestForm
+
+    car = Car.objects.create(
+        year=2024,
+        brand="Ford",
+        vin="IMPORTANTREQVIN01",
+        status="UNLOADED",
+        client=portal_client,
+        is_important=True,
+    )
+    form = TransportRequestForm(client=portal_client)
+    assert car.pk in set(form.fields["cars"].queryset.values_list("pk", flat=True))
+
+
+def test_removed_car_returns_to_request_list(logged_client, portal_client, transport_request, car):
+    """После снятия с заявки авто снова есть в списке слева и с чекбоксом на главной."""
+    car.client = portal_client
+    car.save(update_fields=["client"])
+    assert transport_request.cars.filter(pk=car.pk).exists()
+    response = logged_client.post(
+        reverse("website:transport_request_remove_car", args=[transport_request.pk, car.pk]),
+        HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+    )
+    assert response.status_code == 200
+    assert not transport_request.cars.filter(pk=car.pk).exists()
+
+    page = logged_client.get(reverse("website:transport_requests"))
+    html = page.content.decode()
+    assert car.vin in html
+    assert f'value="{car.pk}"' in html
+
+    dashboard = logged_client.get(reverse("website:dashboard"))
+    dash = dashboard.content.decode()
+    assert f'class="form-check-input car-select" name="cars" value="{car.pk}"' in dash
+
+
 def test_transport_requests_page_hides_floating_cars(logged_client, portal_client):
     floating = Car.objects.create(
         year=2024, brand="Kia", vin="FLOATPAGEVIN00001", status="FLOATING", client=portal_client

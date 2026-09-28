@@ -29,10 +29,12 @@ def client_requestable_cars(client, *, exclude_request_pk=None, extra_cars=None)
     )
     if exclude_request_pk:
         in_other_active_request = in_other_active_request.exclude(pk=exclude_request_pk)
+    # «Важное» в заявку клиента не мешает: это напоминание сотруднику.
+    # В рейс (AutoTransport) такое авто по-прежнему не попадает, пока
+    # галочку не снимут — см. create_autotransport.
     cars_qs = (
         Car.objects.filter(client=client)
         .filter(status__in=REQUESTABLE_CAR_STATUSES)
-        .filter(is_important=False)
         .filter(~Exists(in_other_active_request))
         .order_by("-id")
     )

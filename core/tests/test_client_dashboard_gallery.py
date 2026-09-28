@@ -151,6 +151,23 @@ def test_dashboard_title_warning_when_scan_missing(portal_login):
     assert "title-tile doc-preview-btn" not in html
 
 
+def test_dashboard_shows_request_checkbox_for_important_car(portal_login):
+    http, owner = portal_login
+    car = Car.objects.create(
+        year=2024,
+        brand="Ford",
+        vin="IMPORTANTCAR00001",
+        status="UNLOADED",
+        client=owner,
+        is_important=True,
+    )
+    response = http.get(reverse("website:dashboard"))
+    assert response.status_code == 200
+    html = response.content.decode()
+    assert "IMPORTANTCAR00001" in html
+    assert f'class="form-check-input car-select" name="cars" value="{car.id}"' in html
+
+
 def test_dashboard_hides_request_checkbox_for_floating(portal_login):
     http, owner = portal_login
     Car.objects.create(
