@@ -23,6 +23,7 @@
 
 import logging
 import re
+from contextlib import contextmanager
 
 import requests
 from django.core.files.base import ContentFile
@@ -30,6 +31,37 @@ from django.core.files.base import ContentFile
 from core.services.gdrive_client import get_drive_api_client
 
 logger = logging.getLogger(__name__)
+
+# Крупный контейнер (400+ фото по ~10 с) качается больше часа, а cron
+# запускает синхронизацию каждые 3 часа — без замка запуски накладывались
+# и два процесса скачивали одну папку параллельно (дубли фото).
+_CONTAINER_SYNC_LOCK_TIMEOUT_SEC = 3 * 60 * 60
+
+
+@contextmanager
+def container_sync_lock(container_id):
+    """Замок на синхронизацию фото одного контейнера (общий для cron и Celery).
+
+    Отдаёт ``True``, если замок взят, и ``False``, если контейнер уже
+    синхронизирует другой процесс. Если кэш недоступен — работаем без замка.
+    """
+    from django.core.cache import cache
+
+    key = f"gdrive_photo_sync:{container_id}"
+    try:
+        acquired = cache.add(key, "1", _CONTAINER_SYNC_LOCK_TIMEOUT_SEC)
+    except Exception as exc:
+        logger.warning("[gdrive] lock unavailable for container %s: %s", container_id, exc)
+        yield True
+        return
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            try:
+                cache.delete(key)
+            except Exception:
+                logger.warning("[gdrive] failed to release lock for container %s", container_id)
 
 
 # Конфигурация папок Google Drive
@@ -396,6 +428,14 @@ class GoogleDriveSync:
         Returns:
             int: количество загруженных фотографий
         """
+        with container_sync_lock(container.pk) as acquired:
+            if not acquired:
+                logger.info(f"[SYNC] {container.number} - skipped: another sync of this container is running")
+                return 0
+            return GoogleDriveSync._download_folder_photos_locked(folder_url, container, photo_type)
+
+    @staticmethod
+    def _download_folder_photos_locked(folder_url, container, photo_type):
         from .models_website import ContainerPhoto
 
         try:
@@ -433,8 +473,12 @@ class GoogleDriveSync:
                 file_id = file_info["id"]
                 description = f"Google Drive: {filename}"
 
-                # Проверяем, не добавляли ли уже это фото
                 if description in existing_descriptions:
+                    continue
+                # Список выше снят в начале прохода: фото могло появиться за это
+                # время (архив, ручная загрузка, процесс без замка).
+                if ContainerPhoto.objects.filter(container=container, description=description).exists():
+                    existing_descriptions.add(description)
                     continue
 
                 try:
@@ -468,6 +512,7 @@ class GoogleDriveSync:
                     photo.photo.save(filename, ContentFile(file_content), save=False)
                     photo.save()  # Автоматически создаст миниатюру
 
+                    existing_descriptions.add(description)
                     photos_added += 1
 
                 except Exception as e:
