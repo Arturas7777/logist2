@@ -69,9 +69,9 @@ def test_document_not_before_invoice():
 
 def test_pick_payment_date_within_month_after_invoice():
     invoice_date = datetime.date(2026, 8, 12)
-    for _ in range(20):
+    for _ in range(50):
         day = docs.pick_payment_date(invoice_date)
-        assert invoice_date <= day <= invoice_date + datetime.timedelta(days=30)
+        assert invoice_date + datetime.timedelta(days=2) <= day <= invoice_date + datetime.timedelta(days=30)
         assert docs.is_business_day(day, ("BY",))
 
 
@@ -247,7 +247,7 @@ def test_generate_payment_order(transport_request, car):
     payment_date = datetime.date.fromisoformat(data["payment_date"])
     assert data["payment_number"].startswith(f"{payment_date:%d%m}-")
     invoice_date = datetime.date(2026, 8, 12)
-    assert invoice_date <= payment_date <= invoice_date + datetime.timedelta(days=30)
+    assert invoice_date + datetime.timedelta(days=2) <= payment_date <= invoice_date + datetime.timedelta(days=30)
     assert docs.is_business_day(payment_date, ("BY",))
     assert data["payer_bank_name"] == docs.DEFAULT_BELARUS_PAYER_BANK
     assert data["payer_bank_code"] == docs.DEFAULT_BELARUS_PAYER_BANK_CODE
@@ -260,6 +260,39 @@ def test_generate_payment_order(transport_request, car):
     data_flag = {**data, "payment_include_signature": "1", "payment_number": "", "payment_date": ""}
     _, _, notices_flag = docs.generate_document(transport_request, car, data_flag, "PAYMENT_ORDER")
     assert any("Подпись" in n for n in notices_flag)
+
+
+@pytest.mark.parametrize("stored_offset", [0, 1])
+def test_payment_order_stored_date_too_close_to_invoice_is_repicked(transport_request, car, stored_offset):
+    invoice_date = datetime.date(2026, 7, 29)
+    stored = invoice_date + datetime.timedelta(days=stored_offset)
+    data = {
+        **BUYER_DATA,
+        "invoice_number": "40055",
+        "invoice_date": invoice_date.isoformat(),
+        "invoice_amount": "2850",
+        "payment_date": stored.isoformat(),
+        "payment_number": f"{stored:%d%m}-80",
+    }
+    _, _, notices = docs.generate_document(transport_request, car, data, "PAYMENT_ORDER")
+    payment_date = datetime.date.fromisoformat(data["payment_date"])
+    assert payment_date >= invoice_date + datetime.timedelta(days=2)
+    assert data["payment_number"].startswith(f"{payment_date:%d%m}-")
+    assert any("слишком близко к инвойсу" in n for n in notices)
+
+
+def test_payment_order_keeps_valid_stored_date_and_number(transport_request, car):
+    data = {
+        **BUYER_DATA,
+        "invoice_number": "40055",
+        "invoice_date": "2026-07-29",
+        "invoice_amount": "2850",
+        "payment_date": "2026-08-04",
+        "payment_number": "0408-80",
+    }
+    docs.generate_document(transport_request, car, data, "PAYMENT_ORDER")
+    assert data["payment_date"] == "2026-08-04"
+    assert data["payment_number"] == "0408-80"
 
 
 def test_bank_stamp_date_and_variety(tmp_path, monkeypatch):

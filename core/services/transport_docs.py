@@ -4,6 +4,8 @@
 
 * ключевые «реальные» файлы — паспорт, инвойс, подпись (их нельзя сгенерировать);
 * платёжка и все остальные документы не могут быть датированы раньше инвойса;
+  платёжка — не раньше чем через ``PAYMENT_MIN_DAYS_AFTER_INVOICE`` дней после
+  инвойса (клиенту нужно время, чтобы получить инвойс и оплатить его);
 * дата любого генерируемого документа не должна попадать на выходной или
   праздничный день (страна праздников зависит от документа: инвойс и письмо —
   США, платёжка и обязательство — Беларусь, договор перевозки — Литва/Польша);
@@ -41,6 +43,9 @@ DOC_HOLIDAY_COUNTRIES = {
 
 # Документы, дата которых не может быть раньше даты инвойса.
 DOCS_NOT_BEFORE_INVOICE = {"PAYMENT_ORDER", "LETTER_USA", "OBLIGATION", "CONTRACT"}
+
+PAYMENT_MIN_DAYS_AFTER_INVOICE = 2
+PAYMENT_MAX_DAYS_AFTER_INVOICE = 30
 
 # Реквизиты плательщика для пакета на Беларусь — фиксированные, в UI не спрашиваем.
 DEFAULT_BELARUS_PAYER_IBAN = "BY04RSHN38455615894156834963"
@@ -199,22 +204,31 @@ def next_portal_number(series: str, seed: int) -> int:
     return SeriesCounter.next_value(series, seed)
 
 
+def payment_date_bounds(invoice_date: datetime.date) -> tuple[datetime.date, datetime.date]:
+    """Допустимый диапазон даты платёжки относительно даты инвойса (включительно)."""
+    return (
+        invoice_date + datetime.timedelta(days=PAYMENT_MIN_DAYS_AFTER_INVOICE),
+        invoice_date + datetime.timedelta(days=PAYMENT_MAX_DAYS_AFTER_INVOICE),
+    )
+
+
 def pick_payment_date(invoice_date: datetime.date) -> datetime.date:
     """Случайный рабочий день Беларуси в течение месяца после даты инвойса.
 
-    Диапазон: от даты инвойса (включительно) до +30 дней. Если в диапазоне
-    нет рабочих дней (крайне редко) — берётся ближайший рабочий день после инвойса.
+    Диапазон: от инвойса + ``PAYMENT_MIN_DAYS_AFTER_INVOICE`` до
+    + ``PAYMENT_MAX_DAYS_AFTER_INVOICE`` дней. Если в диапазоне нет рабочих
+    дней (крайне редко) — берётся ближайший рабочий день после начала диапазона.
     """
     countries = DOC_HOLIDAY_COUNTRIES["PAYMENT_ORDER"]
-    end = invoice_date + datetime.timedelta(days=30)
+    start, end = payment_date_bounds(invoice_date)
     candidates = [
         day
-        for offset in range((end - invoice_date).days + 1)
-        if is_business_day(day := invoice_date + datetime.timedelta(days=offset), countries)
+        for offset in range((end - start).days + 1)
+        if is_business_day(day := start + datetime.timedelta(days=offset), countries)
     ]
     if candidates:
         return random.choice(candidates)
-    return shift_to_business_day(invoice_date, countries)
+    return shift_to_business_day(start, countries)
 
 
 def pick_letter_usa_date(
@@ -393,14 +407,25 @@ def generate_document(
         if amount is None:
             raise PackageDataError("Укажите сумму инвойса в окне «Инвойс».")
         require(data, "buyer_name", "Сначала заполните данные покупателя в окне «Паспорт».")
-        date = parse_date(data.get("payment_date"))
-        if date is None or date < invoice_date or date > invoice_date + datetime.timedelta(days=30):
+        stored_date = parse_date(data.get("payment_date"))
+        earliest, latest = payment_date_bounds(invoice_date)
+        if stored_date is None or stored_date < earliest or stored_date > latest:
             date = pick_payment_date(invoice_date)
+            if stored_date is not None:
+                notices.append(
+                    f"Дата платёжки {stored_date.strftime('%d.%m.%Y')} слишком близко к инвойсу "
+                    f"({invoice_date.strftime('%d.%m.%Y')}) — платёжка должна быть не раньше чем "
+                    f"через {PAYMENT_MIN_DAYS_AFTER_INVOICE} дня после инвойса. "
+                    f"Новая дата: {date.strftime('%d.%m.%Y')}."
+                    if stored_date < earliest
+                    else f"Дата платёжки обновлена: {date.strftime('%d.%m.%Y')}."
+                )
         else:
-            date = shift_to_business_day(date, DOC_HOLIDAY_COUNTRIES["PAYMENT_ORDER"])
+            date = shift_to_business_day(stored_date, DOC_HOLIDAY_COUNTRIES["PAYMENT_ORDER"])
         data["payment_date"] = date.isoformat()
         number = (data.get("payment_number") or "").strip()
-        if not number:
+        # Номер начинается с ДДММ даты платёжки — при смене даты он должен смениться тоже.
+        if not number.startswith(f"{date:%d%m}-"):
             number = make_payment_number(date, _used_payment_numbers(transport_request, exclude_car=car))
         data["payment_number"] = number
         data["payer_bank_name"] = DEFAULT_BELARUS_PAYER_BANK
