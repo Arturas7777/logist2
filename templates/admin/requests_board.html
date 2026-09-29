@@ -326,7 +326,16 @@
                         <a class="pc-action primary" href="{{ card.url }}">Открыть карточку</a>
                         <a class="pc-action outline" href="{% url 'admin:core_transportrequest_change' tr.pk %}">В админке</a>
                     </div>
-                    {% if card.can_revert_to_draft %}
+                    {% if card.can_delete_draft %}
+                    <form method="post" action="{% url 'admin_request_delete_draft' tr.pk %}" class="rb-trash"
+                          onsubmit="return confirm('Удалить черновик заявки {{ tr.number }} полностью? Заявка исчезнет и у клиента, её авто снова станут свободными. Отменить это нельзя.');">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{% url 'admin_requests_board' %}?tab={{ active_tab }}{% if search %}&q={{ search|urlencode }}{% endif %}">
+                        <button type="submit" class="rb-trash-btn" title="Удалить черновик полностью">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </form>
+                    {% elif card.can_revert_to_draft %}
                     <form method="post" action="{% url 'admin_request_revert_to_draft' tr.pk %}" class="rb-trash"
                           onsubmit="return confirm('Удалить заявку {{ tr.number }} с доски? Если рейс ещё не оформлен, заявка станет черновиком.');">
                         {% csrf_token %}

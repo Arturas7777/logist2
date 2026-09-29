@@ -929,3 +929,109 @@ def test_revert_to_draft_closed_for_client(logged_client, transport_request):
     assert response.status_code in (302, 403)
     transport_request.refresh_from_db()
     assert transport_request.status == "SUBMITTED"
+
+
+# ---------------------------------------------------------------------------
+# Полное удаление черновика с доски
+# ---------------------------------------------------------------------------
+
+
+def _make_draft(transport_request):
+    transport_request.status = "DRAFT"
+    transport_request.save(update_fields=["status"])
+    return transport_request
+
+
+def test_board_draft_trash_deletes_fully(staff_client, transport_request):
+    _make_draft(transport_request)
+    body = staff_client.get(reverse("admin_requests_board"), {"tab": "drafts"}).content.decode()
+    assert reverse("admin_request_delete_draft", args=[transport_request.pk]) in body
+    assert reverse("admin_request_revert_to_draft", args=[transport_request.pk]) not in body
+
+
+def test_delete_draft_removes_request_files_and_frees_car(
+    staff_client, portal_user, transport_request, car, settings, tmp_path, django_capture_on_commit_callbacks
+):
+    import os
+
+    from django.test import Client as TestClient
+
+    settings.MEDIA_ROOT = str(tmp_path)
+    _make_draft(transport_request)
+    doc = TransportRequestDocument.objects.create(
+        request=transport_request,
+        car=car,
+        doc_type="PASSPORT",
+        file=SimpleUploadedFile("passport.jpg", b"jpeg-bytes", content_type="image/jpeg"),
+        is_generated=False,
+    )
+    file_path = doc.file.path
+    assert os.path.exists(file_path)
+    number = transport_request.number
+
+    with django_capture_on_commit_callbacks(execute=True):
+        response = staff_client.post(reverse("admin_request_delete_draft", args=[transport_request.pk]))
+
+    assert response.status_code == 302
+    assert not TransportRequest.objects.filter(pk=transport_request.pk).exists()
+    assert not TransportRequestDocument.objects.filter(pk=doc.pk).exists()
+    assert not os.path.exists(file_path)
+    assert not car.transport_requests.exists()
+
+    portal_client = TestClient()
+    portal_client.force_login(portal_user)
+    response = portal_client.get(reverse("website:transport_requests"))
+    assert response.status_code == 200
+    assert number not in response.content.decode()
+
+
+def test_delete_draft_unlinks_cars_from_draft_trip(staff_client, transport_request, car):
+    from core.services.transport_request_autotransport import create_autotransport
+
+    carrier = Carrier.objects.create(name="Maxer Transport", eori_code="PL123456789")
+    trip = create_autotransport(transport_request, carrier=carrier)
+    _make_draft(transport_request)
+
+    staff_client.post(reverse("admin_request_delete_draft", args=[transport_request.pk]))
+
+    trip.refresh_from_db()
+    assert not TransportRequest.objects.filter(pk=transport_request.pk).exists()
+    assert car not in trip.cars.all()
+
+
+def test_delete_draft_refuses_non_draft(staff_client, transport_request):
+    response = staff_client.post(reverse("admin_request_delete_draft", args=[transport_request.pk]))
+    assert response.status_code == 302
+    transport_request.refresh_from_db()
+    assert transport_request.status == "SUBMITTED"
+
+
+def test_delete_draft_closed_for_client(logged_client, transport_request):
+    _make_draft(transport_request)
+    logged_client.post(reverse("admin_request_delete_draft", args=[transport_request.pk]))
+    assert TransportRequest.objects.filter(pk=transport_request.pk).exists()
+
+
+def test_django_admin_delete_removes_files(
+    staff_client, transport_request, car, settings, tmp_path, django_capture_on_commit_callbacks
+):
+    import os
+
+    settings.MEDIA_ROOT = str(tmp_path)
+    doc = TransportRequestDocument.objects.create(
+        request=transport_request,
+        car=car,
+        doc_type="PASSPORT",
+        file=SimpleUploadedFile("passport.jpg", b"jpeg-bytes", content_type="image/jpeg"),
+        is_generated=False,
+    )
+    file_path = doc.file.path
+
+    with django_capture_on_commit_callbacks(execute=True):
+        staff_client.post(
+            reverse("admin:core_transportrequest_delete", args=[transport_request.pk]),
+            {"post": "yes"},
+        )
+
+    assert not TransportRequest.objects.filter(pk=transport_request.pk).exists()
+    assert not os.path.exists(file_path)

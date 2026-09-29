@@ -14,7 +14,7 @@
 POST-экшены возвращают JSON (инлайн-правка, сообщения) либо redirect на
 карточку / доску с ``django.contrib.messages`` — как в остальных админ-досках.
 Корзина на карточке доски возвращает заявку в черновик, если рейс ещё не
-оформлен.
+оформлен, а на черновике — удаляет заявку полностью (и из кабинета клиента).
 """
 
 from __future__ import annotations
@@ -238,7 +238,7 @@ def _board_card(transport_request) -> dict:
         for index, line in enumerate(plan, start=1)
     ]
 
-    from core.services.transport_request_autotransport import can_revert_to_draft
+    from core.services.transport_request_autotransport import can_delete_draft, can_revert_to_draft
 
     return {
         "request": transport_request,
@@ -248,6 +248,7 @@ def _board_card(transport_request) -> dict:
         "unread_emails": getattr(transport_request, "unread_email_links", 0) or 0,
         "url": reverse("admin_request_card", args=[transport_request.pk]),
         "can_revert_to_draft": can_revert_to_draft(transport_request),
+        "can_delete_draft": can_delete_draft(transport_request),
     }
 
 
@@ -459,6 +460,25 @@ def request_revert_to_draft(request: HttpRequest, pk: int):
         messages.success(request, f"Заявка {transport_request.number} возвращена в черновик.")
     else:
         messages.info(request, f"Заявка {transport_request.number} уже в черновиках.")
+    return redirect(next_url)
+
+
+@staff_member_required
+@require_POST
+def request_delete_draft(request: HttpRequest, pk: int):
+    """Корзина на черновике: заявка удаляется полностью, авто снова свободны."""
+    from core.services.transport_request_autotransport import DeleteDraftError, delete_draft
+
+    transport_request = get_object_or_404(TransportRequest, pk=pk)
+    next_url = _board_next_url(request)
+    number = transport_request.number
+    try:
+        delete_draft(transport_request)
+    except DeleteDraftError as exc:
+        messages.error(request, str(exc))
+        return redirect(next_url)
+
+    messages.success(request, f"Черновик заявки {number} удалён. Авто снова можно добавить в новую заявку.")
     return redirect(next_url)
 
 

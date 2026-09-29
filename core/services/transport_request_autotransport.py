@@ -198,3 +198,63 @@ def revert_to_draft(transport_request) -> bool:
         transport_request.number,
     )
     return True
+
+
+class DeleteDraftError(Exception):
+    """Заявку нельзя удалить полностью: она не черновик или рейс оформлен."""
+
+
+def can_delete_draft(transport_request) -> bool:
+    """Можно ли корзиной удалить заявку насовсем (только черновик без оформленного рейса)."""
+    return transport_request.status == "DRAFT" and can_revert_to_draft(transport_request)
+
+
+def _request_file_refs(transport_request) -> list[tuple]:
+    refs = []
+    for doc in transport_request.documents.all():
+        if doc.file:
+            refs.append((doc.file.storage, doc.file.name))
+    for upload in transport_request.bulk_uploads.all():
+        if upload.file:
+            refs.append((upload.file.storage, upload.file.name))
+    for message in transport_request.messages.all():
+        if message.attachment:
+            refs.append((message.attachment.storage, message.attachment.name))
+    return refs
+
+
+def _delete_files(refs) -> None:
+    for storage, name in refs:
+        try:
+            storage.delete(name)
+        except Exception:  # noqa: BLE001 — запись уже удалена, битый файл не должен ронять запрос
+            logger.warning("[transport] не удалось удалить файл %s", name, exc_info=True)
+
+
+def purge_request(transport_request) -> None:
+    """Удалить заявку из базы вместе с файлами документов.
+
+    Машины освобождаются сами (занятость авто — это связь с активной заявкой);
+    если заявка успела создать черновик рейса, её авто снимаются и с него.
+    Файлы стираются только после успешного коммита.
+    """
+    from django.db import transaction
+
+    number = transport_request.number
+    with transaction.atomic():
+        auto = transport_request.auto_transport
+        if auto is not None and auto.status == "DRAFT":
+            car_ids = list(transport_request.cars.values_list("pk", flat=True))
+            if car_ids:
+                auto.cars.remove(*car_ids)
+        refs = _request_file_refs(transport_request)
+        transport_request.delete()
+        transaction.on_commit(lambda: _delete_files(refs))
+    logger.info("[transport] заявка %s удалена полностью", number)
+
+
+def delete_draft(transport_request) -> None:
+    """Корзина на черновике: заявка удаляется насовсем — у сотрудника и у клиента."""
+    if not can_delete_draft(transport_request):
+        raise DeleteDraftError("Удалить полностью можно только черновик заявки без оформленного рейса.")
+    purge_request(transport_request)

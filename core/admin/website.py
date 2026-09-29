@@ -400,6 +400,17 @@ class TransportRequestAdmin(admin.ModelAdmin):
     status_display.short_description = "Статус"
     status_display.admin_order_field = "status"
 
+    def delete_model(self, request, obj):
+        from core.services.transport_request_autotransport import purge_request
+
+        purge_request(obj)
+
+    def delete_queryset(self, request, queryset):
+        from core.services.transport_request_autotransport import purge_request
+
+        for obj in queryset:
+            purge_request(obj)
+
 
 class TransportDocumentRuleForm(forms.ModelForm):
     """Обязательные документы — чекбоксами, а не JSON-строкой."""
