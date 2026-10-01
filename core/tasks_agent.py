@@ -17,14 +17,19 @@ logger = logging.getLogger(__name__)
 _ANALYZE_LOCK_KEY = "agent_email_analysis_lock"
 _ANALYZE_LOCK_TIMEOUT_SEC = 15 * 60
 
+# Пауза разбора входящей почты: предложения дел дорабатываются, токены не тратим.
+# Чтобы вернуть — поставить False и снова добавить beat «agent-analyze-new-emails»
+# в logist2/celery.py (crontab minute="*/10").
+EMAIL_ANALYSIS_PAUSED = True
+
 
 @shared_task(bind=True, max_retries=0, time_limit=900, soft_time_limit=840)
 def analyze_new_emails_task(self) -> dict:
     """Разбор новых входящих писем агентом (каждые 10 минут)."""
     from core.services.agent.llm_client import AgentBudgetExceeded, agent_is_enabled
 
-    if not agent_is_enabled():
-        return {"status": "disabled"}
+    if EMAIL_ANALYSIS_PAUSED or not agent_is_enabled():
+        return {"status": "paused" if EMAIL_ANALYSIS_PAUSED else "disabled"}
 
     if not cache.add(_ANALYZE_LOCK_KEY, "1", _ANALYZE_LOCK_TIMEOUT_SEC):
         logger.info("[analyze_new_emails_task] Уже идёт анализ — пропуск.")
