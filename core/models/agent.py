@@ -413,3 +413,41 @@ class AgentPolicy(models.Model):
         """Режим для типа действия. Нет записи — спрашивать (безопасный дефолт)."""
         policy = cls.objects.filter(action_type=action_type).only("mode").first()
         return policy.mode if policy else cls.MODE_ASK
+
+
+class AgentInboxWatch(models.Model):
+    """Синглтон (pk=1): включён ли разбор входящей почты с доски дел.
+
+    Пока ``enabled`` ложно, периодическая задача ничего не отправляет в LLM.
+    ``analyze_since`` — момент включения: письма, полученные раньше, не
+    разбираются. Исключение — ``bootstrap_ids``, последние письма на момент
+    включения (их как раз нужно разобрать).
+    """
+
+    enabled = models.BooleanField(default=False, verbose_name="Включён")
+    enabled_at = models.DateTimeField(null=True, blank=True, verbose_name="Включён в")
+    analyze_since = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Разбирать письма не старше",
+        help_text="Письма с received_at раньше этой метки не анализируются, кроме bootstrap_ids.",
+    )
+    bootstrap_ids = models.JSONField(default=list, blank=True, verbose_name="Стартовые письма")
+    updated_by = models.CharField(max_length=150, blank=True, default="", verbose_name="Изменил")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
+
+    class Meta:
+        verbose_name = "Разбор почты агентом"
+        verbose_name_plural = "Разбор почты агентом"
+
+    def __str__(self) -> str:
+        return "ИИ-помощник включён" if self.enabled else "ИИ-помощник выключен"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls) -> "AgentInboxWatch":
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj

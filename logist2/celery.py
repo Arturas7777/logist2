@@ -96,9 +96,12 @@ app.conf.beat_schedule = {
         "schedule": crontab(hour=4, minute=15),
     },
     # ── AI-агент (docs/AI_AGENT_PLAN.md). No-op пока AGENT_ENABLED=False. ──
-    # Разбор почты (agent-analyze-new-emails, каждые 10 мин) на паузе:
-    # функционал дорабатывается, LLM не вызываем.
-    # См. core.tasks_agent.EMAIL_ANALYSIS_PAUSED.
+    # Разбор почты ещё и выключен, пока на доске дел не нажали «Включить»
+    # (AgentInboxWatch). */10: анализ не время-критичен, LLM-вызовы батчим.
+    "agent-analyze-new-emails": {
+        "task": "core.tasks_agent.analyze_new_emails_task",
+        "schedule": crontab(minute="*/10"),
+    },
     # Утренний план дня (будни 07:00 по серверному времени).
     "agent-morning-digest": {
         "task": "core.tasks_agent.morning_digest_task",

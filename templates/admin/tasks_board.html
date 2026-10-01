@@ -11,6 +11,14 @@
     .tb-header h1 { font-size: 1.6em; font-weight: 800; color: #1a1a2e; margin: 0; letter-spacing: -0.03em; }
     .tb-header .tb-sub { color: #7c7c9a; font-size: .92em; margin-top: 4px; }
     .tb-header-right { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .tb-header-right form { margin: 0; }
+    .tb-assist {
+        display: flex; align-items: center; gap: 8px; background: #fff;
+        border: 1px solid rgba(108,92,231,.12); border-radius: 12px; padding: 6px 8px 6px 12px;
+        box-shadow: 0 1px 4px rgba(108,92,231,.07);
+    }
+    .tb-assist .label { font-size: .82em; font-weight: 700; color: #1a1a2e; }
+    .tb-assist .hint { font-size: .75em; color: #7c7c9a; max-width: 280px; line-height: 1.35; }
     .tb-badge {
         background: #fff; padding: 8px 14px; border-radius: 10px; font-size: .82em;
         font-weight: 600; color: #4a4a68; border: 1px solid rgba(108,92,231,.1);
@@ -105,11 +113,34 @@
             <div class="tb-sub">Задачи, предложения и вопросы AI-агента</div>
         </div>
         <div class="tb-header-right">
-            {% if agent_stats.enabled %}
-                <span class="tb-badge on"><i class="bi bi-robot"></i> Агент включён</span>
-            {% else %}
-                <span class="tb-badge off"><i class="bi bi-robot"></i> Агент выключен (AGENT_ENABLED)</span>
-            {% endif %}
+            <div class="tb-assist">
+                <i class="bi bi-robot"></i>
+                <div>
+                    <div class="label">ИИ-помощник {% if mail_watch.enabled %}включён{% else %}выключен{% endif %}</div>
+                    <div class="hint">
+                        {% if mail_watch.enabled %}
+                            С {{ mail_watch.enabled_at|date:"d.m.Y H:i" }} разбирает новые письма. Более ранние, кроме 10 последних на момент включения, не трогает.
+                        {% else %}
+                            Почту не разбирает. После включения возьмёт 10 последних писем и дальше только новые.
+                        {% endif %}
+                    </div>
+                </div>
+                {% if mail_watch.enabled %}
+                    <form method="post" action="{% url 'agent_mail_assistant_off' %}"
+                          onsubmit="return confirm('Выключить ИИ-помощника? Новые письма больше не будут разбираться.');">
+                        {% csrf_token %}
+                        <button type="submit" class="tb-btn reject">Выключить</button>
+                    </form>
+                {% elif agent_stats.enabled %}
+                    <form method="post" action="{% url 'agent_mail_assistant_on' %}"
+                          onsubmit="return confirm('Включить ИИ-помощника? Он разберёт 10 последних входящих писем и дальше будет брать только новые. Письма, которые пришли раньше, не тронет.');">
+                        {% csrf_token %}
+                        <button type="submit" class="tb-btn approve">Включить</button>
+                    </form>
+                {% else %}
+                    <button type="button" class="tb-btn neutral" disabled title="AGENT_ENABLED выключен или нет ключа API">Включить</button>
+                {% endif %}
+            </div>
             <span class="tb-badge">Запусков сегодня: {{ agent_stats.runs_today }}{% if agent_stats.errors_today %} (ошибок: {{ agent_stats.errors_today }}){% endif %}</span>
             <span class="tb-badge">LLM сегодня: ${{ agent_stats.spent_today|floatformat:2 }} / ${{ agent_stats.budget|floatformat:0 }}</span>
             <a class="tb-btn neutral" href="/admin/core/task/"><i class="bi bi-table"></i> Классический список</a>

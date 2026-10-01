@@ -76,6 +76,8 @@ from core.views.agent_board import (
     agent_question_dismiss,
     task_delegate_to_agent,
     task_complete_from_board,
+    agent_mail_assistant_on,
+    agent_mail_assistant_off,
 )
 
 router = DefaultRouter()
@@ -171,6 +173,8 @@ urlpatterns = [
     path("admin/labels/sheet/", print_labels_sheet, name="labels_print_sheet"),
     # ── Дела + AI-агент (docs/AI_AGENT_PLAN.md) ──────────────────────────────
     path("admin/tasks-board/", tasks_board_page, name="tasks_board"),
+    path("admin/tasks-board/mail-assistant/on/", agent_mail_assistant_on, name="agent_mail_assistant_on"),
+    path("admin/tasks-board/mail-assistant/off/", agent_mail_assistant_off, name="agent_mail_assistant_off"),
     path("admin/tasks-board/action/<int:action_id>/approve/", agent_action_approve, name="agent_action_approve"),
     path("admin/tasks-board/action/<int:action_id>/reject/", agent_action_reject, name="agent_action_reject"),
     path("admin/tasks-board/question/<int:question_id>/answer/", agent_question_answer, name="agent_question_answer"),

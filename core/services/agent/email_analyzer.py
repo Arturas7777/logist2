@@ -17,8 +17,10 @@ tool-use, дёшево. Результат проходит через
 from __future__ import annotations
 
 import logging
+from datetime import date, datetime, time
 
 from django.conf import settings
+from django.db.models import Q
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -192,19 +194,24 @@ def _safe_float(value) -> float | None:
 
 
 def analyze_new_emails(limit: int | None = None) -> dict:
-    """Разбирает накопившиеся новые входящие письма (вызывается из Celery).
+    """Разбирает входящие письма, пока помощник включён с доски дел.
 
-    Берёт INCOMING-письма без ``agent_analyzed_at`` за последние 14 дней
-    (хвост истории не трогаем) — не больше ``AGENT_MAX_EMAILS_PER_RUN``
-    за один запуск. Настройка ``AGENT_ANALYZE_SINCE`` задаёт жёсткую
-    нижнюю границу: письма старше неё не анализируются никогда.
+    Выключенный помощник — пустой отчёт, LLM не вызывается.
+    В работе только письма с ``received_at`` не раньше момента включения
+    и стартовый набор (последние письма на момент включения). Более ранние
+    не помечаются и не анализируются. ``AGENT_ANALYZE_SINCE`` по-прежнему
+    не даёт уйти глубже заданной даты. За запуск — не больше
+    ``AGENT_MAX_EMAILS_PER_RUN``.
     """
-    from datetime import date, datetime, time
+    from core.models import AgentInboxWatch, ContainerEmail
 
-    from core.models import ContainerEmail
+    empty = {"processed": 0, "tasks_proposed": 0, "questions": 0, "nothing": 0, "errors": 0}
+    watch = AgentInboxWatch.load()
+    if not watch.enabled or watch.analyze_since is None:
+        return {**empty, "paused": True}
 
     limit = limit or int(getattr(settings, "AGENT_MAX_EMAILS_PER_RUN", 20))
-    since = timezone.now() - timezone.timedelta(days=14)
+    since = watch.analyze_since
     floor_raw = getattr(settings, "AGENT_ANALYZE_SINCE", "")
     if floor_raw:
         try:
@@ -213,15 +220,21 @@ def analyze_new_emails(limit: int | None = None) -> dict:
         except ValueError:
             logger.warning("AGENT_ANALYZE_SINCE=%r не похоже на ISO-дату — игнорирую", floor_raw)
 
+    eligible = Q(received_at__gte=since)
+    bootstrap_ids = [pk for pk in (watch.bootstrap_ids or []) if isinstance(pk, int)]
+    if bootstrap_ids:
+        eligible |= Q(pk__in=bootstrap_ids)
+
     emails = list(
         ContainerEmail.objects.filter(
             direction=ContainerEmail.DIRECTION_INCOMING,
             agent_analyzed_at__isnull=True,
-            received_at__gte=since,
             # Контентные дубли рассылок и отфильтрованные письма не анализируем —
             # они скрыты и из карточек (см. email_ingest._ingest_one).
             hidden_reason="",
-        ).order_by("received_at")[:limit]
+        )
+        .filter(eligible)
+        .order_by("received_at", "pk")[:limit]
     )
 
     results = {"processed": 0, "tasks_proposed": 0, "questions": 0, "nothing": 0, "errors": 0}

@@ -352,10 +352,24 @@ def test_thread_context_empty_for_single_email():
     assert describe_thread_context(email) == ""
 
 
+def arm_watch(since=None, ids=None):
+    """Включает помощника так, чтобы выборка тестов не упиралась в паузу."""
+    from core.models import AgentInboxWatch
+
+    watch = AgentInboxWatch.load()
+    watch.enabled = True
+    watch.enabled_at = timezone.now()
+    watch.analyze_since = since or (timezone.now() - timezone.timedelta(days=21))
+    watch.bootstrap_ids = ids or []
+    watch.save()
+    return watch
+
+
 def test_budget_exceeded_does_not_mark_email_analyzed():
     from core.services.agent import email_analyzer
     from core.services.agent.llm_client import AgentBudgetExceeded
 
+    arm_watch()
     first = make_email(subject="first", thread_id="tb1")
     second = make_email(subject="second", thread_id="tb2")
 
@@ -378,6 +392,7 @@ def test_budget_exceeded_does_not_mark_email_analyzed():
 def test_analyze_since_floor(settings):
     from core.services.agent import email_analyzer
 
+    arm_watch(since=timezone.make_aware(timezone.datetime(2020, 1, 1)))
     settings.AGENT_ANALYZE_SINCE = "2026-06-01"
     old = make_email(
         subject="old-may",
@@ -401,6 +416,7 @@ def test_analyze_since_floor(settings):
 def test_analyze_new_emails_skips_hidden():
     from core.services.agent import email_analyzer
 
+    arm_watch()
     make_email(subject="visible", thread_id="t1")
     make_email(subject="dup", thread_id="t2", hidden_reason=ContainerEmail.HIDDEN_DUPLICATE)
     make_email(subject="filtered", thread_id="t3", hidden_reason=ContainerEmail.HIDDEN_FILTERED)
@@ -519,9 +535,10 @@ def test_analyze_email_llm_error_marks_analyzed():
 
 
 def test_analyze_new_emails_selection():
-    """Берёт только INCOMING без agent_analyzed_at и не старше 14 дней."""
+    """Берёт только INCOMING без agent_analyzed_at и не старше момента включения."""
     from core.services.agent import email_analyzer
 
+    arm_watch(since=timezone.now() - timezone.timedelta(days=14))
     fresh = make_email(subject="fresh")
     make_email(
         subject="old",
@@ -548,6 +565,101 @@ def test_analyze_new_emails_selection():
 
     assert seen == [fresh.pk]
     assert report["processed"] == 1
+
+
+def test_analyze_new_emails_paused_does_not_touch_mail():
+    from core.services.agent import email_analyzer
+
+    email = make_email(subject="while-off", thread_id="toff")
+    analyzed = []
+    with patch.object(
+        email_analyzer, "analyze_email", side_effect=lambda e: analyzed.append(e.pk) or {"action": "NOTHING"}
+    ):
+        report = email_analyzer.analyze_new_emails()
+    assert report.get("paused") is True
+    assert analyzed == []
+    email.refresh_from_db()
+    assert email.agent_analyzed_at is None
+
+
+def test_enable_takes_last_ten_then_only_new():
+    """После включения — 10 последних и письма новее метки. Более ранние остаются."""
+    from core.services.agent import email_analyzer
+    from core.services.agent.inbox_watch import BOOTSTRAP_LIMIT, enable_mail_assistant
+
+    base = timezone.now() - timezone.timedelta(hours=2)
+    emails = []
+    for i in range(BOOTSTRAP_LIMIT + 2):
+        emails.append(
+            make_email(
+                subject=f"slot-{i}",
+                message_id=f"<slot-{i}@test>",
+                thread_id=f"slot-{i}",
+                received_at=base + timezone.timedelta(minutes=i),
+            )
+        )
+    hidden = make_email(
+        subject="hidden-new",
+        message_id="<hidden-new@test>",
+        thread_id="hidden-new",
+        hidden_reason=ContainerEmail.HIDDEN_DUPLICATE,
+        received_at=base + timezone.timedelta(hours=3),
+    )
+    # Самое свежее из видимых уже разобрано — слот занимает, но в LLM не идёт.
+    emails[-1].agent_analyzed_at = timezone.now()
+    emails[-1].save(update_fields=["agent_analyzed_at"])
+
+    watch, pending = enable_mail_assistant("boss")
+    assert watch.enabled is True
+    assert pending == BOOTSTRAP_LIMIT - 1
+    assert hidden.pk not in watch.bootstrap_ids
+    assert emails[-1].pk in watch.bootstrap_ids
+    assert emails[0].pk not in watch.bootstrap_ids
+    assert emails[1].pk not in watch.bootstrap_ids
+
+    fresh = make_email(
+        subject="after-on",
+        message_id="<after-on@test>",
+        thread_id="after-on",
+        received_at=watch.analyze_since + timezone.timedelta(seconds=30),
+    )
+
+    seen: list[int] = []
+
+    def fake_analyze(email):
+        seen.append(email.pk)
+        return {"action": "NOTHING"}
+
+    with patch.object(email_analyzer, "analyze_email", side_effect=fake_analyze):
+        email_analyzer.analyze_new_emails()
+
+    expected = {email.pk for email in emails[2:-1]}
+    expected.add(fresh.pk)
+    assert set(seen) == expected
+    for skipped in (emails[0], emails[1], hidden):
+        skipped.refresh_from_db()
+        assert skipped.agent_analyzed_at is None
+
+
+def test_board_toggles_mail_assistant(client):
+    make_staff_client(client)
+    with (
+        patch("core.services.agent.llm_client.agent_is_enabled", return_value=True),
+        patch("core.tasks_agent.analyze_new_emails_task.delay") as delay,
+    ):
+        response = client.post(reverse("agent_mail_assistant_on"))
+    assert response.status_code == 302
+    delay.assert_called_once()
+    from core.models import AgentInboxWatch
+
+    watch = AgentInboxWatch.load()
+    assert watch.enabled is True
+
+    response = client.post(reverse("agent_mail_assistant_off"))
+    assert response.status_code == 302
+    watch.refresh_from_db()
+    assert watch.enabled is False
+    assert watch.bootstrap_ids == []
 
 
 # ---------------------------------------------------------------------------

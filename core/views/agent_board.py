@@ -21,7 +21,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from core.models import AgentAction, AgentPolicy, AgentQuestion, AgentRun, Task
+from core.models import AgentAction, AgentInboxWatch, AgentPolicy, AgentQuestion, AgentRun, Task
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +72,7 @@ def tasks_board_page(request: HttpRequest):
     }
 
     policies = {p.action_type: p.get_mode_display() for p in AgentPolicy.objects.all()}
+    mail_watch = AgentInboxWatch.load()
 
     from logist2.admin_site import admin_site
 
@@ -85,6 +86,7 @@ def tasks_board_page(request: HttpRequest):
         "digest": get_latest_digest(),
         "agent_stats": agent_stats,
         "policies": policies,
+        "mail_watch": mail_watch,
     }
     return render(request, "admin/tasks_board.html", context)
 
@@ -170,6 +172,55 @@ def agent_question_dismiss(request: HttpRequest, question_id: int):
     question.answered_at = timezone.now()
     question.save(update_fields=["status", "answered_by", "answered_at"])
     messages.info(request, "Вопрос закрыт без ответа.")
+    return redirect("tasks_board")
+
+
+@staff_member_required
+@require_POST
+def agent_mail_assistant_on(request: HttpRequest):
+    """Включить разбор почты: 10 последних писем и всё, что придёт после."""
+    from core.services.agent.inbox_watch import enable_mail_assistant
+    from core.services.agent.llm_client import agent_is_enabled
+
+    if not agent_is_enabled():
+        messages.error(request, "Помощник не запускается: AGENT_ENABLED выключен или нет ANTHROPIC_API_KEY.")
+        return redirect("tasks_board")
+
+    watch, pending = enable_mail_assistant(_username(request))
+    try:
+        from core.tasks_agent import analyze_new_emails_task
+
+        analyze_new_emails_task.delay()
+    except Exception:
+        logger.exception("Не удалось сразу поставить разбор почты")
+        messages.warning(
+            request,
+            "ИИ-помощник включён, но очередь сейчас недоступна. Разбор начнётся в ближайшие 10 минут.",
+        )
+        return redirect("tasks_board")
+
+    when = timezone.localtime(watch.enabled_at).strftime("%d.%m.%Y %H:%M") if watch.enabled_at else ""
+    if pending:
+        messages.success(
+            request,
+            f"ИИ-помощник включён ({when}). Разбирает {pending} из последних писем, дальше — только новые. Более ранние не трогает.",
+        )
+    else:
+        messages.success(
+            request,
+            f"ИИ-помощник включён ({when}). Последние письма уже разобраны, дальше — только новые. Более ранние не трогает.",
+        )
+    return redirect("tasks_board")
+
+
+@staff_member_required
+@require_POST
+def agent_mail_assistant_off(request: HttpRequest):
+    """Выключить разбор почты. Новые письма копятся, но в LLM не уходят."""
+    from core.services.agent.inbox_watch import disable_mail_assistant
+
+    disable_mail_assistant(_username(request))
+    messages.info(request, "ИИ-помощник выключен. Почта больше не разбирается.")
     return redirect("tasks_board")
 
 
