@@ -289,6 +289,21 @@ class LogistAdminSite(BaseAdminSite):
     # ────────────────────────────────────────────────────────────────────────
     SIDEBAR_COUNTERS_CACHE_KEY = "admin_sidebar_counters"
     SIDEBAR_COUNTERS_TTL = 60
+    # Клик по бейджу открывает список уже с фильтром.
+    SIDEBAR_COUNTER_QUERIES = {
+        "car": "emails=unread",
+        "container": "emails=unread",
+        "autotransport": "emails=unread",
+        "banktransaction": "reconciled=unmatched",
+        "newinvoice": "status__exact=OVERDUE",
+    }
+    SIDEBAR_COUNTER_TITLES = {
+        "car": "Только авто с непрочитанными письмами",
+        "container": "Только контейнеры с непрочитанными письмами",
+        "autotransport": "Только автовозы с непрочитанными письмами",
+        "banktransaction": "Только несверенные операции",
+        "newinvoice": "Только просроченные счета",
+    }
 
     @classmethod
     def get_sidebar_counters(cls):
@@ -303,6 +318,7 @@ class LogistAdminSite(BaseAdminSite):
         if cached is not None:
             return cached
 
+        from core.models import AutoTransport
         from core.models.banking import BankTransaction
         from core.models.billing import NewInvoice
         from core.models.email import CarEmailLink, ContainerEmailLink
@@ -310,6 +326,10 @@ class LogistAdminSite(BaseAdminSite):
         counters = {
             "car": (CarEmailLink.objects.filter(is_read=False).count(), "alert"),
             "container": (ContainerEmailLink.objects.filter(is_read=False).count(), "alert"),
+            "autotransport": (
+                AutoTransport.objects.filter(cars__email_links__is_read=False).distinct().count(),
+                "alert",
+            ),
             # Та же логика, что BankReconciliationFilter(value="unmatched").
             "banktransaction": (
                 BankTransaction.objects.filter(
@@ -368,6 +388,12 @@ class LogistAdminSite(BaseAdminSite):
                     model_url = model.get("admin_url", "")
                     is_active = current_path.startswith(model_url) if model_url else False
                     count, count_level = counters.get(entry, (0, ""))
+                    count_url = ""
+                    count_title = ""
+                    query = self.SIDEBAR_COUNTER_QUERIES.get(entry)
+                    if count and query and model_url:
+                        count_url = f"{model_url}?{query}"
+                        count_title = self.SIDEBAR_COUNTER_TITLES.get(entry, str(count))
                     items.append(
                         {
                             "name": model.get("name", ""),
@@ -378,6 +404,8 @@ class LogistAdminSite(BaseAdminSite):
                             "view_only": not model.get("add_url"),
                             "count": count,
                             "count_level": count_level,
+                            "count_url": count_url,
+                            "count_title": count_title,
                         }
                     )
                 elif "subgroup" in entry:

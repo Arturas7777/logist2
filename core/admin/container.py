@@ -1325,7 +1325,7 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
 
     def get_changelist(self, request, **kwargs):
         """Adds default filtering for statuses 'In Port' and 'Unloaded'"""
-        if not request.GET.get("status_multi"):
+        if not request.GET.get("status_multi") and not request.GET.get("emails"):
             get_params = request.GET.copy()
             get_params.setlist("status_multi", ["IN_PORT", "UNLOADED"])
             request.GET = get_params

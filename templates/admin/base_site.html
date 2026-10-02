@@ -387,8 +387,10 @@ document.addEventListener('DOMContentLoaded', function() {
             <li>
                 <a href="{{ item.url }}" class="{% if item.active %}active{% endif %}">
                     <i class="bi {{ item.icon }}"></i> {{ item.name }}
-                    {% if item.count %}<span class="cm-nav-count{% if item.count_level == 'warn' %} cm-nav-count--warn{% endif %}" title="{{ item.count }}">{{ item.count }}</span>{% endif %}
                 </a>
+                {% if item.count %}
+                <a href="{{ item.count_url|default:item.url }}" class="cm-nav-count{% if item.count_level == 'warn' %} cm-nav-count--warn{% endif %}" title="{{ item.count_title|default:item.count }}">{{ item.count }}</a>
+                {% endif %}
             </li>
             {% endif %}
             {% endfor %}

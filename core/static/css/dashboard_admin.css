@@ -336,6 +336,8 @@ body.login .submit-row input[type="submit"]:hover {
 }
 .cm-sidebar-nav li {
     margin: 1px 0;
+    display: flex;
+    align-items: center;
 }
 .cm-sidebar-nav li a {
     display: flex;
@@ -351,6 +353,8 @@ body.login .submit-row input[type="submit"]:hover {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    flex: 1;
+    min-width: 0;
 }
 .cm-sidebar-nav li a:hover {
     background: var(--cm-bg);
@@ -4798,8 +4802,9 @@ a.cm-status-badge-lg:hover {
 .cm-summary-bar .cm-summary-num--zero { background: #f1f5f9; color: var(--cm-text-muted); }
 
 /* Счётчики в сайдбаре (V9) */
-.cm-sidebar-nav a .cm-nav-count {
-    margin-left: auto;
+.cm-sidebar-nav a.cm-nav-count {
+    flex: 0 0 auto;
+    margin: 0 8px 0 0;
     min-width: 20px;
     padding: 1px 6px;
     border-radius: 100px;
@@ -4810,8 +4815,16 @@ a.cm-status-badge-lg:hover {
     background: #ef4444;
     color: #fff;
     font-variant-numeric: tabular-nums;
+    gap: 0;
+    overflow: visible;
 }
-.cm-sidebar-nav a .cm-nav-count--warn { background: #f59e0b; }
+.cm-sidebar-nav a.cm-nav-count:hover {
+    background: #dc2626;
+    color: #fff;
+    text-decoration: none;
+}
+.cm-sidebar-nav a.cm-nav-count.cm-nav-count--warn { background: #f59e0b; }
+.cm-sidebar-nav a.cm-nav-count.cm-nav-count--warn:hover { background: #d97706; }
 
 /* ===== TRANSITION ===== */
 *, *::before, *::after {

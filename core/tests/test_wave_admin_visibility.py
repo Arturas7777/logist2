@@ -258,7 +258,8 @@ def test_sidebar_counters_and_subgroups(staff_client):
     # Прямая ссылка на список дел
     assert "Все дела (список)" in html
     # Счётчик OVERDUE у инвойсов
-    assert '<span class="cm-nav-count" title="2">2</span>' in html
+    assert 'href="/admin/core/newinvoice/?status__exact=OVERDUE"' in html
+    assert ">2</a>" in html
 
 
 def test_sidebar_counters_cached():
@@ -266,7 +267,7 @@ def test_sidebar_counters_cached():
 
     cache.clear()
     first = LogistAdminSite.get_sidebar_counters()
-    assert set(first) == {"car", "container", "banktransaction", "newinvoice"}
+    assert set(first) == {"car", "container", "autotransport", "banktransaction", "newinvoice"}
     assert cache.get(LogistAdminSite.SIDEBAR_COUNTERS_CACHE_KEY) == first
 
 
