@@ -24,6 +24,7 @@
   var downloadBtn = document.getElementById("cm-photo-download");
   var viewer = document.getElementById("cm-photo-viewer");
   var viewerImg = viewer.querySelector("[data-viewer-img]");
+  var viewerStage = viewer.querySelector("[data-stage]");
   var viewerCounter = viewer.querySelector("[data-counter]");
 
   var photosUrl = modal.getAttribute("data-photos-url");
@@ -34,6 +35,11 @@
   var activeKey = "all";
   var viewerIndex = 0;
   var viewerScale = 1;
+  var viewerPanX = 0;
+  var viewerPanY = 0;
+  var viewerDragging = false;
+  var viewerDragX = 0;
+  var viewerDragY = 0;
 
   function csrfToken() {
     var input = document.querySelector("[name=csrfmiddlewaretoken]");
@@ -180,12 +186,27 @@
       });
   }
 
+  function resetZoom() {
+    viewerScale = 1;
+    viewerPanX = 0;
+    viewerPanY = 0;
+  }
+
+  function paintZoom(animated) {
+    viewerImg.style.transition = animated ? "transform .2s ease" : "none";
+    viewerImg.style.transform = "scale(" + viewerScale + ") translate(" + viewerPanX + "px, " + viewerPanY + "px)";
+    viewerStage.style.cursor = viewerDragging ? "grabbing" : (viewerScale > 1 ? "grab" : "default");
+    viewer.querySelectorAll(".cm-photo-viewer__nav").forEach(function (button) {
+      button.classList.toggle("is-dim", viewerScale > 1);
+    });
+  }
+
   function applyViewer() {
     var photos = activePhotos();
     var photo = photos[viewerIndex];
     if (!photo) return;
     viewerImg.src = photo.url;
-    viewerImg.style.transform = "scale(" + viewerScale + ")";
+    paintZoom(false);
     viewerCounter.textContent = (viewerIndex + 1) + " / " + photos.length;
     viewer.querySelector("[data-nav='-1']").hidden = viewerIndex === 0;
     viewer.querySelector("[data-nav='1']").hidden = viewerIndex >= photos.length - 1;
@@ -193,7 +214,7 @@
 
   function openViewer(index) {
     viewerIndex = index;
-    viewerScale = 1;
+    resetZoom();
     applyViewer();
     viewer.hidden = false;
   }
@@ -208,7 +229,7 @@
     var next = viewerIndex + delta;
     if (next < 0 || next >= photos.length) return;
     viewerIndex = next;
-    viewerScale = 1;
+    resetZoom();
     applyViewer();
   }
 
@@ -275,13 +296,49 @@
     link.click();
   });
   viewer.querySelectorAll("[data-zoom]").forEach(function (button) {
-    button.addEventListener("click", function () {
+    button.addEventListener("click", function (event) {
+      event.stopPropagation();
       var mode = button.getAttribute("data-zoom");
-      if (mode === "in") viewerScale = Math.min(viewerScale + 0.5, 4);
+      if (mode === "in") viewerScale = Math.min(viewerScale + 0.5, 5);
       else if (mode === "out") viewerScale = Math.max(viewerScale - 0.5, 1);
       else viewerScale = 1;
-      viewerImg.style.transform = "scale(" + viewerScale + ")";
+      if (viewerScale === 1) {
+        viewerPanX = 0;
+        viewerPanY = 0;
+      }
+      paintZoom(true);
     });
+  });
+
+  viewerStage.addEventListener("wheel", function (event) {
+    if (viewer.hidden) return;
+    event.preventDefault();
+    viewerScale = Math.min(Math.max(viewerScale + (event.deltaY > 0 ? -0.1 : 0.1), 1), 5);
+    if (viewerScale === 1) {
+      viewerPanX = 0;
+      viewerPanY = 0;
+    }
+    paintZoom(true);
+  }, { passive: false });
+
+  viewerStage.addEventListener("mousedown", function (event) {
+    if (viewerScale <= 1 || event.button !== 0) return;
+    event.preventDefault();
+    viewerDragging = true;
+    viewerDragX = event.clientX - viewerPanX;
+    viewerDragY = event.clientY - viewerPanY;
+    paintZoom(false);
+  });
+  document.addEventListener("mousemove", function (event) {
+    if (!viewerDragging) return;
+    viewerPanX = event.clientX - viewerDragX;
+    viewerPanY = event.clientY - viewerDragY;
+    paintZoom(false);
+  });
+  document.addEventListener("mouseup", function () {
+    if (!viewerDragging) return;
+    viewerDragging = false;
+    paintZoom(false);
   });
   viewer.addEventListener("click", function (event) {
     if (event.target === viewer) hideViewer();

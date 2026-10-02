@@ -42,8 +42,10 @@
       <button type="button" data-viewer-close title="Закрыть"><i class="bi bi-x-lg"></i></button>
     </div>
     <button type="button" class="cm-photo-viewer__nav cm-photo-viewer__nav--prev" data-nav="-1" aria-label="Предыдущее">&lsaquo;</button>
-    <img alt="" data-viewer-img>
+    <div class="cm-photo-viewer__stage" data-stage>
+      <img alt="" data-viewer-img draggable="false">
+    </div>
     <button type="button" class="cm-photo-viewer__nav cm-photo-viewer__nav--next" data-nav="1" aria-label="Следующее">&rsaquo;</button>
   </div>
-  <script src="{% static 'js/admin_photo_gallery.js' %}?v=1"></script>
+  <script src="{% static 'js/admin_photo_gallery.js' %}?v=2"></script>
 {% endblock %}

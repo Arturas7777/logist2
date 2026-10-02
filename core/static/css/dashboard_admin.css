@@ -4970,11 +4970,27 @@ button.cm-count-badge:hover {
     background: rgba(0, 0, 0, .92);
 }
 .cm-photo-viewer[hidden] { display: none !important; }
-.cm-photo-viewer img {
-    max-width: 90vw;
-    max-height: 86vh;
+.cm-photo-viewer__stage {
+    width: 90%;
+    height: 90%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    touch-action: none;
+}
+.cm-photo-viewer__stage img {
+    max-width: 100%;
+    max-height: 100%;
     object-fit: contain;
     transform-origin: center center;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+.cm-photo-viewer__nav,
+.cm-photo-viewer__tools,
+.cm-photo-viewer__counter {
+    z-index: 2;
 }
 .cm-photo-viewer__nav,
 .cm-photo-viewer__tools button {
@@ -4983,6 +4999,10 @@ button.cm-count-badge:hover {
     color: #111;
     border-radius: 8px;
     cursor: pointer;
+}
+.cm-photo-viewer__nav.is-dim {
+    opacity: 0;
+    pointer-events: none;
 }
 .cm-photo-viewer__nav {
     position: absolute;
