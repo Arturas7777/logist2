@@ -253,11 +253,24 @@ class BankConnectionAdmin(admin.ModelAdmin):
         from django.core.management import call_command
 
         key_path = getattr(settings, "REVOLUT_PRIVATE_KEY_PATH", None)
-        if not key_path or not Path(key_path).exists():
+        key_file = Path(key_path) if key_path else None
+        try:
+            key_readable = bool(key_file) and key_file.is_file()
+            if key_readable:
+                with key_file.open("rb"):
+                    pass
+        except OSError as exc:
+            messages.error(
+                request,
+                f"Нет доступа к приватному ключу Revolut ({key_file}): {exc}. "
+                "Файл должен читаться пользователем, под которым работает gunicorn.",
+            )
+            return
+        if not key_readable:
             messages.error(
                 request,
                 f"Приватный ключ Revolut не найден: {key_path or '(не задан)'}. "
-                f"Проверьте файл privatecert.pem или переменную REVOLUT_PRIVATE_KEY_PATH в .env.",
+                "Проверьте файл privatecert.pem или переменную REVOLUT_PRIVATE_KEY_PATH в .env.",
             )
             return
 
