@@ -37,6 +37,14 @@ def content_type_id(obj):
     return None
 
 
+@register.simple_tag
+def line_mark(line):
+    """Цветной значок морской линии (MAE, MSC, CMA…)."""
+    from core.line_marks import line_mark_html
+
+    return line_mark_html(line)
+
+
 @register.filter
 def content_type_name(obj):
     """Возвращает имя content type для объекта"""

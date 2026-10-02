@@ -4617,7 +4617,65 @@ body.popup .cm-form-grid .submit-row {
 .cm-badge--status-todo        { background: #6b7280; }
 .cm-badge--status-done        { background: #10b981; }
 .cm-badge--status-blocked     { background: #ef4444; }
-a.cm-badge--status, a.cm-badge--status:hover { color: #fff; text-decoration: none; }
+a.cm-badge--status,
+a.cm-badge--status:link,
+a.cm-badge--status:visited,
+a.cm-badge--status:hover,
+a.cm-status-badge-lg,
+a.cm-status-badge-lg:link,
+a.cm-status-badge-lg:visited,
+a.cm-status-badge-lg:hover {
+    color: #fff !important;
+    text-decoration: none;
+}
+
+/* Номер контейнера: значок линии + текст. На тёмной плашке статуса
+   ссылка Django иначе остаётся синей (#447e9b) или серой (visited). */
+.cm-container-no {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: inherit;
+}
+.cm-line-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    line-height: 1;
+    flex-shrink: 0;
+}
+.cm-container-photo-number {
+    position: absolute;
+    left: 18%;
+    right: 18%;
+    top: 46%;
+    transform: translateY(-50%);
+    text-align: center;
+    color: #fff;
+    font-weight: 800;
+    font-size: clamp(11px, 2.1vw, 18px);
+    letter-spacing: 0.12em;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .85), 0 0 1px rgba(0, 0, 0, .9);
+    pointer-events: none;
+}
+#result_list tbody tr.selected {
+    background: #efeaff !important;
+}
+#result_list tbody tr.selected td a {
+    color: var(--cm-purple) !important;
+}
+#result_list tbody td a.cm-badge--status,
+#result_list tbody tr.selected td a.cm-badge--status,
+#result_list tbody td a.cm-badge--status .cm-container-no-text {
+    color: #fff !important;
+}
 
 /* Дела (TaskAdmin): приоритет, индикатор состояния, дедлайн */
 .cm-badge--priority {

@@ -438,7 +438,7 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
         )
 
         qs = super().get_queryset(request)
-        qs = qs.select_related("client", "warehouse", "line", "carrier", "container")
+        qs = qs.select_related("client", "warehouse", "line", "carrier", "container", "container__line")
         qs = qs.annotate(
             _total_markup=Coalesce(
                 Subquery(markup_subquery, output_field=DecimalField(max_digits=12, decimal_places=2)),
@@ -1036,13 +1036,18 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
         if not obj.container:
             return "-"
 
-        # Цвет — по статусу авто (как у колонки «Статус»)
+        from core.line_marks import line_mark_html
+
+        # Цвет плашки — по статусу авто. Текст номера всегда белый:
+        # ссылка Django иначе остаётся синей/серой на тёмном фоне плашки.
         container_url = f"/admin/core/container/{obj.container.id}/change/"
 
         return format_html(
-            '<a href="{}" target="_blank" class="cm-badge--status cm-badge--status-{}">{}</a>',
+            '<a href="{}" target="_blank" class="cm-badge--status cm-badge--status-{}">'
+            '<span class="cm-container-no">{}<span class="cm-container-no-text">{}</span></span></a>',
             container_url,
             (obj.status or "unknown").lower(),
+            line_mark_html(obj.container.line),
             obj.container.number,
         )
 

@@ -1,5 +1,5 @@
 {% extends "admin/change_form.html" %}
-{% load static i18n %}
+{% load static i18n admin_extras %}
 
 {% block extrastyle %}
   {{ block.super }}
@@ -501,7 +501,7 @@
         <div style="margin-top: 14px;">
           <a href="{% url 'admin:core_container_change' original.container.pk %}"
              class="cm-status-badge-lg" style="background-color: {{ original.container.get_status_color }}; font-size: .82rem;">
-            📦 {{ original.container.number }}
+            {% line_mark original.container.line %}<span class="cm-container-no-text">{{ original.container.number }}</span>
           </a>
         </div>
         {% endif %}

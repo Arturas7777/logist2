@@ -12,4 +12,7 @@ mask-image по силуэту контейнера.
      aria-label="Контейнер {{ number|default:'' }}">
   <img class="cm-container-photo-img" src="{% static 'img/container_base.webp' %}?v=2" alt="">
   <div class="cm-container-photo-tint"></div>
+  {% if number %}
+  <div class="cm-container-photo-number">{{ number }}</div>
+  {% endif %}
 </div>

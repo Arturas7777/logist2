@@ -607,14 +607,18 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
                 need_reply,
             )
 
+        from core.line_marks import line_mark_html
+
         return format_html(
-            '<span style="display:inline-flex;align-items:center;gap:6px;">'
-            "<span>{}</span>"
+            '<span class="cm-container-no">'
+            "{}"
+            '<span class="cm-container-no-text">{}</span>'
             '<span title="{}" style="background:{};color:#fff;padding:1px 7px;'
             "border-radius:10px;font-size:11px;font-weight:700;min-width:20px;"
             'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">{}</span>'
             "{}"
             "</span>",
+            line_mark_html(obj.line),
             obj.number or "—",
             title,
             bg,

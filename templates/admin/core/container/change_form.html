@@ -1,12 +1,12 @@
 {% extends "admin/change_form.html" %}
-{% load static i18n %}
+{% load static i18n admin_extras %}
 
 {% block extrastyle %}
   {{ block.super }}
 {% endblock %}
 
 {% block topbar_title %}
-  <span>{% if original %}{{ original.number }}{% else %}Новый контейнер{% endif %}</span>
+  <span class="cm-container-no">{% if original %}{% line_mark original.line %}<span class="cm-container-no-text">{{ original.number }}</span>{% else %}Новый контейнер{% endif %}</span>
 {% endblock %}
 
 {% block content_title %}{% endblock %}
