@@ -356,7 +356,7 @@ class BankTransaction(models.Model):
 
     class Meta:
         verbose_name = "Банковская транзакция"
-        verbose_name_plural = "Банковские транзакции"
+        verbose_name_plural = "Банк. транзакции"
         constraints = [
             models.UniqueConstraint(fields=["connection", "external_id"], name="unique_bank_transaction"),
             # Один внутренний платёж (Transaction) не может «закрывать» две
