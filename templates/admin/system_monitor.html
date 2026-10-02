@@ -185,7 +185,11 @@
         </div>
         <div class="sm-header-right">
             <span class="sm-badge" id="sm-host-badge"></span>
-            <button class="sm-refresh-btn" id="sm-refresh-btn" onclick="refreshSnapshot()">
+            <button class="sm-refresh-btn" id="sm-refresh-btn" type="button"
+                    hx-get="{% url 'system_monitor_snapshot' %}"
+                    hx-trigger="every 30s, click"
+                    hx-swap="none"
+                    hx-on::after-request="smApplySnapshot(event)">
                 <i class="bi bi-arrow-clockwise"></i> Обновить
             </button>
         </div>
@@ -267,6 +271,7 @@
 
 </div>
 
+<script src="{% static 'js/htmx.min.js' %}"></script>
 <script src="{% static 'js/chart.umd.min.js' %}"></script>
 <script src="{% static 'js/chartjs-adapter-date-fns.bundle.min.js' %}"></script>
 {{ snapshot|json_script:"sm-initial-snapshot" }}
@@ -291,27 +296,22 @@
     renderAlerts(initialAlerts);
     loadHistory('24h');
 
-    // Auto-refresh каждые 30 секунд
-    setInterval(refreshSnapshot, 30000);
+    // Автообновление — HTMX на кнопке (every 30s и click), ответ JSON
+    // применяется здесь. Графики по-прежнему грузит loadHistory.
+    window.smApplySnapshot = function(evt) {
+        var xhr = evt.detail && evt.detail.xhr;
+        if (!xhr || xhr.status !== 200) return;
+        var data;
+        try { data = JSON.parse(xhr.responseText); } catch (e) { return; }
+        renderSnapshot(data.snapshot);
+        renderAlerts(data.alerts);
+        var stamp = document.getElementById('sm-last-update');
+        if (stamp) stamp.textContent = 'Обновлено: ' + new Date().toLocaleTimeString('ru-RU');
+    };
 
     // ── SNAPSHOT ────────────────────────────────────────────────────────────
     function refreshSnapshot() {
-        const btn = document.getElementById('sm-refresh-btn');
-        btn.disabled = true;
-        btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Обновляю…';
-        fetch('{% url "system_monitor_snapshot" %}', {credentials: 'same-origin'})
-            .then(r => r.json())
-            .then(data => {
-                renderSnapshot(data.snapshot);
-                renderAlerts(data.alerts);
-                document.getElementById('sm-last-update').textContent =
-                    'Обновлено: ' + new Date().toLocaleTimeString('ru-RU');
-            })
-            .catch(err => console.error('snapshot failed', err))
-            .finally(() => {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Обновить';
-            });
+        document.getElementById('sm-refresh-btn').click();
     }
 
     function renderAlerts(alerts) {

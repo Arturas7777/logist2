@@ -110,5 +110,19 @@
       }, 1500);
     });
   });
+
+  // U2: фильтры списка авто без полной перезагрузки страницы.
+  function bindCarFilters() {
+    document.querySelectorAll('#changelist-filter a').forEach(function(link) {
+      link.setAttribute('hx-get', link.getAttribute('href'));
+      link.setAttribute('hx-target', '#changelist');
+      link.setAttribute('hx-select', '#changelist');
+      link.setAttribute('hx-swap', 'outerHTML');
+      link.setAttribute('hx-push-url', 'true');
+    });
+    if (window.htmx) window.htmx.process(document.getElementById('changelist-filter'));
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindCarFilters);
+  else bindCarFilters();
   </script>
 {% endblock %}

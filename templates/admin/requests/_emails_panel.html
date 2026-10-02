@@ -16,6 +16,19 @@ URLs: /core/emails/transport-request/<id>/mark-all-read|updates/.
 
 {% with emails=transport_request.emails_for_panel %}
 <div class="rc-card cm-panel-with-reply" id="tr-emails-section"
+     data-email-thread="1"
+     data-export="tr"
+     data-scope="transportrequest"
+     data-object-id="{{ transport_request.pk }}"
+     data-mark-url="/core/emails/transport-request/{{ transport_request.pk }}/mark-all-read/"
+     data-updates-url="/core/emails/transport-request/{{ transport_request.pk }}/updates/"
+     data-list="#tr-emails-list"
+     data-badge="#tr-emails-badge"
+     data-status="#tr-emails-status"
+     data-sync="#tr-emails-sync"
+     data-compose="#tr-email-compose"
+     data-compose-to="{{ transport_request.warehouse.general_email|default:'' }}"
+     data-compose-subject="Užklausa {{ transport_request.number }}"
      data-tr-id="{{ transport_request.pk }}">
     <details open>
         <summary>
@@ -84,10 +97,11 @@ URLs: /core/emails/transport-request/<id>/mark-all-read|updates/.
 }
 </style>
 
+<script src="{% static 'js/email_thread.js' %}"></script>
 <script>
 (function() {
     var section = document.getElementById('tr-emails-section');
-    if (!section) return;
+    if (!section || section.dataset.emailThread === '1') return;
     var details = section.querySelector(':scope > details');
     var list    = document.getElementById('tr-emails-list');
     var badge   = document.getElementById('tr-emails-badge');

@@ -982,6 +982,11 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
         urls = super().get_urls()
         custom = [
             path(
+                "<int:object_id>/set-status/",
+                self.admin_site.admin_view(self.set_status_view),
+                name="core_container_set_status",
+            ),
+            path(
                 "<int:object_id>/upload-docs/",
                 self.admin_site.admin_view(self.upload_docs_view),
                 name="core_container_upload_docs",
@@ -1003,6 +1008,32 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
             ),
         ]
         return custom + urls
+
+    def set_status_view(self, request, object_id: int):
+        """HTMX: смена статуса контейнера из карточки, без перезагрузки страницы."""
+        from django.core.exceptions import ValidationError
+        from django.http import JsonResponse
+        from django.shortcuts import get_object_or_404, render
+
+        if request.method != "POST":
+            return JsonResponse({"error": "POST only"}, status=405)
+
+        container = get_object_or_404(Container, pk=object_id)
+        new_status = (request.POST.get("status") or "").strip()
+        error = ""
+        try:
+            container.status = new_status
+            container.save()
+            container.sync_cars()
+        except ValidationError as exc:
+            container.refresh_from_db()
+            error = "; ".join(exc.messages) if hasattr(exc, "messages") else str(exc)
+        return render(
+            request,
+            "admin/core/container/_status_live.html",
+            {"original": container, "status_error": error},
+            status=400 if error else 200,
+        )
 
     def upload_docs_view(self, request, object_id: int):
         """AJAX-загрузка сканов (dock receipt / тайтлы) из карточки контейнера.

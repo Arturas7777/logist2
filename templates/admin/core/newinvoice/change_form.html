@@ -871,7 +871,17 @@
                 </div>
                 
                 {% if original.status in 'ISSUED,PARTIALLY_PAID,OVERDUE' %}
-                <a href="{% url 'admin:pay_invoice' original.pk %}" class="btn btn-success">💳 Провести оплату</a>
+                <a href="{% url 'admin:pay_invoice' original.pk %}" class="btn btn-success">Провести оплату</a>
+                {% endif %}
+                {% if original.document_type == 'INVOICE' and original.status in 'ISSUED,PARTIALLY_PAID,OVERDUE' and original.remaining_amount > 0 %}
+                <a href="{% url 'admin:credit_note' original.pk %}" class="btn btn-outline" style="margin-top:8px;">Кредит-нота</a>
+                {% endif %}
+                {% if original.credit_notes.exists %}
+                <div style="margin-top:12px;font-size:13px;text-align:left;">
+                    {% for note in original.credit_notes.all %}
+                    <div><a href="{% url 'admin:core_newinvoice_change' note.pk %}">{{ note.number }}</a> — {{ note.total|floatformat:2 }} €</div>
+                    {% endfor %}
+                </div>
                 {% endif %}
             </div>
         </div>

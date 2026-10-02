@@ -8,7 +8,7 @@
   в колонке ``actions_display``).
 """
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.http import JsonResponse
@@ -30,6 +30,11 @@ class NewInvoiceUrlsMixin:
                 "<int:invoice_id>/pay/",
                 self.admin_site.admin_view(self.pay_invoice_view),
                 name="pay_invoice",
+            ),
+            path(
+                "<int:invoice_id>/credit-note/",
+                self.admin_site.admin_view(self.credit_note_view),
+                name="credit_note",
             ),
             path(
                 "calc-cars-total/",
@@ -171,6 +176,34 @@ class NewInvoiceUrlsMixin:
                 "total": str(grand_total.quantize(Decimal("0.01"))),
                 "count": cars.count(),
             }
+        )
+
+    def credit_note_view(self, request, invoice_id):
+        """Форма кредит-ноты к PARDP."""
+        invoice = NewInvoice.objects.get(pk=invoice_id)
+        if request.method == "POST":
+            try:
+                amount = Decimal(request.POST.get("amount") or "0")
+                reason = (request.POST.get("reason") or "").strip()
+                result = BillingService.create_credit_note(
+                    invoice,
+                    amount=amount,
+                    reason=reason,
+                    created_by=request.user,
+                )
+            except (ValueError, InvalidOperation) as exc:
+                messages.error(request, str(exc))
+            else:
+                note = result["credit_note"]
+                messages.success(
+                    request,
+                    f"Кредит-нота {note.number} на {note.total:.2f} €. Остаток по {invoice.number}: {result['invoice'].remaining_amount:.2f} €",
+                )
+                return redirect("admin:core_newinvoice_change", invoice_id)
+        return render(
+            request,
+            "admin/core/newinvoice/credit_note.html",
+            {"invoice": invoice, "title": f"Кредит-нота к {invoice.number}"},
         )
 
     def pay_invoice_view(self, request, invoice_id):

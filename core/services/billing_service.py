@@ -1020,6 +1020,114 @@ class BillingService:
 
         return trx
 
+    @classmethod
+    @transaction.atomic
+    def create_credit_note(cls, invoice, amount=None, items=None, reason="", created_by=None):
+        """Кредит-нота (KRE) к исходящему PARDP.
+
+        Уменьшает долг по исходному счёту на ``amount``: создаёт документ
+        CREDIT_NOTE и ADJUSTMENT, привязанный к исходному инвойсу. Сигнал
+        транзакции пересчитывает ``paid_amount`` (PAYMENT − REFUND + ADJUSTMENT)
+        и статус. Авансовый ``Client.balance`` не меняется: у корректировки
+        одна сторона — компания-выставитель, и для компании инвойсные
+        транзакции в ``balance`` не входят.
+
+        ``items`` — необязательный список ``{"description", "quantity", "unit_price"}``.
+        Если передан, сумма позиций должна совпасть с ``amount`` (или задаёт её).
+
+        В site.pro не пушится (серия KRE туда не уходит).
+        """
+        from core.models_billing import InvoiceItem, NewInvoice, Transaction
+
+        locked = NewInvoice.objects.select_for_update().get(pk=invoice.pk)
+        if locked.document_type != "INVOICE":
+            raise ValueError("Кредит-нота выписывается только к официальному счёту PARDP")
+        if locked.status in ("CANCELLED", "DRAFT", "PAID"):
+            raise ValueError(f"Нельзя выписать кредит-ноту к счёту в статусе {locked.status}")
+        if not locked.recipient_client_id:
+            raise ValueError("Кредит-нота поддерживается для счетов клиенту")
+        issuer = locked.issuer
+        if issuer is None or issuer.__class__.__name__ != "Company":
+            raise ValueError("У счёта нет компании-выставителя")
+
+        parsed_items = []
+        if items:
+            for raw in items:
+                qty = cls.quantize(raw.get("quantity") or 1)
+                price = cls.quantize(raw["unit_price"])
+                parsed_items.append((raw.get("description") or "Кредит-нота", qty, price))
+            items_total = sum((qty * price for _, qty, price in parsed_items), Decimal("0.00"))
+            items_total = cls.quantize(items_total)
+            if amount is None:
+                amount = items_total
+            elif cls.quantize(amount) != items_total:
+                raise ValueError("Сумма кредит-ноты не совпадает с суммой позиций")
+        if amount is None:
+            raise ValueError("Укажите сумму кредит-ноты")
+        amount = cls.quantize(amount)
+        if amount <= 0:
+            raise ValueError("Сумма кредит-ноты должна быть положительной")
+        remaining = locked.remaining_amount
+        if amount > remaining:
+            raise ValueError(f"Сумма кредит-ноты {amount} больше остатка по счёту {remaining}")
+
+        note = NewInvoice(
+            document_type="CREDIT_NOTE",
+            status="ISSUED",
+            credited_invoice=locked,
+            issuer_company=locked.issuer_company,
+            issuer_warehouse=locked.issuer_warehouse,
+            issuer_line=locked.issuer_line,
+            issuer_carrier=locked.issuer_carrier,
+            recipient_client=locked.recipient_client,
+            recipient_warehouse=locked.recipient_warehouse,
+            recipient_line=locked.recipient_line,
+            recipient_carrier=locked.recipient_carrier,
+            recipient_company=locked.recipient_company,
+            currency=locked.currency or "EUR",
+            date=timezone.now().date(),
+            notes=(reason or "")[:2000],
+            created_by=created_by,
+        )
+        note.save()
+
+        if not parsed_items:
+            parsed_items = [(f"Кредит-нота к {locked.number}", Decimal("1.00"), amount)]
+        for order, (description, qty, price) in enumerate(parsed_items):
+            InvoiceItem.objects.create(
+                invoice=note,
+                description=description[:500],
+                quantity=qty,
+                unit_price=price,
+                order=order,
+            )
+        note.calculate_totals()
+        note.save(update_fields=["subtotal", "total"])
+
+        trx = Transaction(
+            type="ADJUSTMENT",
+            method="OTHER",
+            invoice=locked,
+            to_company=issuer,
+            amount=amount,
+            currency=locked.currency or "EUR",
+            description=f"Кредит-нота {note.number}: {reason}".strip(),
+            created_by=created_by,
+            status="COMPLETED",
+        )
+        trx.save()
+
+        locked.refresh_from_db()
+        invoice.refresh_from_db()
+        logger.info(
+            "Credit note %s for %s on invoice %s, remaining=%s",
+            note.number,
+            amount,
+            locked.number,
+            locked.remaining_amount,
+        )
+        return {"credit_note": note, "transaction": trx, "invoice": locked}
+
     # ========================================================================
     # АВТОМАТИЧЕСКОЕ СОПОСТАВЛЕНИЕ С БАНКОМ (AUTO-RECONCILIATION)
     # ========================================================================

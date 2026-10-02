@@ -401,6 +401,18 @@
 </style>
 
 <fieldset id="car-emails-section" class="module aligned collapse cm-panel-with-reply"
+          data-email-thread="1"
+          data-scope="car"
+          data-object-id="{{ original.pk }}"
+          data-mark-url="/core/emails/car/{{ original.pk }}/mark-all-read/"
+          data-updates-url="/core/emails/car/{{ original.pk }}/updates/"
+          data-list="#cm-car-emails-list"
+          data-badge="#cm-car-emails-badge"
+          data-status="#cm-car-emails-status"
+          data-sync="#cm-car-emails-sync-btn"
+          data-compose="#cm-car-email-compose-btn"
+          data-compose-subject="VIN {{ original.vin }}"
+          data-place="top"
           data-car-id="{{ original.pk }}"
           data-emails-count="{{ emails|length }}">
     <details>
@@ -452,10 +464,11 @@
 
 {% include "admin/core/email/_composer.html" %}
 
+<script src="{% static 'js/email_thread.js' %}"></script>
 <script>
 (function() {
     var section = document.getElementById('car-emails-section');
-    if (!section) return;
+    if (!section || section.dataset.emailThread === '1') return;
 
     // ── Позиционируем в САМЫЙ ВЕРХ основной колонки формы ──
     // Переписка должна быть первым блоком в карточке — над «Основные данные»

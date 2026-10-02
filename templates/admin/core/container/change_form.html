@@ -101,9 +101,7 @@
     {# ── Status Card ── #}
     <div class="cm-sidebar-card">
       <div class="cm-sidebar-card-body" style="text-align: center;">
-        <div class="cm-status-badge-lg" style="background-color: {{ original.get_status_color }};">
-          {{ original.get_status_display }}
-        </div>
+        {% include "admin/core/container/_status_live.html" %}
         {% if original.notes %}
         <p style="margin: 12px 0 0; color: var(--cm-text-secondary); font-size: .85rem;">
           {{ original.notes }}

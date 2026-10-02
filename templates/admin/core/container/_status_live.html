@@ -1,0 +1,22 @@
+{% load i18n %}
+<div id="container-status-live">
+    <div class="cm-status-badge-lg" style="background-color: {{ original.get_status_color }};">
+        {{ original.get_status_display }}
+    </div>
+    {% if status_error %}
+    <p style="margin:8px 0 0;color:#b91c1c;font-size:.82rem;">{{ status_error }}</p>
+    {% endif %}
+    <form method="post" action="{% url 'admin:core_container_set_status' original.pk %}" style="margin-top:10px;">
+        {% csrf_token %}
+        {% for code, label in original.allowed_next_statuses %}
+        <button type="button" name="status" value="{{ code }}"
+                hx-post="{% url 'admin:core_container_set_status' original.pk %}"
+                hx-target="#container-status-live"
+                hx-swap="outerHTML"
+                hx-vals='{"status": "{{ code }}"}'
+                style="margin:2px;padding:4px 8px;font-size:.78rem;border-radius:6px;border:1px solid #d1d5db;background:#fff;cursor:pointer;">
+            {{ label }}
+        </button>
+        {% endfor %}
+    </form>
+</div>

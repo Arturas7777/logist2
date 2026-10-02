@@ -1,0 +1,28 @@
+{% extends "admin/base_site.html" %}
+
+{% block title %}Кредит-нота к {{ invoice.number }}{% endblock %}
+{% block content_title %}<h1>Кредит-нота к {{ invoice.number }}</h1>{% endblock %}
+
+{% block content %}
+<div style="max-width:520px;margin:24px auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:24px;">
+    <p style="margin:0 0 8px;color:#4b5563;">
+        Остаток по счёту: <strong>{{ invoice.remaining_amount|floatformat:2 }} €</strong>
+        (оплачено {{ invoice.paid_amount|floatformat:2 }} из {{ invoice.total|floatformat:2 }}).
+    </p>
+    <p style="margin:0 0 16px;color:#6b7280;font-size:13px;">
+        Кредит-нота уменьшает долг клиента по этому счёту. Деньги на авансовый баланс не зачисляются.
+        В site.pro серия KRE не отправляется.
+    </p>
+    <form method="post">
+        {% csrf_token %}
+        <label for="id_amount" style="display:block;font-weight:600;margin-bottom:4px;">Сумма, €</label>
+        <input id="id_amount" name="amount" type="number" step="0.01" min="0.01"
+               max="{{ invoice.remaining_amount }}" value="{{ invoice.remaining_amount }}"
+               required style="width:100%;padding:8px;margin-bottom:12px;">
+        <label for="id_reason" style="display:block;font-weight:600;margin-bottom:4px;">Причина</label>
+        <textarea id="id_reason" name="reason" rows="3" style="width:100%;padding:8px;margin-bottom:16px;"></textarea>
+        <button type="submit" class="button default">Создать кредит-ноту</button>
+        <a href="{% url 'admin:core_newinvoice_change' invoice.pk %}" style="margin-left:12px;">Отмена</a>
+    </form>
+</div>
+{% endblock %}

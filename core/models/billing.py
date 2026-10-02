@@ -342,6 +342,19 @@ class NewInvoice(models.Model):
         help_text="Пара: реальный BLC-счёт ↔ официальный счёт на ту же сумму",
     )
 
+    # Кредит-нота (KRE) ссылается на исходный PARDP. Не linked_invoice:
+    # то поле — OneToOne для пары «реальный ↔ официальный», и на один
+    # счёт может прийтись несколько частичных кредит-нот.
+    credited_invoice = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="credit_notes",
+        verbose_name="Счёт кредит-ноты",
+        help_text="Исходный счёт, долг по которому уменьшает эта кредит-нота",
+    )
+
     # ========================================================================
     # КАТЕГОРИЗАЦИЯ И ВЛОЖЕНИЯ
     # ========================================================================
@@ -658,7 +671,12 @@ class NewInvoice(models.Model):
             refunds = locked.transactions.filter(type="REFUND", status="COMPLETED").aggregate(total=Sum("amount"))[
                 "total"
             ] or Decimal("0.00")
-            calculated = payments - refunds
+            # Кредит-нота проводится как ADJUSTMENT на исходный счёт и
+            # уменьшает долг, не двигая авансовый баланс клиента.
+            credits = locked.transactions.filter(type="ADJUSTMENT", status="COMPLETED").aggregate(total=Sum("amount"))[
+                "total"
+            ] or Decimal("0.00")
+            calculated = payments - refunds + credits
             if calculated < Decimal("0.00"):
                 logger.warning(
                     "Invoice %s: paid_amount would be negative (%s). Payments=%s, Refunds=%s. Clamping to 0.",

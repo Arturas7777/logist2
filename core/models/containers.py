@@ -29,6 +29,12 @@ ALLOWED_STATUS_TRANSITIONS = {
 }
 
 
+def allowed_next_statuses(current):
+    """Пары (код, подпись) статусов, в которые можно перейти из ``current``."""
+    allowed = ALLOWED_STATUS_TRANSITIONS.get(current, set())
+    return [(code, label) for code, label in Container.STATUS_CHOICES if code in allowed]
+
+
 def validate_status_transition(instance, old_status):
     """Проверить допустимость перехода статуса Car/Container.
 
@@ -226,6 +232,11 @@ class Container(models.Model):
         if ann is not None:
             return ann
         return self.container_cars.aggregate(m=models.Max("days"))["m"] or 0
+
+    @property
+    def allowed_next_statuses(self):
+        """Статусы, в которые можно перейти из текущего (для кнопок в карточке)."""
+        return allowed_next_statuses(self.status)
 
     def sync_cars(self):
         """Синхронизировать авто с контейнером (массовые admin-actions).

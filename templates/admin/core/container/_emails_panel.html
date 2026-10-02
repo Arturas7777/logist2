@@ -936,6 +936,14 @@
 </style>
 
 <fieldset id="container-emails-section" class="module aligned collapse"
+          data-email-thread="1"
+          data-composer="legacy"
+          data-scope="container"
+          data-object-id="{{ original.pk }}"
+          data-mark-url="/core/emails/container/{{ original.pk }}/mark-all-read/"
+          data-updates-url="/core/emails/container/{{ original.pk }}/updates/"
+          data-list="#cm-emails-list"
+          data-badge="#cm-emails-badge"
           data-container-id="{{ original.pk }}"
           data-emails-count="{{ emails|length }}">
     <details>
@@ -1060,6 +1068,7 @@
     </div>
 </div>
 
+<script src="{% static 'js/email_thread.js' %}"></script>
 <script>
 (function() {
     var section = document.getElementById('container-emails-section');
@@ -1188,7 +1197,9 @@
     //  - details открыт (пользователь видит переписку),
     //  - вкладка активна (document.visibilityState === 'visible'),
     //  - нет уже летящего запроса.
+    if (window.EmailThread) window.EmailThread.init(section);
     (function setupEmailPolling() {
+        if (section.dataset.emailThreadBound === '1') return;
         if (!list || !containerId) return;
         var POLL_INTERVAL_MS = 30000;
         var inFlight = false;

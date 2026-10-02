@@ -452,6 +452,17 @@ URLs: /core/emails/autotransport/<id>/mark-all-read|updates/.
 </style>
 
 <div id="at-emails-section" class="cm-panel-with-reply"
+     data-email-thread="1"
+     data-scope="autotransport"
+     data-object-id="{{ original.pk }}"
+     data-mark-url="/core/emails/autotransport/{{ original.pk }}/mark-all-read/"
+     data-updates-url="/core/emails/autotransport/{{ original.pk }}/updates/"
+     data-list="#cm-at-emails-list"
+     data-badge="#cm-at-emails-badge"
+     data-status="#cm-at-emails-status"
+     data-sync="#cm-at-emails-sync-btn"
+     data-compose="#cm-at-email-compose-btn"
+     data-compose-subject="Рейс {{ original.number }}"
      data-at-id="{{ original.pk }}"
      data-emails-count="{{ emails|length }}">
     <details>
@@ -504,10 +515,11 @@ URLs: /core/emails/autotransport/<id>/mark-all-read|updates/.
 
 {% include "admin/core/email/_composer.html" %}
 
+<script src="{% static 'js/email_thread.js' %}"></script>
 <script>
 (function() {
     var section = document.getElementById('at-emails-section');
-    if (!section) return;
+    if (!section || section.dataset.emailThread === '1') return;
 
     var details    = section.querySelector(':scope > details');
     if (details) details.open = false;
