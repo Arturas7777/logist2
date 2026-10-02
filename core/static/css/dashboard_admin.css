@@ -742,6 +742,18 @@ body.login .submit-row input[type="submit"]:hover {
     color: var(--cm-text);
     letter-spacing: -0.03em;
 }
+/* Значок линии в шапке карточки: свой размер, иначе буквы
+   наследуют 1.4rem заголовка и вылезают из низкой плашки. */
+.cm-topbar-center .cm-line-mark {
+    height: auto;
+    min-height: 28px;
+    padding: 5px 10px;
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1.15;
+    letter-spacing: 0.04em;
+    border-radius: 6px;
+}
 
 /* ===== Хлебные крошки =====
    Тонкая строка над содержимым страницы (блок pretitle). В топбаре они

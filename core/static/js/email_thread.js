@@ -38,12 +38,18 @@
             }
         }
 
+        function pick(sel, fallback) {
+            var chosen = sel || fallback;
+            if (!chosen) return null;
+            return section.querySelector(chosen);
+        }
+
         var details = section.querySelector(':scope > details') || section.querySelector('details');
-        var list = section.querySelector(section.dataset.list || '.cm-chat');
-        var badge = section.querySelector(section.dataset.badge || '.cm-email-badge');
-        var status = section.querySelector(section.dataset.status || '.cm-emails-status');
-        var syncBtn = section.querySelector(section.dataset.sync || '');
-        var composeBtn = section.querySelector(section.dataset.compose || '');
+        var list = pick(section.dataset.list, '.cm-chat');
+        var badge = pick(section.dataset.badge, '.cm-email-badge');
+        var status = pick(section.dataset.status, '.cm-emails-status');
+        var syncBtn = pick(section.dataset.sync, '');
+        var composeBtn = pick(section.dataset.compose, '');
         var scope = section.dataset.scope;
         var objectId = section.dataset.objectId;
         var markUrl = section.dataset.markUrl;

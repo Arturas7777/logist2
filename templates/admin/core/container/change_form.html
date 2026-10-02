@@ -6,7 +6,14 @@
 {% endblock %}
 
 {% block topbar_title %}
-  <span class="cm-container-no">{% if original %}{% line_mark original.line %}<span class="cm-container-no-text">{{ original.number }}</span>{% else %}Новый контейнер{% endif %}</span>
+  <span class="cm-container-no">{% if original %}
+    <span class="vin-copy-btn" data-vin="{{ original.number }}" title="Копировать номер" style="display:inline-flex;align-items:center;cursor:pointer;color:#6b7280;transition:color .15s;vertical-align:middle;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+      </svg>
+    </span>
+    {% line_mark original.line %}<span class="cm-container-no-text">{{ original.number }}</span>
+  {% else %}Новый контейнер{% endif %}</span>
 {% endblock %}
 
 {% block content_title %}{% endblock %}
@@ -33,6 +40,24 @@
 
   <script>
   document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('click', function(e) {
+      var btn = e.target.closest('.vin-copy-btn');
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var value = btn.getAttribute('data-vin');
+      if (!value || !navigator.clipboard) return;
+      navigator.clipboard.writeText(value).then(function() {
+        var origColor = btn.style.color;
+        btn.style.color = 'var(--cm-green, #10b981)';
+        btn.setAttribute('title', 'Скопировано!');
+        setTimeout(function() {
+          btn.style.color = origColor;
+          btn.setAttribute('title', 'Копировать номер');
+        }, 1500);
+      });
+    });
+
     // 3D-контейнер переносим в контент первого fieldset «Основные данные»
     // (исключая секцию «Переписка», которую JS поднимает наверх колонки).
     // Секция коллапсирующая (<details><summary>), поэтому вставляем перед

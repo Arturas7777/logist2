@@ -1197,7 +1197,9 @@
     //  - details открыт (пользователь видит переписку),
     //  - вкладка активна (document.visibilityState === 'visible'),
     //  - нет уже летящего запроса.
-    if (window.EmailThread) window.EmailThread.init(section);
+    if (window.EmailThread) {
+        try { window.EmailThread.init(section); } catch (e) { console.error(e); }
+    }
     (function setupEmailPolling() {
         if (section.dataset.emailThreadBound === '1') return;
         if (!list || !containerId) return;
