@@ -14,7 +14,7 @@ def test_short_code_and_ink():
     assert line_short_code("HAPPAG") == "HPL"
     assert line_short_code("CMA CGM") == "CMA"
     assert _ink_on("#D9A404") == "#1a1a2e"  # MSC, светлый фон
-    assert _ink_on("#1F4E9C") == "#ffffff"  # CMA, тёмный фон
+    assert _ink_on("#E30613") == "#ffffff"  # CMA, тёмно-красный фон
     assert _ink_on("#4E8FBF") == "#ffffff"
 
 

@@ -13,19 +13,19 @@ from .requisites import CounterpartyContactsMixin, CounterpartyRequisitesMixin
 LINE_BRAND_COLORS = {
     "MAERSK": "#4E8FBF",
     "MSC": "#D9A404",
-    "CMA": "#1F4E9C",
-    "HAPAG": "#F47920",
-    "HAPPAG": "#F47920",  # встречающееся написание с опечаткой
+    "CMA": "#E30613",
+    "HAPAG": "#FF7A00",
+    "HAPPAG": "#FF7A00",  # встречающееся написание с опечаткой
     "EVERGREEN": "#00834D",
-    "COSCO": "#10538F",
+    "COSCO": "#009B48",
     "YANG MING": "#F5A800",
-    "OOCL": "#8B2332",
+    "OOCL": "#800020",
     "SEALAND": "#C8102E",
     "ARKAS": "#00437B",
     "TURKON": "#0072BC",
     "HMM": "#E11837",
     "ZIM": "#5C6670",
-    "ONE": "#D6187E",
+    "ONE": "#FF4D9A",
 }
 
 DEFAULT_CONTAINER_COLOR = "#8B93A3"
