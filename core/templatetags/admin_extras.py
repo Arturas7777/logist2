@@ -45,6 +45,14 @@ def line_mark(line):
     return line_mark_html(line)
 
 
+@register.simple_tag
+def copy_button(value, title="Копировать"):
+    """Кнопка копирования номера или VIN."""
+    from core.copy_button import copy_button_html
+
+    return copy_button_html(value, title)
+
+
 @register.filter
 def content_type_name(obj):
     """Возвращает имя content type для объекта"""

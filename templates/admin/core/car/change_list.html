@@ -4,13 +4,7 @@
 {% block extrastyle %}
   {{ block.super }}
   <style>
-    .vin-copy-wrap { display: inline-flex; align-items: center; gap: 4px; }
-    .vin-copy-btn {
-      display: inline-flex; align-items: center; cursor: pointer;
-      color: #6b7280; transition: color .15s, transform .1s;
-    }
-    .vin-copy-btn:hover { color: var(--cm-purple, #6c5ce7); transform: scale(1.15); }
-    .vin-copy-btn.copied { color: var(--cm-green, #10b981); }
+    .vin-copy-wrap { display: inline-flex; align-items: center; gap: 6px; }
 
     /* Красный «важное» треугольник + tooltip с полным текстом примечаний.
        Показываем data-tip как абсолютно позиционированный тултип, чтобы
@@ -95,22 +89,6 @@
   {% endif %}
 
   <script>
-  document.addEventListener('click', function(e) {
-    var btn = e.target.closest('.vin-copy-btn');
-    if (!btn) return;
-    e.preventDefault();
-    e.stopPropagation();
-    var vin = btn.getAttribute('data-vin');
-    navigator.clipboard.writeText(vin).then(function() {
-      btn.classList.add('copied');
-      btn.setAttribute('title', 'Скопировано!');
-      setTimeout(function() {
-        btn.classList.remove('copied');
-        btn.setAttribute('title', 'Копировать VIN');
-      }, 1500);
-    });
-  });
-
   // U2: фильтры списка авто без полной перезагрузки страницы.
   function bindCarFilters() {
     document.querySelectorAll('#changelist-filter a').forEach(function(link) {

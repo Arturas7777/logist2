@@ -607,10 +607,12 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
                 need_reply,
             )
 
+        from core.copy_button import copy_button_html
         from core.line_marks import line_mark_html
 
         return format_html(
             '<span class="cm-container-no">'
+            "{}"
             "{}"
             '<span class="cm-container-no-text">{}</span>'
             '<span title="{}" style="background:{};color:#fff;padding:1px 7px;'
@@ -618,6 +620,7 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
             'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">{}</span>'
             "{}"
             "</span>",
+            copy_button_html(obj.number, "Копировать номер"),
             line_mark_html(obj.line),
             obj.number or "—",
             title,

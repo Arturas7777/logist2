@@ -4653,6 +4653,101 @@ a.cm-status-badge-lg:hover {
     gap: 6px;
     color: inherit;
 }
+
+/* Кнопка копирования VIN / номера контейнера.
+   Своя плашка, чтобы иконка не сливалась с текстом и не красилась
+   цветом ссылки списка или заголовком шапки (1.4rem). */
+.vin-copy-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    margin: 0;
+    padding: 0;
+    border: 1px solid #e4e7ee;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #ffffff 0%, #f3f5f9 100%);
+    color: #5c6578;
+    box-shadow: 0 1px 1px rgba(15, 23, 42, 0.05), inset 0 1px 0 #fff;
+    cursor: pointer;
+    flex: 0 0 26px;
+    vertical-align: middle;
+    line-height: 0;
+    letter-spacing: 0;
+    font-size: 0;
+    font-weight: 500;
+    text-decoration: none !important;
+    transition: color .15s, background .15s, border-color .15s, box-shadow .15s, transform .12s;
+}
+.vin-copy-btn svg {
+    width: 15px;
+    height: 15px;
+    display: block;
+}
+.vin-copy-btn .cm-copy-icon {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+.vin-copy-btn .cm-copy-back {
+    fill: currentColor;
+    fill-opacity: 0.14;
+}
+.vin-copy-btn .cm-copy-check {
+    display: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.25;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+.vin-copy-btn:hover {
+    color: #6c5ce7;
+    border-color: #d5cef6;
+    background: linear-gradient(180deg, #fbfaff 0%, #efeaff 100%);
+    box-shadow: 0 4px 10px rgba(108, 92, 231, 0.16);
+    transform: translateY(-1px);
+}
+.vin-copy-btn.copied {
+    color: #059669;
+    border-color: #a7f3d0;
+    background: linear-gradient(180deg, #f3fdf8 0%, #d1fae5 100%);
+    box-shadow: none;
+    transform: none;
+}
+.vin-copy-btn.copied .cm-copy-icon { display: none; }
+.vin-copy-btn.copied .cm-copy-check { display: block; }
+.cm-topbar-center .vin-copy-btn {
+    width: 32px;
+    height: 32px;
+    flex-basis: 32px;
+    margin-right: 8px;
+    color: #5c6578;
+}
+.cm-topbar-center .vin-copy-btn svg {
+    width: 16px;
+    height: 16px;
+}
+.cm-topbar-center .vin-copy-btn:hover { color: #6c5ce7; }
+.cm-topbar-center .vin-copy-btn.copied { color: #059669; }
+.cm-container-no .vin-copy-btn { margin-right: 0; }
+#result_list tbody td a .vin-copy-btn,
+#result_list tbody tr.selected td a .vin-copy-btn,
+#result_list tbody td a:hover .vin-copy-btn {
+    color: #5c6578;
+    text-decoration: none !important;
+}
+#result_list tbody td a .vin-copy-btn:hover,
+#result_list tbody tr.selected td a .vin-copy-btn:hover {
+    color: #6c5ce7;
+}
+#result_list tbody td a .vin-copy-btn.copied,
+#result_list tbody tr.selected td a .vin-copy-btn.copied {
+    color: #059669;
+}
 .cm-line-mark {
     display: inline-flex;
     align-items: center;

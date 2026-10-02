@@ -1004,22 +1004,18 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
                 tip_short=tooltip_text[:200],
             )
 
+        from core.copy_button import copy_button_html
+
         return format_html(
             '<span style="display:inline-flex;align-items:center;gap:6px;">'
-            '<span class="vin-copy-wrap">'
-            '<span class="vin-copy-btn" data-vin="{vin}" title="Копировать VIN">'
-            '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" '
-            'fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'
-            '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>'
-            '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'
-            "</svg>"
-            "</span> {vin}</span>"
+            '<span class="vin-copy-wrap">{copy_btn} {vin}</span>'
             '<span title="{badge_title}" style="background:{badge_bg};color:#fff;padding:1px 7px;'
             "border-radius:10px;font-size:11px;font-weight:700;min-width:20px;"
             'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">{unread}</span>'
             "{need_reply_html}"
             "{important_html}"
             "</span>",
+            copy_btn=copy_button_html(obj.vin, "Копировать VIN"),
             vin=obj.vin,
             unread=unread,
             badge_bg=badge_bg,
