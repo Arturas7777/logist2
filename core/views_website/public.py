@@ -7,13 +7,39 @@ from django.shortcuts import get_object_or_404, render
 from django.utils import translation
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import check_for_language
+from django.utils.translation import gettext as _
 from django.views.decorators.cache import cache_page, never_cache
 from django.views.decorators.http import require_GET
 
 from core.models_website import NewsPost
 
+from .timeline import STEP_LABELS
+
 # Смена этого префикса сбрасывает HTML-кэш публичных страниц (футер общий).
-_PUBLIC_CACHE = "site-v34"
+_PUBLIC_CACHE = "site-v35"
+
+
+def _tracking_i18n():
+    """Строки виджета трекинга для JS (Q11): переводятся на языке запроса."""
+    return {
+        "enter_number": _("Пожалуйста, введите номер для отслеживания"),
+        "searching": _("Поиск..."),
+        "throttled": _("Слишком много запросов. Подождите немного и попробуйте снова."),
+        "found": _("Груз найден!"),
+        "generic_error": _("Произошла ошибка. Попробуйте ещё раз."),
+        "network_error": _("Ошибка соединения. Проверьте интернет и попробуйте снова."),
+        "car": _("Автомобиль"),
+        "brand": _("Марка"),
+        "status": _("Статус"),
+        "eta": _("Ожидаемое прибытие (ETA)"),
+        "unload_date": _("Дата разгрузки"),
+        "warehouse": _("Склад"),
+        "container": _("Контейнер"),
+        "line": _("Линия"),
+        "cars_count": _("Автомобилей"),
+        "timeline": _("Этапы доставки"),
+        "steps": {code: str(label) for code, label in STEP_LABELS.items()},
+    }
 
 
 @cache_page(60 * 15, key_prefix=_PUBLIC_CACHE)
@@ -24,6 +50,7 @@ def website_home(request):
     context = {
         "latest_news": latest_news,
         "company_name": "Caromoto Lithuania",
+        "tracking_i18n": _tracking_i18n(),
     }
     return render(request, "website/home.html", context)
 

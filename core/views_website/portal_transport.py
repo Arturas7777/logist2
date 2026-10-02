@@ -6,7 +6,8 @@ from urllib.parse import quote
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db.models import Case, IntegerField, When
+from django.core.paginator import Paginator
+from django.db.models import Case, Count, IntegerField, Q, When
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -62,11 +63,25 @@ _PORTAL_TAB_CODES = {code for code, _label, _statuses in PORTAL_TAB_DEFS}
 _PORTAL_TAB_STATUSES = {code: statuses for code, _label, statuses in PORTAL_TAB_DEFS}
 
 
-def _client_requests(client):
+# Заявок на страницу в кабинете (C9). Карточка заявки тяжёлая (документы по
+# каждому авто, переписка), поэтому страница — короткая.
+REQUESTS_PER_PAGE = 20
+
+
+def _client_requests_base(client):
+    """Заявки клиента без отменённых — общая база для списка и счётчиков."""
+    return TransportRequest.objects.filter(client=client).exclude(status="CANCELLED")
+
+
+def _client_requests(client, active_statuses=None):
     """Заявки клиента для списка в кабинете (отменённые скрыты).
 
     Порядок: черновики, затем «Подана» / «Принята» / «В процессе»,
-    в конце «Оформлена». Внутри статуса — свежие сверху.
+    в конце «Оформлена». Внутри статуса — свежие сверху. Если передан набор
+    статусов активной вкладки — они поднимаются наверх (важно при пагинации:
+    первая страница вкладки «Оформлена» должна начинаться с оформленных).
+
+    ``unread_for_client`` — аннотация (C9), а не подсчёт в Python.
     """
     status_rank = Case(
         When(status="DRAFT", then=0),
@@ -77,45 +92,68 @@ def _client_requests(client):
         default=5,
         output_field=IntegerField(),
     )
-    return (
-        TransportRequest.objects.filter(client=client)
-        .exclude(status="CANCELLED")
+    ordering = ["_status_rank", "-created_at"]
+    qs = (
+        _client_requests_base(client)
         .prefetch_related("cars", "documents", "doc_packages", "messages__car", "bulk_uploads")
-        .annotate(_status_rank=status_rank)
-        .order_by("_status_rank", "-created_at")
+        .annotate(
+            _status_rank=status_rank,
+            unread_for_client=Count(
+                "messages",
+                filter=Q(messages__author_kind="STAFF", messages__read_by_client_at__isnull=True),
+                distinct=True,
+            ),
+        )
     )
+    if active_statuses:
+        qs = qs.annotate(
+            _tab_rank=Case(
+                When(status__in=list(active_statuses), then=0),
+                default=1,
+                output_field=IntegerField(),
+            )
+        )
+        ordering.insert(0, "_tab_rank")
+    return qs.order_by(*ordering)
 
 
 def _portal_tab_query_extra(request):
     """Прочие GET-параметры, чтобы вкладки не теряли предвыбор авто и т.п."""
     query = request.GET.copy()
     query.pop("tab", None)
+    query.pop("page", None)
     encoded = query.urlencode()
     return f"&{encoded}" if encoded else ""
 
 
-def _resolve_portal_tab(request, transport_requests, editing=None):
+def _resolve_portal_tab(request, client, editing=None):
     """Активная вкладка: явный ``?tab=``, иначе текущие или «Оформлена»."""
     raw = (request.GET.get("tab") or "").strip()
     if raw in _PORTAL_TAB_CODES:
         return raw
-    focus = editing
-    if focus is None:
+    focus_status = editing.status if editing is not None else None
+    if focus_status is None:
         pk = request.GET.get("docs_req", "")
         if pk.isdigit():
-            focus = next((item for item in transport_requests if item.pk == int(pk)), None)
-    if focus is not None and focus.status == "COMPLETED":
+            focus_status = (
+                _client_requests_base(client).filter(pk=int(pk)).values_list("status", flat=True).first()
+            )
+    if focus_status == "COMPLETED":
         return "COMPLETED"
     return "current"
 
 
-def _portal_tabs_context(request, transport_requests, editing=None):
-    """Вкладки статусов и набор статусов активной вкладки для шаблона."""
-    active_tab = _resolve_portal_tab(request, transport_requests, editing)
+def _portal_tabs_context(request, client, active_tab, requests_page):
+    """Вкладки статусов и набор статусов активной вкладки для шаблона.
+
+    Счётчики — одним ``GROUP BY status`` по всем заявкам клиента (не только
+    по текущей странице).
+    """
     active_statuses = set(_PORTAL_TAB_STATUSES[active_tab])
-    counts = {}
-    for item in transport_requests:
-        counts[item.status] = counts.get(item.status, 0) + 1
+    counts = {
+        row["status"]: row["n"]
+        for row in _client_requests_base(client).order_by().values("status").annotate(n=Count("id"))
+    }
     tabs = []
     for code, label, statuses in PORTAL_TAB_DEFS:
         tabs.append(
@@ -126,26 +164,48 @@ def _portal_tabs_context(request, transport_requests, editing=None):
                 "active": code == active_tab,
             }
         )
+    page_items = list(requests_page.object_list)
     return {
         "active_tab": active_tab,
         "active_tab_statuses": active_statuses,
-        "visible_count": sum(1 for item in transport_requests if item.status in active_statuses),
+        "visible_count": sum(1 for item in page_items if item.status in active_statuses),
         "request_tabs": tabs,
         "tab_query_extra": _portal_tab_query_extra(request),
+        "requests_page": requests_page,
+    }
+
+
+def _requests_page(request, client, active_tab):
+    """Страница заявок для активной вкладки (C9: пагинация по 20)."""
+    qs = _client_requests(client, _PORTAL_TAB_STATUSES[active_tab])
+    paginator = Paginator(qs, REQUESTS_PER_PAGE)
+    return paginator.get_page(request.GET.get("page"))
+
+
+def _requests_list_context(request, client, editing=None):
+    """Собирает всё для списка заявок: вкладку, страницу, документы, переписку."""
+    active_tab = _resolve_portal_tab(request, client, editing)
+    page = _requests_page(request, client, active_tab)
+    transport_requests = list(page.object_list)
+    return {
+        "transport_requests": transport_requests,
+        **_portal_tabs_context(request, client, active_tab, page),
+        **_docs_map_context(transport_requests),
     }
 
 
 def _attach_messages(transport_requests):
     """Вешает на заявки данные переписки для шаблона карточки.
 
-    Считаем в Python по уже предзагруженным ``messages`` — иначе на каждую
-    заявку ушло бы по два запроса за счётчиками.
+    ``unread_for_client`` приходит аннотацией из ``_client_requests``; если
+    заявки получены иначе — считаем по предзагруженным сообщениям.
     """
     labels = dict(TRANSPORT_DOCUMENT_TYPES)
     for tr in transport_requests:
         msgs = list(tr.messages.all())
         tr.msg_list = msgs
-        tr.unread_for_client = sum(1 for m in msgs if m.is_from_staff and m.read_by_client_at is None)
+        if not hasattr(tr, "unread_for_client"):
+            tr.unread_for_client = sum(1 for m in msgs if m.is_from_staff and m.read_by_client_at is None)
         tr.pending_doc_labels = [labels.get(code, code) for code in tr.pending_requested_doc_types()]
 
 
@@ -428,14 +488,12 @@ def transport_requests(request):
             initial["cars"] = selected_ids
         form = TransportRequestForm(client=client, initial=initial)
 
-    transport_requests = list(_client_requests(client))
     return render(
         request,
         "website/client_transport_requests.html",
         {
             "client": client,
             "form": form,
-            "transport_requests": transport_requests,
             "editing": None,
             "editing_car_ids": set(),
             "known_carriers_json": _known_carriers_json(client),
@@ -443,8 +501,7 @@ def transport_requests(request):
             "docs_req": request.GET.get("docs_req", ""),
             "docs_car": request.GET.get("docs_car", ""),
             "open_doc": request.GET.get("open_doc", ""),
-            **_portal_tabs_context(request, transport_requests),
-            **_docs_map_context(transport_requests),
+            **_requests_list_context(request, client),
         },
     )
 
@@ -478,14 +535,12 @@ def transport_request_edit(request, pk):
     else:
         form = TransportRequestForm(client=client, instance=transport_request)
 
-    transport_requests = list(_client_requests(client))
     return render(
         request,
         "website/client_transport_requests.html",
         {
             "client": client,
             "form": form,
-            "transport_requests": transport_requests,
             "editing": transport_request,
             "editing_car_ids": {str(pk) for pk in transport_request.cars.values_list("pk", flat=True)},
             "known_carriers_json": _known_carriers_json(client),
@@ -496,8 +551,7 @@ def transport_request_edit(request, pk):
             "docs_req": request.GET.get("docs_req", ""),
             "docs_car": request.GET.get("docs_car", ""),
             "open_doc": request.GET.get("open_doc", ""),
-            **_portal_tabs_context(request, transport_requests, editing=transport_request),
-            **_docs_map_context(transport_requests),
+            **_requests_list_context(request, client, editing=transport_request),
         },
     )
 

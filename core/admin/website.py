@@ -377,23 +377,24 @@ class TransportRequestAdmin(admin.ModelAdmin):
 
     truck_display.short_description = "Тягач / прицеп"
 
+    def get_queryset(self, request):
+        from django.db.models import Count
+
+        return super().get_queryset(request).annotate(_cars_count=Count("cars", distinct=True))
+
     def cars_count(self, obj):
-        return obj.cars.count()
+        count = getattr(obj, "_cars_count", None)
+        if count is None:
+            count = obj.cars.count()
+        return count
 
     cars_count.short_description = "Машин"
+    cars_count.admin_order_field = "_cars_count"
 
     def status_display(self, obj):
-        colors = {
-            "DRAFT": "#5c6370",
-            "SUBMITTED": "#e8590c",
-            "ACCEPTED": "#2b8a3e",
-            "IN_PROGRESS": "#0b7285",
-            "COMPLETED": "#5f3dc4",
-            "CANCELLED": "#c92a2a",
-        }
         return format_html(
-            '<span style="background-color: {}; color: white; padding: 3px 8px; border-radius: 3px;">{}</span>',
-            colors.get(obj.status, "#666"),
+            '<span class="cm-badge--status cm-badge--status-{}">{}</span>',
+            (obj.status or "unknown").lower(),
             obj.get_status_display(),
         )
 

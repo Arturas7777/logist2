@@ -19,13 +19,19 @@ from rest_framework.response import Response
 
 from core.models import Car
 from core.models_website import CarPhoto, ClientUser, ContainerPhoto
+from core.services.photo_response import build_photo_response
+from core.services.signed_urls import photo_url_ttl
 
 logger = logging.getLogger(__name__)
 
 
 @login_required
 def download_car_photo(request, photo_id):
-    """Скачать одну фотографию автомобиля."""
+    """Скачать одну фотографию автомобиля.
+
+    Отдача файла — через :func:`build_photo_response` (P1): на проде это
+    ``X-Accel-Redirect`` для nginx, локально — ``FileResponse``.
+    """
     try:
         client_user = request.user.clientuser
         photo = get_object_or_404(
@@ -34,12 +40,7 @@ def download_car_photo(request, photo_id):
             car__client=client_user.client,
             is_public=True,
         )
-
-        if photo.photo and os.path.exists(photo.photo.path):
-            response = FileResponse(photo.photo.open("rb"))
-            response["Content-Disposition"] = f'attachment; filename="{photo.filename}"'
-            return response
-        raise Http404("Фото не найдено")
+        return build_photo_response(photo.photo, max_age=photo_url_ttl(), download_name=photo.filename)
     except ClientUser.DoesNotExist:
         raise Http404("Доступ запрещен")
 
@@ -55,12 +56,7 @@ def download_container_photo(request, photo_id):
             container__client=client_user.client,
             is_public=True,
         )
-
-        if photo.photo and os.path.exists(photo.photo.path):
-            response = FileResponse(photo.photo.open("rb"))
-            response["Content-Disposition"] = f'attachment; filename="{photo.filename}"'
-            return response
-        raise Http404("Фото не найдено")
+        return build_photo_response(photo.photo, max_age=photo_url_ttl(), download_name=photo.filename)
     except ClientUser.DoesNotExist:
         raise Http404("Доступ запрещен")
 

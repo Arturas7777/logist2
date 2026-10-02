@@ -67,6 +67,12 @@ EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
 
+# GDrive-синк фото: в тестах качаем последовательно — моки download_file
+# пишут в SQLite из того же потока, а сценарии «фото появилось во время
+# прохода» детерминированы только без пула. Параллельный путь покрыт
+# отдельно в test_wave_perf_gdrive.py (переопределяет настройку).
+GDRIVE_DOWNLOAD_WORKERS = 1
+
 PASSWORD_HASHERS = [
     "django.contrib.auth.hashers.MD5PasswordHasher",
 ]

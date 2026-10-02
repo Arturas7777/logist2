@@ -201,8 +201,23 @@ LINE_FETCHERS = {
 # ── Обновление контейнера ──────────────────────────────────────────────────
 
 
-def update_container_eta(container) -> dict:
+def line_fetcher_for(container):
+    """Адаптер Track & Trace для линии контейнера или ``None``.
+
+    Вынесено, чтобы массовая задача могла отсеять линии без адаптера ДО
+    параллельных HTTP-вызовов и вызвать сам fetcher в пуле потоков.
+    """
+    line_name = (container.line.name if container.line_id else "").strip().upper()
+    return line_name, LINE_FETCHERS.get(line_name)
+
+
+def update_container_eta(container, *, fetched: tuple | None = None) -> dict:
     """Запрашивает ETA у линии контейнера и обновляет ``container.eta``.
+
+    ``fetched`` — уже полученный ``(payload, error)`` от адаптера линии
+    (P7: HTTP делается параллельно в пуле потоков, а разбор ответа и
+    ``save()`` — здесь, в потоке с БД-соединением). Без него запрос
+    выполняется прямо тут.
 
     Возвращает dict с результатом (все значения JSON-сериализуемые —
     результат уходит в Celery backend):
@@ -218,14 +233,13 @@ def update_container_eta(container) -> dict:
         "message": "",
     }
 
-    line_name = (container.line.name if container.line_id else "").strip().upper()
-    fetcher = LINE_FETCHERS.get(line_name)
+    line_name, fetcher = line_fetcher_for(container)
     if fetcher is None:
         result["message"] = f"линия «{line_name or '—'}» не поддерживается (есть: {', '.join(LINE_FETCHERS)})"
         return result
 
     try:
-        payload, error = fetcher(container.number)
+        payload, error = fetched if fetched is not None else fetcher(container.number)
     except requests.RequestException as e:
         result["message"] = f"ошибка запроса к {line_name}: {e}"
         logger.warning("ETA %s (%s): %s", container.number, line_name, e)

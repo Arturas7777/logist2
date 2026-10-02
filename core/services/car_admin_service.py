@@ -169,6 +169,86 @@ def auto_add_default_services(
         )
 
 
+def validate_client_change(car, old_client_id) -> None:
+    """B5: запретить смену клиента у авто, которое уже в ВЫСТАВЛЕННОМ счёте.
+
+    Инвойс ISSUED / OVERDUE / PARTIALLY_PAID старому клиенту содержит это
+    авто — его позиции и total уже у клиента. Переназначать авто можно
+    только после кредит-ноты/отмены счёта. Черновики не блокируют (их
+    отвязывает ``detach_car_from_client_drafts``).
+    """
+    from django.core.exceptions import ValidationError
+
+    from core.mixins import OPEN_INVOICE_STATUSES
+    from core.models_billing import NewInvoice
+
+    if not car.pk or not old_client_id or old_client_id == car.client_id:
+        return
+    blocking = list(
+        NewInvoice.objects.filter(
+            cars=car,
+            recipient_client_id=old_client_id,
+            status__in=OPEN_INVOICE_STATUSES,
+        ).values_list("number", flat=True)
+    )
+    if blocking:
+        raise ValidationError(
+            {
+                "client": (
+                    "Авто входит в выставленный счёт прежнему клиенту: "
+                    + ", ".join(blocking)
+                    + ". Сначала оформите кредит-ноту или отмените счёт, затем меняйте клиента."
+                )
+            }
+        )
+
+
+def detach_car_from_client_drafts(car, old_client_id) -> dict:
+    """B5: при смене клиента убрать авто из DRAFT-инвойсов старого клиента.
+
+    Черновик пересобирается без этого авто; пустой черновик удаляется
+    (DRAFT без оплаты удалять можно — см. ``NewInvoice.delete``; отмена
+    вместо удаления оставила бы CANCELLED-запись, которая блокирует
+    повторную генерацию инвойса автовоза этому клиенту). Новый DRAFT
+    новому клиенту автоматически не создаётся — его создаст автовоз или
+    оператор. Результат дублируется в ``car._client_change_result`` для
+    сообщения в админке.
+    """
+    from core.models_billing import NewInvoice
+
+    result = {"detached": [], "deleted": []}
+    if not car.pk or not old_client_id or old_client_id == car.client_id:
+        car._client_change_result = result
+        return result
+
+    drafts = NewInvoice.objects.filter(cars=car, recipient_client_id=old_client_id, status="DRAFT")
+    for invoice in drafts:
+        invoice.cars.remove(car)
+        if invoice.cars.exists():
+            invoice.regenerate_items_from_cars()
+            result["detached"].append(invoice.number)
+            logger.info(
+                "[client change] car %s detached from draft %s (old client %s → %s)",
+                car.vin,
+                invoice.number,
+                old_client_id,
+                car.client_id,
+            )
+        else:
+            number = invoice.number
+            invoice.items.all().delete()
+            invoice.delete()
+            result["deleted"].append(number)
+            logger.info(
+                "[client change] empty draft %s deleted after car %s moved to client %s",
+                number,
+                car.vin,
+                car.client_id,
+            )
+    car._client_change_result = result
+    return result
+
+
 def apply_car_service_edits(car, *, post, changed_data, is_change) -> None:
     """Полная оркестрация правок услуг карточки авто после ``super().save_model``.
 

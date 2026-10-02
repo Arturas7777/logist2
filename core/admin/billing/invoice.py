@@ -77,6 +77,7 @@ class NewInvoiceAdmin(
         "number_display",
         "doc_type_badge",
         "direction_badge",
+        "signals_display",
         "linked_badge",
         "category_display",
         "notes_display",
@@ -121,7 +122,7 @@ class NewInvoiceAdmin(
 
     fieldsets = (
         (
-            "📋 Основная информация",
+            "Основная информация",
             {
                 "fields": (
                     ("date", "due_date", "status"),
@@ -130,20 +131,20 @@ class NewInvoiceAdmin(
             },
         ),
         (
-            "🏢 Выставитель инвойса",
+            "Выставитель инвойса",
             {
                 "fields": ("issuer_company",),
                 "description": ("По умолчанию: Caromoto Lithuania. Для входящих инвойсов — укажите контрагента ниже."),
             },
         ),
         (
-            "👤 Получатель инвойса",
+            "Получатель инвойса",
             {
                 "fields": ("recipient_client",),
             },
         ),
         (
-            "🚗 Автомобили",
+            "Автомобили",
             {
                 "fields": ("cars",),
                 "description": (
@@ -153,7 +154,7 @@ class NewInvoiceAdmin(
             },
         ),
         (
-            "💰 Финансы",
+            "Финансы",
             {
                 "fields": (
                     ("subtotal", "discount", "tax"),
@@ -163,13 +164,13 @@ class NewInvoiceAdmin(
             },
         ),
         (
-            "📎 Дополнительно",
+            "Дополнительно",
             {
                 "fields": ("notes", "attachment", "linked_invoice", "audit_status_display"),
             },
         ),
         (
-            "⚙️ Прочие получатели (если не клиент)",
+            "Прочие получатели (если не клиент)",
             {
                 "fields": (
                     ("recipient_warehouse", "recipient_line"),
@@ -180,7 +181,7 @@ class NewInvoiceAdmin(
             },
         ),
         (
-            "⚙️ Прочие выставители (если не компания)",
+            "Прочие выставители (если не компания)",
             {
                 "fields": (("issuer_warehouse", "issuer_line", "issuer_carrier"),),
                 "classes": ("collapse",),
@@ -200,6 +201,7 @@ class NewInvoiceAdmin(
         "mark_as_paid",
         "cancel_invoices",
         "regenerate_items",
+        "regenerate_items_force",
         "push_to_sitepro",
         "change_series",
         "delete_invoices_with_transactions",

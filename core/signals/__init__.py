@@ -47,6 +47,7 @@ from core.signals import (  # noqa: F401
     car,
     car_service,
     cache_invalidation,
+    client_notifications,
     container,
     invoice,
     partners,
@@ -54,6 +55,7 @@ from core.signals import (  # noqa: F401
     service_cache,
     service_catalog,
     transaction,
+    transport_request,
 )
 
 # m2m + cache invalidation подключаются вручную (через apps.get_model и

@@ -1,0 +1,15 @@
+{% load i18n %}
+{# Таймлайн статусов (C1). Контекст: timeline — список шагов из build_status_timeline(). #}
+<ol class="status-timeline" aria-label="{% trans 'Этапы доставки' %}">
+    {% for step in timeline %}
+    <li class="status-timeline__step is-{{ step.state }}"{% if step.state == "current" %} aria-current="step"{% endif %}>
+        <span class="status-timeline__dot">
+            {% if step.state == "done" %}<i class="bi bi-check-lg" aria-hidden="true"></i>{% else %}<i class="bi {{ step.icon }}" aria-hidden="true"></i>{% endif %}
+        </span>
+        <span class="status-timeline__label">{{ step.label }}</span>
+        {% if step.date %}
+        <span class="status-timeline__date">{% if step.date_prefix %}{{ step.date_prefix }} {% endif %}{{ step.date|date:"d.m.Y" }}</span>
+        {% endif %}
+    </li>
+    {% endfor %}
+</ol>

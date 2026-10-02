@@ -379,6 +379,16 @@ class BankTransaction(models.Model):
             models.Index(fields=["connection", "created_at"], name="bt_conn_created_idx"),
             # Фильтр по состоянию транзакции (list_filter state) + дата.
             models.Index(fields=["state", "created_at"], name="bt_state_created_idx"),
+            # P9: фильтр «не сверено» в админке банка.
+            models.Index(
+                fields=["created_at"],
+                name="bt_unreconciled_idx",
+                condition=models.Q(
+                    matched_invoice__isnull=True,
+                    matched_transaction__isnull=True,
+                    reconciliation_skipped=False,
+                ),
+            ),
         ]
 
     def __str__(self):

@@ -771,47 +771,76 @@ class NewInvoice(models.Model):
         - Хранение — отдельная группа "Хран"
         - description = short_name (для группировки в таблице)
 
-        Guard: для PAID / LINKED_PAID / CANCELLED регенерация запрещена —
-        она удаляет позиции и перезаписывает ``total``, что нарушает
-        инвариант «оплачен = total совпадает с paid_amount». Это единая
-        защита для всех путей вызова (сигналы Car/CarService, Celery,
-        admin-actions, авто-транспорт). Передайте ``force=True`` только
-        если осознанно нужно пересоздать позиции вне зависимости от статуса.
+        Guard (B1/B2, IMPROVEMENT_PLAN_2026-10): без ``force`` пересобирается
+        ТОЛЬКО ``DRAFT``. Выставленный счёт (ISSUED / OVERDUE /
+        PARTIALLY_PAID) клиент уже получил как PDF — тихая перезапись
+        позиций и ``total`` расходится с документом у клиента и в site.pro.
+        Для PAID / LINKED_PAID / CANCELLED реген запрещён в любом режиме
+        автоматики: он удаляет позиции и перезаписывает ``total``, нарушая
+        инвариант «оплачен = total совпадает с paid_amount». Инвойс с
+        ``paid_amount > 0`` без ``force`` тоже не трогаем.
+
+        ``force=True`` — осознанный ручной путь (admin action с
+        подтверждением): пересобирает позиции независимо от статуса, после
+        чего пересчитывает ``paid_amount``/статус из реальных транзакций.
+
+        Returns:
+            bool: True — позиции пересобраны; False — отказ (с warning в лог).
         """
         from django.db import transaction
 
-        from core.mixins import REGENERATABLE_INVOICE_STATUSES
+        from core.mixins import AUTO_REGENERATABLE_INVOICE_STATUSES
 
-        if not force and self.status not in REGENERATABLE_INVOICE_STATUSES:
-            logger.warning(
-                "regenerate_items_from_cars: пропущен инвойс %s (status=%s) — "
-                "регенерация запрещена для оплаченных/отменённых",
-                self.number or self.pk,
-                self.status,
-            )
-            return
+        if not force:
+            if self.status not in AUTO_REGENERATABLE_INVOICE_STATUSES:
+                logger.warning(
+                    "regenerate_items_from_cars: пропущен инвойс %s (status=%s) — "
+                    "автоматическая регенерация разрешена только для DRAFT; "
+                    "для выставленных используйте force / кредит-ноту",
+                    self.number or self.pk,
+                    self.status,
+                )
+                return False
+            if self.paid_amount and self.paid_amount > 0:
+                logger.warning(
+                    "regenerate_items_from_cars: пропущен инвойс %s — есть оплата %s, "
+                    "регенерация без force запрещена",
+                    self.number or self.pk,
+                    self.paid_amount,
+                )
+                return False
 
         with transaction.atomic():
             self._regenerate_items_from_cars_inner()
+            # После пересборки total мог измениться — приводим paid_amount и
+            # статус в соответствие с реальными транзакциями (PARTIALLY_PAID →
+            # PAID, если total упал ниже оплаченного, и т.п.).
+            self.recalculate_paid_amount()
+        return True
 
-    def _regenerate_items_from_cars_inner(self):
+    def _compute_items_from_cars(self, *, dry_run=False):
+        """Собрать группы позиций по машинам, не трогая ``InvoiceItem``.
+
+        Возвращает список ``(car, OrderedDict[short_name → amount])``.
+        ``dry_run=True`` — только расчёт в памяти (для сравнения
+        «позиции расходятся с услугами»): цена услуги «Хранение» в
+        ``CarService`` не перезаписывается.
+        """
         from collections import OrderedDict
-
-        # Удаляем старые позиции
-        self.items.all().delete()
 
         issuer = self.issuer
         if not issuer:
-            return
+            return []
 
         issuer_type = issuer.__class__.__name__
         is_company = issuer_type == "Company"
 
-        order = 0
+        result = []
         for car in self.cars.prefetch_related("car_services").select_related("warehouse").all():
             # Пересчитываем хранение и стоимость перед генерацией позиций
             car.update_days_and_storage()
-            car.calculate_total_price()
+            if not dry_run:
+                car.calculate_total_price()
 
             # Определяем набор услуг в зависимости от типа выставителя
             if issuer_type == "Warehouse":
@@ -873,7 +902,19 @@ class NewInvoice(models.Model):
                         storage_total += storage_markup
                     groups["Хран"] = storage_total
 
-            # === Создаём InvoiceItem для каждой группы ===
+            result.append((car, groups))
+
+        return result
+
+    def _regenerate_items_from_cars_inner(self):
+        # Удаляем старые позиции
+        self.items.all().delete()
+
+        if not self.issuer:
+            return
+
+        order = 0
+        for car, groups in self._compute_items_from_cars():
             for short_name, amount in groups.items():
                 InvoiceItem.objects.create(
                     invoice=self, description=short_name, car=car, quantity=1, unit_price=amount, order=order
@@ -883,6 +924,49 @@ class NewInvoice(models.Model):
         # Пересчитываем итоги
         self.calculate_totals()
         self.save(update_fields=["subtotal", "total"])
+
+    def items_sync_diff(self):
+        """Расхождения текущих позиций с тем, что дал бы реген (по машинам).
+
+        Дешёвый вариант сравнения: суммы позиций по каждому авто, без
+        записи в БД. Возвращает список словарей
+        ``{"car": Car|None, "actual": Decimal, "expected": Decimal}`` —
+        пустой список означает «позиции соответствуют услугам». Позиции
+        без привязки к авто учитываются одной строкой (``car=None``) —
+        реген их всегда удаляет.
+
+        Не вызывать в ``list_display``: один запрос услуг на каждое авто.
+        """
+        from django.db.models import Sum
+
+        if not self.pk or not self.issuer or not self.cars.exists():
+            return []
+
+        cents = Decimal("0.01")
+        expected = {
+            car.pk: sum(groups.values(), Decimal("0")).quantize(cents)
+            for car, groups in self._compute_items_from_cars(dry_run=True)
+        }
+
+        actual = {}
+        for row in self.items.order_by().values("car_id").annotate(s=Sum("total_price")):
+            actual[row["car_id"]] = (row["s"] or Decimal("0")).quantize(cents)
+
+        diff = []
+        car_ids = set(expected) | {cid for cid in actual if cid is not None}
+        cars = {c.pk: c for c in self.cars.model.objects.filter(pk__in=car_ids)} if car_ids else {}
+        for car_id in sorted(car_ids):
+            exp = expected.get(car_id, Decimal("0.00"))
+            act = actual.get(car_id, Decimal("0.00"))
+            if exp != act:
+                diff.append({"car": cars.get(car_id), "actual": act, "expected": exp})
+        if actual.get(None):
+            diff.append({"car": None, "actual": actual[None], "expected": Decimal("0.00")})
+        return diff
+
+    def items_out_of_sync(self):
+        """True, если позиции инвойса расходятся с текущими услугами авто."""
+        return bool(self.items_sync_diff())
 
     def clean(self):
         """Валидация инвойса перед сохранением."""

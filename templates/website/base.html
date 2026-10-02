@@ -5,13 +5,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Caromoto Lithuania — организация доставки автомобилей из США в Европейский союз и сопровождение таможенных процедур">
-    <meta name="keywords" content="доставка авто из США, логистика, контейнерные перевозки, Caromoto">
-    <title>{% block title %}Caromoto Lithuania - Логистика автомобилей{% endblock %}</title>
-    
+    {# SEO (C8): per-page description / OG / canonical. Страницы переопределяют блоки. #}
+    <meta name="description" content="{% block meta_description %}{% trans 'Caromoto Lithuania — организация доставки автомобилей из США в Европейский союз и сопровождение таможенных процедур' %}{% endblock %}">
+    <meta name="keywords" content="{% trans 'доставка авто из США, логистика, контейнерные перевозки, Caromoto' %}">
+    {% block meta_robots %}{% endblock %}
+    <title>{% block title %}{% trans "Caromoto Lithuania - Логистика автомобилей" %}{% endblock %}</title>
+    {% if request %}
+    <link rel="canonical" href="{% block canonical_url %}{{ request.scheme }}://{{ request.get_host }}{{ request.path }}{% endblock %}">
+    {% endif %}
+
+    <!-- Open Graph / Twitter Card -->
+    <meta property="og:type" content="{% block og_type %}website{% endblock %}">
+    <meta property="og:site_name" content="Caromoto Lithuania">
+    <meta property="og:locale" content="{% if LANGUAGE_CODE == 'lt' %}lt_LT{% elif LANGUAGE_CODE == 'en' %}en_GB{% else %}ru_RU{% endif %}">
+    <meta property="og:title" content="{% block og_title %}Caromoto Lithuania{% endblock %}">
+    <meta property="og:description" content="{% block og_description %}{% trans 'Доставка автомобилей из США в ЕС: контейнерные перевозки, разгрузка, хранение и таможенное оформление.' %}{% endblock %}">
+    {% if request %}<meta property="og:url" content="{{ request.scheme }}://{{ request.get_host }}{{ request.path }}">{% endif %}
+    <meta property="og:image" content="{% block og_image %}{% if request %}{{ request.scheme }}://{{ request.get_host }}{% endif %}{% static 'website/images/hero-background.jpg' %}{% endblock %}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{% block twitter_title %}Caromoto Lithuania{% endblock %}">
+    <meta name="twitter:description" content="{% block twitter_description %}{% trans 'Доставка автомобилей из США в ЕС: контейнерные перевозки, разгрузка, хранение и таможенное оформление.' %}{% endblock %}">
+    {% block structured_data %}{% endblock %}
+
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="{% static 'website/images/favicon.png' %}">
-    
+    {% block preload %}{% endblock %}
+
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -30,7 +49,8 @@
             <a class="navbar-brand d-flex align-items-center" href="{% url 'website:home' %}">
                 <img src="{% static 'website/images/caromoto_logo.png' %}" alt="Caromoto Lithuania" class="navbar-logo">
             </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+                    aria-controls="navbarNav" aria-expanded="false" aria-label="{% trans 'Открыть меню' %}">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
@@ -102,6 +122,9 @@
                                     <i class="bi bi-shield-check"></i> {% trans "Проверка на санкции" %}
                                 </a></li>
                                 {% endif %}
+                                <li><a class="dropdown-item" href="{% url 'website:notification_settings' %}">
+                                    <i class="bi bi-bell"></i> {% trans "Уведомления" %}
+                                </a></li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li>
                                     <form method="post" action="{% url 'website:logout' %}">
@@ -133,8 +156,9 @@
     <!-- ИИ-помощник (чат-кнопка) -->
     <div id="ai-chat-widget">
         {% csrf_token %}
-        <button class="ai-chat-button" id="ai-chat-toggle" title="{% trans 'Задать вопрос ИИ-помощнику' %}">
-            <i class="bi bi-chat-dots fs-3"></i>
+        <button class="ai-chat-button" id="ai-chat-toggle" title="{% trans 'Задать вопрос ИИ-помощнику' %}"
+                aria-label="{% trans 'Задать вопрос ИИ-помощнику' %}" aria-controls="ai-chat-window" aria-expanded="false">
+            <i class="bi bi-chat-dots fs-3" aria-hidden="true"></i>
         </button>
         
         <!-- Окно чата -->
@@ -143,7 +167,7 @@
                 <h6 class="mb-0">
                     <i class="bi bi-robot"></i> {% trans "ИИ-помощник" %}
                 </h6>
-                <button class="btn-close btn-close-white" id="ai-chat-close"></button>
+                <button class="btn-close btn-close-white" id="ai-chat-close" aria-label="{% trans 'Закрыть' %}"></button>
             </div>
             <div class="ai-chat-messages" id="ai-chat-messages">
                 <div class="ai-message">
@@ -154,8 +178,8 @@
             </div>
             <div class="ai-chat-input">
                 <input type="text" class="form-control" id="ai-chat-input" placeholder="{% trans 'Введите ваш вопрос...' %}">
-                <button class="btn btn-primary" id="ai-chat-send">
-                    <i class="bi bi-send"></i>
+                <button class="btn btn-primary" id="ai-chat-send" aria-label="{% trans 'Отправить' %}">
+                    <i class="bi bi-send" aria-hidden="true"></i>
                 </button>
             </div>
         </div>
@@ -202,7 +226,7 @@
             </div>
             <hr class="my-4 bg-white">
             <div class="text-center text-white-50">
-                <p class="mb-0">&copy; 2024 Caromoto Lithuania. {% trans "Все права защищены." %}</p>
+                <p class="mb-0">&copy; {% now "Y" %} Caromoto Lithuania. {% trans "Все права защищены." %}</p>
             </div>
         </div>
     </footer>

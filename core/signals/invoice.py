@@ -142,3 +142,50 @@ def sync_linked_invoice_status(sender, instance, **kwargs):
             linked.number,
             instance.number,
         )
+
+
+# ── C5: уведомление клиента «инвойс выставлен» ──────────────────────────────
+# Отдельный pre_save-снимок: ``auto_push_invoice_to_sitepro`` обнуляет
+# ``_pre_save_status`` после чтения, и порядок post_save-обработчиков
+# здесь не гарантирован. Снимок берём из уже сделанного запроса
+# ``save_old_invoice_status``, если он есть, иначе — свой.
+
+
+@receiver(pre_save, sender=NewInvoice, dispatch_uid="client_notify_invoice_pre_save")
+def snapshot_status_for_client_notify(sender, instance, **kwargs):
+    update_fields = kwargs.get("update_fields")
+    if update_fields is not None and "status" not in update_fields:
+        instance._client_notify_old_status = instance.status
+        return
+    if not instance.pk:
+        instance._client_notify_old_status = None
+        return
+    if hasattr(instance, "_pre_save_status"):
+        instance._client_notify_old_status = instance._pre_save_status
+        return
+    old = NewInvoice.objects.filter(pk=instance.pk).values_list("status", flat=True).first()
+    instance._client_notify_old_status = old
+
+
+@receiver(post_save, sender=NewInvoice, dispatch_uid="client_notify_invoice_issued")
+def notify_client_on_invoice_issued(sender, instance, created, **kwargs):
+    """PARDP перешёл в ISSUED → письмо/Telegram клиенту с PDF (после commit)."""
+    old_status = getattr(instance, "_client_notify_old_status", None)
+    if hasattr(instance, "_client_notify_old_status"):
+        del instance._client_notify_old_status
+    if instance.status != "ISSUED" or old_status == "ISSUED":
+        return
+    if instance.document_type != "INVOICE" or not instance.recipient_client_id:
+        return
+
+    invoice_id = instance.pk
+
+    def _queue():
+        try:
+            from core.tasks import send_invoice_issued_notification_task
+
+            send_invoice_issued_notification_task.delay(invoice_id)
+        except Exception as exc:
+            logger.warning("[client_notify] Celery недоступен для инвойса %s: %s", invoice_id, exc)
+
+    transaction.on_commit(_queue)

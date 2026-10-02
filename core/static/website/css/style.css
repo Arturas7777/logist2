@@ -739,3 +739,105 @@ footer a:hover {
     box-shadow: 0 4px 12px rgba(13, 110, 253, 0.3);
 }
 
+/* ===== Таймлайн статусов груза (C1) =====
+   Один компонент для публичного трекинга, карточки авто и контейнера:
+   FLOATING → IN_PORT → UNLOADED → TRANSFERRED. Шаги до текущего — «done»,
+   текущий подсвечен, следующие — приглушены. */
+.status-timeline {
+    --tl-done: #198754;
+    --tl-current: #0d6efd;
+    --tl-upcoming: #c9d1dc;
+    display: flex;
+    align-items: flex-start;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.status-timeline__step {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    text-align: center;
+    padding: 0 .25rem;
+}
+
+.status-timeline__step::before {
+    content: '';
+    position: absolute;
+    top: 13px;
+    left: -50%;
+    width: 100%;
+    height: 3px;
+    background: var(--tl-upcoming);
+    z-index: 0;
+}
+
+.status-timeline__step:first-child::before {
+    display: none;
+}
+
+.status-timeline__step.is-done::before,
+.status-timeline__step.is-current::before {
+    background: var(--tl-done);
+}
+
+.status-timeline__dot {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #fff;
+    border: 3px solid var(--tl-upcoming);
+    color: var(--tl-upcoming);
+    font-size: .8rem;
+    line-height: 1;
+}
+
+.status-timeline__step.is-done .status-timeline__dot {
+    background: var(--tl-done);
+    border-color: var(--tl-done);
+    color: #fff;
+}
+
+.status-timeline__step.is-current .status-timeline__dot {
+    border-color: var(--tl-current);
+    color: var(--tl-current);
+    box-shadow: 0 0 0 4px rgba(13, 110, 253, .18);
+}
+
+.status-timeline__label {
+    display: block;
+    margin-top: .4rem;
+    font-size: .8rem;
+    font-weight: 600;
+    color: #5b6672;
+}
+
+.status-timeline__step.is-current .status-timeline__label {
+    color: var(--tl-current);
+}
+
+.status-timeline__step.is-done .status-timeline__label {
+    color: #1f2933;
+}
+
+.status-timeline__date {
+    display: block;
+    font-size: .75rem;
+    color: #7b8794;
+}
+
+.status-timeline__step.is-current .status-timeline__date {
+    color: var(--tl-current);
+}
+
+@media (max-width: 575.98px) {
+    .status-timeline__label { font-size: .7rem; }
+    .status-timeline__date { font-size: .68rem; }
+}
+

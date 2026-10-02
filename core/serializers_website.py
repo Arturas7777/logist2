@@ -82,6 +82,8 @@ class ClientCarSerializer(serializers.ModelSerializer):
     warehouse_address = serializers.CharField(source="warehouse.address", read_only=True, allow_null=True)
     container_number = serializers.CharField(source="container.number", read_only=True, allow_null=True)
     container_unload_date = serializers.DateField(source="container.unload_date", read_only=True, allow_null=True)
+    # ETA берём у контейнера — у авто своего нет; нужен таймлайну трекинга (C1).
+    eta = serializers.DateField(source="container.eta", read_only=True, allow_null=True)
     photos = CarPhotoSerializer(many=True, read_only=True)
     photos_count = serializers.SerializerMethodField()
     container_photos = serializers.SerializerMethodField()
@@ -100,6 +102,7 @@ class ClientCarSerializer(serializers.ModelSerializer):
             "warehouse_address",
             "container_number",
             "container_unload_date",
+            "eta",
             "unload_date",
             "transfer_date",
             "photos",

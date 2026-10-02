@@ -101,6 +101,74 @@
         row.classList.add('cm-live-updated');
     }
 
+    // ── Обновление ячеек строки из payload (V4) ─────────────────────────
+    // Payload (send_car_ws_notification): {status, days, storage_cost, price}.
+    // Подписи статусов дублируем здесь: в payload приходит только код.
+    var STATUS_LABELS = {
+        FLOATING: 'В пути',
+        IN_PORT: 'В порту',
+        UNLOADED: 'Разгружен',
+        TRANSFERRED: 'Передан'
+    };
+    var STORAGE_WARN_DAYS = 7; // как CarAdmin.STORAGE_WARN_DAYS
+
+    function fmtMoney(value) {
+        var n = parseFloat(value);
+        return isNaN(n) ? null : n.toFixed(2);
+    }
+
+    function updateStatusCell(row, status) {
+        if (!status) return;
+        var badge = row.querySelector('td.field-colored_status .cm-badge--status');
+        if (!badge) return;
+        var code = String(status);
+        badge.className = 'cm-badge--status cm-badge--status-' + code.toLowerCase();
+        badge.textContent = STATUS_LABELS[code] || code;
+        // Контейнер в строке авто окрашен по статусу авто — синхронизируем.
+        var containerBadge = row.querySelector('td.field-container_display .cm-badge--status');
+        if (containerBadge) {
+            containerBadge.className = 'cm-badge--status cm-badge--status-' + code.toLowerCase();
+        }
+    }
+
+    function updateDaysCell(row, days, storageCost) {
+        if (days === undefined || days === null) return;
+        var badge = row.querySelector('td.field-days_display .cm-days-badge');
+        if (!badge || badge.classList.contains('cm-days-badge--none')) return;
+        var n = parseInt(days, 10);
+        if (isNaN(n)) return;
+        var level = n <= 0 ? 'free' : (n <= STORAGE_WARN_DAYS ? 'warn' : 'over');
+        badge.className = 'cm-days-badge cm-days-badge--' + level;
+        // Число платных дней — первый текстовый узел, «/ всего» остаётся в <small>.
+        var textNode = null;
+        for (var i = 0; i < badge.childNodes.length; i++) {
+            if (badge.childNodes[i].nodeType === 3) { textNode = badge.childNodes[i]; break; }
+        }
+        if (textNode) {
+            textNode.nodeValue = String(n) + ' ';
+        } else {
+            badge.insertBefore(document.createTextNode(String(n) + ' '), badge.firstChild);
+        }
+        var cost = fmtMoney(storageCost);
+        if (cost !== null) {
+            var title = badge.getAttribute('title') || '';
+            badge.setAttribute('title', title.replace(/накоплено [\d.,]+ €/, 'накоплено ' + cost + ' €'));
+        }
+    }
+
+    function updatePriceCell(row, price) {
+        var cell = row.querySelector('td.field-total_price_display');
+        var value = fmtMoney(price);
+        if (!cell || value === null) return;
+        cell.textContent = value;
+    }
+
+    function applyRowPayload(row, ev) {
+        updateStatusCell(row, ev.status);
+        updateDaysCell(row, ev.days, ev.storage_cost);
+        updatePriceCell(row, ev.price !== undefined ? ev.price : ev.total_price);
+    }
+
     function applyChangelistUpdates(events) {
         var model = currentChangelistModel();
         if (!model) return 0;
@@ -109,6 +177,7 @@
             if (!ev.model || String(ev.model).toLowerCase() !== model) return;
             var row = findRow(model, ev.id);
             if (row) {
+                applyRowPayload(row, ev);
                 highlightRow(row);
                 touched += 1;
             }

@@ -228,7 +228,21 @@ class Container(models.Model):
         return self.container_cars.aggregate(m=models.Max("days"))["m"] or 0
 
     def sync_cars(self):
-        Container.objects.update_related(self)
+        """Синхронизировать авто с контейнером (массовые admin-actions).
+
+        Раньше делегировало ``OptimizedContainerManager.update_related`` →
+        ``Car.sync_with_container`` — статус переписывался всем авто без
+        FSM, а переданным сбрасывался transfer_date (B3/B11). Теперь:
+        статус — через FSM-каскад (``bulk_update_car_statuses``), склад и
+        дата разгрузки — только непереданным авто.
+        """
+        if not self.pk:
+            return None
+        from core.services.container_lifecycle_service import bulk_update_car_statuses
+
+        result = bulk_update_car_statuses(self)
+        self.sync_cars_after_warehouse_change()
+        return result
 
     def clean(self):
         from django.core.exceptions import ValidationError
@@ -258,7 +272,7 @@ class Container(models.Model):
             self.clean()
         super().save(*args, **kwargs)
 
-    def sync_cars_after_warehouse_change(self):
+    def sync_cars_after_warehouse_change(self, *, include_transferred=False):
         """
         Применяет новый склад ко всем авто контейнера:
         - ставит warehouse
@@ -266,11 +280,18 @@ class Container(models.Model):
         - дата разгрузки ВСЕГДА наследуется из контейнера (принудительно)
         - пересчитывает хранение и суммы
         Использует bulk_update для минимизации запросов.
+
+        B11: переданные (TRANSFERRED) авто по умолчанию не трогаем — их
+        хранение зафиксировано на transfer_date и уже выставлено в счёт.
+        ``include_transferred=True`` — явное «применить и к переданным».
         """
         if not self.pk:
             return
 
-        cars = list(self.container_cars.select_related("warehouse").all())
+        qs = self.container_cars.select_related("warehouse")
+        if not include_transferred:
+            qs = qs.exclude(status="TRANSFERRED")
+        cars = list(qs)
         if not cars:
             return
 

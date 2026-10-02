@@ -4,14 +4,14 @@
 2. Регенерация ``NewInvoice.items`` для инвойсов, в которых участвует
    эта машина.
 
-Оба пути дедуплицируются через thread-local множества:
-``_pricing_local.cars`` и ``_regen_local.cars`` соответственно. При
-сохранении карточки авто из админки приходит 5-15 ``post_save`` от
-``CarService`` подряд (по одной услуге на каждый ``service.save()``).
-Раньше каждый сигнал запускал собственный ``calculate_total_price`` +
-``UPDATE Car``, что давало N+1 даже при включённом ``_bulk_updating``.
-Теперь пересчёт/регенерация происходят ровно один раз на коммит
-транзакции.
+Оба пути дедуплицируются внутри транзакции: пересчёт цены — через
+единый ``_enqueue_recalc_cars_total_price`` (P2, дедуп по on_commit-очереди),
+регенерация — через thread-local ``_regen_local.cars``. При сохранении
+карточки авто из админки приходит 5-15 ``post_save`` от ``CarService``
+подряд (по одной услуге на каждый ``service.save()``). Раньше каждый
+сигнал запускал собственный ``calculate_total_price`` + ``UPDATE Car``,
+что давало N+1 даже при включённом ``_bulk_updating``. Теперь
+пересчёт/регенерация происходят ровно один раз на коммит транзакции.
 """
 
 import logging
@@ -21,7 +21,7 @@ from django.db import OperationalError, transaction
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
-from core.models import Car, CarService
+from core.models import CarService
 from core.models_billing import NewInvoice
 
 logger = logging.getLogger(__name__)
@@ -31,43 +31,29 @@ logger = logging.getLogger(__name__)
 # Car.total_price recalculation
 # ---------------------------------------------------------------------------
 
+# Оставлен для обратной совместимости (на него ссылается фикстура
+# ``_clear_pricing_thread_locals`` в тестах); сам дедуп теперь живёт в
+# ``_enqueue_recalc_cars_total_price`` и опирается на on_commit-очередь.
 _pricing_local = threading.local()
 
 
-def _get_pending_pricing_cars():
-    bucket = getattr(_pricing_local, "cars", None)
-    if bucket is None:
-        bucket = set()
-        _pricing_local.cars = bucket
-    return bucket
-
-
 def _schedule_car_price_recalc(car_id):
+    """Пересчёт ``Car.total_price`` после изменения состава услуг.
+
+    P2: раньше здесь был собственный синхронный путь (``calculate_total_price``
+    + ``UPDATE`` в ``on_commit``), а ``signals.car`` параллельно ставил Celery
+    ``recalculate_cars_total_price_task`` — при сохранении карточки авто цена
+    считалась дважды. Теперь оба триггера идут через один
+    :func:`~core.signals.service_catalog._enqueue_recalc_cars_total_price`
+    (Celery, inline-fallback при недоступном брокере, дедуп внутри транзакции).
+    В тестах и dev ``CELERY_TASK_ALWAYS_EAGER`` выполняет задачу синхронно в
+    ``on_commit`` — результат тот же, что у старого пути.
+    """
     if not car_id:
         return
-    pending = _get_pending_pricing_cars()
-    if car_id in pending:
-        return
-    pending.add(car_id)
+    from core.signals.service_catalog import _enqueue_recalc_cars_total_price
 
-    def _do():
-        try:
-            try:
-                car = Car.objects.get(id=car_id)
-            except Car.DoesNotExist:
-                return
-            car.calculate_total_price()
-            Car.objects.filter(id=car_id).update(
-                total_price=car.total_price,
-                days=car.days,
-                storage_cost=car.storage_cost,
-            )
-        except Exception as e:
-            logger.error("Error recalculating price for car %s: %s", car_id, e)
-        finally:
-            _get_pending_pricing_cars().discard(car_id)
-
-    transaction.on_commit(_do)
+    _enqueue_recalc_cars_total_price([car_id])
 
 
 @receiver(post_save, sender=CarService)
@@ -159,12 +145,12 @@ def _regenerate_invoices_for_car_inline(car_id):
     путь идёт через Celery.
     """
     try:
-        from core.mixins import REGENERATABLE_INVOICE_STATUSES
+        from core.mixins import AUTO_REGENERATABLE_INVOICE_STATUSES
 
         invoice_ids = list(
             NewInvoice.objects.filter(
                 cars__id=car_id,
-                status__in=REGENERATABLE_INVOICE_STATUSES,
+                status__in=AUTO_REGENERATABLE_INVOICE_STATUSES,
             ).values_list("id", flat=True)
         )
         for invoice_id in invoice_ids:

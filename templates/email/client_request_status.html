@@ -1,0 +1,15 @@
+{% extends "email/client_event_base.html" %}
+{% load i18n %}
+{% block accent %}#6c5ce7{% endblock %}{% block accent_h1 %}#6c5ce7{% endblock %}{% block accent_badge %}#6c5ce7{% endblock %}{% block accent_cta %}#6c5ce7{% endblock %}
+{% block badge %}{% trans "Статус заявки" %}{% endblock %}
+{% block body %}
+<p>{% blocktrans with number=transport_request.number %}Статус вашей заявки на автовоз <strong>{{ number }}</strong> изменился.{% endblocktrans %}</p>
+<div class="info-block">
+    <h2>{% trans "Новый статус" %}</h2>
+    <p class="highlight">{{ status_display }}</p>
+    {% if transport_request.truck_number %}
+    <p><strong>{% trans "Тягач:" %}</strong> {{ transport_request.truck_number }}</p>
+    {% endif %}
+</div>
+{% endblock %}
+{% block cta_label %}{% trans "Открыть заявку в кабинете" %}{% endblock %}

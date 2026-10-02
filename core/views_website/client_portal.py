@@ -8,16 +8,100 @@ from django.core.paginator import Paginator
 from django.db.models import Case, Count, Exists, F, IntegerField, OuterRef, Prefetch, Q, Subquery, Value, When
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404, render
+from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
-from core.models import Car, CarModelImage, Container
+from core.models import Car, CarModelImage, CarStatusHistory, Container
 from core.models.website import TransportRequest
 from core.models_website import CarPhoto, ClientUser, ContainerPhoto
 from core.services.car_model_image import car_model_image_media_url, select_car_model_image
+
+from .timeline import build_status_timeline
 
 # Размер страницы списка авто в кабинете клиента. Раньше дашборд грузил
 # ВСЕ авто клиента (со всеми публичными фото) — для клиента с сотнями
 # машин это тяжёлый запрос и большой HTML. Теперь — постранично.
 CARS_PER_PAGE = 50
+
+# Статусы, при которых авто ещё «в работе» — дефолтный фильтр кабинета.
+ACTIVE_CAR_STATUSES = ("FLOATING", "IN_PORT", "UNLOADED")
+
+# Сколько активных контейнеров показывать в блоке «Мои контейнеры» (C3).
+CONTAINERS_LIMIT = 20
+
+# Быстрые чипы над списком авто: (код, подпись, статусы). Пустой набор
+# статусов = дефолт (все активные). Подписи — gettext_lazy, чтобы
+# переводиться в момент рендера.
+STATUS_CHIPS = (
+    ("active", _("Активные"), ()),
+    ("transit", _("В пути"), ("FLOATING", "IN_PORT")),
+    ("warehouse", _("На складе"), ("UNLOADED",)),
+    ("transferred", _("Переданы"), ("TRANSFERRED",)),
+    ("all", _("Все"), ("FLOATING", "IN_PORT", "UNLOADED", "TRANSFERRED")),
+)
+
+
+def _client_active_containers(client, limit=CONTAINERS_LIMIT):
+    """Активные контейнеры клиента для блока «Мои контейнеры» (C3).
+
+    «Мой» контейнер — либо с FK ``client``, либо содержащий авто клиента
+    (у смешанных контейнеров FK может указывать на другого клиента или быть
+    пустым). Количество авто считается только по машинам этого клиента.
+    Всё одним запросом: подзапросы вместо prefetch, без N+1.
+    """
+    my_cars = Car.objects.filter(container_id=OuterRef("pk"), client=client).order_by()
+    my_cars_count_sq = my_cars.values("container_id").annotate(c=Count("id")).values("c")[:1]
+    photos_sq = (
+        ContainerPhoto.objects.filter(container_id=OuterRef("pk"), is_public=True)
+        .order_by()
+        .values("container_id")
+        .annotate(c=Count("id"))
+        .values("c")[:1]
+    )
+    status_rank = Case(
+        When(status="UNLOADED", then=Value(0)),
+        When(status="IN_PORT", then=Value(1)),
+        When(status="FLOATING", then=Value(2)),
+        default=Value(3),
+        output_field=IntegerField(),
+    )
+    return list(
+        Container.objects.filter(Q(client=client) | Exists(my_cars))
+        .exclude(status="TRANSFERRED")
+        .select_related("line", "warehouse")
+        .annotate(
+            my_cars_count=Coalesce(Subquery(my_cars_count_sq, output_field=IntegerField()), Value(0)),
+            public_photos_count=Coalesce(Subquery(photos_sq, output_field=IntegerField()), Value(0)),
+            _status_rank=status_rank,
+        )
+        .order_by("_status_rank", F("eta").asc(nulls_last=True), "-id")[:limit]
+    )
+
+
+def _status_chips(search_query, selected_statuses, status_codes):
+    """Чипы фильтра статусов с готовыми ссылками.
+
+    Спец-значения IN_REQUEST / NO_REQUEST сохраняются в ссылках чипов,
+    чтобы переключение статуса не сбрасывало фильтр по заявкам.
+    """
+    request_flags = [s for s in selected_statuses if s in ("IN_REQUEST", "NO_REQUEST")]
+    current = set(status_codes)
+    chips = []
+    for code, label, statuses in STATUS_CHIPS:
+        params = []
+        if search_query:
+            params.append(("q", search_query))
+        params += [("status", s) for s in statuses]
+        params += [("status", s) for s in request_flags]
+        chips.append(
+            {
+                "code": code,
+                "label": label,
+                "url": "?" + urlencode(params) if params else "?",
+                "active": current == set(statuses),
+            }
+        )
+    return chips
 
 
 def _attach_model_images(cars):
@@ -92,8 +176,9 @@ def client_dashboard(request):
         if status_codes:
             cars_qs = cars_qs.filter(status__in=status_codes)
         else:
-            # По умолчанию: только «Разгружен» и «В порту». Остальное — через фильтр.
-            cars_qs = cars_qs.filter(status__in=["UNLOADED", "IN_PORT"])
+            # По умолчанию — все активные статусы (Q10): раньше FLOATING прятался,
+            # и клиент, у которого всё «в море», видел пустой кабинет.
+            cars_qs = cars_qs.filter(status__in=ACTIVE_CAR_STATUSES)
         in_request = "IN_REQUEST" in selected_statuses
         no_request = "NO_REQUEST" in selected_statuses
         # Оба сразу = «все», фильтровать нечего.
@@ -133,13 +218,20 @@ def client_dashboard(request):
         open_debt = client.open_invoices_debt
         total_balance = client.total_balance
 
+        # Онбординг (C4): самостоятельно зарегистрированный клиент до привязки
+        # менеджером видит пустой кабинет — объясняем, что происходит.
+        onboarding_pending = not client_user.is_verified and not Car.objects.filter(client=client).exists()
+
         context = {
             "client": client,
+            "onboarding_pending": onboarding_pending,
             "cars": cars_page,
             "cars_page": cars_page,
+            "my_containers": _client_active_containers(client),
             "search_query": search_query,
             "selected_statuses": selected_statuses,
             "car_status_choices": Container.STATUS_CHOICES,
+            "status_chips": _status_chips(search_query, selected_statuses, status_codes),
             "qs_extra": qs_extra,
             "open_invoices_debt": open_debt,
             "total_balance": total_balance,
@@ -165,7 +257,21 @@ def car_detail(request, car_id):
         )
         _attach_model_images([car])
 
-        return render(request, "website/car_detail.html", {"car": car})
+        # C2: фактические даты входа в статус из журнала (последняя запись на статус).
+        history = {}
+        for status, changed_at in (
+            CarStatusHistory.objects.filter(car=car).order_by("changed_at").values_list("status", "changed_at")
+        ):
+            history[status] = timezone.localtime(changed_at).date()
+
+        timeline = build_status_timeline(
+            car.status,
+            eta=car.container.eta if car.container else None,
+            unload_date=car.unload_date,
+            transfer_date=car.transfer_date,
+            history=history,
+        )
+        return render(request, "website/car_detail.html", {"car": car, "timeline": timeline})
     except ClientUser.DoesNotExist:
         return render(request, "website/not_authorized.html", status=403)
 
@@ -187,6 +293,11 @@ def container_detail(request, container_id):
             client=client_user.client,
         )
 
-        return render(request, "website/container_detail.html", {"container": container})
+        timeline = build_status_timeline(
+            container.status,
+            eta=container.eta,
+            unload_date=container.unload_date,
+        )
+        return render(request, "website/container_detail.html", {"container": container, "timeline": timeline})
     except ClientUser.DoesNotExist:
         return render(request, "website/not_authorized.html", status=403)

@@ -26,8 +26,10 @@ def get_cost_confirmation_status(car_id):
         'unconfirmed': [{'service_name', 'service_type', 'service_id', 'client_price'}],
     }
     """
-    services = CarService.objects.filter(car_id=car_id)
-    total = services.count()
+    from core.models.services import prefetch_service_objects
+
+    services = list(CarService.objects.filter(car_id=car_id))
+    total = len(services)
     if total == 0:
         return {
             "total_services": 0,
@@ -38,31 +40,40 @@ def get_cost_confirmation_status(car_id):
             "unconfirmed": [],
         }
 
-    confirmed_ids = set(
+    # Каталог услуг — одним батчем, иначе get_service_name/invoice_price
+    # ходят в БД на каждую услугу.
+    prefetch_service_objects(services)
+
+    # Сумма и источники затрат по каждой услуге — одним запросом вместо
+    # aggregate + values_list на услугу.
+    costs_by_service: dict[int, dict] = {}
+    for row in (
         SupplierCost.objects.filter(car_id=car_id, car_service__isnull=False)
-        .values_list("car_service_id", flat=True)
-        .distinct()
-    )
+        .values("car_service_id", "source")
+        .annotate(total=Sum("amount"))
+    ):
+        entry = costs_by_service.setdefault(row["car_service_id"], {"total": Decimal("0"), "sources": []})
+        entry["total"] += row["total"] or Decimal("0")
+        if row["source"] not in entry["sources"]:
+            entry["sources"].append(row["source"])
 
     confirmed_list = []
     unconfirmed_list = []
 
     for svc in services:
-        if svc.pk in confirmed_ids:
-            costs = SupplierCost.objects.filter(car_service=svc)
-            total_cost = costs.aggregate(t=Sum("amount"))["t"] or 0
-            sources = list(costs.values_list("source", flat=True).distinct())
+        costs = costs_by_service.get(svc.pk)
+        if costs is not None:
             confirmed_list.append(
                 {
                     "car_service_id": svc.pk,
                     "service_name": svc.get_service_name(),
                     "service_type": svc.service_type,
-                    "actual_cost": float(total_cost),
+                    "actual_cost": float(costs["total"]),
                     # Цена для клиента = invoice_price (с наценкой) — то, что
                     # реально выставляется в инвойсе. final_price — внутренняя
                     # себестоимость без наценки.
                     "client_price": float(svc.invoice_price),
-                    "sources": sources,
+                    "sources": costs["sources"],
                 }
             )
         else:
@@ -245,7 +256,9 @@ def get_container_profitability(audit_ids=None):
 def generate_hints(audit_ids=None):
     """Генерирует подсказки и замечания."""
     hints = []
-    cost_qs = SupplierCost.objects.select_related("car", "car__client", "car__container", "audit")
+    # car_service нужен в проверке THS ниже — без select_related это N+1
+    # (по одному запросу CarService на каждую THS-позицию).
+    cost_qs = SupplierCost.objects.select_related("car", "car__client", "car__container", "audit", "car_service")
     if audit_ids:
         cost_qs = cost_qs.filter(audit_id__in=audit_ids)
 

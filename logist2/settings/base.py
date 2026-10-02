@@ -316,6 +316,14 @@ STORAGES = {
 MEDIA_URL = "/media/"
 MEDIA_ROOT = os.getenv("MEDIA_ROOT", BASE_DIR / "media")
 
+# P1: отдача фото через nginx X-Accel-Redirect. Django проверяет подпись /
+# права и отвечает пустым телом с заголовком `X-Accel-Redirect:
+# <PHOTO_ACCEL_PREFIX>/<путь относительно MEDIA_ROOT>`, а сам файл стримит
+# nginx (см. `location /_protected_media/` в scripts/nginx_caromoto.conf).
+# Локально и в тестах выключено — файл отдаёт FileResponse.
+PHOTO_SERVE_VIA_NGINX = str(os.getenv("PHOTO_SERVE_VIA_NGINX", "False")).lower() == "true"
+PHOTO_ACCEL_PREFIX = os.getenv("PHOTO_ACCEL_PREFIX", "/_protected_media")
+
 # ---------------------------------------------------------------------------
 # DRF
 # ---------------------------------------------------------------------------
@@ -679,6 +687,9 @@ GMAIL_MAX_OUTBOUND_MB = int(os.getenv("GMAIL_MAX_OUTBOUND_MB", "25"))
 # именно так — другой вариант потребовал бы OAuth с drive.readonly scope).
 # Если ключ не задан — код откатывается на старый HTML-парсинг с warning-ом.
 GOOGLE_DRIVE_API_KEY = os.getenv("GOOGLE_DRIVE_API_KEY", "").strip()
+# P5: сколько фото одного контейнера скачивать параллельно (пул потоков;
+# запись в БД остаётся в основном потоке). 1 = последовательно.
+GDRIVE_DOWNLOAD_WORKERS = int(os.getenv("GDRIVE_DOWNLOAD_WORKERS", "4"))
 
 # ---------------------------------------------------------------------------
 # Company info (used in email templates)
@@ -692,9 +703,19 @@ COMPANY_WEBSITE = "https://caromoto-lt.com"
 # ---------------------------------------------------------------------------
 # System monitoring (/admin/system-monitor/) — psutil + celery beat
 # ---------------------------------------------------------------------------
-# Сколько дней хранить SystemMetric/UptimeCheck. По дефолту 30 дней
-# (~8 600 + 43 200 строк = ≈10 MB на postgres).
+# Ретеншен служебных таблиц (Q12, задача `cleanup_monitoring_tables`,
+# beat ежедневно 04:40). Удаление батчами по 5000 строк.
+#   UptimeCheck     — 1 строка/мин, 30 дней ≈ 43 000 строк (MONITORING_RETENTION_DAYS)
+#   SystemMetric    — 1 строка/5 мин, 90 дней ≈ 26 000 строк
+#   AgentRun        — 90 дней (AgentAction/AgentQuestion остаются, run → NULL)
+#   NotificationLog — 180 дней (только по уже переданным контейнерам/авто:
+#                     лог нужен дедупу уведомлений о разгрузке)
 MONITORING_RETENTION_DAYS = int(os.getenv("MONITORING_RETENTION_DAYS", "30"))
+MONITORING_UPTIME_RETENTION_DAYS = int(os.getenv("MONITORING_UPTIME_RETENTION_DAYS", str(MONITORING_RETENTION_DAYS)))
+MONITORING_METRICS_RETENTION_DAYS = int(os.getenv("MONITORING_METRICS_RETENTION_DAYS", "90"))
+AGENT_RUNS_RETENTION_DAYS = int(os.getenv("AGENT_RUNS_RETENTION_DAYS", "90"))
+NOTIFICATION_LOG_RETENTION_DAYS = int(os.getenv("NOTIFICATION_LOG_RETENTION_DAYS", "180"))
+MONITORING_CLEANUP_BATCH_SIZE = int(os.getenv("MONITORING_CLEANUP_BATCH_SIZE", "5000"))
 # URL для ping_uptime task. Локально — gunicorn/runserver, на сервере —
 # nginx upstream. По дефолту локальный health endpoint.
 MONITORING_HEALTH_URL = os.getenv("MONITORING_HEALTH_URL", "http://127.0.0.1:8000/health/")

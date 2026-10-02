@@ -33,6 +33,10 @@ class NewInvoiceFormHandlerMixin:
         linked_invoice / linked_from (reverse OneToOne) / audit / created_by —
         без select_related на каждую строку было до 8 доп. запросов.
         """
+        from django.db.models import Exists, OuterRef
+
+        from core.models.accounting import SiteProInvoiceSync
+
         qs = super().get_queryset(request)
         return qs.select_related(
             "issuer_company",
@@ -48,6 +52,15 @@ class NewInvoiceFormHandlerMixin:
             "linked_invoice",
             "linked_from",
             "created_by",
+            # Колонка «Сигналы» (V5): статус AI-аудита без запроса на строку.
+            "audit",
+        ).annotate(
+            _sitepro_sent=Exists(
+                SiteProInvoiceSync.objects.filter(
+                    invoice_id=OuterRef("pk"),
+                    sync_status__in=("SENT", "PDF_READY"),
+                )
+            ),
         )
 
     def add_view(self, request, form_url="", extra_context=None):
@@ -110,8 +123,12 @@ class NewInvoiceFormHandlerMixin:
             )
         else:
             extra_context["cars"] = Car.objects.none()
+        # category_type нужен шаблону (get_category_type_display) — без него
+        # в only() каждый <option> делал отдельный запрос за отложенным полем.
         extra_context["expense_categories"] = (
-            ExpenseCategory.objects.filter(is_active=True).only("id", "name").order_by("order", "name")
+            ExpenseCategory.objects.filter(is_active=True)
+            .only("id", "name", "category_type")
+            .order_by("order", "name")
         )
 
         # Caromoto по умолчанию — кэшируется в Company.get_default_id.
@@ -131,6 +148,13 @@ class NewInvoiceFormHandlerMixin:
                     extra_context["audit_status"] = self.audit_status_display(invoice)
                 except Exception:
                     extra_context["audit_status"] = None
+                # B1: выставленный счёт не пересобирается автоматически —
+                # показываем расхождение позиций с услугами вместо тихой перезаписи.
+                try:
+                    extra_context["items_sync_warning"] = self.items_sync_display(invoice)
+                except Exception:
+                    logger.exception("items_sync_display failed for invoice %s", invoice.pk)
+                    extra_context["items_sync_warning"] = None
                 # Обратная связь: кто ссылается на этот инвойс
                 try:
                     extra_context["linked_from_invoice"] = invoice.linked_from
@@ -356,12 +380,18 @@ class NewInvoiceFormHandlerMixin:
                 # с привязкой к car) и строим из manual_items/manual_total.
                 self._handle_manual_items(request, invoice, wipe_all=True)
             elif not has_audit:
-                invoice.regenerate_items_from_cars()
+                regenerated = invoice.regenerate_items_from_cars()
                 # Помечаем, что save_related не должен делать ту же работу повторно
                 invoice._items_regenerated_in_form = True
+                if not regenerated:
+                    messages.warning(
+                        request,
+                        f"Инвойс {invoice.number} выставлен — позиции не пересобраны автоматически. "
+                        "Для перезаписи используйте действие «Пересоздать позиции (принудительно)».",
+                    )
             messages.success(
                 request,
-                f"✅ Инвойс {invoice.number} сохранен! Создано {invoice.items.count()} позиций.",
+                f"✅ Инвойс {invoice.number} сохранен! Позиций: {invoice.items.count()}.",
             )
         else:
             invoice.cars.clear()
@@ -530,11 +560,11 @@ class NewInvoiceFormHandlerMixin:
                 logger.debug("audit check failed for invoice %s", obj.pk, exc_info=True)
             # skip_ai_comparison = пользователь берёт контроль, не перезаписываем.
             if obj.cars.exists() and not has_audit and not obj.skip_ai_comparison:
-                obj.regenerate_items_from_cars()
-                messages.success(
-                    request,
-                    f"Автоматически создано {obj.items.count()} позиций из услуг автомобилей!",
-                )
+                if obj.regenerate_items_from_cars():
+                    messages.success(
+                        request,
+                        f"Автоматически создано {obj.items.count()} позиций из услуг автомобилей!",
+                    )
 
         has_audit = False
         try:

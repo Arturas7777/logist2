@@ -1,17 +1,10 @@
 {% extends "website/base.html" %}
-{% load i18n %}
+{% load i18n static %}
 
 {% block title %}{{ car.brand }} {{ car.year }} - {{ car.vin }}{% endblock %}
 
 {% block extra_css %}
-<style>
-    .portal-hero {
-        background: linear-gradient(135deg, var(--primary-color, #2c3e50) 0%, #34495e 100%);
-        color: #fff;
-        padding: 2rem 0;
-        margin-bottom: 2rem;
-    }
-</style>
+<link rel="stylesheet" href="{% static 'website/css/portal.css' %}">
 {% endblock %}
 
 {% block content %}
@@ -57,69 +50,50 @@
                     <span><i class="bi bi-geo-alt"></i> {{ car.warehouse.name }}</span>
                     {% endif %}
                     {% if car.unload_date %}
-                    <span><i class="bi bi-calendar-check"></i> Разгружен {{ car.unload_date|date:"d.m.Y" }}</span>
+                    <span><i class="bi bi-calendar-check"></i> {% trans "Разгружен" %} {{ car.unload_date|date:"d.m.Y" }}</span>
                     {% endif %}
                 </div>
             </div>
+        </div>
+        <!-- Таймлайн статусов (C1) -->
+        <div class="border-top px-4 py-3">
+            {% include "website/_status_timeline.html" with timeline=timeline %}
         </div>
     </div>
 
     <div class="row">
         <!-- Основная информация -->
         <div class="col-lg-8 mb-4">
-            <!-- Галерея фотографий -->
+            <!-- Галерея фотографий (C7: lazy, единый lightbox) -->
             {% if car.photos.all %}
             <div class="card mb-4">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">
-                        <i class="bi bi-images"></i> Фотографии
+                        <i class="bi bi-images"></i> {% trans "Фотографии" %}
                     </h5>
                     <a href="{% url 'website:download_all_car_photos' car.id %}" class="btn btn-sm btn-success">
-                        <i class="bi bi-download"></i> Скачать все
+                        <i class="bi bi-download"></i> {% trans "Скачать все" %}
                     </a>
                 </div>
                 <div class="card-body">
                     <div class="row g-3">
                         {% for photo in car.photos.all %}
                         <div class="col-md-4 col-sm-6">
-                            <div class="photo-item position-relative">
-                                <img src="{{ photo.photo.url }}" class="img-fluid rounded" 
+                            <div class="photo-item" role="button" tabindex="0"
+                                 data-full-url="{{ photo.photo.url }}"
+                                 data-download-url="{% url 'website:download_car_photo' photo.id %}">
+                                <img src="{% if photo.thumbnail %}{{ photo.thumbnail.url }}{% else %}{{ photo.photo.url }}{% endif %}"
+                                     class="img-fluid rounded"
                                      alt="{{ photo.get_photo_type_display }}"
-                                     data-bs-toggle="modal" data-bs-target="#photoModal{{ photo.id }}"
-                                     style="cursor: pointer; width: 100%; height: 200px; object-fit: cover;">
+                                     loading="lazy" decoding="async">
                                 <div class="photo-overlay">
                                     <span class="badge bg-dark">{{ photo.get_photo_type_display }}</span>
                                 </div>
-                                <a href="{% url 'website:download_car_photo' photo.id %}" 
-                                   class="btn btn-sm btn-light position-absolute bottom-0 end-0 m-2" 
-                                   download>
+                                <a href="{% url 'website:download_car_photo' photo.id %}"
+                                   class="btn btn-sm btn-light photo-download"
+                                   title="{% trans 'Скачать' %}" aria-label="{% trans 'Скачать' %}" download>
                                     <i class="bi bi-download"></i>
                                 </a>
-                            </div>
-
-                            <!-- Modal для просмотра фото -->
-                            <div class="modal fade" id="photoModal{{ photo.id }}" tabindex="-1">
-                                <div class="modal-dialog modal-lg modal-dialog-centered">
-                                    <div class="modal-content">
-                                        <div class="modal-header">
-                                            <h5 class="modal-title">{{ photo.get_photo_type_display }}</h5>
-                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                        </div>
-                                        <div class="modal-body">
-                                            <img src="{{ photo.photo.url }}" class="img-fluid" alt="{{ photo.get_photo_type_display }}">
-                                            {% if photo.description %}
-                                            <p class="mt-3 text-muted">{{ photo.description }}</p>
-                                            {% endif %}
-                                        </div>
-                                        <div class="modal-footer">
-                                            <a href="{% url 'website:download_car_photo' photo.id %}" 
-                                               class="btn btn-success" download>
-                                                <i class="bi bi-download"></i> Скачать
-                                            </a>
-                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
                         </div>
                         {% endfor %}
@@ -132,18 +106,18 @@
             <div class="card">
                 <div class="card-header">
                     <h5 class="mb-0">
-                        <i class="bi bi-info-circle"></i> Детальная информация
+                        <i class="bi bi-info-circle"></i> {% trans "Детальная информация" %}
                     </h5>
                 </div>
                 <div class="card-body">
                     <table class="table table-borderless">
                         <tbody>
                             <tr>
-                                <th width="40%">Марка и модель:</th>
+                                <th width="40%">{% trans "Марка и модель:" %}</th>
                                 <td>{{ car.brand }}</td>
                             </tr>
                             <tr>
-                                <th>Год выпуска:</th>
+                                <th>{% trans "Год выпуска:" %}</th>
                                 <td>{{ car.year }}</td>
                             </tr>
                             <tr>
@@ -151,7 +125,7 @@
                                 <td><code>{{ car.vin }}</code></td>
                             </tr>
                             <tr>
-                                <th>Статус:</th>
+                                <th>{% trans "Статус:" %}</th>
                                 <td>
                                     <span class="status-badge status-{{ car.status }}">
                                         {{ car.get_status_display }}
@@ -160,40 +134,46 @@
                             </tr>
                             {% if car.container %}
                             <tr>
-                                <th>Контейнер:</th>
+                                <th>{% trans "Контейнер:" %}</th>
                                 <td>
                                     <a href="{% url 'website:container_detail' car.container.id %}">
                                         {{ car.container.number }}
                                     </a>
                                 </td>
                             </tr>
+                            {% if car.container.eta and car.status == "FLOATING" %}
+                            <tr>
+                                <th>{% trans "ETA (ожидаемая дата прибытия):" %}</th>
+                                <td>{{ car.container.eta|date:"d.m.Y" }}</td>
+                            </tr>
+                            {% endif %}
                             {% endif %}
                             {% if car.warehouse %}
                             <tr>
-                                <th>Склад:</th>
+                                <th>{% trans "Склад:" %}</th>
                                 <td>{{ car.warehouse.name }}</td>
                             </tr>
                             {% endif %}
                             {% if car.line %}
                             <tr>
-                                <th>Морская линия:</th>
+                                <th>{% trans "Морская линия:" %}</th>
                                 <td>{{ car.line.name }}</td>
                             </tr>
                             {% endif %}
                             {% if car.unload_date %}
                             <tr>
-                                <th>Дата разгрузки:</th>
+                                <th>{% trans "Дата разгрузки:" %}</th>
                                 <td>{{ car.unload_date|date:"d.m.Y" }}</td>
                             </tr>
                             {% endif %}
                             {% if car.transfer_date %}
                             <tr>
-                                <th>Дата передачи:</th>
+                                <th>{% trans "Дата передачи:" %}</th>
                                 <td>{{ car.transfer_date|date:"d.m.Y" }}</td>
                             </tr>
                             {% endif %}
                             <tr>
-                                <th>Дней на складе:</th>
+                                <th>{% trans "Платных дней на складе:" %}</th>
                                 <td>{{ car.days }}</td>
                             </tr>
                         </tbody>
@@ -204,29 +184,35 @@
 
         <!-- Боковая панель -->
         <div class="col-lg-4">
-            <!-- Стоимость -->
+            <!-- Стоимость (C6: единая валюта EUR, подписи, без внутренних полей) -->
             <div class="card mb-4">
                 <div class="card-header bg-primary text-white">
                     <h5 class="mb-0">
-                        <i class="bi bi-currency-dollar"></i> Стоимость
+                        <i class="bi bi-cash-coin"></i> {% trans "Стоимость" %}
                     </h5>
                 </div>
                 <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <span class="text-muted">Текущая стоимость:</span>
-                        <h4 class="mb-0 text-primary">${{ car.current_price|floatformat:2 }}</h4>
-                    </div>
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <span class="text-muted">Хранение:</span>
-                        <span class="fw-bold">${{ car.storage_cost|floatformat:2 }}</span>
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <div class="text-muted">{% trans "Хранение" %}</div>
+                            <small class="text-muted">{% trans "по тарифу склада" %}{% if car.days %}, {% trans "платных дней:" %} {{ car.days }}{% endif %}</small>
+                        </div>
+                        <span class="fw-bold text-nowrap">{{ car.storage_cost|floatformat:2 }} EUR</span>
                     </div>
                     {% if car.total_price > 0 %}
                     <hr>
                     <div class="d-flex justify-content-between align-items-center">
-                        <span class="text-muted">Итоговая стоимость:</span>
-                        <h4 class="mb-0 text-success">${{ car.total_price|floatformat:2 }}</h4>
+                        <div>
+                            <div class="text-muted">{% trans "Итого по автомобилю" %}</div>
+                            <small class="text-muted">{% trans "услуги и хранение" %}</small>
+                        </div>
+                        <h4 class="mb-0 text-success text-nowrap">{{ car.total_price|floatformat:2 }} EUR</h4>
                     </div>
                     {% endif %}
+                    <p class="small text-muted mb-0 mt-3">
+                        {% trans "Сумма к оплате и выставленные счета — в разделе" %}
+                        <a href="{% url 'website:invoices' %}">{% trans "Мои счета" %}</a>.
+                    </p>
                 </div>
             </div>
 
@@ -234,22 +220,22 @@
             <div class="card">
                 <div class="card-header">
                     <h5 class="mb-0">
-                        <i class="bi bi-gear"></i> Действия
+                        <i class="bi bi-gear"></i> {% trans "Действия" %}
                     </h5>
                 </div>
                 <div class="card-body">
                     <div class="d-grid gap-2">
                         {% if car.photos.all %}
-                        <a href="{% url 'website:download_all_car_photos' car.id %}" 
+                        <a href="{% url 'website:download_all_car_photos' car.id %}"
                            class="btn btn-success">
-                            <i class="bi bi-download"></i> Скачать все фото
+                            <i class="bi bi-download"></i> {% trans "Скачать все фото" %}
                         </a>
                         {% endif %}
                         <a href="{% url 'website:contact' %}" class="btn btn-primary">
-                            <i class="bi bi-envelope"></i> Связаться с менеджером
+                            <i class="bi bi-envelope"></i> {% trans "Связаться с менеджером" %}
                         </a>
                         <a href="{% url 'website:dashboard' %}" class="btn btn-outline-secondary">
-                            <i class="bi bi-arrow-left"></i> Назад в кабинет
+                            <i class="bi bi-arrow-left"></i> {% trans "Назад в кабинет" %}
                         </a>
                     </div>
                 </div>
@@ -259,38 +245,17 @@
 </div>
 
 <style>
-/* Цвета статусов — единая гамма проекта (как на дашборде) */
-.status-badge {
-    padding: .35em .6em;
-    font-weight: 500;
-    border-radius: 10px;
-    white-space: nowrap;
-}
-.status-FLOATING  { background:#d1ecf1; color:#0c5460; }
-.status-IN_PORT   { background:#f8d7da; color:#721c24; }
-.status-UNLOADED  { background:#d4edda; color:#155724; }
-.status-TRANSFERRED { background:#e2d9f3; color:#4b2e83; }
-.status-PENDING, .status-NEW { background:#fff3cd; color:#856404; }
 .car-hero-image {
     align-self: stretch;
     display: flex;
     align-items: center;
     justify-content: center;
 }
-.photo-item {
-    overflow: hidden;
-    border-radius: 0.5rem;
-}
-.photo-item:hover img {
-    transform: scale(1.05);
-    transition: transform 0.3s ease;
-}
-.photo-overlay {
-    position: absolute;
-    top: 0.5rem;
-    left: 0.5rem;
-}
 </style>
+{% endblock %}
+
+{% block extra_js %}
+{% include "website/partials/photo_lightbox.html" %}
 {% endblock %}
 
 

@@ -1,0 +1,16 @@
+{% extends "email/client_event_base.html" %}
+{% load i18n %}
+{% block badge %}{% trans "Выставлен счёт" %}{% endblock %}
+{% block body %}
+<p>{% blocktrans with number=invoice.number %}Мы выставили вам счёт <strong>{{ number }}</strong>.{% endblocktrans %}</p>
+<div class="info-block">
+    <h2>{% trans "Сумма к оплате" %}</h2>
+    <p class="highlight">{{ invoice.total|floatformat:2 }} EUR</p>
+    {% if invoice.due_date %}
+    <p><strong>{% trans "Срок оплаты:" %}</strong> {{ invoice.due_date|date:"d.m.Y" }}</p>
+    {% endif %}
+    <p><strong>{% trans "Дата выставления:" %}</strong> {{ invoice.date|date:"d.m.Y" }}</p>
+</div>
+<p>{% trans "PDF счёта — во вложении к этому письму (если файл уже сформирован). Счёт также доступен в личном кабинете в разделе «Мои счета»." %}</p>
+{% endblock %}
+{% block cta_label %}{% trans "Открыть мои счета" %}{% endblock %}

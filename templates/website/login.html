@@ -35,8 +35,11 @@
                                    autofocus autocomplete="username" required>
                         </div>
                         <div class="mb-4">
-                            <label for="id_password" class="form-label">{% trans "Пароль" %}</label>
-                            <input type="password" name="password" id="id_password" class="form-control"
+                            <div class="d-flex justify-content-between align-items-center">
+                                <label for="id_password" class="form-label mb-0">{% trans "Пароль" %}</label>
+                                <a href="{% url 'website:password_reset' %}" class="small">{% trans "Забыли пароль?" %}</a>
+                            </div>
+                            <input type="password" name="password" id="id_password" class="form-control mt-2"
                                    autocomplete="current-password" required>
                         </div>
                         <button type="submit" class="btn btn-primary w-100">

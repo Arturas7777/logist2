@@ -609,8 +609,15 @@ class DashboardService:
 
         from ..models_billing import Transaction
 
+        # P4: prefetch_related вместо select_related по 11 FK. С 11 LEFT JOIN
+        # планировщик PostgreSQL тратил ~130 мс на перебор порядка соединений
+        # (join_collapse_limit) при 1 мс исполнения — это и был «тяжёлый запрос
+        # по core_transaction» на холодном дашборде. Prefetch даёт 1 + k
+        # точечных запросов по pk (k = число реально задействованных
+        # контрагентов, обычно 3-5), каждый < 1 мс. Для шаблона разницы нет:
+        # t.sender_name / t.recipient_name читают те же кэшированные FK.
         result = list(
-            Transaction.objects.select_related(
+            Transaction.objects.prefetch_related(
                 "from_client",
                 "from_warehouse",
                 "from_line",
@@ -636,8 +643,10 @@ class DashboardService:
 
         from ..models_billing import NewInvoice
 
+        # P4: prefetch_related по той же причине, что в get_recent_transactions
+        # (9 LEFT JOIN → ~40 мс планирования при 3 мс исполнения).
         result = list(
-            NewInvoice.objects.select_related(
+            NewInvoice.objects.prefetch_related(
                 "issuer_company",
                 "issuer_warehouse",
                 "issuer_line",
@@ -817,4 +826,57 @@ class DashboardService:
             # Recent operations
             "recent_transactions": self.get_recent_transactions(),
             "recent_invoices": self.get_recent_invoices(),
+        }
+
+    # ========================================================================
+    # V6: касса и карты рядом с банком, плитка «Несверено»
+    # ========================================================================
+
+    def get_unreconciled_bank_summary(self):
+        """Несверенные банковские операции: сколько и на какую сумму.
+
+        Критерий тот же, что у фильтра «Не сопоставлены» в админке банка
+        (``BankReconciliationFilter``, ``?reconciled=unmatched``). Один
+        aggregate-запрос, кэш как у остальных плиток дашборда.
+        """
+        cache_key = get_cache_key("dashboard", "unreconciled_bank")
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        from ..models_banking import BankTransaction
+
+        agg = BankTransaction.objects.filter(
+            matched_invoice__isnull=True,
+            matched_transaction__isnull=True,
+            reconciliation_skipped=False,
+        ).aggregate(
+            count=Count("id"),
+            incoming=Sum("amount", filter=Q(amount__gt=0)),
+            outgoing=Sum("amount", filter=Q(amount__lt=0)),
+        )
+        incoming = agg["incoming"] or Decimal("0")
+        outgoing = -(agg["outgoing"] or Decimal("0"))
+        data = {
+            "count": agg["count"] or 0,
+            "incoming": incoming,
+            "outgoing": outgoing,
+            "total": incoming + outgoing,
+            "url": "/admin/core/banktransaction/?reconciled=unmatched",
+        }
+        cache.set(cache_key, data, CACHE_TIMEOUTS["short"])
+        return data
+
+    def get_treasury_overview(self):
+        """Касса компании и активные личные карты — для блока рядом с банком.
+
+        Использует уже посчитанные ``get_company_balance`` / ``get_cash_wallet``
+        (кэш), новых запросов не добавляет.
+        """
+        wallet = self.get_cash_wallet()
+        return {
+            "company_balance": self.get_company_balance(),
+            "cash_on_hand": wallet.get("total_cash", Decimal("0")),
+            "personal_cards": wallet.get("personal_cards", []),
+            "total_cards": wallet.get("total_cards", Decimal("0")),
         }

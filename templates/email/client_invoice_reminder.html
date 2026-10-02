@@ -1,0 +1,29 @@
+{% extends "email/client_event_base.html" %}
+{% load i18n %}
+{% block accent %}{% if overdue %}#c62828{% else %}#e65100{% endif %}{% endblock %}
+{% block accent_h1 %}{% if overdue %}#c62828{% else %}#e65100{% endif %}{% endblock %}
+{% block accent_badge %}{% if overdue %}#c62828{% else %}#e65100{% endif %}{% endblock %}
+{% block accent_cta %}{% if overdue %}#c62828{% else %}#e65100{% endif %}{% endblock %}
+{% block badge %}{% if overdue %}{% trans "Счёт просрочен" %}{% else %}{% trans "Напоминание об оплате" %}{% endif %}{% endblock %}
+{% block body %}
+{% if overdue %}
+<p>{% blocktrans with number=invoice.number date=invoice.due_date|date:"d.m.Y" %}Срок оплаты счёта <strong>{{ number }}</strong> ({{ date }}) истёк, оплата пока не поступила.{% endblocktrans %}</p>
+{% else %}
+<p>{% blocktrans with number=invoice.number date=invoice.due_date|date:"d.m.Y" %}Напоминаем: срок оплаты счёта <strong>{{ number }}</strong> — <strong>{{ date }}</strong>.{% endblocktrans %}</p>
+{% endif %}
+<div class="info-block">
+    <h2>{% trans "К оплате" %}</h2>
+    <p class="highlight">{{ amount_due|floatformat:2 }} EUR</p>
+    {% if invoice.paid_amount %}
+    <p>{% blocktrans with paid=invoice.paid_amount|floatformat:2 total=invoice.total|floatformat:2 %}Оплачено {{ paid }} EUR из {{ total }} EUR{% endblocktrans %}</p>
+    {% endif %}
+</div>
+{% if overdue %}
+<div class="warn">
+    {% trans "Если оплата уже отправлена — спасибо, просто проигнорируйте это письмо. Если возникли сложности, напишите нам, и мы подберём решение." %}
+</div>
+{% else %}
+<p>{% trans "Если оплата уже отправлена — спасибо, просто проигнорируйте это письмо." %}</p>
+{% endif %}
+{% endblock %}
+{% block cta_label %}{% trans "Открыть мои счета" %}{% endblock %}

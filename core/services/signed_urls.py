@@ -37,6 +37,12 @@ def _ttl() -> int:
     return int(getattr(settings, "PHOTO_URL_TTL", DEFAULT_TTL_SECONDS))
 
 
+def photo_url_ttl() -> int:
+    """Публичный TTL подписи — его же ставим в `Cache-Control: max-age`
+    при отдаче файла, чтобы кэш браузера жил ровно столько, сколько ссылка."""
+    return _ttl()
+
+
 def make_photo_token(kind: str, photo_id: int, variant: str = "full") -> str:
     """Подписывает идентификатор фото в виде `kind:id:variant`.
 
@@ -106,4 +112,5 @@ __all__ = [
     "make_photo_token",
     "parse_container_token",
     "parse_photo_token",
+    "photo_url_ttl",
 ]

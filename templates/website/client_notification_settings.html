@@ -1,0 +1,113 @@
+{% extends "website/base.html" %}
+{% load i18n static %}
+
+{% block title %}{% trans "Уведомления" %} - {{ client.name }}{% endblock %}
+{% block meta_robots %}<meta name="robots" content="noindex">{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'website/css/portal.css' %}">
+{% endblock %}
+
+{% block content %}
+<section class="portal-hero">
+    <div class="container">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div>
+                <div class="text-white-50 small mb-1">{{ client.name }}</div>
+                <h1 class="h3 mb-0"><i class="bi bi-bell"></i> {% trans "Уведомления" %}</h1>
+            </div>
+            <a href="{% url 'website:dashboard' %}" class="btn btn-sm btn-light">
+                <i class="bi bi-arrow-left"></i> {% trans "Назад в кабинет" %}
+            </a>
+        </div>
+    </div>
+</section>
+
+<div class="container pb-5">
+    {% if messages %}
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="{% trans 'Закрыть' %}"></button>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0">{% trans "О каких событиях сообщать" %}</h5>
+                    <p class="text-muted small mb-0 mt-1">
+                        {% trans "Уведомления о планируемой и фактической разгрузке, а также сообщения менеджера по заявкам приходят всегда." %}
+                    </p>
+                </div>
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 align-middle notification-prefs">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>{% trans "Событие" %}</th>
+                                    <th class="text-center" style="width:110px;"><i class="bi bi-envelope"></i> Email</th>
+                                    <th class="text-center" style="width:110px;"><i class="bi bi-telegram"></i> Telegram</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in rows %}
+                                <tr>
+                                    <td>
+                                        <label for="{{ row.code }}__email" class="fw-semibold d-block">{{ row.label }}</label>
+                                        <span class="text-muted small">{{ row.help }}</span>
+                                    </td>
+                                    <td class="text-center">
+                                        <input type="checkbox" class="form-check-input" name="{{ row.code }}__email"
+                                               id="{{ row.code }}__email" {% if row.email %}checked{% endif %}
+                                               aria-label="{{ row.label }} — Email">
+                                    </td>
+                                    <td class="text-center">
+                                        <input type="checkbox" class="form-check-input" name="{{ row.code }}__telegram"
+                                               id="{{ row.code }}__telegram" {% if row.telegram %}checked{% endif %}
+                                               aria-label="{{ row.label }} — Telegram">
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="card-footer bg-white d-flex justify-content-end">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check2"></i> {% trans "Сохранить" %}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white"><h6 class="mb-0">{% trans "Каналы" %}</h6></div>
+                <div class="card-body small">
+                    <p class="mb-2">
+                        <i class="bi bi-envelope me-1"></i>
+                        {% if email_available %}
+                            <span class="text-success fw-semibold">{% trans "Email подключён" %}</span>
+                            <br><span class="text-muted">{{ notification_emails|join:", " }}</span>
+                        {% else %}
+                            <span class="text-muted">{% trans "Email-уведомления не настроены — обратитесь к менеджеру." %}</span>
+                        {% endif %}
+                    </p>
+                    <p class="mb-0">
+                        <i class="bi bi-telegram me-1"></i>
+                        {% if telegram_available %}
+                            <span class="text-success fw-semibold">{% trans "Telegram подключён" %}</span>
+                        {% else %}
+                            <span class="text-muted">{% trans "Telegram не подключён. Персональную ссылку на бота пришлёт менеджер." %}</span>
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

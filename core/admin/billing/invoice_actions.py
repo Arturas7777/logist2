@@ -130,33 +130,133 @@ class NewInvoiceActionsMixin:
     cancel_invoices.short_description = "✗ Отменить инвойсы"
 
     def regenerate_items(self, request, queryset):
-        """Пересоздать позиции из автомобилей (пропускает PAID и CANCELLED)."""
+        """Пересоздать позиции из автомобилей — только для черновиков (B1).
+
+        Выставленные счета (ISSUED / OVERDUE / PARTIALLY_PAID) намеренно не
+        трогаем: клиент уже получил PDF. Для них есть отдельное действие
+        «Пересоздать позиции (принудительно)» с подтверждением.
+        """
         count = 0
-        skipped = 0
+        skipped_issued = []
+        skipped_final = 0
         for invoice in queryset:
-            if invoice.status in ("PAID", "CANCELLED"):
-                skipped += 1
+            if not invoice.cars.exists():
                 continue
-            if invoice.cars.exists():
-                invoice.regenerate_items_from_cars()
-                count += 1
+            if invoice.status == "DRAFT" and not invoice.paid_amount:
+                if invoice.regenerate_items_from_cars():
+                    count += 1
+                continue
+            if invoice.status in ("PAID", "LINKED_PAID", "CANCELLED"):
+                skipped_final += 1
+            else:
+                skipped_issued.append(invoice.number)
 
         if count > 0:
             self.message_user(
                 request,
-                f"Позиции пересозданы для {count} инвойсов",
+                f"Позиции пересозданы для {count} черновиков",
                 messages.SUCCESS,
             )
-        if skipped > 0:
+        if skipped_issued:
             self.message_user(
                 request,
-                f"Пропущено {skipped} оплаченных/отменённых инвойсов",
+                "Выставленные счета не пересобраны (клиент уже получил документ): "
+                + ", ".join(skipped_issued)
+                + ". Используйте «Пересоздать позиции (принудительно)» или кредит-ноту.",
                 messages.WARNING,
             )
-        if count == 0 and skipped == 0:
-            self.message_user(request, "Выберите инвойсы с автомобилями", messages.WARNING)
+        if skipped_final > 0:
+            self.message_user(
+                request,
+                f"Пропущено {skipped_final} оплаченных/отменённых инвойсов",
+                messages.WARNING,
+            )
+        if count == 0 and not skipped_issued and skipped_final == 0:
+            self.message_user(request, "Выберите черновики с автомобилями", messages.WARNING)
 
-    regenerate_items.short_description = "Пересоздать позиции из автомобилей"
+    regenerate_items.short_description = "Пересоздать позиции из автомобилей (черновики)"
+
+    def regenerate_items_force(self, request, queryset):
+        """Принудительный реген позиций для выставленных счетов (B1 force-путь).
+
+        Промежуточная страница подтверждения; каждое пересоздание пишется
+        в ``LogEntry`` (кто и когда переписал выставленный документ).
+        PAID / LINKED_PAID / CANCELLED не трогаем даже принудительно —
+        для них путь один: кредит-нота.
+        """
+        from django.contrib.admin.models import CHANGE, LogEntry
+        from django.contrib.contenttypes.models import ContentType
+
+        from core.mixins import FORCE_REGENERATABLE_INVOICE_STATUSES
+
+        eligible = [inv for inv in queryset if inv.status in FORCE_REGENERATABLE_INVOICE_STATUSES and inv.cars.exists()]
+        rejected = [inv for inv in queryset if inv not in eligible]
+
+        if "confirm" in request.POST:
+            ct = ContentType.objects.get_for_model(NewInvoice)
+            done = 0
+            for invoice in eligible:
+                before = f"{invoice.total} / оплачено {invoice.paid_amount} / {invoice.status}"
+                if not invoice.regenerate_items_from_cars(force=True):
+                    continue
+                invoice.refresh_from_db()
+                done += 1
+                LogEntry.objects.log_action(
+                    user_id=request.user.pk,
+                    content_type_id=ct.pk,
+                    object_id=str(invoice.pk),
+                    object_repr=str(invoice)[:200],
+                    action_flag=CHANGE,
+                    change_message=(
+                        f"Принудительный реген позиций: было {before}; "
+                        f"стало {invoice.total} / оплачено {invoice.paid_amount} / {invoice.status}"
+                    ),
+                )
+                logger.warning(
+                    "[regenerate_items_force] %s пересобран пользователем %s: %s → total=%s status=%s",
+                    invoice.number,
+                    request.user,
+                    before,
+                    invoice.total,
+                    invoice.status,
+                )
+            if done:
+                self.message_user(
+                    request,
+                    f"Принудительно пересобраны позиции {done} инвойсов. "
+                    "Если документ уже отправлен клиенту — перевыставьте PDF.",
+                    messages.WARNING,
+                )
+            if rejected:
+                self.message_user(
+                    request,
+                    f"Пропущено {len(rejected)} (оплаченные/отменённые/без авто): "
+                    + ", ".join(inv.number for inv in rejected),
+                    messages.WARNING,
+                )
+            return None
+
+        if not eligible:
+            self.message_user(
+                request,
+                "Нет инвойсов, которые можно пересобрать принудительно (нужны DRAFT/ISSUED/OVERDUE/"
+                "PARTIALLY_PAID с автомобилями).",
+                messages.WARNING,
+            )
+            return None
+
+        return render(
+            request,
+            "admin/core/newinvoice/confirm_regenerate_force.html",
+            {
+                "invoices": eligible,
+                "rejected": rejected,
+                "action_checkbox_name": admin.helpers.ACTION_CHECKBOX_NAME,
+                "opts": self.model._meta,
+            },
+        )
+
+    regenerate_items_force.short_description = "⚠ Пересоздать позиции (принудительно, для выставленных)"
 
     def push_to_sitepro(self, request, queryset):
         """Отправить выбранные инвойсы в site.pro (бухгалтерия)."""

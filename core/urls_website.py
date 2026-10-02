@@ -30,7 +30,21 @@ urlpatterns = [
     path("login/", views_website.ClientLoginView.as_view(), name="login"),
     path("logout/", views_website.ClientLogoutView.as_view(), name="logout"),
     path("register/", views_website.client_register, name="register"),
+    # Восстановление пароля (C4): стандартные Django-вьюхи с шаблонами сайта.
+    path("password-reset/", views_website.ClientPasswordResetView.as_view(), name="password_reset"),
+    path("password-reset/sent/", views_website.ClientPasswordResetDoneView.as_view(), name="password_reset_done"),
+    path(
+        "password-reset/<uidb64>/<token>/",
+        views_website.ClientPasswordResetConfirmView.as_view(),
+        name="password_reset_confirm",
+    ),
+    path(
+        "password-reset/complete/",
+        views_website.ClientPasswordResetCompleteView.as_view(),
+        name="password_reset_complete",
+    ),
     # ========== Личный кабинет ==========
+    path("profile/notifications/", views_website.notification_settings, name="notification_settings"),
     path("dashboard/", views_website.client_dashboard, name="dashboard"),
     path("car/<int:car_id>/", views_website.car_detail, name="car_detail"),
     path("container/<int:container_id>/", views_website.container_detail, name="container_detail"),

@@ -1244,6 +1244,174 @@ class BillingService:
         return result
 
     # ========================================================================
+    # ОДИН БАНКОВСКИЙ ПЛАТЁЖ → НЕСКОЛЬКО ИНВОЙСОВ (B9)
+    # ========================================================================
+
+    #: Допуск суммы при автоматическом разнесении (правило 4 auto_reconcile):
+    #: объединённый платёж считается совпавшим, если |Σ остатков − сумма BT| ≤ 1 €.
+    ALLOCATION_TOLERANCE = Decimal("1.00")
+
+    @classmethod
+    def greedy_allocation(cls, amount: Decimal, invoices) -> tuple[list[tuple], Decimal]:
+        """Жадно разложить ``amount`` по открытым инвойсам в порядке даты.
+
+        Возвращает ``([(invoice, amount), ...], remainder)``: каждому инвойсу —
+        не больше его остатка, пока деньги не кончатся; ``remainder`` — что
+        осталось нераспределённым (кандидат в BALANCE_TOPUP). Инвойсы без
+        остатка пропускаются. Чистая функция — используется и для
+        предзаполнения формы «Разнести платёж», и автосопоставителем.
+        """
+        amount = cls.quantize(amount)
+        left = amount
+        plan = []
+        for invoice in sorted(invoices, key=lambda i: (i.date, i.pk)):
+            if left <= 0:
+                break
+            remaining = cls.quantize(invoice.remaining_amount)
+            if remaining <= 0:
+                continue
+            part = min(remaining, left)
+            plan.append((invoice, part))
+            left -= part
+        return plan, left
+
+    @classmethod
+    def allocate_bank_transaction(cls, bank_transaction, allocations, *, client=None, created_by=None) -> dict:
+        """Разнести ОДИН входящий банковский платёж по нескольким инвойсам клиента.
+
+        Атомарно, под ``select_for_update`` на BT и инвойсах:
+
+        * на каждый инвойс — пара ``BALANCE_TOPUP`` + ``PAYMENT(BALANCE)``
+          (``register_incoming_bank_payment``; авансовый счёт клиента не
+          уходит в минус — см. accounting-context);
+        * остаток ``|bt.amount| − Σ аллокаций`` → ``BALANCE_TOPUP`` клиенту
+          (переплата / аванс), без инвойса;
+        * ``bt.matched_transaction`` = первый PAYMENT (или TOPUP остатка, если
+          инвойсов нет), ``bt.matched_invoice`` = первый инвойс,
+          ``reconciliation_note`` — перечень разнесения.
+
+        Args:
+            bank_transaction: входящая BankTransaction (amount > 0, EUR, не сопоставлена).
+            allocations: список ``(invoice, amount)``; инвойсы — открытые,
+                одного клиента-получателя, сумма ≤ |bt.amount|, каждая ≤ остатка.
+            client: клиент для остатка, если ``allocations`` пуст (весь платёж на баланс).
+            created_by: пользователь.
+
+        Returns:
+            dict: ``{"payments": [Transaction], "remainder_topup": Transaction|None,
+            "remainder": Decimal, "client": Client}``.
+
+        Raises:
+            ValueError: при любой нарушенной предпосылке (ничего не записано).
+        """
+        from core.mixins import OPEN_INVOICE_STATUSES
+        from core.models_banking import BankTransaction
+        from core.models_billing import NewInvoice, Transaction
+
+        with transaction.atomic():
+            bt = BankTransaction.objects.select_for_update().get(pk=bank_transaction.pk)
+            if bt.matched_transaction_id or bt.reconciliation_skipped:
+                raise ValueError(f"Банковская операция {bt.pk} уже сопоставлена или помечена «не требует привязки»")
+            if bt.amount <= 0:
+                raise ValueError("Разнести можно только входящий платёж (amount > 0)")
+            if (bt.currency or "EUR").upper() != "EUR":
+                raise ValueError(f"Валюта операции {bt.currency} ≠ EUR — требуется ручная конверсия")
+
+            bank_amount = cls.quantize(bt.amount)
+            normalized = []
+            for invoice, amount in allocations:
+                amount = cls.quantize(amount)
+                if amount <= 0:
+                    raise ValueError(f"Сумма для {invoice.number} должна быть положительной")
+                normalized.append((invoice.pk, amount))
+            invoice_ids = [pk for pk, _ in normalized]
+            if len(set(invoice_ids)) != len(invoice_ids):
+                raise ValueError("Инвойс указан в разнесении дважды")
+
+            total_alloc = sum((a for _, a in normalized), Decimal("0.00"))
+            if total_alloc > bank_amount:
+                raise ValueError(f"Сумма разнесения {total_alloc} превышает сумму платежа {bank_amount}")
+
+            locked = {
+                inv.pk: inv
+                for inv in NewInvoice.objects.select_for_update().filter(pk__in=invoice_ids).select_related(
+                    "recipient_client"
+                )
+            }
+            if len(locked) != len(invoice_ids):
+                raise ValueError("Часть инвойсов не найдена")
+
+            target_client = client
+            for pk, amount in normalized:
+                inv = locked[pk]
+                if inv.status not in OPEN_INVOICE_STATUSES:
+                    raise ValueError(f"Инвойс {inv.number} не открыт ({inv.get_status_display()})")
+                if inv.direction != NewInvoice.DIRECTION_OUTGOING:
+                    raise ValueError(f"Инвойс {inv.number} не исходящий — входящий платёж к нему не относится")
+                if not inv.recipient_client_id:
+                    raise ValueError(f"Инвойс {inv.number} выставлен не клиенту")
+                if target_client is None:
+                    target_client = inv.recipient_client
+                elif inv.recipient_client_id != target_client.pk:
+                    raise ValueError("Все инвойсы разнесения должны принадлежать одному клиенту")
+                remaining = cls.quantize(inv.remaining_amount)
+                if amount > remaining:
+                    raise ValueError(f"Сумма {amount} для {inv.number} превышает остаток {remaining}")
+            if target_client is None:
+                raise ValueError("Не определён клиент: укажите инвойсы или client для зачисления остатка")
+
+            payments = []
+            note_parts = []
+            for pk, amount in normalized:
+                inv = locked[pk]
+                payment = cls.register_incoming_bank_payment(
+                    inv,
+                    amount,
+                    date=bt.created_at,
+                    description=f"Разнесение банковского платежа {bt.counterparty_name} -> {inv.number}",
+                    created_by=created_by,
+                )
+                payments.append(payment)
+                note_parts.append(f"{inv.number} {amount}")
+
+            remainder = bank_amount - total_alloc
+            remainder_topup = None
+            if remainder > 0:
+                remainder_topup = Transaction(
+                    type="BALANCE_TOPUP",
+                    method="TRANSFER",
+                    status="COMPLETED",
+                    amount=remainder,
+                    currency="EUR",
+                    to_client=target_client,
+                    description=f"Остаток банковского платежа {bt.counterparty_name} ({bt.external_id}) на баланс",
+                    date=bt.created_at,
+                    created_by=created_by,
+                )
+                remainder_topup.save()
+                note_parts.append(f"остаток {remainder} → баланс")
+
+            bt.matched_transaction = payments[0] if payments else remainder_topup
+            bt.matched_invoice = locked[invoice_ids[0]] if invoice_ids else None
+            bt.reconciliation_note = ("Разнесено: " + "; ".join(note_parts))[:255]
+            bt.save(update_fields=["matched_transaction", "matched_invoice", "reconciliation_note", "fetched_at"])
+
+            logger.info(
+                "[BT allocate] BT %s (%s EUR) → %d инвойсов, остаток %s, клиент %s",
+                bt.pk,
+                bank_amount,
+                len(payments),
+                remainder,
+                target_client.pk,
+            )
+            return {
+                "payments": payments,
+                "remainder_topup": remainder_topup,
+                "remainder": remainder,
+                "client": target_client,
+            }
+
+    # ========================================================================
     # ОТЧЕТЫ И АНАЛИТИКА
     # ========================================================================
 

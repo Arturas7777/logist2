@@ -388,9 +388,10 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
         умножена на число писем. См. карточку авто (services_summary_display)
         — там расчёт через отдельный aggregate, всегда корректен.
         """
-        from django.db.models import Count, DecimalField, F, OuterRef, Q, Subquery, Sum
+        from django.db.models import Count, DecimalField, F, IntegerField, OuterRef, Subquery, Sum
         from django.db.models.functions import Coalesce
 
+        from core.models.email import CarEmailLink
         from core.service_codes import storage_service_q
 
         markup_subquery = (
@@ -414,9 +415,30 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
             .values("default_price")[:1]
         )
 
+        # Счётчики писем — коррелированными подзапросами (P3): Count по
+        # email_links с JOIN на письма заставлял GROUP BY по всем колонкам
+        # Car и раздувал план на каждой странице списка.
+        unread_subquery = (
+            CarEmailLink.objects.filter(car_id=OuterRef("pk"), is_read=False)
+            .order_by()
+            .values("car_id")
+            .annotate(c=Count("pk"))
+            .values("c")
+        )
+        need_reply_subquery = (
+            CarEmailLink.objects.filter(
+                car_id=OuterRef("pk"),
+                email__needs_reply=True,
+                email__direction="INCOMING",
+            )
+            .order_by()
+            .values("car_id")
+            .annotate(c=Count("email_id", distinct=True))
+            .values("c")
+        )
+
         qs = super().get_queryset(request)
         qs = qs.select_related("client", "warehouse", "line", "carrier", "container")
-        qs = qs.prefetch_related("car_services")
         qs = qs.annotate(
             _total_markup=Coalesce(
                 Subquery(markup_subquery, output_field=DecimalField(max_digits=12, decimal_places=2)),
@@ -428,18 +450,15 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
                 output_field=DecimalField(max_digits=12, decimal_places=2),
             ),
             _storage_daily_rate_ann_wh=F("warehouse_id"),
-            _emails_unread=Count(
-                "email_links",
-                filter=Q(email_links__is_read=False),
-                distinct=True,
+            _emails_unread=Coalesce(
+                Subquery(unread_subquery, output_field=IntegerField()),
+                0,
+                output_field=IntegerField(),
             ),
-            _emails_need_reply=Count(
-                "email_links__email",
-                filter=Q(
-                    email_links__email__needs_reply=True,
-                    email_links__email__direction="INCOMING",
-                ),
-                distinct=True,
+            _emails_need_reply=Coalesce(
+                Subquery(need_reply_subquery, output_field=IntegerField()),
+                0,
+                output_field=IntegerField(),
             ),
         )
         return qs
@@ -931,14 +950,14 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
     services_summary_display.short_description = "Сводка по услугам"
 
     def colored_status(self, obj):
-        color = obj.get_status_color()
         return format_html(
-            '<span style="background-color: {}; color: white; padding: 4px 8px; border-radius: 4px;">{}</span>',
-            color,
+            '<span class="cm-badge--status cm-badge--status-{}">{}</span>',
+            (obj.status or "unknown").lower(),
             obj.get_status_display(),
         )
 
     colored_status.short_description = "Статус"
+    colored_status.admin_order_field = "status"
 
     def vin_display(self, obj):
         unread = getattr(obj, "_emails_unread", None)
@@ -1017,16 +1036,13 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
         if not obj.container:
             return "-"
 
-        # Use car status for color (like status)
-        color = obj.get_status_color()
-
-        # Create link to container
+        # Цвет — по статусу авто (как у колонки «Статус»)
         container_url = f"/admin/core/container/{obj.container.id}/change/"
 
         return format_html(
-            '<a href="{}" target="_blank" style="text-decoration: none;"><span style="background-color: {}; color: white; padding: 4px 8px; border-radius: 4px;">{}</span></a>',
+            '<a href="{}" target="_blank" class="cm-badge--status cm-badge--status-{}">{}</a>',
             container_url,
-            color,
+            (obj.status or "unknown").lower(),
             obj.container.number,
         )
 
@@ -1063,38 +1079,54 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
     storage_cost_display.short_description = "Хран"
     storage_cost_display.admin_order_field = "storage_cost"
 
+    # Порог «жёлтой» зоны платных дней: до 7 платных дней — предупреждение,
+    # дальше — красный бейдж.
+    STORAGE_WARN_DAYS = 7
+
     def days_display(self, obj):
-        """Shows paid days accounting for free days from warehouse"""
-        if obj.warehouse and obj.unload_date:
-            chargeable_days, total_days = obj.get_storage_days()
-            return f"{chargeable_days} (из {total_days})"
-        return obj.days if hasattr(obj, "days") else 0
+        """Платные дни хранения бейджем с эскалацией (V1).
+
+        Берём денормализованные ``days``/``storage_cost`` (пересчитываются
+        сигналами и ежедневной задачей) — без пересчёта в Python на каждую
+        строку. Всего дней — простая арифметика по датам, без запросов.
+        """
+        if not (obj.warehouse and obj.unload_date):
+            return format_html('<span class="cm-days-badge cm-days-badge--none">—</span>')
+
+        chargeable = int(obj.days or 0)
+        end_date = (
+            obj.transfer_date if obj.status == "TRANSFERRED" and obj.transfer_date else timezone.now().date()
+        )
+        total_days = max(0, (end_date - obj.unload_date).days + 1)
+        free_days = int(obj.warehouse.free_days or 0)
+
+        if chargeable <= 0:
+            level, hint = "free", f"Бесплатный период: {free_days} дн."
+        elif chargeable <= self.STORAGE_WARN_DAYS:
+            level, hint = "warn", f"Платных дней: {chargeable}"
+        else:
+            level, hint = "over", f"Платных дней: {chargeable} — больше {self.STORAGE_WARN_DAYS}"
+
+        rate = obj._get_storage_daily_rate()
+        tooltip = f"{hint}. Ставка {rate:.2f} €/дн., накоплено {obj.storage_cost or 0:.2f} €"
+        return format_html(
+            '<span class="cm-days-badge cm-days-badge--{}" title="{}">{} <small>/ {}</small></span>',
+            level,
+            tooltip,
+            chargeable,
+            total_days,
+        )
 
     days_display.short_description = "Плат.дн."
     days_display.admin_order_field = "days"
 
     def total_price_display(self, obj):
-        # For non-transferred cars calculate price dynamically
-        if obj.status != "TRANSFERRED":
-            from decimal import Decimal
+        """Цена из денормализованного ``total_price`` (пересчёт — сигналы/Celery).
 
-            # Calculate services total from preloaded car_services (no extra queries)
-            base_total = Decimal("0.00")
-            for cs in obj.car_services.all():
-                base_total += Decimal(str(cs.final_price))
-
-            # Use _total_markup annotation from get_queryset (if available)
-            if hasattr(obj, "_total_markup") and obj._total_markup is not None:
-                distributed_markup = obj._total_markup
-            else:
-                distributed_markup = sum(
-                    (cs.markup_amount for cs in obj.car_services.all() if cs.markup_amount), Decimal("0.00")
-                )
-
-            total = base_total + distributed_markup
-            return f"{total:.2f}"
-
-        return f"{obj.total_price:.2f}"
+        Раньше для не-TRANSFERRED сумма собиралась из prefetch'нутых
+        car_services на каждую строку; теперь список не грузит услуги вовсе.
+        """
+        return f"{obj.total_price or 0:.2f}"
 
     total_price_display.short_description = "Цена"
     total_price_display.admin_order_field = "total_price"
@@ -1162,6 +1194,9 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
         """
         from django.db.models import Sum
 
+        extra_context = extra_context or {}
+        extra_context["car_summary"] = self.get_changelist_summary()
+
         # Call parent method to get response
         response = super().changelist_view(request, extra_context)
 
@@ -1187,6 +1222,41 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
             pass
 
         return response
+
+    CHANGELIST_SUMMARY_CACHE_KEY = "car_changelist_summary"
+    CHANGELIST_SUMMARY_TTL = 60
+
+    @classmethod
+    def get_changelist_summary(cls):
+        """Сводка над списком авто (V3): склад / платные дни / тайтл / письма.
+
+        Один агрегирующий запрос по Car + один COUNT по письмам, кэш 60 с —
+        цифры нужны «на глаз», а не в реальном времени.
+        """
+        from django.core.cache import cache
+        from django.db.models import Count, Q
+
+        from core.models.email import CarEmailLink
+
+        cached = cache.get(cls.CHANGELIST_SUMMARY_CACHE_KEY)
+        if cached is not None:
+            return cached
+
+        unloaded = Q(status="UNLOADED")
+        agg = Car.objects.aggregate(
+            on_warehouse=Count("pk", filter=unloaded),
+            over_days=Count("pk", filter=unloaded & Q(days__gt=cls.STORAGE_WARN_DAYS)),
+            no_title=Count("pk", filter=unloaded & Q(has_title=False)),
+        )
+        summary = {
+            "on_warehouse": agg["on_warehouse"] or 0,
+            "over_days": agg["over_days"] or 0,
+            "no_title": agg["no_title"] or 0,
+            "unread_emails": CarEmailLink.objects.filter(is_read=False).count(),
+            "warn_days": cls.STORAGE_WARN_DAYS,
+        }
+        cache.set(cls.CHANGELIST_SUMMARY_CACHE_KEY, summary, cls.CHANGELIST_SUMMARY_TTL)
+        return summary
 
     def free_days_display(self, obj):
         """Shows free days from warehouse"""

@@ -23,9 +23,11 @@
 
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 
 import requests
+from django.conf import settings
 from django.core.files.base import ContentFile
 
 from core.services.gdrive_client import get_drive_api_client
@@ -466,58 +468,48 @@ class GoogleDriveSync:
                 ContainerPhoto.objects.filter(container=container).values_list("description", flat=True)
             )
 
-            photos_added = 0
-
+            # Кандидаты на загрузку: без уже имеющихся и без повторов в самом
+            # листинге (Drive иногда отдаёт один файл дважды).
+            candidates = []
             for file_info in images:
-                filename = file_info["name"]
-                file_id = file_info["id"]
-                description = f"Google Drive: {filename}"
-
+                description = f"Google Drive: {file_info['name']}"
                 if description in existing_descriptions:
                     continue
+                existing_descriptions.add(description)
+                candidates.append((file_info["id"], file_info["name"], description))
+
+            def _exists(description):
                 # Список выше снят в начале прохода: фото могло появиться за это
                 # время (архив, ручная загрузка, процесс без замка).
-                if ContainerPhoto.objects.filter(container=container, description=description).exists():
-                    existing_descriptions.add(description)
-                    continue
+                return ContainerPhoto.objects.filter(container=container, description=description).exists()
 
-                try:
-                    # Скачиваем файл
-                    file_content = GoogleDriveSync.download_file(file_id)
+            # P5: скачивание и пережатие — сеть + CPU без обращений к БД,
+            # идут в пуле потоков (GDRIVE_DOWNLOAD_WORKERS, по умолчанию 4).
+            # Запись файла в storage и ContainerPhoto.save() — только в
+            # основном потоке (одно БД-соединение; миниатюру ставит в Celery
+            # сам save() через on_commit → create_container_photo_thumbnail_task).
+            # workers<=1 — прежний последовательный путь (тесты).
+            workers = max(1, int(getattr(settings, "GDRIVE_DOWNLOAD_WORKERS", 4)))
+            photos_added = 0
 
-                    if not file_content:
-                        logger.warning(f"   Failed to download {filename}")
+            if workers > 1:
+                chunk_size = workers * 2
+                for start in range(0, len(candidates), chunk_size):
+                    chunk = [c for c in candidates[start : start + chunk_size] if not _exists(c[2])]
+                    if not chunk:
                         continue
-
-                    # Сжимаем ДО записи на диск, чтобы оригинал вообще не
-                    # попадал в storage. Иначе мы бы сначала писали 2 МБ
-                    # оригинала, потом ContainerPhoto.save() через
-                    # maybe_compress_image_field создавал бы рядом сжатую
-                    # копию с суффиксом — а оригинал оставался orphan.
-                    from .services.photo_optimize import compress_image_bytes
-
-                    compressed = compress_image_bytes(file_content)
-                    if compressed is not None:
-                        file_content = compressed
-
-                    # Создаем запись фотографии с правильным типом
-                    photo = ContainerPhoto(
-                        container=container,
-                        photo_type=photo_type,  # IN_CONTAINER или UNLOADING
-                        description=description,
-                        is_public=True,
-                    )
-
-                    # Сохраняем файл
-                    photo.photo.save(filename, ContentFile(file_content), save=False)
-                    photo.save()  # Автоматически создаст миниатюру
-
-                    existing_descriptions.add(description)
-                    photos_added += 1
-
-                except Exception as e:
-                    logger.error(f"   Error processing {filename}: {e}")
-                    continue
+                    with ThreadPoolExecutor(max_workers=min(workers, len(chunk))) as pool:
+                        contents = list(pool.map(lambda c: GoogleDriveSync._fetch_photo_bytes(c[0], c[1]), chunk))
+                    for (_file_id, filename, description), content in zip(chunk, contents, strict=True):
+                        if GoogleDriveSync._store_photo(container, photo_type, description, filename, content):
+                            photos_added += 1
+            else:
+                for file_id, filename, description in candidates:
+                    if _exists(description):
+                        continue
+                    content = GoogleDriveSync._fetch_photo_bytes(file_id, filename)
+                    if GoogleDriveSync._store_photo(container, photo_type, description, filename, content):
+                        photos_added += 1
 
             if photos_added > 0:
                 logger.info(f"   [OK] Added {photos_added} photos ({type_label})")
@@ -526,6 +518,55 @@ class GoogleDriveSync:
         except Exception as e:
             logger.error(f"Error downloading folder: {e}", exc_info=True)
             return 0
+
+    @staticmethod
+    def _fetch_photo_bytes(file_id, filename):
+        """Скачать и пережать файл. Без БД — безопасно вызывать из пула потоков.
+
+        Возвращает байты либо ``None`` (ошибка/не изображение — уже
+        залогировано).
+        """
+        try:
+            content = GoogleDriveSync.download_file(file_id)
+            if not content:
+                logger.warning(f"   Failed to download {filename}")
+                return None
+            # Сжимаем ДО записи на диск, чтобы оригинал вообще не попадал в
+            # storage. Иначе мы бы сначала писали 2 МБ оригинала, потом
+            # ContainerPhoto.save() через maybe_compress_image_field создавал
+            # бы рядом сжатую копию с суффиксом — а оригинал оставался orphan.
+            from .services.photo_optimize import compress_image_bytes
+
+            compressed = compress_image_bytes(content)
+            return compressed if compressed is not None else content
+        except Exception as e:
+            logger.error(f"   Error downloading {filename}: {e}")
+            return None
+
+    @staticmethod
+    def _store_photo(container, photo_type, description, filename, content) -> bool:
+        """Записать файл в storage и создать ContainerPhoto (основной поток)."""
+        from .models_website import ContainerPhoto
+
+        if not content:
+            return False
+        try:
+            # Повторная проверка после скачивания: за время загрузки пачки
+            # фото могло появиться другим путём.
+            if ContainerPhoto.objects.filter(container=container, description=description).exists():
+                return False
+            photo = ContainerPhoto(
+                container=container,
+                photo_type=photo_type,  # IN_CONTAINER или UNLOADING
+                description=description,
+                is_public=True,
+            )
+            photo.photo.save(filename, ContentFile(content), save=False)
+            photo.save()  # миниатюра — отдельной Celery-задачей из save()
+            return True
+        except Exception as e:
+            logger.error(f"   Error processing {filename}: {e}")
+            return False
 
     @staticmethod
     def find_container_folder(container_number, root_folder_id, verbose=False):

@@ -1,7 +1,36 @@
 {% extends "website/base.html" %}
-{% load i18n %}
+{% load i18n static %}
 
 {% block title %}{% trans "Caromoto Lithuania - Доставка автомобилей из США" %}{% endblock %}
+{% block meta_description %}{% trans "Доставка автомобилей из США в Литву и ЕС: контейнерные перевозки, разгрузка в Клайпеде, хранение, таможенное оформление и отслеживание груза по VIN." %}{% endblock %}
+{% block og_title %}{% trans "Caromoto Lithuania - Доставка автомобилей из США" %}{% endblock %}
+{% block og_description %}{% trans "Доставка автомобилей из США в Литву и ЕС: контейнерные перевозки, разгрузка в Клайпеде, хранение, таможенное оформление и отслеживание груза по VIN." %}{% endblock %}
+{% block twitter_title %}{% trans "Caromoto Lithuania - Доставка автомобилей из США" %}{% endblock %}
+{% block twitter_description %}{% trans "Доставка автомобилей из США в Литву и ЕС: контейнерные перевозки, разгрузка в Клайпеде, хранение, таможенное оформление и отслеживание груза по VIN." %}{% endblock %}
+{# Фон hero задан в CSS (background-image) — это LCP-элемент, поэтому не lazy, а preload. #}
+{% block preload %}<link rel="preload" as="image" href="{% static 'website/images/hero-background.jpg' %}">{% endblock %}
+{% block structured_data %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "Caromoto Lithuania",
+  "legalName": "Caromoto Lithuania, MB",
+  "url": "{% if request %}{{ request.scheme }}://{{ request.get_host }}/{% else %}https://caromoto-lt.com/{% endif %}",
+  "logo": "{% if request %}{{ request.scheme }}://{{ request.get_host }}{% endif %}{% static 'website/images/caromoto_logo.png' %}",
+  "email": "lithuania@caromoto.com",
+  "telephone": "+37068830450",
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": "Šilutės pl. 105A",
+    "addressLocality": "Klaipėda",
+    "addressCountry": "LT"
+  },
+  "areaServed": ["LT", "EU"],
+  "sameAs": []
+}
+</script>
+{% endblock %}
 
 {% block content %}
 <!-- Hero секция -->
@@ -168,7 +197,7 @@
             <div class="col-md-4">
                 <div class="card h-100 shadow-sm">
                     {% if post.image %}
-                    <img src="{{ post.image.url }}" class="card-img-top" alt="{{ post.title }}" style="height: 200px; object-fit: cover;">
+                    <img src="{{ post.image.url }}" class="card-img-top" alt="{{ post.title }}" loading="lazy" style="height: 200px; object-fit: cover;">
                     {% else %}
                     <div class="card-img-top bg-primary d-flex align-items-center justify-content-center" style="height: 200px;">
                         <i class="bi bi-newspaper text-white" style="font-size: 4rem;"></i>
@@ -197,10 +226,10 @@
 <!-- CTA секция -->
 <section class="py-4 text-white cta-section">
     <div class="container text-center">
-        <h2 class="mb-3 fw-bold">Готовы начать?</h2>
-        <p class="lead mb-3">Получите бесплатную консультацию и расчет стоимости доставки</p>
+        <h2 class="mb-3 fw-bold">{% trans "Готовы начать?" %}</h2>
+        <p class="lead mb-3">{% trans "Получите бесплатную консультацию и расчет стоимости доставки" %}</p>
         <a href="{% url 'website:contact' %}" class="btn btn-lg px-5 py-3" style="background: var(--accent-red); border: none; font-weight: 600; letter-spacing: 0.5px;">
-            <i class="bi bi-envelope"></i> СВЯЗАТЬСЯ С НАМИ
+            <i class="bi bi-envelope"></i> {% trans "СВЯЗАТЬСЯ С НАМИ" %}
         </a>
     </div>
 </section>
@@ -209,12 +238,16 @@
 
 {% block extra_js %}
 {% include "website/partials/container_photos_modal.html" %}
+{# Строки трекинга для JS — через словарь из шаблона, чтобы переводиться вместе со страницей (Q11). #}
+{{ tracking_i18n|json_script:"tracking-i18n" }}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const trackingForm = document.getElementById('tracking-form');
     const trackingResult = document.getElementById('tracking-result');
     const photosSection = document.getElementById('photos-section');
     const showPhotosBtn = document.getElementById('show-photos-btn');
+    const I18N = JSON.parse(document.getElementById('tracking-i18n').textContent);
+    const LOCALE = document.documentElement.lang || 'lt';
 
     let currentContainerNumber = null;
     const urlParams = new URLSearchParams(window.location.search);
@@ -226,6 +259,39 @@ document.addEventListener('DOMContentLoaded', function() {
         const div = document.createElement('div');
         div.textContent = String(str);
         return div.innerHTML;
+    }
+
+    function formatDate(value) {
+        if (!value) return '';
+        const d = new Date(value);
+        if (isNaN(d.getTime())) return escapeHtml(value);
+        return escapeHtml(d.toLocaleDateString(LOCALE));
+    }
+
+    // Таймлайн FLOATING → IN_PORT → UNLOADED → TRANSFERRED (C1) —
+    // та же разметка, что у website/_status_timeline.html.
+    const TIMELINE_STEPS = ['FLOATING', 'IN_PORT', 'UNLOADED', 'TRANSFERRED'];
+    const TIMELINE_ICONS = {FLOATING: 'bi-water', IN_PORT: 'bi-geo-alt', UNLOADED: 'bi-box-seam', TRANSFERRED: 'bi-check2-circle'};
+    function renderTimeline(status, dates) {
+        const currentIdx = TIMELINE_STEPS.indexOf(status);
+        let html = '<ol class="status-timeline my-3" aria-label="' + escapeHtml(I18N.timeline) + '">';
+        TIMELINE_STEPS.forEach(function(code, idx) {
+            const state = idx < currentIdx ? 'done' : (idx === currentIdx ? 'current' : 'upcoming');
+            let date = dates[code] || '';
+            let prefix = '';
+            if (code === 'IN_PORT' && !date && currentIdx <= 0 && dates.eta) {
+                date = dates.eta;
+                prefix = 'ETA ';
+            }
+            html += '<li class="status-timeline__step is-' + state + '"' + (state === 'current' ? ' aria-current="step"' : '') + '>';
+            html += '<span class="status-timeline__dot"><i class="bi ' + (state === 'done' ? 'bi-check-lg' : TIMELINE_ICONS[code]) + '" aria-hidden="true"></i></span>';
+            html += '<span class="status-timeline__label">' + escapeHtml(I18N.steps[code]) + '</span>';
+            if (date) {
+                html += '<span class="status-timeline__date">' + prefix + formatDate(date) + '</span>';
+            }
+            html += '</li>';
+        });
+        return html + '</ol>';
     }
 
     function openGallery(containerNumber) {
@@ -244,7 +310,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const trackingNumber = document.getElementById('tracking_number').value.trim();
 
         if (!trackingNumber) {
-            showResult('Пожалуйста, введите номер для отслеживания', 'danger');
+            showResult(escapeHtml(I18N.enter_number), 'danger');
             return;
         }
 
@@ -252,7 +318,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const submitBtn = trackingForm.querySelector('button[type="submit"]');
         submitBtn.disabled = true;
 
-        showResult('<div class="spinner-border spinner-border-sm me-2"></div>Поиск...', 'info');
+        showResult('<div class="spinner-border spinner-border-sm me-2"></div>' + escapeHtml(I18N.searching), 'info');
 
         fetch('{% url "website:track_shipment" %}', {
             method: 'POST',
@@ -273,31 +339,39 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .then(data => {
             if (data._throttled) {
-                showResult('<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> Слишком много запросов. Подождите немного и попробуйте снова.</div>', 'warning');
+                showResult('<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> ' + escapeHtml(I18N.throttled) + '</div>', 'warning');
                 photosSection.style.display = 'none';
                 return;
             }
 
             if (data.type) {
-                let resultHtml = '<div class="alert alert-success"><h6><i class="bi bi-check-circle"></i> Груз найден!</h6>';
+                let resultHtml = '<div class="alert alert-success"><h6><i class="bi bi-check-circle"></i> ' + escapeHtml(I18N.found) + '</h6>';
 
                 if (data.type === 'car') {
                     const car = data.data;
-                    resultHtml += `<p><strong>Автомобиль:</strong> ${escapeHtml(car.vin)}</p>`;
-                    resultHtml += `<p><strong>Марка:</strong> ${escapeHtml(car.brand || 'N/A')}</p>`;
-                    resultHtml += `<p><strong>Статус:</strong> ${escapeHtml(car.status_display || car.status)}</p>`;
+                    resultHtml += renderTimeline(car.status, {
+                        UNLOADED: car.unload_date || car.container_unload_date,
+                        TRANSFERRED: car.transfer_date,
+                        eta: car.eta
+                    });
+                    resultHtml += `<p><strong>${escapeHtml(I18N.car)}:</strong> ${escapeHtml(car.vin)}</p>`;
+                    resultHtml += `<p><strong>${escapeHtml(I18N.brand)}:</strong> ${escapeHtml(car.brand || 'N/A')}</p>`;
+                    resultHtml += `<p><strong>${escapeHtml(I18N.status)}:</strong> ${escapeHtml(car.status_display || car.status)}</p>`;
 
-                    if (car.container_unload_date) {
-                        const unloadDate = new Date(car.container_unload_date);
-                        resultHtml += `<p><strong>Дата разгрузки:</strong> ${escapeHtml(unloadDate.toLocaleDateString('ru-RU'))}</p>`;
+                    if (car.eta && car.status === 'FLOATING') {
+                        resultHtml += `<p><strong>${escapeHtml(I18N.eta)}:</strong> ${formatDate(car.eta)}</p>`;
+                    }
+
+                    if (car.container_unload_date || car.unload_date) {
+                        resultHtml += `<p><strong>${escapeHtml(I18N.unload_date)}:</strong> ${formatDate(car.unload_date || car.container_unload_date)}</p>`;
                     }
 
                     if (car.warehouse_address) {
-                        resultHtml += `<p><strong>Склад:</strong> ${escapeHtml(car.warehouse_address)}</p>`;
+                        resultHtml += `<p><strong>${escapeHtml(I18N.warehouse)}:</strong> ${escapeHtml(car.warehouse_address)}</p>`;
                     }
 
                     if (car.container_number) {
-                        resultHtml += `<p><strong>Контейнер:</strong> ${escapeHtml(car.container_number)}</p>`;
+                        resultHtml += `<p><strong>${escapeHtml(I18N.container)}:</strong> ${escapeHtml(car.container_number)}</p>`;
                     }
 
                     if (car.container_number && car.container_photos_count > 0) {
@@ -314,24 +388,31 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 } else if (data.type === 'container') {
                     const container = data.data;
-                    resultHtml += `<p><strong>Контейнер:</strong> ${escapeHtml(container.number)}</p>`;
-                    resultHtml += `<p><strong>Статус:</strong> ${escapeHtml(container.status_display || container.status)}</p>`;
+                    resultHtml += renderTimeline(container.status, {
+                        UNLOADED: container.unload_date,
+                        eta: container.eta
+                    });
+                    resultHtml += `<p><strong>${escapeHtml(I18N.container)}:</strong> ${escapeHtml(container.number)}</p>`;
+                    resultHtml += `<p><strong>${escapeHtml(I18N.status)}:</strong> ${escapeHtml(container.status_display || container.status)}</p>`;
+
+                    if (container.eta && container.status === 'FLOATING') {
+                        resultHtml += `<p><strong>${escapeHtml(I18N.eta)}:</strong> ${formatDate(container.eta)}</p>`;
+                    }
 
                     if (container.unload_date) {
-                        const unloadDate = new Date(container.unload_date);
-                        resultHtml += `<p><strong>Дата разгрузки:</strong> ${escapeHtml(unloadDate.toLocaleDateString('ru-RU'))}</p>`;
+                        resultHtml += `<p><strong>${escapeHtml(I18N.unload_date)}:</strong> ${formatDate(container.unload_date)}</p>`;
                     }
 
                     if (container.line_name) {
-                        resultHtml += `<p><strong>Линия:</strong> ${escapeHtml(container.line_name)}</p>`;
+                        resultHtml += `<p><strong>${escapeHtml(I18N.line)}:</strong> ${escapeHtml(container.line_name)}</p>`;
                     }
 
                     if (container.warehouse_address) {
-                        resultHtml += `<p><strong>Склад:</strong> ${escapeHtml(container.warehouse_address)}</p>`;
+                        resultHtml += `<p><strong>${escapeHtml(I18N.warehouse)}:</strong> ${escapeHtml(container.warehouse_address)}</p>`;
                     }
 
                     if (container.cars_count) {
-                        resultHtml += `<p><strong>Автомобилей:</strong> ${escapeHtml(container.cars_count)}</p>`;
+                        resultHtml += `<p><strong>${escapeHtml(I18N.cars_count)}:</strong> ${escapeHtml(container.cars_count)}</p>`;
                     }
 
                     currentContainerNumber = container.number;
@@ -353,13 +434,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 showResult(`<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> ${escapeHtml(data.detail)}</div>`, 'warning');
                 photosSection.style.display = 'none';
             } else {
-                showResult('<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Произошла ошибка. Попробуйте ещё раз.</div>', 'danger');
+                showResult('<div class="alert alert-danger"><i class="bi bi-x-circle"></i> ' + escapeHtml(I18N.generic_error) + '</div>', 'danger');
                 photosSection.style.display = 'none';
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            showResult('<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка соединения. Проверьте интернет и попробуйте снова.</div>', 'danger');
+            showResult('<div class="alert alert-danger"><i class="bi bi-x-circle"></i> ' + escapeHtml(I18N.network_error) + '</div>', 'danger');
             photosSection.style.display = 'none';
         })
         .finally(() => {

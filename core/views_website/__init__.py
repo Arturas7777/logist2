@@ -47,6 +47,10 @@ from .api import (
 from .auth import (
     ClientLoginView,
     ClientLogoutView,
+    ClientPasswordResetCompleteView,
+    ClientPasswordResetConfirmView,
+    ClientPasswordResetDoneView,
+    ClientPasswordResetView,
     client_register,
 )
 from .client_portal import (
@@ -69,6 +73,7 @@ from .portal_invoices import (
     client_invoice_download,
     client_invoices,
 )
+from .portal_profile import notification_settings
 from .portal_sanctions import (
     client_sees_sanctions_check,
     sanctions_check_page,
@@ -123,6 +128,10 @@ __all__ = [  # noqa: RUF022
     # auth
     "ClientLoginView",
     "ClientLogoutView",
+    "ClientPasswordResetView",
+    "ClientPasswordResetDoneView",
+    "ClientPasswordResetConfirmView",
+    "ClientPasswordResetCompleteView",
     "client_register",
     # portal_docs
     "client_documents",
@@ -148,6 +157,8 @@ __all__ = [  # noqa: RUF022
     "transport_request_generate_all",
     "transport_request_message_send",
     "transport_request_messages_read",
+    # portal_profile
+    "notification_settings",
     # portal_sanctions
     "sanctions_check_page",
     "sanctions_vin_lookup",

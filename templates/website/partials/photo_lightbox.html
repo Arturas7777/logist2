@@ -1,0 +1,74 @@
+{% load i18n %}
+{# Единый lightbox галереи кабинета (C7): карточка авто и контейнера.
+   Галерея — элементы .photo-item[data-full-url] (атрибут на самом элементе
+   или на вложенном <img>). Листание стрелками/клавишами, закрытие по Esc. #}
+<div id="photoLightbox" class="photo-lightbox" role="dialog" aria-modal="true" aria-label="{% trans 'Просмотр фотографии' %}" hidden>
+    <img id="lightboxImg" src="" alt="">
+    <button id="lbPrev" type="button" class="photo-lightbox__nav photo-lightbox__nav--prev" aria-label="{% trans 'Предыдущее фото' %}">&#8249;</button>
+    <button id="lbNext" type="button" class="photo-lightbox__nav photo-lightbox__nav--next" aria-label="{% trans 'Следующее фото' %}">&#8250;</button>
+    <div class="photo-lightbox__counter"><span id="lbCounter"></span></div>
+    <a id="lbDownload" class="photo-lightbox__download" href="#" download hidden>
+        <i class="bi bi-download" aria-hidden="true"></i> {% trans "Скачать" %}
+    </a>
+    <button id="lbClose" type="button" class="photo-lightbox__close" aria-label="{% trans 'Закрыть' %}">&times;</button>
+</div>
+
+<script>
+(function () {
+    var items = Array.prototype.slice.call(document.querySelectorAll('.photo-item'));
+    if (!items.length) return;
+    var lb = document.getElementById('photoLightbox');
+    var img = document.getElementById('lightboxImg');
+    var prev = document.getElementById('lbPrev');
+    var next = document.getElementById('lbNext');
+    var counter = document.getElementById('lbCounter');
+    var download = document.getElementById('lbDownload');
+    var current = 0;
+
+    function fullUrl(el) {
+        var inner = el.querySelector('img');
+        return el.dataset.fullUrl || (inner && inner.dataset.fullUrl) || (inner && inner.src) || '';
+    }
+    function downloadUrl(el) {
+        return el.dataset.downloadUrl || '';
+    }
+
+    function show() {
+        img.src = fullUrl(items[current]);
+        prev.style.display = current > 0 ? '' : 'none';
+        next.style.display = current < items.length - 1 ? '' : 'none';
+        counter.textContent = (current + 1) + ' / ' + items.length;
+        var dl = downloadUrl(items[current]);
+        download.hidden = !dl;
+        if (dl) download.href = dl;
+        lb.hidden = false;
+        document.body.style.overflow = 'hidden';
+    }
+    function close() {
+        lb.hidden = true;
+        img.src = '';
+        document.body.style.overflow = '';
+    }
+
+    items.forEach(function (el, idx) {
+        el.addEventListener('click', function (e) {
+            // Клик по кнопке скачивания внутри карточки — не открывать просмотр.
+            if (e.target.closest('a')) return;
+            current = idx;
+            show();
+        });
+    });
+    prev.addEventListener('click', function (e) { e.stopPropagation(); if (current > 0) { current--; show(); } });
+    next.addEventListener('click', function (e) { e.stopPropagation(); if (current < items.length - 1) { current++; show(); } });
+    document.getElementById('lbClose').addEventListener('click', close);
+    img.addEventListener('click', function (e) { e.stopPropagation(); });
+    download.addEventListener('click', function (e) { e.stopPropagation(); });
+    lb.addEventListener('click', close);
+    document.addEventListener('keydown', function (e) {
+        if (lb.hidden) return;
+        if (e.key === 'Escape') close();
+        else if (e.key === 'ArrowLeft' && current > 0) { e.preventDefault(); current--; show(); }
+        else if (e.key === 'ArrowRight' && current < items.length - 1) { e.preventDefault(); current++; show(); }
+    });
+})();
+</script>

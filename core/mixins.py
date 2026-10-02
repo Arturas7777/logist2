@@ -35,10 +35,24 @@ ACTIVE_INVOICE_STATUSES = (*OPEN_INVOICE_STATUSES, "PAID")
 # Используется в `check_overdue_invoices` Celery-задаче и в dashboard'е.
 OVERDUE_CANDIDATE_STATUSES = ("ISSUED", "PARTIALLY_PAID")
 
-# Статусы, при которых имеет смысл регенерировать позиции из CarService
-# (после изменения цены/услуги машины). PAID — нет (уже оплачен,
-# регенерация нарушит баланс), CANCELLED/LINKED_PAID — тоже нет.
-REGENERATABLE_INVOICE_STATUSES = ("DRAFT", *OPEN_INVOICE_STATUSES)
+# Регенерация позиций из CarService (B1, IMPROVEMENT_PLAN_2026-10).
+#
+# АВТОМАТИЧЕСКИЙ реген (сигналы CarService, Celery-задачи, каскады
+# контейнера/автовоза) — только черновики. Выставленный счёт (ISSUED /
+# OVERDUE / PARTIALLY_PAID) клиент уже держит в руках как PDF; тихая
+# перезапись его позиций и total расходится с документом у клиента и в
+# site.pro. Для таких счетов — только явный force-путь (admin action
+# «Пересоздать позиции (принудительно)») либо кредит-нота.
+AUTO_REGENERATABLE_INVOICE_STATUSES = ("DRAFT",)
+
+# Статусы, в которых реген допустим ХОТЯ БЫ принудительно (force).
+# PAID — нет (уже оплачен, регенерация нарушит баланс), CANCELLED /
+# LINKED_PAID — тоже нет.
+FORCE_REGENERATABLE_INVOICE_STATUSES = ("DRAFT", *OPEN_INVOICE_STATUSES)
+
+# Обратная совместимость: старое имя означало «можно регенерировать» без
+# различия auto/force. Теперь это синоним force-набора.
+REGENERATABLE_INVOICE_STATUSES = FORCE_REGENERATABLE_INVOICE_STATUSES
 
 # Обратная совместимость для уже импортированного приватного имени.
 _OPEN_INVOICE_STATUSES = OPEN_INVOICE_STATUSES

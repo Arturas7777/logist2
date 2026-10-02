@@ -61,6 +61,26 @@
 {% endblock %}
 
 {% block result_list %}
+  {% if car_summary %}
+  <div class="cm-summary-bar" id="cm-car-summary">
+    <a href="?status_multi=UNLOADED" title="Авто со статусом «Разгружен»">
+      <i class="bi bi-geo-alt-fill"></i> На складе
+      <span class="cm-summary-num{% if not car_summary.on_warehouse %} cm-summary-num--zero{% endif %}">{{ car_summary.on_warehouse }}</span>
+    </a>
+    <a href="?status_multi=UNLOADED&amp;days__gt={{ car_summary.warn_days }}" title="На складе дольше бесплатного периода + {{ car_summary.warn_days }} дней">
+      <i class="bi bi-hourglass-split"></i> Платных дней &gt; {{ car_summary.warn_days }}
+      <span class="cm-summary-num{% if car_summary.over_days %} cm-summary-num--bad{% else %} cm-summary-num--zero{% endif %}">{{ car_summary.over_days }}</span>
+    </a>
+    <a href="?status_multi=UNLOADED&amp;has_title__exact=0" title="Разгружены, но тайтл ещё не у нас">
+      <i class="bi bi-file-earmark-x"></i> Без тайтла
+      <span class="cm-summary-num{% if car_summary.no_title %} cm-summary-num--warn{% else %} cm-summary-num--zero{% endif %}">{{ car_summary.no_title }}</span>
+    </a>
+    <a href="?emails=unread" title="Непрочитанные письма, привязанные к авто">
+      <i class="bi bi-envelope-exclamation"></i> Непрочитанных писем
+      <span class="cm-summary-num{% if car_summary.unread_emails %} cm-summary-num--bad{% else %} cm-summary-num--zero{% endif %}">{{ car_summary.unread_emails }}</span>
+    </a>
+  </div>
+  {% endif %}
   {{ block.super }}
   
   {% if total_markup_sum is not None %}

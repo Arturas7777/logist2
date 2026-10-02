@@ -41,6 +41,10 @@ def company_dashboard(request):
     cash_wallet = context.get("cash_wallet", {})
     context["personal_category_breakdown_json"] = cash_wallet.get("category_breakdown", [])
 
+    # V6: касса/карты рядом с банком и плитка «Несверено»
+    context["treasury"] = service.get_treasury_overview()
+    context["bank_unreconciled"] = service.get_unreconciled_bank_summary()
+
     return render(request, "admin/company_dashboard.html", context)
 
 

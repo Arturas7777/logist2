@@ -46,6 +46,146 @@
 .status-PAID, .status-LINKED_PAID { background: #d4edda; color: #155724; }
 .status-OVERDUE { background: #f8d7da; color: #721c24; }
 
+/* Быстрые чипы статусов над списком авто (Q10) */
+.status-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+}
+
+.status-chip {
+    display: inline-block;
+    padding: .3rem .85rem;
+    border: 1px solid #d5dbe3;
+    border-radius: 999px;
+    background: #fff;
+    color: #3d4852;
+    font-size: .85rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+
+.status-chip:hover {
+    background: #f1f4f8;
+    color: #1f2933;
+}
+
+.status-chip.is-active {
+    background: var(--primary-color, #2c3e50);
+    border-color: var(--primary-color, #2c3e50);
+    color: #fff;
+}
+
+/* Галерея карточек авто/контейнера + единый lightbox (C7) */
+.photo-item {
+    position: relative;
+    overflow: hidden;
+    border-radius: .5rem;
+    cursor: pointer;
+}
+
+.photo-item img {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+    transition: transform .3s ease;
+}
+
+.photo-item:hover img {
+    transform: scale(1.04);
+}
+
+.photo-item .photo-overlay {
+    position: absolute;
+    top: .5rem;
+    left: .5rem;
+}
+
+.photo-item .photo-download {
+    position: absolute;
+    right: .5rem;
+    bottom: .5rem;
+}
+
+.photo-lightbox {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: rgba(0, 0, 0, .9);
+    z-index: 9999;
+    cursor: pointer;
+}
+
+.photo-lightbox[hidden] {
+    display: none;
+}
+
+.photo-lightbox img {
+    max-width: 90%;
+    max-height: 90%;
+    object-fit: contain;
+    border-radius: 4px;
+    cursor: default;
+}
+
+.photo-lightbox__nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, .3);
+    border: 0;
+    color: #fff;
+    font-size: 2rem;
+    padding: 10px 14px;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.photo-lightbox__nav--prev { left: 15px; }
+.photo-lightbox__nav--next { right: 15px; }
+
+.photo-lightbox__counter {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, .6);
+    padding: 8px 18px;
+    border-radius: 20px;
+    color: #fff;
+    font-size: 14px;
+}
+
+.photo-lightbox__download {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, .15);
+    color: #fff;
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 14px;
+}
+
+.photo-lightbox__download:hover { color: #fff; background: rgba(255, 255, 255, .3); }
+
+.photo-lightbox__close {
+    position: absolute;
+    top: 15px;
+    right: 20px;
+    background: none;
+    border: 0;
+    color: #fff;
+    font-size: 2.5rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
 .empty-state {
     text-align: center;
     padding: 2.5rem 1rem;

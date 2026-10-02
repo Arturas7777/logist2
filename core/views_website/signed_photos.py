@@ -31,6 +31,7 @@ from rest_framework.response import Response
 
 from core.models import Container
 from core.models_website import CarPhoto, ContainerPhoto
+from core.services.photo_response import build_photo_response
 from core.services.signed_urls import (
     BadSignature,
     SignatureExpired,
@@ -38,6 +39,7 @@ from core.services.signed_urls import (
     make_photo_token,
     parse_container_token,
     parse_photo_token,
+    photo_url_ttl,
 )
 from core.throttles import PhotoDownloadThrottle
 
@@ -284,6 +286,12 @@ def serve_signed_photo(request, token):
     Логирование: каждый скачанный файл записывается в ``logger.info(...)``
     с client_ip, photo_id, container/car_id — для аудита массовых
     выгрузок через Sentry / ``grep`` по journalctl.
+
+    Отдача файла (P1): при ``PHOTO_SERVE_VIA_NGINX=True`` возвращается
+    пустой ответ с ``X-Accel-Redirect`` — файл стримит nginx; иначе
+    ``FileResponse``. В обоих случаях ``Cache-Control: private,
+    max-age=<TTL подписи>``, чтобы повторное открытие галереи не шло в
+    Django (Q6). См. :mod:`core.services.photo_response`.
     """
     try:
         kind, photo_id, variant = parse_photo_token(token)
@@ -318,8 +326,9 @@ def serve_signed_photo(request, token):
     else:
         file_field = photo.photo
 
-    if not file_field or not os.path.exists(file_field.path):
-        raise Http404
+    # build_photo_response сам поднимет Http404 для пустого поля,
+    # отсутствующего файла или пути вне MEDIA_ROOT.
+    response = build_photo_response(file_field, max_age=photo_url_ttl())
 
     logger.info(
         "serve_signed_photo: kind=%s id=%s variant=%s parent=%s ip=%s",
@@ -330,4 +339,4 @@ def serve_signed_photo(request, token):
         request.META.get("REMOTE_ADDR"),
     )
 
-    return FileResponse(file_field.open("rb"))
+    return response

@@ -48,6 +48,197 @@ def check_overdue_invoices(self):
     return updated
 
 
+# Напоминания о просрочке (B8) ───────────────────────────────────────────────
+
+# За сколько дней до due_date напоминать клиенту.
+INVOICE_DUE_REMINDER_DAYS = 3
+# Через сколько дней просрочки заводить дело менеджеру.
+INVOICE_OVERDUE_ESCALATION_DAYS = 14
+
+
+@shared_task(bind=True, max_retries=1, default_retry_delay=300, time_limit=600)
+def send_invoice_due_reminders(self):
+    """Ежедневно: напоминания клиентам по официальным счетам (PARDP).
+
+    * за ``INVOICE_DUE_REMINDER_DAYS`` дней до ``due_date`` — «скоро срок оплаты»
+      (только ISSUED / PARTIALLY_PAID);
+    * по счетам в статусе OVERDUE — «счёт просрочен» (один раз на инвойс).
+
+    Дедуп — через ``NotificationLog`` в ``client_notifications``; задачу можно
+    перезапускать без риска повторной рассылки. Пени не начисляются.
+    """
+    from datetime import timedelta
+
+    from core.models_billing import NewInvoice
+    from core.services import client_notifications as cn
+
+    with task_lock("send_invoice_due_reminders_lock", 600) as acquired:
+        if not acquired:
+            logger.info("[send_invoice_due_reminders] another run in progress — skip")
+            return {"status": "locked"}
+
+        today = timezone.now().date()
+        base_qs = NewInvoice.objects.filter(
+            document_type="INVOICE",
+            recipient_client__isnull=False,
+        ).select_related("recipient_client")
+
+        due_soon = base_qs.filter(
+            status__in=("ISSUED", "PARTIALLY_PAID"),
+            due_date=today + timedelta(days=INVOICE_DUE_REMINDER_DAYS),
+        )
+        overdue = base_qs.filter(status="OVERDUE")
+
+        stats = {"due_soon": 0, "overdue": 0}
+        for invoice in due_soon:
+            result = cn.notify_invoice_due_soon(invoice)
+            stats["due_soon"] += int(bool(result["email"] or result["telegram"]))
+        for invoice in overdue:
+            result = cn.notify_invoice_overdue(invoice)
+            stats["overdue"] += int(bool(result["email"] or result["telegram"]))
+
+        logger.info("[send_invoice_due_reminders] due_soon=%d overdue=%d", stats["due_soon"], stats["overdue"])
+        return stats
+
+
+@shared_task(bind=True, max_retries=1, default_retry_delay=300, time_limit=300)
+def escalate_overdue_invoices(self):
+    """Ежедневно: дело менеджеру по счетам с просрочкой > 14 дней (B8).
+
+    Одно дело на инвойс: повторный запуск ничего не дублирует (ищем
+    открытое или уже закрытое дело по заголовку с номером счёта).
+    """
+    from datetime import timedelta
+
+    from core.models import Task
+    from core.models_billing import NewInvoice
+
+    today = timezone.now().date()
+    threshold = today - timedelta(days=INVOICE_OVERDUE_ESCALATION_DAYS)
+    invoices = (
+        NewInvoice.objects.filter(status="OVERDUE", due_date__lt=threshold, recipient_client__isnull=False)
+        .select_related("recipient_client")
+        .order_by("due_date")
+    )
+
+    created = 0
+    for invoice in invoices:
+        title = f"Просрочка > {INVOICE_OVERDUE_ESCALATION_DAYS} дней: счёт {invoice.number}"
+        if Task.objects.filter(title=title).exists():
+            continue
+        days_overdue = (today - invoice.due_date).days
+        remaining = (invoice.total or 0) - (invoice.paid_amount or 0)
+        Task.objects.create(
+            title=title[:200],
+            description=(
+                f"Клиент: {invoice.recipient_client.name}\n"
+                f"Счёт: {invoice.number} от {invoice.date:%d.%m.%Y}, срок оплаты {invoice.due_date:%d.%m.%Y}\n"
+                f"Просрочка: {days_overdue} дн.\n"
+                f"Остаток к оплате: {remaining:.2f} EUR\n\n"
+                "Напоминания клиенту уже отправлены автоматически (email/Telegram). "
+                "Нужно связаться с клиентом и договориться об оплате."
+            ),
+            priority="HIGH",
+            deadline=timezone.now() + timedelta(days=2),
+            auto_created=True,
+            origin=Task.ORIGIN_MANUAL,
+            created_by="celery:escalate_overdue_invoices",
+        )
+        created += 1
+
+    if created:
+        logger.info("[escalate_overdue_invoices] created %d tasks", created)
+    return created
+
+
+# Уведомления о событиях кабинета (C5) ──────────────────────────────────────
+
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=120, time_limit=300)
+def notify_photos_ready_task(self, kind, obj_id):
+    """«Фото готовы» по контейнеру (``kind='container'``) или авто (``kind='car'``).
+
+    Ставится из сигнала с задержкой (countdown) — фото обычно льются пачкой,
+    поэтому ждём, пока загрузка закончится, и шлём одно письмо. Дедуп в
+    ``NotificationLog`` защищает от повторов при перезапусках.
+    """
+    from core.models import Car, Container
+    from core.services import client_notifications as cn
+
+    try:
+        if kind == "container":
+            container = Container.objects.get(pk=obj_id)
+            return cn.notify_photos_ready(container=container)
+        car = Car.objects.select_related("client", "container").get(pk=obj_id)
+        return cn.notify_photos_ready(car=car)
+    except (Container.DoesNotExist, Car.DoesNotExist):
+        logger.warning("[notify_photos_ready_task] %s %s not found", kind, obj_id)
+        return None
+    except Exception as exc:
+        logger.error("[notify_photos_ready_task] %s %s failed: %s", kind, obj_id, exc)
+        raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60, time_limit=300)
+def send_invoice_issued_notification_task(self, invoice_id):
+    """«Инвойс выставлен»: письмо + Telegram клиенту с PDF, если он прикреплён."""
+    from core.models_billing import NewInvoice
+    from core.services import client_notifications as cn
+
+    try:
+        invoice = NewInvoice.objects.select_related("recipient_client").get(pk=invoice_id)
+    except NewInvoice.DoesNotExist:
+        logger.warning("[send_invoice_issued_notification_task] invoice %s not found", invoice_id)
+        return None
+    if invoice.status != "ISSUED" or invoice.document_type != "INVOICE":
+        return None
+    try:
+        return cn.notify_invoice_issued(invoice)
+    except Exception as exc:
+        logger.error("[send_invoice_issued_notification_task] %s failed: %s", invoice.number, exc)
+        raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60, time_limit=300)
+def send_request_status_notification_task(self, request_id, status):
+    """«Заявка сменила статус»: шлём, только если статус всё ещё тот, что в событии."""
+    from core.models.website import TransportRequest
+    from core.services import client_notifications as cn
+
+    try:
+        transport_request = TransportRequest.objects.select_related("client").get(pk=request_id)
+    except TransportRequest.DoesNotExist:
+        logger.warning("[send_request_status_notification_task] request %s not found", request_id)
+        return None
+    if transport_request.status != status:
+        return None
+    try:
+        return cn.notify_request_status(transport_request)
+    except Exception as exc:
+        logger.error("[send_request_status_notification_task] %s failed: %s", transport_request.number, exc)
+        raise self.retry(exc=exc)
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60, time_limit=300)
+def send_car_transferred_notification_task(self, car_id):
+    """«Авто передано»: Car перешёл в TRANSFERRED."""
+    from core.models import Car
+    from core.services import client_notifications as cn
+
+    try:
+        car = Car.objects.select_related("client", "warehouse").get(pk=car_id)
+    except Car.DoesNotExist:
+        logger.warning("[send_car_transferred_notification_task] car %s not found", car_id)
+        return None
+    if car.status != "TRANSFERRED":
+        return None
+    try:
+        return cn.notify_car_transferred(car)
+    except Exception as exc:
+        logger.error("[send_car_transferred_notification_task] %s failed: %s", car.vin, exc)
+        raise self.retry(exc=exc)
+
+
 @shared_task(bind=True, max_retries=2, default_retry_delay=120, time_limit=600)
 def sync_container_photos_gdrive_task(self, container_id, folder_url=None):
     """Синхронизирует фотографии контейнера с Google Drive в фоне через Celery."""
@@ -599,11 +790,12 @@ def _sync_bank_and_reconcile_inner():
         try:
             incoming = reconcile_incoming_payments()
             logger.info(
-                "[sync_bank] incoming reconcile: %d matched (R1=%d R2=%d R3=%d)",
+                "[sync_bank] incoming reconcile: %d matched (R1=%d R2=%d R3=%d R4=%d)",
                 incoming["total"],
                 incoming["rule1"],
                 incoming["rule2"],
                 incoming["rule3"],
+                incoming.get("rule4", 0),
             )
         except Exception as exc:
             logger.error("[sync_bank] incoming reconcile failed: %s", exc, exc_info=True)
@@ -1032,14 +1224,48 @@ def update_container_etas_task():
     Линии без настроенного ключа/адаптера просто пропускаются — задача
     безопасна и до получения всех доступов.
     """
-    from core.models import Container
-    from core.services.eta_tracker import update_container_eta
+    from concurrent.futures import ThreadPoolExecutor
 
-    containers = Container.objects.filter(status="FLOATING", line__isnull=False).select_related("line")
+    import requests
+
+    from core.models import Container
+    from core.services.eta_tracker import line_fetcher_for, update_container_eta
+
+    containers = list(Container.objects.filter(status="FLOATING", line__isnull=False).select_related("line"))
     updated, unchanged, skipped = 0, 0, 0
+
+    # P7: линии без адаптера отсеиваем до HTTP; сами HTTP-вызовы — параллельно
+    # в пуле потоков (сеть, без БД), разбор ответа и save() — в основном
+    # потоке, чтобы не плодить по соединению с PostgreSQL на поток.
+    to_fetch = []
     for container in containers:
+        _line_name, fetcher = line_fetcher_for(container)
+        if fetcher is None:
+            skipped += 1
+        else:
+            to_fetch.append((container, fetcher))
+
+    def _fetch(item):
+        container, fetcher = item
         try:
-            result = update_container_eta(container)
+            return fetcher(container.number)
+        except requests.RequestException as exc:
+            # Сетевая ошибка — не инцидент (как и раньше: warning, не exception).
+            logger.warning("ETA %s: ошибка запроса к линии: %s", container.number, exc)
+            return None, f"ошибка запроса к линии: {exc}"
+        except Exception as exc:
+            return exc
+
+    fetched_results = []
+    if to_fetch:
+        with ThreadPoolExecutor(max_workers=min(4, len(to_fetch))) as pool:
+            fetched_results = list(pool.map(_fetch, to_fetch))
+
+    for (container, _fetcher), fetched in zip(to_fetch, fetched_results, strict=True):
+        try:
+            if isinstance(fetched, Exception):
+                raise fetched
+            result = update_container_eta(container, fetched=fetched)
         except Exception:
             logger.exception("ETA update failed for container %s", container.number)
             skipped += 1
@@ -1050,7 +1276,7 @@ def update_container_etas_task():
             unchanged += 1
         else:
             skipped += 1
-    summary = {"total": containers.count(), "updated": updated, "unchanged": unchanged, "skipped": skipped}
+    summary = {"total": len(containers), "updated": updated, "unchanged": unchanged, "skipped": skipped}
     logger.info("update_container_etas: %s", summary)
     return summary
 
@@ -1273,7 +1499,7 @@ def check_business_rules(self):
     retry_backoff=True,
 )
 def regenerate_invoices_for_car_task(self, car_id):
-    """Пересоздать позиции всех открытых инвойсов, связанных с указанной машиной.
+    """Пересоздать позиции всех DRAFT-инвойсов, связанных с указанной машиной.
 
     Ранее эта работа делалась в `transaction.on_commit` синхронно — каждое
     сохранение CarService приводило к N SQL-запросов в HTTP-потоке.
@@ -1283,13 +1509,15 @@ def regenerate_invoices_for_car_task(self, car_id):
     from django.db import transaction as db_transaction
     from django.db.utils import OperationalError
 
-    from core.mixins import REGENERATABLE_INVOICE_STATUSES
+    from core.mixins import AUTO_REGENERATABLE_INVOICE_STATUSES
     from core.models_billing import NewInvoice
 
+    # B1: автоматический реген — только черновики; выставленные счета
+    # пересобираются лишь явным force-действием из админки.
     invoice_ids = list(
         NewInvoice.objects.filter(
             cars__id=car_id,
-            status__in=REGENERATABLE_INVOICE_STATUSES,
+            status__in=AUTO_REGENERATABLE_INVOICE_STATUSES,
         )
         .values_list("id", flat=True)
         .distinct()
@@ -1435,11 +1663,44 @@ def finalize_cars_transfer_task(self, car_ids):
     затем пересобираем позиции открытых инвойсов этих машин — иначе
     regen прочитал бы устаревшие цены CarService.
     """
+    from django.db import transaction as db_transaction
+    from django.db.utils import OperationalError
+
+    from core.mixins import REGENERATABLE_INVOICE_STATUSES
+    from core.models_billing import NewInvoice
+
     car_ids = list(car_ids)
     recalculate_cars_total_price_task(car_ids)
-    for car_id in car_ids:
-        regenerate_invoices_for_car_task(car_id)
-    return {"finalized": len(car_ids)}
+
+    # P7: один инвойс обычно охватывает несколько машин автовоза/клиента —
+    # раньше regen вызывался на каждую машину и пересобирал один и тот же
+    # инвойс N раз. Собираем уникальные id одним запросом (тот же фильтр
+    # статусов, что в regenerate_invoices_for_car_task) и регенерим по разу.
+    invoice_ids = list(
+        NewInvoice.objects.filter(cars__id__in=car_ids, status__in=REGENERATABLE_INVOICE_STATUSES)
+        .values_list("id", flat=True)
+        .distinct()
+    )
+    regenerated = skipped = 0
+    for invoice_id in invoice_ids:
+        try:
+            with db_transaction.atomic():
+                invoice = NewInvoice.objects.select_for_update(nowait=True).get(id=invoice_id)
+                invoice.regenerate_items_from_cars()
+                regenerated += 1
+        except OperationalError:
+            logger.warning("[finalize_cars_transfer] invoice %s locked, skipping", invoice_id)
+            skipped += 1
+        except NewInvoice.DoesNotExist:
+            pass
+    logger.info(
+        "[finalize_cars_transfer] cars=%s invoices=%s regenerated=%s skipped=%s",
+        len(car_ids),
+        len(invoice_ids),
+        regenerated,
+        skipped,
+    )
+    return {"finalized": len(car_ids), "invoices": len(invoice_ids), "regenerated": regenerated, "skipped": skipped}
 
 
 @shared_task(time_limit=600)
@@ -1456,9 +1717,31 @@ def refresh_unloaded_storage_daily():
     """
     from core.models import Car
 
-    ids = list(Car.objects.filter(status="UNLOADED").values_list("pk", flat=True))
+    # P6: без unload_date хранение не считается (days=0) — пересчитывать
+    # нечего. У Car нет updated_at, поэтому «уже пересчитанные сегодня»
+    # не отсекаем: пачка и так маленькая (десятки машин на складе).
+    ids = list(
+        Car.objects.filter(status="UNLOADED", unload_date__isnull=False).order_by("pk").values_list("pk", flat=True)
+    )
     batch_size = 500
     for i in range(0, len(ids), batch_size):
         recalculate_cars_total_price_task.delay(ids[i : i + batch_size])
     logger.info("[refresh_unloaded_storage_daily] enqueued %s cars", len(ids))
     return {"enqueued": len(ids)}
+
+
+@shared_task(time_limit=180)
+def warm_dashboard_cache():
+    """P4: прогреть кэш дашборда, чтобы первый заход утром не ждал агрегаты.
+
+    Вызывает тот же набор методов, что и страница ``/admin/dashboard/``.
+    Наложение запусков (beat каждые 5 мин при медленном PG) закрывает лок.
+    """
+    from core.services.dashboard_service import DashboardService
+
+    with task_lock("warm_dashboard_cache_lock", 240) as acquired:
+        if not acquired:
+            logger.info("[warm_dashboard_cache] another run in progress — skip")
+            return {"status": "locked"}
+        DashboardService().get_full_dashboard_context()
+        return {"status": "ok"}

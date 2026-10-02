@@ -69,12 +69,18 @@ def calculate_ths_for_container(container):
     return result
 
 
-def create_ths_services_for_container(container):
+def create_ths_services_for_container(container, *, include_transferred=True):
     """
     Create THS CarService records for all cars in container using proportional distribution.
 
     Service provider type (LINE or WAREHOUSE) is determined by container.ths_payer.
     Returns the number of created services.
+
+    B11: ``include_transferred=False`` — распределение считается по ВСЕМ авто
+    контейнера (доли не меняются), но запись услуг для TRANSFERRED авто
+    пропускается: их THS уже выставлен в счёт. Используется каскадом
+    контейнера; «заполнение пробела» (``ensure_ths_for_car_container``)
+    по-прежнему пишет всем.
     """
     from core.models import (
         Car,
@@ -164,6 +170,8 @@ def create_ths_services_for_container(container):
             car = cars_by_id.get(car_id)
             if not car:
                 logger.warning("Car %s not found when creating THS service", car_id)
+                continue
+            if not include_transferred and car.status == "TRANSFERRED":
                 continue
 
             CarService.objects.filter(car=car, service_type="LINE").filter(
@@ -279,7 +287,7 @@ def _count_vehicles_for_tariff(cars, vehicle_type):
     return sum(1 for c in cars if (c.vehicle_type in MOTORCYCLE_TYPES) == target_is_moto)
 
 
-def apply_client_tariffs_for_container(container):
+def apply_client_tariffs_for_container(container, *, include_transferred=True):
     """
     Apply client tariff markups to warehouse services after THS is calculated.
 
@@ -290,6 +298,10 @@ def apply_client_tariffs_for_container(container):
 
     Количество ТС для подбора тарифа считается по категориям: мотоциклы не
     учитываются при подсчёте легковых авто (и наоборот).
+
+    B11: ``include_transferred=False`` — число авто для подбора тарифа
+    считается по всему контейнеру, но наценки переданных авто не
+    перезаписываются.
     """
     if not container:
         return
@@ -299,6 +311,8 @@ def apply_client_tariffs_for_container(container):
         return
 
     for car in cars:
+        if not include_transferred and car.status == "TRANSFERRED":
+            continue
         if not car.client or car.client.tariff_type == "NONE":
             continue
 

@@ -519,7 +519,7 @@
     </div>
     <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
         {% if operational_day.pending_reconciliation_count %}
-            <a href="{% url 'admin:core_banktransaction_changelist' %}?reconciliation_status=unmatched"
+            <a href="{% url 'admin:core_banktransaction_changelist' %}?reconciled=unmatched"
                class="db-action outline">🔎 Разобрать банковские транзакции</a>
         {% endif %}
         {% if operational_day.overdue_invoices_count %}
@@ -772,11 +772,11 @@
     {% endif %}
     </div>
 
-    <!-- ════════════════ BANK ACCOUNTS ════════════════ -->
-    {% if bank_accounts %}
-    <div class="db-section" data-section="bank-accounts"><i class="bi bi-bank2" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Банковские счета</div>
+    <!-- ════════════════ BANK ACCOUNTS + КАССА + КАРТЫ (V6) ════════════════ -->
+    {% if bank_accounts or treasury %}
+    <div class="db-section" data-section="bank-accounts"><i class="bi bi-bank2" style="font-size:1.1em;vertical-align:middle;margin-right:4px"></i> Банк, касса и карты</div>
     <div class="db-section-body">
-    <div class="kpi-row {% if bank_accounts|length <= 3 %}three{% elif bank_accounts|length == 4 %}four{% else %}five{% endif %}" style="margin-bottom:28px">
+    <div class="kpi-row five" style="margin-bottom:12px">
         {% for acc in bank_accounts %}
         <div class="kpi accent-indigo">
             <div class="kpi-icon indigo"><i class="bi bi-bank2"></i></div>
@@ -792,6 +792,40 @@
             </div>
         </div>
         {% endfor %}
+        {% if treasury %}
+        <div class="kpi accent-green">
+            <div class="kpi-icon green"><i class="bi bi-cash-stack"></i></div>
+            <div class="kpi-label">Касса компании</div>
+            <div class="kpi-value {% if treasury.company_balance >= 0 %}v-green{% else %}v-red{% endif %}">
+                {{ treasury.company_balance|floatformat:2 }} €
+            </div>
+            <div class="kpi-sub">баланс по книгам · наличные {{ treasury.cash_on_hand|floatformat:2 }} €</div>
+        </div>
+        {% for card in treasury.personal_cards %}
+        <div class="kpi" style="border-top: 3px solid {{ card.color }}">
+            <div class="kpi-icon" style="background: {{ card.color }}15; color: {{ card.color }}"><i class="bi bi-credit-card-fill"></i></div>
+            <div class="kpi-label">{{ card.name }}{% if card.last_four %} ·{{ card.last_four }}{% endif %}</div>
+            <div class="kpi-value {% if card.balance < 0 %}v-red{% endif %}">{{ card.balance|floatformat:2 }} €</div>
+            <div class="kpi-sub">личная карта</div>
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% if bank_unreconciled %}
+        <a href="{{ bank_unreconciled.url }}" class="kpi {% if bank_unreconciled.count %}accent-amber{% else %}accent-green{% endif %}" style="text-decoration:none;color:inherit" title="Открыть несверенные банковские операции">
+            <div class="kpi-icon {% if bank_unreconciled.count %}amber{% else %}green{% endif %}"><i class="bi bi-link-45deg"></i></div>
+            <div class="kpi-label">Несверено</div>
+            <div class="kpi-value {% if bank_unreconciled.count %}v-amber{% else %}v-green{% endif %}">
+                {{ bank_unreconciled.count }} <span style="font-size:.55em;font-weight:500;color:#7c7c9a">опер.</span>
+            </div>
+            <div class="kpi-sub">
+                {% if bank_unreconciled.count %}
+                на {{ bank_unreconciled.total|floatformat:2 }} € · вх. {{ bank_unreconciled.incoming|floatformat:0 }} / исх. {{ bank_unreconciled.outgoing|floatformat:0 }}
+                {% else %}
+                все операции сверены
+                {% endif %}
+            </div>
+        </a>
+        {% endif %}
     </div>
     </div>
     {% endif %}
@@ -1097,8 +1131,7 @@
 
 </div>
 
-<!-- Chart.js 4.x CDN -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/chart.umd.min.js' %}"></script>
 
 {{ revenue_expenses_chart_json|json_script:"rev-exp-data" }}
 {{ cars_by_status_json|json_script:"cars-data" }}

@@ -341,6 +341,63 @@ class NewInvoiceDisplayMixin:
     status_display.short_description = "Статус"
     status_display.admin_order_field = "status"
 
+    def signals_display(self, obj):
+        """Колонка «Сигналы» (V5): вложение, AI-аудит, пара, site.pro, просрочка.
+
+        Все данные — из select_related/аннотаций ``get_queryset``
+        (``audit``, ``linked_invoice``/``linked_from``, ``_sitepro_sent``):
+        ни одного запроса на строку.
+        """
+        from django.core.exceptions import ObjectDoesNotExist
+
+        icons = []
+
+        if obj.attachment:
+            icons.append(("bi-paperclip", "ok", "Вложение есть"))
+        else:
+            icons.append(("bi-paperclip", "muted", "Вложения нет"))
+
+        try:
+            audit = obj.audit
+        except ObjectDoesNotExist:
+            audit = None
+        if audit is not None:
+            if audit.status == "OK":
+                icons.append(("bi-shield-check", "ok", "AI-аудит: всё совпадает"))
+            elif audit.status == "HAS_ISSUES":
+                icons.append(("bi-shield-exclamation", "bad", f"AI-аудит: расхождений {audit.issues_count or 0}"))
+            elif audit.status == "ERROR":
+                icons.append(("bi-shield-x", "bad", "AI-аудит: ошибка"))
+            else:
+                icons.append(("bi-shield", "warn", "AI-аудит: в обработке"))
+
+        linked = obj.linked_invoice if obj.linked_invoice_id else None
+        if linked is None:
+            try:
+                linked = obj.linked_from
+            except ObjectDoesNotExist:
+                linked = None
+        if linked is not None:
+            icons.append(("bi-link-45deg", "info", f"Связан с {linked.number}"))
+
+        if getattr(obj, "_sitepro_sent", False):
+            icons.append(("bi-cloud-check", "ok", "Отправлен в site.pro"))
+
+        if obj.is_overdue:
+            days = abs(obj.days_until_due)
+            icons.append(("bi-alarm", "bad", f"Просрочен на {days} дн."))
+
+        return format_html(
+            '<span class="cm-signals">{}</span>',
+            format_html_join(
+                "",
+                '<i class="bi {} cm-signal--{}" title="{}"></i>',
+                icons,
+            ),
+        )
+
+    signals_display.short_description = "Сигналы"
+
     def actions_display(self, obj):
         """Кнопка быстрой оплаты для активных инвойсов."""
         if obj.status in ["ISSUED", "PARTIALLY_PAID", "OVERDUE"]:
@@ -464,6 +521,47 @@ class NewInvoiceDisplayMixin:
         )
 
     payment_history_display.short_description = "История платежей"
+
+    def items_sync_display(self, obj):
+        """Баннер «позиции расходятся с услугами» для выставленных счетов (B1).
+
+        Считается только для ISSUED / OVERDUE / PARTIALLY_PAID с авто: DRAFT
+        пересобирается автоматически, PAID/CANCELLED заморожены. Возвращает
+        ``None``, если расхождений нет. Не для ``list_display`` — делает
+        запрос услуг по каждому авто инвойса.
+        """
+        from core.mixins import OPEN_INVOICE_STATUSES
+
+        if not obj.pk or obj.status not in OPEN_INVOICE_STATUSES:
+            return None
+        diff = obj.items_sync_diff()
+        if not diff:
+            return None
+
+        rows = format_html_join(
+            "",
+            "<li>{}: в счёте <b>{}</b> €, по услугам сейчас <b>{}</b> €</li>",
+            (
+                (
+                    (f"{d['car'].brand} {d['car'].vin}" if d["car"] else "Позиции без авто"),
+                    f"{d['actual']:.2f}",
+                    f"{d['expected']:.2f}",
+                )
+                for d in diff
+            ),
+        )
+        return format_html(
+            '<div style="background:#fff7ed;border-left:4px solid #f59e0b;padding:10px 14px;'
+            'margin:0 0 14px;border-radius:6px;font-size:.9rem;">'
+            "<strong>⚠ Позиции расходятся с услугами авто</strong><br>"
+            "Счёт уже выставлен, поэтому автоматически не пересобирается. "
+            "Если расхождение нужно отразить — действие «Пересоздать позиции (принудительно)» "
+            "или кредит-нота."
+            '<ul style="margin:8px 0 0 18px;padding:0;">{}</ul></div>',
+            rows,
+        )
+
+    items_sync_display.short_description = "Соответствие позиций услугам"
 
     def audit_status_display(self, obj):
         """Бейдж статуса AI-аудита PDF (для readonly_fields)."""

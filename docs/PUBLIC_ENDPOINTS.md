@@ -107,32 +107,59 @@ Django/DRF.
 
 ## 4. TODO — следующие шаги
 
-### 4.1 Закрыть прямой `/media/photos/` в nginx [HIGH]
+### 4.1 Фото через nginx `X-Accel-Redirect` — СДЕЛАНО (P1, 2026-10), закрытие `/media/` — отдельный шаг
 
-> Сейчас signed URL'ы выдаются клиентам, но nginx по-прежнему отдаёт
-> `/media/photos/...` напрямую. Без этого шага защита частичная: кто-то,
-> сохранивший прямую ссылку до H5a, продолжит скачивать.
+**Что сделано в коде (P1 + Q6):**
 
-Минимальный конфиг:
+- `core/services/photo_response.py::build_photo_response()` — единая
+  точка формирования ответа с файлом. Используется в
+  `serve_signed_photo` (`/photo/s/<token>/`) и в
+  `download_car_photo` / `download_container_photo` (портал).
+- Два режима по `settings.PHOTO_SERVE_VIA_NGINX` (env, дефолт `False`):
+  - выключен — `FileResponse` (локально, тесты, старое поведение);
+  - включён — пустой `HttpResponse` с `X-Accel-Redirect:
+    <PHOTO_ACCEL_PREFIX>/<путь относительно MEDIA_ROOT>` (дефолт
+    префикса `/_protected_media`). Путь строится через `storage.path` +
+    проверка `os.path.commonpath` против `MEDIA_ROOT` (traversal → 404),
+    имя файла percent-encoded.
+- В обоих режимах: `Content-Type` по расширению, `Cache-Control: private,
+  max-age=<PHOTO_URL_TTL>` (= TTL подписи, 1 ч — Q6), для скачивания
+  `Content-Disposition: attachment` (RFC 5987, кириллица ок).
+- Тесты: `core/tests/test_wave_perf_photos.py`.
+
+**Как включить на проде (руками, nginx-конфиги не раскатываются deploy.ps1):**
+
+1. Убедиться, что `MEDIA_ROOT` в `.env` сервера совпадает с `alias` в
+   nginx (`grep MEDIA_ROOT .env`; `nginx -T | grep -n -A2 'location /media/'`).
+2. В активный конфиг (`/etc/nginx/sites-enabled/caromoto-lt` или
+   аналогичный — сверить с `scripts/nginx_caromoto.conf`) добавить:
 
 ```nginx
-location /media/photos/ {
-    internal;  # доступно только через X-Accel-Redirect
+location /_protected_media/ {
+    internal;
+    alias /var/www/caromoto-lt/media/;   # = MEDIA_ROOT, со слэшем на конце
+    add_header X-Content-Type-Options "nosniff" always;
 }
 ```
 
-И в `serve_signed_photo` заменить `FileResponse(...)` на:
+3. `nginx -t && systemctl reload nginx`.
+4. В `.env` сервера: `PHOTO_SERVE_VIA_NGINX=true` → `systemctl restart
+   gunicorn daphne`.
+5. Проверка: `curl -sI https://caromoto-lt.com/photo/s/<свежий token>/` —
+   200, `Content-Type: image/jpeg`, `Cache-Control: private, max-age=3600`,
+   тело файла есть; `curl -sI https://caromoto-lt.com/_protected_media/x` — 404.
+6. Откат: `PHOTO_SERVE_VIA_NGINX=false` + рестарт gunicorn — Django снова
+   отдаёт файлы сам, nginx-location можно оставить.
 
-```python
-response = HttpResponse()
-response['X-Accel-Redirect'] = '/internal/media/' + photo.photo.name
-response['Content-Type'] = ''  # nginx выставит сам
-del response['Content-Length']
-return response
-```
-
-Альтернатива — `location /media/photos/ { deny all; }` и отдавать целиком
-через Django (медленнее, но без `X-Accel-Redirect`-настройки).
+**Что НЕ сделано и почему (шаг 2 — закрыть прямой `/media/container_photos/`,
+`/media/car_photos/`):** прямые `photo.photo.url` всё ещё используются в
+`templates/website/car_detail.html`, `container_detail.html`,
+`client_dashboard.html` (портал) и в `core/admin/inlines.py` /
+`core/views/admin_views.py` (админка). Пока они не переведены на
+`/photo/s/<token>/` (пункт C7 плана), `return 404` на эти каталоги сломает
+портал и карточки. Заготовка закомментирована в
+`scripts/nginx_caromoto.conf`. `news/` и `car_model_images/` должны
+остаться публичными.
 
 ### 4.2 CAPTCHA для tracking и contact-формы [MEDIUM]
 

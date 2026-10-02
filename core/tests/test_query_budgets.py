@@ -14,6 +14,9 @@
   каждую строку (см. Car._get_storage_daily_rate).
 - ``Container`` список авто — ``container_cars`` префетчится, подсчёт
   числа машин не делает запрос на контейнер.
+- T10 (план 2026-10): страницы целиком через test client — changelist
+  контейнеров, changelist заявок на автовоз, ``/admin/reconciliation/``,
+  change-форма инвойса. Число запросов не должно расти с числом строк.
 
 Запуск: pytest core/tests/test_query_budgets.py
 """
@@ -254,3 +257,163 @@ class TestServiceCatalogBatchResolve:
         with CaptureQueriesContext(connection) as ctx:
             assert ghost.get_default_price() == 0
         assert len(ctx.captured_queries) == 0
+
+
+# ---------------------------------------------------------------------------
+# T10: бюджеты страниц целиком (Django test client)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def staff_client(client):
+    User = get_user_model()
+    user = User.objects.create_user(username="qb-staff", password="secret123", is_staff=True, is_superuser=True)
+    client.force_login(user)
+    return client
+
+
+def _page_queries(client, url):
+    """Число SQL-запросов на GET страницы.
+
+    Прогревочный запрос снимает одноразовые эффекты (ContentType-кэш,
+    сессия); Django-кэш перед замером чистим, чтобы считать холодный путь.
+    """
+    from django.core.cache import cache
+
+    client.get(url)
+    cache.clear()
+    with CaptureQueriesContext(connection) as ctx:
+        response = client.get(url)
+    assert response.status_code == 200, f"{url} → {response.status_code}"
+    return len(ctx.captured_queries)
+
+
+@pytest.mark.django_db
+class TestContainerChangelistBudget:
+    """Q2/V2: changelist контейнеров — счётчики фото/писем подзапросами,
+    без prefetch машин; число запросов не зависит от числа контейнеров."""
+
+    def _seed(self, n):
+        from core.models.website import ContainerPhoto
+
+        wh = Warehouse.objects.create(name=f"WH-CL-{n}", free_days=0)
+        for i in range(n):
+            container = Container.objects.create(
+                number=f"CL{n}{i:03d}",
+                status="IN_PORT",
+                eta=timezone.now().date() - timezone.timedelta(days=i),
+            )
+            _seed_cars(2, warehouse=wh, container=container)
+            ContainerPhoto.objects.create(container=container, photo=f"photos/cl-{n}-{i}.jpg")
+
+    def test_constant_budget(self, staff_client):
+        self._seed(2)
+        q2 = _page_queries(staff_client, "/admin/core/container/")
+        self._seed(5)
+        q7 = _page_queries(staff_client, "/admin/core/container/")
+        assert q2 == q7, f"Запросы changelist контейнеров растут с числом строк: {q2} → {q7}"
+
+    def test_eta_filter_works(self, staff_client):
+        self._seed(1)
+        resp = staff_client.get("/admin/core/container/?status_multi=IN_PORT&eta_state=overdue")
+        assert resp.status_code == 200
+        # Контейнер с ETA «сегодня» не просрочен — список пуст, фильтр отработал без ошибок.
+        assert "просрочен на" not in resp.content.decode()
+
+
+@pytest.mark.django_db
+class TestTransportRequestChangelistBudget:
+    """Q3: число машин заявки — аннотация, а не ``cars.count()`` на строку."""
+
+    def _seed(self, n):
+        from core.models import Client as ClientModel
+        from core.models.website import TransportRequest
+
+        wh = Warehouse.objects.create(name=f"WH-TR-{n}", free_days=0)
+        owner = ClientModel.objects.create(name=f"TR client {n}")
+        for i in range(n):
+            tr = TransportRequest.objects.create(
+                client=owner,
+                carrier_name="Carrier",
+                truck_number=f"TR{n}{i}",
+                driver_name="Driver",
+                status="SUBMITTED",
+            )
+            container = Container.objects.create(number=f"TR{n}{i:03d}", status="FLOATING")
+            _seed_cars(2, warehouse=wh, container=container)
+            tr.cars.set(Car.objects.filter(container=container))
+
+    def test_constant_budget(self, staff_client):
+        self._seed(2)
+        q2 = _page_queries(staff_client, "/admin/core/transportrequest/")
+        self._seed(5)
+        q7 = _page_queries(staff_client, "/admin/core/transportrequest/")
+        assert q2 == q7, f"Запросы changelist заявок растут с числом строк: {q2} → {q7}"
+
+
+@pytest.mark.django_db
+class TestReconciliationDashboardBudget:
+    """Q5: сверка — SupplierCost/CarService батчами, не по одному на услугу."""
+
+    def _seed(self, n):
+        from core.models import CarService
+        from core.models_invoice_audit import SupplierCost
+
+        wh = Warehouse.objects.create(name=f"WH-RC-{n}", free_days=0)
+        svc = WarehouseService.objects.create(
+            warehouse=wh, name="Разгрузка", code="UNLOADING", default_price=Decimal("100"), is_active=True
+        )
+        container = Container.objects.create(number=f"RC{n:03d}", status="FLOATING")
+        _seed_cars(n, warehouse=wh, container=container)
+        for car in Car.objects.filter(container=container):
+            cs = CarService.objects.create(car=car, service_type="WAREHOUSE", service_id=svc.pk)
+            SupplierCost.objects.create(
+                car=car,
+                car_service=cs,
+                counterparty="Terminal",
+                service_type="THS",
+                amount=Decimal("80"),
+                vin=car.vin,
+            )
+
+    def test_constant_budget(self, staff_client):
+        self._seed(2)
+        q2 = _page_queries(staff_client, "/admin/reconciliation/")
+        self._seed(5)
+        q7 = _page_queries(staff_client, "/admin/reconciliation/")
+        assert q2 == q7, f"Запросы сверки растут с числом услуг: {q2} → {q7}"
+        assert q2 <= 30, f"Бюджет сверки ≤ 30 запросов, сейчас {q2}"
+
+
+@pytest.mark.django_db
+class TestInvoiceChangeFormBudget:
+    """Q4: категории расходов в форме инвойса — один запрос, не по одному на <option>."""
+
+    def _seed_categories(self, n):
+        from core.models.billing import ExpenseCategory
+
+        for i in range(n):
+            ExpenseCategory.objects.create(name=f"Категория {n}-{i}", category_type="OPERATIONAL")
+
+    def _make_invoice(self):
+        from core.models import Client as ClientModel
+        from core.models import Company
+        from core.models.billing import NewInvoice
+
+        company = Company.objects.create(name="Caromoto Lithuania")
+        owner = ClientModel.objects.create(name="Invoice owner")
+        return NewInvoice.objects.create(
+            issuer_company=company,
+            recipient_client=owner,
+            date=timezone.now().date(),
+            status="DRAFT",
+        )
+
+    def test_constant_budget(self, staff_client):
+        invoice = self._make_invoice()
+        url = f"/admin/core/newinvoice/{invoice.pk}/change/"
+        self._seed_categories(2)
+        q2 = _page_queries(staff_client, url)
+        self._seed_categories(6)
+        q8 = _page_queries(staff_client, url)
+        assert q2 == q8, f"Запросы формы инвойса растут с числом категорий: {q2} → {q8}"

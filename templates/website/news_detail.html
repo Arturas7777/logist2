@@ -1,14 +1,37 @@
 {% extends "website/base.html" %}
+{% load i18n %}
 
-{% block title %}{{ post.title }} - Новости{% endblock %}
+{% block title %}{{ post.title }} - {% trans "Новости" %}{% endblock %}
+{% block meta_description %}{{ post.excerpt|default:post.content|striptags|truncatechars:160 }}{% endblock %}
+{% block og_type %}article{% endblock %}
+{% block og_title %}{{ post.title }}{% endblock %}
+{% block og_description %}{{ post.excerpt|default:post.content|striptags|truncatechars:200 }}{% endblock %}
+{% block twitter_title %}{{ post.title }}{% endblock %}
+{% block twitter_description %}{{ post.excerpt|default:post.content|striptags|truncatechars:200 }}{% endblock %}
+{% block og_image %}{% if post.image %}{% if request %}{{ request.scheme }}://{{ request.get_host }}{% endif %}{{ post.image.url }}{% else %}{{ block.super }}{% endif %}{% endblock %}
+{% block structured_data %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "NewsArticle",
+  "headline": "{{ post.title|escapejs }}",
+  "datePublished": "{{ post.published_at|date:'c' }}",
+  "dateModified": "{{ post.updated_at|date:'c' }}",
+  {% if post.image %}"image": ["{% if request %}{{ request.scheme }}://{{ request.get_host }}{% endif %}{{ post.image.url }}"],{% endif %}
+  "author": {"@type": "Organization", "name": "Caromoto Lithuania"},
+  "publisher": {"@type": "Organization", "name": "Caromoto Lithuania"},
+  "mainEntityOfPage": "{% if request %}{{ request.scheme }}://{{ request.get_host }}{{ request.path }}{% endif %}"
+}
+</script>
+{% endblock %}
 
 {% block content %}
 <div class="container my-5">
     <!-- Навигация -->
     <nav aria-label="breadcrumb">
         <ol class="breadcrumb">
-            <li class="breadcrumb-item"><a href="{% url 'website:home' %}">Главная</a></li>
-            <li class="breadcrumb-item"><a href="{% url 'website:news_list' %}">Новости</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'website:home' %}">{% trans "Главная" %}</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'website:news_list' %}">{% trans "Новости" %}</a></li>
             <li class="breadcrumb-item active">{{ post.title|truncatewords:5 }}</li>
         </ol>
     </nav>
@@ -47,7 +70,7 @@
                 
                 <div class="card-footer bg-light">
                     <a href="{% url 'website:news_list' %}" class="btn btn-outline-primary">
-                        <i class="bi bi-arrow-left"></i> Вернуться к новостям
+                        <i class="bi bi-arrow-left"></i> {% trans "Вернуться к новостям" %}
                     </a>
                 </div>
             </article>

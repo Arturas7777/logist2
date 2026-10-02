@@ -21,6 +21,18 @@ app.conf.beat_schedule = {
         "task": "core.tasks.check_overdue_invoices",
         "schedule": crontab(hour=6, minute=0),
     },
+    # B8: напоминания клиентам (за 3 дня до срока и при OVERDUE) — после того,
+    # как check_overdue_invoices проставил статусы. 06:15 UTC ≈ 08:15/09:15
+    # Europe/Vilnius (зима/лето); CELERY_TIMEZONE = UTC.
+    "send-invoice-due-reminders-daily": {
+        "task": "core.tasks.send_invoice_due_reminders",
+        "schedule": crontab(hour=6, minute=15),
+    },
+    # B8: дело менеджеру по счетам с просрочкой > 14 дней (одно на инвойс).
+    "escalate-overdue-invoices-daily": {
+        "task": "core.tasks.escalate_overdue_invoices",
+        "schedule": crontab(hour=6, minute=20),
+    },
     "refresh-unloaded-storage-daily": {
         # Хранение растёт каждый день — освежаем денормализованные
         # days/storage_cost/total_price у машин на складе, чтобы дашборд
@@ -82,11 +94,9 @@ app.conf.beat_schedule = {
         "task": "core.tasks_monitoring.ping_uptime",
         "schedule": crontab(minute="*"),
     },
-    # Удаление метрик старше MONITORING_RETENTION_DAYS (по дефолту 30 дней).
-    "cleanup-old-metrics-daily": {
-        "task": "core.tasks_monitoring.cleanup_old_metrics",
-        "schedule": crontab(hour=4, minute=0),
-    },
+    # Ретеншен метрик/аптайма/AgentRun/NotificationLog — см.
+    # `cleanup-monitoring-tables-daily` в конце словаря (Q12); прежняя
+    # `cleanup-old-metrics-daily` (04:00) удалена, задача оставлена как алиас.
     # Проверка свежести ночного PostgreSQL-бэкапа. Ночной cron делает
     # /var/backups/logist2/${DB_NAME}_YYYY-MM-DD.dump в 03:30, эта задача
     # в 04:15 убеждается, что свежий .dump существует и не старше 36 часов.
@@ -119,5 +129,20 @@ app.conf.beat_schedule = {
     "audit-container-data-daily": {
         "task": "core.tasks.audit_all_containers",
         "schedule": crontab(hour=6, minute=30),
+    },
+    # ── Производительность (docs/IMPROVEMENT_PLAN_2026-10.md, раздел P) ─────
+    # Q12: ретеншен служебных таблиц. UptimeCheck 30 дн., SystemMetric 90 дн.,
+    # AgentRun 90 дн., NotificationLog 180 дн. (пороги — settings
+    # *_RETENTION_DAYS), удаление батчами по 5000. После бэкапа (03:30) и
+    # его проверки (04:15).
+    "cleanup-monitoring-tables-daily": {
+        "task": "core.tasks_monitoring.cleanup_monitoring_tables",
+        "schedule": crontab(hour=4, minute=40),
+    },
+    # P4: прогрев кэша дашборда компании, чтобы первый пользователь утром не
+    # ждал холодных агрегатов (~1 с). TTL ключей 5 мин — греем каждые 5 мин.
+    "warm-dashboard-cache": {
+        "task": "core.tasks.warm_dashboard_cache",
+        "schedule": crontab(minute="*/5"),
     },
 }

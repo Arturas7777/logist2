@@ -40,7 +40,8 @@
 }
 .rb-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+    /* min(100%, …) — на телефоне колонка не шире экрана, без горизонтального скролла */
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
     gap: 16px;
 }
 .rb-card {

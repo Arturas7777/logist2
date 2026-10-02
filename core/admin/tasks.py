@@ -179,31 +179,24 @@ class TaskAdmin(admin.ModelAdmin):
 
     def state_indicator(self, obj):
         if obj.is_completed:
-            return format_html('<span style="color:#10b981;font-size:18px;line-height:1;" title="Выполнено">✓</span>')
+            return format_html('<span class="cm-task-state cm-task-state--done" title="Выполнено">✓</span>')
         if obj.is_overdue:
-            return format_html('<span style="color:#dc2626;font-size:18px;line-height:1;" title="Просрочено">!</span>')
-        return format_html('<span style="color:#6b7280;font-size:18px;line-height:1;" title="Открыто">○</span>')
+            return format_html('<span class="cm-task-state cm-task-state--overdue" title="Просрочено">!</span>')
+        return format_html('<span class="cm-task-state cm-task-state--open" title="Открыто">○</span>')
 
     state_indicator.short_description = ""
 
     def title_display(self, obj):
-        style = "text-decoration:line-through;color:#9ca3af;" if obj.is_completed else "font-weight:600;"
-        return format_html('<span style="{}">{}</span>', style, obj.title)
+        css = "cm-task-title cm-task-title--done" if obj.is_completed else "cm-task-title"
+        return format_html('<span class="{}">{}</span>', css, obj.title)
 
     title_display.short_description = "Название"
     title_display.admin_order_field = "title"
 
     def priority_display(self, obj):
-        colors = {
-            "LOW": "#6b7280",
-            "MEDIUM": "#0ea5e9",
-            "HIGH": "#dc2626",
-        }
-        color = colors.get(obj.priority, "#6b7280")
         return format_html(
-            '<span style="background:{};color:#fff;padding:2px 8px;border-radius:10px;'
-            'font-size:11px;font-weight:600;">{}</span>',
-            color,
+            '<span class="cm-badge--priority cm-badge--priority-{}">{}</span>',
+            (obj.priority or "medium").lower(),
             obj.get_priority_display(),
         )
 
@@ -212,13 +205,11 @@ class TaskAdmin(admin.ModelAdmin):
 
     def deadline_display(self, obj):
         if not obj.deadline:
-            return format_html('<span style="color:#9ca3af;">—</span>')
+            return format_html('<span class="cm-muted">—</span>')
         formatted = obj.deadline.strftime("%d.%m.%Y %H:%M")
         if obj.is_overdue:
-            return format_html(
-                '<span style="color:#dc2626;font-weight:700;" title="Просрочено">⏰ {}</span>', formatted
-            )
-        return format_html('<span style="color:#1f2937;">{}</span>', formatted)
+            return format_html('<span class="cm-task-deadline--overdue" title="Просрочено">{}</span>', formatted)
+        return formatted
 
     deadline_display.short_description = "Дедлайн"
     deadline_display.admin_order_field = "deadline"

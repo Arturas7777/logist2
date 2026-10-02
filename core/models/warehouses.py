@@ -5,6 +5,7 @@ from django.db import models
 
 from core.managers import OptimizedWarehouseManager
 from core.mixins import BalanceMethodsMixin
+from core.utils import STORAGE_DAY_POLICY_CALENDAR, STORAGE_DAY_POLICY_CHOICES
 
 from .requisites import CounterpartyContactsMixin, CounterpartyRequisitesMixin
 
@@ -54,6 +55,16 @@ class Warehouse(BalanceMethodsMixin, CounterpartyRequisitesMixin, CounterpartyCo
         max_digits=10, decimal_places=2, default=0, verbose_name="Цена за разгрузку"
     )
     free_days = models.PositiveIntegerField(default=0, verbose_name="Бесплатные дни")
+    # B4: как считать дни хранения на этом складе. Дефолт — прежнее
+    # поведение (календарные дни), данные существующих складов не меняются.
+    storage_day_policy = models.CharField(
+        max_length=15,
+        choices=STORAGE_DAY_POLICY_CHOICES,
+        default=STORAGE_DAY_POLICY_CALENDAR,
+        verbose_name="Учёт дней хранения",
+        help_text="Календарные дни — как раньше. Рабочие дни — суббота/воскресенье (и праздники Литвы, "
+        "если выбрано) не считаются днями хранения. Применяется ко всем авто склада при пересчёте.",
+    )
     complex_fee = models.DecimalField(
         max_digits=10, decimal_places=2, default=0, verbose_name="Комплекс", validators=[MinValueValidator(0)]
     )

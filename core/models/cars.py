@@ -343,12 +343,20 @@ class Car(models.Model):
         в админке/сервисах: день разгрузки и день передачи включаются,
         бесплатные дни склада вычитаются. Для TRANSFERRED отсчёт
         останавливается на transfer_date, иначе — по сегодняшний день.
+
+        B4: какие дни считать — определяет ``Warehouse.storage_day_policy``
+        (календарные / рабочие / рабочие без праздников LT, см.
+        ``core.utils.count_storage_days``). «Всего дней» возвращается уже
+        по политике склада, бесплатные дни вычитаются из него.
         """
         if not self.unload_date or not self.warehouse:
             return 0, 0
 
+        from core.utils import count_storage_days
+
         end_date = self.transfer_date if self.status == "TRANSFERRED" and self.transfer_date else timezone.now().date()
-        total_days = (end_date - self.unload_date).days + 1
+        policy = getattr(self.warehouse, "storage_day_policy", None) or "CALENDAR"
+        total_days = count_storage_days(self.unload_date, end_date, policy)
         free_days = int(self.warehouse.free_days or 0)
         return max(0, total_days - free_days), total_days
 
@@ -594,6 +602,15 @@ class Car(models.Model):
             errors["transfer_date"] = "Дата передачи не может быть раньше даты разгрузки."
         if errors:
             raise ValidationError(errors)
+        # B5: смена клиента у авто из выставленного счёта — ошибка формы,
+        # а не 500 из save(). Та же проверка дублируется в save() для
+        # не-админских путей.
+        if self.pk:
+            old_client_id = Car.objects.filter(pk=self.pk).values_list("client_id", flat=True).first()
+            if old_client_id and old_client_id != self.client_id:
+                from core.services.car_admin_service import validate_client_change
+
+                validate_client_change(self, old_client_id)
 
     def _inherit_from_container(self):
         """Наследует данные из контейнера (склад, дату разгрузки)."""
@@ -619,14 +636,16 @@ class Car(models.Model):
         # _car_important_post_save). Сама галочка снимается из карточки авто.
         old_status = None
         old_contractors = None
+        old_client_id = None
         if self.pk:
             old = (
                 Car.objects.filter(pk=self.pk)
-                .values("status", "is_important", "warehouse_id", "line_id", "carrier_id")
+                .values("status", "is_important", "warehouse_id", "line_id", "carrier_id", "transfer_date", "client_id")
                 .first()
             )
             if old:
                 old_status = old.get("status")
+                old_client_id = old.get("client_id")
                 old_contractors = {
                     "warehouse_id": old["warehouse_id"],
                     "line_id": old["line_id"],
@@ -638,10 +657,14 @@ class Car(models.Model):
                 # этом же save() пользователь её снимает (сначала пусть сохранит
                 # снятие галочки отдельным действием).
                 if old_is_important and self.status != old_status and not self.is_important:
-                    # Разрешаем одновременное снятие галочки — без смены статуса.
-                    # Откатим попытку сменить статус, если она пришла вместе со
-                    # снятием important. Безопаснее явно сообщить пользователю.
-                    pass
+                    # Снятие галочки и смена статуса одним save: галочку
+                    # снимаем, статус откатываем (B6). Флаг оставляем для
+                    # админки — она покажет warning, что статус не изменён.
+                    self._status_change_blocked = (old_status, self.status)
+                    self.status = old_status
+                    # Иначе _sync_status_and_dates по новой transfer_date снова
+                    # выставит TRANSFERRED в обход блокировки.
+                    self.transfer_date = old.get("transfer_date")
                 if old_is_important and self.is_important and self.status != old_status:
                     from django.core.exceptions import ValidationError
 
@@ -652,13 +675,25 @@ class Car(models.Model):
                         }
                     )
 
+        # B5: клиент сменился — выставленный счёт старому клиенту блокирует
+        # смену, черновики старого клиента теряют это авто.
+        update_fields = kwargs.get("update_fields")
+        if (
+            old_contractors is not None
+            and old_client_id != self.client_id
+            and (update_fields is None or "client" in update_fields)
+        ):
+            from core.services.car_admin_service import detach_car_from_client_drafts, validate_client_change
+
+            validate_client_change(self, old_client_id)
+            detach_car_from_client_drafts(self, old_client_id)
+
         self._inherit_from_container()
         self._sync_status_and_dates()
 
         # FSM статусов (см. ALLOWED_STATUS_TRANSITIONS в containers.py):
         # проверяем ПОСЛЕ _sync_status_and_dates, т.к. синхронизация сама
         # может выставить TRANSFERRED по transfer_date.
-        update_fields = kwargs.get("update_fields")
         if old_status and (update_fields is None or "status" in update_fields):
             from .containers import validate_status_transition
 
@@ -827,6 +862,10 @@ class Car(models.Model):
             models.Index(fields=["container", "status"], name="car_container_status_idx"),
             # Фильтр «Важное» в админке (is_important).
             models.Index(fields=["is_important"], name="car_is_important_idx"),
+            # P9: ежедневный пересчёт хранения и дашборд «на складе».
+            models.Index(fields=["status", "unload_date"], name="car_status_unload_idx"),
+            # Портал и API: авто клиента за период разгрузки.
+            models.Index(fields=["client", "unload_date"], name="car_client_unload_idx"),
         ]
 
 

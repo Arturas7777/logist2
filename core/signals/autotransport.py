@@ -80,22 +80,47 @@ def autotransport_post_save(sender, instance, created, **kwargs):
         _mark_cars_as_transferred(instance, transfer_date)
 
 
-def _mark_cars_as_transferred(autotransport, transfer_date=None):
+def resolve_transfer_date(autotransport, override=None):
+    """Дата передачи авто при загрузке автовоза (B12).
+
+    Приоритет: явный ``override`` (admin «Загружен» с датой) →
+    ``loading_date`` → ``departure_date`` → сегодня. Дата из будущего не
+    используется (хранение нельзя остановить «завтра»), берётся сегодня.
+    """
     from django.utils import timezone as tz
 
-    if transfer_date is None:
-        transfer_date = tz.now().date()
-    affected_cars = list(autotransport.cars.exclude(status="TRANSFERRED").values_list("id", "container_id"))
+    today = tz.now().date()
+    candidate = override or autotransport.loading_date or autotransport.departure_date
+    if candidate is None or candidate > today:
+        return today
+    return candidate
+
+
+def _mark_cars_as_transferred(autotransport, transfer_date=None):
+    transfer_date = resolve_transfer_date(autotransport, transfer_date)
+    affected_cars = list(
+        autotransport.cars.exclude(status="TRANSFERRED").values_list("id", "container_id", "unload_date")
+    )
     if not affected_cars:
         return
     car_ids = [c[0] for c in affected_cars]
     container_ids = {c[1] for c in affected_cars if c[1]}
-    Car.objects.filter(id__in=car_ids).update(status="TRANSFERRED", transfer_date=transfer_date)
+    # Дата передачи не может быть раньше разгрузки (инвариант Car.clean):
+    # если автовоз загружен «задним числом» до разгрузки авто — передача
+    # фиксируется днём разгрузки.
+    late_ids = [c[0] for c in affected_cars if c[2] and c[2] > transfer_date]
+    normal_ids = [cid for cid in car_ids if cid not in set(late_ids)]
+    if normal_ids:
+        Car.objects.filter(id__in=normal_ids).update(status="TRANSFERRED", transfer_date=transfer_date)
+    for cid, _container_id, unload_date in affected_cars:
+        if cid in late_ids:
+            Car.objects.filter(id=cid).update(status="TRANSFERRED", transfer_date=unload_date)
     logger.info(
-        "AutoTransport %s: %d cars -> TRANSFERRED (date: %s)",
+        "AutoTransport %s: %d cars -> TRANSFERRED (date: %s%s)",
         autotransport.number,
         len(car_ids),
         transfer_date,
+        f", {len(late_ids)} по дате разгрузки" if late_ids else "",
     )
     for cid in container_ids:
         _update_container_status_if_all_transferred(cid)

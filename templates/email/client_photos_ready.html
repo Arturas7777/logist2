@@ -1,0 +1,21 @@
+{% extends "email/client_event_base.html" %}
+{% load i18n %}
+{% block accent %}#2e7d32{% endblock %}{% block accent_h1 %}#2e7d32{% endblock %}{% block accent_badge %}#2e7d32{% endblock %}{% block accent_cta %}#2e7d32{% endblock %}
+{% block badge %}{% trans "Фото готовы" %}{% endblock %}
+{% block body %}
+<p>
+    {% if container %}
+        {% blocktrans with number=container.number %}Мы загрузили фотографии контейнера <strong>{{ number }}</strong>.{% endblocktrans %}
+    {% else %}
+        {% blocktrans with brand=car.brand vin=car.vin %}Мы загрузили фотографии вашего автомобиля <strong>{{ brand }}</strong> (VIN {{ vin }}).{% endblocktrans %}
+    {% endif %}
+</p>
+<div class="info-block">
+    <h2>{% trans "Доступно фотографий" %}</h2>
+    <p class="highlight">{{ photos_count }}</p>
+    {% if gallery_url %}
+    <p><a href="{{ gallery_url }}">{% trans "Открыть галерею без входа в кабинет" %}</a></p>
+    {% endif %}
+</div>
+{% endblock %}
+{% block cta_label %}{% trans "Смотреть фотографии в кабинете" %}{% endblock %}

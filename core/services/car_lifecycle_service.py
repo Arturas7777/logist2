@@ -10,6 +10,7 @@ import logging
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from django.core.cache import cache
 from django.db import transaction
 
 logger = logging.getLogger(__name__)
@@ -40,8 +41,38 @@ def check_container_status(car) -> None:
         logger.error("Failed to check container status for car %s: %s", car.pk, e)
 
 
-def send_car_ws_notification(car) -> None:
-    """Enqueue a WebSocket notification after commit."""
+# Денормализованные поля Car: их пишут фоновые пересчёты
+# (recalculate_cars_total_price_task, refresh_unloaded_storage_daily,
+# apply_car_service_edits). Сохранение ТОЛЬКО этих полей — не событие для
+# UI-рассылки: иначе ежедневный пересчёт 40+ машин = 40+ group_send подряд (Q8).
+CAR_WS_DENORM_FIELDS = frozenset({"total_price", "days", "storage_cost", "current_price", "updated_at"})
+
+# Окно дебаунса рассылки по одной машине, сек. Сохранение карточки из админки
+# даёт несколько Car.save подряд (форма → тариф → финальный пересчёт) — в
+# WebSocket уходит одно сообщение.
+CAR_WS_DEBOUNCE_SECONDS = 2
+
+
+def should_send_car_ws(car, *, update_fields=None, raw=False) -> bool:
+    """Нужно ли слать WS-уведомление для этого сохранения Car."""
+    if raw or getattr(car, "_bulk_updating", False) or getattr(car, "_creating_services", False):
+        return False
+    if update_fields is not None and set(update_fields) <= CAR_WS_DENORM_FIELDS:
+        return False
+    return True
+
+
+def send_car_ws_notification(car, *, update_fields=None, raw=False) -> None:
+    """Enqueue a WebSocket notification after commit.
+
+    Q8: пропускаем «тихие» сохранения (только денормализованные поля,
+    ``_bulk_updating``, ``raw``) и дебаунсим по ``car_id`` через
+    ``cache.add`` — повторное сохранение той же машины в течение
+    :data:`CAR_WS_DEBOUNCE_SECONDS` сообщение не шлёт.
+    """
+    if not should_send_car_ws(car, update_fields=update_fields, raw=raw):
+        return
+
     car_id = car.pk
     payload = {
         "type": "data_update",
@@ -56,6 +87,13 @@ def send_car_ws_notification(car) -> None:
     }
 
     def _notify():
+        try:
+            # add() атомарен: True только у первого за окно дебаунса.
+            if not cache.add(f"ws:car:{car_id}", 1, CAR_WS_DEBOUNCE_SECONDS):
+                return
+        except Exception:
+            # Кэш недоступен — лучше лишнее сообщение, чем потерянное.
+            logger.debug("WS debounce cache unavailable for car %s", car_id, exc_info=True)
         try:
             channel_layer = get_channel_layer()
             if channel_layer is not None:

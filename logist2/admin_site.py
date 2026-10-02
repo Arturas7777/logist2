@@ -70,7 +70,9 @@ MODEL_ICONS = {
 # Элемент группы:
 #   • строка  — object_name модели в нижнем регистре;
 #   • dict    — ссылка на кастомную страницу: {"name", "url", "icon"};
-#     опционально "match" — префикс URL для подсветки active (по умолчанию url).
+#     опционально "match" — префикс URL для подсветки active (по умолчанию url);
+#   • {"subgroup": "Заголовок"} — подзаголовок внутри группы (разделитель),
+#     не ссылка.
 ADMIN_GROUPS = OrderedDict(
     [
         (
@@ -99,14 +101,18 @@ ADMIN_GROUPS = OrderedDict(
                 "icon": "bi-cash-stack",
                 "collapsed": False,
                 "items": [
+                    {"subgroup": "Документы"},
                     "newinvoice",
                     "transaction",
+                    {"subgroup": "Банк и сверка"},
                     "banktransaction",
                     {"name": "Сверка счетов", "url": "/admin/reconciliation/", "icon": "bi-graph-up-arrow"},
                     {"name": "Проверка счетов", "url": "/admin/invoice-audit/", "icon": "bi-shield-check"},
+                    {"subgroup": "Касса и карты"},
                     {"name": "Касса: расход", "url": "/admin/cash-expense/", "icon": "bi-dash-circle"},
                     {"name": "Касса: приход", "url": "/admin/cash-income/", "icon": "bi-plus-circle"},
                     {"name": "Личные карты", "url": "/admin/personal-cards/", "icon": "bi-credit-card-2-front"},
+                    {"subgroup": "Аналитика"},
                     {"name": "Аналитика расходов", "url": "/admin/expense-analytics/", "icon": "bi-pie-chart-fill"},
                     {"name": "Сравнение сумм", "url": "/admin/comparison/", "icon": "bi-bar-chart-line"},
                 ],
@@ -119,6 +125,12 @@ ADMIN_GROUPS = OrderedDict(
                 "collapsed": False,
                 "items": [
                     {"name": "Доска дел", "url": "/admin/tasks-board/", "icon": "bi-kanban"},
+                    {
+                        "name": "Все дела (список)",
+                        "url": "/admin/core/task/",
+                        "icon": "bi-check2-square",
+                        "match": "/admin/core/task/",
+                    },
                     "scanprocessingjob",
                     "agentquestion",
                 ],
@@ -265,7 +277,7 @@ class LogistAdminSite(BaseAdminSite):
         """
         for group in nav:
             for item in group["items"]:
-                if item["active"]:
+                if item.get("active"):
                     return {
                         "group": group["name"],
                         "group_icon": group["icon"],
@@ -273,6 +285,44 @@ class LogistAdminSite(BaseAdminSite):
                         "item_url": item["url"],
                     }
         return None
+
+    # ────────────────────────────────────────────────────────────────────────
+    SIDEBAR_COUNTERS_CACHE_KEY = "admin_sidebar_counters"
+    SIDEBAR_COUNTERS_TTL = 60
+
+    @classmethod
+    def get_sidebar_counters(cls):
+        """Счётчики-бейджи у пунктов меню (V9): {model_name: (count, level)}.
+
+        Авто/Контейнеры — непрочитанные письма, Банк — несверенные операции,
+        Инвойсы — просроченные. Четыре COUNT'а, кэш 60 с на всех пользователей.
+        """
+        from django.core.cache import cache
+
+        cached = cache.get(cls.SIDEBAR_COUNTERS_CACHE_KEY)
+        if cached is not None:
+            return cached
+
+        from core.models.banking import BankTransaction
+        from core.models.billing import NewInvoice
+        from core.models.email import CarEmailLink, ContainerEmailLink
+
+        counters = {
+            "car": (CarEmailLink.objects.filter(is_read=False).count(), "alert"),
+            "container": (ContainerEmailLink.objects.filter(is_read=False).count(), "alert"),
+            # Та же логика, что BankReconciliationFilter(value="unmatched").
+            "banktransaction": (
+                BankTransaction.objects.filter(
+                    matched_transaction__isnull=True,
+                    matched_invoice__isnull=True,
+                    reconciliation_skipped=False,
+                ).count(),
+                "warn",
+            ),
+            "newinvoice": (NewInvoice.objects.filter(status="OVERDUE").count(), "alert"),
+        }
+        cache.set(cls.SIDEBAR_COUNTERS_CACHE_KEY, counters, cls.SIDEBAR_COUNTERS_TTL)
+        return counters
 
     # ────────────────────────────────────────────────────────────────────────
     def _collect_model_index(self, request):
@@ -300,6 +350,7 @@ class LogistAdminSite(BaseAdminSite):
         """
         current_path = request.path
         model_index = self._collect_model_index(request)
+        counters = self.get_sidebar_counters()
         used_models = set()
         nav = []
 
@@ -308,6 +359,7 @@ class LogistAdminSite(BaseAdminSite):
             has_active = False
 
             for entry in conf["items"]:
+                is_active = False
                 if isinstance(entry, str):
                     model = model_index.get(entry)
                     if model is None:
@@ -315,6 +367,7 @@ class LogistAdminSite(BaseAdminSite):
                     used_models.add(entry)
                     model_url = model.get("admin_url", "")
                     is_active = current_path.startswith(model_url) if model_url else False
+                    count, count_level = counters.get(entry, (0, ""))
                     items.append(
                         {
                             "name": model.get("name", ""),
@@ -323,8 +376,12 @@ class LogistAdminSite(BaseAdminSite):
                             "active": is_active,
                             "add_url": model.get("add_url", ""),
                             "view_only": not model.get("add_url"),
+                            "count": count,
+                            "count_level": count_level,
                         }
                     )
+                elif "subgroup" in entry:
+                    items.append({"subgroup": entry["subgroup"], "active": False})
                 else:
                     match = entry.get("match", entry["url"])
                     is_active = current_path.startswith(match)
@@ -336,13 +393,22 @@ class LogistAdminSite(BaseAdminSite):
                             "active": is_active,
                             "add_url": "",
                             "view_only": True,
+                            "count": 0,
+                            "count_level": "",
                         }
                     )
 
                 if is_active:
                     has_active = True
 
-            if items:
+            # Подзаголовок без единого пункта под ним (нет прав) — убираем.
+            items = [
+                item
+                for i, item in enumerate(items)
+                if "subgroup" not in item or (i + 1 < len(items) and "subgroup" not in items[i + 1])
+            ]
+
+            if items and any("subgroup" not in item for item in items):
                 nav.append(
                     {
                         "name": group_name,
@@ -368,6 +434,8 @@ class LogistAdminSite(BaseAdminSite):
                     "active": current_path.startswith(model_url) if model_url else False,
                     "add_url": model.get("add_url", ""),
                     "view_only": not model.get("add_url"),
+                    "count": 0,
+                    "count_level": "",
                 }
             )
         if leftover:

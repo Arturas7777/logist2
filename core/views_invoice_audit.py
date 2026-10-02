@@ -273,19 +273,51 @@ def reconciliation_dashboard(request):
 
     data = get_reconciliation_summary(audit_ids=audit_ids)
 
+    # V8: рендерим только активную вкладку и постранично — иначе HTML
+    # страницы с ~1000 машин и вложенными таблицами контейнеров ≈ 600 КБ.
+    from django.core.paginator import Paginator
+    from django.db.models import Sum
+
+    from core.services.reconciliation_service import get_unlinked_costs
+
+    active_tab = request.GET.get("tab", "cars")
+    if active_tab not in ("cars", "containers", "hints", "unlinked"):
+        active_tab = "cars"
+    per_page = {"cars": 100, "containers": 25, "unlinked": 100}.get(active_tab, 100)
+    tab_items = {
+        "cars": data["cars"],
+        "containers": data["containers"],
+        "hints": data["hints"],
+        "unlinked": data.get("unlinked", []),
+    }[active_tab]
+    page = Paginator(tab_items, per_page).get_page(request.GET.get("page"))
+
+    base_query = "tab=" + active_tab + "".join(f"&audit={a}" for a in (audit_ids or []))
+
+    unlinked_amount = get_unlinked_costs(audit_ids=audit_ids).aggregate(s=Sum("amount"))["s"] or 0
+    totals = data["totals"]
+    pending = {
+        "cars_not_final": totals["cars_count"] - totals["final_cars_count"],
+        "unlinked_count": totals["unlinked_count"],
+        "unlinked_amount": float(unlinked_amount),
+    }
+
     context = admin_site.each_context(request)
     context.update(
         {
             "title": "Сверка счетов",
             "data": data,
-            "totals": data["totals"],
-            "cars": data["cars"],
-            "containers": data["containers"],
-            "hints": data["hints"],
-            "unlinked": data.get("unlinked", []),
+            "totals": totals,
+            "pending": pending,
+            "page": page,
+            "base_query": base_query,
+            "cars": page.object_list if active_tab == "cars" else [],
+            "containers": page.object_list if active_tab == "containers" else [],
+            "hints": page.object_list if active_tab == "hints" else [],
+            "unlinked": page.object_list if active_tab == "unlinked" else [],
             "all_audits": all_audits,
             "selected_audits": audit_ids or [],
-            "active_tab": request.GET.get("tab", "cars"),
+            "active_tab": active_tab,
         }
     )
     return render(request, "admin/reconciliation_dashboard.html", context)

@@ -379,6 +379,19 @@ body.login .submit-row input[type="submit"]:hover {
     text-align: center;
 }
 
+/* Подзаголовок внутри группы меню (U4: «Документы», «Банк и сверка» …) */
+.cm-sidebar-nav li.cm-nav-subhead {
+    padding: 10px 14px 3px;
+    font-size: .62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--cm-text-muted);
+    opacity: .85;
+    white-space: nowrap;
+}
+.cm-sidebar-nav li.cm-nav-subhead:first-child { padding-top: 4px; }
+
 /* Collapsible nav groups */
 .cm-nav-group {
     margin-top: 6px;
@@ -424,7 +437,8 @@ body.login .submit-row input[type="submit"]:hover {
     transition: max-height .25s ease;
 }
 .cm-nav-group.open .cm-nav-group-items {
-    max-height: 800px;
+    /* «Финансы» с подзаголовками (U4) выше 800px при узком экране */
+    max-height: 1200px;
 }
 .cm-nav-group.no-anim .cm-nav-group-items {
     transition: none;
@@ -4572,6 +4586,162 @@ body.popup .cm-form-grid .submit-row {
 /* Убираем разделительные полосы под каждым полем (наследие table-вёрстки).
    Нужен #content-main, иначе побеждает ID-правило #content-main table td. */
 #content-main .cm-card-inline.module tbody tr.form-row td { border-bottom: 0 !important; }
+
+/* ============================================================
+   БЕЙДЖИ СПИСКОВ (V1/V2/V5/U7): статусы, дни хранения, ETA, сигналы.
+   Единые классы вместо inline-стилей в list_display-методах админки.
+   ============================================================ */
+.cm-badge--status {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    color: #fff;
+    font-size: .8rem;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+.cm-badge--status-floating    { background: #2772a8; }
+.cm-badge--status-in_port     { background: #8B0000; }
+.cm-badge--status-unloaded    { background: #239f58; }
+.cm-badge--status-transferred { background: #78458c; }
+.cm-badge--status-unknown     { background: #3a8c3d; }
+/* Заявки на автовоз (TransportRequest) */
+.cm-badge--status-draft       { background: #5c6370; }
+.cm-badge--status-submitted   { background: #e8590c; }
+.cm-badge--status-accepted    { background: #2b8a3e; }
+.cm-badge--status-in_progress { background: #0b7285; }
+.cm-badge--status-completed   { background: #5f3dc4; }
+.cm-badge--status-cancelled   { background: #c92a2a; }
+/* Дела (Task) */
+.cm-badge--status-todo        { background: #6b7280; }
+.cm-badge--status-done        { background: #10b981; }
+.cm-badge--status-blocked     { background: #ef4444; }
+a.cm-badge--status, a.cm-badge--status:hover { color: #fff; text-decoration: none; }
+
+/* Дела (TaskAdmin): приоритет, индикатор состояния, дедлайн */
+.cm-badge--priority {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.cm-badge--priority-low    { background: #6b7280; }
+.cm-badge--priority-medium { background: #0ea5e9; }
+.cm-badge--priority-high   { background: #dc2626; }
+.cm-task-state { font-size: 18px; line-height: 1; }
+.cm-task-state--done    { color: #10b981; }
+.cm-task-state--overdue { color: #dc2626; }
+.cm-task-state--open    { color: #6b7280; }
+.cm-task-title { font-weight: 600; }
+.cm-task-title--done { font-weight: 400; text-decoration: line-through; color: #9ca3af; }
+.cm-task-deadline--overdue { color: #dc2626; font-weight: 700; }
+.cm-muted { color: var(--cm-text-muted); }
+
+/* Платные дни хранения: зелёный — бесплатный период, жёлтый — 1..7 платных,
+   красный — больше 7. Число / всего дней. */
+.cm-days-badge {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 2px;
+    padding: 2px 8px;
+    border-radius: 100px;
+    font-size: .8rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    cursor: help;
+}
+.cm-days-badge small { font-size: .68rem; font-weight: 500; opacity: .8; }
+.cm-days-badge--free { background: var(--cm-green-bg); color: #047857; }
+.cm-days-badge--warn { background: var(--cm-orange-bg); color: #b45309; }
+.cm-days-badge--over { background: var(--cm-red-bg); color: #b91c1c; }
+.cm-days-badge--none { background: transparent; color: var(--cm-text-muted); cursor: default; }
+
+/* ETA контейнера: countdown */
+.cm-eta {
+    display: inline-flex;
+    flex-direction: column;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.cm-eta small { font-size: .7rem; font-weight: 600; }
+.cm-eta--soon small    { color: #b45309; }
+.cm-eta--future small  { color: var(--cm-text-secondary); }
+.cm-eta--overdue small { color: #b91c1c; }
+.cm-eta--arrived       { color: var(--cm-text-muted); }
+
+/* Сигналы инвойса: ряд иконок */
+.cm-signals {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    font-size: 1rem;
+    line-height: 1;
+}
+.cm-signals i { cursor: help; }
+.cm-signal--ok     { color: #10b981; }
+.cm-signal--warn   { color: #f59e0b; }
+.cm-signal--bad    { color: #ef4444; }
+.cm-signal--info   { color: #6c5ce7; }
+.cm-signal--muted  { color: #cbd5e1; }
+
+/* Сводная строка над changelist (V3) */
+.cm-summary-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    align-items: center;
+    padding: 10px 16px;
+    margin: 0 0 14px 0;
+    background: #fff;
+    border-radius: var(--cm-radius);
+    box-shadow: 0 2px 8px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.08);
+    font-size: .85rem;
+    color: var(--cm-text-secondary);
+}
+.cm-summary-bar a {
+    color: var(--cm-text);
+    text-decoration: none;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.cm-summary-bar a:hover { color: var(--cm-purple); }
+.cm-summary-bar .cm-summary-num {
+    display: inline-block;
+    min-width: 22px;
+    padding: 1px 7px;
+    border-radius: 100px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    background: var(--cm-purple-bg);
+    color: var(--cm-purple);
+}
+.cm-summary-bar .cm-summary-num--warn { background: var(--cm-orange-bg); color: #b45309; }
+.cm-summary-bar .cm-summary-num--bad  { background: var(--cm-red-bg); color: #b91c1c; }
+.cm-summary-bar .cm-summary-num--zero { background: #f1f5f9; color: var(--cm-text-muted); }
+
+/* Счётчики в сайдбаре (V9) */
+.cm-sidebar-nav a .cm-nav-count {
+    margin-left: auto;
+    min-width: 20px;
+    padding: 1px 6px;
+    border-radius: 100px;
+    font-size: .68rem;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+    background: #ef4444;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+}
+.cm-sidebar-nav a .cm-nav-count--warn { background: #f59e0b; }
 
 /* ===== TRANSITION ===== */
 *, *::before, *::after {

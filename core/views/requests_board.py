@@ -24,6 +24,7 @@ import logging
 
 from django.contrib import messages
 from django.contrib.admin.views.decorators import staff_member_required
+from django.core.exceptions import ValidationError
 from django.db.models import Count, Q
 from django.http import FileResponse, Http404, HttpRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -334,7 +335,8 @@ def request_card_page(request: HttpRequest, pk: int):
             destination_countries=TRANSPORT_DESTINATION_COUNTRIES,
             declaration_lines=declaration_lines,
             declaration_panel=_declaration_panel(transport_request, declaration_lines),
-            status_choices=TransportRequest.STATUS_CHOICES,
+            # B10: в селекте только текущий статус и допустимые переходы.
+            status_choices=transport_request.status_choices_for_ui(),
             warehouse_state_choices=TransportRequest.WAREHOUSE_STATE_CHOICES,
             warehouses=warehouses,
             available_cars=_available_cars(transport_request),
@@ -490,9 +492,16 @@ def request_status_set(request: HttpRequest, pk: int):
     fields = []
 
     status = (request.POST.get("status") or "").strip()
+    warnings: list[str] = []
     if status:
         if status not in dict(TransportRequest.STATUS_CHOICES):
             return JsonResponse({"ok": False, "error": "Неизвестный статус."}, status=400)
+        # B10: доска не должна прыгать через FSM (напр. COMPLETED → DRAFT).
+        try:
+            transport_request.validate_transition(status)
+        except ValidationError as exc:
+            return JsonResponse({"ok": False, "error": " ".join(exc.messages)}, status=400)
+        warnings = transport_request.transition_problems(status)
         transport_request.status = status
         fields.append("status")
 
@@ -520,6 +529,8 @@ def request_status_set(request: HttpRequest, pk: int):
             "warehouse_state": transport_request.warehouse_state,
             "warehouse_state_display": transport_request.get_warehouse_state_display(),
             "awaiting_client_docs": transport_request.awaiting_client_docs,
+            "warnings": warnings,
+            "allowed_statuses": transport_request.allowed_next_statuses(),
         }
     )
 

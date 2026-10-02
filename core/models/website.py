@@ -41,8 +41,20 @@ class ClientUser(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата регистрации")
     last_login = models.DateTimeField(null=True, blank=True, verbose_name="Последний вход")
 
+    # Подписки на события кабинета (C5): ``{"<event>": {"email": bool, "telegram": bool}}``.
+    # Отсутствующий ключ = включено. События — core.services.client_notifications.EVENTS.
+    notification_prefs = models.JSONField(default=dict, blank=True, verbose_name="Настройки уведомлений")
+
     def __str__(self):
         return f"{self.user.username} ({self.client.name})"
+
+    def wants_notification(self, event, channel):
+        """True, если пользователь не отключил событие ``event`` в канале ``channel``."""
+        prefs = self.notification_prefs or {}
+        event_prefs = prefs.get(event)
+        if not isinstance(event_prefs, dict):
+            return True
+        return bool(event_prefs.get(channel, True))
 
     class Meta:
         verbose_name = "Доступ клиента в портал"
@@ -480,6 +492,13 @@ class NotificationLog(models.Model):
         ("CAR_UNLOADED", "Разгрузка ТС (без контейнера)"),
         ("REQUEST_MESSAGE", "Сообщение по заявке на автовоз"),
         ("REQUEST_DOCS", "Запрос документов по заявке"),
+        # События кабинета (C5) и напоминания о просрочке (B8).
+        ("PHOTOS_READY", "Фото готовы"),
+        ("INVOICE_ISSUED", "Инвойс выставлен"),
+        ("REQUEST_STATUS", "Заявка сменила статус"),
+        ("CAR_TRANSFERRED", "Авто передано"),
+        ("INVOICE_DUE_SOON", "Напоминание о сроке оплаты"),
+        ("INVOICE_OVERDUE", "Инвойс просрочен"),
     ]
 
     CHANNEL_CHOICES = [
@@ -873,6 +892,22 @@ class TransportRequest(models.Model):
     # Статусы, в которых заявка «активна» (авто занято заявкой).
     INACTIVE_STATUSES = {"COMPLETED", "CANCELLED"}
 
+    # FSM статусов (B10). Вперёд — по шагам, пропуск ACCEPTED допустим
+    # (сотрудник часто сразу уходит в работу / оформляет). Назад — к
+    # черновику из любого рабочего статуса (корзина на доске), но из
+    # COMPLETED — только на шаг назад в IN_PROGRESS: оформленная заявка
+    # уже дала рейс/документы. CANCELLED восстанавливается только через
+    # DRAFT. DRAFT → IN_PROGRESS нужен письму складу из черновика
+    # (``warehouse_request_email``).
+    ALLOWED_STATUS_TRANSITIONS = {
+        "DRAFT": {"SUBMITTED", "IN_PROGRESS", "CANCELLED"},
+        "SUBMITTED": {"DRAFT", "ACCEPTED", "IN_PROGRESS", "COMPLETED", "CANCELLED"},
+        "ACCEPTED": {"DRAFT", "SUBMITTED", "IN_PROGRESS", "COMPLETED", "CANCELLED"},
+        "IN_PROGRESS": {"DRAFT", "ACCEPTED", "COMPLETED", "CANCELLED"},
+        "COMPLETED": {"IN_PROGRESS"},
+        "CANCELLED": {"DRAFT"},
+    }
+
     number = models.CharField(max_length=50, unique=True, blank=True, verbose_name="Номер заявки")
     client = models.ForeignKey(
         Client, on_delete=models.CASCADE, related_name="transport_requests", verbose_name="Клиент"
@@ -958,6 +993,8 @@ class TransportRequest(models.Model):
             models.Index(fields=["status"], name="transreq_status_idx"),
             # Табы доски «У склада» / «Подтверждены складом» фильтруют по нему.
             models.Index(fields=["warehouse_state", "-created_at"], name="transreq_whstate_idx"),
+            # P9: кабинет клиента — заявки по статусу.
+            models.Index(fields=["client", "status", "-created_at"], name="transreq_client_status_idx"),
         ]
 
     def __str__(self):
@@ -1053,6 +1090,65 @@ class TransportRequest(models.Model):
         present = set(self.documents.values_list("doc_type", flat=True))
         return [code for code, _label in TRANSPORT_DOCUMENT_TYPES if code in requested - present]
 
+    # ------------------------------------------------------------------
+    # FSM (B10)
+    # ------------------------------------------------------------------
+
+    def can_transition(self, new_status: str) -> bool:
+        """Допустим ли переход из текущего статуса в ``new_status``."""
+        if new_status == self.status:
+            return True
+        return new_status in self.ALLOWED_STATUS_TRANSITIONS.get(self.status, set())
+
+    def allowed_next_statuses(self) -> list[str]:
+        """Статусы, в которые можно перейти из текущего (без текущего)."""
+        order = [code for code, _ in self.STATUS_CHOICES]
+        allowed = self.ALLOWED_STATUS_TRANSITIONS.get(self.status, set())
+        return [code for code in order if code in allowed]
+
+    def status_choices_for_ui(self) -> list[tuple[str, str]]:
+        """Текущий статус + допустимые переходы — для селекта на доске заявок."""
+        labels = dict(self.STATUS_CHOICES)
+        codes = [self.status, *self.allowed_next_statuses()]
+        return [(code, labels[code]) for code in codes if code in labels]
+
+    def transition_problems(self, new_status: str) -> list[str]:
+        """Мягкие гейты перехода (не блокируют сохранение — см. ``save``).
+
+        * SUBMITTED — нужна хотя бы одна машина;
+        * COMPLETED — нужен созданный рейс (``auto_transport``).
+
+        Жёстко не проверяем: клиентская форма сохраняет заявку ДО
+        ``save_m2m`` (машин ещё нет), а оформление без рейса в системе
+        встречается, когда автовоз вели вне Logist2. Портал проверяет
+        машины сам (``transport_request_submit``), доска показывает
+        предупреждение.
+        """
+        problems = []
+        if new_status == "SUBMITTED" and self.pk and not self.cars.exists():
+            problems.append("В заявке нет автомобилей.")
+        if new_status == "COMPLETED" and not self.auto_transport_id:
+            problems.append("Для заявки не создан автовоз (рейс).")
+        return problems
+
+    def validate_transition(self, new_status: str) -> None:
+        """``ValidationError``, если переход запрещён FSM."""
+        from django.core.exceptions import ValidationError
+
+        if new_status not in dict(self.STATUS_CHOICES):
+            raise ValidationError({"status": f"Неизвестный статус заявки: {new_status}."})
+        if not self.can_transition(new_status):
+            labels = dict(self.STATUS_CHOICES)
+            allowed = ", ".join(labels[c] for c in self.allowed_next_statuses()) or "нет"
+            raise ValidationError(
+                {
+                    "status": (
+                        f"Недопустимый переход статуса заявки {self.number or self.pk}: "
+                        f"{labels.get(self.status, self.status)} → {labels[new_status]}. Допустимые: {allowed}."
+                    )
+                }
+            )
+
     def save(self, *args, **kwargs):
         if not self.number:
             from django.db import transaction as db_transaction
@@ -1062,6 +1158,30 @@ class TransportRequest(models.Model):
             date_str = timezone.now().strftime("%Y%m%d")
             with db_transaction.atomic():
                 self.number = next_document_number(TransportRequest, f"TR-{date_str}", pad=3)
+
+        update_fields = kwargs.get("update_fields")
+        if self.pk and (update_fields is None or "status" in update_fields):
+            old_status = TransportRequest.objects.filter(pk=self.pk).values_list("status", flat=True).first()
+            if old_status and old_status != self.status:
+                new_status = self.status
+                # validate_transition сравнивает с self.status — временно
+                # подставляем состояние из БД.
+                self.status = old_status
+                try:
+                    self.validate_transition(new_status)
+                    problems = self.transition_problems(new_status)
+                finally:
+                    self.status = new_status
+                if problems:
+                    import logging
+
+                    logging.getLogger(__name__).warning(
+                        "[TransportRequest %s] %s → %s с замечаниями: %s",
+                        self.number,
+                        old_status,
+                        new_status,
+                        " ".join(problems),
+                    )
         super().save(*args, **kwargs)
 
 

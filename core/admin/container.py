@@ -74,6 +74,37 @@ class HasUnreadEmailsFilter(SimpleListFilter):
         return queryset
 
 
+class EtaOverdueFilter(SimpleListFilter):
+    """ETA контейнеров в пути/в порту: просрочен, сегодня-завтра, на неделе."""
+
+    title = "ETA"
+    parameter_name = "eta_state"
+
+    def lookups(self, request, model_admin):
+        return (
+            ("overdue", "Просрочен"),
+            ("soon", "Сегодня–завтра"),
+            ("week", "В ближайшие 7 дней"),
+            ("missing", "Не указан"),
+        )
+
+    def queryset(self, request, queryset):
+        value = self.value()
+        if not value:
+            return queryset
+        today = timezone.localdate()
+        active = queryset.filter(status__in=("FLOATING", "IN_PORT"))
+        if value == "overdue":
+            return active.filter(eta__lt=today)
+        if value == "soon":
+            return active.filter(eta__gte=today, eta__lte=today + timezone.timedelta(days=1))
+        if value == "week":
+            return active.filter(eta__gte=today, eta__lte=today + timezone.timedelta(days=7))
+        if value == "missing":
+            return active.filter(eta__isnull=True)
+        return queryset
+
+
 class DataAuditFilter(SimpleListFilter):
     """Фильтр по итогу сверки данных (см. core.services.container_audit)."""
 
@@ -103,7 +134,7 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
         "number_with_unread",
         "booking_number",
         "colored_status",
-        "eta",
+        "eta_display",
         "planned_unload_date",
         "unload_date",
         "line",
@@ -117,6 +148,7 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
         MultiStatusFilter,
         ClientAutocompleteFilter,
         MultiWarehouseFilter,
+        EtaOverdueFilter,
         LabelsPrintedFilter,
         HasUnreadEmailsFilter,
         DataAuditFilter,
@@ -193,29 +225,42 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
         return initial
 
     def get_queryset(self, request):
-        from django.db.models import Count, Q
+        from django.db.models import Count, IntegerField, OuterRef, Subquery
+        from django.db.models.functions import Coalesce
+
+        from core.models.email import ContainerEmailLink
+        from core.models.website import ContainerPhoto
+
+        def _count_subquery(qs, fk, count_field="pk"):
+            return Coalesce(
+                Subquery(
+                    qs.order_by().values(fk).annotate(c=Count(count_field, distinct=True)).values("c"),
+                    output_field=IntegerField(),
+                ),
+                0,
+                output_field=IntegerField(),
+            )
 
         qs = super().get_queryset(request)
-        return (
-            qs.select_related("line", "client", "warehouse")
-            .prefetch_related("container_cars")
-            .annotate(
-                _photos_count=Count("photos", distinct=True),
-                _emails_total=Count("emails", distinct=True),
-                _emails_unread=Count(
-                    "email_links",
-                    filter=Q(email_links__is_read=False),
-                    distinct=True,
+        # Без prefetch_related("container_cars"): ни одна колонка списка не
+        # обращается к машинам, а prefetch тянул сотни объектов на страницу.
+        # Счётчики — коррелированными подзапросами: четыре Count(distinct) с
+        # JOIN на фото/письма давали один запрос списка на 225 мс.
+        return qs.select_related("line", "client", "warehouse").annotate(
+            _photos_count=_count_subquery(ContainerPhoto.objects.filter(container_id=OuterRef("pk")), "container_id"),
+            _emails_unread=_count_subquery(
+                ContainerEmailLink.objects.filter(container_id=OuterRef("pk"), is_read=False),
+                "container_id",
+            ),
+            _emails_need_reply=_count_subquery(
+                ContainerEmailLink.objects.filter(
+                    container_id=OuterRef("pk"),
+                    email__needs_reply=True,
+                    email__direction="INCOMING",
                 ),
-                _emails_need_reply=Count(
-                    "emails",
-                    filter=Q(
-                        emails__needs_reply=True,
-                        emails__direction="INCOMING",
-                    ),
-                    distinct=True,
-                ),
-            )
+                "container_id",
+                count_field="email_id",
+            ),
         )
 
     def save_model(self, request, obj, form, change):
@@ -451,14 +496,48 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
         return form
 
     def colored_status(self, obj):
-        color = obj.get_status_color()
         return format_html(
-            '<span style="background-color: {}; color: white; padding: 4px 8px; border-radius: 4px;">{}</span>',
-            color,
+            '<span class="cm-badge--status cm-badge--status-{}">{}</span>',
+            (obj.status or "unknown").lower(),
             obj.get_status_display(),
         )
 
     colored_status.short_description = "Статус"
+    colored_status.admin_order_field = "status"
+
+    @staticmethod
+    def _eta_countdown(eta, today):
+        """Подпись под датой ETA: «через N дн.» / «сегодня» / «просрочен на N дн.»."""
+        delta = (eta - today).days
+        if delta < 0:
+            return "overdue", f"просрочен на {-delta} дн."
+        if delta == 0:
+            return "soon", "сегодня"
+        if delta == 1:
+            return "soon", "завтра"
+        return "future", f"через {delta} дн."
+
+    def eta_display(self, obj):
+        """ETA с countdown для контейнеров в пути / в порту (V2).
+
+        Для разгруженных и переданных показываем просто дату — обратный
+        отсчёт там не имеет смысла.
+        """
+        if not obj.eta:
+            return format_html('<span class="cm-muted">—</span>')
+        date_str = obj.eta.strftime("%d.%m.%Y")
+        if obj.status not in ("FLOATING", "IN_PORT"):
+            return format_html('<span class="cm-eta cm-eta--arrived">{}</span>', date_str)
+        level, label = self._eta_countdown(obj.eta, timezone.localdate())
+        return format_html(
+            '<span class="cm-eta cm-eta--{}"><span>{}</span><small>{}</small></span>',
+            level,
+            date_str,
+            label,
+        )
+
+    eta_display.short_description = "ETA"
+    eta_display.admin_order_field = "eta"
 
     def photos_count_display(self, obj):
         """Displays count of container photos (uses annotation when available)"""

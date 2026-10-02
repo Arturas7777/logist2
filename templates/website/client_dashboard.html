@@ -153,10 +153,94 @@
 </section>
 
 <div class="container pb-5 pt-2">
+    {% if onboarding_pending %}
+    <!-- Онбординг (C4): кабинет ещё не привязан к клиенту CRM -->
+    <div class="alert alert-info d-flex gap-3 align-items-start shadow-sm mb-4" role="status">
+        <i class="bi bi-hourglass-split fs-3 flex-shrink-0"></i>
+        <div>
+            <strong>{% trans "Кабинет будет активирован менеджером." %}</strong>
+            <div class="small mt-1">
+                {% trans "Мы получили вашу регистрацию и в ближайшее время свяжем аккаунт с вашими автомобилями и контейнерами — после этого они появятся здесь. Если вопрос срочный, напишите нам." %}
+            </div>
+            <a href="{% url 'website:contact' %}" class="btn btn-sm btn-outline-primary mt-2">
+                <i class="bi bi-envelope"></i> {% trans "Связаться с менеджером" %}
+            </a>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if my_containers %}
+    <!-- Мои контейнеры (C3): активные контейнеры с ETA, статусом и числом авто -->
+    <div class="section-title">
+        <h4 class="mb-0"><i class="bi bi-box-seam text-primary"></i> {% trans "Мои контейнеры" %}</h4>
+        <span class="text-muted small">{{ my_containers|length }}</span>
+    </div>
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle portal-table">
+                <thead class="table-light">
+                    <tr>
+                        <th>{% trans "Контейнер" %}</th>
+                        <th>{% trans "Статус" %}</th>
+                        <th>{% trans "ETA / Разгружен" %}</th>
+                        <th>{% trans "Линия" %}</th>
+                        <th>{% trans "Склад" %}</th>
+                        <th class="text-end">{% trans "Авто" %}</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ctr in my_containers %}
+                    <tr>
+                        <td data-label="{% trans 'Контейнер' %}">
+                            <a class="fw-semibold text-decoration-none text-monospace" href="{% url 'website:container_detail' ctr.id %}">{{ ctr.number }}</a>
+                            {% if ctr.public_photos_count %}
+                            <button type="button" class="gallery-link" data-container-photos="{{ ctr.number }}"
+                                    title="{% trans 'Фотографии контейнера' %}">
+                                <i class="bi bi-camera"></i>{{ ctr.public_photos_count }}
+                            </button>
+                            {% endif %}
+                        </td>
+                        <td data-label="{% trans 'Статус' %}">
+                            <span class="status-badge status-{{ ctr.status }}">{{ ctr.get_status_display }}</span>
+                        </td>
+                        <td data-label="{% trans 'ETA / Разгружен' %}">
+                            {% if ctr.unload_date %}
+                                {{ ctr.unload_date|date:"d.m.Y" }}
+                            {% elif ctr.eta %}
+                                <span title="{% trans 'Ожидаемая дата прибытия' %}">ETA {{ ctr.eta|date:"d.m.Y" }}</span>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td data-label="{% trans 'Линия' %}">{{ ctr.line.name|default:"—" }}</td>
+                        <td data-label="{% trans 'Склад' %}">{{ ctr.warehouse.name|default:"—" }}</td>
+                        <td data-label="{% trans 'Авто' %}" class="text-end">{{ ctr.my_cars_count }}</td>
+                        <td class="text-end">
+                            <a href="{% url 'website:container_detail' ctr.id %}" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-eye"></i> <span class="d-none d-md-inline">{% trans "Открыть" %}</span>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Автомобили -->
     <div class="section-title">
         <h4 class="mb-0"><i class="bi bi-car-front text-primary"></i> {% trans "Мои автомобили" %}</h4>
     </div>
+
+    <!-- Быстрые чипы статусов (Q10) -->
+    <nav class="status-chips mb-2" aria-label="{% trans 'Фильтр по статусу' %}">
+        {% for chip in status_chips %}
+        <a href="{{ chip.url }}" class="status-chip{% if chip.active %} is-active{% endif %}"
+           {% if chip.active %}aria-current="true"{% endif %}>{{ chip.label }}</a>
+        {% endfor %}
+    </nav>
 
     <!-- Поиск и фильтр по своим авто -->
     <form method="get" class="row g-2 align-items-center mb-3" action="">
@@ -175,7 +259,7 @@
                     {% if selected_statuses %}
                         {% trans "Фильтры" %} ({{ selected_statuses|length }})
                     {% else %}
-                        {% trans "Разгружен / В порту" %}
+                        {% trans "Активные" %}
                     {% endif %}
                 </button>
                 <div class="dropdown-menu p-3" style="min-width: 230px;">

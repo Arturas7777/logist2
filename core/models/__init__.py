@@ -99,6 +99,7 @@ from .monitoring import (  # noqa: E402, F401
     UptimeCheck,
 )
 from .scans import ScanProcessingJob  # noqa: E402, F401
+from .status_history import CarStatusHistory  # noqa: E402, F401
 from .vin_checks import VinCheck  # noqa: E402, F401
 
 __all__ = [
@@ -134,5 +135,6 @@ __all__ = [
     'InvoiceAudit', 'SupplierCost',
     'SystemMetric', 'UptimeCheck',
     'ScanProcessingJob',
+    'CarStatusHistory',
     'VinCheck',
 ]

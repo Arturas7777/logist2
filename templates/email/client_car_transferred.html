@@ -1,0 +1,16 @@
+{% extends "email/client_event_base.html" %}
+{% load i18n %}
+{% block accent %}#4b2e83{% endblock %}{% block accent_h1 %}#4b2e83{% endblock %}{% block accent_badge %}#4b2e83{% endblock %}{% block accent_cta %}#4b2e83{% endblock %}
+{% block badge %}{% trans "Авто передано" %}{% endblock %}
+{% block body %}
+<p>{% blocktrans with brand=car.brand year=car.year vin=car.vin %}Ваш автомобиль <strong>{{ brand }} {{ year }}</strong> (VIN {{ vin }}) передан.{% endblocktrans %}</p>
+<div class="info-block">
+    <h2>{% trans "Дата передачи" %}</h2>
+    <p class="highlight">{% if transfer_date %}{{ transfer_date|date:"d.m.Y" }}{% else %}—{% endif %}</p>
+    {% if car.warehouse %}
+    <p><strong>{% trans "Склад:" %}</strong> {{ car.warehouse.name }}</p>
+    {% endif %}
+</div>
+<p>{% trans "Спасибо, что выбрали нас. Будем рады помочь со следующей доставкой." %}</p>
+{% endblock %}
+{% block cta_label %}{% trans "Открыть карточку автомобиля" %}{% endblock %}

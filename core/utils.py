@@ -2,6 +2,8 @@
 Утилиты для оптимизации производительности и бизнес-логики
 """
 
+import datetime
+import functools
 import logging
 import threading
 
@@ -23,6 +25,70 @@ def round_up_to_5(value):
 
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Дни хранения: календарные / рабочие / рабочие без праздников Литвы (B4)
+# ============================================================================
+
+STORAGE_DAY_POLICY_CALENDAR = "CALENDAR"
+STORAGE_DAY_POLICY_BUSINESS = "BUSINESS"
+STORAGE_DAY_POLICY_BUSINESS_LT = "BUSINESS_LT"
+
+STORAGE_DAY_POLICY_CHOICES = [
+    (STORAGE_DAY_POLICY_CALENDAR, "Календарные дни"),
+    (STORAGE_DAY_POLICY_BUSINESS, "Рабочие дни (пн–пт)"),
+    (STORAGE_DAY_POLICY_BUSINESS_LT, "Рабочие дни без праздников Литвы"),
+]
+
+
+@functools.lru_cache(maxsize=16)
+def lithuanian_holidays(year: int) -> frozenset:
+    """Праздники Литвы за год (включая переходящие — Пасху и пр.).
+
+    Берём из пакета ``holidays`` (он уже используется в transport_docs);
+    если пакет недоступен — статический список фиксированных дат, Пасха
+    в этом fallback не учитывается.
+    """
+    try:
+        import holidays as holidays_lib
+
+        return frozenset(holidays_lib.country_holidays("LT", years=year).keys())
+    except Exception:  # пакет не установлен или не знает LT — не роняем расчёт хранения
+        logger.warning("holidays.LT недоступен, используем статический список праздников за %s", year)
+        fixed = ((1, 1), (2, 16), (3, 11), (5, 1), (6, 24), (7, 6), (8, 15), (11, 1), (11, 2), (12, 24), (12, 25), (12, 26))
+        return frozenset(datetime.date(year, m, d) for m, d in fixed)
+
+
+def is_storage_day(day: datetime.date, policy: str) -> bool:
+    """Считается ли ``day`` днём хранения при данной политике склада."""
+    if policy == STORAGE_DAY_POLICY_CALENDAR or not policy:
+        return True
+    if day.weekday() >= 5:
+        return False
+    if policy == STORAGE_DAY_POLICY_BUSINESS_LT and day in lithuanian_holidays(day.year):
+        return False
+    return True
+
+
+def count_storage_days(start: datetime.date, end: datetime.date, policy: str = STORAGE_DAY_POLICY_CALENDAR) -> int:
+    """Число дней хранения с ``start`` по ``end`` включительно по политике.
+
+    День разгрузки и день передачи входят в интервал (как и раньше для
+    календарных дней). Для ``end < start`` возвращает 0.
+    """
+    if end < start:
+        return 0
+    if policy == STORAGE_DAY_POLICY_CALENDAR or not policy:
+        return (end - start).days + 1
+    count = 0
+    day = start
+    one = datetime.timedelta(days=1)
+    while day <= end:
+        if is_storage_day(day, policy):
+            count += 1
+        day += one
+    return count
 
 
 class WebSocketBatcher:

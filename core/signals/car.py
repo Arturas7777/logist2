@@ -199,9 +199,11 @@ def car_post_save(sender, instance, **kwargs):
 
     # --- 7. WebSocket data_update notification [EVENT] ---
     # Фаза 3: единый источник EVENT-нотификации — сервис; сигнал делегирует.
+    # Q8: сервис сам пропускает сохранения только денорм-полей / bulk / raw
+    # и дебаунсит по car_id — здесь лишь прокидываем контекст save().
     from core.services.car_lifecycle_service import send_car_ws_notification
 
-    send_car_ws_notification(instance)
+    send_car_ws_notification(instance, update_fields=kwargs.get("update_fields"), raw=kwargs.get("raw", False))
 
     # --- 8. Итог сверки данных контейнера [COMMAND/denorm] ---
     _refresh_container_audit_level(instance, update_fields=kwargs.get("update_fields"))
@@ -274,6 +276,12 @@ def _handle_car_important_transition(car, *, created: bool):
     car._pre_save_is_important = None
     if created:
         old_is_important = False
+    elif old_is_important is None:
+        # pre_save не снимал снимок (save(update_fields=...) без is_important)
+        # — флаг точно не менялся. Раньше None != False трактовалось как
+        # переход True→False и давало лишний UPDATE core_task на каждом
+        # частичном сохранении (в т.ч. из фоновых пересчётов).
+        return
 
     new_is_important = bool(car.is_important)
 

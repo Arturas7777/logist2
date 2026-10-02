@@ -1,0 +1,117 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}Принудительный реген позиций{% endblock %}
+{% block content_title %}<h1>Пересоздать позиции выставленных счетов</h1>{% endblock %}
+
+{% block content %}
+<style>
+    .regen-warning {
+        max-width: 760px;
+        margin: 0 auto;
+        background: #1e1e2e;
+        border-radius: 16px;
+        padding: 32px;
+        border: 1px solid rgba(245,158,11,.25);
+    }
+    .warning-badge {
+        text-align: center;
+        padding: 20px;
+        background: rgba(245,158,11,.08);
+        border: 1px solid rgba(245,158,11,.18);
+        border-radius: 12px;
+        margin-bottom: 24px;
+    }
+    .warning-badge .icon { font-size: 2.5em; }
+    .warning-badge .title { font-size: 1.2em; font-weight: 700; color: #f59e0b; margin-top: 8px; }
+    .warning-badge .subtitle { font-size: .9em; color: #a0a0c8; margin-top: 6px; line-height: 1.4; }
+    .inv-list {
+        max-height: 320px;
+        overflow-y: auto;
+        background: #16162a;
+        border-radius: 10px;
+        padding: 12px 16px;
+        margin-bottom: 24px;
+        border: 1px solid rgba(255,255,255,.06);
+    }
+    .inv-list table { width: 100%; border-collapse: collapse; }
+    .inv-list th { text-align: left; font-size: .8em; color: #808098; padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,.06); }
+    .inv-list td { padding: 6px 8px; font-size: .9em; color: #e0e0f0; border-bottom: 1px solid rgba(255,255,255,.03); }
+    .inv-list td.muted { color: #808098; }
+    .btn-row { display: flex; gap: 12px; justify-content: center; }
+    .btn-apply {
+        padding: 12px 32px;
+        border: none;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #d97706, #f59e0b);
+        color: #fff;
+        font-size: 1em;
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .btn-cancel {
+        padding: 12px 32px;
+        border: 1px solid rgba(255,255,255,.12);
+        border-radius: 10px;
+        background: transparent;
+        color: #a0a0c8;
+        font-size: 1em;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+    }
+</style>
+
+<div class="regen-warning">
+    <div class="warning-badge">
+        <div class="icon">⚠️</div>
+        <div class="title">Позиции и сумма документа будут перезаписаны</div>
+        <div class="subtitle">
+            Клиент уже мог получить этот счёт. После пересборки <b>total</b> изменится,
+            <b>paid_amount</b> и статус пересчитаются из реальных платежей, действие
+            попадёт в журнал изменений. Если документ отправлен в site.pro —
+            перевыставьте PDF вручную.
+        </div>
+    </div>
+
+    <div class="inv-list">
+        <table>
+            <thead>
+                <tr><th>Номер</th><th>Серия</th><th>Статус</th><th>Сумма</th><th>Оплачено</th><th>Получатель</th></tr>
+            </thead>
+            <tbody>
+            {% for inv in invoices %}
+                <tr>
+                    <td><strong>{{ inv.number }}</strong></td>
+                    <td>{{ inv.get_document_type_display }}</td>
+                    <td>{{ inv.get_status_display }}</td>
+                    <td>{{ inv.total|floatformat:2 }} {{ inv.currency }}</td>
+                    <td>{{ inv.paid_amount|floatformat:2 }}</td>
+                    <td>{{ inv.recipient_name }}</td>
+                </tr>
+            {% endfor %}
+            {% for inv in rejected %}
+                <tr>
+                    <td class="muted">{{ inv.number }}</td>
+                    <td class="muted" colspan="5">пропускается — {{ inv.get_status_display }} / нет автомобилей</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        {% for inv in invoices %}
+        <input type="hidden" name="{{ action_checkbox_name }}" value="{{ inv.pk }}">
+        {% endfor %}
+        <input type="hidden" name="action" value="regenerate_items_force">
+        <input type="hidden" name="confirm" value="1">
+        <div class="btn-row">
+            <a href="{% url 'admin:core_newinvoice_changelist' %}" class="btn-cancel">Отмена</a>
+            <button type="submit" class="btn-apply">Пересобрать {{ invoices|length }} инвойсов</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

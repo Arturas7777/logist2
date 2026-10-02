@@ -13,7 +13,7 @@
 import logging
 from decimal import Decimal
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models.signals import post_save, pre_delete, pre_save
 from django.dispatch import receiver
 
@@ -30,6 +30,21 @@ from core.service_codes import is_storage_service
 logger = logging.getLogger(__name__)
 
 
+def _pending_recalc_car_ids() -> set:
+    """car_id, для которых пересчёт уже стоит в on_commit текущей транзакции.
+
+    Дедуп делается по самому списку ``connection.run_on_commit``, а не по
+    thread-local множеству: при откате транзакции Django сам выбрасывает
+    незакоммиченные коллбэки, и «залипшего» id, который навсегда глушил бы
+    пересчёт в этом потоке, не остаётся.
+    """
+    pending: set = set()
+    for entry in getattr(connection, "run_on_commit", ()):
+        func = entry[1] if len(entry) > 1 else None
+        pending.update(getattr(func, "_recalc_car_ids", ()))
+    return pending
+
+
 def _enqueue_recalc_cars_total_price(car_ids):
     """Поставить пересчёт Car.total_price в Celery; fallback inline.
 
@@ -37,10 +52,18 @@ def _enqueue_recalc_cars_total_price(car_ids):
     при импорте 100+ машин это блокировало запрос. Теперь HTTP отдаёт ответ
     сразу, тяжёлая работа идёт в фоне с graceful inline-fallback при
     недоступности брокера.
+
+    P2: это ЕДИНСТВЕННЫЙ путь пересчёта цены из сигналов — и для ``Car.save``,
+    и для ``CarService.save/delete`` (см. :mod:`core.signals.car_service`).
+    Повторные вызовы для той же машины внутри одной транзакции (карточка
+    авто из админки = 1 Car.save + N CarService.save) схлопываются в один
+    ``delay``.
     """
     if not car_ids:
         return
-    car_ids = list({int(cid) for cid in car_ids if cid})
+    car_ids = sorted({int(cid) for cid in car_ids if cid} - _pending_recalc_car_ids())
+    if not car_ids:
+        return
 
     def _dispatch():
         try:
@@ -60,6 +83,7 @@ def _enqueue_recalc_cars_total_price(car_ids):
                 len(car_ids),
             )
 
+    _dispatch._recalc_car_ids = frozenset(car_ids)
     transaction.on_commit(_dispatch)
 
 
