@@ -356,12 +356,39 @@ class ContainerEmailAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         custom = [
             path(
+                "mark-all-read/",
+                self.admin_site.admin_view(self.mark_all_read_view),
+                name="core_containeremail_mark_all_read",
+            ),
+            path(
                 "trigger-sync/",
                 self.admin_site.admin_view(self.trigger_sync_view),
                 name="core_containeremail_trigger_sync",
             ),
         ]
         return custom + urls
+
+    def mark_all_read_view(self, request):
+        """Подтверждение и сброс всех непрочитанных писем в карточках."""
+        from core.models.email import CarEmailLink, ContainerEmailLink, TransportRequestEmailLink
+        from core.services.email_read import mark_all_emails_read
+
+        if request.method == "POST":
+            stats = mark_all_emails_read()
+            self.message_user(
+                request,
+                "Отмечено прочитанными: контейнеры {containers}, авто {cars}, заявки {requests}.".format(**stats),
+                level=messages.SUCCESS,
+            )
+            return redirect("admin:core_container_changelist")
+        context = {
+            "title": "Отметить все письма прочитанными",
+            "containers": ContainerEmailLink.objects.filter(is_read=False).count(),
+            "cars": CarEmailLink.objects.filter(is_read=False).count(),
+            "requests": TransportRequestEmailLink.objects.filter(is_read=False).count(),
+            "back_url": reverse("admin:core_container_changelist"),
+        }
+        return render(request, "admin/core/containeremail/mark_all_read.html", context)
 
     def trigger_sync_view(self, request):
         if request.method != "POST":

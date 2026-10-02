@@ -126,3 +126,10 @@
   else bindCarFilters();
   </script>
 {% endblock %}
+
+{% block object-tools-items %}
+  {{ block.super }}
+  <li>
+    <a href="{% url 'admin:core_containeremail_mark_all_read' %}">Отметить все письма прочитанными</a>
+  </li>
+{% endblock %}

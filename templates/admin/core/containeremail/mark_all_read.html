@@ -1,0 +1,22 @@
+{% extends "admin/base_site.html" %}
+
+{% block title %}Отметить все письма прочитанными{% endblock %}
+{% block content_title %}<h1>Отметить все письма прочитанными</h1>{% endblock %}
+
+{% block content %}
+<div style="max-width:640px;margin:24px auto;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:24px;">
+    <p style="margin:0 0 12px;">
+        Сейчас непрочитанных связей: контейнеры <strong>{{ containers }}</strong>,
+        авто <strong>{{ cars }}</strong>, заявки <strong>{{ requests }}</strong>.
+    </p>
+    <p style="margin:0 0 16px;color:#4b5563;">
+        Письма, которые вы уже прочитали в почте, в системе остаются непрочитанными.
+        Эта кнопка снимает бейджи во всех карточках. Сами письма не удаляются.
+    </p>
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="button default">Отметить все прочитанными</button>
+        <a href="{{ back_url }}" style="margin-left:12px;">Отмена</a>
+    </form>
+</div>
+{% endblock %}
