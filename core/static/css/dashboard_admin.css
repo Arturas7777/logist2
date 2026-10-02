@@ -4748,6 +4748,89 @@ a.cm-status-badge-lg:hover {
 #result_list tbody tr.selected td a .vin-copy-btn.copied {
     color: #059669;
 }
+
+/* Счётчики: фиксированная пилюля, цифра строго по центру.
+   Раньше это был inline-span с line-height — глиф сидел левее и ниже. */
+.cm-count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    height: 22px;
+    min-width: 22px;
+    padding: 0 7px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    gap: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    text-decoration: none !important;
+    flex: 0 0 auto;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+.cm-count-badge .bi {
+    font-size: 10px;
+    line-height: 1;
+    width: 10px;
+    height: 10px;
+    display: block;
+}
+.cm-count-badge--alert {
+    color: #fff;
+    background: linear-gradient(180deg, #f87171 0%, #dc2626 58%, #b91c1c 100%);
+    border-color: rgba(127, 29, 29, .45);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 1px 2px rgba(185, 28, 28, .35);
+}
+.cm-count-badge--ok {
+    color: #047857;
+    background: linear-gradient(180deg, #f0fdf8 0%, #d1fae5 100%);
+    border-color: #a7f3d0;
+    box-shadow: inset 0 1px 0 #fff;
+}
+.cm-count-badge--reply {
+    color: #fff;
+    background: linear-gradient(180deg, #fdba74 0%, #ea580c 62%, #c2410c 100%);
+    border-color: rgba(154, 52, 18, .4);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 1px 2px rgba(234, 88, 12, .3);
+}
+.cm-count-badge--warn {
+    color: #fff;
+    background: linear-gradient(180deg, #fcd34d 0%, #d97706 70%, #b45309 100%);
+    border-color: rgba(146, 64, 14, .4);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .4), 0 1px 2px rgba(180, 83, 9, .28);
+}
+.cm-count-badge--info {
+    color: #fff;
+    background: linear-gradient(180deg, #93c5fd 0%, #2563eb 65%, #1d4ed8 100%);
+    border-color: rgba(30, 64, 175, .4);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 1px 2px rgba(37, 99, 235, .28);
+}
+#result_list .cm-count-badge,
+#result_list tbody td a .cm-count-badge,
+#result_list tbody tr.selected td a .cm-count-badge,
+#result_list tbody td a:hover .cm-count-badge {
+    text-decoration: none !important;
+    font-weight: 700 !important;
+}
+#result_list .cm-count-badge--alert,
+#result_list .cm-count-badge--reply,
+#result_list .cm-count-badge--warn,
+#result_list .cm-count-badge--info,
+#result_list tbody td a .cm-count-badge--alert,
+#result_list tbody td a .cm-count-badge--reply,
+#result_list tbody td a .cm-count-badge--warn,
+#result_list tbody td a .cm-count-badge--info {
+    color: #fff !important;
+}
+#result_list .cm-count-badge--ok,
+#result_list tbody td a .cm-count-badge--ok {
+    color: #047857 !important;
+}
 .cm-line-mark {
     display: inline-flex;
     align-items: center;
@@ -4883,12 +4966,16 @@ a.cm-status-badge-lg:hover {
 }
 .cm-summary-bar a:hover { color: var(--cm-purple); }
 .cm-summary-bar .cm-summary-num {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    height: 22px;
     min-width: 22px;
-    padding: 1px 7px;
-    border-radius: 100px;
-    text-align: center;
+    padding: 0 7px;
+    border-radius: 999px;
     font-variant-numeric: tabular-nums;
+    line-height: 1;
     background: var(--cm-purple-bg);
     color: var(--cm-purple);
 }
@@ -4896,30 +4983,39 @@ a.cm-status-badge-lg:hover {
 .cm-summary-bar .cm-summary-num--bad  { background: var(--cm-red-bg); color: #b91c1c; }
 .cm-summary-bar .cm-summary-num--zero { background: #f1f5f9; color: var(--cm-text-muted); }
 
-/* Счётчики в сайдбаре (V9) */
+/* Счётчики в сайдбаре: та же пилюля, что в списках.
+   Ссылка меню тянет flex:1 и padding 9px 14px — здесь это сбрасывается,
+   иначе цифра прижимается влево. */
+.cm-sidebar-nav a.cm-nav-count.cm-count-badge--alert,
+.cm-sidebar-nav a.cm-nav-count.cm-count-badge--warn {
+    color: #fff;
+}
 .cm-sidebar-nav a.cm-nav-count {
     flex: 0 0 auto;
-    margin: 0 8px 0 0;
-    min-width: 20px;
-    padding: 1px 6px;
-    border-radius: 100px;
-    font-size: .68rem;
-    font-weight: 700;
-    line-height: 16px;
-    text-align: center;
-    background: #ef4444;
-    color: #fff;
-    font-variant-numeric: tabular-nums;
+    margin: 0 10px 0 0;
+    height: 22px;
+    min-width: 22px;
+    padding: 0 7px;
     gap: 0;
+    justify-content: center;
     overflow: visible;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0;
+    border-radius: 999px;
 }
-.cm-sidebar-nav a.cm-nav-count:hover {
-    background: #dc2626;
+.cm-sidebar-nav a.cm-nav-count:hover,
+.cm-sidebar-nav a.cm-nav-count.cm-count-badge--alert:hover {
     color: #fff;
     text-decoration: none;
+    background: linear-gradient(180deg, #fca5a5 0%, #b91c1c 100%);
 }
-.cm-sidebar-nav a.cm-nav-count.cm-nav-count--warn { background: #f59e0b; }
-.cm-sidebar-nav a.cm-nav-count.cm-nav-count--warn:hover { background: #d97706; }
+.cm-sidebar-nav a.cm-nav-count.cm-count-badge--warn:hover {
+    color: #fff;
+    text-decoration: none;
+    background: linear-gradient(180deg, #fde68a 0%, #b45309 100%);
+}
 
 /* ===== TRANSITION ===== */
 *, *::before, *::after {

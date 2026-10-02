@@ -20,7 +20,7 @@
 {# — Icons — #}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
 {# — Design System — #}
-<link rel="stylesheet" type="text/css" href="{% static 'css/dashboard_admin.css' %}?v=77">
+<link rel="stylesheet" type="text/css" href="{% static 'css/dashboard_admin.css' %}?v=78">
 <style>
 /* Sticky first columns for wide changelists so VIN/status don't scroll out of view */
 #result_list.cm-sticky-cols thead th:nth-child(1),
@@ -389,7 +389,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <i class="bi {{ item.icon }}"></i> {{ item.name }}
                 </a>
                 {% if item.count %}
-                <a href="{{ item.count_url|default:item.url }}" class="cm-nav-count{% if item.count_level == 'warn' %} cm-nav-count--warn{% endif %}" title="{{ item.count_title|default:item.count }}">{{ item.count }}</a>
+                <a href="{{ item.count_url|default:item.url }}" class="cm-nav-count cm-count-badge {% if item.count_level == 'warn' %}cm-count-badge--warn{% else %}cm-count-badge--alert{% endif %}" title="{{ item.count_title|default:item.count }}">{{ item.count }}</a>
                 {% endif %}
             </li>
             {% endif %}

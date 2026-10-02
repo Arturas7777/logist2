@@ -965,20 +965,20 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
             unread = obj.email_links.filter(is_read=False).count() if obj.pk else 0
         need_reply = getattr(obj, "_emails_need_reply", 0) or 0
 
+        from core.count_badge import count_badge_html
+
         if unread > 0:
-            badge_bg, badge_title = "#dc2626", f"{unread} непрочитанных письма"
+            unread_html = count_badge_html(unread, tone="alert", title=f"{unread} непрочитанных письма")
         else:
-            badge_bg, badge_title = "#10b981", "Непрочитанных писем нет"
+            unread_html = count_badge_html(unread, tone="ok", title="Непрочитанных писем нет")
 
         need_reply_html = ""
         if need_reply > 0:
-            need_reply_html = format_html(
-                '<span title="{}" style="background:#f97316;color:#fff;padding:1px 7px;'
-                "border-radius:10px;font-size:11px;font-weight:700;min-width:20px;"
-                'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">'
-                '<i class="bi bi-flag-fill"></i> {}</span>',
-                f"{need_reply} письмо(-а) ждут ответа",
+            need_reply_html = count_badge_html(
                 need_reply,
+                tone="reply",
+                title=f"{need_reply} письмо(-а) ждут ответа",
+                icon="flag-fill",
             )
 
         # Красный треугольник для авто, помеченных как «Важное».
@@ -1009,17 +1009,13 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
         return format_html(
             '<span style="display:inline-flex;align-items:center;gap:6px;">'
             '<span class="vin-copy-wrap">{copy_btn} {vin}</span>'
-            '<span title="{badge_title}" style="background:{badge_bg};color:#fff;padding:1px 7px;'
-            "border-radius:10px;font-size:11px;font-weight:700;min-width:20px;"
-            'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">{unread}</span>'
+            "{unread_html}"
             "{need_reply_html}"
             "{important_html}"
             "</span>",
             copy_btn=copy_button_html(obj.vin, "Копировать VIN"),
             vin=obj.vin,
-            unread=unread,
-            badge_bg=badge_bg,
-            badge_title=badge_title,
+            unread_html=unread_html,
             need_reply_html=need_reply_html,
             important_html=important_html,
         )

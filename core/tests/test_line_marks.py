@@ -32,6 +32,7 @@ def test_container_list_shows_line_mark(client):
     assert "cm-line-mark" in html
     assert "vin-copy-btn" in html
     assert 'data-vin="MSCU1234567"' in html
+    assert "cm-count-badge--ok" in html
     assert "MAE" in html
     assert "MSCU1234567" in html
     assert line_mark_html(line)

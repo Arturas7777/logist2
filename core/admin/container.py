@@ -545,11 +545,9 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
         if count is None:
             count = obj.photos.count()
         if count > 0:
-            return format_html(
-                '<span style="background-color: #4285f4; color: white; padding: 2px 8px; border-radius: 10px;">'
-                '<i class="bi bi-camera"></i> {}</span>',
-                count,
-            )
+            from core.count_badge import count_badge_html
+
+            return count_badge_html(count, tone="info", title=f"Фото: {count}", icon="camera")
         return "-"
 
     photos_count_display.short_description = "Фото"
@@ -562,17 +560,15 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
         ежедневной задачей) — считать сверку для каждой строки списка
         было бы слишком дорого.
         """
+        from core.count_badge import count_badge_html
+
         if obj.data_audit_level == Container.AUDIT_LEVEL_OK or not obj.data_audit_count:
-            return format_html('<span style="color:#10b981;" title="Расхождений нет">&#10003;</span>')
+            return count_badge_html("✓", tone="ok", title="Расхождений нет")
         is_error = obj.data_audit_level == Container.AUDIT_LEVEL_ERROR
-        bg = "#dc2626" if is_error else "#f59e0b"
-        title = "Расхождения в данных" if is_error else "Замечания по данным"
-        return format_html(
-            '<span title="{}" style="background:{};color:#fff;padding:1px 7px;border-radius:10px;'
-            'font-size:11px;font-weight:700;">{}</span>',
-            title,
-            bg,
+        return count_badge_html(
             obj.data_audit_count,
+            tone="alert" if is_error else "warn",
+            title="Расхождения в данных" if is_error else "Замечания по данным",
         )
 
     data_audit_display.short_description = "Сверка"
@@ -591,41 +587,32 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
 
         need_reply = getattr(obj, "_emails_need_reply", 0) or 0
 
+        from core.copy_button import copy_button_html
+        from core.count_badge import count_badge_html
+        from core.line_marks import line_mark_html
+
         if unread > 0:
-            bg, title = "#dc2626", f"{unread} непрочитанных письма"
+            unread_html = count_badge_html(unread, tone="alert", title=f"{unread} непрочитанных письма")
         else:
-            bg, title = "#10b981", "Непрочитанных писем нет"
+            unread_html = count_badge_html(unread, tone="ok", title="Непрочитанных писем нет")
 
         need_reply_html = ""
         if need_reply > 0:
-            need_reply_html = format_html(
-                '<span title="{}" style="background:#f97316;color:#fff;padding:1px 7px;'
-                "border-radius:10px;font-size:11px;font-weight:700;min-width:20px;"
-                'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">'
-                '<i class="bi bi-flag-fill"></i> {}</span>',
-                f"{need_reply} письмо(-а) ждут ответа",
+            need_reply_html = count_badge_html(
                 need_reply,
+                tone="reply",
+                title=f"{need_reply} письмо(-а) ждут ответа",
+                icon="flag-fill",
             )
-
-        from core.copy_button import copy_button_html
-        from core.line_marks import line_mark_html
 
         return format_html(
             '<span class="cm-container-no">'
-            "{}"
-            "{}"
-            '<span class="cm-container-no-text">{}</span>'
-            '<span title="{}" style="background:{};color:#fff;padding:1px 7px;'
-            "border-radius:10px;font-size:11px;font-weight:700;min-width:20px;"
-            'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">{}</span>'
-            "{}"
+            "{}{}<span class=\"cm-container-no-text\">{}</span>{}{}"
             "</span>",
             copy_button_html(obj.number, "Копировать номер"),
             line_mark_html(obj.line),
             obj.number or "—",
-            title,
-            bg,
-            unread,
+            unread_html,
             need_reply_html,
         )
 

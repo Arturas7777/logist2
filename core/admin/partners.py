@@ -1717,34 +1717,28 @@ class AutoTransportAdmin(admin.ModelAdmin):
             )
         need_reply = getattr(obj, "_emails_need_reply", 0) or 0
 
+        from core.count_badge import count_badge_html
+
         if unread > 0:
-            bg, title = "#dc2626", f"{unread} непрочитанных письма"
+            unread_html = count_badge_html(unread, tone="alert", title=f"{unread} непрочитанных письма")
         else:
-            bg, title = "#10b981", "Непрочитанных писем нет"
+            unread_html = count_badge_html(unread, tone="ok", title="Непрочитанных писем нет")
 
         need_reply_html = ""
         if need_reply > 0:
-            need_reply_html = format_html(
-                '<span title="{}" style="background:#f97316;color:#fff;padding:1px 7px;'
-                "border-radius:10px;font-size:11px;font-weight:700;min-width:20px;"
-                'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">'
-                '<i class="bi bi-flag-fill"></i> {}</span>',
-                f"{need_reply} письмо(-а) ждут ответа",
+            need_reply_html = count_badge_html(
                 need_reply,
+                tone="reply",
+                title=f"{need_reply} письмо(-а) ждут ответа",
+                icon="flag-fill",
             )
 
         return format_html(
             '<span style="display:inline-flex;align-items:center;gap:6px;">'
-            "<span>{}</span>"
-            '<span title="{}" style="background:{};color:#fff;padding:1px 7px;'
-            "border-radius:10px;font-size:11px;font-weight:700;min-width:20px;"
-            'text-align:center;line-height:16px;font-variant-numeric:tabular-nums;">{}</span>'
-            "{}"
+            "<span>{}</span>{}{}"
             "</span>",
             obj.number or "—",
-            title,
-            bg,
-            unread,
+            unread_html,
             need_reply_html,
         )
 
