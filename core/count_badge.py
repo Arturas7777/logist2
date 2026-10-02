@@ -8,6 +8,7 @@ _TONES = {
     "reply": "cm-count-badge--reply",
     "warn": "cm-count-badge--warn",
     "info": "cm-count-badge--info",
+    "done": "cm-count-badge--done",
 }
 
 

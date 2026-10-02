@@ -544,11 +544,11 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
         count = getattr(obj, "_photos_count", None)
         if count is None:
             count = obj.photos.count()
-        if count > 0:
-            from core.count_badge import count_badge_html
+        from core.count_badge import count_badge_html
 
+        if count > 0:
             return count_badge_html(count, tone="info", title=f"Фото: {count}", icon="camera")
-        return "-"
+        return format_html('<span class="cm-muted">{}</span>', "—")
 
     photos_count_display.short_description = "Фото"
     photos_count_display.admin_order_field = "_photos_count"
@@ -916,15 +916,17 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
 
     def labels_printed_display(self, obj):
         """Колонка-индикатор: напечатаны ли наклейки для контейнера."""
+        from core.count_badge import count_badge_html
+
         if obj.labels_printed_at:
             local = timezone.localtime(obj.labels_printed_at)
-            return format_html(
-                '<span title="{}" style="background-color: #2e7d32; color: #fff; padding: 2px 8px; border-radius: 10px; white-space: nowrap;">'
-                '<i class="bi bi-tag-fill"></i> {}</span>',
-                local.strftime("%d.%m.%Y %H:%M"),
+            return count_badge_html(
                 local.strftime("%d.%m"),
+                tone="done",
+                title=local.strftime("%d.%m.%Y %H:%M"),
+                icon="tag-fill",
             )
-        return format_html('<span style="color: #9999b5;">—</span>')
+        return format_html('<span class="cm-muted">{}</span>', "—")
 
     labels_printed_display.short_description = "Наклейки"
     labels_printed_display.admin_order_field = "labels_printed_at"

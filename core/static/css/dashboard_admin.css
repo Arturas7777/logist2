@@ -4810,6 +4810,12 @@ a.cm-status-badge-lg:hover {
     border-color: transparent;
     box-shadow: 0 1px 2px rgba(37, 99, 235, .28);
 }
+.cm-count-badge--done {
+    color: #fff;
+    background: #16a34a;
+    border-color: transparent;
+    box-shadow: 0 1px 2px rgba(22, 163, 74, .28);
+}
 #result_list .cm-count-badge,
 #result_list tbody td a .cm-count-badge,
 #result_list tbody tr.selected td a .cm-count-badge,
@@ -4821,10 +4827,12 @@ a.cm-status-badge-lg:hover {
 #result_list .cm-count-badge--reply,
 #result_list .cm-count-badge--warn,
 #result_list .cm-count-badge--info,
+#result_list .cm-count-badge--done,
 #result_list tbody td a .cm-count-badge--alert,
 #result_list tbody td a .cm-count-badge--reply,
 #result_list tbody td a .cm-count-badge--warn,
-#result_list tbody td a .cm-count-badge--info {
+#result_list tbody td a .cm-count-badge--info,
+#result_list tbody td a .cm-count-badge--done {
     color: #fff !important;
 }
 #result_list .cm-count-badge--ok,

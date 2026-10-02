@@ -36,3 +36,28 @@ def test_container_list_shows_line_mark(client):
     assert "MAE" in html
     assert "MSCU1234567" in html
     assert line_mark_html(line)
+
+
+def test_photo_and_label_columns_share_badge(client):
+    """Фото и наклейки — одна пилюля. Пустые ячейки тоже одинаковые."""
+    from django.contrib import admin
+    from django.utils import timezone
+
+    user = get_user_model().objects.create_user(
+        username="badge-cols", password="secret123", is_staff=True, is_superuser=True
+    )
+    client.force_login(user)
+    container = Container.objects.create(number="MSCU7654321", status="FLOATING")
+    container.labels_printed_at = timezone.now()
+    container._photos_count = 4
+    model_admin = admin.site._registry[Container]
+    photos = str(model_admin.photos_count_display(container))
+    labels = str(model_admin.labels_printed_display(container))
+    assert "cm-count-badge cm-count-badge--info" in photos
+    assert "bi-camera" in photos
+    assert "cm-count-badge cm-count-badge--done" in labels
+    assert "bi-tag-fill" in labels
+
+    container.labels_printed_at = None
+    container._photos_count = 0
+    assert str(model_admin.photos_count_display(container)) == str(model_admin.labels_printed_display(container))
