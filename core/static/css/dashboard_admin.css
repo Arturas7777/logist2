@@ -4816,6 +4816,207 @@ a.cm-status-badge-lg:hover {
     border-color: transparent;
     box-shadow: 0 1px 2px rgba(22, 163, 74, .28);
 }
+button.cm-count-badge {
+    font-family: inherit;
+    appearance: none;
+    cursor: pointer;
+}
+button.cm-count-badge:hover {
+    filter: brightness(1.08);
+}
+
+/* Галерея фото из списка контейнеров — то же окно, что на портале клиента. */
+.cm-photo-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 4000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(15, 23, 42, .55);
+}
+.cm-photo-modal[hidden] { display: none !important; }
+.cm-photo-modal__dialog {
+    display: flex;
+    flex-direction: column;
+    width: min(1100px, 100%);
+    max-height: min(860px, calc(100vh - 48px));
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, .28);
+    overflow: hidden;
+}
+.cm-photo-modal__head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 18px;
+    border-bottom: 1px solid #e6e8ef;
+}
+.cm-photo-modal__head h2 {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 750;
+}
+.cm-photo-modal__close {
+    margin-left: auto;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 8px;
+    background: #f3f5f9;
+    color: #334155;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+}
+.cm-photo-modal__body {
+    padding: 16px 18px 20px;
+    overflow: auto;
+}
+.cm-photo-modal__tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+.cm-photo-modal__tabs button {
+    border: 1px solid #e4e7ee;
+    background: #f8fafc;
+    color: #334155;
+    border-radius: 999px;
+    padding: 6px 12px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 650;
+    cursor: pointer;
+}
+.cm-photo-modal__tabs button.is-active {
+    background: #6c5ce7;
+    border-color: #6c5ce7;
+    color: #fff;
+}
+.cm-photo-modal__toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+.cm-photo-modal__toolbar label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+}
+.cm-photo-modal__download {
+    border: 0;
+    border-radius: 8px;
+    background: #16a34a;
+    color: #fff;
+    padding: 8px 14px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.cm-photo-modal__download:disabled {
+    background: #d1d5db;
+    cursor: default;
+}
+.cm-photo-modal__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+}
+.cm-photo-card {
+    border: 1px solid #e6e8ef;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #fff;
+}
+.cm-photo-card__shot {
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    padding: 0;
+    border: 0;
+    background: #f1f5f9;
+    cursor: zoom-in;
+}
+.cm-photo-card__shot img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.cm-photo-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: #64748b;
+}
+.cm-photo-viewer {
+    position: fixed;
+    inset: 0;
+    z-index: 4100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, .92);
+}
+.cm-photo-viewer[hidden] { display: none !important; }
+.cm-photo-viewer img {
+    max-width: 90vw;
+    max-height: 86vh;
+    object-fit: contain;
+    transform-origin: center center;
+}
+.cm-photo-viewer__nav,
+.cm-photo-viewer__tools button {
+    border: 0;
+    background: rgba(255, 255, 255, .92);
+    color: #111;
+    border-radius: 8px;
+    cursor: pointer;
+}
+.cm-photo-viewer__nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    font-size: 20px;
+}
+.cm-photo-viewer__nav--prev { left: 16px; }
+.cm-photo-viewer__nav--next { right: 16px; }
+.cm-photo-viewer__tools {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    display: flex;
+    gap: 8px;
+}
+.cm-photo-viewer__tools button {
+    padding: 8px 12px;
+    font-size: 16px;
+}
+.cm-photo-viewer__counter {
+    position: absolute;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #fff;
+    background: rgba(0, 0, 0, .55);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 13px;
+}
 #result_list .cm-count-badge,
 #result_list tbody td a .cm-count-badge,
 #result_list tbody tr.selected td a .cm-count-badge,

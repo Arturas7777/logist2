@@ -16,6 +16,11 @@ urlpatterns = [
     path(
         "container/<int:container_id>/photos-json/", views.get_container_photos_json, name="get_container_photos_json"
     ),
+    path(
+        "container/<int:container_id>/photos-zip/",
+        views.download_container_photos_zip,
+        name="download_container_photos_zip",
+    ),
     # API для автокомплита в инвойсах
     path("api/search-counterparties/", views.search_counterparties, name="search_counterparties"),
     path("api/search-cars/", views.search_cars, name="search_cars"),

@@ -544,10 +544,15 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
         count = getattr(obj, "_photos_count", None)
         if count is None:
             count = obj.photos.count()
-        from core.count_badge import count_badge_html
-
         if count > 0:
-            return count_badge_html(count, tone="info", title=f"Фото: {count}", icon="camera")
+            return format_html(
+                '<button type="button" class="cm-count-badge cm-count-badge--info cm-photo-open" '
+                'data-container-id="{}" data-container-number="{}" title="Открыть галерею">'
+                '<i class="bi bi-camera" aria-hidden="true"></i>{}</button>',
+                obj.pk,
+                obj.number or "",
+                count,
+            )
         return format_html('<span class="cm-muted">{}</span>', "—")
 
     photos_count_display.short_description = "Фото"

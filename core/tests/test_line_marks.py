@@ -53,8 +53,12 @@ def test_photo_and_label_columns_share_badge(client):
     model_admin = admin.site._registry[Container]
     photos = str(model_admin.photos_count_display(container))
     labels = str(model_admin.labels_printed_display(container))
-    assert "cm-count-badge cm-count-badge--info" in photos
+    assert "cm-count-badge cm-count-badge--info cm-photo-open" in photos
+    assert f'data-container-id="{container.pk}"' in photos
     assert "bi-camera" in photos
+    page = client.get("/admin/core/container/?status_multi=FLOATING")
+    assert "cm-photo-modal" in page.content.decode()
+    assert "admin_photo_gallery.js" in page.content.decode()
     assert "cm-count-badge cm-count-badge--done" in labels
     assert "bi-tag-fill" in labels
 

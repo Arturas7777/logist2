@@ -1,8 +1,49 @@
 {% extends "admin/change_list.html" %}
+{% load static %}
 
 {% block object-tools-items %}
   {{ block.super }}
   <li>
     <a href="{% url 'admin:core_containeremail_mark_all_read' %}">Отметить все письма прочитанными</a>
   </li>
+{% endblock %}
+
+{% block footer %}
+  {{ block.super }}
+  <div id="cm-photo-modal" class="cm-photo-modal" hidden
+       data-photos-url="{% url 'core:get_container_photos_json' 0 %}"
+       data-zip-url="{% url 'core:download_container_photos_zip' 0 %}">
+    <div class="cm-photo-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="cm-photo-modal-title">
+      <div class="cm-photo-modal__head">
+        <h2 id="cm-photo-modal-title">Фотографии контейнера</h2>
+        <button type="button" class="cm-photo-modal__close" data-close aria-label="Закрыть">&times;</button>
+      </div>
+      <div class="cm-photo-modal__body">
+        <div class="cm-photo-modal__loading">Загружаем фотографии…</div>
+        <div class="cm-photo-modal__error" hidden></div>
+        <div class="cm-photo-modal__main" hidden>
+          <div class="cm-photo-modal__tabs"></div>
+          <div class="cm-photo-modal__toolbar">
+            <label><input type="checkbox" id="cm-photo-select-all"> Выбрать все</label>
+            <button type="button" class="cm-photo-modal__download" id="cm-photo-download" disabled>Скачать выбранные</button>
+          </div>
+          <div class="cm-photo-modal__grid"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="cm-photo-viewer" class="cm-photo-viewer" hidden>
+    <div class="cm-photo-viewer__counter" data-counter></div>
+    <div class="cm-photo-viewer__tools">
+      <button type="button" data-zoom="in" title="Увеличить"><i class="bi bi-zoom-in"></i></button>
+      <button type="button" data-zoom="out" title="Уменьшить"><i class="bi bi-zoom-out"></i></button>
+      <button type="button" data-zoom="reset" title="Сбросить"><i class="bi bi-arrows-angle-contract"></i></button>
+      <button type="button" data-download title="Скачать"><i class="bi bi-download"></i></button>
+      <button type="button" data-viewer-close title="Закрыть"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <button type="button" class="cm-photo-viewer__nav cm-photo-viewer__nav--prev" data-nav="-1" aria-label="Предыдущее">&lsaquo;</button>
+    <img alt="" data-viewer-img>
+    <button type="button" class="cm-photo-viewer__nav cm-photo-viewer__nav--next" data-nav="1" aria-label="Следующее">&rsaquo;</button>
+  </div>
+  <script src="{% static 'js/admin_photo_gallery.js' %}?v=1"></script>
 {% endblock %}

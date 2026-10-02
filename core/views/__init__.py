@@ -22,6 +22,7 @@ from .admin_views import (  # noqa: F401
     add_cash_income,
     cash_wallet_reset,
     company_dashboard,
+    download_container_photos_zip,
     expense_analytics,
     get_container_photos_json,
     personal_card_add,

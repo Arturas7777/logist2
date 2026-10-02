@@ -1,14 +1,19 @@
 """Staff-only admin views: dashboards, payments, photos, GDrive sync, personal cards."""
 
+import json
 import logging
+import os
+import tempfile
+import zipfile
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import admin, messages
 from django.contrib.admin.views.decorators import staff_member_required
-from django.http import JsonResponse
+from django.http import FileResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_POST
 
 from core.models import Company, Container
 from core.models_billing import (
@@ -53,8 +58,17 @@ def get_container_photos_json(request, container_id):
     try:
         container = Container.objects.get(id=container_id)
 
+        type_order = {"UNLOADING": 0, "GENERAL": 1, "IN_CONTAINER": 2}
+        photo_rows = list(container.photos.only("id", "photo", "thumbnail", "photo_type").all())
+        photo_rows.sort(
+            key=lambda photo: (
+                type_order.get(photo.photo_type or "GENERAL", 1),
+                photo.photo.name if photo.photo else "",
+            )
+        )
+
         photos_data = []
-        for photo in container.photos.only("id", "photo", "thumbnail", "photo_type").all():
+        for photo in photo_rows:
             photo_url = photo.photo.url if photo.photo else ""
             if photo_url and not photo_url.startswith("/media/") and not photo_url.startswith("http"):
                 photo_url = "/media/" + photo_url.lstrip("/")
@@ -84,6 +98,52 @@ def get_container_photos_json(request, container_id):
     except Exception as e:
         logger.error("Error in get_container_photos_json: %s", e, exc_info=True)
         return JsonResponse({"success": False, "error": "Внутренняя ошибка сервера"}, status=500)
+
+
+@staff_member_required
+@require_POST
+def download_container_photos_zip(request, container_id):
+    """ZIP выбранных фото контейнера для галереи в админке.
+
+    В архив попадают только фото этого контейнера, в том числе непубличные.
+    """
+    container = get_object_or_404(Container, pk=container_id)
+    try:
+        payload = json.loads(request.body.decode() or "{}")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"success": False, "error": "Некорректный запрос"}, status=400)
+
+    raw_ids = payload.get("photo_ids") or []
+    photo_ids = []
+    for raw in raw_ids:
+        try:
+            photo_ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    if not photo_ids:
+        return JsonResponse({"success": False, "error": "Не выбраны фотографии"}, status=400)
+
+    from core.models_website import ContainerPhoto
+
+    photos = ContainerPhoto.objects.filter(container=container, id__in=photo_ids)
+    if not photos.exists():
+        return JsonResponse({"success": False, "error": "Фотографии не найдены"}, status=404)
+
+    zip_buffer = tempfile.SpooledTemporaryFile(max_size=16 * 1024 * 1024)
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        for photo in photos:
+            if not photo.photo:
+                continue
+            try:
+                path = photo.photo.path
+            except (NotImplementedError, ValueError, OSError):
+                continue
+            if path and os.path.exists(path):
+                zip_file.write(path, f"{container.number}_{photo.filename}")
+    zip_buffer.seek(0)
+    response = FileResponse(zip_buffer, content_type="application/zip")
+    response["Content-Disposition"] = f'attachment; filename="container_photos_{container.number}.zip"'
+    return response
 
 
 @staff_member_required
