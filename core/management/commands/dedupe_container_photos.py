@@ -48,14 +48,18 @@ class Command(BaseCommand):
         per_container = {}
         for group in groups:
             photos = list(
-                ContainerPhoto.objects.filter(
-                    container_id=group["container_id"], description=group["description"]
-                ).select_related("container").order_by("id")
+                ContainerPhoto.objects.filter(container_id=group["container_id"], description=group["description"])
+                .select_related("container")
+                .order_by("id")
             )
             keep, rest = photos[0], photos[1:]
             keep_hash = _file_md5(keep.photo)
             for photo in rest:
-                if keep_hash is not None and photo.photo.name != keep.photo.name and _file_md5(photo.photo) == keep_hash:
+                if (
+                    keep_hash is not None
+                    and photo.photo.name != keep.photo.name
+                    and _file_md5(photo.photo) == keep_hash
+                ):
                     to_delete.append((keep, photo))
                     number = photo.container.number
                     per_container[number] = per_container.get(number, 0) + 1
@@ -67,14 +71,18 @@ class Command(BaseCommand):
             self.stdout.write(f"  {number}: {count}")
         if skipped:
             self.stdout.write(
-                self.style.WARNING(f"Пропущено (другое содержимое или нет файла): {len(skipped)} — ids {[p.id for p in skipped][:20]}")
+                self.style.WARNING(
+                    f"Пропущено (другое содержимое или нет файла): {len(skipped)} — ids {[p.id for p in skipped][:20]}"
+                )
             )
 
         if not delete_mode:
             self.stdout.write(self.style.HTTP_INFO("Для удаления запустите с флагом --delete"))
             return
 
-        referenced = set(ContainerPhoto.objects.exclude(pk__in=[p.pk for _k, p in to_delete]).values_list("photo", flat=True))
+        referenced = set(
+            ContainerPhoto.objects.exclude(pk__in=[p.pk for _k, p in to_delete]).values_list("photo", flat=True)
+        )
         referenced |= set(
             ContainerPhoto.objects.exclude(pk__in=[p.pk for _k, p in to_delete]).values_list("thumbnail", flat=True)
         )

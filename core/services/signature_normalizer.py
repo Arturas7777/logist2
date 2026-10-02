@@ -254,9 +254,7 @@ def _sample_points(pts: list[tuple[int, int]], limit: int = 80) -> list[tuple[in
     return pts[::step][:limit]
 
 
-def _nearest_pair(
-    a: list[tuple[int, int]], b: list[tuple[int, int]]
-) -> tuple[float, tuple[int, int], tuple[int, int]]:
+def _nearest_pair(a: list[tuple[int, int]], b: list[tuple[int, int]]) -> tuple[float, tuple[int, int], tuple[int, int]]:
     best = (1e9, a[0], b[0])
     for x1, y1 in a:
         for x2, y2 in b:

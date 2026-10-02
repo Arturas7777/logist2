@@ -103,7 +103,10 @@ def _get_maersk_token() -> tuple[str | None, str]:
         timeout=REQUEST_TIMEOUT,
     )
     if resp.status_code in (400, 401, 403):
-        return None, f"Maersk отклонил учётные данные (HTTP {resp.status_code}) — проверьте Consumer Key / Client Secret"
+        return (
+            None,
+            f"Maersk отклонил учётные данные (HTTP {resp.status_code}) — проверьте Consumer Key / Client Secret",
+        )
     resp.raise_for_status()
     data = resp.json()
     token = data.get("access_token")

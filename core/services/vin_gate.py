@@ -167,8 +167,7 @@ def vehicle_type_from_nhtsa(vehicle_type: str = "", body_class: str = "") -> str
     body = (body_class or "").strip().lower()
     blob = f"{vt} {body}"
     if any(
-        token in blob
-        for token in ("atv", "all terrain", "all-terrain", "utv", "side by side", "quadricycle", "buggy")
+        token in blob for token in ("atv", "all terrain", "all-terrain", "utv", "side by side", "quadricycle", "buggy")
     ):
         return "ATV"
     if "off road vehicle" in vt or "off-road vehicle" in vt:

@@ -1491,7 +1491,8 @@ def test_generate_all_id_card_fills_name_ru(transport_request, car, settings, tm
     """С ID-карты ФИО кириллицей не нужно вводить — достаточно адреса и инвойса."""
     from PIL import Image
 
-    from core.services import passport_extractor, transport_package_actions as actions
+    from core.services import passport_extractor
+    from core.services import transport_package_actions as actions
 
     settings.MEDIA_ROOT = str(tmp_path)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")

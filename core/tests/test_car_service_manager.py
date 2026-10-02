@@ -229,8 +229,8 @@ class EnsureThsForTransferredCarTest(TestCase):
         )
 
     def test_creates_warehouse_ths_when_missing(self):
-        from core.services.car_service_manager import ensure_ths_and_tariffs_for_car
         from core.service_codes import is_ths_service
+        from core.services.car_service_manager import ensure_ths_and_tariffs_for_car
 
         self.assertFalse(any(is_ths_service(cs) for cs in self.car.car_services.all()))
 

@@ -254,9 +254,7 @@ def test_generated_document_cannot_be_retyped(transport_request, car, settings, 
         bulk.retype_document(doc, "OTHER")
 
 
-def test_client_bulk_upload_view_queues_split(
-    logged_client, transport_request, car, settings, tmp_path, fake_ai
-):
+def test_client_bulk_upload_view_queues_split(logged_client, transport_request, car, settings, tmp_path, fake_ai):
     settings.MEDIA_ROOT = str(tmp_path)
     fake_ai([("PASSPORT", "high"), ("INVOICE", "high")])
 

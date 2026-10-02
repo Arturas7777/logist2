@@ -77,12 +77,20 @@ def _register_fonts() -> dict[str, str]:
             if name not in pdfmetrics.getRegisteredFontNames():
                 pdfmetrics.registerFont(TTFont(name, str(path)))
         return {
-            "light": "Fallback", "regular": "Fallback", "medium": "Fallback",
-            "semibold": "Fallback-Bold", "bold": "Fallback-Bold", "xbold": "Fallback-Bold",
+            "light": "Fallback",
+            "regular": "Fallback",
+            "medium": "Fallback",
+            "semibold": "Fallback-Bold",
+            "bold": "Fallback-Bold",
+            "xbold": "Fallback-Bold",
         }
     return {
-        "light": "Helvetica", "regular": "Helvetica", "medium": "Helvetica",
-        "semibold": "Helvetica-Bold", "bold": "Helvetica-Bold", "xbold": "Helvetica-Bold",
+        "light": "Helvetica",
+        "regular": "Helvetica",
+        "medium": "Helvetica",
+        "semibold": "Helvetica-Bold",
+        "bold": "Helvetica-Bold",
+        "xbold": "Helvetica-Bold",
     }
 
 
@@ -96,6 +104,7 @@ F_XBOLD = FONTS["xbold"]
 
 
 # ---------------------------------------------------------------- примитивы
+
 
 def rrect_path(c: canvas.Canvas, x, y, w, h, r):
     r = min(r, w / 2, h / 2)
@@ -203,8 +212,9 @@ def card(c, x, y, w, h, radius=3 * mm, fill=white, border=HAIRLINE, shadow=True)
         c.setFillColor(black)
         for i in range(4):
             c.setFillAlpha(0.030 - i * 0.006)
-            c.drawPath(rrect_path(c, x - i * 0.4, y - 0.9 * mm - i * 0.4, w + 0.8 * i, h + 0.8 * i, radius),
-                       stroke=0, fill=1)
+            c.drawPath(
+                rrect_path(c, x - i * 0.4, y - 0.9 * mm - i * 0.4, w + 0.8 * i, h + 0.8 * i, radius), stroke=0, fill=1
+            )
         c.restoreState()
     c.saveState()
     c.setFillColor(fill)
@@ -225,8 +235,14 @@ def logo(c, x, y, size, on_dark=False):
     """Надпись CAROMOTO с брендовыми «O» и подписью LITHUANIA."""
     base = white if on_dark else INK
     letters = [
-        ("C", base), ("A", base), ("R", base), ("O", GREEN),
-        ("M", base), ("O", YELLOW), ("T", base), ("O", RED),
+        ("C", base),
+        ("A", base),
+        ("R", base),
+        ("O", GREEN),
+        ("M", base),
+        ("O", YELLOW),
+        ("T", base),
+        ("O", RED),
     ]
     tracking = size * 0.02
     cx = x
@@ -235,12 +251,19 @@ def logo(c, x, y, size, on_dark=False):
         cx += pdfmetrics.stringWidth(ch, F_XBOLD, size) + tracking
     sub_size = size * 0.30
     text(
-        c, x + 0.3, y - size * 0.44, "LITHUANIA", F_MED, sub_size,
-        Color(1, 1, 1, 0.62) if on_dark else MUTED, tracking=sub_size * 0.52,
+        c,
+        x + 0.3,
+        y - size * 0.44,
+        "LITHUANIA",
+        F_MED,
+        sub_size,
+        Color(1, 1, 1, 0.62) if on_dark else MUTED,
+        tracking=sub_size * 0.52,
     )
 
 
 # ---------------------------------------------------------------- иконки
+
 
 def _icon_setup(c, color, s, weight=0.085):
     c.setStrokeColor(color)
@@ -343,8 +366,7 @@ def icon_headset(c, cx, cy, s, color):
     p.arcTo(cx - 0.34 * s, cy - 0.36 * s, cx + 0.34 * s, cy + 0.32 * s, startAng=180, extent=-180)
     c.drawPath(p, stroke=1, fill=0)
     for dx in (-0.34, 0.34):
-        c.drawPath(rrect_path(c, cx + dx * s - 0.08 * s, cy - 0.32 * s, 0.16 * s, 0.32 * s, 0.07 * s),
-                   stroke=1, fill=0)
+        c.drawPath(rrect_path(c, cx + dx * s - 0.08 * s, cy - 0.32 * s, 0.16 * s, 0.32 * s, 0.07 * s), stroke=1, fill=0)
     p = c.beginPath()
     p.moveTo(cx + 0.34 * s, cy - 0.32 * s)
     p.lineTo(cx + 0.34 * s, cy - 0.42 * s)
@@ -470,26 +492,37 @@ STATS = [
 ]
 # короткая версия — в узкой карточке наверху, полная — в сносках тарифного блока
 MAERSK_NOTE_SHORT = "* Для автомобилей, доставленных MAERSK, действует отдельный тариф."
-MAERSK_NOTE = ("* Для автомобилей, доставленных MAERSK, действует отдельный тариф — "
-               "уточняйте у менеджера.")
+MAERSK_NOTE = "* Для автомобилей, доставленных MAERSK, действует отдельный тариф — уточняйте у менеджера."
 
 ADVANTAGES = [
-    (icon_bell, "Вы узнаёте о выгрузке первым",
-     "Плановая и фактическая дата выгрузки — в Telegram и на e-mail, без звонков."),
-    (icon_truck, "Забор из порта за 1–2 дня",
-     "Забираем сразу после прибытия: без демереджа и простоя в порту."),
-    (icon_calendar, "7 дней бесплатного хранения авто",
-     "Неделя стоянки на складе без оплаты — спокойно оформляете документы и находите перевозчика."),
-    (icon_camera, "Фото и видео всей выгрузки",
-     "Состояние авто зафиксировано на момент выхода из контейнера — споров нет."),
-    (icon_monitor, "Личный кабинет 24/7",
-     "Ближайшие прибытия, статусы, фотоотчёты и заявка на вывоз авто — онлайн."),
-    (icon_doc, "Документы для декларации",
-     "Пакет генерируется прямо в личном кабинете — поможем с подготовкой всех необходимых бумаг."),
-    (icon_clock, "Быстрое оформление деклараций",
-     "Транзитные и экспортные декларации делаем быстро — авто не ждёт бумаг."),
-    (icon_headset, "Персональный менеджер",
-     "Поможем решить любые вопросы: ключи, тайтлы, повреждения при перевозке."),
+    (
+        icon_bell,
+        "Вы узнаёте о выгрузке первым",
+        "Плановая и фактическая дата выгрузки — в Telegram и на e-mail, без звонков.",
+    ),
+    (icon_truck, "Забор из порта за 1–2 дня", "Забираем сразу после прибытия: без демереджа и простоя в порту."),
+    (
+        icon_calendar,
+        "7 дней бесплатного хранения авто",
+        "Неделя стоянки на складе без оплаты — спокойно оформляете документы и находите перевозчика.",
+    ),
+    (
+        icon_camera,
+        "Фото и видео всей выгрузки",
+        "Состояние авто зафиксировано на момент выхода из контейнера — споров нет.",
+    ),
+    (icon_monitor, "Личный кабинет 24/7", "Ближайшие прибытия, статусы, фотоотчёты и заявка на вывоз авто — онлайн."),
+    (
+        icon_doc,
+        "Документы для декларации",
+        "Пакет генерируется прямо в личном кабинете — поможем с подготовкой всех необходимых бумаг.",
+    ),
+    (
+        icon_clock,
+        "Быстрое оформление деклараций",
+        "Транзитные и экспортные декларации делаем быстро — авто не ждёт бумаг.",
+    ),
+    (icon_headset, "Персональный менеджер", "Поможем решить любые вопросы: ключи, тайтлы, повреждения при перевозке."),
 ]
 
 TIMELINE = [
@@ -610,8 +643,7 @@ def draw_price_card(c, x, cy, w):
         w_from = str_w("от", F_MED, 8)
         w_num = str_w(value, F_XBOLD, 20)
         w_eur = str_w("€", F_SEMI, 9.5)
-        sx = rx - (w_from + 1.2 * mm + w_num + 1.2 * mm + w_eur + 0.5 * mm
-                   + str_w("*", F_BOLD, 8))
+        sx = rx - (w_from + 1.2 * mm + w_num + 1.2 * mm + w_eur + 0.5 * mm + str_w("*", F_BOLD, 8))
         text(c, sx, base, "от", F_MED, 8, MUTED)
         sx += w_from + 1.2 * mm
         text(c, sx, base, value, F_XBOLD, 20, INK)
@@ -707,8 +739,9 @@ def draw_price(c):
         w_from = str_w("от", F_LIGHT, 7.6)
         w_num = str_w(price, F_XBOLD, 14)
         w_eur = str_w("€", F_BOLD, 9.5)
-        px = lx + chip_w - 4.5 * mm - (w_from + 1.5 * mm + w_num + 1.2 * mm + w_eur
-                                       + 0.5 * mm + str_w("*", F_BOLD, 7.5))
+        px = (
+            lx + chip_w - 4.5 * mm - (w_from + 1.5 * mm + w_num + 1.2 * mm + w_eur + 0.5 * mm + str_w("*", F_BOLD, 7.5))
+        )
         text(c, px, base, "от", F_LIGHT, 7.6, Color(1, 1, 1, 0.6))
         px += w_from + 1.5 * mm
         text(c, px, base, price, F_XBOLD, 14, white)

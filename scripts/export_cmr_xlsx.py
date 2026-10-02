@@ -343,9 +343,7 @@ def build(geom: dict) -> Workbook:
                 put(r, line - 1, "right", w)
 
     for (row, col), box in edges.items():
-        ws.cell(row + 1, col + 1).border = Border(
-            **{side: Side(style=style) for side, style in box.items()}
-        )
+        ws.cell(row + 1, col + 1).border = Border(**{side: Side(style=style) for side, style in box.items()})
 
     # --- подписи ----------------------------------------------------------
     cells: dict[tuple[int, int], dict] = {}
@@ -374,20 +372,14 @@ def build(geom: dict) -> Workbook:
                 spans.append((row, last, col))
         else:
             row = row_of(ys, t["y"])
-        box = cells.setdefault(
-            (row, col), {"lines": [], "pt": 0.0, "b": 0, "al": align, "xs": [], "w": 0.0}
-        )
+        box = cells.setdefault((row, col), {"lines": [], "pt": 0.0, "b": 0, "al": align, "xs": [], "w": 0.0})
         box["lines"].append(t["t"])
         box["pt"] = max(box["pt"], t["pt"])
         box["b"] = max(box["b"], t["b"])
         box["xs"].append(t["x"])
         box["w"] = max(box["w"], t["w"])
 
-    collisions = [
-        (r, c, box["lines"])
-        for (r, c), box in cells.items()
-        if max(box["xs"]) - min(box["xs"]) > 0.6
-    ]
+    collisions = [(r, c, box["lines"]) for (r, c), box in cells.items() if max(box["xs"]) - min(box["xs"]) > 0.6]
     if collisions:
         print(f"warning: {len(collisions)} cells mix texts from different columns:")
         for r, c, lines in collisions:
@@ -413,9 +405,7 @@ def build(geom: dict) -> Workbook:
         # По верху, а не по центру: последняя текстовая строка блока попадает в
         # полосу, растянутую до следующей линии бланка, и центрирование уронило бы
         # подпись на несколько миллиметров вниз.
-        cell.alignment = Alignment(
-            horizontal=box["al"], vertical="top", wrap_text=len(box["lines"]) > 1
-        )
+        cell.alignment = Alignment(horizontal=box["al"], vertical="top", wrap_text=len(box["lines"]) > 1)
 
     for r0, r1, col in spans:
         if any((r, col) in cells for r in range(r0 + 1, r1 + 1)):
@@ -439,9 +429,7 @@ def build(geom: dict) -> Workbook:
                 horizontal={"center": "center", "right": "right"}.get(f["al"], "left"),
                 vertical="center",
             )
-        fields.append(
-            [f["name"], f"{get_column_letter(col + 1)}{row + 1}", "много" if f["multi"] else ""]
-        )
+        fields.append([f["name"], f"{get_column_letter(col + 1)}{row + 1}", "много" if f["multi"] else ""])
     fields.column_dimensions["A"].width = 26
     fields.column_dimensions["B"].width = 10
     fields.column_dimensions["C"].width = 8
@@ -476,9 +464,12 @@ def build(geom: dict) -> Workbook:
     ws.page_setup.orientation = "portrait"
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_margins = PageMargins(
-        left=(210 - geom["w"]) / 2 / 25.4, right=(210 - geom["w"]) / 2 / 25.4,
-        top=(297 - geom["h"]) / 2 / 25.4, bottom=(297 - geom["h"]) / 2 / 25.4,
-        header=0, footer=0,
+        left=(210 - geom["w"]) / 2 / 25.4,
+        right=(210 - geom["w"]) / 2 / 25.4,
+        top=(297 - geom["h"]) / 2 / 25.4,
+        bottom=(297 - geom["h"]) / 2 / 25.4,
+        header=0,
+        footer=0,
     )
     ws.print_area = f"A1:{get_column_letter(ncol)}{nrow}"
     print(f"grid: {ncol} columns x {nrow} rows, frame {geom['w']:.1f} x {geom['h']:.1f} mm")
@@ -487,8 +478,10 @@ def build(geom: dict) -> Workbook:
 
 def main() -> None:
     geom = measure()
-    print(f"lines: {len(geom['hl'])} horizontal, {len(geom['vl'])} vertical; "
-          f"texts: {len(geom['texts'])}, fields: {len(geom['fields'])}")
+    print(
+        f"lines: {len(geom['hl'])} horizontal, {len(geom['vl'])} vertical; "
+        f"texts: {len(geom['texts'])}, fields: {len(geom['fields'])}"
+    )
     build(geom).save(XLSX)
     print(f"xlsx -> {XLSX}")
 

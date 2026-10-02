@@ -448,6 +448,6 @@ class AgentInboxWatch(models.Model):
         super().save(*args, **kwargs)
 
     @classmethod
-    def load(cls) -> "AgentInboxWatch":
+    def load(cls) -> AgentInboxWatch:
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj

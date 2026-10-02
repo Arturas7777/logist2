@@ -200,8 +200,7 @@ def _check_collectible(age: int | None) -> CheckResult:
     if age is not None and age < COLLECTIBLE_AGE_YEARS:
         result.verdict = NEED_DATA
         result.reasons.append(
-            f"Для позиции 9705 нужен возраст от {COLLECTIBLE_AGE_YEARS} лет, "
-            f"а по году выпуска получается {age}."
+            f"Для позиции 9705 нужен возраст от {COLLECTIBLE_AGE_YEARS} лет, а по году выпуска получается {age}."
         )
         result.missing.append("Подтверждение возраста от 30 лет")
         return result

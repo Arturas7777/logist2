@@ -152,7 +152,7 @@ def generate_bank_stamp_png(
 
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    ink = _INK + (255,)
+    ink = (*_INK, 255)
 
     # Резиновый штамп: линии заметно толще «волоска» (иначе выглядит как вектор).
     line_w = max(3, scale + 1)  # scale=2 → 3 px на холсте
@@ -353,7 +353,7 @@ def _generate_operator_signature_png(index: int) -> bytes:
         p2 = (cursor[0] + dx * 0.7, cursor[1] + down)
         end = (cursor[0] + dx, base_y + rng.uniform(-12, 12) + math.sin(index + s) * 6)
         pts = _cubic_bezier(cursor, p1, p2, end, steps=28)
-        draw.line(pts, fill=_INK + (250,), width=width, joint="curve")
+        draw.line(pts, fill=(*_INK, 250), width=width, joint="curve")
         cursor = end
 
     # Завиток в конце (как росчерк фамилии).
@@ -366,13 +366,13 @@ def _generate_operator_signature_png(index: int) -> bytes:
             (cx + rng.uniform(15, 40), cy + rng.uniform(15, 40)),
             steps=24,
         )
-        draw.line(flourish, fill=_INK + (240,), width=max(2, width - 1), joint="curve")
+        draw.line(flourish, fill=(*_INK, 240), width=max(2, width - 1), joint="curve")
 
     # Короткий начальный штрих / точка у части подписей.
     if index % 2 == 0:
         draw.ellipse(
             [start_x - 3, base_y - 18, start_x + 5, base_y - 10],
-            fill=_INK + (230,),
+            fill=(*_INK, 230),
         )
 
     # Подчёркивание.
@@ -385,7 +385,7 @@ def _generate_operator_signature_png(index: int) -> bytes:
             (min(w - 30, cursor[0] + 20), y_line + rng.uniform(-3, 5)),
             steps=16,
         )
-        draw.line(underline, fill=_INK + (200,), width=2, joint="curve")
+        draw.line(underline, fill=(*_INK, 200), width=2, joint="curve")
 
     img = _recolor_ink(img, solid=100)
     cropped = _crop_alpha(img, pad=6)

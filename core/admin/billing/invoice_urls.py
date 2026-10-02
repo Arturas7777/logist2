@@ -67,9 +67,7 @@ class NewInvoiceUrlsMixin:
         # TRANSFERRED не скрываем: инвойсы часто оформляют постфактум,
         # когда машины уже переданы. Активные (не переданные) всё равно
         # выше в выдаче, чтобы повседневный поиск не утопал в истории.
-        qs = Car.objects.select_related("client").only(
-            "id", "vin", "brand", "year", "status", "client__name"
-        )
+        qs = Car.objects.select_related("client").only("id", "vin", "brand", "year", "status", "client__name")
         if term:
             qs = qs.filter(Q(vin__icontains=term) | Q(brand__icontains=term) | Q(client__name__icontains=term))
         qs = qs.annotate(

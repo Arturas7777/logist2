@@ -43,6 +43,7 @@ def _safe_year(value):
     except (TypeError, ValueError):
         return None
 
+
 # Кэш списка файлов car_models. Раньше `find_car_image` делал os.listdir на
 # каждый просмотр карточки — при 200+ иконок и 10 операторах это десятки
 # системных вызовов в секунду. Кэшируем при первом обращении и
@@ -228,7 +229,7 @@ def find_car_image(year, brand):
         return None
 
     class _IconRec:
-        __slots__ = ("brand", "year", "fname")
+        __slots__ = ("brand", "fname", "year")
 
         def __init__(self, rec_brand, rec_year, fname):
             self.brand = rec_brand
@@ -642,9 +643,7 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
                     "make": check.nhtsa_make if check else "",
                     "model": check.nhtsa_model if check else "",
                     "year": check.nhtsa_year if check else None,
-                    "vehicle_type": (
-                        vehicle_type_from_nhtsa(check.nhtsa_vehicle_type) if check else None
-                    ),
+                    "vehicle_type": (vehicle_type_from_nhtsa(check.nhtsa_vehicle_type) if check else None),
                 },
                 "issues": [
                     {

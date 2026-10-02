@@ -241,8 +241,7 @@ def _classify_pages(images: list[tuple[str, str]]) -> list[str]:
     for start in range(0, len(images), PAGES_PER_CALL):
         chunk = images[start : start + PAGES_PER_CALL]
         user_text = (
-            f"Определи тип каждой из {len(chunk)} страниц. "
-            f"Нумеруй их с 1 в том порядке, в котором они показаны."
+            f"Определи тип каждой из {len(chunk)} страниц. Нумеруй их с 1 в том порядке, в котором они показаны."
         )
         data = _call_claude_vision(chunk, CLASSIFY_PROMPT, user_text)
         types.extend(_read_chunk_answer(data, len(chunk)))
@@ -350,9 +349,7 @@ def _autofill_from_passport(upload: TransportBulkUpload) -> None:
     """
     from core.services.transport_package_actions import apply_passport_ai
 
-    passport = (
-        upload.request.documents.filter(car=upload.car, doc_type="PASSPORT").order_by("-created_at").first()
-    )
+    passport = upload.request.documents.filter(car=upload.car, doc_type="PASSPORT").order_by("-created_at").first()
     if passport is None:
         return
     package, _ = TransportDocumentPackage.objects.get_or_create(request=upload.request, car=upload.car)

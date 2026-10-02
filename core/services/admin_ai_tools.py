@@ -116,8 +116,7 @@ TOOL_SPECS: list[dict] = [
     {
         "name": "diagnose_object",
         "description": (
-            "Проверка типичных проблем карточки. "
-            "model_name: car / container / newinvoice. Нужен object_id."
+            "Проверка типичных проблем карточки. model_name: car / container / newinvoice. Нужен object_id."
         ),
         "input_schema": {
             "type": "object",
@@ -140,8 +139,7 @@ TOOL_SPECS: list[dict] = [
     {
         "name": "create_task",
         "description": (
-            "Создать дело в разделе «Дела». Вызывай только если сотрудник явно просит "
-            "создать задачу/напоминание."
+            "Создать дело в разделе «Дела». Вызывай только если сотрудник явно просит создать задачу/напоминание."
         ),
         "input_schema": {
             "type": "object",
@@ -303,7 +301,13 @@ def _tool_get_container(args: dict) -> dict:
     if obj is None:
         return {"error": "Контейнер не найден"}
     cars = [
-        {"id": car.pk, "vin": car.vin, "brand": car.brand, "status": car.get_status_display(), "client": str(car.client or "")}
+        {
+            "id": car.pk,
+            "vin": car.vin,
+            "brand": car.brand,
+            "status": car.get_status_display(),
+            "client": str(car.client or ""),
+        }
         for car in obj.container_cars.select_related("client").all()[:12]
     ]
     issues = _diagnose_container(obj)
@@ -327,7 +331,11 @@ def _tool_get_car(args: dict) -> dict:
 
     obj = None
     if args.get("car_id"):
-        obj = Car.objects.select_related("container", "warehouse", "line", "carrier", "client").filter(pk=args["car_id"]).first()
+        obj = (
+            Car.objects.select_related("container", "warehouse", "line", "carrier", "client")
+            .filter(pk=args["car_id"])
+            .first()
+        )
     if obj is None and args.get("vin"):
         obj = (
             Car.objects.select_related("container", "warehouse", "line", "carrier", "client")
@@ -419,7 +427,11 @@ def _tool_get_invoice(args: dict) -> dict:
 def _tool_list_open_tasks(args: dict) -> list[dict]:
     from core.models import Task
 
-    rows = Task.objects.filter(is_completed=False).select_related("car", "container").order_by("-priority", "deadline")[:20]
+    rows = (
+        Task.objects.filter(is_completed=False)
+        .select_related("car", "container")
+        .order_by("-priority", "deadline")[:20]
+    )
     return [
         {
             "id": task.pk,
@@ -444,9 +456,11 @@ def _tool_get_today_overview(args: dict) -> dict:
     today = timezone.localdate()
     overdue = Task.objects.filter(is_completed=False, deadline__date__lt=today).count()
     open_tasks = Task.objects.filter(is_completed=False).count()
-    need_reply = ContainerEmail.objects.filter(needs_reply=True).filter(
-        Q(hidden_reason__isnull=True) | Q(hidden_reason="")
-    ).order_by("-received_at")[:8]
+    need_reply = (
+        ContainerEmail.objects.filter(needs_reply=True)
+        .filter(Q(hidden_reason__isnull=True) | Q(hidden_reason=""))
+        .order_by("-received_at")[:8]
+    )
     arriving = Container.objects.filter(eta__gte=today, status="FLOATING").order_by("eta")[:8]
     return {
         "open_tasks": open_tasks,
@@ -454,9 +468,7 @@ def _tool_get_today_overview(args: dict) -> dict:
         "emails_need_reply": [
             {"id": e.pk, "subject": (e.subject or "")[:160], "from": (e.from_addr or "")[:120]} for e in need_reply
         ],
-        "arriving_containers": [
-            {"id": c.pk, "number": c.number, "eta": str(c.eta or "")} for c in arriving
-        ],
+        "arriving_containers": [{"id": c.pk, "number": c.number, "eta": str(c.eta or "")} for c in arriving],
         "tasks_board_url": "/admin/tasks-board/",
     }
 

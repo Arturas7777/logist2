@@ -261,15 +261,17 @@ def test_ruled_lines_are_elements_and_match_blank(staff_client, transport_reques
 def test_blank_has_exactly_three_line_weights(staff_client, transport_request, car, company):
     """В бланке ровно три толщины линий: фоновая, базовая и жирная.
 
-    Экранные значения целочисленные, печатные — точные по эталону; при 96 dpi
-    точные схлопнулись бы в один пиксель, и градаций осталось бы две.
+    И экранные, и печатные значения — целые px: дробные (pt/мм) браузер
+    округляет до пикселя при отрисовке рамки, но смещения в calc() считает
+    по дробному значению, и накладки контура уезжают на разницу толщин.
     """
     url = reverse("admin_request_cmr_editor", args=[transport_request.pk, car.pk])
     body = staff_client.get(url).content.decode()
     weights = {"rule", "base", "bold"}
-    # Любая другая переменная в px или pt — забытая четвёртая градация.
+    # Любая другая переменная в px — забытая четвёртая градация.
     assert set(re.findall(r"--([a-z-]+): \d+px;", body)) == weights
-    assert set(re.findall(r"--([a-z-]+): [\d.]+pt;", body)) == weights
+    # Толщины в pt/мм запрещены: см. docstring.
+    assert not re.findall(r"--(?:rule|base|bold): [\d.]+(?:pt|mm);", body)
     assert set(re.findall(r"var\(--(rule|base|bold)\)", body)) == weights
 
 

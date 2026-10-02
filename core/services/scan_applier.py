@@ -969,8 +969,7 @@ def evaluate_auto_apply(job: ScanProcessingJob) -> tuple[bool, str]:
                 return False, f"новая машина {vin}: уверенность {level or 'нет данных'} (нужна high)"
         skipped_note = f", без VIN пропущено: {skipped_invalid}" if skipped_invalid else ""
         return True, (
-            f"все {len(valid_vehicles)} VIN уверенно распознаны, "
-            f"контейнер {target.number} из контекста{skipped_note}"
+            f"все {len(valid_vehicles)} VIN уверенно распознаны, контейнер {target.number} из контекста{skipped_note}"
         )
 
     return False, f"неизвестный scan_type {job.scan_type}"

@@ -282,11 +282,7 @@ def process_extracted_vin(
     second_normalized = ""
     if second_pass_vin:
         second_normalized, _ = normalize_vin(second_pass_vin)
-        if (
-            len(normalized) < 17
-            and len(second_normalized) == 17
-            and one_char_insertion(normalized, second_normalized)
-        ):
+        if len(normalized) < 17 and len(second_normalized) == 17 and one_char_insertion(normalized, second_normalized):
             final_vin = second_normalized
             was_corrected = True
             second_pass_agrees = True

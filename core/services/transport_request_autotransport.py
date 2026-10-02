@@ -227,7 +227,7 @@ def _delete_files(refs) -> None:
     for storage, name in refs:
         try:
             storage.delete(name)
-        except Exception:  # noqa: BLE001 — запись уже удалена, битый файл не должен ронять запрос
+        except Exception:
             logger.warning("[transport] не удалось удалить файл %s", name, exc_info=True)
 
 
