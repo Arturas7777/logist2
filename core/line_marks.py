@@ -5,7 +5,6 @@
 """
 
 from django.utils.html import format_html
-from django.utils.safestring import mark_safe
 
 # Более длинные ключи — раньше коротких, чтобы HAPPAG не стал HAP.
 _LINE_CODES = (
@@ -66,7 +65,7 @@ def line_mark_html(line) -> str:
 def container_number_html(container, *, link=False) -> str:
     """Номер контейнера со значком линии. ``link=True`` — ссылка в карточку."""
     if container is None:
-        return mark_safe("—")
+        return "—"
     mark = line_mark_html(getattr(container, "line", None))
     number = container.number or "—"
     if link and container.pk:

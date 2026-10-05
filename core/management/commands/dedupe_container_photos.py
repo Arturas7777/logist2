@@ -18,7 +18,7 @@ from core.models_website import ContainerPhoto
 def _file_md5(field):
     try:
         with field.storage.open(field.name, "rb") as fh:
-            return hashlib.md5(fh.read()).hexdigest()
+            return hashlib.md5(fh.read(), usedforsecurity=False).hexdigest()
     except OSError:
         return None
 
