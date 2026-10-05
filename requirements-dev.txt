@@ -39,6 +39,8 @@ cyclonedx-python-lib==11.10.0
     # via pip-audit
 defusedxml==0.7.1
     # via py-serializable
+et-xmlfile==2.0.0
+    # via openpyxl
 filelock==3.29.3
     # via cachecontrol
 freezegun==1.5.5
@@ -59,6 +61,8 @@ msgpack==1.2.1
     # via
     #   -c requirements.txt
     #   cachecontrol
+openpyxl==3.1.5
+    # via -r requirements-dev.in
 packageurl-python==0.17.6
     # via cyclonedx-python-lib
 packaging==25.0
@@ -142,7 +146,7 @@ tomli==2.4.1
     # via pip-audit
 tomli-w==1.2.0
     # via pip-audit
-urllib3==2.7.0
+urllib3==2.8.0
     # via
     #   -c requirements.txt
     #   requests

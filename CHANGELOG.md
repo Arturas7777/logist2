@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+### Fixed — Уязвимости зависимостей (2026-10-05)
+
+- Закрыты известные CVE в локе: Django 5.2.17, Django REST framework 3.18.1,
+  cryptography 50.0.2, autobahn 26.7.1, PyJWT 2.15.1, а также sqlparse, urllib3,
+  oauthlib, pyasn1, anyio и pyOpenSSL. `pip-audit` по `requirements.txt` чистый.
+
 ### Fixed — Клиентам только уведомления о разгрузке (2026-10-05)
 
 - На почту и в Telegram больше не уходят передача авто, фото, счета,
