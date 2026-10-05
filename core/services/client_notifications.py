@@ -1,7 +1,11 @@
 """Уведомления клиента о событиях кабинета (C5) и напоминания о просрочке (B8).
 
-Один конвейер для всех новых событий — email + Telegram, с дедупом через
-``NotificationLog`` и учётом подписок (``ClientUser.notification_prefs``):
+Клиенту на email и в Telegram уходят только планируемая разгрузка и разгрузка
+(``email_service`` / ``telegram_service``). ``dispatch`` ниже ничего не
+отправляет: передача авто, фото, счета, статус заявки и напоминания об оплате
+в эти каналы не попадают.
+
+Конвейер событий сохранён (сбор текста, подписки, дедуп), но рассылка выключена:
 
 * ``PHOTOS_READY``     — появились публичные фото контейнера / авто;
 * ``INVOICE_ISSUED``   — выставлен официальный счёт (PARDP) с PDF, если есть;
@@ -242,18 +246,17 @@ def _send_telegram(ev: ClientEvent) -> int:
 
 
 def dispatch(ev: ClientEvent) -> dict:
-    """Отправляет событие в оба канала. Исключения каналов не пробрасываются
-    выше уровня канала — падение Telegram не должно блокировать email и наоборот."""
-    result = {"email": 0, "telegram": 0}
-    try:
-        result["email"] = _send_email(ev)
-    except Exception:
-        logger.exception("[client_notifications] email %s для %s упал", ev.event, ev.client.name)
-    try:
-        result["telegram"] = _send_telegram(ev)
-    except Exception:
-        logger.exception("[client_notifications] telegram %s для %s упал", ev.event, ev.client.name)
-    return result
+    """Не отправляет событие клиенту.
+
+    Клиенту положены только уведомления о планируемой разгрузке и о разгрузке.
+    Их шлют сервисы контейнера и отдельного ТС, не этот конвейер.
+    """
+    logger.info(
+        "[client_notifications] %s для клиента %s не отправлено: клиентам только разгрузка",
+        ev.event,
+        getattr(ev.client, "name", ""),
+    )
+    return {"email": 0, "telegram": 0}
 
 
 def _tg_footer():
@@ -339,7 +342,11 @@ def _dispatch_photos_ready(*, client, container, car, cars, photos_count, galler
             "portal_url": link,
             "gallery_url": f"{_site_url()}/?track={gallery_number}&photos=1" if gallery_number and _site_url() else "",
         }
-        tg = [f"📷 <b>{html.escape(subject)}</b>", "", _("Здравствуйте, %(name)s!") % {"name": html.escape(client.name)}]
+        tg = [
+            f"📷 <b>{html.escape(subject)}</b>",
+            "",
+            _("Здравствуйте, %(name)s!") % {"name": html.escape(client.name)},
+        ]
         tg += ["", _("Доступно фотографий: %(count)s") % {"count": photos_count}]
         if cars:
             tg += ["", _("Ваши автомобили:"), _tg_cars(cars)]

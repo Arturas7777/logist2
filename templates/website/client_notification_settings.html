@@ -36,51 +36,14 @@
     <div class="row g-4">
         <div class="col-lg-8">
             <div class="card border-0 shadow-sm">
-                <div class="card-header bg-white">
-                    <h5 class="mb-0">{% trans "О каких событиях сообщать" %}</h5>
-                    <p class="text-muted small mb-0 mt-1">
-                        {% trans "Уведомления о планируемой и фактической разгрузке, а также сообщения менеджера по заявкам приходят всегда." %}
-                    </p>
+                <div class="card-body">
+                    <h5 class="mb-2">{% trans "Что приходит на почту и в Telegram" %}</h5>
+                    <p class="mb-2">{% trans "Только два уведомления:" %}</p>
+                    <ul class="mb-0">
+                        <li>{% trans "планируемая разгрузка;" %}</li>
+                        <li>{% trans "разгрузка." %}</li>
+                    </ul>
                 </div>
-                <form method="post">
-                    {% csrf_token %}
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0 align-middle notification-prefs">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>{% trans "Событие" %}</th>
-                                    <th class="text-center" style="width:110px;"><i class="bi bi-envelope"></i> Email</th>
-                                    <th class="text-center" style="width:110px;"><i class="bi bi-telegram"></i> Telegram</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for row in rows %}
-                                <tr>
-                                    <td>
-                                        <label for="{{ row.code }}__email" class="fw-semibold d-block">{{ row.label }}</label>
-                                        <span class="text-muted small">{{ row.help }}</span>
-                                    </td>
-                                    <td class="text-center">
-                                        <input type="checkbox" class="form-check-input" name="{{ row.code }}__email"
-                                               id="{{ row.code }}__email" {% if row.email %}checked{% endif %}
-                                               aria-label="{{ row.label }} — Email">
-                                    </td>
-                                    <td class="text-center">
-                                        <input type="checkbox" class="form-check-input" name="{{ row.code }}__telegram"
-                                               id="{{ row.code }}__telegram" {% if row.telegram %}checked{% endif %}
-                                               aria-label="{{ row.label }} — Telegram">
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="card-footer bg-white d-flex justify-content-end">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-check2"></i> {% trans "Сохранить" %}
-                        </button>
-                    </div>
-                </form>
             </div>
         </div>
 

@@ -135,7 +135,7 @@ def escalate_overdue_invoices(self):
                 f"Счёт: {invoice.number} от {invoice.date:%d.%m.%Y}, срок оплаты {invoice.due_date:%d.%m.%Y}\n"
                 f"Просрочка: {days_overdue} дн.\n"
                 f"Остаток к оплате: {remaining:.2f} EUR\n\n"
-                "Напоминания клиенту уже отправлены автоматически (email/Telegram). "
+                "Клиенту письма о просрочке не отправляются. "
                 "Нужно связаться с клиентом и договориться об оплате."
             ),
             priority="HIGH",

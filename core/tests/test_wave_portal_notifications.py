@@ -1,13 +1,9 @@
 """Уведомления клиента о событиях кабинета (C5) и напоминания о просрочке (B8).
 
-Проверяем:
-
-* каждое событие отправляется один раз (дедуп через ``NotificationLog``);
-* подписки ``ClientUser.notification_prefs`` уважаются;
-* сигналы ставят задачи (eager Celery + on_commit);
-* B8: напоминание за 3 дня, уведомление о просрочке, эскалация в ``Task``;
-* страница настроек уведомлений сохраняет prefs;
-* C2: ``CarStatusHistory`` пишется при смене статуса авто.
+Клиенту на email и в Telegram уходят только планируемая разгрузка и разгрузка.
+События кабинета (фото, счёт, статус заявки, передача авто, напоминания)
+письмо не создают. История статусов авто и дело менеджеру по долгой
+просрочке остаются.
 """
 
 from __future__ import annotations
@@ -63,15 +59,11 @@ def test_photos_ready_sent_once_per_container(owner, django_capture_on_commit_ca
             ContainerPhoto.objects.create(container=container, photo=_photo_upload(), is_public=True)
             ContainerPhoto.objects.create(container=container, photo=_photo_upload("q.jpg"), is_public=True)
 
-    assert len(mail.outbox) == 1
-    assert "PHOTOSRDY0001" in mail.outbox[0].subject
-    assert mail.outbox[0].to == ["notify@example.com"]
-    logs = NotificationLog.objects.filter(notification_type="PHOTOS_READY", container=container, success=True)
-    assert logs.count() == 1
+    assert mail.outbox == []
+    assert not NotificationLog.objects.filter(notification_type="PHOTOS_READY", container=container).exists()
 
-    # Повторный вызов — дедуп.
     cn.notify_photos_ready(container=container)
-    assert len(mail.outbox) == 1
+    assert mail.outbox == []
 
 
 def test_photos_ready_for_car_without_container(owner, django_capture_on_commit_callbacks):
@@ -79,8 +71,7 @@ def test_photos_ready_for_car_without_container(owner, django_capture_on_commit_
     with patch("core.services.photo_optimize.maybe_compress_image_field", return_value=False):
         with django_capture_on_commit_callbacks(execute=True):
             CarPhoto.objects.create(car=car, photo=_photo_upload(), is_public=True)
-    assert len(mail.outbox) == 1
-    assert "CARPHOTOVIN000001" in mail.outbox[0].subject
+    assert mail.outbox == []
 
 
 def test_private_photo_does_not_notify(owner, django_capture_on_commit_callbacks):
@@ -112,17 +103,9 @@ def test_notification_settings_page_saves_prefs(client, owner, portal_user):
     client.force_login(portal_user.user)
     url = reverse("website:notification_settings")
     html = client.get(url).content.decode()
-    assert "PHOTOS_READY__email" in html
-    assert "INVOICE_ISSUED__telegram" in html
-
-    response = client.post(url, {"PHOTOS_READY__email": "on", "INVOICE_ISSUED__telegram": "on"})
-    assert response.status_code == 302
-    portal_user.refresh_from_db()
-    assert portal_user.notification_prefs["PHOTOS_READY"] == {"email": True, "telegram": False}
-    assert portal_user.notification_prefs["INVOICE_ISSUED"] == {"email": False, "telegram": True}
-    assert portal_user.wants_notification("PHOTOS_READY", "telegram") is False
-    assert cn.client_wants(owner, "INVOICE_ISSUED", "EMAIL") is False
-    assert cn.client_wants(owner, "INVOICE_ISSUED", "TELEGRAM") is True
+    assert "планируемая разгрузка" in html
+    assert "PHOTOS_READY__email" not in html
+    assert "CAR_TRANSFERRED" not in html
 
 
 # ── Инвойс выставлен ────────────────────────────────────────────────────────
@@ -157,19 +140,15 @@ def test_invoice_issued_notifies_once_with_pdf(owner, django_capture_on_commit_c
             invoice.status = "ISSUED"
             invoice.save()
 
-    assert len(mail.outbox) == 1
-    message = mail.outbox[0]
-    assert invoice.number in message.subject
-    assert message.attachments and message.attachments[0][0] == f"{invoice.number}.pdf"
-    assert NotificationLog.objects.filter(notification_type="INVOICE_ISSUED", success=True).count() == 1
+    assert mail.outbox == []
+    assert not NotificationLog.objects.filter(notification_type="INVOICE_ISSUED").exists()
 
-    # Повторное сохранение уже выставленного — без письма.
     with patch("core.tasks.push_invoice_to_sitepro_task.delay"):
         with django_capture_on_commit_callbacks(execute=True):
             invoice.notes = "edit"
             invoice.save()
     cn.notify_invoice_issued(invoice)
-    assert len(mail.outbox) == 1
+    assert mail.outbox == []
 
 
 def test_proforma_issue_does_not_notify(owner, django_capture_on_commit_callbacks):
@@ -189,17 +168,14 @@ def test_request_status_change_notifies_once(owner, portal_user, django_capture_
     with django_capture_on_commit_callbacks(execute=True):
         tr.status = "ACCEPTED"
         tr.save()
-    assert len(mail.outbox) == 1
-    assert tr.number in mail.outbox[0].subject
-    assert "Принята" in mail.outbox[0].subject
+    assert mail.outbox == []
 
     with django_capture_on_commit_callbacks(execute=True):
         tr.staff_comment = "ok"
         tr.save()
-    assert len(mail.outbox) == 1
     cn.notify_request_status(tr)
-    assert len(mail.outbox) == 1
-    assert NotificationLog.objects.filter(notification_type="REQUEST_STATUS", transport_request=tr).count() == 1
+    assert mail.outbox == []
+    assert not NotificationLog.objects.filter(notification_type="REQUEST_STATUS", transport_request=tr).exists()
 
 
 def test_new_request_does_not_notify(owner, django_capture_on_commit_callbacks):
@@ -220,8 +196,7 @@ def test_car_transferred_notifies_once_and_records_history(owner, django_capture
         car.status = "TRANSFERRED"
         car.save()
 
-    assert len(mail.outbox) == 1
-    assert "TRANSFERVIN000001" in mail.outbox[0].subject
+    assert mail.outbox == []
     history = list(CarStatusHistory.objects.filter(car=car).order_by("changed_at", "id"))
     assert [h.status for h in history] == ["UNLOADED", "TRANSFERRED"]
     assert history[-1].previous_status == "UNLOADED"
@@ -230,7 +205,7 @@ def test_car_transferred_notifies_once_and_records_history(owner, django_capture
     with django_capture_on_commit_callbacks(execute=True):
         car.save(update_fields=["transfer_date"])
     cn.notify_car_transferred(car)
-    assert len(mail.outbox) == 1
+    assert mail.outbox == []
     assert CarStatusHistory.objects.filter(car=car).count() == 2
 
 
@@ -257,14 +232,14 @@ def test_due_soon_reminder_sent_once(owner):
     _invoice(owner, company, status="ISSUED", due_date=today + timedelta(days=5))
 
     stats = send_invoice_due_reminders.apply().get()
-    assert stats["due_soon"] == 1
-    assert len(mail.outbox) == 1
-    assert invoice.number in mail.outbox[0].subject
+    assert stats["due_soon"] == 0
+    assert mail.outbox == []
+    assert invoice.number
 
     stats = send_invoice_due_reminders.apply().get()
     assert stats["due_soon"] == 0
-    assert len(mail.outbox) == 1
-    assert NotificationLog.objects.filter(notification_type="INVOICE_DUE_SOON", success=True).count() == 1
+    assert mail.outbox == []
+    assert not NotificationLog.objects.filter(notification_type="INVOICE_DUE_SOON").exists()
 
 
 def test_overdue_notification_and_escalation(owner):
@@ -277,12 +252,8 @@ def test_overdue_notification_and_escalation(owner):
     assert NewInvoice.objects.filter(pk__in=[old.pk, fresh.pk], status="OVERDUE").count() == 2
 
     stats = send_invoice_due_reminders.apply().get()
-    assert stats["overdue"] == 2
-    assert len(mail.outbox) == 2
-    assert {m.subject for m in mail.outbox} == {
-        f"Счёт {old.number} просрочен",
-        f"Счёт {fresh.number} просрочен",
-    }
+    assert stats["overdue"] == 0
+    assert mail.outbox == []
 
     created = escalate_overdue_invoices.apply().get()
     assert created == 1
@@ -295,7 +266,7 @@ def test_overdue_notification_and_escalation(owner):
     assert escalate_overdue_invoices.apply().get() == 0
     stats = send_invoice_due_reminders.apply().get()
     assert stats["overdue"] == 0
-    assert len(mail.outbox) == 2
+    assert mail.outbox == []
 
 
 def test_reminders_respect_prefs(owner, portal_user):
@@ -320,14 +291,10 @@ def test_telegram_channel_sends_and_logs(owner, settings):
 
     with patch("core.services.client_notifications.send_telegram_message", return_value=(True, "")) as tg:
         result = cn.notify_car_transferred(car)
-    assert result == {"email": 1, "telegram": 1}
-    assert tg.call_count == 1
-    assert "TGTRANSFERVIN0001" in tg.call_args.args[1]
-    assert NotificationLog.objects.filter(notification_type="CAR_TRANSFERRED", channel="TELEGRAM", success=True).count() == 1
-
-    with patch("core.services.client_notifications.send_telegram_message", return_value=(True, "")) as tg:
-        cn.notify_car_transferred(car)
+    assert result == {"email": 0, "telegram": 0}
     assert tg.call_count == 0
+    assert mail.outbox == []
+    assert not NotificationLog.objects.filter(notification_type="CAR_TRANSFERRED").exists()
 
 
 # ── Регистрация: дело менеджеру ─────────────────────────────────────────────

@@ -832,7 +832,7 @@ core.services.transport_package_actions), переписка с клиентом
                         </div>
 
                         <form class="rc-msg-form" id="rc-msg-form" style="margin-top:14px;">
-                            <label class="rc-note" for="rc-msg-body">Сообщение клиенту (уйдёт на email и в Telegram)</label>
+                            <label class="rc-note" for="rc-msg-body">Сообщение клиенту (только в кабинете, без email и Telegram)</label>
                             <textarea id="rc-msg-body" name="body" placeholder="Например: не хватает паспорта покупателя по VIN …"></textarea>
                             <p class="rc-note" style="margin:10px 0 0;">Запросить документы (отметьте типы — клиент увидит кнопки загрузки):</p>
                             <div class="rc-doc-picker">
@@ -1287,8 +1287,7 @@ core.services.transport_package_actions), переписка с клиентом
                     thread.appendChild(div);
                     thread.scrollTop = thread.scrollHeight;
                     msgForm.reset();
-                    var d = res.data.delivery || {};
-                    show(out, 'Отправлено (email: ' + (d.email || 0) + ', telegram: ' + (d.telegram || 0) + ')');
+                    show(out, 'Сообщение сохранено в кабинете клиента');
                 })
                 .catch(function(err) { show(out, String(err), true); });
         });
