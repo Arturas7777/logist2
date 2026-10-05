@@ -12,7 +12,7 @@ URL-конфиг работал без изменений.
 * :mod:`.public`         — статические страницы (home/about/services/
   contact/news_list/news_detail), кэшируются ``@cache_page``.
 * :mod:`.client_portal`  — личный кабинет (``client_dashboard``,
-  ``car_detail``, ``container_detail``), `@login_required`.
+  ``car_detail``, ``client_containers``, ``container_detail``), `@login_required`.
 * :mod:`.api`            — DRF ``ViewSet``-ы и permission
   :class:`IsClientUser`.
 * :mod:`.tracking`       — публичный ``/api/track/`` + аналитика
@@ -55,6 +55,7 @@ from .auth import (
 )
 from .client_portal import (
     car_detail,
+    client_containers,
     client_dashboard,
     container_detail,
 )
@@ -122,6 +123,7 @@ __all__ = [  # noqa: RUF022
     "news_detail",
     "set_site_language",
     # client_portal
+    "client_containers",
     "client_dashboard",
     "car_detail",
     "container_detail",

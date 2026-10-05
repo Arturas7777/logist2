@@ -3,7 +3,7 @@
 * Q10 — дефолтный фильтр показывает все активные статусы (включая FLOATING),
   чипы статусов над списком.
 * C1 — таймлайн статусов в карточках авто/контейнера и ETA в ``/api/track/``.
-* C3 — блок «Мои контейнеры» на дашборде без N+1.
+* C3 — страница «Контейнеры» без N+1; на главной кабинета списка нет.
 * C6/C7 — цены в EUR, фото с lazy-loading и единым lightbox.
 """
 
@@ -147,7 +147,7 @@ def test_car_detail_prices_in_eur_and_lazy_photos(portal):
 # ── C3 ──────────────────────────────────────────────────────────────────────
 
 
-def test_dashboard_lists_client_containers_without_n_plus_one(portal):
+def test_containers_page_lists_client_containers_without_n_plus_one(portal):
     http, owner = portal
     containers = []
     for i in range(4):
@@ -166,15 +166,22 @@ def test_dashboard_lists_client_containers_without_n_plus_one(portal):
     with patch("core.services.photo_optimize.maybe_compress_image_field", return_value=False):
         ContainerPhoto.objects.create(container=containers[0], photo=upload, is_public=True)
 
+    dashboard = http.get(reverse("website:dashboard"))
+    assert dashboard.status_code == 200
+    dashboard_html = dashboard.content.decode()
+    assert "Мои контейнеры" not in dashboard_html
+    assert reverse("website:containers") in dashboard_html
+    for ctr in containers:
+        assert reverse("website:container_detail", args=[ctr.id]) not in dashboard_html
+
     with CaptureQueriesContext(connection) as ctx:
-        response = http.get(reverse("website:dashboard"))
+        response = http.get(reverse("website:containers"))
     assert response.status_code == 200
     html = response.content.decode()
-    assert "Мои контейнеры" in html
+    assert "Контейнеры" in html
     for ctr in containers:
         assert reverse("website:container_detail", args=[ctr.id]) in html
     assert "MYCONTORPHAN" in html
     assert reverse("website:container_detail", args=[done.id]) not in html
     assert "01.11.2026" in html
-    # Бюджет: дашборд с 5 контейнерами и 6 авто — без запроса на каждую строку.
-    assert len(ctx.captured_queries) <= 16, "\n".join(q["sql"] for q in ctx.captured_queries)
+    assert len(ctx.captured_queries) <= 12, "\n".join(q["sql"] for q in ctx.captured_queries)

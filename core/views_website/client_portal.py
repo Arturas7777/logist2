@@ -26,9 +26,6 @@ CARS_PER_PAGE = 50
 # Статусы, при которых авто ещё «в работе» — дефолтный фильтр кабинета.
 ACTIVE_CAR_STATUSES = ("FLOATING", "IN_PORT", "UNLOADED")
 
-# Сколько активных контейнеров показывать в блоке «Мои контейнеры» (C3).
-CONTAINERS_LIMIT = 20
-
 # Быстрые чипы над списком авто: (код, подпись, статусы). Пустой набор
 # статусов = дефолт (все активные). Подписи — gettext_lazy, чтобы
 # переводиться в момент рендера.
@@ -41,8 +38,8 @@ STATUS_CHIPS = (
 )
 
 
-def _client_active_containers(client, limit=CONTAINERS_LIMIT):
-    """Активные контейнеры клиента для блока «Мои контейнеры» (C3).
+def _client_active_containers(client):
+    """Активные контейнеры клиента для страницы «Контейнеры».
 
     «Мой» контейнер — либо с FK ``client``, либо содержащий авто клиента
     (у смешанных контейнеров FK может указывать на другого клиента или быть
@@ -74,7 +71,7 @@ def _client_active_containers(client, limit=CONTAINERS_LIMIT):
             public_photos_count=Coalesce(Subquery(photos_sq, output_field=IntegerField()), Value(0)),
             _status_rank=status_rank,
         )
-        .order_by("_status_rank", F("eta").asc(nulls_last=True), "-id")[:limit]
+        .order_by("_status_rank", F("eta").asc(nulls_last=True), "-id")
     )
 
 
@@ -128,7 +125,7 @@ def _attach_model_images(cars):
 
 @login_required
 def client_dashboard(request):
-    """Главная страница личного кабинета клиента (список авто и контейнеров)."""
+    """Главная страница личного кабинета клиента (список авто)."""
     try:
         client_user = request.user.clientuser
         client = client_user.client
@@ -227,7 +224,6 @@ def client_dashboard(request):
             "onboarding_pending": onboarding_pending,
             "cars": cars_page,
             "cars_page": cars_page,
-            "my_containers": _client_active_containers(client),
             "search_query": search_query,
             "selected_statuses": selected_statuses,
             "car_status_choices": Container.STATUS_CHOICES,
@@ -242,6 +238,20 @@ def client_dashboard(request):
         return render(request, "website/client_dashboard.html", context)
     except ClientUser.DoesNotExist:
         return render(request, "website/not_authorized.html", status=403)
+
+
+@login_required
+def client_containers(request):
+    """Страница контейнеров клиента: статус, ETA, линия, склад, число авто."""
+    try:
+        client = request.user.clientuser.client
+    except ClientUser.DoesNotExist:
+        return render(request, "website/not_authorized.html", status=403)
+    return render(
+        request,
+        "website/client_containers.html",
+        {"client": client, "my_containers": _client_active_containers(client)},
+    )
 
 
 @login_required

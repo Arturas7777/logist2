@@ -46,6 +46,7 @@ urlpatterns = [
     # ========== Личный кабинет ==========
     path("profile/notifications/", views_website.notification_settings, name="notification_settings"),
     path("dashboard/", views_website.client_dashboard, name="dashboard"),
+    path("containers/", views_website.client_containers, name="containers"),
     path("car/<int:car_id>/", views_website.car_detail, name="car_detail"),
     path("container/<int:container_id>/", views_website.container_detail, name="container_detail"),
     # ========== Документы и декларации ==========
