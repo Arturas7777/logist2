@@ -69,7 +69,9 @@ def _warehouse(name, policy, free_days=0, rate=Decimal("5")):
 
 
 def _transferred_car(warehouse, vin, start=MON, end=SUN_2W):
-    container = Container.objects.create(number=f"SD-{vin[-4:]}", status="UNLOADED", warehouse=warehouse, unload_date=start)
+    container = Container.objects.create(
+        number=f"SD-{vin[-4:]}", status="UNLOADED", warehouse=warehouse, unload_date=start
+    )
     return Car.objects.create(
         year=2023,
         brand="Toyota",

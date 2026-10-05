@@ -178,7 +178,11 @@ class TestTransferredFreeze:
             unload_date=today - timezone.timedelta(days=4),
         )
         active = _car(
-            container, warehouse, f"{number[-6:]}ACTIVE0001"[:17].ljust(17, "A"), "UNLOADED", unload_date=container.unload_date
+            container,
+            warehouse,
+            f"{number[-6:]}ACTIVE0001"[:17].ljust(17, "A"),
+            "UNLOADED",
+            unload_date=container.unload_date,
         )
         frozen = _car(
             container,

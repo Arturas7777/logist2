@@ -1442,9 +1442,9 @@ class BillingService:
 
             locked = {
                 inv.pk: inv
-                for inv in NewInvoice.objects.select_for_update().filter(pk__in=invoice_ids).select_related(
-                    "recipient_client"
-                )
+                for inv in NewInvoice.objects.select_for_update()
+                .filter(pk__in=invoice_ids)
+                .select_related("recipient_client")
             }
             if len(locked) != len(invoice_ids):
                 raise ValueError("Часть инвойсов не найдена")

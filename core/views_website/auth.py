@@ -96,8 +96,7 @@ def _notify_manager_about_registration(client, user, phone):
     lines += [
         f"Логин: {user.username}",
         "",
-        "Нужно: привязать доступ к реальному клиенту CRM (ClientUser → client) "
-        "и поставить галочку «Верифицирован».",
+        "Нужно: привязать доступ к реальному клиенту CRM (ClientUser → client) и поставить галочку «Верифицирован».",
     ]
     description = "\n".join(lines)
     try:

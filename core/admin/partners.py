@@ -1734,9 +1734,7 @@ class AutoTransportAdmin(admin.ModelAdmin):
             )
 
         return format_html(
-            '<span style="display:inline-flex;align-items:center;gap:6px;">'
-            "<span>{}</span>{}{}"
-            "</span>",
+            '<span style="display:inline-flex;align-items:center;gap:6px;"><span>{}</span>{}{}</span>',
             obj.number or "—",
             unread_html,
             need_reply_html,

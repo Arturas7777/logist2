@@ -17,9 +17,7 @@ def test_mark_all_emails_read_clears_badges(client):
     client.force_login(user)
     owner = Client.objects.create(name="Mail Owner")
     container = Container.objects.create(number="MSCU9990001", status="FLOATING")
-    car = Car.objects.create(
-        vin="MAILREADVIN000001", client=owner, container=container, status="FLOATING", year=2020
-    )
+    car = Car.objects.create(vin="MAILREADVIN000001", client=owner, container=container, status="FLOATING", year=2020)
     email = ContainerEmail.objects.create(
         message_id="<mark-all-read@test>",
         thread_id="thread-mark-all",

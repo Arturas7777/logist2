@@ -126,9 +126,7 @@ class NewInvoiceFormHandlerMixin:
         # category_type нужен шаблону (get_category_type_display) — без него
         # в only() каждый <option> делал отдельный запрос за отложенным полем.
         extra_context["expense_categories"] = (
-            ExpenseCategory.objects.filter(is_active=True)
-            .only("id", "name", "category_type")
-            .order_by("order", "name")
+            ExpenseCategory.objects.filter(is_active=True).only("id", "name", "category_type").order_by("order", "name")
         )
 
         # Caromoto по умолчанию — кэшируется в Company.get_default_id.

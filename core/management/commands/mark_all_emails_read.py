@@ -10,6 +10,4 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         stats = mark_all_emails_read()
-        self.stdout.write(
-            "Прочитано: контейнеры {containers}, авто {cars}, заявки {requests}.".format(**stats)
-        )
+        self.stdout.write("Прочитано: контейнеры {containers}, авто {cars}, заявки {requests}.".format(**stats))

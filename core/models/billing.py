@@ -821,8 +821,7 @@ class NewInvoice(models.Model):
                 return False
             if self.paid_amount and self.paid_amount > 0:
                 logger.warning(
-                    "regenerate_items_from_cars: пропущен инвойс %s — есть оплата %s, "
-                    "регенерация без force запрещена",
+                    "regenerate_items_from_cars: пропущен инвойс %s — есть оплата %s, регенерация без force запрещена",
                     self.number or self.pk,
                     self.paid_amount,
                 )

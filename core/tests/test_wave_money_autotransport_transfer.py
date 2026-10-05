@@ -26,7 +26,9 @@ def warehouse(db):
 
 def _car(vin, warehouse, unload_date):
     client = Client.objects.create(name=f"Client {vin[-3:]}")
-    container = Container.objects.create(number=f"B12-{vin[-4:]}", status="UNLOADED", warehouse=warehouse, unload_date=unload_date)
+    container = Container.objects.create(
+        number=f"B12-{vin[-4:]}", status="UNLOADED", warehouse=warehouse, unload_date=unload_date
+    )
     return Car.objects.create(
         year=2023,
         brand="Toyota",
@@ -97,7 +99,9 @@ class TestLoadedSetsTransferDateFromLoadingDate:
         today = timezone.now().date()
         early_car = _car("B12EARLYUNLOAD001", warehouse, unload_date=today - datetime.timedelta(days=10))
         late_car = _car("B12LATEUNLOAD0001", warehouse, unload_date=today - datetime.timedelta(days=1))
-        at = AutoTransport.objects.create(carrier=carrier, status="FORMED", loading_date=today - datetime.timedelta(days=3))
+        at = AutoTransport.objects.create(
+            carrier=carrier, status="FORMED", loading_date=today - datetime.timedelta(days=3)
+        )
         at.cars.add(early_car, late_car)
 
         at.status = "LOADED"
@@ -113,7 +117,9 @@ class TestLoadedSetsTransferDateFromLoadingDate:
         today = timezone.now().date()
         car = _car("B12ALREADYTRF0001", warehouse, unload_date=today - datetime.timedelta(days=10))
         Car.objects.filter(pk=car.pk).update(status="TRANSFERRED", transfer_date=today - datetime.timedelta(days=7))
-        at = AutoTransport.objects.create(carrier=carrier, status="FORMED", loading_date=today - datetime.timedelta(days=2))
+        at = AutoTransport.objects.create(
+            carrier=carrier, status="FORMED", loading_date=today - datetime.timedelta(days=2)
+        )
         at.cars.add(car)
 
         at.status = "LOADED"

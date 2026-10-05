@@ -56,7 +56,20 @@ def lithuanian_holidays(year: int) -> frozenset:
         return frozenset(holidays_lib.country_holidays("LT", years=year).keys())
     except Exception:  # пакет не установлен или не знает LT — не роняем расчёт хранения
         logger.warning("holidays.LT недоступен, используем статический список праздников за %s", year)
-        fixed = ((1, 1), (2, 16), (3, 11), (5, 1), (6, 24), (7, 6), (8, 15), (11, 1), (11, 2), (12, 24), (12, 25), (12, 26))
+        fixed = (
+            (1, 1),
+            (2, 16),
+            (3, 11),
+            (5, 1),
+            (6, 24),
+            (7, 6),
+            (8, 15),
+            (11, 1),
+            (11, 2),
+            (12, 24),
+            (12, 25),
+            (12, 26),
+        )
         return frozenset(datetime.date(year, m, d) for m, d in fixed)
 
 

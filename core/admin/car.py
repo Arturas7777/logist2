@@ -1091,9 +1091,7 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
             return format_html('<span class="cm-days-badge cm-days-badge--none">—</span>')
 
         chargeable = int(obj.days or 0)
-        end_date = (
-            obj.transfer_date if obj.status == "TRANSFERRED" and obj.transfer_date else timezone.now().date()
-        )
+        end_date = obj.transfer_date if obj.status == "TRANSFERRED" and obj.transfer_date else timezone.now().date()
         total_days = max(0, (end_date - obj.unload_date).days + 1)
         free_days = int(obj.warehouse.free_days or 0)
 

@@ -135,9 +135,7 @@ def _resolve_portal_tab(request, client, editing=None):
     if focus_status is None:
         pk = request.GET.get("docs_req", "")
         if pk.isdigit():
-            focus_status = (
-                _client_requests_base(client).filter(pk=int(pk)).values_list("status", flat=True).first()
-            )
+            focus_status = _client_requests_base(client).filter(pk=int(pk)).values_list("status", flat=True).first()
     if focus_status == "COMPLETED":
         return "COMPLETED"
     return "current"

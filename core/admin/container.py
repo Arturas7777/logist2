@@ -611,9 +611,7 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
             )
 
         return format_html(
-            '<span class="cm-container-no">'
-            "{}{}<span class=\"cm-container-no-text\">{}</span>{}{}"
-            "</span>",
+            '<span class="cm-container-no">{}{}<span class="cm-container-no-text">{}</span>{}{}</span>',
             copy_button_html(obj.number, "Копировать номер"),
             line_mark_html(obj.line),
             obj.number or "—",
