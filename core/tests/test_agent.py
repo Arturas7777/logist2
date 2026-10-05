@@ -199,9 +199,13 @@ def test_execute_complete_task():
     assert "[ИИ] Сделано агентом" in task.description
 
 
-def test_execute_create_container_with_cars():
+def test_execute_create_container_with_cars(monkeypatch):
     from core.models import Car, Container
 
+    monkeypatch.setattr(
+        "core.services.vin_gate.identity_from_vin",
+        lambda vin, *, brand="", year=0: ((brand or "")[:50], int(year or 0)),
+    )
     existing = Car.objects.create(vin="EXIST000000000001", brand="BMW", year=2020, status="FLOATING")
     action = AgentAction.objects.create(
         action_type=AgentAction.TYPE_CREATE_CONTAINER,
@@ -228,6 +232,40 @@ def test_execute_create_container_with_cars():
     assert new_car.year == 2021
     existing.refresh_from_db()
     assert existing.container_id == container.pk
+    assert existing.brand == "BMW"
+
+
+def test_execute_create_container_fills_model_from_vin_cache():
+    """Модель берётся из кэша NHTSA, без сети и без текста от модели."""
+    from django.utils import timezone
+
+    from core.models import Car, Container, VinCheck
+
+    VinCheck.objects.create(
+        vin="1G1RD6S51GU129545",
+        length_ok=True,
+        checksum_ok=True,
+        is_north_american=True,
+        nhtsa_ok=True,
+        nhtsa_make="CHEVROLET",
+        nhtsa_model="Malibu",
+        nhtsa_year=2016,
+        checked_at=timezone.now(),
+    )
+    action = AgentAction.objects.create(
+        action_type=AgentAction.TYPE_CREATE_CONTAINER,
+        title="Создать контейнер MRSU6031876",
+        payload={
+            "number": "MRSU6031876",
+            "summary": "Контейнер",
+            "cars": [{"vin": "1G1RD6S51GU129545", "brand": "CHEVROLET"}],
+        },
+    )
+    execute_action(action, by="boss")
+    car = Car.objects.get(vin="1G1RD6S51GU129545")
+    assert car.brand == "CHEVROLET Malibu"
+    assert car.year == 2016
+    assert car.container_id == Container.objects.get(number="MRSU6031876").pk
 
 
 def test_execute_create_container_duplicate_fails():

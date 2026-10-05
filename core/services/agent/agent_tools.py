@@ -108,13 +108,11 @@ TOOL_SPECS: list[dict] = [
                 "eta": {"type": "string", "description": "Дата прибытия в формате YYYY-MM-DD, если известна"},
                 "cars": {
                     "type": "array",
-                    "description": "Автомобили в контейнере (из текста письма)",
+                    "description": "Автомобили в контейнере. Передавай только VIN: марку, модель и год система допишет сама.",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "vin": {"type": "string", "description": "VIN (17 символов)"},
-                            "brand": {"type": "string", "description": "Марка и модель, например Toyota Camry"},
-                            "year": {"type": "integer", "description": "Год выпуска"},
+                            "vin": {"type": "string", "description": "VIN, 17 символов"},
                         },
                         "required": ["vin"],
                     },

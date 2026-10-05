@@ -31,6 +31,7 @@ from core.services.vin_gate import (
     apply_nhtsa_vehicle_type,
     check_vin,
     get_vin_check,
+    identity_from_vin,
     normalize_vin_input,
     refresh_vin_check,
     vehicle_type_from_nhtsa,
@@ -376,3 +377,27 @@ def test_form_sets_motorcycle_type_from_nhtsa():
     form = MotoForm(data=_form_data(VALID_NA_VIN, brand="HARLEY-DAVIDSON SPORTSTER", vehicle_type="SEDAN"))
     assert form.is_valid(), form.errors
     assert form.cleaned_data["vehicle_type"] == "MOTO"
+
+
+def test_identity_from_vin_uses_cached_model_without_network(monkeypatch):
+    _nhtsa(VALID_NA_VIN, make="CHEVROLET", model="Equinox", year=2024)
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("свежий кэш не должен ходить в NHTSA")
+
+    monkeypatch.setattr("core.services.vin_gate.refresh_vin_check", _boom)
+    brand, year = identity_from_vin(VALID_NA_VIN, brand="CHEVROLET", year=0)
+    assert brand == "CHEVROLET Equinox"
+    assert year == 2024
+
+
+def test_identity_from_vin_keeps_brand_when_model_unknown(monkeypatch):
+    _nhtsa(EU_VIN, make="AUDI", model="", year=2022, ok=True)
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("свежий кэш не должен ходить в NHTSA")
+
+    monkeypatch.setattr("core.services.vin_gate.refresh_vin_check", _boom)
+    brand, year = identity_from_vin(EU_VIN, brand="AUDI", year=2022)
+    assert brand == "AUDI"
+    assert year == 2022

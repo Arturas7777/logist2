@@ -151,6 +151,42 @@ def brand_from_nhtsa(make, model, *, max_length: int = 50) -> str:
     return label[:max_length]
 
 
+def identity_from_vin(vin: str, *, brand: str = "", year: int = 0) -> tuple[str, int]:
+    """Марка с моделью и год по VIN. Один запрос NHTSA, дальше кэш. Без LLM.
+
+    Модель из расшифровки заменяет марку из одного слова («CHEVROLET» →
+    «CHEVROLET Equinox»). Если NHTSA модель не вернул, остаётся то, что
+    уже передали. Год подставляется только когда своего нет.
+    """
+    brand = (brand or "").strip()[:50]
+    try:
+        year = int(year or 0)
+    except (TypeError, ValueError):
+        year = 0
+
+    vin_norm = normalize_vin_input(vin)
+    if len(vin_norm) != 17:
+        return brand, year
+
+    from core.models import VinCheck
+
+    check = VinCheck.objects.filter(vin=vin_norm).first()
+    if check is None or check.is_stale:
+        try:
+            check = refresh_vin_check(vin_norm) or check
+        except Exception:
+            logger.warning("VIN %s: NHTSA не ответил, марку не меняем", vin_norm, exc_info=True)
+    if check is None:
+        return brand, year
+    if check.nhtsa_model:
+        brand = brand_from_nhtsa(check.nhtsa_make, check.nhtsa_model)
+    elif not brand and check.nhtsa_make:
+        brand = check.nhtsa_make.strip()[:50]
+    if year <= 0 and check.nhtsa_year:
+        year = int(check.nhtsa_year)
+    return brand, year
+
+
 # Дефолт карточки Car — «Легковой». Подставляем мотоцикл/квадроцикл только
 # поверх него, уже выбранный оператором тип не трогаем.
 _DEFAULT_CAR_VEHICLE_TYPE = "SEDAN"

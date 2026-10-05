@@ -182,6 +182,8 @@ def _execute_create_container(action, by: str = "") -> dict:
         status="FLOATING",
     )
 
+    from core.services.vin_gate import identity_from_vin
+
     created_vins, attached_vins, skipped = [], [], []
     for item in payload.get("cars") or []:
         vin = (item.get("vin") or "").strip().upper()
@@ -192,17 +194,27 @@ def _execute_create_container(action, by: str = "") -> dict:
             if existing.container_id:
                 skipped.append(f"{vin} (уже в контейнере {existing.container.number})")
             else:
+                update_fields = ["container"]
+                if " " not in (existing.brand or "").strip():
+                    brand, year = identity_from_vin(vin, brand=existing.brand, year=existing.year)
+                    if brand and brand != existing.brand:
+                        existing.brand = brand
+                        update_fields.append("brand")
+                    if not existing.year and year:
+                        existing.year = year
+                        update_fields.append("year")
                 existing.container = container
-                existing.save(update_fields=["container"])
+                existing.save(update_fields=update_fields)
                 attached_vins.append(vin)
             continue
         try:
-            year = int(item.get("year") or 0)
+            given_year = int(item.get("year") or 0)
         except (TypeError, ValueError):
-            year = 0
+            given_year = 0
+        brand, year = identity_from_vin(vin, brand=item.get("brand") or "", year=given_year)
         Car.objects.create(
             vin=vin,
-            brand=(item.get("brand") or "")[:50],
+            brand=brand,
             year=year,
             status="FLOATING",
             container=container,
@@ -245,7 +257,8 @@ EXECUTOR_SYSTEM_TEMPLATE = """Ты — AI-исполнитель в логист
 2. Если для выполнения хватает инструментов — действуй: предложи ответ на
    письмо (propose_email_reply), создание контейнера с автомобилями
    (propose_create_container — сначала проверь дубликаты через
-   search_containers), и если после этого дело можно считать закрытым —
+   search_containers; у авто передавай только VIN, марку и модель не ищи),
+   и если после этого дело можно считать закрытым —
    предложи закрытие (propose_complete_task).
 3. Если непонятно, как действовать — задай вопрос владельцу (ask_owner)
    и НЕ предлагай сомнительных действий.
