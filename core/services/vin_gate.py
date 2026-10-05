@@ -195,9 +195,9 @@ _DEFAULT_CAR_VEHICLE_TYPE = "SEDAN"
 def vehicle_type_from_nhtsa(vehicle_type: str = "", body_class: str = "") -> str | None:
     """Код типа ТС карточки по сырому Vehicle Type / Body Class NHTSA.
 
-    Легковые кузова не мапим: «MPV» и «SUV» в NHTSA слишком грубые, чтобы
-    выбирать между легковым, кроссовером и джипом. Мотоцикл и квадроцикл
-    NHTSA называет однозначно.
+    Мотоцикл и квадроцикл NHTSA называет однозначно. MPV (CR-V, RAV4,
+    Equinox и т.п.) пишем как кроссовер: отделить джип по этой строке нельзя,
+    его ставят вручную. Легковой и грузовик (Transit — не пикап) не трогаем.
     """
     vt = (vehicle_type or "").strip().lower()
     body = (body_class or "").strip().lower()
@@ -210,7 +210,22 @@ def vehicle_type_from_nhtsa(vehicle_type: str = "", body_class: str = "") -> str
         return "ATV"
     if "motorcycle" in vt or "motorcycle" in body or "moped" in body or "motor scooter" in body:
         return "MOTO"
+    if "mpv" in vt or "multipurpose passenger" in vt:
+        return "CROSSOVER"
     return None
+
+
+def cached_vehicle_type(vin: str) -> str | None:
+    """Тип карточки по уже сохранённой расшифровке VIN. Без сети и без LLM."""
+    vin_norm = normalize_vin_input(vin)
+    if len(vin_norm) != 17:
+        return None
+    from core.models import VinCheck
+
+    vehicle_type = VinCheck.objects.filter(vin=vin_norm).values_list("nhtsa_vehicle_type", flat=True).first()
+    if not vehicle_type:
+        return None
+    return vehicle_type_from_nhtsa(vehicle_type)
 
 
 def apply_nhtsa_vehicle_type(car, nhtsa_vehicle_type: str, *, body_class: str = "") -> bool:

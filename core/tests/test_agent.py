@@ -248,8 +248,9 @@ def test_execute_create_container_fills_model_from_vin_cache():
         is_north_american=True,
         nhtsa_ok=True,
         nhtsa_make="CHEVROLET",
-        nhtsa_model="Malibu",
+        nhtsa_model="Equinox",
         nhtsa_year=2016,
+        nhtsa_vehicle_type="MULTIPURPOSE PASSENGER VEHICLE (MPV)",
         checked_at=timezone.now(),
     )
     action = AgentAction.objects.create(
@@ -263,8 +264,9 @@ def test_execute_create_container_fills_model_from_vin_cache():
     )
     execute_action(action, by="boss")
     car = Car.objects.get(vin="1G1RD6S51GU129545")
-    assert car.brand == "CHEVROLET Malibu"
+    assert car.brand == "CHEVROLET Equinox"
     assert car.year == 2016
+    assert car.vehicle_type == "CROSSOVER"
     assert car.container_id == Container.objects.get(number="MRSU6031876").pk
 
 

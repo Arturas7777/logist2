@@ -335,7 +335,8 @@ def test_vehicle_type_from_nhtsa_motorcycle_and_atv():
     assert vehicle_type_from_nhtsa("OFF ROAD VEHICLE") == "ATV"
     assert vehicle_type_from_nhtsa("", "All-Terrain Vehicle") == "ATV"
     assert vehicle_type_from_nhtsa("PASSENGER CAR") is None
-    assert vehicle_type_from_nhtsa("MULTIPURPOSE PASSENGER VEHICLE (MPV)", "Sport Utility Vehicle") is None
+    assert vehicle_type_from_nhtsa("TRUCK") is None
+    assert vehicle_type_from_nhtsa("MULTIPURPOSE PASSENGER VEHICLE (MPV)") == "CROSSOVER"
 
 
 def test_apply_nhtsa_vehicle_type_only_overrides_default_sedan():

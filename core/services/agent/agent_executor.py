@@ -182,7 +182,7 @@ def _execute_create_container(action, by: str = "") -> dict:
         status="FLOATING",
     )
 
-    from core.services.vin_gate import identity_from_vin
+    from core.services.vin_gate import cached_vehicle_type, identity_from_vin
 
     created_vins, attached_vins, skipped = [], [], []
     for item in payload.get("cars") or []:
@@ -203,6 +203,11 @@ def _execute_create_container(action, by: str = "") -> dict:
                     if not existing.year and year:
                         existing.year = year
                         update_fields.append("year")
+                if (existing.vehicle_type or "SEDAN") == "SEDAN":
+                    mapped = cached_vehicle_type(vin)
+                    if mapped:
+                        existing.vehicle_type = mapped
+                        update_fields.append("vehicle_type")
                 existing.container = container
                 existing.save(update_fields=update_fields)
                 attached_vins.append(vin)
@@ -216,6 +221,7 @@ def _execute_create_container(action, by: str = "") -> dict:
             vin=vin,
             brand=brand,
             year=year,
+            vehicle_type=cached_vehicle_type(vin) or "SEDAN",
             status="FLOATING",
             container=container,
         )
