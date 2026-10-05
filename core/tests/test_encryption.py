@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import pytest
+from cryptography.fernet import InvalidToken
 from django.test import override_settings
 
 from core import encryption
@@ -113,6 +114,17 @@ class TestKeyRotation:
         with override_settings(ENCRYPTION_KEY=PRIMARY_KEY, ENCRYPTION_KEY_FALLBACKS=""):
             encryption.reset_cache()
             assert encryption.decrypt_value(rotated) == "token-X"
+
+    @override_settings(ENCRYPTION_KEY=PRIMARY_KEY, ENCRYPTION_KEY_FALLBACKS="")
+    def test_rotate_empty_returns_empty(self):
+        encryption.reset_cache()
+        assert encryption.rotate_value("") == ""
+
+    @override_settings(ENCRYPTION_KEY=PRIMARY_KEY, ENCRYPTION_KEY_FALLBACKS="")
+    def test_rotate_garbage_raises(self):
+        encryption.reset_cache()
+        with pytest.raises(InvalidToken):
+            encryption.rotate_value("not-a-fernet-token")
 
     @override_settings(
         ENCRYPTION_KEY=PRIMARY_KEY,

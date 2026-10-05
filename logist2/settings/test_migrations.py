@@ -84,6 +84,10 @@ EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
 
+# Как в settings.test: моки download_file и сценарий «фото появилось
+# во время прохода» детерминированы только без пула потоков.
+GDRIVE_DOWNLOAD_WORKERS = 1
+
 # MD5 — заметно быстрее на больших тестах с createsuperuser.
 PASSWORD_HASHERS = [
     "django.contrib.auth.hashers.MD5PasswordHasher",

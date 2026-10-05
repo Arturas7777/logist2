@@ -34,7 +34,7 @@ def car(db, warehouse):
     return Car.objects.create(
         year=2023,
         brand="Toyota",
-        vin="CATALOGSERVICE0001",
+        vin="CATALOGSERVICE001",
         status="UNLOADED",
         container=container,
         warehouse=warehouse,
@@ -156,7 +156,7 @@ class TestLineServiceCatalogSignal:
         car = Car.objects.create(
             year=2023,
             brand="BMW",
-            vin="CATALOGLINESVC0001",
+            vin="CATALOGLINESVC001",
             status="FLOATING",
             container=container,
             line=line,

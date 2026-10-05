@@ -18,6 +18,8 @@ from core.services.car_lifecycle_service import (
     after_car_save,
     check_container_status,
     recalculate_car_price,
+    send_car_ws_notification,
+    should_send_car_ws,
 )
 
 
@@ -116,6 +118,77 @@ class AfterCarSaveTest(TestCase):
         after_car_save(self.car, is_new=False)
         mock_recalc.assert_called_once_with(self.car)
         mock_ws.assert_called_once_with(self.car)
+
+    def test_without_pk_does_nothing(self):
+        self.car.pk = None
+        after_car_save(self.car)
+
+
+class CarWsNotificationTest(TestCase):
+    def setUp(self):
+        self.car = Car.objects.create(
+            year=2023,
+            brand="Honda",
+            vin="WSNOTIFY000000001",
+            status="FLOATING",
+        )
+
+    def test_skips_quiet_saves(self):
+        self.assertFalse(should_send_car_ws(self.car, raw=True))
+        self.car._bulk_updating = True
+        self.assertFalse(should_send_car_ws(self.car))
+        self.car._bulk_updating = False
+        self.assertFalse(should_send_car_ws(self.car, update_fields={"days", "updated_at"}))
+        self.assertTrue(should_send_car_ws(self.car, update_fields={"status"}))
+
+    def test_raw_save_does_not_schedule_notification(self):
+        with self.captureOnCommitCallbacks(execute=True) as callbacks:
+            send_car_ws_notification(self.car, raw=True)
+        self.assertEqual(callbacks, [])
+
+    @patch("core.services.car_lifecycle_service.get_channel_layer")
+    def test_notifies_once_inside_debounce_window(self, mock_layer):
+        layer = mock_layer.return_value
+        with self.captureOnCommitCallbacks(execute=True):
+            send_car_ws_notification(self.car)
+            send_car_ws_notification(self.car)
+        layer.group_send.assert_called_once()
+
+    @patch("core.services.car_lifecycle_service.cache.add", side_effect=RuntimeError("down"))
+    @patch("core.services.car_lifecycle_service.get_channel_layer")
+    def test_notifies_when_debounce_cache_is_down(self, mock_layer, _cache_add):
+        layer = mock_layer.return_value
+        with self.captureOnCommitCallbacks(execute=True):
+            send_car_ws_notification(self.car)
+        layer.group_send.assert_called_once()
+
+    @patch("core.services.car_lifecycle_service.get_channel_layer", return_value=None)
+    def test_skips_when_channel_layer_missing(self, _layer):
+        with self.captureOnCommitCallbacks(execute=True):
+            send_car_ws_notification(self.car)
+
+    @patch("core.services.car_lifecycle_service.logger")
+    def test_logs_when_channel_send_fails(self, mock_logger):
+        with patch("core.services.car_lifecycle_service.get_channel_layer") as mock_layer:
+            mock_layer.return_value.group_send.side_effect = RuntimeError("ws down")
+            with self.captureOnCommitCallbacks(execute=True):
+                send_car_ws_notification(self.car)
+        mock_logger.error.assert_called()
+
+    @patch("core.models.Car.calculate_total_price", side_effect=RuntimeError("price"))
+    @patch("core.services.car_lifecycle_service.logger")
+    def test_recalculate_logs_when_price_fails(self, mock_logger, _price):
+        recalculate_car_price(self.car)
+        mock_logger.error.assert_called()
+
+    @patch("core.models.Container.check_and_update_status_from_cars", side_effect=RuntimeError("status"))
+    @patch("core.services.car_lifecycle_service.logger")
+    def test_container_status_logs_when_check_fails(self, mock_logger, _check):
+        container = Container.objects.create(number="WS-CONT-1", status="FLOATING")
+        self.car.container = container
+        self.car.save(update_fields=["container"])
+        check_container_status(self.car)
+        mock_logger.error.assert_called()
 
 
 class FieldRenameTest(TestCase):

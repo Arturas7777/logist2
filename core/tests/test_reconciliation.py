@@ -14,6 +14,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from django.core.management import call_command
 from django.utils import timezone
 
 from core.management.commands.auto_reconcile import (
@@ -269,3 +270,9 @@ class TestReconcileRule3:
         stats = reconcile_incoming_payments(dry_run=False)
         assert stats["rule3"] == 0
         assert stats["no_match"] == 1
+
+
+@pytest.mark.django_db
+def test_auto_reconcile_command_prints_summary():
+    call_command("auto_reconcile", "--dry-run")
+    call_command("auto_reconcile")
