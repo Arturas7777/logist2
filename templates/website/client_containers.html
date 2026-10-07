@@ -56,21 +56,8 @@
 {% block content %}
 <section class="dashboard-hero">
     <div class="container">
-        <div class="text-white-50 small mb-1">
-            <a href="{% url 'website:dashboard' %}" class="link-light text-decoration-none">{% trans "Личный кабинет" %}</a>
-        </div>
         <h1 class="h3 mb-0">{% trans "Контейнеры" %}</h1>
-        <div class="d-flex flex-wrap gap-2 mt-3">
-            <a href="{% url 'website:transport_requests' %}" class="btn btn-sm btn-light">
-                <i class="bi bi-truck"></i> {% trans "Мои заявки" %}
-            </a>
-            <a href="{% url 'website:containers' %}" class="btn btn-sm btn-primary" aria-current="page">
-                <i class="bi bi-box-seam"></i> {% trans "Контейнеры" %}
-            </a>
-            <a href="{% url 'website:invoices' %}" class="btn btn-sm btn-light">
-                <i class="bi bi-receipt"></i> {% trans "Мои счета" %}
-            </a>
-        </div>
+        {% include "website/partials/portal_nav.html" %}
     </div>
 </section>
 

@@ -1,0 +1,31 @@
+{% load i18n %}
+{% with name=request.resolver_match.url_name %}
+<div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+    <nav class="d-flex flex-wrap gap-2" aria-label="{% trans 'Разделы кабинета' %}">
+        <a href="{% url 'website:dashboard' %}"
+           class="btn btn-sm {% if name == 'dashboard' or name == 'car_detail' %}btn-primary{% else %}btn-light{% endif %}"
+           {% if name == 'dashboard' or name == 'car_detail' %}aria-current="page"{% endif %}>
+            <i class="bi bi-car-front"></i> {% trans "Автомобили" %}
+        </a>
+        <a href="{% url 'website:transport_requests' %}"
+           class="btn btn-sm {% if name == 'transport_requests' or name == 'transport_request_edit' %}btn-primary{% else %}btn-light{% endif %}"
+           {% if name == 'transport_requests' or name == 'transport_request_edit' %}aria-current="page"{% endif %}>
+            <i class="bi bi-truck"></i> {% trans "Мои заявки" %}
+        </a>
+        <a href="{% url 'website:containers' %}"
+           class="btn btn-sm {% if name == 'containers' or name == 'container_detail' %}btn-primary{% else %}btn-light{% endif %}"
+           {% if name == 'containers' or name == 'container_detail' %}aria-current="page"{% endif %}>
+            <i class="bi bi-box-seam"></i> {% trans "Контейнеры" %}
+        </a>
+    </nav>
+    {% if name == 'dashboard' %}
+    <a href="{% url 'website:home' %}" class="btn btn-sm btn-light ms-auto">
+        <i class="bi bi-arrow-left"></i> {% trans "Назад" %}
+    </a>
+    {% else %}
+    <a href="{% url 'website:dashboard' %}" class="btn btn-sm btn-light ms-auto">
+        <i class="bi bi-arrow-left"></i> {% trans "Назад" %}
+    </a>
+    {% endif %}
+</div>
+{% endwith %}
