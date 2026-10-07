@@ -112,6 +112,13 @@ nav.sticky {
 html {
     overscroll-behavior-x: none;
 }
+/* Тот же рабочий масштаб, что на клиентском сайте: как браузер на 80%.
+   Узкие окна и печать не трогаем. */
+@media screen and (min-width: 992px) {
+    html {
+        zoom: 0.8;
+    }
+}
 body {
     overflow-x: hidden;
     width: 100%;

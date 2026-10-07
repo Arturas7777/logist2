@@ -26,6 +26,14 @@
     --gradient-green: linear-gradient(135deg, #32CD32 0%, #228B22 100%);
 }
 
+/* Рабочий масштаб как браузер на 80%. На телефоне не уменьшаем:
+   там и так мало места. Печать остаётся 100%. */
+@media screen and (min-width: 992px) {
+    html {
+        zoom: 0.8;
+    }
+}
+
 body {
     font-family: 'Montserrat', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     line-height: 1.6;
