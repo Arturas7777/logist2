@@ -5,7 +5,20 @@ from urllib.parse import urlencode
 
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Case, Count, Exists, F, IntegerField, OuterRef, Prefetch, Q, Subquery, Value, When
+from django.db.models import (
+    Case,
+    Count,
+    DateField,
+    Exists,
+    F,
+    IntegerField,
+    OuterRef,
+    Prefetch,
+    Q,
+    Subquery,
+    Value,
+    When,
+)
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
@@ -158,6 +171,13 @@ def client_dashboard(request):
                     Subquery(container_photos_sq, output_field=IntegerField()),
                     Value(0),
                 ),
+                # ETA только у «В пути». У остальных статусов ключ пустой,
+                # чтобы не сдвигать разгрузку, порт и передачи.
+                _floating_eta=Case(
+                    When(status="FLOATING", then=F("container__eta")),
+                    default=Value(None),
+                    output_field=DateField(),
+                ),
             )
         )
 
@@ -183,15 +203,19 @@ def client_dashboard(request):
             cars_qs = cars_qs.filter(in_active_request=in_request)
 
         # UNLOADED — давние разгрузки сверху (рабочий список склада).
-        # TRANSFERRED — свежие передачи сверху: у старых часто нет фото,
-        # иначе первая страница фильтра «Передан» идёт без иконки галереи.
+        # IN_PORT — следом. FLOATING («В пути») — ближайший ETA контейнера
+        # выше, без даты внизу группы. TRANSFERRED — свежие передачи сверху:
+        # у старых часто нет фото, иначе первая страница фильтра «Передан»
+        # идёт без иконки галереи.
         cars_qs = cars_qs.order_by(
             Case(
                 When(status="UNLOADED", then=Value(0)),
                 When(status="IN_PORT", then=Value(1)),
-                default=Value(2),
+                When(status="FLOATING", then=Value(2)),
+                default=Value(3),
                 output_field=IntegerField(),
             ),
+            F("_floating_eta").asc(nulls_last=True),
             F("transfer_date").desc(nulls_last=True),
             F("unload_date").asc(nulls_last=True),
             "-id",

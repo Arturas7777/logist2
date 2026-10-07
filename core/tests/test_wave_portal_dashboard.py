@@ -41,6 +41,23 @@ def _car(owner, vin, status, **kwargs):
 # ── Q10 ─────────────────────────────────────────────────────────────────────
 
 
+def test_dashboard_floating_sorted_by_eta_soonest_first(portal):
+    """«В пути»: ближайший ETA выше, без даты — внизу. Разгрузка остаётся над ними."""
+    http, owner = portal
+    late = Container.objects.create(number="ETALATE00001", status="FLOATING", eta=date(2026, 12, 20))
+    soon = Container.objects.create(number="ETASOON00001", status="FLOATING", eta=date(2026, 10, 15))
+    missing = Container.objects.create(number="ETANONE00001", status="FLOATING")
+    _car(owner, "ETALATEVIN0000001", "FLOATING", container=late)
+    _car(owner, "ETASOONVIN0000001", "FLOATING", container=soon)
+    _car(owner, "ETANONEVIN0000001", "FLOATING", container=missing)
+    _car(owner, "ETAUNLDVIN0000001", "UNLOADED", unload_date=date(2026, 9, 1))
+
+    html = http.get(reverse("website:dashboard")).content.decode()
+    assert html.index("ETAUNLDVIN0000001") < html.index("ETASOONVIN0000001")
+    assert html.index("ETASOONVIN0000001") < html.index("ETALATEVIN0000001")
+    assert html.index("ETALATEVIN0000001") < html.index("ETANONEVIN0000001")
+
+
 def test_dashboard_default_shows_floating_cars(portal):
     http, owner = portal
     _car(owner, "FLOATDEFAULT00001", "FLOATING")
