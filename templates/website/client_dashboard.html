@@ -1,5 +1,5 @@
 {% extends "website/base.html" %}
-{% load i18n static %}
+{% load i18n static admin_extras %}
 
 {% block title %}{% trans "Личный кабинет" %} - {{ client.name }}{% endblock %}
 
@@ -64,6 +64,12 @@
     .gallery-link:hover { background: #c8e6c9; color: #146c43; }
     .gallery-link .bi { font-size: .9rem; }
     .title-cell { text-align: center; width: 44px; }
+    .photos-cell {
+        text-align: center;
+        width: 1%;
+        white-space: nowrap;
+    }
+    .photos-cell .gallery-link { margin-left: 0; }
     .title-tile {
         display: inline-flex;
         align-items: center;
@@ -273,6 +279,10 @@
                             <th>{% trans "Марка" %}</th>
                             <th>VIN</th>
                             <th class="title-cell">{% trans "Тайтл" %}</th>
+                            <th class="photos-cell" title="{% trans 'Фото контейнера' %}">
+                                <i class="bi bi-camera" aria-hidden="true"></i>
+                                <span class="visually-hidden">{% trans "Фото контейнера" %}</span>
+                            </th>
                             <th>{% trans "Контейнер" %}</th>
                             <th>{% trans "Разгружен" %}</th>
                             <th>{% trans "Склад" %}</th>
@@ -326,16 +336,23 @@
                                 </span>
                                 {% endif %}
                             </td>
+                            <td class="photos-cell" data-label="{% trans 'Фото контейнера' %}">
+                                {% if car.container and car.container_photos_count %}
+                                <button type="button" class="gallery-link"
+                                        data-container-photos="{{ car.container.number }}"
+                                        title="{% trans 'Фотографии контейнера' %}">
+                                    <i class="bi bi-camera"></i>{{ car.container_photos_count }}
+                                </button>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
                             <td data-label="{% trans 'Контейнер' %}">
                                 {% if car.container %}
-                                    <span class="text-monospace">{{ car.container.number }}</span>
-                                    {% if car.container_photos_count %}
-                                    <button type="button" class="gallery-link"
-                                            data-container-photos="{{ car.container.number }}"
-                                            title="{% trans 'Фотографии контейнера' %}">
-                                        <i class="bi bi-camera"></i>{{ car.container_photos_count }}
-                                    </button>
-                                    {% endif %}
+                                    <span class="cm-container-no">
+                                        {% line_mark car.container.line %}
+                                        <span class="text-monospace">{{ car.container.number }}</span>
+                                    </span>
                                 {% else %}
                                     <span class="text-muted">—</span>
                                 {% endif %}

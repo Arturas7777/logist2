@@ -48,6 +48,28 @@
 .status-PAID, .status-LINKED_PAID { background: #d4edda; color: #155724; }
 .status-OVERDUE { background: #f8d7da; color: #721c24; }
 
+/* Значок морской линии перед номером контейнера — тот же, что в админке. */
+.cm-container-no {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: inherit;
+}
+.cm-line-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
 /* Галерея карточек авто/контейнера + единый lightbox (C7) */
 .photo-item {
     position: relative;

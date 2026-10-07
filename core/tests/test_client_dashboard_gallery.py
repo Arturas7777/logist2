@@ -46,6 +46,11 @@ def test_dashboard_gallery_link_when_container_has_photos(portal_login):
     assert "GALLERY0011" in html
     assert 'data-container-photos="GALLERY0011"' in html
     assert "bi-camera" in html
+    row = html[html.index("GALLERYVIN0000001"):]
+    container_cell = row[row.index('data-label="Контейнер"'):row.index('data-label="Разгружен"')]
+    assert row.index("title-cell") < row.index("photos-cell") < row.index('data-label="Контейнер"')
+    assert "bi-camera" not in container_cell
+    assert "GALLERY0011" in container_cell
     assert 'id="photosModal"' in html
     assert "?track=" not in html
 

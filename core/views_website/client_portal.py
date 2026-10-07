@@ -118,7 +118,7 @@ def client_dashboard(request):
         )
         cars_qs = (
             Car.objects.filter(client=client)
-            .select_related("warehouse", "container")
+            .select_related("warehouse", "container", "container__line")
             .prefetch_related(Prefetch("photos", queryset=CarPhoto.objects.filter(is_public=True)))
             # Метка «Уже в заявке»: авто состоит в активной заявке на автовоз.
             .annotate(

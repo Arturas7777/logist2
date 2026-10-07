@@ -19,7 +19,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
-from core.models import Car, Client, Container, Warehouse
+from core.models import Car, Client, Container, Line, Warehouse
 from core.models.website import CarPhoto, ClientUser, ContainerPhoto
 
 pytestmark = pytest.mark.django_db
@@ -84,6 +84,22 @@ def test_dashboard_status_filter_works(portal):
     assert "CHIPTRANSFER00001" in html
     assert "CHIPUNLOADED00001" not in html
     assert "Сбросить" in html
+
+
+def test_dashboard_shows_line_mark_before_container_number(portal):
+    http, owner = portal
+    line = Line.objects.create(name="MAERSK")
+    container = Container.objects.create(number="LINECONT000001", status="FLOATING", line=line)
+    bare = Container.objects.create(number="NOLINECONT00001", status="FLOATING")
+    _car(owner, "LINECARVIN0000001", "FLOATING", container=container)
+    _car(owner, "NOLINECARVIN00001", "FLOATING", container=bare)
+
+    html = http.get(reverse("website:dashboard")).content.decode()
+    assert html.index("cm-line-mark") < html.index("LINECONT000001")
+    assert ">MAE<" in html
+    assert "title=\"MAERSK\"" in html
+    assert "NOLINECONT00001" in html
+    assert html.count("cm-line-mark") == 1
 
 
 # ── C1 ──────────────────────────────────────────────────────────────────────
