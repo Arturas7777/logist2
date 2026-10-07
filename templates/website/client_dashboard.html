@@ -100,7 +100,45 @@
         display:flex;
         align-items:center;
         justify-content:space-between;
-        margin-bottom:1rem;
+        margin-bottom:.75rem;
+    }
+    .cars-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        width: 100%;
+        gap: .5rem .75rem;
+        margin-bottom: .75rem;
+    }
+    .cars-toolbar form {
+        flex: 0 0 auto;
+        min-width: 0;
+        flex-wrap: nowrap;
+    }
+    .cars-search-field {
+        width: 18rem;
+        max-width: 100%;
+    }
+    .cars-toolbar #create-request-btn {
+        margin-left: auto;
+    }
+    @media (max-width: 767px) {
+        .cars-toolbar form { flex-wrap: wrap; flex-basis: 100%; }
+        .cars-toolbar #create-request-btn { margin-left: 0; }
+    }
+    /* Сплошной зелёный: градиент .btn-success на светлом фоне почти пропадает,
+       особенно пока кнопка неактивна. */
+    #create-request-btn,
+    #create-request-btn:hover,
+    #create-request-btn:disabled,
+    #create-request-btn:disabled:hover {
+        background: #146c43 !important;
+        border: 1px solid #0f5132 !important;
+        color: #fff !important;
+        opacity: 1 !important;
+    }
+    #create-request-btn:hover:not(:disabled) {
+        background: #0f5132 !important;
     }
     .balance-positive { color:#155724; }
     .balance-negative { color:#721c24; }
@@ -166,24 +204,14 @@
         <h4 class="mb-0"><i class="bi bi-car-front text-primary"></i> {% trans "Мои автомобили" %}</h4>
     </div>
 
-    <!-- Быстрые чипы статусов (Q10) -->
-    <nav class="status-chips mb-2" aria-label="{% trans 'Фильтр по статусу' %}">
-        {% for chip in status_chips %}
-        <a href="{{ chip.url }}" class="status-chip{% if chip.active %} is-active{% endif %}"
-           {% if chip.active %}aria-current="true"{% endif %}>{{ chip.label }}</a>
-        {% endfor %}
-    </nav>
-
-    <!-- Поиск и фильтр по своим авто -->
-    <form method="get" class="row g-2 align-items-center mb-3" action="">
-        <div class="col-sm-5 col-lg-4">
-            <div class="input-group input-group-sm car-search">
+    <!-- Поиск слева, «Создать заявку» справа в той же строке -->
+    <div class="cars-toolbar">
+        <form method="get" class="d-flex align-items-center gap-2" action="">
+            <div class="input-group input-group-sm car-search cars-search-field">
                 <span class="input-group-text"><i class="bi bi-search"></i></span>
                 <input type="text" class="form-control" name="q" value="{{ search_query }}"
                        placeholder="{% trans 'VIN, марка или контейнер' %}">
             </div>
-        </div>
-        <div class="col-auto">
             <div class="dropdown">
                 <button class="btn btn-sm btn-outline-secondary dropdown-toggle bg-white text-body" type="button"
                         data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
@@ -216,25 +244,24 @@
                     <button type="submit" class="btn btn-sm btn-primary w-100 mt-2">{% trans "Применить" %}</button>
                 </div>
             </div>
-        </div>
-        <div class="col-auto">
-            <button type="submit" class="btn btn-sm btn-success">{% trans "Найти" %}</button>
-            {% if search_query or selected_statuses %}
-            <a href="{% url 'website:dashboard' %}" class="btn btn-sm btn-outline-secondary">{% trans "Сбросить" %}</a>
-            {% endif %}
-        </div>
-    </form>
+            <div>
+                <button type="submit" class="btn btn-sm btn-success">{% trans "Найти" %}</button>
+                {% if search_query or selected_statuses %}
+                <a href="{% url 'website:dashboard' %}" class="btn btn-sm btn-primary">{% trans "Сбросить" %}</a>
+                {% endif %}
+            </div>
+        </form>
+        {% if cars %}
+        <button type="submit" form="mass-request-form" class="btn btn-sm" id="create-request-btn" disabled>
+            <span class="badge text-bg-light me-1 d-none" id="selected-count-badge">0</span><i class="bi bi-truck"></i> {% trans "Создать заявку" %}
+        </button>
+        {% endif %}
+    </div>
 
     <div class="card border-0 shadow-sm mb-4">
         <div class="card-body p-0">
             {% if cars %}
             <form method="get" action="{% url 'website:transport_requests' %}" id="mass-request-form">
-            <div class="d-flex justify-content-between align-items-center px-3 py-2 border-bottom bg-light rounded-top">
-                <span class="text-muted small" id="selected-count">{% trans "Выберите авто для новой заявки на автовоз" %}</span>
-                <button type="submit" class="btn btn-sm btn-success" id="create-request-btn" disabled>
-                    <span class="badge text-bg-light me-1 d-none" id="selected-count-badge">0</span><i class="bi bi-truck"></i> {% trans "Создать заявку" %}
-                </button>
-            </div>
             <div class="table-responsive">
                 <table class="table table-cars table-hover mb-0 align-middle portal-table">
                     <thead class="table-light">
@@ -387,17 +414,12 @@
     var checkboxes = Array.prototype.slice.call(form.querySelectorAll(".car-select"));
     var button = document.getElementById("create-request-btn");
     var badge = document.getElementById("selected-count-badge");
-    var counter = document.getElementById("selected-count");
-    var defaultText = counter.textContent;
 
     function refresh() {
         var checked = checkboxes.filter(function (cb) { return cb.checked; });
         button.disabled = checked.length === 0;
         badge.textContent = checked.length;
         badge.classList.toggle("d-none", checked.length === 0);
-        counter.textContent = checked.length
-            ? "{% trans 'Выбрано авто:' %} " + checked.length
-            : defaultText;
         checkboxes.forEach(function (cb) {
             var row = cb.closest("tr");
             if (row) row.classList.toggle("row-selected", cb.checked);

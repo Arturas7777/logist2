@@ -70,19 +70,20 @@ def test_dashboard_default_shows_floating_cars(portal):
     assert "TRANSFDEFAULT0001" not in html
 
 
-def test_dashboard_status_chips_present_and_work(portal):
+def test_dashboard_status_filter_works(portal):
     http, owner = portal
     _car(owner, "CHIPTRANSFER00001", "TRANSFERRED", transfer_date=date(2026, 1, 1))
     _car(owner, "CHIPUNLOADED00001", "UNLOADED")
 
     html = http.get(reverse("website:dashboard")).content.decode()
-    assert 'class="status-chips' in html
-    assert "status-chip is-active" in html
-    assert "?status=TRANSFERRED" in html
+    assert "status-chips" not in html
+    assert "CHIPUNLOADED00001" in html
+    assert "CHIPTRANSFER00001" not in html
 
     html = http.get(reverse("website:dashboard"), {"status": "TRANSFERRED"}).content.decode()
     assert "CHIPTRANSFER00001" in html
     assert "CHIPUNLOADED00001" not in html
+    assert "Сбросить" in html
 
 
 # ── C1 ──────────────────────────────────────────────────────────────────────

@@ -22,7 +22,6 @@ from django.db.models import (
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
-from django.utils.translation import gettext_lazy as _
 
 from core.models import Car, CarModelImage, CarStatusHistory, Container
 from core.models.website import TransportRequest
@@ -38,18 +37,6 @@ CARS_PER_PAGE = 50
 
 # Статусы, при которых авто ещё «в работе» — дефолтный фильтр кабинета.
 ACTIVE_CAR_STATUSES = ("FLOATING", "IN_PORT", "UNLOADED")
-
-# Быстрые чипы над списком авто: (код, подпись, статусы). Пустой набор
-# статусов = дефолт (все активные). Подписи — gettext_lazy, чтобы
-# переводиться в момент рендера.
-STATUS_CHIPS = (
-    ("active", _("Активные"), ()),
-    ("transit", _("В пути"), ("FLOATING", "IN_PORT")),
-    ("warehouse", _("На складе"), ("UNLOADED",)),
-    ("transferred", _("Переданы"), ("TRANSFERRED",)),
-    ("all", _("Все"), ("FLOATING", "IN_PORT", "UNLOADED", "TRANSFERRED")),
-)
-
 
 def _client_active_containers(client):
     """Активные контейнеры клиента для страницы «Контейнеры».
@@ -86,32 +73,6 @@ def _client_active_containers(client):
         )
         .order_by("_status_rank", F("eta").asc(nulls_last=True), "-id")
     )
-
-
-def _status_chips(search_query, selected_statuses, status_codes):
-    """Чипы фильтра статусов с готовыми ссылками.
-
-    Спец-значения IN_REQUEST / NO_REQUEST сохраняются в ссылках чипов,
-    чтобы переключение статуса не сбрасывало фильтр по заявкам.
-    """
-    request_flags = [s for s in selected_statuses if s in ("IN_REQUEST", "NO_REQUEST")]
-    current = set(status_codes)
-    chips = []
-    for code, label, statuses in STATUS_CHIPS:
-        params = []
-        if search_query:
-            params.append(("q", search_query))
-        params += [("status", s) for s in statuses]
-        params += [("status", s) for s in request_flags]
-        chips.append(
-            {
-                "code": code,
-                "label": label,
-                "url": "?" + urlencode(params) if params else "?",
-                "active": current == set(statuses),
-            }
-        )
-    return chips
 
 
 def _attach_model_images(cars):
@@ -251,7 +212,6 @@ def client_dashboard(request):
             "search_query": search_query,
             "selected_statuses": selected_statuses,
             "car_status_choices": Container.STATUS_CHOICES,
-            "status_chips": _status_chips(search_query, selected_statuses, status_codes),
             "qs_extra": qs_extra,
             "open_invoices_debt": open_debt,
             "total_balance": total_balance,
