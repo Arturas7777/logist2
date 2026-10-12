@@ -38,6 +38,7 @@ CARS_PER_PAGE = 50
 # Статусы, при которых авто ещё «в работе» — дефолтный фильтр кабинета.
 ACTIVE_CAR_STATUSES = ("FLOATING", "IN_PORT", "UNLOADED")
 
+
 def _client_active_containers(client):
     """Активные контейнеры клиента для страницы «Контейнеры».
 
