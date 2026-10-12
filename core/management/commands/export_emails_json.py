@@ -1,211 +1,145 @@
-"""Management-команда для экспорта писем в JSON (read-only доступ для ботов).
+"""Письма из БД CRM в JSON — источник почты для ботов вместо Gmail API.
 
-Боты подключаются к серверу по SSH и запускают эту команду с фильтрами.
-Возвращает компактный JSON без тяжёлого body_html — только метаданные
-и опционально body_text.
+Команда только читает БД. Письма отдаются по возрастанию ``id``; ``id``
+монотонно растёт в порядке попадания письма в CRM, поэтому он и служит
+курсором: бот запоминает ``next_after_id`` из ответа и передаёт его в
+следующий вызов как ``--after-id``. ``--since`` фильтрует по
+``received_at`` (дата из заголовка письма, её задаёт отправитель) и для
+опроса «что нового» не годится — письмо с «задней» датой будет пропущено.
 
-Примеры:
-    # Новые письма за последние 2 часа
-    python manage.py export_emails_json --since=2h
-
-    # От конкретного отправителя
-    python manage.py export_emails_json --since=24h --sender=maersk.com
-
-    # По конкретному контейнеру
-    python manage.py export_emails_json --container=MSKU9754460
-
-    # С полным телом (осторожно: большой вывод)
-    python manage.py export_emails_json --since=1h --include-body
+    python manage.py export_emails_json --after-id 12345
+    python manage.py export_emails_json --since 2d --sender maersk.com --pretty
 """
 
 from __future__ import annotations
 
 import json
-import sys
-from datetime import timedelta
-from typing import Any
+import re
+from datetime import datetime, timedelta
+from datetime import timezone as dt_timezone
 
-from django.core.management.base import BaseCommand
-from django.db.models import Prefetch, Q
+from django.core.management.base import BaseCommand, CommandError
+from django.db.models import Prefetch
 from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_datetime
+
+from core.services.email_attachments import cached_path
+
+MAX_LIMIT = 500
+_RELATIVE_RE = re.compile(r"^(\d+)([mhd])$")
+_UNITS = {"m": "minutes", "h": "hours", "d": "days"}
+
+
+def parse_since(value: str):
+    """'30m' / '2h' / '7d' / ISO-дата или дата-время → aware datetime."""
+    raw = (value or "").strip()
+    match = _RELATIVE_RE.match(raw.lower())
+    if match:
+        return timezone.now() - timedelta(**{_UNITS[match.group(2)]: int(match.group(1))})
+    dt = parse_datetime(raw)
+    if dt is None:
+        d = parse_date(raw)
+        if d is not None:
+            dt = datetime(d.year, d.month, d.day)
+    if dt is None:
+        raise CommandError(f"--since={value!r}: ожидается 30m, 2h, 7d или ISO-дата/время")
+    if timezone.is_naive(dt):
+        dt = dt.replace(tzinfo=dt_timezone.utc)
+    return dt
 
 
 class Command(BaseCommand):
-    help = "Экспорт писем из БД в JSON (для ботов через SSH)"
+    help = "Письма из БД CRM в JSON (только чтение; для ботов вместо Gmail API)."
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            "--since",
-            type=str,
-            help="Временной фильтр: '2h' (часы), '7d' (дни), или ISO timestamp",
-        )
-        parser.add_argument(
-            "--sender",
-            type=str,
-            help="Фильтр по from_addr (substring match, case-insensitive)",
-        )
-        parser.add_argument(
-            "--subject",
-            type=str,
-            help="Фильтр по subject (substring match, case-insensitive)",
-        )
-        parser.add_argument(
-            "--direction",
-            choices=["INCOMING", "OUTGOING"],
-            help="Фильтр по направлению",
-        )
-        parser.add_argument(
-            "--container",
-            type=str,
-            help="Фильтр по номеру контейнера",
-        )
-        parser.add_argument(
-            "--car-vin",
-            type=str,
-            help="Фильтр по VIN машины",
-        )
-        parser.add_argument(
-            "--transport-request",
-            type=str,
-            help="Фильтр по номеру заявки на автовоз (TR-YYYYMMDD-NNN)",
-        )
-        parser.add_argument(
-            "--include-body",
-            action="store_true",
-            help="Включить body_text в вывод (может быть большим)",
-        )
-        parser.add_argument(
-            "--limit",
-            type=int,
-            default=100,
-            help="Максимальное количество писем в выводе (default: 100)",
-        )
-        parser.add_argument(
-            "--compact",
-            action="store_true",
-            help="Компактный JSON (без отступов)",
-        )
+        parser.add_argument("--after-id", type=int, default=0, help="Курсор: письма с id больше указанного.")
+        parser.add_argument("--since", help="received_at не раньше: 30m, 2h, 7d или ISO-дата/время.")
+        parser.add_argument("--sender", help="Подстрока в From (без учёта регистра).")
+        parser.add_argument("--subject", help="Подстрока в теме (без учёта регистра).")
+        parser.add_argument("--direction", choices=["INCOMING", "OUTGOING"])
+        parser.add_argument("--container", help="Номер контейнера, к которому привязано письмо.")
+        parser.add_argument("--car-vin", help="VIN машины, к которой привязано письмо.")
+        parser.add_argument("--transport-request", help="Номер заявки на автовоз (TR-…).")
+        parser.add_argument("--include-body", action="store_true", help="Добавить body_text.")
+        parser.add_argument("--include-hidden", action="store_true", help="Не скрывать дубли и отфильтрованные.")
+        parser.add_argument("--limit", type=int, default=100, help=f"Сколько писем (1..{MAX_LIMIT}, по умолчанию 100).")
+        parser.add_argument("--pretty", action="store_true", help="JSON с отступами.")
 
     def handle(self, *args, **options):
+        from core.models import Car, Container
         from core.models.email import ContainerEmail
+        from core.models.website import TransportRequest
 
-        qs = ContainerEmail.objects.all()
+        limit = options["limit"]
+        if not 1 <= limit <= MAX_LIMIT:
+            raise CommandError(f"--limit должен быть от 1 до {MAX_LIMIT}")
+        if options["after_id"] < 0:
+            raise CommandError("--after-id не может быть отрицательным")
 
-        # ── Фильтры ─────────────────────────────────────────────────────────
-        since_str = options.get("since")
-        if since_str:
-            cutoff = self._parse_since(since_str)
-            if cutoff:
-                qs = qs.filter(received_at__gte=cutoff)
+        qs = ContainerEmail.objects.filter(pk__gt=options["after_id"])
+        if not options["include_hidden"]:
+            qs = qs.filter(hidden_reason="")
+        if options["since"] is not None:
+            qs = qs.filter(received_at__gte=parse_since(options["since"]))
+        if options["sender"]:
+            qs = qs.filter(from_addr__icontains=options["sender"])
+        if options["subject"]:
+            qs = qs.filter(subject__icontains=options["subject"])
+        if options["direction"]:
+            qs = qs.filter(direction=options["direction"])
+        if options["container"]:
+            qs = qs.filter(containers__number__iexact=options["container"].strip())
+        if options["car_vin"]:
+            qs = qs.filter(cars__vin__iexact=options["car_vin"].strip())
+        if options["transport_request"]:
+            qs = qs.filter(transport_requests__number__iexact=options["transport_request"].strip())
 
-        sender = options.get("sender")
-        if sender:
-            qs = qs.filter(from_addr__icontains=sender)
+        fields = [
+            "id",
+            "gmail_id",
+            "thread_id",
+            "message_id",
+            "direction",
+            "from_addr",
+            "to_addrs",
+            "cc_addrs",
+            "subject",
+            "received_at",
+            "snippet",
+            "attachments_json",
+        ]
+        if options["include_body"]:
+            fields.append("body_text")
 
-        subject = options.get("subject")
-        if subject:
-            qs = qs.filter(subject__icontains=subject)
-
-        direction = options.get("direction")
-        if direction:
-            qs = qs.filter(direction=direction)
-
-        container_num = options.get("container")
-        if container_num:
-            qs = qs.filter(containers__number__iexact=container_num).distinct()
-
-        car_vin = options.get("car_vin")
-        if car_vin:
-            qs = qs.filter(cars__vin__iexact=car_vin).distinct()
-
-        transport_req = options.get("transport_request")
-        if transport_req:
-            qs = qs.filter(transport_requests__number__iexact=transport_req).distinct()
-
-        # ── Исключаем скрытые письма (дубли и отфильтрованные) ───────────────
-        qs = qs.filter(hidden_reason="")
-
-        # ── Prefetch связей для вывода linked entities ───────────────────────
-        qs = qs.prefetch_related(
-            Prefetch("containers", queryset=self._container_queryset()),
-            Prefetch("cars", queryset=self._car_queryset()),
-            Prefetch("transport_requests", queryset=self._tr_queryset()),
-        )
-
-        # ── Лимит + сортировка ───────────────────────────────────────────────
-        limit = options.get("limit", 100)
-        qs = qs.order_by("-received_at")[:limit]
-
-        # ── Сериализация ─────────────────────────────────────────────────────
-        include_body = options.get("include_body", False)
-        items = [self._serialize_email(email, include_body) for email in qs]
-
-        output = {
-            "count": len(items),
-            "timestamp": timezone.now().isoformat(),
-            "emails": items,
-        }
-
-        indent = None if options.get("compact") else 2
-        json.dump(output, sys.stdout, ensure_ascii=False, indent=indent)
-        sys.stdout.write("\n")
-
-    def _parse_since(self, since_str: str):
-        """Парсит '2h', '7d', или ISO timestamp."""
-        if not since_str:
-            return None
-
-        # ISO timestamp
-        if "T" in since_str or "-" in since_str[:10]:
-            try:
-                from django.utils.dateparse import parse_datetime
-
-                dt = parse_datetime(since_str)
-                if dt:
-                    return dt
-            except Exception:
-                pass
-
-        # Относительное время: '2h', '30m', '7d'
-        import re
-
-        m = re.match(r"^(\d+)([mhd])$", since_str.lower())
-        if m:
-            value = int(m.group(1))
-            unit = m.group(2)
-            if unit == "m":
-                return timezone.now() - timedelta(minutes=value)
-            elif unit == "h":
-                return timezone.now() - timedelta(hours=value)
-            elif unit == "d":
-                return timezone.now() - timedelta(days=value)
-
-        self.stderr.write(
-            self.style.WARNING(
-                f"Не удалось распарсить --since={since_str}; "
-                f"ожидается '2h', '7d', или ISO timestamp"
+        qs = (
+            qs.distinct()
+            .order_by("pk")
+            .only(*fields)
+            .prefetch_related(
+                Prefetch("containers", queryset=Container.objects.only("id", "number")),
+                Prefetch("cars", queryset=Car.objects.only("id", "vin")),
+                Prefetch("transport_requests", queryset=TransportRequest.objects.only("id", "number")),
             )
         )
-        return None
+        rows = list(qs[: limit + 1])
+        has_more = len(rows) > limit
+        rows = rows[:limit]
 
-    def _container_queryset(self):
-        from core.models import Container
+        payload = {
+            "count": len(rows),
+            "has_more": has_more,
+            "next_after_id": rows[-1].pk if rows else options["after_id"],
+            "emails": [self._serialize(e, options["include_body"]) for e in rows],
+        }
+        if options["pretty"]:
+            text = json.dumps(payload, ensure_ascii=False, indent=2)
+        else:
+            text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        self.stdout.write(text)
 
-        return Container.objects.only("id", "number")
-
-    def _car_queryset(self):
-        from core.models import Car
-
-        return Car.objects.only("id", "vin")
-
-    def _tr_queryset(self):
-        from core.models import TransportRequest
-
-        return TransportRequest.objects.only("id", "number")
-
-    def _serialize_email(self, email, include_body: bool) -> dict[str, Any]:
-        """Компактная сериализация одного письма."""
-        result = {
+    @staticmethod
+    def _serialize(email, include_body: bool) -> dict:
+        item = {
             "id": email.pk,
             "gmail_id": email.gmail_id,
             "thread_id": email.thread_id,
@@ -217,30 +151,21 @@ class Command(BaseCommand):
             "subject": email.subject,
             "received_at": email.received_at.isoformat(),
             "snippet": email.snippet,
-        }
-
-        if include_body:
-            result["body_text"] = email.body_text
-
-        # Вложения: filename, size, content_type, is_inline
-        if email.attachments_json:
-            result["attachments"] = [
+            "attachments": [
                 {
-                    "filename": att.get("filename"),
-                    "size": att.get("size"),
-                    "content_type": att.get("content_type"),
-                    "attachment_id": att.get("attachment_id"),
-                    "is_inline": att.get("is_inline", False),
-                    "available": bool(att.get("storage_path")),
+                    "index": idx,
+                    "filename": att.get("filename") or "",
+                    "size": att.get("size") or 0,
+                    "content_type": att.get("content_type") or "",
+                    "is_inline": bool(att.get("is_inline")),
+                    "cached": cached_path(att) is not None,
                 }
-                for att in email.attachments_json
-            ]
-        else:
-            result["attachments"] = []
-
-        # Связанные сущности
-        result["linked_containers"] = [c.number for c in email.containers.all()]
-        result["linked_cars"] = [car.vin for car in email.cars.all()]
-        result["linked_transport_requests"] = [tr.number for tr in email.transport_requests.all()]
-
-        return result
+                for idx, att in enumerate(email.attachments_json or [])
+            ],
+            "containers": [c.number for c in email.containers.all()],
+            "cars": [c.vin for c in email.cars.all()],
+            "transport_requests": [t.number for t in email.transport_requests.all()],
+        }
+        if include_body:
+            item["body_text"] = email.body_text
+        return item
