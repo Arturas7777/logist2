@@ -127,9 +127,9 @@ class Command(BaseCommand):
 
         # ── Prefetch связей для вывода linked entities ───────────────────────
         qs = qs.prefetch_related(
-            Prefetch("containers", queryset=lambda: self._container_queryset()),
-            Prefetch("cars", queryset=lambda: self._car_queryset()),
-            Prefetch("transport_requests", queryset=lambda: self._tr_queryset()),
+            Prefetch("containers", queryset=self._container_queryset()),
+            Prefetch("cars", queryset=self._car_queryset()),
+            Prefetch("transport_requests", queryset=self._tr_queryset()),
         )
 
         # ── Лимит + сортировка ───────────────────────────────────────────────
