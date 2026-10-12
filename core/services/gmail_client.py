@@ -10,8 +10,8 @@ Scopes:
 При смене scope — перегенерировать refresh_token через
 scripts/get_gmail_refresh_token.py.
 
-Rate limiting: Gmail API имеет квоты (429 Too Many Requests). При 429 делаем
-exponential backoff с retry до 3 попыток. См. _execute_with_retry().
+Отказы по квоте (429 / 403 rateLimitExceeded) превращаются в
+``GmailRateLimited`` — см. ``core.services.gmail_quota``.
 """
 
 from __future__ import annotations
@@ -19,7 +19,6 @@ from __future__ import annotations
 import base64
 import logging
 import re
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -29,6 +28,8 @@ from email.utils import parsedate_to_datetime
 from typing import Any, Iterable, Iterator
 
 from django.conf import settings
+
+from core.services.gmail_quota import GmailRateLimited, is_rate_limit_error, retry_after_of
 
 logger = logging.getLogger(__name__)
 
@@ -136,46 +137,20 @@ class GmailApiClient:
             self._service = self._build_service()
         return self._service
 
-    # ------------------------------------------------------------------
-    # retry logic for rate limiting
-    # ------------------------------------------------------------------
+    def _execute(self, request):
+        """``request.execute()``, но отказ по квоте → ``GmailRateLimited``.
 
-    def _execute_with_retry(self, request, max_retries: int = 3):
-        """Выполняет API request с exponential backoff при 429.
-
-        Gmail API quota limits могут возвращать 429 Too Many Requests.
-        При этом делаем retry с паузами: 2s, 4s, 8s.
+        Повторов здесь нет намеренно: решение «ждать» принимает вызывающий
+        код через ``gmail_quota.start_cooldown``.
         """
         from googleapiclient.errors import HttpError
 
-        for attempt in range(max_retries + 1):
-            try:
-                return request.execute()
-            except HttpError as err:
-                status = getattr(err, "status_code", None) or getattr(
-                    getattr(err, "resp", None), "status", None
-                )
-                try:
-                    status = int(status) if status is not None else None
-                except (TypeError, ValueError):
-                    status = None
-
-                if status == 429 and attempt < max_retries:
-                    wait = 2 ** (attempt + 1)  # 2, 4, 8 секунд
-                    logger.warning(
-                        "[gmail_client] 429 rate limit hit, retry %d/%d in %ds",
-                        attempt + 1,
-                        max_retries,
-                        wait,
-                    )
-                    time.sleep(wait)
-                    continue
-
-                # Любая другая ошибка или исчерпаны retry
-                raise
-
-        # Не должно дойти сюда, но для безопасности
-        raise RuntimeError("_execute_with_retry: все попытки исчерпаны")
+        try:
+            return request.execute()
+        except HttpError as err:
+            if is_rate_limit_error(err):
+                raise GmailRateLimited(str(err), retry_after=retry_after_of(err)) from err
+            raise
 
     # ------------------------------------------------------------------
     # public API
@@ -183,9 +158,7 @@ class GmailApiClient:
 
     def get_profile(self) -> dict[str, Any]:
         """users.getProfile — возвращает emailAddress, historyId и др."""
-        return self._execute_with_retry(
-            self.service.users().getProfile(userId=self._user_email)
-        )
+        return self._execute(self.service.users().getProfile(userId=self._user_email))
 
     def list_history(self, start_history_id: int) -> Iterator[str]:
         """Возвращает iterator по новым message_id с момента start_history_id.
@@ -208,7 +181,7 @@ class GmailApiClient:
                         pageToken=page_token,
                     )
                 )
-                resp = self._execute_with_retry(request)
+                resp = self._execute(request)
                 for entry in resp.get("history", []) or []:
                     for ma in entry.get("messagesAdded", []) or []:
                         msg = ma.get("message", {})
@@ -243,7 +216,7 @@ class GmailApiClient:
                     pageToken=page_token,
                 )
             )
-            resp = self._execute_with_retry(request)
+            resp = self._execute(request)
             for m in resp.get("messages", []) or []:
                 mid = m.get("id")
                 if mid:
@@ -263,7 +236,7 @@ class GmailApiClient:
                 format="full",
             )
         )
-        raw = self._execute_with_retry(request)
+        raw = self._execute(request)
         return parse_gmail_message(raw)
 
     def get_attachment(self, gmail_id: str, attachment_id: str) -> bytes:
@@ -278,7 +251,7 @@ class GmailApiClient:
                 id=attachment_id,
             )
         )
-        resp = self._execute_with_retry(request)
+        resp = self._execute(request)
         data = resp.get("data", "")
         return _b64url_decode(data)
 
@@ -302,15 +275,21 @@ class GmailApiClient:
         total = 0
         for chunk in _chunked(ids, 1000):
             try:
-                request = self.service.users().messages().batchModify(
-                    userId=self._user_email,
-                    body={
-                        "ids": list(chunk),
-                        "removeLabelIds": ["UNREAD"],
-                    },
+                request = (
+                    self.service.users()
+                    .messages()
+                    .batchModify(
+                        userId=self._user_email,
+                        body={
+                            "ids": list(chunk),
+                            "removeLabelIds": ["UNREAD"],
+                        },
+                    )
                 )
-                self._execute_with_retry(request)
+                self._execute(request)
                 total += len(chunk)
+            except GmailRateLimited:
+                raise
             except HttpError as err:
                 logger.warning(
                     "[gmail_client] batchModify(removeLabelIds=UNREAD) failed for %d ids: %s",

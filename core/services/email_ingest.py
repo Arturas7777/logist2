@@ -22,6 +22,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from core.services import gmail_quota
 from core.services.email_matcher import build_booking_index, match_email_to_containers
 from core.services.gmail_client import (
     GmailApiClient,
@@ -30,6 +31,7 @@ from core.services.gmail_client import (
     ParsedAttachment,
     ParsedMessage,
 )
+from core.services.gmail_quota import GmailRateLimited
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +93,13 @@ def sync_mailbox(*, force_full: bool = False) -> SyncReport:
         report.finished_at = timezone.now().isoformat()
         return report
 
+    remaining = gmail_quota.cooldown_remaining()
+    if remaining:
+        logger.info("[gmail_sync] Пауза после отказа Gmail по квоте, осталось %d с — пропуск.", remaining)
+        report.mode = "cooldown"
+        report.finished_at = timezone.now().isoformat()
+        return report
+
     try:
         client = GmailApiClient()
     except GmailNotConfigured as err:
@@ -100,6 +109,33 @@ def sync_mailbox(*, force_full: bool = False) -> SyncReport:
         report.finished_at = timezone.now().isoformat()
         return report
 
+    try:
+        return _sync_with_client(client, report, force_full=force_full)
+    except GmailRateLimited as err:
+        seconds = gmail_quota.start_cooldown(err.retry_after)
+        logger.warning("[gmail_sync] Gmail отказал по квоте, пауза синка %d с: %s", seconds, err)
+        report.mode = "rate_limited"
+        report.errors.append(f"rate_limited: пауза {seconds} с")
+        report.finished_at = timezone.now().isoformat()
+        _record_rate_limit(report)
+        return report
+
+
+def _record_rate_limit(report: SyncReport) -> None:
+    """Пишет ошибку в GmailSyncState, не трогая курсор истории.
+
+    Ящик один, а адрес из getProfile мы при отказе могли и не получить,
+    поэтому обновляем все строки состояния.
+    """
+    from core.models_email import GmailSyncState
+
+    GmailSyncState.objects.all().update(
+        last_error="; ".join(report.errors[:5])[:2000],
+        updated_at=timezone.now(),
+    )
+
+
+def _sync_with_client(client: GmailApiClient, report: SyncReport, *, force_full: bool) -> SyncReport:
     from core.models_email import GmailSyncState
 
     profile = client.get_profile()
@@ -124,6 +160,8 @@ def sync_mailbox(*, force_full: bool = False) -> SyncReport:
     else:
         report.mode = "full"
         _process_full(client, booking_index, report, ingest_filters)
+
+    gmail_quota.reset_cooldown()
 
     # В конце сохраняем max historyId, полученный от API (приоритет — свежий remote).
     # НО: если хоть одно письмо не удалось скачать/сохранить — курсор НЕ двигаем.
@@ -220,6 +258,8 @@ def _ingest_one(
 
     try:
         msg = client.get_message(gmail_id)
+    except GmailRateLimited:
+        raise
     except Exception as exc:
         # 404 — письмо удалено из ящика после попадания в history (или
         # недоступно навсегда). Ретраить бессмысленно: без этой ветки те же
@@ -708,6 +748,8 @@ def _persist_attachments(
             continue
         try:
             data = client.get_attachment(msg.gmail_id, att.attachment_id)
+        except GmailRateLimited:
+            raise
         except Exception as exc:
             logger.warning("[gmail_sync] attachment fetch failed (%s): %s", att.filename, exc)
             meta["skipped_reason"] = f"fetch_error: {exc}"
