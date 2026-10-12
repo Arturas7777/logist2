@@ -637,10 +637,15 @@ GMAIL_USER_EMAIL = os.getenv("GMAIL_USER_EMAIL", "").strip()
 GMAIL_INITIAL_LOOKBACK_DAYS = int(os.getenv("GMAIL_INITIAL_LOOKBACK_DAYS", "30"))
 GMAIL_MAX_ATTACHMENT_MB = int(os.getenv("GMAIL_MAX_ATTACHMENT_MB", "25"))
 GMAIL_TOKEN_URI = "https://oauth2.googleapis.com/token"
-# Retention policy: сколько дней хранить body_html и закэшированные вложения.
-# После EMAIL_RETENTION_DAYS body_html очищается (остаётся body_text + snippet),
-# вложения удаляются с диска (метаданные остаются в attachments_json).
+# Ретеншен почты (core/services/email_storage.py). У писем старше
+# EMAIL_RETENTION_DAYS очищается body_html и удаляются файлы вложений, к
+# которым не обращались EMAIL_ATTACHMENT_CACHE_TTL_DAYS дней (по запросу
+# файл снова скачивается из Gmail). 0 — очистка выключена.
 EMAIL_RETENTION_DAYS = int(os.getenv("EMAIL_RETENTION_DAYS", "90"))
+EMAIL_ATTACHMENT_CACHE_TTL_DAYS = int(os.getenv("EMAIL_ATTACHMENT_CACHE_TTL_DAYS", "7"))
+# Общий лимит каталога вложений, МБ: сверх него вытесняются давно не
+# использованные файлы любых писем. 0 — без лимита.
+EMAIL_ATTACHMENT_CACHE_MAX_MB = int(os.getenv("EMAIL_ATTACHMENT_CACHE_MAX_MB", "0"))
 # Scopes: чтение + отправка (Phase 2).
 # При изменении — перегенерировать refresh_token через
 # scripts/get_gmail_refresh_token.py.
