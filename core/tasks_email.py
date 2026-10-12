@@ -90,3 +90,11 @@ def sync_emails_from_gmail(self, force_full: bool = False) -> dict:
         raise
     finally:
         cache.delete(_LOCK_KEY)
+
+
+@shared_task(bind=True, max_retries=0, time_limit=1800, soft_time_limit=1700)
+def cleanup_email_storage(self) -> dict:
+    """Ежедневный ретеншен почтовых данных (см. core/services/email_storage.py)."""
+    from core.services.email_storage import run_retention
+
+    return run_retention()

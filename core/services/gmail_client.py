@@ -9,6 +9,9 @@ Scopes:
   * ``gmail.send``    — отправка писем из админки.
 При смене scope — перегенерировать refresh_token через
 scripts/get_gmail_refresh_token.py.
+
+Отказы по квоте (429 / 403 rateLimitExceeded) превращаются в
+``GmailRateLimited`` — см. ``core.services.gmail_quota``.
 """
 
 from __future__ import annotations
@@ -25,6 +28,8 @@ from email.utils import parsedate_to_datetime
 from typing import Any, Iterable, Iterator
 
 from django.conf import settings
+
+from core.services.gmail_quota import GmailRateLimited, is_rate_limit_error, retry_after_of
 
 logger = logging.getLogger(__name__)
 
@@ -132,13 +137,28 @@ class GmailApiClient:
             self._service = self._build_service()
         return self._service
 
+    def _execute(self, request):
+        """``request.execute()``, но отказ по квоте → ``GmailRateLimited``.
+
+        Повторов здесь нет намеренно: решение «ждать» принимает вызывающий
+        код через ``gmail_quota.start_cooldown``.
+        """
+        from googleapiclient.errors import HttpError
+
+        try:
+            return request.execute()
+        except HttpError as err:
+            if is_rate_limit_error(err):
+                raise GmailRateLimited(str(err), retry_after=retry_after_of(err)) from err
+            raise
+
     # ------------------------------------------------------------------
     # public API
     # ------------------------------------------------------------------
 
     def get_profile(self) -> dict[str, Any]:
         """users.getProfile — возвращает emailAddress, historyId и др."""
-        return self.service.users().getProfile(userId=self._user_email).execute()
+        return self._execute(self.service.users().getProfile(userId=self._user_email))
 
     def list_history(self, start_history_id: int) -> Iterator[str]:
         """Возвращает iterator по новым message_id с момента start_history_id.
@@ -151,7 +171,7 @@ class GmailApiClient:
         page_token: str | None = None
         try:
             while True:
-                resp = (
+                request = (
                     self.service.users()
                     .history()
                     .list(
@@ -160,8 +180,8 @@ class GmailApiClient:
                         historyTypes=_HISTORY_TYPES_ADDED,
                         pageToken=page_token,
                     )
-                    .execute()
                 )
+                resp = self._execute(request)
                 for entry in resp.get("history", []) or []:
                     for ma in entry.get("messagesAdded", []) or []:
                         msg = ma.get("message", {})
@@ -186,7 +206,7 @@ class GmailApiClient:
         """messages.list (пагинация) — возвращает id писем по Gmail-запросу (q=...)."""
         page_token: str | None = None
         while True:
-            resp = (
+            request = (
                 self.service.users()
                 .messages()
                 .list(
@@ -195,8 +215,8 @@ class GmailApiClient:
                     maxResults=min(500, max_results),
                     pageToken=page_token,
                 )
-                .execute()
             )
+            resp = self._execute(request)
             for m in resp.get("messages", []) or []:
                 mid = m.get("id")
                 if mid:
@@ -207,7 +227,7 @@ class GmailApiClient:
 
     def get_message(self, gmail_id: str) -> ParsedMessage:
         """messages.get(format=full) + парсинг payload в ParsedMessage."""
-        raw = (
+        request = (
             self.service.users()
             .messages()
             .get(
@@ -215,13 +235,13 @@ class GmailApiClient:
                 id=gmail_id,
                 format="full",
             )
-            .execute()
         )
+        raw = self._execute(request)
         return parse_gmail_message(raw)
 
     def get_attachment(self, gmail_id: str, attachment_id: str) -> bytes:
         """messages.attachments.get → raw bytes (декодированные из base64url)."""
-        resp = (
+        request = (
             self.service.users()
             .messages()
             .attachments()
@@ -230,8 +250,8 @@ class GmailApiClient:
                 messageId=gmail_id,
                 id=attachment_id,
             )
-            .execute()
         )
+        resp = self._execute(request)
         data = resp.get("data", "")
         return _b64url_decode(data)
 
@@ -255,14 +275,21 @@ class GmailApiClient:
         total = 0
         for chunk in _chunked(ids, 1000):
             try:
-                self.service.users().messages().batchModify(
-                    userId=self._user_email,
-                    body={
-                        "ids": list(chunk),
-                        "removeLabelIds": ["UNREAD"],
-                    },
-                ).execute()
+                request = (
+                    self.service.users()
+                    .messages()
+                    .batchModify(
+                        userId=self._user_email,
+                        body={
+                            "ids": list(chunk),
+                            "removeLabelIds": ["UNREAD"],
+                        },
+                    )
+                )
+                self._execute(request)
                 total += len(chunk)
+            except GmailRateLimited:
+                raise
             except HttpError as err:
                 logger.warning(
                     "[gmail_client] batchModify(removeLabelIds=UNREAD) failed for %d ids: %s",

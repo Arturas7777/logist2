@@ -67,6 +67,13 @@ app.conf.beat_schedule = {
         # меньше запусков и риск 429 от Gmail.
         "schedule": crontab(minute="*/2"),
     },
+    "cleanup-email-storage-daily": {
+        # Ретеншен почты: body_html и неиспользуемые файлы вложений писем
+        # старше EMAIL_RETENTION_DAYS (см. core/services/email_storage.py).
+        # После ночного бэкапа (03:30) и его проверки (04:15).
+        "task": "core.tasks_email.cleanup_email_storage",
+        "schedule": crontab(hour=4, minute=50),
+    },
     "check-business-rules-daily": {
         # Аудит 3 бизнес-правил (FACT/AV/PARDP). При превышении baseline
         # логируется warning → Sentry создаёт issue. См. core/tasks.py

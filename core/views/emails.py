@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 import mimetypes
-from pathlib import Path
 
 from django.conf import settings
 from django.contrib.admin.views.decorators import staff_member_required
@@ -106,23 +105,16 @@ def email_detail(request, email_id: int):
 @staff_member_required
 @require_GET
 def email_attachment(request, email_id: int, idx: int):
+    from core.services.email_attachments import AttachmentUnavailable, get_attachment_file
+
     email = get_object_or_404(ContainerEmail, pk=email_id)
-    attachments = email.attachments_json or []
-    if idx < 0 or idx >= len(attachments):
-        raise Http404("Attachment not found")
-
-    meta = attachments[idx]
-    storage_path = meta.get("storage_path") or ""
-    if not storage_path:
-        return HttpResponse(
-            "Вложение не сохранено локально (слишком большое или ошибка загрузки).",
-            status=410,
-        )
-
-    abs_path = Path(settings.MEDIA_ROOT) / storage_path
-    if not abs_path.exists():
-        logger.warning("[email_attachment] File missing on disk: %s", abs_path)
-        raise Http404("File missing on disk")
+    try:
+        abs_path, meta = get_attachment_file(email, idx)
+    except IndexError:
+        raise Http404("Attachment not found") from None
+    except AttachmentUnavailable as exc:
+        logger.warning("[email_attachment] email=%s idx=%s unavailable: %s", email_id, idx, exc)
+        return HttpResponse(f"Вложение недоступно: {exc}", status=410)
 
     filename = meta.get("filename") or abs_path.name
     content_type = meta.get("content_type") or mimetypes.guess_type(filename)[0] or "application/octet-stream"

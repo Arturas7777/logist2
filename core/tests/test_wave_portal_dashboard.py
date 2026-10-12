@@ -97,7 +97,7 @@ def test_dashboard_shows_line_mark_before_container_number(portal):
     html = http.get(reverse("website:dashboard")).content.decode()
     assert html.index("cm-line-mark") < html.index("LINECONT000001")
     assert ">MAE<" in html
-    assert "title=\"MAERSK\"" in html
+    assert 'title="MAERSK"' in html
     assert "NOLINECONT00001" in html
     assert html.count("cm-line-mark") == 1
 
