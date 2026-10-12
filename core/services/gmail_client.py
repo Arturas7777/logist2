@@ -9,6 +9,9 @@ Scopes:
   * ``gmail.send``    — отправка писем из админки.
 При смене scope — перегенерировать refresh_token через
 scripts/get_gmail_refresh_token.py.
+
+Rate limiting: Gmail API имеет квоты (429 Too Many Requests). При 429 делаем
+exponential backoff с retry до 3 попыток. См. _execute_with_retry().
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ from __future__ import annotations
 import base64
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -133,12 +137,55 @@ class GmailApiClient:
         return self._service
 
     # ------------------------------------------------------------------
+    # retry logic for rate limiting
+    # ------------------------------------------------------------------
+
+    def _execute_with_retry(self, request, max_retries: int = 3):
+        """Выполняет API request с exponential backoff при 429.
+
+        Gmail API quota limits могут возвращать 429 Too Many Requests.
+        При этом делаем retry с паузами: 2s, 4s, 8s.
+        """
+        from googleapiclient.errors import HttpError
+
+        for attempt in range(max_retries + 1):
+            try:
+                return request.execute()
+            except HttpError as err:
+                status = getattr(err, "status_code", None) or getattr(
+                    getattr(err, "resp", None), "status", None
+                )
+                try:
+                    status = int(status) if status is not None else None
+                except (TypeError, ValueError):
+                    status = None
+
+                if status == 429 and attempt < max_retries:
+                    wait = 2 ** (attempt + 1)  # 2, 4, 8 секунд
+                    logger.warning(
+                        "[gmail_client] 429 rate limit hit, retry %d/%d in %ds",
+                        attempt + 1,
+                        max_retries,
+                        wait,
+                    )
+                    time.sleep(wait)
+                    continue
+
+                # Любая другая ошибка или исчерпаны retry
+                raise
+
+        # Не должно дойти сюда, но для безопасности
+        raise RuntimeError("_execute_with_retry: все попытки исчерпаны")
+
+    # ------------------------------------------------------------------
     # public API
     # ------------------------------------------------------------------
 
     def get_profile(self) -> dict[str, Any]:
         """users.getProfile — возвращает emailAddress, historyId и др."""
-        return self.service.users().getProfile(userId=self._user_email).execute()
+        return self._execute_with_retry(
+            self.service.users().getProfile(userId=self._user_email)
+        )
 
     def list_history(self, start_history_id: int) -> Iterator[str]:
         """Возвращает iterator по новым message_id с момента start_history_id.
@@ -151,7 +198,7 @@ class GmailApiClient:
         page_token: str | None = None
         try:
             while True:
-                resp = (
+                request = (
                     self.service.users()
                     .history()
                     .list(
@@ -160,8 +207,8 @@ class GmailApiClient:
                         historyTypes=_HISTORY_TYPES_ADDED,
                         pageToken=page_token,
                     )
-                    .execute()
                 )
+                resp = self._execute_with_retry(request)
                 for entry in resp.get("history", []) or []:
                     for ma in entry.get("messagesAdded", []) or []:
                         msg = ma.get("message", {})
@@ -186,7 +233,7 @@ class GmailApiClient:
         """messages.list (пагинация) — возвращает id писем по Gmail-запросу (q=...)."""
         page_token: str | None = None
         while True:
-            resp = (
+            request = (
                 self.service.users()
                 .messages()
                 .list(
@@ -195,8 +242,8 @@ class GmailApiClient:
                     maxResults=min(500, max_results),
                     pageToken=page_token,
                 )
-                .execute()
             )
+            resp = self._execute_with_retry(request)
             for m in resp.get("messages", []) or []:
                 mid = m.get("id")
                 if mid:
@@ -207,7 +254,7 @@ class GmailApiClient:
 
     def get_message(self, gmail_id: str) -> ParsedMessage:
         """messages.get(format=full) + парсинг payload в ParsedMessage."""
-        raw = (
+        request = (
             self.service.users()
             .messages()
             .get(
@@ -215,13 +262,13 @@ class GmailApiClient:
                 id=gmail_id,
                 format="full",
             )
-            .execute()
         )
+        raw = self._execute_with_retry(request)
         return parse_gmail_message(raw)
 
     def get_attachment(self, gmail_id: str, attachment_id: str) -> bytes:
         """messages.attachments.get → raw bytes (декодированные из base64url)."""
-        resp = (
+        request = (
             self.service.users()
             .messages()
             .attachments()
@@ -230,8 +277,8 @@ class GmailApiClient:
                 messageId=gmail_id,
                 id=attachment_id,
             )
-            .execute()
         )
+        resp = self._execute_with_retry(request)
         data = resp.get("data", "")
         return _b64url_decode(data)
 
@@ -255,13 +302,14 @@ class GmailApiClient:
         total = 0
         for chunk in _chunked(ids, 1000):
             try:
-                self.service.users().messages().batchModify(
+                request = self.service.users().messages().batchModify(
                     userId=self._user_email,
                     body={
                         "ids": list(chunk),
                         "removeLabelIds": ["UNREAD"],
                     },
-                ).execute()
+                )
+                self._execute_with_retry(request)
                 total += len(chunk)
             except HttpError as err:
                 logger.warning(

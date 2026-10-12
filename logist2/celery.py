@@ -13,6 +13,7 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 # Явно перечисляем нестандартные модули задач.
 app.autodiscover_tasks(related_name="tasks")
 app.autodiscover_tasks(related_name="tasks_email")
+app.autodiscover_tasks(related_name="tasks_email_cleanup")
 app.autodiscover_tasks(related_name="tasks_monitoring")
 app.autodiscover_tasks(related_name="tasks_agent")
 
@@ -66,6 +67,13 @@ app.conf.beat_schedule = {
         # тот же UX (письма видны в течение пары минут), но в 2 раза
         # меньше запусков и риск 429 от Gmail.
         "schedule": crontab(minute="*/2"),
+    },
+    "cleanup-old-email-data-daily": {
+        # Очистка body_html и cached attachments старше EMAIL_RETENTION_DAYS
+        # (default: 90 дней). Метаданные/links остаются навсегда. После
+        # ночного бэкапа (03:30) и его проверки (04:15).
+        "task": "core.tasks_email_cleanup.cleanup_old_email_data",
+        "schedule": crontab(hour=4, minute=50),
     },
     "check-business-rules-daily": {
         # Аудит 3 бизнес-правил (FACT/AV/PARDP). При превышении baseline

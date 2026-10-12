@@ -637,6 +637,10 @@ GMAIL_USER_EMAIL = os.getenv("GMAIL_USER_EMAIL", "").strip()
 GMAIL_INITIAL_LOOKBACK_DAYS = int(os.getenv("GMAIL_INITIAL_LOOKBACK_DAYS", "30"))
 GMAIL_MAX_ATTACHMENT_MB = int(os.getenv("GMAIL_MAX_ATTACHMENT_MB", "25"))
 GMAIL_TOKEN_URI = "https://oauth2.googleapis.com/token"
+# Retention policy: сколько дней хранить body_html и закэшированные вложения.
+# После EMAIL_RETENTION_DAYS body_html очищается (остаётся body_text + snippet),
+# вложения удаляются с диска (метаданные остаются в attachments_json).
+EMAIL_RETENTION_DAYS = int(os.getenv("EMAIL_RETENTION_DAYS", "90"))
 # Scopes: чтение + отправка (Phase 2).
 # При изменении — перегенерировать refresh_token через
 # scripts/get_gmail_refresh_token.py.
