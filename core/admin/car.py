@@ -37,6 +37,16 @@ CAR_MODELS_DIR = os.path.join(settings.BASE_DIR, "core", "static", "icons", "car
 UNSAVED_CAR_SERVICES_NOTE = "Услуги можно будет добавить после сохранения машины."
 
 
+def car_copy_line(year, brand, vin):
+    """Строка «2022 Honda Accord VIN» для массового копирования авто."""
+    return " ".join(str(part).strip() for part in (year, brand, vin) if part and str(part).strip())
+
+
+def cars_copy_text(rows):
+    """Нумерованный список авто, по одному на строку. ``rows`` — кортежи (year, brand, vin)."""
+    return "\n".join(f"{i}. {car_copy_line(*row)}" for i, row in enumerate(rows, start=1))
+
+
 def _safe_year(value):
     try:
         return int(value)
@@ -528,6 +538,7 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
         "set_title_with_us",
         "resend_car_unload_notification",
         "resend_car_unload_telegram",
+        "copy_selected_cars",
         "export_selected_as_csv",
     ]
 
@@ -1007,12 +1018,13 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
         from core.copy_button import copy_button_html
 
         return format_html(
-            '<span style="display:inline-flex;align-items:center;gap:6px;">'
+            '<span style="display:inline-flex;align-items:center;gap:6px;" data-copy-line="{copy_line}">'
             '<span class="vin-copy-wrap">{copy_btn} {vin}</span>'
             "{unread_html}"
             "{need_reply_html}"
             "{important_html}"
             "</span>",
+            copy_line=car_copy_line(obj.year, obj.brand, obj.vin),
             copy_btn=copy_button_html(obj.vin, "Копировать VIN"),
             vin=obj.vin,
             unread_html=unread_html,
@@ -1400,6 +1412,28 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
         self.message_user(request, f"Тайтл установлен как 'У нас' для {updated} автомобилей.")
 
     set_title_with_us.short_description = "Тайтл у нас"
+
+    def copy_selected_cars(self, request, queryset):
+        """Список выбранных авто для буфера обмена.
+
+        На странице списка действие перехватывает JS и копирует сразу, без
+        запроса. Сюда попадаем, когда выбраны «все N» (часть авто не на
+        странице) или браузер не дал доступа к буферу.
+        """
+        from django.shortcuts import render
+
+        text = cars_copy_text(queryset.values_list("year", "brand", "vin"))
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Скопировать авто",
+            "opts": self.model._meta,
+            "copy_text": text,
+            "count": text.count("\n") + 1 if text else 0,
+            "back_url": request.get_full_path(),
+        }
+        return render(request, "admin/core/car/copy_cars.html", context)
+
+    copy_selected_cars.short_description = "📋 Скопировать"
 
     def resend_car_unload_notification(self, request, queryset):
         """Повторная отправка email-уведомления о разгрузке для выбранных ТС.

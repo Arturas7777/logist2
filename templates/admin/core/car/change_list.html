@@ -102,6 +102,59 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindCarFilters);
   else bindCarFilters();
+
+  // Действие «Скопировать»: собираем выбранные строки прямо со страницы и
+  // кладём в буфер без запроса. При «выбрать все N» часть авто не на этой
+  // странице — тогда форма уходит на сервер и он показывает текст целиком.
+  (function () {
+    if (window.cmCarCopyBound) return;
+    window.cmCarCopyBound = true;
+
+    function copyText(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text);
+      }
+      return new Promise(function (resolve, reject) {
+        var area = document.createElement('textarea');
+        area.value = text;
+        area.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+        document.body.appendChild(area);
+        area.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(area);
+        ok ? resolve() : reject();
+      });
+    }
+
+    // capture: раньше обработчика actions.js, который иначе спросит про
+    // несохранённые галочки «Тайтл», хотя копирование их не трогает.
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest && e.target.closest('#changelist-form button[name=index]');
+      if (!btn) return;
+      var form = btn.form;
+      var select = form.querySelector('select[name=action]');
+      if (!select || select.value !== 'copy_selected_cars') return;
+      var across = form.querySelector('input[name=select_across]');
+      if (across && across.value === '1') return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      var lines = [];
+      form.querySelectorAll('tr input.action-select:checked').forEach(function (cb) {
+        var cell = cb.closest('tr').querySelector('[data-copy-line]');
+        if (cell) lines.push((lines.length + 1) + '. ' + cell.getAttribute('data-copy-line'));
+      });
+      if (!lines.length) {
+        if (window.cmToast) window.cmToast('Отметьте галочками авто для копирования', {kind: 'error'});
+        return;
+      }
+      copyText(lines.join('\n')).then(function () {
+        if (window.cmToast) window.cmToast('Скопировано: ' + lines.length + ' авто', {kind: 'success'});
+      }, function () {
+        form.submit();
+      });
+    }, true);
+  })();
   </script>
 {% endblock %}
 
