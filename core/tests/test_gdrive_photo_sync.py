@@ -102,6 +102,23 @@ def test_same_name_listed_twice_imported_once(container):
     assert ContainerPhoto.objects.filter(container=container).count() == 1
 
 
+def test_drive_api_service_is_per_thread():
+    from concurrent.futures import ThreadPoolExecutor
+
+    from core.services.gdrive_client import GoogleDriveApiClient
+
+    client = GoogleDriveApiClient(api_key="test-key")
+    with patch.object(GoogleDriveApiClient, "_build_service", side_effect=lambda: object()) as build:
+        main_service = client.service
+        assert client.service is main_service
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            thread_services = list(pool.map(lambda _: client.service, range(2)))
+
+    assert all(s is not main_service for s in thread_services)
+    assert build.call_count == 1 + len({id(s) for s in thread_services})
+
+
 def test_dedupe_command_removes_only_identical_copies(container):
     original = _add_photo(container, "a.jpg")
     copy = _add_photo(container, "a.jpg")

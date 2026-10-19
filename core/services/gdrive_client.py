@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import io
 import logging
+import threading
 from typing import Any, Iterator
 
 from django.conf import settings
@@ -51,8 +52,11 @@ class DriveApiNotConfigured(RuntimeError):
 class GoogleDriveApiClient:
     """Lazy-клиент к Drive API v3.
 
-    Один экземпляр на процесс достаточно — HTTP-сессия внутри
-    ``googleapiclient`` потокобезопасна, а discovery кэшируется.
+    Один экземпляр на процесс, но ``service`` — свой в каждом потоке:
+    ``httplib2.Http`` внутри ``googleapiclient`` НЕ потокобезопасен.
+    Общее SSL-соединение из пула потоков скачивания портило память
+    OpenSSL — процесс синхронизации падал с segfault / ``malloc(): ...
+    corrupted``, не сохранив остаток фото.
     """
 
     def __init__(self, *, api_key: str | None = None) -> None:
@@ -62,7 +66,7 @@ class GoogleDriveApiClient:
                 "GOOGLE_DRIVE_API_KEY не задан. Включите Drive API в Google "
                 "Cloud Console, создайте API key и положите его в .env."
             )
-        self._service = None
+        self._local = threading.local()
 
     # ------------------------------------------------------------------
     # service (ленивая инициализация)
@@ -80,9 +84,10 @@ class GoogleDriveApiClient:
 
     @property
     def service(self):
-        if self._service is None:
-            self._service = self._build_service()
-        return self._service
+        service = getattr(self._local, "service", None)
+        if service is None:
+            service = self._local.service = self._build_service()
+        return service
 
     # ------------------------------------------------------------------
     # list folders / files
