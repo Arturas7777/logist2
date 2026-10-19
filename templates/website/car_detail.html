@@ -168,7 +168,7 @@
                             {% endif %}
                             <tr>
                                 <th>{% trans "Платных дней на складе:" %}</th>
-                                <td>{{ car.days }}</td>
+                                <td>{{ client_storage.paid_days }}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -189,9 +189,9 @@
                     <div class="d-flex justify-content-between align-items-start mb-3">
                         <div>
                             <div class="text-muted">{% trans "Хранение" %}</div>
-                            <small class="text-muted">{% trans "по тарифу склада" %}{% if car.days %}, {% trans "платных дней:" %} {{ car.days }}{% endif %}</small>
+                            <small class="text-muted">{% trans "бесплатных дней:" %} {{ client_storage.free_days }}{% if client_storage.paid_days %}, {% trans "платных дней:" %} {{ client_storage.paid_days }} × {{ client_storage.daily_rate|floatformat:2 }} EUR{% endif %}</small>
                         </div>
-                        <span class="fw-bold text-nowrap">{{ car.storage_cost|floatformat:2 }} EUR</span>
+                        <span class="fw-bold text-nowrap">{{ client_storage.amount|floatformat:2 }} EUR</span>
                     </div>
                     {% if car.total_price > 0 %}
                     <hr>

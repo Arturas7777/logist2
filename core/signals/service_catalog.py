@@ -2,7 +2,8 @@
 обновления существующих ``CarService`` + пересчёт ``Car.total_price``.
 
 Дополнительно — каскадное удаление ``CarService`` при удалении услуги
-каталога (раньше FK был с PROTECT, сейчас удаляем явно).
+каталога (раньше FK был с PROTECT, сейчас удаляем явно) и пересчёт авто
+при смене условий хранения клиента (``ClientStorageTerms``).
 
 Хелпер :func:`_enqueue_recalc_cars_total_price` живёт здесь, потому что
 именно отсюда им пользуются все 4 receiver'а. Он же реэкспортируется
@@ -14,18 +15,19 @@ import logging
 from decimal import Decimal
 
 from django.db import connection, transaction
-from django.db.models.signals import post_save, pre_delete, pre_save
+from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
 from django.dispatch import receiver
 
 from core.models import (
     Car,
     CarrierService,
     CarService,
+    ClientStorageTerms,
     CompanyService,
     LineService,
     WarehouseService,
 )
-from core.service_codes import is_storage_service
+from core.service_codes import is_storage_service, is_ths_service
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +96,17 @@ def _recalc_cars_total_price_inline(car_ids):
     через ``update_days_and_storage()`` меняет days/storage_cost, поэтому
     bulk_update тянет все три (раньше fallback сохранял только total_price,
     из-за чего при недоступном брокере days/storage_cost расходились с БД).
+    Тариф клиента применяется так же, как в таске.
     """
+    from core.services.car_service_manager import apply_tariff_if_applicable
+
     cars_to_update = []
-    for car in Car.objects.filter(pk__in=car_ids).prefetch_related("car_services").select_related("warehouse"):
+    for car in (
+        Car.objects.filter(pk__in=car_ids)
+        .prefetch_related("car_services", "client__storage_terms")
+        .select_related("warehouse", "client")
+    ):
+        apply_tariff_if_applicable(car)
         car.calculate_total_price()
         cars_to_update.append(car)
     if cars_to_update:
@@ -116,6 +126,9 @@ def _recalc_cars_total_price_inline(car_ids):
 #
 # Теперь: существующие машины трогаем только если изменилась цена
 # (``custom_price``) или услуга выключена. ``markup_amount`` не трогаем.
+# Переданные (TRANSFERRED) авто не трогаем: их цены уже в выставленных счетах.
+# THS не трогаем вовсе: в каталоге у него цена 0, а сумма по авто считается
+# распределением THS контейнера.
 
 
 _CATALOG_TRACK_FIELDS = ("default_price", "is_active")
@@ -160,6 +173,20 @@ def company_service_pre_save(sender, instance, **kwargs):
     _stash_catalog_previous(sender, instance)
 
 
+def _reprice_cars_after_catalog_change(car_ids):
+    """Пересчёт цены (с тарифом) и регенерация черновиков инвойсов.
+
+    ``QuerySet.update`` / ``bulk_update`` сигналов ``CarService`` не шлют —
+    без явной регенерации черновики остались бы со старой ценой.
+    """
+    from core.signals.car_service import _deferred_invoice_regeneration
+
+    car_ids = sorted(set(car_ids))
+    _enqueue_recalc_cars_total_price(car_ids)
+    for car_id in car_ids:
+        _deferred_invoice_regeneration(car_id)
+
+
 def _delete_related_carservices(service_type, service_id):
     affected_car_ids = list(
         CarService.objects.filter(service_type=service_type, service_id=service_id).values_list("car_id", flat=True)
@@ -172,6 +199,8 @@ def _delete_related_carservices(service_type, service_id):
 @receiver(post_save, sender=WarehouseService)
 def update_cars_on_warehouse_service_change(sender, instance, created, **kwargs):
     try:
+        if is_ths_service(instance):
+            return
         if not (instance.is_active and instance.default_price > 0):
             _delete_related_carservices("WAREHOUSE", instance.id)
             return
@@ -180,7 +209,9 @@ def update_cars_on_warehouse_service_change(sender, instance, created, **kwargs)
         car_services = list(
             CarService.objects.filter(
                 service_type="WAREHOUSE", service_id=instance.id, car__warehouse=instance.warehouse
-            ).select_related("car")
+            )
+            .exclude(car__status="TRANSFERRED")
+            .select_related("car")
         )
         if not car_services:
             return
@@ -191,7 +222,7 @@ def update_cars_on_warehouse_service_change(sender, instance, created, **kwargs)
             else:
                 cs.custom_price = instance.default_price
         CarService.objects.bulk_update(car_services, ["custom_price"], batch_size=100)
-        _enqueue_recalc_cars_total_price([cs.car_id for cs in car_services])
+        _reprice_cars_after_catalog_change([cs.car_id for cs in car_services])
     except Exception as e:
         logger.error("Error updating cars on warehouse service change: %s", e)
     finally:
@@ -205,15 +236,19 @@ def update_cars_on_line_service_change(sender, instance, created, **kwargs):
     Если услуга стала неактивной — удалить связанные ``CarService``.
     """
     try:
+        if is_ths_service(instance):
+            return
         if not (instance.is_active and instance.default_price > 0):
             _delete_related_carservices("LINE", instance.id)
             return
         if created or not _price_actually_changed(instance):
             return
-        qs = CarService.objects.filter(service_type="LINE", service_id=instance.id, car__line=instance.line)
+        qs = CarService.objects.filter(service_type="LINE", service_id=instance.id, car__line=instance.line).exclude(
+            car__status="TRANSFERRED"
+        )
         affected_car_ids = list(qs.values_list("car_id", flat=True))
         qs.update(custom_price=instance.default_price)
-        _enqueue_recalc_cars_total_price(affected_car_ids)
+        _reprice_cars_after_catalog_change(affected_car_ids)
     except Exception as e:
         logger.error("Error updating cars on line service change: %s", e)
     finally:
@@ -228,10 +263,12 @@ def update_cars_on_carrier_service_change(sender, instance, created, **kwargs):
             return
         if created or not _price_actually_changed(instance):
             return
-        qs = CarService.objects.filter(service_type="CARRIER", service_id=instance.id, car__carrier=instance.carrier)
+        qs = CarService.objects.filter(
+            service_type="CARRIER", service_id=instance.id, car__carrier=instance.carrier
+        ).exclude(car__status="TRANSFERRED")
         affected_car_ids = list(qs.values_list("car_id", flat=True))
         qs.update(custom_price=instance.default_price)
-        _enqueue_recalc_cars_total_price(affected_car_ids)
+        _reprice_cars_after_catalog_change(affected_car_ids)
     except Exception as e:
         logger.error("Error updating cars on carrier service change: %s", e)
     finally:
@@ -250,13 +287,30 @@ def update_cars_on_company_service_change(sender, instance, created, **kwargs):
             return
         if created or not _price_actually_changed(instance):
             return
+        qs = qs.exclude(car__status="TRANSFERRED")
         affected_car_ids = list(qs.values_list("car_id", flat=True).distinct())
         qs.update(custom_price=instance.default_price)
-        _enqueue_recalc_cars_total_price(affected_car_ids)
+        _reprice_cars_after_catalog_change(affected_car_ids)
     except Exception as e:
         logger.error("Error updating cars on company service change: %s", e)
     finally:
         _clear_catalog_previous(instance)
+
+
+@receiver(post_save, sender=ClientStorageTerms)
+@receiver(post_delete, sender=ClientStorageTerms)
+def reprice_cars_on_client_storage_terms_change(sender, instance, **kwargs):
+    """Условия хранения клиента изменились — пересчитать его активные авто.
+
+    Переданные авто не трогаем: их хранение уже в выставленных счетах.
+    """
+    car_ids = list(
+        Car.objects.filter(client_id=instance.client_id, warehouse__isnull=False)
+        .exclude(status="TRANSFERRED")
+        .values_list("pk", flat=True)
+    )
+    if car_ids:
+        _reprice_cars_after_catalog_change(car_ids)
 
 
 # ---------------------------------------------------------------------------

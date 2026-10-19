@@ -449,6 +449,7 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
 
         qs = super().get_queryset(request)
         qs = qs.select_related("client", "warehouse", "line", "carrier", "container", "container__line")
+        qs = qs.prefetch_related("client__storage_terms")
         qs = qs.annotate(
             _total_markup=Coalesce(
                 Subquery(markup_subquery, output_field=DecimalField(max_digits=12, decimal_places=2)),
@@ -1116,6 +1117,12 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
 
         rate = obj._get_storage_daily_rate()
         tooltip = f"{hint}. Ставка {rate:.2f} €/дн., накоплено {obj.storage_cost or 0:.2f} €"
+        if obj.get_client_storage_terms():
+            client_storage = obj.get_client_storage()
+            tooltip += (
+                f"\nКлиенту: {client_storage['paid_days']} плат. дн. × {client_storage['daily_rate']:.2f} € "
+                f"= {client_storage['amount']:.2f} €"
+            )
         return format_html(
             '<span class="cm-days-badge cm-days-badge--{}" title="{}">{} <small>/ {}</small></span>',
             level,

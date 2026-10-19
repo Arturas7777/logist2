@@ -166,10 +166,10 @@ class TestRegenerateItemsFromCars:
 class TestStorageMarkupInInvoice:
     """Наценка на хранении: счёт клиенту должен сходиться с ``Car.total_price``.
 
-    ``Car._update_storage_service_price`` пересчитывает у услуги хранения
-    только ``custom_price`` и намеренно не трогает ``markup_amount``.
-    Позиция «Хран» считается заново по актуальным дням, поэтому наценку
-    нужно добавить к ней явно — иначе сумма счёта окажется меньше цены авто.
+    Наценку услуги хранения задают условия хранения клиента
+    (``ClientStorageTerms``): ``Car._update_storage_service_price`` ставит её
+    равной «хранение клиенту − себестоимость». Позиция «Хран» в счёте
+    компании — сумма по условиям клиента.
     """
 
     def _car_on_storage(self, warehouse, days_stored=3):
@@ -184,17 +184,23 @@ class TestStorageMarkupInInvoice:
             unload_date=timezone.now().date() - timezone.timedelta(days=days_stored - 1),
         )
 
-    def test_company_invoice_includes_storage_markup(self, company, warehouse):
+    def test_company_invoice_uses_client_storage_terms(self, company, warehouse):
+        from core.models import Client, ClientStorageTerms
+
         car = self._car_on_storage(warehouse)
+        client = Client.objects.create(name="Storage Terms Client")
+        ClientStorageTerms.objects.create(client=client, daily_rate=Decimal("10"))
+        Car.objects.filter(pk=car.pk).update(client=client)
         storage = _wh_service(warehouse, "Хранение", "Хран", 5)
-        _add(car, storage, custom_price=15, markup=20)
+        _add(car, storage, custom_price=15)
         inv = _company_draft_invoice(company, car)
 
         inv.regenerate_items_from_cars()
 
         item = inv.items.get(description="Хран")
-        # 3 платных дня × 5 = 15 базы + 20 наценки
-        assert item.unit_price == Decimal("35.00")
+        # 3 платных дня × 10 € клиенту (себестоимость 3 × 5 = 15 + наценка 15)
+        assert item.unit_price == Decimal("30.00")
+        assert CarService.objects.get(car=car, service_id=storage.id).markup_amount == Decimal("15.00")
 
     def test_invoice_total_matches_car_total_price(self, company, warehouse):
         car = self._car_on_storage(warehouse)

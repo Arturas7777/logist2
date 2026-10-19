@@ -348,17 +348,67 @@ class Car(models.Model):
         (календарные / рабочие / рабочие без праздников LT, см.
         ``core.utils.count_storage_days``). «Всего дней» возвращается уже
         по политике склада, бесплатные дни вычитаются из него.
+
+        Это дни СЕБЕСТОИМОСТИ (условия склада). Дни для клиента — см.
+        :meth:`get_client_storage`.
         """
         if not self.unload_date or not self.warehouse:
             return 0, 0
+
+        total_days = self._storage_total_days()
+        free_days = int(self.warehouse.free_days or 0)
+        return max(0, total_days - free_days), total_days
+
+    def _storage_total_days(self):
+        """Всего дней на складе (включая бесплатные) по политике дней склада."""
+        if not self.unload_date or not self.warehouse:
+            return 0
 
         from core.utils import count_storage_days
 
         end_date = self.transfer_date if self.status == "TRANSFERRED" and self.transfer_date else timezone.now().date()
         policy = getattr(self.warehouse, "storage_day_policy", None) or "CALENDAR"
-        total_days = count_storage_days(self.unload_date, end_date, policy)
-        free_days = int(self.warehouse.free_days or 0)
-        return max(0, total_days - free_days), total_days
+        return count_storage_days(self.unload_date, end_date, policy)
+
+    def get_client_storage_terms(self):
+        """Условия хранения клиента для склада авто; ``None`` — условия склада.
+
+        Строка с конкретным складом важнее строки «все склады». Перебор в
+        Python, чтобы ``prefetch_related("client__storage_terms")`` снимал
+        запрос на каждое авто при массовом пересчёте.
+        """
+        if not self.client_id or not self.warehouse_id:
+            return None
+        key = (self.client_id, self.warehouse_id)
+        if getattr(self, "_client_storage_terms_key", None) != key:
+            terms = [t for t in self.client.storage_terms.all() if t.warehouse_id in (self.warehouse_id, None)]
+            terms.sort(key=lambda t: t.warehouse_id is None)
+            self._client_storage_terms = terms[0] if terms else None
+            self._client_storage_terms_key = key
+        return self._client_storage_terms
+
+    def get_client_storage(self):
+        """Хранение для клиента (то, что попадает в счёт).
+
+        Возвращает dict: ``free_days``, ``paid_days``, ``daily_rate``,
+        ``amount`` и ``custom`` (True — у клиента свои условия). Без своих
+        условий совпадает с себестоимостью (условия склада).
+        """
+        terms = self.get_client_storage_terms()
+        warehouse_free = int(self.warehouse.free_days or 0) if self.warehouse else 0
+        free_days = warehouse_free if terms is None or terms.free_days is None else int(terms.free_days)
+        if terms is None or terms.daily_rate is None:
+            daily_rate = self._get_storage_daily_rate()
+        else:
+            daily_rate = Decimal(str(terms.daily_rate))
+        paid_days = max(0, self._storage_total_days() - free_days)
+        return {
+            "free_days": free_days,
+            "paid_days": paid_days,
+            "daily_rate": daily_rate,
+            "amount": daily_rate * paid_days,
+            "custom": terms is not None,
+        }
 
     def update_days_and_storage(self):
         """Обновляет платные дни и стоимость хранения для автомобиля.
@@ -427,11 +477,12 @@ class Car(models.Model):
     def _update_storage_service_price(self):
         """Обновляет цену услуги 'Хранение' в CarService.
 
-        Цена = платные_дни × ставка_за_день (из WarehouseService)
-
-        ВАЖНО: markup_amount НЕ обновляется автоматически!
-        Наценка устанавливается только при создании услуги (из default_markup)
-        или вручную пользователем в админке.
+        Цена (себестоимость) = платные_дни × ставка_за_день склада.
+        Наценка = хранение клиенту (``get_client_storage``) − себестоимость:
+        так клиент платит по своим условиям, а разница — наша прибыль (при
+        более щедрых условиях клиенту — отрицательная). Без своих условий у
+        активного авто наценка 0; у переданного без условий не трогаем —
+        там может быть историческая ручная наценка.
         """
         if not self.pk or not self.warehouse:
             return
@@ -453,10 +504,14 @@ class Car(models.Model):
                 # Стоимость = платные_дни × цена_за_день
                 storage_price = days * Decimal(str(storage_service.default_price or 0))
 
-                # Обновляем ТОЛЬКО цену в CarService (markup_amount не трогаем!)
-                # Наценка устанавливается при создании услуги или вручную в админке
+                fields = {"custom_price": storage_price}
+                client_storage = self.get_client_storage()
+                if client_storage["custom"]:
+                    fields["markup_amount"] = client_storage["amount"] - storage_price
+                elif self.status != "TRANSFERRED":
+                    fields["markup_amount"] = Decimal("0")
                 CarService.objects.filter(car=self, service_type="WAREHOUSE", service_id=storage_service.id).update(
-                    custom_price=storage_price
+                    **fields
                 )
 
                 # Сбрасываем prefetch кэш чтобы получить актуальные данные

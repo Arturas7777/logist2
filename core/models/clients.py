@@ -259,20 +259,36 @@ class Client(BalanceMethodsMixin, CounterpartyRequisitesMixin, CounterpartyConta
 
 class ClientTariffRate(models.Model):
     """
-    Тариф клиента: общая согласованная цена за авто (все услуги кроме хранения).
+    Тариф клиента: общая согласованная цена за авто — услуги склада (кроме
+    хранения) вместе с THS линии. Хранение, перевозчик и услуги компании
+    добавляются сверху.
 
     FIXED: цена не зависит от кол-ва авто в контейнере.
     FLEXIBLE: цена зависит от общего кол-ва ТС в контейнере (диапазоны min_cars/max_cars).
+
+    ``line`` — ставка только для этой линии; пусто = любая линия. Ставка с
+    линией приоритетнее ставки без линии. CROSSOVER/SUV/PICKUP без своей
+    ставки берут ставку SEDAN.
 
     Примеры:
       FIXED:    (SEDAN, min=1, max=None, price=300) — легковой всегда 300€
       FLEXIBLE: (SEDAN, min=3, max=3, price=290)    — легковой при 3 ТС → 290€
                 (SEDAN, min=4, max=4, price=265)    — легковой при 4 ТС → 265€
                 (SEDAN, min=5, max=None, price=240)  — легковой при 5+ ТС → 240€
+      По линии: (SEDAN, line=MAERSK, price=290) + (SEDAN, line=None, price=260)
     """
 
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="tariff_rates", verbose_name="Клиент")
     vehicle_type = models.CharField(max_length=20, choices=VEHICLE_TYPE_CHOICES, verbose_name="Тип ТС")
+    line = models.ForeignKey(
+        "core.Line",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="client_tariff_rates",
+        verbose_name="Линия",
+        help_text="Пусто = любая линия",
+    )
     min_cars = models.PositiveIntegerField(default=1, verbose_name="От (ТС в контейнере)")
     max_cars = models.PositiveIntegerField(null=True, blank=True, verbose_name="До (пусто = и более)")
     agreed_total_price = models.DecimalField(
@@ -280,7 +296,7 @@ class ClientTariffRate(models.Model):
         decimal_places=2,
         default=0,
         verbose_name="Цена за авто (€)",
-        help_text="Общая согласованная цена за все услуги (кроме хранения) для этого типа ТС",
+        help_text="Общая согласованная цена за услуги склада (кроме хранения) и THS линии для этого типа ТС",
     )
 
     class Meta:
@@ -290,9 +306,67 @@ class ClientTariffRate(models.Model):
 
     def __str__(self):
         vtype = dict(VEHICLE_TYPE_CHOICES).get(self.vehicle_type, self.vehicle_type)
+        if self.line_id:
+            vtype = f"{vtype} ({self.line})"
         if self.max_cars:
             return f"{vtype}, {self.min_cars}-{self.max_cars} ТС → {self.agreed_total_price}€"
         return f"{vtype}, {self.min_cars}+ ТС → {self.agreed_total_price}€"
+
+
+class ClientStorageTerms(models.Model):
+    """Условия хранения для клиента — мы перепродаём хранение склада.
+
+    Себестоимость хранения считается по условиям склада (бесплатные дни
+    ``Warehouse.free_days`` и ставка услуги «Хранение»), а клиенту — по этим
+    условиям. Разница идёт скрытой наценкой услуги «Хранение» авто (см.
+    ``Car.get_client_storage``).
+
+    ``warehouse`` пусто — условия для всех складов; строка с конкретным
+    складом важнее. Пустые ``free_days``/``daily_rate`` — как у склада.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="storage_terms", verbose_name="Клиент")
+    warehouse = models.ForeignKey(
+        "core.Warehouse",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="client_storage_terms",
+        verbose_name="Склад",
+        help_text="Пусто = все склады",
+    )
+    free_days = models.PositiveIntegerField(
+        null=True, blank=True, verbose_name="Бесплатные дни", help_text="Пусто = как у склада"
+    )
+    daily_rate = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Ставка за сутки (€)",
+        help_text="Пусто = как у склада",
+    )
+
+    class Meta:
+        verbose_name = "Условия хранения"
+        verbose_name_plural = "Условия хранения клиента"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["client", "warehouse"],
+                name="unique_client_storage_terms_warehouse",
+            ),
+            models.UniqueConstraint(
+                fields=["client"],
+                condition=models.Q(warehouse__isnull=True),
+                name="unique_client_storage_terms_any_warehouse",
+            ),
+        ]
+
+    def __str__(self):
+        where = self.warehouse.name if self.warehouse_id else "все склады"
+        free = "как у склада" if self.free_days is None else self.free_days
+        rate = "как у склада" if self.daily_rate is None else f"{self.daily_rate}€"
+        return f"{where}: беспл. дней {free}, ставка {rate}"
 
 
 class ClientEmail(models.Model):

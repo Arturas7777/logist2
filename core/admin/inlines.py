@@ -9,6 +9,7 @@ from core.models import (
     CarrierService,
     CarrierTruck,
     CarService,
+    ClientStorageTerms,
     ClientTariffRate,
     CompanyService,
     LineService,
@@ -454,7 +455,7 @@ class ClientTariffRateInline(admin.TabularInline):
 
     model = ClientTariffRate
     extra = 1
-    fields = ("vehicle_type", "min_cars", "max_cars", "agreed_total_price")
+    fields = ("vehicle_type", "line", "min_cars", "max_cars", "agreed_total_price")
     verbose_name = "Ставка тарифа"
     verbose_name_plural = "Тарифы клиента"
     classes = ("cm-tariff-inline", "cm-card-inline")
@@ -464,6 +465,7 @@ class ClientTariffRateInline(admin.TabularInline):
     # всё пояснение вынесено в баннер над таблицей (см. tariff_tabular.html).
     _FIELD_LABELS = {
         "vehicle_type": "Тип ТС",
+        "line": "Линия",
         "min_cars": "Авто от",
         "max_cars": "Авто до",
         "agreed_total_price": "Цена за авто, €",
@@ -476,4 +478,29 @@ class ClientTariffRateInline(admin.TabularInline):
             if field is not None:
                 field.label = label
                 field.help_text = ""
+        return formset
+
+
+class ClientStorageTermsInline(admin.TabularInline):
+    """Условия хранения клиента: бесплатные дни и ставка вместо условий склада."""
+
+    model = ClientStorageTerms
+    extra = 0
+    fields = ("warehouse", "free_days", "daily_rate")
+    verbose_name = "Условия хранения"
+    verbose_name_plural = "Условия хранения для клиента (пусто = как у склада)"
+    classes = ("cm-card-inline",)
+
+    _FIELD_LABELS = {
+        "warehouse": "Склад (пусто = все)",
+        "free_days": "Беспл. дней",
+        "daily_rate": "€ за сутки",
+    }
+
+    def get_formset(self, request, obj=None, **kwargs):
+        formset = super().get_formset(request, obj, **kwargs)
+        for name, label in self._FIELD_LABELS.items():
+            field = formset.form.base_fields.get(name)
+            if field is not None:
+                field.label = label
         return formset

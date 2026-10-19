@@ -287,14 +287,25 @@ def _count_vehicles_for_tariff(cars, vehicle_type):
     return sum(1 for c in cars if (c.vehicle_type in MOTORCYCLE_TYPES) == target_is_moto)
 
 
+TARIFF_TYPES = ("FIXED", "FLEXIBLE")
+
+# Типы ТС, которые без собственной ставки тарифа берут ставку легкового.
+SEDAN_RATE_FALLBACK_TYPES = {"CROSSOVER", "SUV", "PICKUP"}
+
+
+def _tariff_line_id(car, container=None):
+    container = container or (car.container if car.container_id else None)
+    return car.line_id or (container.line_id if container else None)
+
+
 def apply_client_tariffs_for_container(container, *, include_transferred=True):
     """
     Apply client tariff markups to warehouse services after THS is calculated.
 
     agreed_total_price — согласованная с клиентом цена за складской пакет
-    (все услуги WAREHOUSE кроме хранения). Услуги перевозчика (CARRIER) и
-    отдельные услуги компаний (COMPANY) в тариф НЕ входят — они добавляются
-    сверху как есть.
+    (все услуги WAREHOUSE кроме хранения) вместе с THS линии. Услуги
+    перевозчика (CARRIER) и отдельные услуги компаний (COMPANY) в тариф НЕ
+    входят — они добавляются сверху как есть.
 
     Количество ТС для подбора тарифа считается по категориям: мотоциклы не
     учитываются при подсчёте легковых авто (и наоборот).
@@ -318,7 +329,7 @@ def apply_client_tariffs_for_container(container, *, include_transferred=True):
 
         client = car.client
         count = _count_vehicles_for_tariff(cars, car.vehicle_type)
-        agreed_total = _get_agreed_total(client, car.vehicle_type, count)
+        agreed_total = _get_agreed_total(client, car.vehicle_type, count, line_id=_tariff_line_id(car, container))
 
         if agreed_total is None:
             logger.debug(
@@ -355,98 +366,137 @@ def apply_client_tariff_for_car(car):
         cars = list(Car.objects.filter(container_id=car.container_id).only("id", "vehicle_type"))
         count = _count_vehicles_for_tariff(cars, car.vehicle_type)
 
-    agreed_total = _get_agreed_total(client, car.vehicle_type, count)
+    agreed_total = _get_agreed_total(client, car.vehicle_type, count, line_id=_tariff_line_id(car))
     if agreed_total is None:
         return
 
     _distribute_markup_for_car(car, agreed_total, count)
 
 
-def _get_agreed_total(client, vehicle_type, total_cars_in_container):
+def apply_tariff_if_applicable(car) -> bool:
+    """Применить тариф клиента к активному авто; переданные авто не трогаем.
+
+    В отличие от :func:`apply_client_tariff_for_car`, для клиента без тарифа
+    ничего не делает — ручные наценки таких авто сохраняются.
+    """
+    if not car or not car.pk or car.status == "TRANSFERRED":
+        return False
+    client = car.client
+    if not client or client.tariff_type not in TARIFF_TYPES:
+        return False
+    apply_client_tariff_for_car(car)
+    return True
+
+
+def _find_tariff_rate(client, vehicle_type, total_cars_in_container, line_id=None):
+    """Ставка тарифа: сначала свой тип ТС, потом SEDAN (для кроссовера/джипа/пикапа);
+    внутри типа — ставка этой линии, потом ставка без линии."""
     from core.models import ClientTariffRate
 
-    if client.tariff_type == "FIXED":
-        rate = ClientTariffRate.objects.filter(client=client, vehicle_type=vehicle_type).first()
-        return rate.agreed_total_price if rate else None
+    if client.tariff_type not in TARIFF_TYPES:
+        return None
+
+    vehicle_types = [vehicle_type]
+    if vehicle_type in SEDAN_RATE_FALLBACK_TYPES:
+        vehicle_types.append("SEDAN")
+
+    line_q = Q(line__isnull=True)
+    if line_id:
+        line_q |= Q(line_id=line_id)
+    rates = ClientTariffRate.objects.filter(line_q, client=client, vehicle_type__in=vehicle_types)
 
     if client.tariff_type == "FLEXIBLE":
-        rate = (
-            ClientTariffRate.objects.filter(
-                client=client,
-                vehicle_type=vehicle_type,
-                min_cars__lte=total_cars_in_container,
-            )
-            .filter(db_models.Q(max_cars__gte=total_cars_in_container) | db_models.Q(max_cars__isnull=True))
-            .first()
+        rates = rates.filter(min_cars__lte=total_cars_in_container).filter(
+            db_models.Q(max_cars__gte=total_cars_in_container) | db_models.Q(max_cars__isnull=True)
         )
-        return rate.agreed_total_price if rate else None
 
-    return None
+    return min(
+        rates,
+        key=lambda r: (vehicle_types.index(r.vehicle_type), r.line_id is None, r.min_cars, r.pk),
+        default=None,
+    )
+
+
+def _get_agreed_total(client, vehicle_type, total_cars_in_container, line_id=None):
+    rate = _find_tariff_rate(client, vehicle_type, total_cars_in_container, line_id=line_id)
+    return rate.agreed_total_price if rate else None
 
 
 def _distribute_markup_for_car(car, agreed_total, total_cars_in_container):
-    """Приводит сумму услуг склада (кроме хранения) РОВНО к тарифу клиента.
+    """Приводит сумму «услуги склада (кроме хранения) + THS линии» РОВНО к тарифу.
 
     Тариф (``FIXED`` или подобранная по числу ТС ставка ``FLEXIBLE``) — это
-    точная цена складского пакета, выше которой клиент платить не может.
-    Скрытая наценка всегда перезаписывается так, чтобы итог был равен тарифу:
+    точная цена пакета, выше которой клиент платить не может. THS входит в
+    тариф при любом плательщике: при оплате складу это услуга склада, при
+    оплате линии — услуга линии, которая учитывается в базе как есть.
+    Скрытая наценка услуг склада всегда перезаписывается так, чтобы итог был
+    равен тарифу:
       - база ниже тарифа  → наценка положительная (прибыль);
       - база выше тарифа  → наценка отрицательная (убыток), т.к. с клиента
         всё равно берётся только фиксированная сумма.
 
-    Хранение в тариф не входит и добавляется сверху. Услуги перевозчика
-    (CARRIER) и отдельные услуги компаний (COMPANY) тоже не затрагиваются.
-    """
-    from core.models import CarService
+    Хранение в тариф не входит и добавляется сверху; его наценку задают
+    условия хранения клиента (``Car._update_storage_service_price``). Услуги
+    перевозчика (CARRIER) и отдельные услуги компаний (COMPANY) тоже не
+    затрагиваются.
 
-    all_services = list(CarService.objects.filter(car=car))
+    Пересчёт ``total_price`` — забота вызывающего кода: сигналы пересчёта
+    цены от сохранения наценок здесь подавлены флагом ``_bulk_updating``.
+    """
+    getattr(car, "_prefetched_objects_cache", {}).pop("car_services", None)
+    all_services = list(car.car_services.all())
 
     warehouse_non_storage = [
         svc for svc in all_services if svc.service_type == "WAREHOUSE" and not is_storage_service(svc)
     ]
+    line_ths_services = [svc for svc in all_services if svc.service_type == "LINE" and is_ths_service(svc)]
 
-    storage_services = [svc for svc in all_services if is_storage_service(svc)]
-    for svc in storage_services:
-        if svc.markup_amount != 0:
-            svc.markup_amount = Decimal("0")
-            svc.save(update_fields=["markup_amount"])
+    was_bulk_updating = getattr(car, "_bulk_updating", False)
+    car._bulk_updating = True
+    try:
+        if not warehouse_non_storage:
+            logger.info(
+                "Tariff for %s (%s): agreed=%s, но нет услуг склада (кроме хранения) — наценка не распределена",
+                car.vin,
+                car.client.name if car.client else "?",
+                agreed_total,
+            )
+            return
 
-    if not warehouse_non_storage:
-        logger.info(
-            "Tariff for %s (%s): agreed=%s, но нет услуг склада (кроме хранения) — наценка не распределена",
-            car.vin,
-            car.client.name if car.client else "?",
-            agreed_total,
-        )
-        return
+        tariff_type = car.client.tariff_type if car.client else "?"
 
-    tariff_type = car.client.tariff_type if car.client else "?"
+        # Склад — себестоимость БЕЗ скрытой наценки (её и раскладываем),
+        # THS линии — как его видит клиент.
+        warehouse_base = sum(Decimal(str(svc.final_price)) for svc in warehouse_non_storage)
+        line_ths_total = sum(Decimal(str(svc.invoice_price)) for svc in line_ths_services)
+        base_total = warehouse_base + line_ths_total
 
-    # Базовая стоимость пакета — БЕЗ скрытой наценки.
-    base_total = sum(Decimal(str(svc.final_price)) for svc in warehouse_non_storage)
+        # Цена пакета не может быть выше тарифа: приводим ровно к тарифу.
+        # diff > 0 → прибыль, diff < 0 → убыток (отрицательная наценка).
+        diff = agreed_total - base_total
 
-    # Цена пакета не может быть выше тарифа: приводим ровно к тарифу.
-    # diff > 0 → прибыль, diff < 0 → убыток (отрицательная наценка).
-    diff = agreed_total - base_total
+        share = (diff / len(warehouse_non_storage)).quantize(Decimal("0.01"))
+        remainder = diff - share * len(warehouse_non_storage)
 
-    share = (diff / len(warehouse_non_storage)).quantize(Decimal("0.01"))
-    remainder = diff - share * len(warehouse_non_storage)
-
-    for i, svc in enumerate(warehouse_non_storage):
-        new_markup = share
-        if i == len(warehouse_non_storage) - 1:
-            new_markup = share + remainder
-        if svc.markup_amount != new_markup:
-            svc.markup_amount = new_markup
-            svc.save(update_fields=["markup_amount"])
+        for i, svc in enumerate(warehouse_non_storage):
+            new_markup = share
+            if i == len(warehouse_non_storage) - 1:
+                new_markup = share + remainder
+            if svc.markup_amount != new_markup:
+                svc.markup_amount = new_markup
+                svc.save(update_fields=["markup_amount"])
+    finally:
+        car._bulk_updating = was_bulk_updating
 
     logger.info(
-        "Tariff for %s (%s): type=%s, agreed=%s, base=%s, diff=%s, cars_count=%s, распределено по %d услугам склада",
+        "Tariff for %s (%s): type=%s, agreed=%s, base=%s (THS линии %s), diff=%s, cars_count=%s, "
+        "распределено по %d услугам склада",
         car.vin,
         car.client.name if car.client else "?",
         tariff_type,
         agreed_total,
         base_total,
+        line_ths_total,
         diff,
         total_cars_in_container,
         len(warehouse_non_storage),
@@ -629,3 +679,13 @@ def sync_car_services_for_car(
                     )
     finally:
         car._creating_services = False
+
+    # Пересчёт из post_save машины мог отработать ДО создания услуг: вне
+    # транзакции (скрипты, бот) on_commit выполняется сразу, и авто получало
+    # total_price=0. Ставим пересчёт заново — уже по созданным услугам
+    # (внутри транзакции дубль схлопнется). Админка с _bulk_updating
+    # пересчитывает цену сама.
+    if not getattr(car, "_bulk_updating", False):
+        from core.signals.service_catalog import _enqueue_recalc_cars_total_price
+
+        _enqueue_recalc_cars_total_price([car.pk])

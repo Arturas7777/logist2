@@ -1567,14 +1567,23 @@ def recalculate_cars_total_price_task(self, car_ids):
 
     `calculate_total_price()` обновляет days/storage_cost через
     `update_days_and_storage()`, поэтому bulk_update тянет все три поля.
+
+    Перед пересчётом активным авто тарифных клиентов заново раскладывается
+    тариф — так цена остаётся равной тарифу и после программных правок
+    (бот, импорт, смена цены в каталоге), минующих карточку авто.
     """
     from core.models import Car
     from core.models.services import prefetch_service_objects
+    from core.services.car_service_manager import apply_tariff_if_applicable
 
     if not car_ids:
         return {"updated": 0}
 
-    cars = list(Car.objects.filter(pk__in=car_ids).prefetch_related("car_services", "warehouse"))
+    cars = list(
+        Car.objects.filter(pk__in=car_ids)
+        .select_related("client")
+        .prefetch_related("car_services", "warehouse", "client__storage_terms")
+    )
 
     # P2 (AUDIT_ROUND3): батч-резолвинг каталога услуг — максимум 4 запроса
     # in_bulk + set_many вместо cache/DB-lookup'а на каждую услугу в цикле.
@@ -1583,6 +1592,7 @@ def recalculate_cars_total_price_task(self, car_ids):
     cars_to_update = []
     for car in cars:
         try:
+            apply_tariff_if_applicable(car)
             car.calculate_total_price()
             cars_to_update.append(car)
         except Exception as exc:

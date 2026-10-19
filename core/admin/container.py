@@ -328,8 +328,6 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
 
         logger.info(f"[TIMING] Processing {len(instances)} changed instances")
 
-        saved_car_ids = []
-
         for obj in instances:
             if isinstance(obj, Car):
                 # Bind to container
@@ -367,7 +365,6 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
                 # делается одним bulk_update в конце метода.
                 obj._bulk_updating = True
                 obj.save()
-                saved_car_ids.append(obj.pk)
 
                 logger.debug(f"Saved Car {obj.vin} (creating={creating}, has_title={obj.has_title})")
 
@@ -478,14 +475,18 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
 
         # Без THS-ветки цены изменённых машин остались бы старыми: в цикле
         # выше per-car пересчёт намеренно заглушен флагом _bulk_updating.
-        if not prices_recalculated and saved_car_ids:
-            cars_to_price = list(
-                Car.objects.filter(pk__in=saved_car_ids).select_related("warehouse").prefetch_related("car_services")
-            )
+        # Тариф раскладываем и без THS — иначе цена авто «прыгает» только в
+        # момент первого ввода THS. Состав контейнера меняет число ТС для
+        # гибкого тарифа, поэтому пересчитываем все машины контейнера.
+        if not prices_recalculated and cars_changed:
+            from core.services.car_service_manager import apply_client_tariffs_for_container
+
+            apply_client_tariffs_for_container(parent, include_transferred=False)
+            cars_to_price = list(parent.container_cars.select_related("warehouse").prefetch_related("car_services"))
             for car in cars_to_price:
                 car.calculate_total_price()
             Car.objects.bulk_update(cars_to_price, ["total_price", "storage_cost", "days"])
-            logger.info(f"[FORMSET] Recalculated prices for {len(cars_to_price)} changed cars")
+            logger.info(f"[FORMSET] Recalculated prices for {len(cars_to_price)} cars")
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)

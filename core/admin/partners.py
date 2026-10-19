@@ -17,6 +17,7 @@ from core.admin.inlines import (
     CarrierDriverInline,
     CarrierServiceInline,
     CarrierTruckInline,
+    ClientStorageTermsInline,
     ClientTariffRateInline,
     CompanyServiceInline,
     LineServiceInline,
@@ -118,7 +119,8 @@ class WarehouseAdmin(admin.ModelAdmin):
             "Настройки хранения",
             {
                 "fields": ("free_days",),
-                "description": 'Бесплатные дни хранения. Ставка за сутки берётся из услуги "Хранение" в списке услуг склада.',
+                "description": 'Бесплатные дни хранения. Ставка за сутки берётся из услуги "Хранение" в списке услуг склада. '
+                "Это наша себестоимость; клиенту можно задать свои условия в карточке клиента.",
             },
         ),
         ("Баланс", {"fields": ("balance",), "description": "Баланс склада"}),
@@ -367,7 +369,7 @@ class ClientAdmin(admin.ModelAdmin):
         "new_transactions_display",
         "telegram_link_display",
     )
-    inlines = [CounterpartyBankAccountInline, ClientTariffRateInline]
+    inlines = [CounterpartyBankAccountInline, ClientTariffRateInline, ClientStorageTermsInline]
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
@@ -927,13 +929,15 @@ class ClientAdmin(admin.ModelAdmin):
         # Get all client's cars with UNLOADED status (in warehouse)
         cars = (
             Car.objects.filter(client=client, status="UNLOADED")
-            .select_related("warehouse", "container")
+            .select_related("warehouse", "container", "client")
+            .prefetch_related("client__storage_terms")
             .order_by("warehouse__name", "-unload_date")
         )
 
         # Group by warehouses
         warehouses_data = {}
         for car in cars:
+            car.client_paid_days = car.get_client_storage()["paid_days"]
             wh_name = car.warehouse.name if car.warehouse else "Без склада"
             if wh_name not in warehouses_data:
                 warehouses_data[wh_name] = []

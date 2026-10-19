@@ -266,7 +266,11 @@ def car_detail(request, car_id):
             transfer_date=car.transfer_date,
             history=history,
         )
-        return render(request, "website/car_detail.html", {"car": car, "timeline": timeline})
+        return render(
+            request,
+            "website/car_detail.html",
+            {"car": car, "timeline": timeline, "client_storage": car.get_client_storage()},
+        )
     except ClientUser.DoesNotExist:
         return render(request, "website/not_authorized.html", status=403)
 

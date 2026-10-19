@@ -853,7 +853,11 @@ class NewInvoice(models.Model):
         is_company = issuer_type == "Company"
 
         result = []
-        for car in self.cars.prefetch_related("car_services").select_related("warehouse").all():
+        for car in (
+            self.cars.prefetch_related("car_services", "client__storage_terms")
+            .select_related("warehouse", "client")
+            .all()
+        ):
             # Пересчитываем хранение и стоимость перед генерацией позиций
             car.update_days_and_storage()
             if not dry_run:
@@ -910,13 +914,20 @@ class NewInvoice(models.Model):
 
             # === Добавляем хранение как отдельную группу ===
             if is_company or issuer_type == "Warehouse":
-                if car.storage_cost and car.storage_cost > 0 and car.days and car.days > 0:
-                    daily_rate = car._get_storage_daily_rate() if car.warehouse else Decimal("0")
-                    storage_total = daily_rate * car.days
-                    # Наценка идёт только в счёт клиенту. Во входящем счёте
-                    # склада, как и по остальным услугам, — себестоимость.
-                    if is_company:
+                daily_rate = car._get_storage_daily_rate() if car.warehouse else Decimal("0")
+                storage_total = daily_rate * (car.days or 0)
+                # Наценка идёт только в счёт клиенту. Во входящем счёте
+                # склада, как и по остальным услугам, — себестоимость.
+                # Клиенту со своими условиями хранения — сумма по ним (это и
+                # есть себестоимость + наценка, но наценка в CarService при
+                # dry_run может быть не пересчитана).
+                if is_company:
+                    client_storage = car.get_client_storage()
+                    if client_storage["custom"]:
+                        storage_total = client_storage["amount"]
+                    else:
                         storage_total += storage_markup
+                if storage_total > 0:
                     groups["Хран"] = storage_total
 
             result.append((car, groups))

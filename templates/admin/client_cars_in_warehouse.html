@@ -170,7 +170,7 @@
                         <th>Год</th>
                         <th>Контейнер</th>
                         <th>Дата разгрузки</th>
-                        <th>Дней на складе</th>
+                        <th>Платных дней (клиенту)</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -196,9 +196,9 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if car.days %}
-                                <span class="{% if car.days > 14 %}ciw-days-danger{% elif car.days > 7 %}ciw-days-warn{% else %}ciw-days-ok{% endif %}">
-                                    {{ car.days }} дн.
+                            {% if car.client_paid_days %}
+                                <span class="{% if car.client_paid_days > 14 %}ciw-days-danger{% elif car.client_paid_days > 7 %}ciw-days-warn{% else %}ciw-days-ok{% endif %}">
+                                    {{ car.client_paid_days }} дн.
                                 </span>
                             {% else %}
                                 —

@@ -14,7 +14,7 @@
 * :mod:`.carriers` — :class:`Carrier`, :class:`CarrierTruck`,
   :class:`CarrierDriver`.
 * :mod:`.clients` — :class:`Client`, :class:`ClientTariffRate`,
-  :class:`ClientEmail`.
+  :class:`ClientStorageTerms`, :class:`ClientEmail`.
 * :mod:`.warehouses` — :class:`Warehouse`, :class:`WarehouseSite`.
 * :mod:`.company` — :class:`Company`.
 * :mod:`.containers` — :class:`Container`.
@@ -49,7 +49,7 @@ from .agent import AgentAction, AgentInboxWatch, AgentMemory, AgentPolicy, Agent
 from .auto_transport import AutoTransport
 from .cars import Car, CarModelImage
 from .carriers import Carrier, CarrierDriver, CarrierTruck
-from .clients import Client, ClientEmail, ClientTariffRate
+from .clients import Client, ClientEmail, ClientStorageTerms, ClientTariffRate
 from .company import Company
 from .containers import Container
 from .lines import Line, LineTHSCoefficient
@@ -108,7 +108,7 @@ __all__ = [
     # справочники
     'Line', 'LineTHSCoefficient',
     'Carrier', 'CarrierTruck', 'CarrierDriver',
-    'Client', 'ClientTariffRate', 'ClientEmail',
+    'Client', 'ClientTariffRate', 'ClientStorageTerms', 'ClientEmail',
     'Warehouse', 'WarehouseSite',
     'Company',
     # основные сущности
