@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 
 from django import forms
+from django.core.exceptions import ValidationError
 
 from core.models import Car
 from core.services.vin_gate import check_vin, normalize_vin_input, schedule_vin_check, vehicle_type_from_nhtsa
@@ -95,3 +96,47 @@ class VinGuardForm(forms.ModelForm):
             # в момент сохранения ждать незачем — обновляем в фоне.
             schedule_vin_check(car.vin)
         return car
+
+
+# Поля, которые AI-обработка сканов (dock receipt, тайтл, расшифровка NHTSA)
+# пишет в машину в фоне, пока карточка контейнера открыта.
+BACKGROUND_FIELDS = ("weight_kg", "vehicle_type", "brand", "year", "has_title")
+
+
+class ContainerCarInlineForm(VinGuardForm):
+    """Машина в инлайне контейнера: устаревшая форма не затирает данные AI.
+
+    Инлайн отрисован до того, как AI записал в машину вес, тип или тайтл.
+    Django сравнивает присланное значение со свежим из базы, видит разницу
+    и записывает пустое поле поверх данных AI. Поэтому для этих полей форма
+    хранит значение на момент открытия страницы (скрытый initial): если
+    оператор поле не трогал, а в базе оно с тех пор изменилось, остаётся
+    значение из базы.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in BACKGROUND_FIELDS:
+            if name in self.fields:
+                self.fields[name].show_hidden_initial = True
+
+    def clean(self):
+        cleaned = super().clean()
+        if not self.instance.pk:
+            return cleaned
+        changed = set(self.changed_data)
+        for name in BACKGROUND_FIELDS:
+            if name not in self.fields or name in changed:
+                continue
+            current = getattr(self.instance, name)
+            if self._value_on_page_load(name) != current:
+                cleaned[name] = current
+        return cleaned
+
+    def _value_on_page_load(self, name):
+        field = self.fields[name]
+        raw = field.hidden_widget().value_from_datadict(self.data, self.files, self.add_initial_prefix(name))
+        try:
+            return field.to_python(raw)
+        except ValidationError:
+            return None

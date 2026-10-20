@@ -1155,19 +1155,31 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
                     "auto_apply_skipped": data.get("auto_apply_skipped") or "",
                     "needs_review": job.status == ScanProcessingJob.STATUS_NEEDS_REVIEW,
                     "has_vin_conflict": bool(data.get("vin_mismatch_review") or data.get("vin_conflicts")),
-                    # Для live-синхронизации чекбокса «Т» в инлайне машин:
-                    # AI мог поставить has_title, пока карточка открыта, и
-                    # сохранение устаревшей формы сбросило бы галочку.
-                    "car_vin": job.linked_car.vin if job.linked_car_id and job.linked_car else "",
-                    "car_has_title": bool(job.linked_car.has_title) if job.linked_car_id and job.linked_car else False,
                     "admin_url": reverse("admin:core_scanprocessingjob_change", args=[job.id]),
                     "review_url": reverse("admin:core_container_scan_job_review", args=[object_id, job.id]),
                     "created_at": timezone.localtime(job.created_at).strftime("%d.%m %H:%M"),
                 }
             )
+        # Актуальные значения полей, которые AI пишет в машины, пока карточка
+        # открыта: панель подставляет их в инлайн, иначе «Сохранить» вернул
+        # бы в базу устаревшие значения из формы.
+        cars = []
+        if container is not None:
+            for car in container.container_cars.only("vin", "weight_kg", "vehicle_type", "brand", "year", "has_title"):
+                cars.append(
+                    {
+                        "vin": car.vin,
+                        "weight_kg": "" if car.weight_kg is None else str(car.weight_kg),
+                        "vehicle_type": car.vehicle_type or "",
+                        "brand": car.brand or "",
+                        "year": "" if car.year is None else str(car.year),
+                        "has_title": bool(car.has_title),
+                    }
+                )
         return JsonResponse(
             {
                 "jobs": items,
+                "cars": cars,
                 "has_active": has_active,
                 "summary": self._scan_docs_summary(container, items),
             }

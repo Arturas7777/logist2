@@ -214,23 +214,62 @@ ScanProcessingJob с target_container = этот контейнер, обраб�
     data.jobs.forEach(function (job) { box.appendChild(jobRow(job)); });
   }
 
-  // AI-обработка ставит Car.has_title=True в БД, пока карточка открыта.
-  // Инлайн машин отрисован ДО этого: если пользователь сохранит форму,
-  // Django перезапишет галочку обратно в False (устаревшее значение из
-  // формы). Поэтому при каждом обновлении статусов синхронизируем
-  // чекбоксы «Т» в инлайне с актуальным состоянием из БД.
-  function syncTitleCheckboxes(jobs) {
-    var vinInputs = document.querySelectorAll('input[name$="-vin"]');
-    if (!vinInputs.length) return;
-    jobs.forEach(function (job) {
-      if (job.scan_type !== 'TITLE' || job.status !== 'APPLIED') return;
-      if (!job.car_vin || !job.car_has_title) return;
-      vinInputs.forEach(function (vinInput) {
-        if ((vinInput.value || '').trim().toUpperCase() !== job.car_vin) return;
-        var prefix = vinInput.name.replace(/-vin$/, '');
-        var cb = document.querySelector('input[name="' + prefix + '-has_title"]');
-        if (cb && !cb.checked) cb.checked = true;
+  // AI пишет в машины вес, тип ТС, марку, год и галочку «Т», пока карточка
+  // открыта, а инлайн отрисован ДО этого. Если пользователь сохранит форму,
+  // Django запишет устаревшие значения из формы поверх данных AI. Поэтому
+  // при каждом обновлении статусов подставляем актуальные значения — но
+  // только в поля, которые пользователь не трогал после загрузки страницы.
+  var SYNC_FIELDS = ['weight_kg', 'vehicle_type', 'brand', 'year', 'has_title'];
+  var NUMERIC_FIELDS = { weight_kg: true, year: true };
+
+  function sameValue(name, a, b) {
+    a = (a === null || a === undefined) ? '' : String(a).trim();
+    b = (b === null || b === undefined) ? '' : String(b).trim();
+    if (a === b) return true;
+    if (NUMERIC_FIELDS[name] && a !== '' && b !== '') return parseFloat(a) === parseFloat(b);
+    return false;
+  }
+
+  function defaultSelectValue(select) {
+    for (var i = 0; i < select.options.length; i++) {
+      if (select.options[i].defaultSelected) return select.options[i].value;
+    }
+    return select.options.length ? select.options[0].value : '';
+  }
+
+  function syncField(prefix, name, value) {
+    var input = document.querySelector('[name="' + prefix + '-' + name + '"]');
+    if (!input) return;
+    var hiddenInitial = document.querySelector('input[name="initial-' + prefix + '-' + name + '"]');
+
+    if (input.type === 'checkbox') {
+      if (input.checked !== input.defaultChecked || input.checked === value) return;
+      input.checked = input.defaultChecked = value;
+      if (hiddenInitial) hiddenInitial.value = value ? 'True' : 'False';
+      return;
+    }
+    if (input.tagName === 'SELECT') {
+      if (input.value !== defaultSelectValue(input) || input.value === value) return;
+      Array.prototype.forEach.call(input.options, function (opt) {
+        opt.defaultSelected = opt.value === value;
       });
+      input.value = value;
+    } else {
+      if (input.value !== input.defaultValue || sameValue(name, input.value, value)) return;
+      input.value = input.defaultValue = value;
+    }
+    if (hiddenInitial) hiddenInitial.value = value;
+  }
+
+  function syncCarFields(cars) {
+    if (!cars || !cars.length) return;
+    var byVin = {};
+    cars.forEach(function (car) { byVin[car.vin] = car; });
+    document.querySelectorAll('input[name$="-vin"]').forEach(function (vinInput) {
+      var car = byVin[(vinInput.value || '').trim().toUpperCase()];
+      if (!car) return;
+      var prefix = vinInput.name.replace(/-vin$/, '');
+      SYNC_FIELDS.forEach(function (name) { syncField(prefix, name, car[name]); });
     });
   }
 
@@ -240,7 +279,7 @@ ScanProcessingJob с target_container = этот контейнер, обраб�
       .then(function (data) {
         pollErrors = 0;
         renderJobs(data);
-        syncTitleCheckboxes(data.jobs);
+        syncCarFields(data.cars);
         clearTimeout(pollTimer);
         if (data.has_active) {
           pollTimer = setTimeout(refreshJobs, 4000);
@@ -248,7 +287,7 @@ ScanProcessingJob с target_container = этот контейнер, обраб�
       })
       .catch(function () {
         // Сетевая ошибка не должна убивать поллинг: пока задачи могут быть
-        // активны, пробуем ещё (иначе чекбоксы «Т» не синхронизируются).
+        // активны, пробуем ещё (иначе поля машин в инлайне не синхронизируются).
         if (++pollErrors <= 10) {
           clearTimeout(pollTimer);
           pollTimer = setTimeout(refreshJobs, 6000);

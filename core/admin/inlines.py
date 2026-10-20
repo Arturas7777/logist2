@@ -2,7 +2,7 @@ from django import forms
 from django.contrib import admin
 from django.utils.html import format_html
 
-from core.admin.car_forms import VinGuardForm as CarVinGuardForm
+from core.admin.car_forms import ContainerCarInlineForm
 from core.models import (
     Car,
     CarrierDriver,
@@ -369,7 +369,7 @@ class CarInline(admin.TabularInline):
     classes = ("collapse",)
     # VIN проверяется той же формой, что и в карточке авто: контрольная
     # цифра, расшифровка NHTSA и поиск похожих номеров (см. car_forms).
-    form = CarVinGuardForm
+    form = ContainerCarInlineForm
     fields = (
         "year",
         "brand",
