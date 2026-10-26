@@ -499,7 +499,7 @@ def test_portal_requests_completed_docs_open_completed_tab(logged_client, portal
     assert "d-none" not in _req_card_class(response.content.decode(), completed.pk)
 
 
-def test_request_form_omits_floating_cars(portal_client):
+def test_request_form_includes_floating_cars(portal_client):
     from core.views_website.forms import TransportRequestForm
 
     floating = Car.objects.create(
@@ -511,11 +511,15 @@ def test_request_form_omits_floating_cars(portal_client):
     unloaded = Car.objects.create(
         year=2023, brand="Audi", vin="UNLOADVIN00000001", status="UNLOADED", client=portal_client
     )
+    transferred = Car.objects.create(
+        year=2022, brand="Ford", vin="TRANSFVIN00000001", status="TRANSFERRED", client=portal_client
+    )
     form = TransportRequestForm(client=portal_client)
     pks = set(form.fields["cars"].queryset.values_list("pk", flat=True))
-    assert floating.pk not in pks
+    assert floating.pk in pks
     assert in_port.pk in pks
     assert unloaded.pk in pks
+    assert transferred.pk not in pks
 
 
 def test_important_car_stays_requestable(portal_client):
@@ -556,7 +560,7 @@ def test_removed_car_returns_to_request_list(logged_client, portal_client, trans
     assert f'class="form-check-input car-select" name="cars" value="{car.pk}"' in dash
 
 
-def test_transport_requests_page_hides_floating_cars(logged_client, portal_client):
+def test_transport_requests_page_shows_floating_cars(logged_client, portal_client):
     floating = Car.objects.create(
         year=2024, brand="Kia", vin="FLOATPAGEVIN00001", status="FLOATING", client=portal_client
     )
@@ -567,7 +571,7 @@ def test_transport_requests_page_hides_floating_cars(logged_client, portal_clien
     assert response.status_code == 200
     html = response.content.decode()
     assert "UNLOADPAGEVIN0001" in html
-    assert "FLOATPAGEVIN00001" not in html
+    assert "FLOATPAGEVIN00001" in html
 
 
 def _draft_post(**extra):
@@ -591,6 +595,16 @@ def test_dashboard_preselect_checks_car_checkbox(logged_client, portal_client):
     tag = re.search(rf'<input[^>]*name="cars"[^>]*value="{car.pk}"[^>]*>', html)
     assert tag, html
     assert "checked" in tag.group(0)
+
+
+def test_create_draft_accepts_floating_car(logged_client, portal_client):
+    car = Car.objects.create(year=2024, brand="Kia", vin="DRAFTFLOATVIN0001", status="FLOATING", client=portal_client)
+    url = reverse("website:transport_requests")
+    response = logged_client.post(f"{url}?cars={car.pk}", _draft_post(cars=[car.pk]))
+    assert response.status_code == 302
+    tr = TransportRequest.objects.get(client=portal_client)
+    assert tr.status == "DRAFT"
+    assert list(tr.cars.values_list("pk", flat=True)) == [car.pk]
 
 
 def test_create_draft_saves_preselected_cars(logged_client, portal_client):

@@ -173,9 +173,9 @@ def test_dashboard_shows_request_checkbox_for_important_car(portal_login):
     assert f'class="form-check-input car-select" name="cars" value="{car.id}"' in html
 
 
-def test_dashboard_hides_request_checkbox_for_floating(portal_login):
+def test_dashboard_shows_request_checkbox_for_floating(portal_login):
     http, owner = portal_login
-    Car.objects.create(
+    car = Car.objects.create(
         year=2024,
         brand="Kia",
         vin="FLOATDASHVIN00001",
@@ -186,4 +186,4 @@ def test_dashboard_hides_request_checkbox_for_floating(portal_login):
     assert response.status_code == 200
     html = response.content.decode()
     assert "FLOATDASHVIN00001" in html
-    assert 'class="form-check-input car-select"' not in html
+    assert f'class="form-check-input car-select" name="cars" value="{car.id}"' in html

@@ -17,9 +17,10 @@ from core.models.website import (
     TransportRequest,
 )
 
-# В заявку на автовоз — только то, что уже можно забрать со склада/порта.
-# FLOATING («В пути») ещё не приплыли; TRANSFERRED уже уехали.
-REQUESTABLE_CAR_STATUSES = ("UNLOADED", "IN_PORT")
+# В заявку на автовоз — машины, которые ещё у нас: в пути, в порту или
+# разгружены. Документы можно готовить заранее, пока контейнер плывёт.
+# TRANSFERRED уже уехали.
+REQUESTABLE_CAR_STATUSES = ("FLOATING", "IN_PORT", "UNLOADED")
 
 
 def client_requestable_cars(client, *, exclude_request_pk=None, extra_cars=None):
@@ -174,8 +175,7 @@ class TransportRequestForm(forms.ModelForm):
 
     def __init__(self, *args, client=None, **kwargs):
         super().__init__(*args, **kwargs)
-        # Забрать автовозом можно только разгруженные / в порту.
-        # «В пути» ещё не приплыли; переданные уже уехали.
+        # Документы можно готовить и для авто «В пути». Переданные уже уехали.
         extra = self.instance.cars.all() if self.instance.pk else None
         self.fields["cars"].queryset = client_requestable_cars(
             client,
