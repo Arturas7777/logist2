@@ -29,11 +29,14 @@ from core.services.vin_gate import (
     ISSUE_NHTSA_UNKNOWN,
     ISSUE_SPEC_MISMATCH,
     apply_nhtsa_vehicle_type,
+    brand_from_nhtsa,
     check_vin,
     get_vin_check,
     identity_from_vin,
+    normalize_car_identity,
     normalize_vin_input,
     refresh_vin_check,
+    split_hazard_marker,
     vehicle_type_from_nhtsa,
 )
 
@@ -59,11 +62,11 @@ def _make_car(vin, **kwargs):
     return Car.objects.create(vin=vin, **defaults)
 
 
-def _nhtsa(vin, *, make="TOYOTA", model="CAMRY", year=2012, ok=True, vehicle_type="PASSENGER CAR"):
+def _nhtsa(vin, *, make="TOYOTA", model="CAMRY", year=2012, ok=True, vehicle_type="PASSENGER CAR", checksum_ok=True):
     return VinCheck.objects.create(
         vin=vin,
         length_ok=True,
-        checksum_ok=True,
+        checksum_ok=checksum_ok,
         is_north_american=vin[0] in "12345",
         nhtsa_ok=ok,
         nhtsa_make=make,
@@ -402,3 +405,70 @@ def test_identity_from_vin_keeps_brand_when_model_unknown(monkeypatch):
     brand, year = identity_from_vin(EU_VIN, brand="AUDI", year=2022)
     assert brand == "AUDI"
     assert year == 2022
+
+
+# ── Марка и модель по VIN для новых машин ─────────────────────────────────
+
+# Корейский VIN внутреннего рынка: NHTSA отдаёт чужую модель.
+KOREAN_VIN = "KMHSW81XDGU558617"
+
+
+def test_brand_from_nhtsa_drops_repeated_make():
+    assert brand_from_nhtsa("POLESTAR", "Polestar 2") == "POLESTAR 2"
+    assert brand_from_nhtsa("CHEVROLET", "Equinox") == "CHEVROLET Equinox"
+
+
+def test_split_hazard_marker():
+    assert split_hazard_marker("TESLA MODEL Y (Hazzard)") == ("TESLA MODEL Y", True)
+    assert split_hazard_marker("BMW I4 EDRIVE 40 ( hazard )") == ("BMW I4 EDRIVE 40", True)
+    assert split_hazard_marker("HONDA CR-V EX-L") == ("HONDA CR-V EX-L", False)
+
+
+def test_identity_from_vin_ignores_model_without_checksum():
+    _nhtsa(KOREAN_VIN, make="HYUNDAI", model="Stellar", year=2016, checksum_ok=False)
+    brand, _year = identity_from_vin(KOREAN_VIN, brand="HYUNDAI Santa Fe", year=2016)
+    assert brand == "HYUNDAI Santa Fe"
+
+
+def test_normalize_car_identity_uses_nhtsa_and_keeps_source():
+    _nhtsa(VALID_NA_VIN, make="TESLA", model="Model Y", year=2026)
+    car = _make_car(VALID_NA_VIN, brand="TESLA MODEL Y PREMIUM/RWD (Hazzard)")
+
+    fields = normalize_car_identity(car)
+
+    assert set(fields) == {"brand", "source_title", "is_hazardous"}
+    assert car.brand == "TESLA Model Y"
+    assert car.source_title == "TESLA MODEL Y PREMIUM/RWD (Hazzard)"
+    assert car.is_hazardous is True
+
+
+def test_normalize_car_identity_keeps_site_text_when_untrusted():
+    _nhtsa(KOREAN_VIN, make="HYUNDAI", model="Stellar", year=2016, checksum_ok=False)
+    car = _make_car(KOREAN_VIN, brand="HYUNDAI Santa Fe 2.2 4WD (Hazzard)")
+
+    normalize_car_identity(car)
+
+    assert car.brand == "HYUNDAI Santa Fe 2.2 4WD"
+    assert car.source_title == "HYUNDAI Santa Fe 2.2 4WD (Hazzard)"
+    assert car.is_hazardous is True
+
+
+def test_normalize_car_identity_does_not_overwrite_source():
+    _nhtsa(VALID_NA_VIN, make="HONDA", model="CR-V")
+    car = _make_car(VALID_NA_VIN, brand="HONDA CR-V EX-L AWD", source_title="HONDA CR-V EX-L AWD")
+    car.brand = "HONDA CR-V EXL"
+
+    normalize_car_identity(car)
+
+    assert car.brand == "HONDA CR-V"
+    assert car.source_title == "HONDA CR-V EX-L AWD"
+
+
+def test_new_car_brand_normalized_after_commit(django_capture_on_commit_callbacks):
+    _nhtsa(VALID_NA_VIN, make="CHEVROLET", model="Equinox", year=2024)
+    with django_capture_on_commit_callbacks(execute=True):
+        car = _make_car(VALID_NA_VIN, brand="CHEVROLET EQUINOX AWD LT", year=2024)
+
+    car.refresh_from_db()
+    assert car.brand == "CHEVROLET Equinox"
+    assert car.source_title == "CHEVROLET EQUINOX AWD LT"

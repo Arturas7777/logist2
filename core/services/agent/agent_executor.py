@@ -182,7 +182,7 @@ def _execute_create_container(action, by: str = "") -> dict:
         status="FLOATING",
     )
 
-    from core.services.vin_gate import cached_vehicle_type, identity_from_vin
+    from core.services.vin_gate import cached_vehicle_type, identity_from_vin, split_hazard_marker
 
     created_vins, attached_vins, skipped = [], [], []
     for item in payload.get("cars") or []:
@@ -216,10 +216,14 @@ def _execute_create_container(action, by: str = "") -> dict:
             given_year = int(item.get("year") or 0)
         except (TypeError, ValueError):
             given_year = 0
-        brand, year = identity_from_vin(vin, brand=item.get("brand") or "", year=given_year)
+        raw_brand = (item.get("brand") or "").strip()
+        cleaned_brand, hazardous = split_hazard_marker(raw_brand)
+        brand, year = identity_from_vin(vin, brand=cleaned_brand, year=given_year)
         Car.objects.create(
             vin=vin,
             brand=brand,
+            source_title=raw_brand[:255] if raw_brand != brand else "",
+            is_hazardous=hazardous,
             year=year,
             vehicle_type=cached_vehicle_type(vin) or "SEDAN",
             status="FLOATING",

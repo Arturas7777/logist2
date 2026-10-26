@@ -1297,6 +1297,34 @@ def refresh_vin_check_task(self, vin):
     return {"ok": True, "vin": check.vin, "nhtsa_ok": check.nhtsa_ok}
 
 
+@shared_task(bind=True, max_retries=3, default_retry_delay=900, time_limit=60)
+def normalize_car_identity_task(self, car_id):
+    """Марка и модель новой машины по расшифровке VIN (см. ``normalize_car_identity``).
+
+    Если NHTSA не ответил, марка пока очищается только от «(Hazzard)», а
+    задача повторяется позже с принудительным запросом: неудачный снимок
+    иначе живёт в кэше неделю.
+    """
+    from core.models import Car
+    from core.services.vin_gate import NHTSA_UNAVAILABLE, normalize_car_identity, refresh_vin_check
+
+    car = Car.objects.filter(pk=car_id).first()
+    if car is None:
+        return {"ok": False, "reason": "not_found", "car_id": car_id}
+    check = refresh_vin_check(car.vin) if self.request.retries else None
+    fields = normalize_car_identity(car)
+    if fields:
+        car.save(update_fields=fields)
+    if check is None:
+        from core.models import VinCheck
+        from core.services.vin_gate import normalize_vin_input
+
+        check = VinCheck.objects.filter(vin=normalize_vin_input(car.vin)).first()
+    if check is not None and check.error_text == NHTSA_UNAVAILABLE and self.request.retries < self.max_retries:
+        raise self.retry()
+    return {"ok": True, "car_id": car_id, "fields": fields}
+
+
 @shared_task(time_limit=1800)
 def audit_all_containers(days: int = 180, max_vin_checks: int = 300):
     """Ежедневная сверка данных по активным контейнерам (celery beat).

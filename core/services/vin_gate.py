@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -65,6 +66,11 @@ _MAKE_ALIASES = {
 _NEAR_DUPLICATE_MAX_DISTANCE = 2
 
 _NHTSA_TIMEOUT = 5
+
+NHTSA_UNAVAILABLE = "NHTSA недоступен"
+
+# Пометка в названии машины на caromoto.com: «TESLA MODEL Y (Hazzard)».
+_HAZARD_MARKER = re.compile(r"\(\s*haz+ard\s*\)|\bhaz+ard\b", re.IGNORECASE)
 
 
 @dataclass
@@ -146,9 +152,38 @@ def extracted_make_agrees(extracted, nhtsa_make, nhtsa_model=None) -> bool:
 
 
 def brand_from_nhtsa(make, model, *, max_length: int = 50) -> str:
-    """«CHEVROLET Equinox» — каноническая марка+модель из расшифровки VIN."""
-    label = " ".join(part.strip() for part in (make, model) if part and str(part).strip())
+    """«CHEVROLET Equinox» — каноническая марка+модель из расшифровки VIN.
+
+    Марку, повторённую в начале модели, не дублируем: «POLESTAR Polestar 2»
+    → «POLESTAR 2».
+    """
+    make = str(make or "").strip()
+    model = str(model or "").strip()
+    if make and model.upper() == make.upper():
+        model = ""
+    elif make and model.upper().startswith(make.upper() + " "):
+        model = model[len(make) :].strip()
+    label = " ".join(part for part in (make, model) if part)
     return label[:max_length]
+
+
+def trusted_nhtsa_brand(check) -> str:
+    """«МАРКА Модель» из снимка NHTSA, если расшифровке можно верить.
+
+    Верим только VIN с верной контрольной цифрой — так размечены машины
+    американского рынка. Корейские машины внутреннего рынка NHTSA
+    расшифровывает с чужой моделью (Santa Fe → «Stellar», Tucson →
+    «Elantra»), у европейских модели чаще всего нет вовсе.
+    """
+    if check is None or not check.nhtsa_ok or not check.checksum_ok or not check.nhtsa_model:
+        return ""
+    return brand_from_nhtsa(check.nhtsa_make, check.nhtsa_model)
+
+
+def split_hazard_marker(text) -> tuple[str, bool]:
+    """Убирает «(Hazzard)» из названия: (очищенный текст, была ли пометка)."""
+    cleaned, found = _HAZARD_MARKER.subn(" ", str(text or ""))
+    return " ".join(cleaned.split()), bool(found)
 
 
 def identity_from_vin(vin: str, *, brand: str = "", year: int = 0) -> tuple[str, int]:
@@ -178,13 +213,48 @@ def identity_from_vin(vin: str, *, brand: str = "", year: int = 0) -> tuple[str,
             logger.warning("VIN %s: NHTSA не ответил, марку не меняем", vin_norm, exc_info=True)
     if check is None:
         return brand, year
-    if check.nhtsa_model:
-        brand = brand_from_nhtsa(check.nhtsa_make, check.nhtsa_model)
+    trusted = trusted_nhtsa_brand(check)
+    if trusted:
+        brand = trusted
     elif not brand and check.nhtsa_make:
         brand = check.nhtsa_make.strip()[:50]
     if year <= 0 and check.nhtsa_year:
         year = int(check.nhtsa_year)
     return brand, year
+
+
+def normalize_car_identity(car, *, allow_network: bool = True) -> list[str]:
+    """Приводит марку машины к «МАРКА Модель» по расшифровке VIN.
+
+    Текст, с которым машину прислали, уходит в ``source_title`` (только
+    первый раз — ручную правку исходника не затираем), пометка «(Hazzard)»
+    — в ``is_hazardous``. Если расшифровке NHTSA верить нельзя, в марке
+    остаётся присланный текст без пометки. Возвращает список изменённых
+    полей; сохраняет вызывающий.
+    """
+    original = (car.brand or "").strip()
+    cleaned, hazardous = split_hazard_marker(original)
+    changed: list[str] = []
+    if hazardous and not car.is_hazardous:
+        car.is_hazardous = True
+        changed.append("is_hazardous")
+
+    check = get_vin_check(car.vin, allow_network=allow_network)
+    brand = (trusted_nhtsa_brand(check) or cleaned)[:50]
+    if brand and brand != original:
+        if not car.source_title:
+            car.source_title = original[:255]
+            changed.append("source_title")
+        car.brand = brand
+        changed.append("brand")
+
+    if check is not None and check.nhtsa_ok:
+        if not car.year and check.nhtsa_year:
+            car.year = int(check.nhtsa_year)
+            changed.append("year")
+        if apply_nhtsa_vehicle_type(car, check.nhtsa_vehicle_type):
+            changed.append("vehicle_type")
+    return changed
 
 
 # Дефолт карточки Car — «Легковой». Подставляем мотоцикл/квадроцикл только
@@ -291,7 +361,7 @@ def refresh_vin_check(vin: str, *, timeout: int = _NHTSA_TIMEOUT, use_nhtsa: boo
     if use_nhtsa:
         decoded = decode_vin_nhtsa(vin_norm, timeout=timeout)
         if decoded.get("raw_failed"):
-            defaults["error_text"] = "NHTSA недоступен"
+            defaults["error_text"] = NHTSA_UNAVAILABLE
         else:
             defaults["nhtsa_make"] = (decoded.get("make") or "")[:100]
             defaults["nhtsa_model"] = (decoded.get("model") or "")[:100]
@@ -453,7 +523,7 @@ def check_vin(
     # Если контрольная цифра уже не сошлась, NHTSA скажет ровно о том же —
     # повторять одну проблему дважды разными словами незачем.
     checksum_reported = any(issue.code == ISSUE_CHECKSUM for issue in verdict.issues)
-    if not checksum_reported and check is not None and not check.nhtsa_ok and check.error_text != "NHTSA недоступен":
+    if not checksum_reported and check is not None and not check.nhtsa_ok and check.error_text != NHTSA_UNAVAILABLE:
         verdict.issues.append(
             VinIssue(
                 code=ISSUE_NHTSA_UNKNOWN,

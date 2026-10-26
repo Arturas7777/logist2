@@ -208,6 +208,25 @@ def car_post_save(sender, instance, **kwargs):
     # --- 8. Итог сверки данных контейнера [COMMAND/denorm] ---
     _refresh_container_audit_level(instance, update_fields=kwargs.get("update_fields"))
 
+    # --- 9. Марка и модель по VIN [COMMAND/denorm] ---
+    # Машины заводят и боты напрямую в базу, поэтому нормализуем здесь, а не
+    # в конкретной точке ввода. Сеть сохранение не ждёт — задача в фоне.
+    if created and not kwargs.get("raw", False):
+        car_id = instance.pk
+        transaction.on_commit(lambda: _enqueue_car_identity(car_id))
+
+
+def _enqueue_car_identity(car_id: int) -> None:
+    from core.tasks import normalize_car_identity_task
+
+    try:
+        normalize_car_identity_task.delay(car_id)
+    except Exception:
+        try:
+            normalize_car_identity_task(car_id)
+        except Exception:
+            logger.warning("Не удалось нормализовать марку авто #%s", car_id, exc_info=True)
+
 
 # Поля, от которых зависит сверка данных контейнера. Пересчёт по любому
 # сохранению машины был бы расточительным: цены и дни пересчитываются часто

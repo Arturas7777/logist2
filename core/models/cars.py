@@ -54,6 +54,21 @@ class Car(models.Model):
 
     year = models.PositiveIntegerField(verbose_name="Год выпуска")
     brand = models.CharField(max_length=50, verbose_name="Марка")
+    # Марку с моделью приводим к расшифровке VIN (NHTSA), а то, как машину
+    # прислали (бот с caromoto.com пишет комплектацию произвольно), храним тут.
+    source_title = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Исходное описание",
+        help_text="Марка и модель в том виде, как их прислали при создании (например, с caromoto.com), "
+        "до сверки с VIN.",
+    )
+    is_hazardous = models.BooleanField(
+        default=False,
+        verbose_name="Hazzard",
+        help_text="В названии на caromoto.com была пометка «(Hazzard)».",
+    )
     vehicle_type = models.CharField(max_length=20, choices=VEHICLE_TYPE_CHOICES, default="SEDAN", verbose_name="Тип ТС")
     vin = models.CharField(max_length=17, unique=True, verbose_name="VIN")
     client = models.ForeignKey("Client", on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Клиент")

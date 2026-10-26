@@ -488,6 +488,7 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
         "carrier_services_display",
         "company_services_display",
         "title_link_display",
+        "source_title",
     )
     # inlines = []  # Services managed through sections below
     fieldsets = (
@@ -496,6 +497,7 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
             {
                 "fields": (
                     ("year", "brand", "vin", "vehicle_type", "weight_kg", "status"),
+                    ("source_title", "is_hazardous"),
                     # Скрытое поле: видимую галочку рисует vin_guard.js рядом
                     # с VIN, когда проверка нашла расхождение.
                     "vin_confirmed",
