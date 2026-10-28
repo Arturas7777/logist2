@@ -161,6 +161,18 @@ class ContainerEmail(models.Model):
         help_text="[{filename, size, content_type, storage_path, attachment_id}]. "
         "storage_path пуст, если вложение пропущено из-за размера.",
     )
+    attachment_container_numbers = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Номера контейнеров из PDF",
+        help_text="Все номера ISO 6346 из текста вложений, не только первый.",
+    )
+    unknown_vins = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="VIN нет в CRM",
+        help_text="VIN из письма, которых нет среди машин.",
+    )
 
     matched_by = models.CharField(
         max_length=20,

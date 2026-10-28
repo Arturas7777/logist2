@@ -328,7 +328,10 @@ def apply_client_tariffs_for_container(container, *, include_transferred=True):
             continue
 
         client = car.client
-        count = _count_vehicles_for_tariff(cars, car.vehicle_type)
+        # Брекет FLEXIBLE — машины этого клиента, не всего контейнера.
+        # Иначе чужие авто роняют CAROMOTO MOLDOVA с 360 € на 290 €.
+        own_cars = [item for item in cars if item.client_id == car.client_id]
+        count = _count_vehicles_for_tariff(own_cars, car.vehicle_type)
         agreed_total = _get_agreed_total(client, car.vehicle_type, count, line_id=_tariff_line_id(car, container))
 
         if agreed_total is None:
@@ -363,7 +366,9 @@ def apply_client_tariff_for_car(car):
 
     count = 1
     if car.container_id:
-        cars = list(Car.objects.filter(container_id=car.container_id).only("id", "vehicle_type"))
+        cars = list(
+            Car.objects.filter(container_id=car.container_id, client_id=car.client_id).only("id", "vehicle_type")
+        )
         count = _count_vehicles_for_tariff(cars, car.vehicle_type)
 
     agreed_total = _get_agreed_total(client, car.vehicle_type, count, line_id=_tariff_line_id(car))

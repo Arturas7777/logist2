@@ -61,6 +61,11 @@ class Command(BaseCommand):
         parser.add_argument("--car-vin", help="VIN машины, к которой привязано письмо.")
         parser.add_argument("--transport-request", help="Номер заявки на автовоз (TR-…).")
         parser.add_argument("--include-body", action="store_true", help="Добавить body_text.")
+        parser.add_argument(
+            "--include-attachment-text",
+            action="store_true",
+            help="Добавить номера контейнеров из PDF и VIN, которых нет в CRM.",
+        )
         parser.add_argument("--include-hidden", action="store_true", help="Не скрывать дубли и отфильтрованные.")
         parser.add_argument("--limit", type=int, default=100, help=f"Сколько писем (1..{MAX_LIMIT}, по умолчанию 100).")
         parser.add_argument("--pretty", action="store_true", help="JSON с отступами.")
@@ -110,6 +115,8 @@ class Command(BaseCommand):
         ]
         if options["include_body"]:
             fields.append("body_text")
+        if options["include_attachment_text"]:
+            fields.extend(["attachment_container_numbers", "unknown_vins"])
 
         qs = (
             qs.distinct()
@@ -129,7 +136,9 @@ class Command(BaseCommand):
             "count": len(rows),
             "has_more": has_more,
             "next_after_id": rows[-1].pk if rows else options["after_id"],
-            "emails": [self._serialize(e, options["include_body"]) for e in rows],
+            "emails": [
+                self._serialize(e, options["include_body"], options["include_attachment_text"]) for e in rows
+            ],
         }
         if options["pretty"]:
             text = json.dumps(payload, ensure_ascii=False, indent=2)
@@ -138,7 +147,7 @@ class Command(BaseCommand):
         self.stdout.write(text)
 
     @staticmethod
-    def _serialize(email, include_body: bool) -> dict:
+    def _serialize(email, include_body: bool, include_attachment_text: bool = False) -> dict:
         item = {
             "id": email.pk,
             "gmail_id": email.gmail_id,
@@ -168,4 +177,7 @@ class Command(BaseCommand):
         }
         if include_body:
             item["body_text"] = email.body_text
+        if include_attachment_text:
+            item["attachment_container_numbers"] = email.attachment_container_numbers or []
+            item["unknown_vins"] = email.unknown_vins or []
         return item

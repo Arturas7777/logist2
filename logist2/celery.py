@@ -15,6 +15,7 @@ app.autodiscover_tasks(related_name="tasks")
 app.autodiscover_tasks(related_name="tasks_email")
 app.autodiscover_tasks(related_name="tasks_monitoring")
 app.autodiscover_tasks(related_name="tasks_agent")
+app.autodiscover_tasks(related_name="tasks_bots")
 
 # Время в crontab — UTC (CELERY_TIMEZONE, как cron сервера). По Вильнюсу это
 # +2 ч зимой и +3 ч летом; все ежедневные задачи идут уже после местной
@@ -23,6 +24,10 @@ app.conf.beat_schedule = {
     "check-overdue-invoices-daily": {
         "task": "core.tasks.check_overdue_invoices",
         "schedule": crontab(hour=6, minute=0),
+    },
+    "bot-morning-snapshot": {
+        "task": "core.tasks_bots.bot_morning_snapshot_task",
+        "schedule": crontab(hour=6, minute=5),
     },
     # B8: напоминания клиентам (за 3 дня до срока и при OVERDUE) — после того,
     # как check_overdue_invoices проставил статусы. 06:15 UTC ≈ 08:15/09:15

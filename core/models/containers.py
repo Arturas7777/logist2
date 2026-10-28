@@ -88,6 +88,20 @@ class Container(models.Model):
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default="FLOATING", verbose_name="Статус")
     line = models.ForeignKey("Line", on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Морская линия")
     eta = models.DateField(null=True, blank=True, verbose_name="ETA")
+    ETA_SOURCE_MAERSK = "MAERSK_API"
+    ETA_SOURCE_LINE = "LINE_API"
+    ETA_SOURCE_CAROMOTO = "CAROMOTO"
+    ETA_SOURCE_MANUAL = "MANUAL"
+    ETA_SOURCE_CHOICES = [
+        (ETA_SOURCE_MAERSK, "Maersk API"),
+        (ETA_SOURCE_LINE, "API линии"),
+        (ETA_SOURCE_CAROMOTO, "Caromoto"),
+        (ETA_SOURCE_MANUAL, "Вручную"),
+    ]
+    eta_source = models.CharField(
+        max_length=20, choices=ETA_SOURCE_CHOICES, blank=True, default="", verbose_name="Источник ETA"
+    )
+    eta_updated_at = models.DateTimeField(null=True, blank=True, verbose_name="ETA обновлена")
     client = models.ForeignKey("Client", on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Клиент")
     customs_procedure = models.CharField(
         max_length=20, choices=CUSTOMS_PROCEDURE_CHOICES, null=True, blank=True, verbose_name="Таможенная процедура"
@@ -135,6 +149,23 @@ class Container(models.Model):
         help_text="Укажите когда планируете разгружать контейнер (клиенты получат уведомление)",
     )
     unload_date = models.DateField(null=True, blank=True, verbose_name="Дата разгрузки")
+    unload_confirmed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Разгрузка подтверждена",
+        help_text="Письмо склада «Iškrautas»: план разгрузки подтверждён, статус сам не меняется.",
+    )
+    transferred_to_neto_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="Передан в Neto", help_text="Исходящее «Perduodam konteineri»."
+    )
+    transferred_to_neto_email = models.ForeignKey(
+        "ContainerEmail",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="neto_handover_containers",
+        verbose_name="Письмо передачи в Neto",
+    )
     unloaded_status_at = models.DateTimeField(
         null=True,
         blank=True,

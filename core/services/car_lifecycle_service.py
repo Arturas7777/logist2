@@ -218,7 +218,18 @@ def transition_cars(
         for new_transfer_date, pks in by_date.items():
             Car.objects.filter(pk__in=pks).update(status=target, transfer_date=new_transfer_date)
         if history:
-            CarStatusHistory.objects.bulk_create(history)
+            created_history = CarStatusHistory.objects.bulk_create(history)
+            if target == "TRANSFERRED":
+                from core.models.status_history import transferred_history_timestamp
+
+                for row, car_pk in zip(created_history, [item.car_id for item in history], strict=True):
+                    car_date = next(
+                        (day for day, pks in by_date.items() if car_pk in pks),
+                        None,
+                    )
+                    stamp = transferred_history_timestamp(car_date)
+                    if stamp and row.pk:
+                        CarStatusHistory.objects.filter(pk=row.pk).update(changed_at=stamp)
 
         for container in Container.objects.filter(pk__in=transferred_container_ids):
             container.check_and_update_status_from_cars()
@@ -239,6 +250,16 @@ def transition_cars(
         )
         _after_transition(updated, finalize=finalize and touched_transfer, recalc=finalize)
         _notify_transferred(transferred_with_client)
+        if target == "TRANSFERRED":
+
+            def _close_requests():
+                from core.models import Car
+                from core.services.bot_ops import complete_requests_for_vins
+
+                vins = list(Car.objects.filter(pk__in=updated).values_list("vin", flat=True))
+                complete_requests_for_vins(vins)
+
+            transaction.on_commit(_close_requests)
     return result
 
 
@@ -265,8 +286,13 @@ def _after_transition(car_ids, *, finalize: bool, recalc: bool) -> None:
 def _notify_transferred(car_ids) -> None:
     if not car_ids:
         return
+    from core.services.bot_runtime import notifications_muted
+
+    muted = notifications_muted()
 
     def _queue():
+        if muted:
+            return
         from core.tasks import send_car_transferred_notification_task
 
         for car_id in car_ids:

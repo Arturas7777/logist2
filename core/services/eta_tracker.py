@@ -261,8 +261,17 @@ def update_container_eta(container, *, fetched: tuple | None = None) -> dict:
         return result
 
     old = container.eta
+    from django.utils import timezone
+
+    from core.models.bots import EtaHistory
+    from core.models.containers import Container
+
+    source = Container.ETA_SOURCE_MAERSK if "maersk" in (line_name or "").lower() else Container.ETA_SOURCE_LINE
     container.eta = eta
-    container.save(update_fields=["eta"])
+    container.eta_source = source
+    container.eta_updated_at = timezone.now()
+    container.save(update_fields=["eta", "eta_source", "eta_updated_at"])
+    EtaHistory.objects.create(container=container, eta=eta, previous_eta=old, source=source)
     result["updated"] = True
     result["message"] = f"ETA обновлён: {old or '—'} → {eta}"
     logger.info("ETA %s (%s): %s → %s", container.number, line_name, old, eta)

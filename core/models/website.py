@@ -1000,6 +1000,7 @@ class TransportRequest(models.Model):
     driver_phone = models.CharField(max_length=20, blank=True, verbose_name="Телефон водителя")
     border_crossing = models.CharField(max_length=100, blank=True, verbose_name="Граница пересечения")
     planned_loading_date = models.DateField(null=True, blank=True, verbose_name="Планируемая дата загрузки")
+    t1_deadline = models.DateField(null=True, blank=True, verbose_name="Срок T1")
 
     comment = models.TextField(blank=True, verbose_name="Комментарий клиента")
 

@@ -44,21 +44,39 @@ def on_car_status_changed(sender, instance, created, **kwargs):
         return
 
     try:
-        CarStatusHistory.objects.create(
+        row = CarStatusHistory.objects.create(
             car=instance,
             status=instance.status,
             previous_status=old_status or "",
             source=CarStatusHistory.SOURCE_SIGNAL,
         )
+        from core.models.status_history import transferred_history_timestamp
+
+        stamp = transferred_history_timestamp(instance.transfer_date) if instance.status == "TRANSFERRED" else None
+        if stamp and row.pk:
+            CarStatusHistory.objects.filter(pk=row.pk).update(changed_at=stamp)
     except Exception as exc:  # журнал — вспомогательный, сохранение авто не ломаем
         logger.warning("Не удалось записать историю статуса авто %s: %s", instance.pk, exc)
+
+    if instance.status == "TRANSFERRED" and not created:
+        try:
+            from core.services.bot_ops import complete_requests_for_vins
+
+            complete_requests_for_vins([instance.vin])
+        except Exception as exc:
+            logger.warning("Не удалось закрыть заявку после передачи авто %s: %s", instance.pk, exc)
 
     if created or instance.status != "TRANSFERRED" or not instance.client_id:
         return
 
     car_id = instance.pk
+    from core.services.bot_runtime import notifications_muted
+
+    muted = notifications_muted()
 
     def _queue():
+        if muted:
+            return
         try:
             from core.tasks import send_car_transferred_notification_task
 

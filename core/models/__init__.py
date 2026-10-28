@@ -102,6 +102,23 @@ from .monitoring import (  # noqa: E402, F401
 from .scans import ScanProcessingJob  # noqa: E402, F401
 from .status_history import CarStatusHistory  # noqa: E402, F401
 from .vin_checks import VinCheck  # noqa: E402, F401
+from .banking import BankTransaction  # noqa: E402, F401
+from .billing import ExpenseCategory  # noqa: E402, F401
+from .website import TransportRequest  # noqa: E402, F401
+from .bots import (  # noqa: E402, F401
+    BotAuditEntry,
+    BotCommandReceipt,
+    BotEmailMark,
+    BotJob,
+    BotLock,
+    BotPrincipal,
+    CaromotoClientMap,
+    CaromotoImportBatch,
+    EtaHistory,
+    LedgerEntry,
+    NetoDispatchCounter,
+    Proforma,
+)
 
 __all__ = [
     # constants

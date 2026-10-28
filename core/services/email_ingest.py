@@ -454,6 +454,12 @@ def _ingest_one(
                         tr_links,
                         ignore_conflicts=True,
                     )
+                try:
+                    from core.services.bot_mail import enrich_email_for_bots
+
+                    enrich_email_for_bots(obj)
+                except Exception:
+                    logger.exception("[gmail_sync] разбор письма для ботов не удался, письмо сохранено: %s", obj.pk)
             else:
                 # Идемпотентно обновим gmail_id/labels. Связи с контейнерами
                 # не пересчитываем: пользователь мог вручную перепривязать.

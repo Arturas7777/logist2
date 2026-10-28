@@ -80,6 +80,25 @@ class Car(models.Model):
     carrier = models.ForeignKey("Carrier", on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Перевозчик")
     unload_date = models.DateField(null=True, blank=True, verbose_name="Дата разгрузки")
     transfer_date = models.DateField(null=True, blank=True, verbose_name="Дата передачи")
+    t1_deadline = models.DateField(null=True, blank=True, verbose_name="Срок T1")
+    caromoto_client_id = models.CharField(max_length=64, blank=True, default="", verbose_name="Клиент Caromoto")
+    caromoto_office = models.CharField(max_length=128, blank=True, default="", verbose_name="Офис Caromoto")
+    foreign_container_number = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Чужой контейнер",
+        help_text="Машина Atlantic в чужом контейнере. Раньше это писали в примечания.",
+    )
+    foreign_line = models.CharField(max_length=64, blank=True, default="", verbose_name="Чужая линия")
+    source_email = models.ForeignKey(
+        "ContainerEmail",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sourced_cars",
+        verbose_name="Письмо-источник",
+    )
     has_title = models.BooleanField(default=False, verbose_name="Т")
     title_notes = models.CharField(max_length=200, blank=True, verbose_name="Примечания к тайтлу")
     # Общие примечания и флаг «важное» (см. core.models.Task — авто-создание дела

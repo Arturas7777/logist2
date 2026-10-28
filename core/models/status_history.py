@@ -18,10 +18,12 @@ class CarStatusHistory(models.Model):
     SOURCE_ADMIN = "ADMIN"
     SOURCE_SIGNAL = "SIGNAL"
     SOURCE_IMPORT = "IMPORT"
+    SOURCE_BOT = "BOT"
     SOURCE_CHOICES = [
         (SOURCE_ADMIN, "Админка / пользователь"),
         (SOURCE_SIGNAL, "Автоматически (сигнал)"),
         (SOURCE_IMPORT, "Импорт / миграция данных"),
+        (SOURCE_BOT, "Бот"),
     ]
 
     car = models.ForeignKey(
@@ -51,3 +53,24 @@ class CarStatusHistory(models.Model):
 
     def __str__(self):
         return f"{self.car_id}: {self.previous_status or '—'} → {self.status} ({self.changed_at:%d.%m.%Y %H:%M})"
+
+
+def transferred_history_timestamp(transfer_date):
+    """Дата журнала для передачи, если её записали не в тот же день.
+
+    В день передачи оставляем фактическое время, чтобы «разгружен» оставался
+    раньше «передан». Если строка пишется позже, ставим конец дня ``transfer_date``,
+    а не «сегодня».
+    """
+    if not transfer_date:
+        return None
+    from datetime import datetime, time
+
+    from django.utils import timezone
+
+    if transfer_date >= timezone.localdate():
+        return None
+    stamp = datetime.combine(transfer_date, time(23, 59))
+    if timezone.is_naive(stamp):
+        stamp = timezone.make_aware(stamp, timezone.get_current_timezone())
+    return stamp

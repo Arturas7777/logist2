@@ -82,9 +82,15 @@ def send_container_notifications_on_save(sender, instance, created, **kwargs):
         if created or old_unload is None:
             should_notify_unload = True
 
+    from core.services.bot_runtime import notifications_muted
+
+    muted = notifications_muted()
+
     if should_notify_planned:
 
         def _enqueue_planned():
+            if muted:
+                return
             try:
                 from core.tasks import send_planned_notifications_task
 
@@ -103,6 +109,8 @@ def send_container_notifications_on_save(sender, instance, created, **kwargs):
     if should_notify_unload:
 
         def _enqueue_unload():
+            if muted:
+                return
             try:
                 from core.tasks import send_unload_notifications_task
 
