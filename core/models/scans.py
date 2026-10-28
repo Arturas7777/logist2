@@ -116,6 +116,7 @@ class ScanProcessingJob(models.Model):
     error_message = models.TextField(blank=True, verbose_name="Сообщение об ошибке")
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True, verbose_name="Создано")
+    processing_started_at = models.DateTimeField(null=True, blank=True, verbose_name="Начало обработки AI")
     processed_at = models.DateTimeField(null=True, blank=True, verbose_name="Обработано AI")
     applied_at = models.DateTimeField(null=True, blank=True, verbose_name="Применено")
 

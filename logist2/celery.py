@@ -137,6 +137,11 @@ app.conf.beat_schedule = {
     # Сверка данных контейнеров: догоняет кэш проверок VIN, пересчитывает
     # бейджи расхождений и заводит «Дела» по проблемным контейнерам.
     # Ночью, до утреннего дайджеста — чтобы находки попали в него же.
+    # Скан-задачи, зависшие в PROCESSING после убитого воркера, → ERROR.
+    "reset-stuck-scan-jobs": {
+        "task": "core.tasks.reset_stuck_scan_jobs",
+        "schedule": crontab(minute="*/15"),
+    },
     "audit-container-data-daily": {
         "task": "core.tasks.audit_all_containers",
         "schedule": crontab(hour=6, minute=30),

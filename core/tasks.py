@@ -1101,9 +1101,13 @@ def process_scan_job(self, job_id):
         job.save(update_fields=["status", "error_message"])
         return {"ok": False, "reason": "no_file"}
 
-    job.status = ScanProcessingJob.STATUS_PROCESSING
-    job.error_message = ""
-    job.save(update_fields=["status", "error_message"])
+    claimed = ScanProcessingJob.objects.filter(
+        pk=job.pk, status__in=(ScanProcessingJob.STATUS_PENDING, ScanProcessingJob.STATUS_ERROR)
+    ).update(status=ScanProcessingJob.STATUS_PROCESSING, error_message="", processing_started_at=timezone.now())
+    if not claimed:
+        logger.info("process_scan_job: job #%s уже взят другим воркером", job_id)
+        return {"ok": False, "reason": "already_claimed"}
+    job.refresh_from_db()
 
     try:
         # FileField даёт нам путь, только если используется FileSystemStorage.
@@ -1146,6 +1150,36 @@ def process_scan_job(self, job_id):
         auto_applied = maybe_auto_apply(job)
         job.refresh_from_db()
     return {"ok": True, "job_id": job.id, "status": job.status, "auto_applied": auto_applied}
+
+
+SCAN_JOB_STUCK_AFTER_MINUTES = 30
+
+
+@shared_task
+def reset_stuck_scan_jobs():
+    """PROCESSING дольше 30 мин (воркер убит/перезапущен) → ERROR.
+
+    ``process_scan_job`` ограничен 5 минутами, так что такая задача уже не
+    завершится; в ERROR её можно повторить кнопкой «Повторить AI-обработку».
+    Повтор не автоматический — каждый проход стоит денег (Claude Vision).
+    """
+    from datetime import timedelta
+
+    from django.db.models import Q
+
+    from core.models_scans import ScanProcessingJob
+
+    threshold = timezone.now() - timedelta(minutes=SCAN_JOB_STUCK_AFTER_MINUTES)
+    stuck = ScanProcessingJob.objects.filter(status=ScanProcessingJob.STATUS_PROCESSING).filter(
+        Q(processing_started_at__lt=threshold) | Q(processing_started_at__isnull=True, created_at__lt=threshold)
+    )
+    count = stuck.update(
+        status=ScanProcessingJob.STATUS_ERROR,
+        error_message="Обработка прервалась (воркер перезапущен?) — повторите AI-обработку",
+    )
+    if count:
+        logger.warning("reset_stuck_scan_jobs: %d зависших скан-задач переведены в ERROR", count)
+    return count
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60, retry_backoff=True, soft_time_limit=540, time_limit=600)
