@@ -125,7 +125,8 @@ def _recalc_cars_total_price_inline(car_ids):
 # одной услуги склада обнуляла наценки остальных.
 #
 # Теперь: существующие машины трогаем только если изменилась цена
-# (``custom_price``) или услуга выключена. ``markup_amount`` не трогаем.
+# (``custom_price``) или услугу выключили (``deactivate_catalog_service``;
+# цена 0 — не выключение). ``markup_amount`` не трогаем.
 # Переданные (TRANSFERRED) авто не трогаем: их цены уже в выставленных счетах.
 # THS не трогаем вовсе: в каталоге у него цена 0, а сумма по авто считается
 # распределением THS контейнера.
@@ -151,6 +152,25 @@ def _price_actually_changed(instance) -> bool:
 
 def _clear_catalog_previous(instance):
     instance._catalog_previous = None
+
+
+def _deactivated(instance) -> bool:
+    """Услуга только что выключена (а не просто сохранена выключенной или с ценой 0)."""
+    prev = getattr(instance, "_catalog_previous", None)
+    return bool(prev and prev["is_active"] and not instance.is_active)
+
+
+def _handle_deactivation(instance, service_type) -> bool:
+    """Выключение услуги → :func:`deactivate_catalog_service`; ошибки не глотаем."""
+    if instance.is_active:
+        return False
+    deactivated = _deactivated(instance)
+    _clear_catalog_previous(instance)
+    if deactivated:
+        from core.services.car_service_manager import deactivate_catalog_service
+
+        deactivate_catalog_service(service_type, instance.id)
+    return True
 
 
 @receiver(pre_save, sender=WarehouseService)
@@ -187,23 +207,14 @@ def _reprice_cars_after_catalog_change(car_ids):
         _deferred_invoice_regeneration(car_id)
 
 
-def _delete_related_carservices(service_type, service_id):
-    affected_car_ids = list(
-        CarService.objects.filter(service_type=service_type, service_id=service_id).values_list("car_id", flat=True)
-    )
-    deleted, _ = CarService.objects.filter(service_type=service_type, service_id=service_id).delete()
-    if deleted:
-        _enqueue_recalc_cars_total_price(affected_car_ids)
-
-
 @receiver(post_save, sender=WarehouseService)
 def update_cars_on_warehouse_service_change(sender, instance, created, **kwargs):
+    if is_ths_service(instance):
+        _clear_catalog_previous(instance)
+        return
+    if _handle_deactivation(instance, "WAREHOUSE"):
+        return
     try:
-        if is_ths_service(instance):
-            return
-        if not (instance.is_active and instance.default_price > 0):
-            _delete_related_carservices("WAREHOUSE", instance.id)
-            return
         if created or not _price_actually_changed(instance):
             return
         car_services = list(
@@ -233,14 +244,14 @@ def update_cars_on_warehouse_service_change(sender, instance, created, **kwargs)
 def update_cars_on_line_service_change(sender, instance, created, **kwargs):
     """При изменении ``default_price`` активной услуги линии — обновить
     ``custom_price`` связанных ``CarService`` (наценку не трогаем).
-    Если услуга стала неактивной — удалить связанные ``CarService``.
+    Если услугу выключили — :func:`deactivate_catalog_service`.
     """
+    if is_ths_service(instance):
+        _clear_catalog_previous(instance)
+        return
+    if _handle_deactivation(instance, "LINE"):
+        return
     try:
-        if is_ths_service(instance):
-            return
-        if not (instance.is_active and instance.default_price > 0):
-            _delete_related_carservices("LINE", instance.id)
-            return
         if created or not _price_actually_changed(instance):
             return
         qs = CarService.objects.filter(service_type="LINE", service_id=instance.id, car__line=instance.line).exclude(
@@ -257,10 +268,9 @@ def update_cars_on_line_service_change(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender=CarrierService)
 def update_cars_on_carrier_service_change(sender, instance, created, **kwargs):
+    if _handle_deactivation(instance, "CARRIER"):
+        return
     try:
-        if not (instance.is_active and instance.default_price > 0):
-            _delete_related_carservices("CARRIER", instance.id)
-            return
         if created or not _price_actually_changed(instance):
             return
         qs = CarService.objects.filter(
@@ -277,17 +287,14 @@ def update_cars_on_carrier_service_change(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender=CompanyService)
 def update_cars_on_company_service_change(sender, instance, created, **kwargs):
+    if _handle_deactivation(instance, "COMPANY"):
+        return
     try:
-        qs = CarService.objects.filter(service_type="COMPANY", service_id=instance.id)
-        if not (instance.is_active and instance.default_price > 0):
-            affected_car_ids = list(qs.values_list("car_id", flat=True).distinct())
-            deleted, _ = qs.delete()
-            if deleted:
-                _enqueue_recalc_cars_total_price(affected_car_ids)
-            return
         if created or not _price_actually_changed(instance):
             return
-        qs = qs.exclude(car__status="TRANSFERRED")
+        qs = CarService.objects.filter(service_type="COMPANY", service_id=instance.id).exclude(
+            car__status="TRANSFERRED"
+        )
         affected_car_ids = list(qs.values_list("car_id", flat=True).distinct())
         qs.update(custom_price=instance.default_price)
         _reprice_cars_after_catalog_change(affected_car_ids)

@@ -566,6 +566,49 @@ def find_company_services_for_car(company):
 
 
 # ---------------------------------------------------------------------------
+# Выключение услуги каталога
+# ---------------------------------------------------------------------------
+
+# Счета в этих статусах уже ушли клиенту/контрагенту — машины в них не трогаем.
+_INVOICE_STATUSES_KEEPING_SERVICES = ("ISSUED", "PARTIALLY_PAID", "PAID", "OVERDUE", "LINKED_PAID")
+
+
+def deactivate_catalog_service(service_type, service_id) -> dict:
+    """Снять выключенную услугу каталога с машин, где она ещё не выставлена.
+
+    Остаётся у переданных (TRANSFERRED) машин и у машин из выставленных
+    счетов — их суммы уже в документах. Снимается у остальных, включая
+    машины только в черновиках (черновики перегенерируются).
+
+    Returns:
+        dict: ``removed`` — у скольких машин снята, ``kept`` — у скольких оставлена.
+    """
+    from core.models import Car, CarService
+    from core.signals.service_catalog import _reprice_cars_after_catalog_change
+
+    locked_car_ids = Car.objects.filter(
+        Q(status="TRANSFERRED")
+        | Q(invoices_new__status__in=_INVOICE_STATUSES_KEEPING_SERVICES)
+        | Q(invoice_items_new__invoice__status__in=_INVOICE_STATUSES_KEEPING_SERVICES)
+    ).values("pk")
+    services = CarService.objects.filter(service_type=service_type, service_id=service_id)
+    removable = services.exclude(car_id__in=locked_car_ids)
+    car_ids = sorted(set(removable.values_list("car_id", flat=True)))
+    removable.delete()
+    kept = services.values("car_id").distinct().count()
+    if car_ids:
+        _reprice_cars_after_catalog_change(car_ids)
+    logger.info(
+        "Catalog service %s#%s deactivated: removed from %d cars, kept on %d",
+        service_type,
+        service_id,
+        len(car_ids),
+        kept,
+    )
+    return {"removed": len(car_ids), "kept": kept}
+
+
+# ---------------------------------------------------------------------------
 # Пересоздание ценообразующих CarService при смене контрактников
 # ---------------------------------------------------------------------------
 
