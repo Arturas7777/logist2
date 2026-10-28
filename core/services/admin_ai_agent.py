@@ -18,11 +18,12 @@ logger = logging.getLogger(__name__)
 
 
 def _extract_identifiers(message: str) -> dict[str, list]:
-    vin_pattern = re.compile(r"\b[A-HJ-NPR-Z0-9]{17}\b", re.IGNORECASE)
+    from core.services.vin import find_vins
+
     container_pattern = re.compile(r"\b[A-Z]{4}\d{7}\b", re.IGNORECASE)
     invoice_pattern = re.compile(r"\bINV-\d{6}-\d{4}\b", re.IGNORECASE)
 
-    vins = list({m.group(0).upper() for m in vin_pattern.finditer(message or "")})
+    vins = find_vins(message)
     containers = list({m.group(0).upper() for m in container_pattern.finditer(message or "")})
     invoices = list({m.group(0).upper() for m in invoice_pattern.finditer(message or "")})
     return {"vins": vins, "containers": containers, "invoices": invoices}

@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from core.services.vin import normalize_vin as base_normalize_vin
 from core.services.vin_validator import (
     is_north_american_vin,
     is_vin_checksum_valid,
@@ -62,12 +63,12 @@ _CONFUSION_MAP: dict[str, tuple[str, ...]] = {
 
 
 def normalize_vin(vin) -> tuple[str, list[str]]:
-    """Upper + strip + замена запрещённых I/O/Q на визуальные двойники.
+    """``vin.normalize_vin`` + замена запрещённых I/O/Q на визуальные двойники (OCR).
 
     Возвращает ``(normalized_vin, changes)``, где changes — человекочитаемый
     список замен вида ``"поз. 4: O → 0"`` (позиции 1-индексные).
     """
-    raw = (vin or "").strip().upper().replace(" ", "")
+    raw = base_normalize_vin(vin)
     changes: list[str] = []
     out_chars: list[str] = []
     for i, ch in enumerate(raw):

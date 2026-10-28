@@ -323,11 +323,12 @@ def ai_chat(request):
             "photo",
             "photos",
         ]
-        vin_pattern = re.compile(r"\b[A-HJ-NPR-Z0-9]{17}\b", re.IGNORECASE)
+        from core.services.vin import VIN_SEARCH_RE
+
         container_pattern = re.compile(r"\b[A-Z]{4}\d{7}\b", re.IGNORECASE)
         message_lower = message.lower()
         if any(keyword in message_lower for keyword in photo_keywords) or re.search(r"\bфот", message_lower):
-            vin_match = vin_pattern.search(message)
+            vin_match = VIN_SEARCH_RE.search(message)
             if vin_match:
                 vin = vin_match.group(0).upper()
                 response_text = _photo_response_for_car(request, message, vin)

@@ -25,6 +25,7 @@ from core.services.scan_applier import (
     _resolve_weight_kg,  # та же формула веса, что и при применении
     find_similar_vins,
 )
+from core.services.vin import normalize_vin as _norm_vin
 from core.services.vin_corrector import hamming_distance
 
 logger = logging.getLogger(__name__)
@@ -58,10 +59,6 @@ VEHICLE_STATE_LABELS = {
 
 
 # ── Мелкие утилиты ─────────────────────────────────────────────────────────
-
-
-def _norm_vin(value) -> str:
-    return (value or "").strip().upper()
 
 
 def _clean(value) -> str:

@@ -6,6 +6,7 @@ from decimal import Decimal
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Q, Sum
+from django.db.models.functions import Upper
 from django.utils import timezone
 
 from core.constants import STATUS_COLORS
@@ -711,6 +712,9 @@ class Car(models.Model):
         # связанное с ним «Дело», поэтому пока галочка стоит, статус
         # должен оставаться неизменным (см. core.models.Task / signal
         # _car_important_post_save). Сама галочка снимается из карточки авто.
+        from core.services.vin import normalize_vin
+
+        self.vin = normalize_vin(self.vin)
         old_status = None
         old_contractors = None
         old_client_id = None
@@ -945,6 +949,13 @@ class Car(models.Model):
             models.Index(fields=["status", "unload_date"], name="car_status_unload_idx"),
             # Портал и API: авто клиента за период разгрузки.
             models.Index(fields=["client", "unload_date"], name="car_client_unload_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                Upper("vin"),
+                name="uniq_car_vin_upper",
+                violation_error_message="Автомобиль с таким VIN уже существует (без учёта регистра).",
+            ),
         ]
 
 

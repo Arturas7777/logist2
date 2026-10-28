@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from core.models.vin_checks import VinCheck
+from core.services.vin import normalize_vin
 from core.services.vin_corrector import (
     VALID_VIN_CHARS,
     correct_vin_by_checksum,
@@ -329,7 +330,7 @@ def normalize_vin_input(vin) -> str:
     Это единственное преобразование, которое делается молча. Замену
     похожих символов (I/O/Q) молча не делаем — см. :func:`check_vin`.
     """
-    return "".join((vin or "").split()).upper()
+    return normalize_vin(vin)
 
 
 # ── Кэш проверок ──────────────────────────────────────────────────────────

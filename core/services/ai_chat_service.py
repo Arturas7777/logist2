@@ -79,10 +79,11 @@ def _build_system_prompt(language_code: str) -> str:
 
 
 def _find_identifiers(message: str) -> dict:
-    vin_pattern = re.compile(r"\b[A-HJ-NPR-Z0-9]{17}\b", re.IGNORECASE)
+    from core.services.vin import find_vins
+
     container_pattern = re.compile(r"\b[A-Z]{4}\d{7}\b", re.IGNORECASE)
 
-    vins = list({m.group(0).upper() for m in vin_pattern.finditer(message or "")})
+    vins = find_vins(message)
     containers = list({m.group(0).upper() for m in container_pattern.finditer(message or "")})
     return {"vins": vins, "containers": containers}
 

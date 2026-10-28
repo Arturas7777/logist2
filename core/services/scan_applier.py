@@ -25,6 +25,7 @@ from django.utils import timezone
 from core.models import Car, Container
 from core.models_scans import ScanProcessingJob
 from core.services.scan_extractor import lbs_to_kg
+from core.services.vin import normalize_vin as _normalize_vin
 
 logger = logging.getLogger(__name__)
 
@@ -236,10 +237,6 @@ def _copy_field_file(source_field, target_field) -> None:
     finally:
         source_field.close()
     target_field.save(_file_basename(source_field), ContentFile(data), save=False)
-
-
-def _normalize_vin(vin) -> str:
-    return (vin or "").strip().upper()
 
 
 def _parse_date(value) -> datetime | None:

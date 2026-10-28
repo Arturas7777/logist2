@@ -26,6 +26,8 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from core.services.vin import VIN_SEARCH_RE
+
 if TYPE_CHECKING:
     from core.services.gmail_client import ParsedMessage
 
@@ -35,9 +37,7 @@ logger = logging.getLogger(__name__)
 # но для матчинга достаточно — коллизий практически не бывает.
 _CONTAINER_NUMBER_RE = re.compile(r"\b([A-Z]{4}\d{7})\b")
 
-# VIN: 17 символов из A-HJ-NPR-Z0-9 (без I, O, Q чтобы не путать с 1/0).
-# Границы \b чтобы не цеплять подстроки длинных строк.
-_VIN_RE = re.compile(r"\b([A-HJ-NPR-Z0-9]{17})\b")
+_VIN_RE = VIN_SEARCH_RE
 
 # Номер заявки на автовоз: TR-YYYYMMDD-NNN (см. ``TransportRequest.save``).
 _TRANSPORT_REQUEST_NUMBER_RE = re.compile(r"\b(TR-\d{8}-\d+)\b")
@@ -323,7 +323,7 @@ def _match_by_vins(text: str) -> list[int]:
 
     order_map: dict[str, int] = {}
     for idx, m in enumerate(_VIN_RE.finditer(upper)):
-        order_map.setdefault(m.group(1), idx)
+        order_map.setdefault(m.group(0), idx)
 
     rows = list(Car.objects.filter(vin__in=candidates).values_list("id", "vin"))
     rows.sort(key=lambda row: order_map.get((row[1] or "").upper(), 1_000_000))

@@ -251,7 +251,7 @@
 - Telegram `getUpdates` без `offset` (`telegram_service.py:161`) — после 100
   апдейтов новые `/start` не обрабатываются.
 
-### L5. Нормализация VIN в одном месте (Medium, S)
+### [x] L5. Нормализация VIN в одном месте (Medium, S)
 - 4 разные реализации (`vin_gate.py:326`, `scan_applier.py:241`,
   `scan_review.py:63`, `vin_corrector.py:64`) и 4 копии regex
   (`ai_chat.py:326`, `ai_chat_service.py:82`, `admin_ai_agent.py:21`,
