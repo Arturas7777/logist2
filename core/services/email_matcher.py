@@ -42,8 +42,11 @@ _VIN_RE = VIN_SEARCH_RE
 # Номер заявки на автовоз: TR-YYYYMMDD-NNN (см. ``TransportRequest.save``).
 _TRANSPORT_REQUEST_NUMBER_RE = re.compile(r"\b(TR-\d{8}-\d+)\b")
 
-# Чтобы не ловить "U1", "UV3" как букинги — нижний предел длины.
-_MIN_BOOKING_LEN = 4
+# Короткий букинг совпадает со случайными словами/числами письма, а
+# ложная связь потом наследуется всем тредом. Реальные букинги линий —
+# от 8 символов; чисто цифровые короче 8 похожи на суммы, телефоны, даты.
+_MIN_BOOKING_LEN = 6
+_MIN_DIGIT_BOOKING_LEN = 8
 
 
 @dataclass(frozen=True)
@@ -272,7 +275,7 @@ def build_booking_index(queryset=None) -> dict[str, int]:
         if not booking:
             continue
         key = booking.strip().lower()
-        if len(key) < _MIN_BOOKING_LEN:
+        if len(key) < (_MIN_DIGIT_BOOKING_LEN if key.isdigit() else _MIN_BOOKING_LEN):
             continue
         if key in index and index[key] != cid:
             logger.warning(

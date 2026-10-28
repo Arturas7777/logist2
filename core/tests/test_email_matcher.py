@@ -196,6 +196,20 @@ class EmailMatcherTest(TestCase):
         self.assertIn("xyz99999", index)
         self.assertEqual(index["abc12345"], self.container_a.id)
 
+    def test_build_booking_index_skips_short_bookings(self):
+        """L6: короткие букинги давали ложные связи с суммами/датами в письмах."""
+        Container.objects.create(number="TEST2222222", booking_number="AB12", line=self.line)
+        Container.objects.create(number="TEST3333333", booking_number="1234567", line=self.line)
+        kept_alnum = Container.objects.create(number="TEST4444444", booking_number="AB1234", line=self.line)
+        kept_digits = Container.objects.create(number="TEST5555555", booking_number="12345678", line=self.line)
+
+        index = build_booking_index()
+
+        self.assertNotIn("ab12", index)
+        self.assertNotIn("1234567", index)
+        self.assertEqual(index["ab1234"], kept_alnum.id)
+        self.assertEqual(index["12345678"], kept_digits.id)
+
 
 def _b64url(data: str) -> str:
     return base64.urlsafe_b64encode(data.encode("utf-8")).decode("ascii").rstrip("=")
