@@ -302,7 +302,7 @@
   Решение: через `AgentAction`; тест-инвариант «ни один инструмент не пишет
   в БД напрямую».
 
-### A5. Токен Telegram в логах и БД (High, S)
+### [x] A5. Токен Telegram в логах и БД (High, S)
 - `telegram_service.py:81-82, 163-164` — текст исключения requests содержит
   URL с `/bot<token>/` → `NotificationLog.error_message` и Sentry.
 - Решение: маскировать токен в тексте ошибок, логировать тип ошибки.

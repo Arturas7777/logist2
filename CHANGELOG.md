@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### Fixed — Токен Telegram-бота не утекает в логи и Sentry (2026-10-28, A5)
+
+- Ошибки сети Telegram пишутся как «тип ошибки: текст» с `/bot***/`
+  вместо токена — в лог, `NotificationLog.error_message` и вывод
+  `manage.py telegram_updates`.
+- Sentry: `before_send` / `before_breadcrumb` вычищают токен из событий и
+  HTTP-breadcrumbs (`logist2/sentry_filters.py`). В копии прод-базы
+  записей с утёкшим токеном нет — чистка данных не нужна.
+
 ### Fixed — Двойное «Принять» не исполняет действие агента дважды (2026-10-28, A3)
 
 - `AgentAction.approve()` / `reject()` — условный `UPDATE … WHERE

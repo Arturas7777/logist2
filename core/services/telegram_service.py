@@ -34,6 +34,22 @@ _TELEGRAM_TOKEN_RE = re.compile(r"^[A-Za-z0-9_\-]{10,64}$")
 _TELEGRAM_LAST_REPLY_KEY = "telegram_starts_last_reply_update_id"
 
 
+def mask_bot_token(text):
+    """Убирает токен бота из текста (URL Bot API попадает в тексты исключений requests)."""
+    from logist2.sentry_filters import BOT_TOKEN_IN_URL_RE
+
+    text = str(text or "")
+    token = getattr(settings, "TELEGRAM_BOT_TOKEN", "")
+    if token:
+        text = text.replace(token, "***")
+    return BOT_TOKEN_IN_URL_RE.sub("/bot***", text)
+
+
+def describe_request_error(exc):
+    """Тип ошибки + текст без токена — для логов, NotificationLog и Sentry."""
+    return f"{type(exc).__name__}: {mask_bot_token(exc)}"
+
+
 def _telegram_enabled():
     """True, если Telegram-канал настроен и включён глобально."""
     return bool(getattr(settings, "TELEGRAM_NOTIFICATIONS_ENABLED", False)) and bool(
@@ -77,9 +93,9 @@ def send_telegram_message(chat_id, text):
             return True, ""
 
         error = data.get("description") or f"HTTP {response.status_code}"
-        return False, str(error)
+        return False, mask_bot_token(error)
     except requests.RequestException as e:
-        return False, str(e)
+        return False, describe_request_error(e)
 
 
 def _extract_start_token(text):
@@ -161,11 +177,11 @@ def process_telegram_starts():
         resp = requests.get(url, params={"limit": 100}, timeout=timeout)
         data = resp.json() if resp.content else {}
     except (requests.RequestException, ValueError) as e:
-        logger.error("Telegram getUpdates failed: %s", e)
+        logger.error("Telegram getUpdates failed: %s", describe_request_error(e))
         return 0
 
     if not data.get("ok"):
-        logger.error("Telegram getUpdates not ok: %s", data.get("description"))
+        logger.error("Telegram getUpdates not ok: %s", mask_bot_token(data.get("description")))
         return 0
 
     last_replied = cache.get(_TELEGRAM_LAST_REPLY_KEY, 0) or 0

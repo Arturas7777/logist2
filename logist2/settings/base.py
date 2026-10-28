@@ -753,6 +753,8 @@ if SENTRY_DSN:
         from sentry_sdk.integrations.logging import LoggingIntegration
         from sentry_sdk.integrations.redis import RedisIntegration
 
+        from logist2.sentry_filters import scrub_telegram_token
+
         # M7: фильтруем поток в Sentry — теперь file-handler ловит INFO+,
         # а в Sentry уходят только ERROR+ events (breadcrumbs остаются по
         # умолчанию = INFO+ для контекста ошибки).
@@ -778,6 +780,8 @@ if SENTRY_DSN:
             send_default_pii=SENTRY_SEND_PII,
             attach_stacktrace=True,
             max_breadcrumbs=50,
+            before_send=scrub_telegram_token,
+            before_breadcrumb=scrub_telegram_token,
         )
         sentry_sdk.set_tag("service", "logist2")
     except ImportError:

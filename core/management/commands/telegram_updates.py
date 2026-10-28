@@ -41,7 +41,9 @@ class Command(BaseCommand):
         try:
             resp = requests.get(url, params={"limit": options["limit"]}, timeout=timeout)
         except requests.RequestException as e:
-            raise CommandError(f"Ошибка запроса к Telegram API: {e}")
+            from core.services.telegram_service import describe_request_error
+
+            raise CommandError(f"Ошибка запроса к Telegram API: {describe_request_error(e)}") from None
 
         data = resp.json() if resp.content else {}
         if not data.get("ok"):
