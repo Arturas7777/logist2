@@ -334,8 +334,10 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
                 if not obj.container_id:
                     obj.container = parent
 
-                # Status always matches container
-                obj.status = parent.status
+                # Новое авто получает статус контейнера; у существующих статус
+                # меняют только FSM-пути (карточка авто, каскад контейнера).
+                if obj.pk is None:
+                    obj.status = parent.status
 
                 # Warehouse/client/line from container if not set
                 if not obj.warehouse_id and parent.warehouse_id:
@@ -345,8 +347,8 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
                 if not obj.line_id and parent.line_id:
                     obj.line = parent.line
 
-                # Unload date ALWAYS inherited from container
-                if parent.unload_date:
+                # Дата разгрузки наследуется от контейнера (кроме переданных авто)
+                if parent.unload_date and obj.status != "TRANSFERRED":
                     obj.unload_date = parent.unload_date
                     logger.debug(
                         f"Car {obj.vin}: inherited unload_date={obj.unload_date} from container {parent.number}"

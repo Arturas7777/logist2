@@ -186,6 +186,8 @@ def car_post_save(sender, instance, **kwargs):
     instance._pre_save_status = None
     if instance.status == "TRANSFERRED" and old_status != "TRANSFERRED" and instance.container_id:
         _update_container_status_if_all_transferred(instance.container_id)
+    elif old_status == "TRANSFERRED" and instance.status != "TRANSFERRED" and instance.container_id:
+        instance.container.reopen_if_not_all_transferred()
 
     # --- 5. Авто-создание/закрытие "Дела" по флагу is_important [COMMAND/orchestration] ---
     _handle_car_important_transition(instance, created=created)

@@ -365,6 +365,25 @@ class Container(models.Model):
             total,
         )
 
+    def reopen_if_not_all_transferred(self):
+        """Авто вернули из TRANSFERRED: переданный контейнер снова «Разгружен».
+
+        Вызывается только при откате передачи авто, а не на каждом save —
+        исторические контейнеры, переданные вручную, не трогаем.
+        """
+        if not self.pk or self.status != "TRANSFERRED":
+            return
+        if not self.container_cars.exclude(status="TRANSFERRED").exists():
+            return
+        if not (self.warehouse_id and self.unload_date):
+            logger.warning(
+                "Container %s: авто возвращено, но без склада/даты разгрузки — статус не изменён", self.number
+            )
+            return
+        self.status = "UNLOADED"
+        self.save(update_fields=["status"])
+        logger.info("Container %s -> UNLOADED (car returned from TRANSFERRED)", self.number)
+
     def get_unload_address(self):
         """Возвращает (name, address) выбранной площадки разгрузки"""
         if self.warehouse:

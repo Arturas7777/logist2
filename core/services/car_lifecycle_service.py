@@ -104,6 +104,180 @@ def send_car_ws_notification(car, *, update_fields=None, raw=False) -> None:
     transaction.on_commit(_notify)
 
 
+def transition_cars(
+    car_ids,
+    target: str,
+    *,
+    transfer_date=None,
+    source: str = "ADMIN",
+    note: str = "",
+    finalize: bool = True,
+    skip_transferred: bool = False,
+    require_unload_info: bool = False,
+) -> dict:
+    """Единственная массовая смена статуса авто (bulk action, контейнер, автовоз).
+
+    Правила те же, что у одиночного ``Car.save``:
+
+    * переходы только по ``ALLOWED_STATUS_TRANSITIONS``, «Важное» не трогаем;
+    * ``require_unload_info`` — UNLOADED только со складом и датой разгрузки
+      (каскад контейнера проставляет их авто следом, ему проверка не нужна);
+    * в TRANSFERRED — ``transfer_date`` (явная → уже стоящая → сегодня, не
+      раньше разгрузки); откат из TRANSFERRED очищает ``transfer_date``;
+    * запись в ``CarStatusHistory``, свёртка статуса контейнеров;
+    * после commit: пересчёт цен (+ реген DRAFT-счетов при передаче/откате,
+      если ``finalize``) и уведомление клиенту «авто передано».
+
+    ``skip_transferred`` — каскад контейнера: переданные авто не откатываются
+    побочным эффектом статуса контейнера.
+
+    Возвращает ``{"updated": [pk], "skipped_fsm" / "skipped_important" /
+    "skipped_missing" / "skipped_transferred": [VIN]}``.
+    """
+    from django.utils import timezone
+
+    from core.models import Car, Container
+    from core.models.containers import ALLOWED_STATUS_TRANSITIONS
+    from core.models.status_history import CarStatusHistory
+
+    result = {
+        "updated": [],
+        "skipped_fsm": [],
+        "skipped_important": [],
+        "skipped_missing": [],
+        "skipped_transferred": [],
+    }
+    car_ids = list(car_ids)
+    if not car_ids:
+        return result
+
+    today = timezone.localdate()
+    by_date: dict = {}
+    history = []
+    transferred_with_client = []
+    returned_container_ids = set()
+    transferred_container_ids = set()
+    touched_transfer = False
+
+    with transaction.atomic():
+        rows = (
+            Car.objects.select_for_update()
+            .filter(pk__in=car_ids)
+            .order_by("pk")
+            .values(
+                "pk",
+                "vin",
+                "status",
+                "is_important",
+                "warehouse_id",
+                "unload_date",
+                "transfer_date",
+                "container_id",
+                "client_id",
+            )
+        )
+        for row in rows:
+            current = row["status"]
+            if current == target:
+                continue
+            if skip_transferred and current == "TRANSFERRED":
+                result["skipped_transferred"].append(row["vin"])
+                continue
+            if row["is_important"]:
+                result["skipped_important"].append(row["vin"])
+                continue
+            if target not in ALLOWED_STATUS_TRANSITIONS.get(current, set()):
+                result["skipped_fsm"].append(row["vin"])
+                continue
+            if require_unload_info and target == "UNLOADED" and not (row["warehouse_id"] and row["unload_date"]):
+                result["skipped_missing"].append(row["vin"])
+                continue
+
+            new_transfer_date = row["transfer_date"]
+            if target == "TRANSFERRED":
+                new_transfer_date = transfer_date or row["transfer_date"] or today
+                if row["unload_date"] and new_transfer_date < row["unload_date"]:
+                    new_transfer_date = row["unload_date"]
+                touched_transfer = True
+                if row["container_id"]:
+                    transferred_container_ids.add(row["container_id"])
+                if row["client_id"]:
+                    transferred_with_client.append(row["pk"])
+            elif current == "TRANSFERRED":
+                new_transfer_date = None
+                touched_transfer = True
+                if row["container_id"]:
+                    returned_container_ids.add(row["container_id"])
+
+            by_date.setdefault(new_transfer_date, []).append(row["pk"])
+            result["updated"].append(row["pk"])
+            history.append(
+                CarStatusHistory(car_id=row["pk"], status=target, previous_status=current, source=source, note=note)
+            )
+
+        for new_transfer_date, pks in by_date.items():
+            Car.objects.filter(pk__in=pks).update(status=target, transfer_date=new_transfer_date)
+        if history:
+            CarStatusHistory.objects.bulk_create(history)
+
+        for container in Container.objects.filter(pk__in=transferred_container_ids):
+            container.check_and_update_status_from_cars()
+        for container in Container.objects.filter(pk__in=returned_container_ids):
+            container.reopen_if_not_all_transferred()
+
+    updated = result["updated"]
+    if updated:
+        logger.info(
+            "transition_cars → %s: updated=%d skipped(fsm=%d important=%d missing=%d transferred=%d) %s",
+            target,
+            len(updated),
+            len(result["skipped_fsm"]),
+            len(result["skipped_important"]),
+            len(result["skipped_missing"]),
+            len(result["skipped_transferred"]),
+            note,
+        )
+        _after_transition(updated, finalize=finalize and touched_transfer, recalc=finalize)
+        _notify_transferred(transferred_with_client)
+    return result
+
+
+def _after_transition(car_ids, *, finalize: bool, recalc: bool) -> None:
+    """Пересчёт после bulk-перехода: при передаче/откате — finalize-задача
+    (хранение по transfer_date, затем реген DRAFT-счетов), иначе пересчёт цен."""
+    if finalize:
+        from core.tasks import finalize_cars_transfer_task
+
+        def _run():
+            try:
+                finalize_cars_transfer_task.delay(car_ids)
+            except Exception as exc:
+                logger.warning("Celery unavailable, finalizing transfer inline: %s", exc)
+                finalize_cars_transfer_task(car_ids)
+
+        transaction.on_commit(_run)
+    elif recalc:
+        from core.signals.service_catalog import _enqueue_recalc_cars_total_price
+
+        _enqueue_recalc_cars_total_price(car_ids)
+
+
+def _notify_transferred(car_ids) -> None:
+    if not car_ids:
+        return
+
+    def _queue():
+        from core.tasks import send_car_transferred_notification_task
+
+        for car_id in car_ids:
+            try:
+                send_car_transferred_notification_task.delay(car_id)
+            except Exception as exc:
+                logger.warning("[client_notify] Celery недоступен для авто %s: %s", car_id, exc)
+
+    transaction.on_commit(_queue)
+
+
 def after_car_save(car, *, is_new: bool = False) -> None:
     """
     Central entry-point for post-save side-effects.

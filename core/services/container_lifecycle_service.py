@@ -45,56 +45,35 @@ def bulk_update_car_statuses(container) -> dict:
 
     Раньше ``container_cars.update(status=...)`` переписывал статус всем
     машинам: откат контейнера UNLOADED → IN_PORT возвращал уже TRANSFERRED
-    авто «на склад» — снова шло хранение, ломались инвойсы. Теперь, как в
-    ``CarAdmin._bulk_set_status``:
-
-    * применяются только переходы из ``Car.ALLOWED_STATUS_TRANSITIONS``;
-    * TRANSFERRED авто не трогаем вообще, кроме случая, когда и контейнер
-      становится TRANSFERRED (откат передачи — осознанное действие по
-      конкретному авто, а не побочный эффект статуса контейнера);
-    * авто с пометкой «Важное» пропускаются (как в ``Car.save``);
-    * при переходе в TRANSFERRED проставляется ``transfer_date`` (как
-      делает ``Car._sync_status_and_dates``), иначе хранение не остановится.
+    авто «на склад» — снова шло хранение, ломались инвойсы. Теперь через
+    ``car_lifecycle_service.transition_cars`` (FSM, «Важное», transfer_date,
+    история статусов); TRANSFERRED авто не трогаем вообще, кроме случая,
+    когда и контейнер становится TRANSFERRED (откат передачи — осознанное
+    действие по конкретному авто, а не побочный эффект статуса контейнера).
 
     Возвращает счётчики ``{"updated", "skipped_fsm", "skipped_transferred",
     "skipped_important"}`` (списки VIN) и дублирует их в
     ``container._status_cascade_result`` — админка может показать
     пользователю, какие авто не переведены.
     """
-    from django.utils import timezone
-
-    from core.models.containers import ALLOWED_STATUS_TRANSITIONS
+    from core.models.status_history import CarStatusHistory
+    from core.services.car_lifecycle_service import transition_cars
 
     target = container.status
     result = {"updated": 0, "skipped_fsm": [], "skipped_transferred": [], "skipped_important": []}
     try:
         logger.info("Status changed for container %s to %s, cascading to cars via FSM...", container.id, target)
-        allowed_pks = []
-        for pk, vin, cur_status, is_important in container.container_cars.values_list(
-            "pk", "vin", "status", "is_important"
-        ):
-            if cur_status == target:
-                continue
-            if cur_status == "TRANSFERRED" and target != "TRANSFERRED":
-                result["skipped_transferred"].append(vin)
-                continue
-            if is_important:
-                result["skipped_important"].append(vin)
-                continue
-            if target not in ALLOWED_STATUS_TRANSITIONS.get(cur_status, set()):
-                result["skipped_fsm"].append(vin)
-                continue
-            allowed_pks.append(pk)
-
-        if allowed_pks:
-            qs = Car.objects.filter(pk__in=allowed_pks)
-            if target == "TRANSFERRED":
-                today = timezone.localdate()
-                qs.filter(transfer_date__isnull=True).update(status=target, transfer_date=today)
-                qs.filter(transfer_date__isnull=False).update(status=target)
-                result["updated"] = len(allowed_pks)
-            else:
-                result["updated"] = qs.update(status=target)
+        transition = transition_cars(
+            list(container.container_cars.values_list("pk", flat=True)),
+            target,
+            source=CarStatusHistory.SOURCE_SIGNAL,
+            note=f"Контейнер {container.number}",
+            skip_transferred=True,
+        )
+        result["updated"] = len(transition["updated"])
+        result["skipped_transferred"] = transition["skipped_transferred"]
+        result["skipped_important"] = transition["skipped_important"]
+        result["skipped_fsm"] = transition["skipped_fsm"] + transition["skipped_missing"]
 
         logger.info(
             "Container %s → '%s': cars updated=%s, skipped(fsm=%s, transferred=%s, important=%s)",

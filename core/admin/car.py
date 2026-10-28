@@ -1297,57 +1297,48 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
     # Раньше пересчёт шёл синхронно в цикле — при 100+ выбранных машинах
     # HTTP-запрос висел десятки секунд (N×(SELECT+UPDATE) + услуги).
 
-    def _bulk_set_status(self, request, queryset, status, status_label, enqueue_recalc=True):
-        """Массовая смена статуса с теми же правилами, что и одиночный ``Car.save()``.
-
-        Раньше bulk-actions обходили FSM через ``queryset.update()`` — можно
-        было массово «откатить» переданные авто в FLOATING. Теперь:
-
-        * недопустимые переходы (``ALLOWED_STATUS_TRANSITIONS``) пропускаются
-          с предупреждением;
-        * авто с пометкой «Важное» пропускаются (как в ``Car.save``);
-        * пересчёт цен уходит в Celery (как раньше).
+    def _bulk_set_status(self, request, queryset, status, status_label):
+        """Массовая смена статуса — через ``transition_cars`` (FSM, «Важное»,
+        transfer_date, история статусов, свёртка контейнера, пересчёт в фоне).
 
         Возвращает список pk реально обновлённых машин.
         """
-        from core.models.containers import ALLOWED_STATUS_TRANSITIONS
-        from core.signals.service_catalog import _enqueue_recalc_cars_total_price
+        from core.models.status_history import CarStatusHistory
+        from core.services.car_lifecycle_service import transition_cars
 
-        allowed_pks = []
-        skipped_fsm = []
-        skipped_important = []
-        for pk, vin, cur_status, is_important in queryset.values_list("pk", "vin", "status", "is_important"):
-            if cur_status == status:
-                continue  # уже в целевом статусе — no-op
-            if is_important:
-                skipped_important.append(vin)
-                continue
-            if status not in ALLOWED_STATUS_TRANSITIONS.get(cur_status, set()):
-                skipped_fsm.append(vin)
-                continue
-            allowed_pks.append(pk)
+        result = transition_cars(
+            list(queryset.values_list("pk", flat=True)),
+            status,
+            source=CarStatusHistory.SOURCE_ADMIN,
+            note=f"Массовое действие ({getattr(request, 'user', '')})",
+            require_unload_info=True,
+        )
 
-        updated = Car.objects.filter(pk__in=allowed_pks).update(status=status)
-        if enqueue_recalc and allowed_pks:
-            _enqueue_recalc_cars_total_price(allowed_pks)
-
-        if skipped_important:
+        if result["skipped_missing"]:
             self.message_user(
                 request,
-                "Пропущены авто с пометкой «Важное» (сначала снимите галочку): " + ", ".join(skipped_important),
+                "Не обновлены (нужны «Склад» и «Дата разгрузки»): " + ", ".join(result["skipped_missing"]),
                 level="warning",
             )
-        if skipped_fsm:
+        if result["skipped_important"]:
             self.message_user(
                 request,
-                f"Пропущены (недопустимый переход статуса → '{status_label}'): " + ", ".join(skipped_fsm),
+                "Пропущены авто с пометкой «Важное» (сначала снимите галочку): "
+                + ", ".join(result["skipped_important"]),
+                level="warning",
+            )
+        if result["skipped_fsm"]:
+            self.message_user(
+                request,
+                f"Пропущены (недопустимый переход статуса → '{status_label}'): " + ", ".join(result["skipped_fsm"]),
                 level="warning",
             )
         self.message_user(
             request,
-            f"Статус изменён на '{status_label}' для {updated} автомобилей. Цены пересчитываются в фоне.",
+            f"Статус изменён на '{status_label}' для {len(result['updated'])} автомобилей. "
+            "Цены пересчитываются в фоне.",
         )
-        return allowed_pks
+        return result["updated"]
 
     def set_status_floating(self, request, queryset):
         self._bulk_set_status(request, queryset, "FLOATING", "В пути")
@@ -1360,60 +1351,14 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
     set_status_in_port.short_description = "Изменить статус на В порту"
 
     def set_status_unloaded(self, request, queryset):
-        # Для UNLOADED обязательны склад и дата разгрузки — проверяем без
-        # загрузки полных объектов.
-        ready_pks = []
-        for pk, vin, wh_id, unload_date in queryset.values_list("pk", "vin", "warehouse_id", "unload_date"):
-            if wh_id and unload_date:
-                ready_pks.append(pk)
-            else:
-                self.message_user(
-                    request,
-                    f"Автомобиль {vin} не обновлён: требуются поля 'Склад' и 'Дата разгрузки'.",
-                    level="warning",
-                )
-        self._bulk_set_status(request, Car.objects.filter(pk__in=ready_pks), "UNLOADED", "Разгружен")
+        self._bulk_set_status(request, queryset, "UNLOADED", "Разгружен")
 
     set_status_unloaded.short_description = "Изменить статус на Разгружен"
 
     def set_status_transferred(self, request, queryset):
-        # Пересчёт делает finalize-задача ниже (сначала цены, потом инвойсы),
-        # поэтому обычный recalc не ставим.
-        allowed_pks = self._bulk_set_status(request, queryset, "TRANSFERRED", "Передан", enqueue_recalc=False)
-        if not allowed_pks:
-            return
-        # Дата передачи проставляется только там, где её ещё нет
-        Car.objects.filter(pk__in=allowed_pks, transfer_date__isnull=True).update(transfer_date=timezone.localdate())
-        self._finalize_bulk_transfer(allowed_pks)
+        self._bulk_set_status(request, queryset, "TRANSFERRED", "Передан")
 
     set_status_transferred.short_description = "Изменить статус на Передан"
-
-    def _finalize_bulk_transfer(self, car_pks):
-        """Те же пересчёты, что при одиночной передаче через ``Car.save()``:
-
-        * контейнеры, у которых все авто переданы → TRANSFERRED;
-        * фиксация хранения по transfer_date + regen открытых инвойсов
-          (Celery-задача, сначала цены — потом позиции).
-        """
-        from django.db import transaction as db_transaction
-
-        from core.signals.autotransport import _update_container_status_if_all_transferred
-        from core.tasks import finalize_cars_transfer_task
-
-        container_ids = set(
-            Car.objects.filter(pk__in=car_pks, container__isnull=False).values_list("container_id", flat=True)
-        )
-        for cid in container_ids:
-            _update_container_status_if_all_transferred(cid)
-
-        try:
-            db_transaction.on_commit(lambda: finalize_cars_transfer_task.delay(car_pks))
-        except Exception as exc:
-            logger.warning("Celery unavailable, finalizing bulk transfer inline: %s", exc)
-            try:
-                finalize_cars_transfer_task(car_pks)
-            except Exception as e:
-                logger.error("Bulk transfer finalize error: %s", e)
 
     def set_title_with_us(self, request, queryset):
         logger.info(f"Setting has_title=True for {queryset.count()} cars")

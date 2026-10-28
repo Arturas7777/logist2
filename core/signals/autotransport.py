@@ -1,9 +1,11 @@
 """Сигналы для ``AutoTransport``:
 
 * ``post_save`` — при переходе в ``FORMED`` ставит генерацию инвойсов в
-  Celery; при переходе в ``LOADED/IN_TRANSIT/DELIVERED`` помечает все
-  привязанные машины как ``TRANSFERRED`` и ставит финализацию передачи
-  (пересчёт хранения по transfer_date + regen открытых инвойсов рейса).
+  Celery; при ПЕРЕХОДЕ в ``LOADED/IN_TRANSIT/DELIVERED`` переводит
+  привязанные машины в ``TRANSFERRED`` (``transition_cars``) и ставит
+  финализацию передачи (пересчёт хранения по transfer_date + regen
+  черновиков рейса). Авто, добавленные в уже погруженный автовоз,
+  передаются через ``m2m_changed``.
 * ``m2m_changed (cars)`` — блокирует добавление в автовоз авто с пометкой
   «Важное» (см. большой коммент внутри :func:`autotransport_cars_changed_handler`).
 
@@ -26,6 +28,8 @@ from django.dispatch import receiver
 from core.models import Car, Container
 
 logger = logging.getLogger(__name__)
+
+TRANSFER_STATUSES = ("LOADED", "IN_TRANSIT", "DELIVERED")
 
 
 def _queue_or_run_generate_invoices(autotransport):
@@ -75,7 +79,9 @@ def autotransport_post_save(sender, instance, created, **kwargs):
     if instance.status == "FORMED" and old_status != "FORMED":
         _queue_or_run_generate_invoices(instance)
 
-    if instance.status in ("LOADED", "IN_TRANSIT", "DELIVERED"):
+    # Передача авто — только на ПЕРЕХОДЕ в погруженный статус: повторный
+    # save не должен заново передавать авто, которое вручную вернули на склад.
+    if instance.status in TRANSFER_STATUSES and old_status not in TRANSFER_STATUSES:
         transfer_date = getattr(instance, "_transfer_date_override", None)
         _mark_cars_as_transferred(instance, transfer_date)
 
@@ -96,35 +102,38 @@ def resolve_transfer_date(autotransport, override=None):
     return candidate
 
 
-def _mark_cars_as_transferred(autotransport, transfer_date=None):
+def _mark_cars_as_transferred(autotransport, transfer_date=None, car_ids=None):
+    """Перевести авто автовоза в TRANSFERRED через ``transition_cars``.
+
+    Дата передачи не раньше разгрузки авто (инвариант ``Car.clean``);
+    «Важное» и недопустимые переходы пропускаются с записью в лог.
+    """
+    from core.models.status_history import CarStatusHistory
+    from core.services.car_lifecycle_service import transition_cars
+
     transfer_date = resolve_transfer_date(autotransport, transfer_date)
-    affected_cars = list(
-        autotransport.cars.exclude(status="TRANSFERRED").values_list("id", "container_id", "unload_date")
+    if car_ids is None:
+        car_ids = list(autotransport.cars.values_list("pk", flat=True))
+    result = transition_cars(
+        car_ids,
+        "TRANSFERRED",
+        transfer_date=transfer_date,
+        source=CarStatusHistory.SOURCE_SIGNAL,
+        note=f"Автовоз {autotransport.number}",
+        finalize=False,
     )
-    if not affected_cars:
-        return
-    car_ids = [c[0] for c in affected_cars]
-    container_ids = {c[1] for c in affected_cars if c[1]}
-    # Дата передачи не может быть раньше разгрузки (инвариант Car.clean):
-    # если автовоз загружен «задним числом» до разгрузки авто — передача
-    # фиксируется днём разгрузки.
-    late_ids = [c[0] for c in affected_cars if c[2] and c[2] > transfer_date]
-    normal_ids = [cid for cid in car_ids if cid not in set(late_ids)]
-    if normal_ids:
-        Car.objects.filter(id__in=normal_ids).update(status="TRANSFERRED", transfer_date=transfer_date)
-    for cid, _container_id, unload_date in affected_cars:
-        if cid in late_ids:
-            Car.objects.filter(id=cid).update(status="TRANSFERRED", transfer_date=unload_date)
-    logger.info(
-        "AutoTransport %s: %d cars -> TRANSFERRED (date: %s%s)",
-        autotransport.number,
-        len(car_ids),
-        transfer_date,
-        f", {len(late_ids)} по дате разгрузки" if late_ids else "",
-    )
-    for cid in container_ids:
-        _update_container_status_if_all_transferred(cid)
-    _queue_or_run_finalize_transfer(autotransport, car_ids)
+    skipped = result["skipped_important"] + result["skipped_fsm"]
+    if skipped:
+        logger.warning("AutoTransport %s: не переданы авто %s", autotransport.number, ", ".join(skipped))
+    if result["updated"]:
+        logger.info(
+            "AutoTransport %s: %d cars -> TRANSFERRED (date: %s)",
+            autotransport.number,
+            len(result["updated"]),
+            transfer_date,
+        )
+        _queue_or_run_finalize_transfer(autotransport, result["updated"])
+    return result
 
 
 def _queue_or_run_finalize_transfer(autotransport, car_ids):
@@ -220,6 +229,7 @@ def autotransport_cars_changed_handler(sender, instance, action, **kwargs):
 
     if action in ("post_add", "post_remove"):
         # Чистим временный атрибут после успешного цикла set().
+        existing = getattr(instance, "_existing_cars_before_clear", None)
         if hasattr(instance, "_existing_cars_before_clear"):
             try:
                 del instance._existing_cars_before_clear
@@ -227,6 +237,12 @@ def autotransport_cars_changed_handler(sender, instance, action, **kwargs):
                 pass
         if instance.status == "FORMED":
             _queue_or_run_generate_invoices(instance)
+        if action == "post_add" and instance.status in TRANSFER_STATUSES:
+            # Авто, добавленные в уже погруженный автовоз (повторный set()
+            # из админки не передаёт заново авто, которые там уже были).
+            added = set(kwargs.get("pk_set") or set()) - (existing or set())
+            if added:
+                _mark_cars_as_transferred(instance, car_ids=list(added))
 
 
 def connect_autotransport_signals():

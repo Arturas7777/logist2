@@ -688,12 +688,19 @@ class Car(models.Model):
             return
         if not self.warehouse and self.container.warehouse:
             self.warehouse = self.container.warehouse
-        if self.container.unload_date:
+        # У переданного авто период хранения закрыт — дату не переписываем (B11).
+        if self.container.unload_date and not (self.status == "TRANSFERRED" and self.unload_date):
             self.unload_date = self.container.unload_date
 
-    def _sync_status_and_dates(self):
-        """Синхронизирует статус и даты передачи."""
-        if self.transfer_date and self.status != "TRANSFERRED":
+    def _sync_status_and_dates(self, old_status=None):
+        """Синхронизирует статус и даты передачи.
+
+        Явный уход из TRANSFERRED (откат передачи) очищает ``transfer_date``;
+        иначе заполненная дата передачи переводит авто в TRANSFERRED.
+        """
+        if old_status == "TRANSFERRED" and self.status != "TRANSFERRED":
+            self.transfer_date = None
+        elif self.transfer_date and self.status != "TRANSFERRED":
             self.status = "TRANSFERRED"
         if self.status == "TRANSFERRED" and not self.transfer_date:
             self.transfer_date = timezone.localdate()
@@ -759,7 +766,9 @@ class Car(models.Model):
             detach_car_from_client_drafts(self, old_client_id)
 
         self._inherit_from_container()
-        self._sync_status_and_dates()
+        self._sync_status_and_dates(old_status)
+        if update_fields is not None and "status" in update_fields and "transfer_date" not in update_fields:
+            kwargs["update_fields"] = update_fields = [*update_fields, "transfer_date"]
 
         # FSM статусов (см. ALLOWED_STATUS_TRANSITIONS в containers.py):
         # проверяем ПОСЛЕ _sync_status_and_dates, т.к. синхронизация сама

@@ -1662,7 +1662,7 @@ def finalize_cars_transfer_task(self, car_ids):
     from django.db import transaction as db_transaction
     from django.db.utils import OperationalError
 
-    from core.mixins import REGENERATABLE_INVOICE_STATUSES
+    from core.mixins import AUTO_REGENERATABLE_INVOICE_STATUSES
     from core.models_billing import NewInvoice
 
     car_ids = list(car_ids)
@@ -1670,10 +1670,10 @@ def finalize_cars_transfer_task(self, car_ids):
 
     # P7: один инвойс обычно охватывает несколько машин автовоза/клиента —
     # раньше regen вызывался на каждую машину и пересобирал один и тот же
-    # инвойс N раз. Собираем уникальные id одним запросом (тот же фильтр
-    # статусов, что в regenerate_invoices_for_car_task) и регенерим по разу.
+    # инвойс N раз. Собираем уникальные id одним запросом и регенерим по разу
+    # (автоматика — только черновики).
     invoice_ids = list(
-        NewInvoice.objects.filter(cars__id__in=car_ids, status__in=REGENERATABLE_INVOICE_STATUSES)
+        NewInvoice.objects.filter(cars__id__in=car_ids, status__in=AUTO_REGENERATABLE_INVOICE_STATUSES)
         .values_list("id", flat=True)
         .distinct()
     )
