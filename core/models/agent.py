@@ -227,18 +227,23 @@ class AgentAction(models.Model):
     def __str__(self) -> str:
         return f"[{self.get_action_type_display()}] {self.title[:60]} ({self.status})"
 
-    def approve(self, by: str = "") -> None:
-        self.status = self.STATUS_APPROVED
-        self.decided_at = timezone.now()
-        self.decided_by = by
-        self.save(update_fields=["status", "decided_at", "decided_by"])
+    def approve(self, by: str = "") -> bool:
+        """PROPOSED → APPROVED условным UPDATE; False — решение уже принято другим запросом."""
+        return self._decide(self.STATUS_APPROVED, by=by)
 
-    def reject(self, by: str = "", reason: str = "") -> None:
-        self.status = self.STATUS_REJECTED
-        self.decided_at = timezone.now()
-        self.decided_by = by
-        self.reject_reason = reason
-        self.save(update_fields=["status", "decided_at", "decided_by", "reject_reason"])
+    def reject(self, by: str = "", reason: str = "") -> bool:
+        """PROPOSED → REJECTED условным UPDATE; False — решение уже принято другим запросом."""
+        return self._decide(self.STATUS_REJECTED, by=by, reject_reason=reason)
+
+    def _decide(self, status: str, *, by: str, **extra) -> bool:
+        fields = {"status": status, "decided_at": timezone.now(), "decided_by": by, **extra}
+        updated = type(self).objects.filter(pk=self.pk, status=self.STATUS_PROPOSED).update(**fields)
+        if updated:
+            for name, value in fields.items():
+                setattr(self, name, value)
+        else:
+            self.refresh_from_db()
+        return bool(updated)
 
     def mark_executed(self, result: dict | None = None, *, auto: bool = False) -> None:
         self.status = self.STATUS_AUTO_EXECUTED if auto else self.STATUS_EXECUTED

@@ -62,7 +62,10 @@ def make_email(**kwargs) -> ContainerEmail:
 
 
 def make_staff_client(client):
+    from django.contrib.auth.models import Permission
+
     user = User.objects.create_user("boss", "boss@test.com", "pw", is_staff=True)
+    user.user_permissions.add(Permission.objects.get(codename="change_agentaction"))
     client.force_login(user)
     return user
 

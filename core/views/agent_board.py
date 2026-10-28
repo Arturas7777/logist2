@@ -97,8 +97,13 @@ def agent_action_approve(request: HttpRequest, action_id: int):
     """Принять предложение агента → исполнение действия."""
     from core.services.agent.agent_executor import execute_action
 
-    action = get_object_or_404(AgentAction, pk=action_id, status=AgentAction.STATUS_PROPOSED)
-    action.approve(by=_username(request))
+    if not request.user.has_perm("core.change_agentaction"):
+        messages.error(request, "Нет права одобрять действия агента.")
+        return redirect("tasks_board")
+    action = get_object_or_404(AgentAction, pk=action_id)
+    if not action.approve(by=_username(request)):
+        messages.warning(request, f"Предложение уже обработано ({action.get_status_display()}).")
+        return redirect("tasks_board")
     try:
         result = execute_action(action, by=_username(request))
         if action.action_type == AgentAction.TYPE_CREATE_TASK:
@@ -117,9 +122,14 @@ def agent_action_reject(request: HttpRequest, action_id: int):
     """Отклонить предложение агента. Причина (если есть) уходит в память."""
     from core.services.agent.memory import add_rejection_memory
 
-    action = get_object_or_404(AgentAction, pk=action_id, status=AgentAction.STATUS_PROPOSED)
+    if not request.user.has_perm("core.change_agentaction"):
+        messages.error(request, "Нет права отклонять действия агента.")
+        return redirect("tasks_board")
+    action = get_object_or_404(AgentAction, pk=action_id)
     reason = (request.POST.get("reason") or "").strip()
-    action.reject(by=_username(request), reason=reason)
+    if not action.reject(by=_username(request), reason=reason):
+        messages.warning(request, f"Предложение уже обработано ({action.get_status_display()}).")
+        return redirect("tasks_board")
     if reason:
         try:
             add_rejection_memory(action, reason, by=_username(request))

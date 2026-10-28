@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
+from django.contrib.auth.models import Permission, User
+from django.urls import reverse
 from django.utils import timezone
 
-from core.models import AgentAction, AgentMemory, AgentPolicy, ContainerEmail
+from core.models import AgentAction, AgentMemory, AgentPolicy, ContainerEmail, Task
 from core.services.agent.agent_executor import execute_action
 from core.services.agent.agent_tools import execute_tool
 from core.services.agent.context_builder import (
@@ -101,12 +105,16 @@ def test_rejected_save_memory_does_not_quote_content():
     assert "это из письма" in memory.content
 
 
-def test_board_approve_save_memory(client):
-    from django.contrib.auth.models import User
-    from django.urls import reverse
-
+def _login_staff(client, *, can_decide=True):
     user = User.objects.create_user("boss", "boss@test.com", "pw", is_staff=True)
+    if can_decide:
+        user.user_permissions.add(Permission.objects.get(codename="change_agentaction"))
     client.force_login(user)
+    return user
+
+
+def test_board_approve_save_memory(client):
+    _login_staff(client)
     result = execute_tool("save_memory", {"content": "Факт с доски"}, context={})
 
     page = client.get(reverse("tasks_board"))
@@ -223,3 +231,60 @@ def test_execute_reply_refuses_changed_recipient():
 
     with pytest.raises(ValueError, match="не совпадает"):
         execute_action(action)
+
+
+# --- A3: атомарное «Принять» --------------------------------------------------
+
+
+def _task_proposal():
+    return AgentAction.objects.create(
+        action_type=AgentAction.TYPE_CREATE_TASK, title="Дело", payload={"title": "Из письма"}
+    )
+
+
+def test_approve_is_conditional_on_proposed():
+    action = _task_proposal()
+    stale = AgentAction.objects.get(pk=action.pk)
+
+    assert action.approve(by="first") is True
+    assert stale.approve(by="second") is False
+    assert stale.status == AgentAction.STATUS_APPROVED
+    assert stale.decided_by == "first"
+    assert stale.reject(by="second", reason="поздно") is False
+    action.refresh_from_db()
+    assert action.status == AgentAction.STATUS_APPROVED
+
+
+def test_double_approve_executes_once(client):
+    _login_staff(client)
+    action = _task_proposal()
+    url = reverse("agent_action_approve", args=[action.pk])
+
+    client.post(url)
+    client.post(url)
+
+    assert Task.objects.filter(title="Из письма").count() == 1
+    action.refresh_from_db()
+    assert action.status == AgentAction.STATUS_EXECUTED
+
+
+def test_approve_racing_request_does_not_execute(client):
+    _login_staff(client)
+    action = _task_proposal()
+    with patch("core.views.agent_board.get_object_or_404", return_value=AgentAction.objects.get(pk=action.pk)):
+        AgentAction.objects.filter(pk=action.pk).update(status=AgentAction.STATUS_APPROVED)
+        client.post(reverse("agent_action_approve", args=[action.pk]))
+
+    assert Task.objects.count() == 0
+
+
+def test_approve_requires_permission(client):
+    _login_staff(client, can_decide=False)
+    action = _task_proposal()
+
+    client.post(reverse("agent_action_approve", args=[action.pk]))
+    client.post(reverse("agent_action_reject", args=[action.pk]), {"reason": "x"})
+
+    action.refresh_from_db()
+    assert action.status == AgentAction.STATUS_PROPOSED
+    assert Task.objects.count() == 0
