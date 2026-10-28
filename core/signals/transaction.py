@@ -15,12 +15,17 @@ from core.models_billing import Transaction
 logger = logging.getLogger(__name__)
 
 
+def _affects_balances(instance):
+    """COMPLETED-транзакция или только что ушедшая из COMPLETED (отмена)."""
+    return instance.status == "COMPLETED" or getattr(instance, "_status_before_save", None) == "COMPLETED"
+
+
 def _recalc_transaction_effects(instance):
     # B4 (AUDIT_ROUND3): деньги — исключения НЕ глотаем. Сбой пересчёта
     # баланса/paid_amount означает рассинхрон финансового состояния;
     # пробрасываем, чтобы вся транзакция сохранения откатилась и ошибка
     # ушла в Sentry, а не осталась «тихо неверным» балансом.
-    if instance.status != "COMPLETED":
+    if not _affects_balances(instance):
         return
     for entity in (instance.sender, instance.recipient):
         try:
@@ -38,8 +43,6 @@ def _recalc_transaction_effects(instance):
 
 @receiver(post_save, sender=Transaction)
 def recalculate_on_transaction_save(sender, instance, **kwargs):
-    if getattr(instance, "_skip_balance_recalc", False):
-        return
     _recalc_transaction_effects(instance)
 
 

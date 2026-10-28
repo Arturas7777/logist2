@@ -1858,11 +1858,15 @@ class Transaction(models.Model):
         ``queryset.update()`` — это сознательный escape hatch для
         миграций/массовых исправлений.
         """
+        self._status_before_save = None
         if not self.pk:
             return
         old = Transaction.objects.filter(pk=self.pk).values("status", *self.LEDGER_FROZEN_FIELDS).first()
         if old is None:
             return
+        # Сигнал пересчёта балансов смотрит на это поле: уход из COMPLETED
+        # (отмена) обязан вернуть балансы сторон и paid_amount счёта.
+        self._status_before_save = old["status"]
 
         if old["status"] != self.status:
             allowed = self.ALLOWED_STATUS_TRANSITIONS.get(old["status"], set())

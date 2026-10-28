@@ -1,11 +1,15 @@
 """Админка :class:`Transaction`."""
 
-from django.contrib import admin
-from django.urls import reverse
+from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.http import HttpResponseNotAllowed
+from django.shortcuts import get_object_or_404, redirect
+from django.urls import path, reverse
 from django.utils.html import format_html
 
 from core.admin_export import CSVExportMixin
-from core.models_billing import Transaction
+from core.models.billing import Transaction
+from core.services.billing_service import BillingService
 
 
 @admin.register(Transaction)
@@ -114,9 +118,10 @@ class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
 
     # Денежные поля проведённой транзакции заморожены (леджер,
     # Transaction.LEDGER_FROZEN_FIELDS) — показываем это в форме сразу,
-    # а не ValidationError-ом после сабмита. Статус остаётся редактируемым
-    # (COMPLETED → CANCELLED — легальный путь отмены).
+    # а не ValidationError-ом после сабмита. Статус тоже read-only:
+    # отмена — только кнопкой «Отменить транзакцию» (BillingService).
     _LEDGER_FROZEN_FORM_FIELDS = (
+        "status",
         "amount",
         "currency",
         "type",
@@ -139,6 +144,32 @@ class TransactionAdmin(CSVExportMixin, admin.ModelAdmin):
         if obj is not None and obj.status in ("COMPLETED", "CANCELLED"):
             ro = tuple(ro) + self._LEDGER_FROZEN_FORM_FIELDS
         return ro
+
+    def get_urls(self):
+        urls = [
+            path(
+                "<int:pk>/cancel/",
+                self.admin_site.admin_view(self.cancel_view),
+                name="core_transaction_cancel",
+            ),
+        ]
+        return urls + super().get_urls()
+
+    def cancel_view(self, request, pk):
+        if request.method != "POST":
+            return HttpResponseNotAllowed(["POST"])
+        trx = get_object_or_404(Transaction, pk=pk)
+        if not self.has_change_permission(request, trx):
+            raise PermissionDenied
+        reason = (request.POST.get("reason") or "").strip()
+        try:
+            BillingService.cancel_transaction(trx, reason=reason, created_by=request.user)
+        except (ValueError, ValidationError) as exc:
+            self.message_user(request, f"Не удалось отменить {trx.number}: {exc}", level=messages.ERROR)
+        else:
+            self.log_change(request, trx, f"Отменена{': ' + reason if reason else ''}")
+            self.message_user(request, f"Транзакция {trx.number} отменена, балансы пересчитаны.")
+        return redirect("admin:core_transaction_change", pk)
 
     def has_delete_permission(self, request, obj=None):
         # Проведённые/отменённые транзакции — иммутабельная история.

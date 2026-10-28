@@ -1,0 +1,16 @@
+{% extends "admin/change_form.html" %}
+
+{% block object-tools-items %}
+  {{ block.super }}
+  {% if original and original.status == "COMPLETED" %}
+    <li>
+      <form method="post" action="{% url 'admin:core_transaction_cancel' original.pk %}"
+            style="display:inline"
+            onsubmit="var r = prompt('Отменить транзакцию {{ original.number|escapejs }}? Балансы и оплата счёта будут пересчитаны.\n\nПричина отмены:'); if (r === null) return false; this.reason.value = r; return true;">
+        {% csrf_token %}
+        <input type="hidden" name="reason" value="">
+        <a href="#" onclick="this.closest('form').requestSubmit(); return false;">Отменить транзакцию</a>
+      </form>
+    </li>
+  {% endif %}
+{% endblock %}

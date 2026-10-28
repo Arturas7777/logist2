@@ -330,23 +330,19 @@ class BillingService:
     @classmethod
     def reverse_cash_payments(cls, invoice):
         """Отменить авто-созданные CASH-платежи при уходе с кассовой серии."""
-        cash_payments = invoice.transactions.filter(
-            type="PAYMENT",
-            method="CASH",
-            status="COMPLETED",
-            description__contains="Оплата наличными",
+        cash_payments = list(
+            invoice.transactions.filter(
+                type="PAYMENT",
+                method="CASH",
+                status="COMPLETED",
+                description__contains="Оплата наличными",
+            )
         )
         for trx in cash_payments:
-            trx.status = "CANCELLED"
-            trx._skip_balance_recalc = True
-            trx.save(update_fields=["status"])
-        if cash_payments.exists():
-            invoice.recalculate_paid_amount()
-            logger.info(
-                "Reversed %d cash payments for invoice %s",
-                cash_payments.count(),
-                invoice.number,
-            )
+            cls.cancel_transaction(trx, reason="уход с кассовой серии")
+        if cash_payments:
+            invoice.refresh_from_db(fields=["paid_amount", "status", "updated_at"])
+            logger.info("Reversed %d cash payments for invoice %s", len(cash_payments), invoice.number)
 
     # ========================================================================
     # РАБОТА С ПЛАТЕЖАМИ
@@ -863,6 +859,39 @@ class BillingService:
         # Балансы и paid_amount пересчитываются автоматически сигналом post_save Transaction
 
         return refund_trx
+
+    @classmethod
+    @transaction.atomic
+    def cancel_transaction(cls, trx, reason: str = "", created_by=None):
+        """Отменить транзакцию (→ CANCELLED) с пересчётом последствий.
+
+        Балансы обеих сторон и ``paid_amount``/статус счёта пересчитывает
+        сигнал ``post_save`` (он реагирует на уход из COMPLETED). Отмена
+        одной половины пары TOPUP + PAYMENT вторую не трогает: отменённая
+        оплата счёта оставляет деньги авансом на балансе клиента.
+
+        Returns:
+            Transaction: отменённая транзакция (заблокированная копия).
+        """
+        from core.models_billing import Transaction
+
+        locked = Transaction.objects.select_for_update().get(pk=trx.pk)
+        if locked.status == "CANCELLED":
+            raise ValueError(f"Транзакция {locked.number} уже отменена")
+
+        stamp = f"ОТМЕНЕНА {timezone.localdate():%d.%m.%Y}"
+        if created_by is not None:
+            stamp += f" ({created_by})"
+        if reason:
+            stamp += f": {reason}"
+        locked.description = f"{locked.description}\n{stamp}" if locked.description else stamp
+        locked.status = "CANCELLED"
+        locked.save(update_fields=["status", "description"])
+
+        logger.info("Transaction %s cancelled: %s", locked.number, reason)
+        trx.status = locked.status
+        trx.description = locked.description
+        return locked
 
     @classmethod
     @transaction.atomic
