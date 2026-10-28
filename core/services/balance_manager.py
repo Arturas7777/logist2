@@ -11,9 +11,11 @@
 """
 
 import logging
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 
 from django.db import transaction
+
+from core.utils import quantize_money
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +25,7 @@ class BalanceManager:
     def quantize_amount(amount) -> Decimal:
         if amount is None:
             return Decimal("0.00")
-        return Decimal(str(amount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return quantize_money(amount)
 
     @classmethod
     def recalculate_entity_balance(cls, entity):
@@ -40,17 +42,19 @@ class BalanceManager:
 
         updated = 0
         failed = 0
-        with transaction.atomic():
-            for model in [Client, Warehouse, Line, Company, Carrier]:
-                for entity in model.objects.all():
-                    try:
+        for model in [Client, Warehouse, Line, Company, Carrier]:
+            for entity in model.objects.all():
+                try:
+                    # Своя (под)транзакция на сущность: на PostgreSQL ошибка
+                    # внутри общего atomic ломает все последующие запросы.
+                    with transaction.atomic():
                         Transaction.recalculate_entity_balance(entity)
-                        updated += 1
-                    except Exception:
-                        # Bulk-repair: продолжаем по остальным, но сбой не
-                        # прячем — счётчик failed уходит вызывающему (B4).
-                        failed += 1
-                        logger.exception(f"Failed to recalculate balance for {entity}")
+                    updated += 1
+                except Exception:
+                    # Bulk-repair: продолжаем по остальным, но сбой не
+                    # прячем — счётчик failed уходит вызывающему (B4).
+                    failed += 1
+                    logger.exception(f"Failed to recalculate balance for {entity}")
 
         logger.info(f"Recalculated balances for {updated} entities ({failed} failed)")
         return {"success": failed == 0, "entities_updated": updated, "failed": failed}

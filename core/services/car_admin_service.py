@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 
 from core.models import (
     Car,
@@ -28,6 +29,7 @@ from core.models import (
     LineService,
     WarehouseService,
 )
+from core.utils import parse_money, quantize_money
 
 logger = logging.getLogger(__name__)
 
@@ -104,19 +106,18 @@ def update_existing_carservices(car, post, *, prefix, service_type, removed_serv
         field_name = f"{prefix}_service_{car_service.service_id}"
         if field_name not in post:
             continue
-        value = post.get(field_name)
-        if value:
-            try:
-                car_service.custom_price = float(value)
-            except (ValueError, TypeError):
-                pass
+        price = parse_money(post.get(field_name))
+        if price is not None:
+            car_service.custom_price = price
         markup_field = f"markup_{prefix}_service_{car_service.service_id}"
         markup_value = post.get(markup_field)
         if markup_value is not None:
-            try:
-                car_service.markup_amount = float(markup_value) if markup_value else 0
-            except (ValueError, TypeError):
-                car_service.markup_amount = 0
+            if not markup_value.strip():
+                car_service.markup_amount = Decimal("0.00")
+            else:
+                markup = parse_money(markup_value)
+                if markup is not None:
+                    car_service.markup_amount = markup
         car_service.save()
     return existing_qs
 
@@ -158,14 +159,15 @@ def auto_add_default_services(
         if service.id in existing_ids:
             continue
         field_name = f"{prefix}_service_{service.id}"
-        value = post.get(field_name) or service.default_price
-        default_markup = getattr(service, "default_markup", 0) or 0
+        price = parse_money(post.get(field_name))
+        if price is None:
+            price = quantize_money(service.default_price or 0)
         CarService.objects.create(
             car=car,
             service_type=service_type,
             service_id=service.id,
-            custom_price=float(value),
-            markup_amount=float(default_markup),
+            custom_price=price,
+            markup_amount=quantize_money(getattr(service, "default_markup", 0) or 0),
         )
 
 

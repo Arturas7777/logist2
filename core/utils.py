@@ -6,10 +6,41 @@ import datetime
 import functools
 import logging
 import threading
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.db import transaction
+
+CENT = Decimal("0.01")
+
+
+def quantize_money(value) -> Decimal:
+    """Сумма до центов по ROUND_HALF_UP.
+
+    Деньги квантуем сами до записи: DecimalField при сохранении округляет
+    по HALF_EVEN (10.125 → 10.12), а расчёты в коде — по HALF_UP (10.13).
+    """
+    return Decimal(str(value)).quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+def parse_money(raw) -> Decimal | None:
+    """Сумма из ввода пользователя: «12,50», «1 200.5», 12.5 → Decimal до центов.
+
+    ``None`` — пустое или нечисловое значение (в т.ч. NaN/Infinity).
+    """
+    if raw is None:
+        return None
+    text = str(raw).strip().replace("\u00a0", "").replace(" ", "").replace(",", ".")
+    if not text:
+        return None
+    try:
+        value = Decimal(text)
+    except InvalidOperation:
+        return None
+    if not value.is_finite():
+        return None
+    return value.quantize(CENT, rounding=ROUND_HALF_UP)
 
 
 def round_up_to_5(value):

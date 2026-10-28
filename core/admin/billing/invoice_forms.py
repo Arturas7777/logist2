@@ -11,7 +11,7 @@ actions.
 
 import json
 import logging
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from django.contrib import messages
 from django.shortcuts import redirect
@@ -19,6 +19,7 @@ from django.shortcuts import redirect
 from core.admin.billing.invoice_display import build_items_pivot_table
 from core.models_billing import ExpenseCategory, InvoiceItem, NewInvoice
 from core.services.billing_service import BillingService
+from core.utils import parse_money, quantize_money
 
 logger = logging.getLogger(__name__)
 
@@ -389,12 +390,8 @@ class NewInvoiceFormHandlerMixin:
                 return True
         except (json.JSONDecodeError, TypeError):
             pass
-        try:
-            if "manual_total" in post and Decimal(post["manual_total"]) != invoice.total:
-                return True
-        except (InvalidOperation, ValueError):
-            pass
-        return False
+        manual_total = parse_money(post.get("manual_total"))
+        return manual_total is not None and manual_total != invoice.total
 
     def _save_locked_invoice(self, request, invoice):
         """Выставленный счёт: стороны, машины и позиции не меняются."""
@@ -528,13 +525,8 @@ class NewInvoiceFormHandlerMixin:
         с базой», когда пользователь явно перехватывает управление суммой
         и не хочет, чтобы результаты AI остались в позициях.
         """
-        manual_total_str = request.POST.get("manual_total", "0")
         manual_items_raw = request.POST.get("manual_items_json", "[]")
-
-        try:
-            manual_total = Decimal(manual_total_str)
-        except (InvalidOperation, ValueError, TypeError):
-            manual_total = Decimal("0")
+        manual_total = parse_money(request.POST.get("manual_total")) or Decimal("0")
 
         manual_items = []
         try:
@@ -557,22 +549,20 @@ class NewInvoiceFormHandlerMixin:
                 desc = str(item_data.get("description", "")).strip()
                 if not desc:
                     continue
-                try:
-                    qty = Decimal(str(item_data.get("quantity", 1)))
-                    price = Decimal(str(item_data.get("unit_price", 0)))
-                except (InvalidOperation, ValueError, TypeError):
+                qty = parse_money(item_data.get("quantity", 1))
+                price = parse_money(item_data.get("unit_price", 0))
+                if qty is None or price is None:
                     continue
 
                 if qty <= 0 and price <= 0:
                     continue
 
-                total_price = qty * price
                 InvoiceItem.objects.create(
                     invoice=invoice,
                     description=desc,
                     quantity=qty,
                     unit_price=price,
-                    total_price=total_price,
+                    total_price=quantize_money(qty * price),
                     order=order,
                 )
                 order += 1

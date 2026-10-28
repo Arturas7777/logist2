@@ -13,6 +13,7 @@
 Дата: 30 сентября 2025
 """
 
+import datetime
 import logging
 from decimal import Decimal
 
@@ -23,6 +24,7 @@ from django.db import models
 from django.utils import timezone
 
 from ..service_codes import is_storage_service
+from ..utils import quantize_money
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -171,6 +173,8 @@ class NewInvoice(models.Model):
 
     # Серии, которые всегда оплачиваются наличными и не пушатся в site.pro
     CASH_DOCUMENT_TYPES = frozenset({"INVOICE_BLC", "INVOICE_INCBLC"})
+
+    DEFAULT_DUE_DAYS = 14
 
     # ========================================================================
     # ИДЕНТИФИКАЦИЯ
@@ -671,6 +675,14 @@ class NewInvoice(models.Model):
     def _due_date_passed(self):
         return bool(self.due_date) and self.due_date < timezone.localdate()
 
+    def issue_date(self):
+        """Дата выставления как ``date`` (до сохранения ``date`` бывает aware-datetime)."""
+        if not self.date:
+            return timezone.localdate()
+        if isinstance(self.date, datetime.datetime):
+            return timezone.localdate(self.date) if timezone.is_aware(self.date) else self.date.date()
+        return self.date
+
     @property
     def days_until_due(self):
         """Количество дней до срока оплаты"""
@@ -686,8 +698,8 @@ class NewInvoice(models.Model):
     def calculate_totals(self):
         """Пересчитать итоговые суммы на основе позиций"""
         items = self.items.all()
-        self.subtotal = sum(item.total_price for item in items)
-        self.total = self.subtotal - self.discount + self.tax
+        self.subtotal = quantize_money(sum((item.total_price for item in items), Decimal("0")))
+        self.total = quantize_money(self.subtotal - self.discount + self.tax)
         return self.total
 
     def recalculate_paid_amount(self):
@@ -1108,7 +1120,7 @@ class NewInvoice(models.Model):
                 self.number = self.generate_number()
 
         if not self.due_date:
-            self.due_date = timezone.localdate() + timezone.timedelta(days=14)
+            self.due_date = self.issue_date() + timezone.timedelta(days=self.DEFAULT_DUE_DAYS)
 
         self.update_status()
         self._validate_status_transition(kwargs.get("update_fields"))
@@ -1208,7 +1220,9 @@ class InvoiceItem(models.Model):
 
     def calculate_total(self):
         """Рассчитать итоговую сумму позиции"""
-        self.total_price = self.quantity * self.unit_price
+        self.quantity = quantize_money(self.quantity)
+        self.unit_price = quantize_money(self.unit_price)
+        self.total_price = quantize_money(self.quantity * self.unit_price)
         return self.total_price
 
     def save(self, *args, **kwargs):
@@ -1289,6 +1303,8 @@ class Transaction(models.Model):
         "date",
         "invoice_id",
         "paired_topup_id",
+        "refund_of_id",
+        "auto_cash",
         "from_client_id",
         "from_warehouse_id",
         "from_line_id",
@@ -1448,6 +1464,21 @@ class Transaction(models.Model):
         related_name="ledger_transactions",
         verbose_name="Банковская операция",
         help_text="Банковская операция, из привязки которой создана транзакция",
+    )
+    refund_of = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="refunds",
+        verbose_name="Возврат по транзакции",
+        help_text="Исходная транзакция, по которой оформлен этот возврат (REFUND)",
+    )
+    auto_cash = models.BooleanField(
+        default=False,
+        editable=False,
+        verbose_name="Авто-оплата кассовой серии",
+        help_text="PAYMENT создан автоматически при выборе кассовой серии и отменяется при уходе с неё",
     )
 
     # ========================================================================
@@ -2132,6 +2163,13 @@ class PersonalTransfer(models.Model):
         auto_now_add=True,
         verbose_name="Создана",
     )
+    executed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name="Проведена",
+        help_text="Когда балансы карт и касса изменены; повторное проведение невозможно",
+    )
 
     class Meta:
         verbose_name = "Личный перевод"
@@ -2165,59 +2203,7 @@ class PersonalTransfer(models.Model):
             raise ValidationError(errors)
 
     def execute(self, company=None):
-        """
-        Выполнить перевод: обновить балансы карт и создать Transaction для кассы.
-        Вызывается из view после создания объекта.
-        """
-        from django.db import transaction as db_transaction
+        """Провести перевод — см. ``BillingService.execute_personal_transfer``."""
+        from core.services.billing_service import BillingService
 
-        tt = self.transfer_type
-
-        with db_transaction.atomic():
-            if tt in ("CASH_TO_CARD", "CARD_INCOME"):
-                card = PersonalCard.objects.select_for_update().get(pk=self.to_card_id)
-                card.balance += self.amount
-                card.save(update_fields=["balance"])
-
-            if tt in ("CARD_TO_CASH", "CARD_EXPENSE"):
-                card = PersonalCard.objects.select_for_update().get(pk=self.from_card_id)
-                card.balance -= self.amount
-                card.save(update_fields=["balance"])
-
-            if tt == "CARD_TO_CARD":
-                src = PersonalCard.objects.select_for_update().get(pk=self.from_card_id)
-                dst = PersonalCard.objects.select_for_update().get(pk=self.to_card_id)
-                src.balance -= self.amount
-                dst.balance += self.amount
-                src.save(update_fields=["balance"])
-                dst.save(update_fields=["balance"])
-
-            if tt == "CASH_TO_CARD" and company:
-                tx = Transaction.objects.create(
-                    type="ADJUSTMENT",
-                    method="CASH",
-                    amount=self.amount,
-                    currency="EUR",
-                    from_company=company,
-                    description=self.description or f"Перевод на карту {self.to_card}",
-                    status="COMPLETED",
-                    date=self.date,
-                    created_by=self.created_by,
-                )
-                self.linked_transaction = tx
-                self.save(update_fields=["linked_transaction"])
-
-            if tt == "CARD_TO_CASH" and company:
-                tx = Transaction.objects.create(
-                    type="ADJUSTMENT",
-                    method="CASH",
-                    amount=self.amount,
-                    currency="EUR",
-                    to_company=company,
-                    description=self.description or f"Снятие с карты {self.from_card}",
-                    status="COMPLETED",
-                    date=self.date,
-                    created_by=self.created_by,
-                )
-                self.linked_transaction = tx
-                self.save(update_fields=["linked_transaction"])
+        return BillingService.execute_personal_transfer(self, company=company)

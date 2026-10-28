@@ -50,6 +50,7 @@ def test_full_credit_note_closes_invoice_without_touching_balance(company, clien
     assert inv.status == "PAID"
     assert inv.remaining_amount == Decimal("0.00")
     assert client_a.balance == Decimal("0.00")
+    assert client_a.total_balance == Decimal("0.00")
     trx = result["transaction"]
     assert trx.type == "ADJUSTMENT"
     assert trx.invoice_id == inv.pk
@@ -124,10 +125,15 @@ def test_partial_credit_note(company, client_a):
     assert inv.status == "PARTIALLY_PAID"
     assert inv.paid_amount == Decimal("40.00")
     assert inv.remaining_amount == Decimal("60.00")
+    client_a.refresh_from_db()
+    assert client_a.total_balance == Decimal("-60.00")
     BillingService.create_credit_note(inv, amount=Decimal("60"), reason="Остаток")
     inv.refresh_from_db()
     assert inv.status == "PAID"
     assert inv.credit_notes.count() == 2
+    client_a.refresh_from_db()
+    assert client_a.balance == Decimal("0.00")
+    assert client_a.total_balance == Decimal("0.00")
 
 
 def test_credit_note_cannot_exceed_remaining(company, client_a):
@@ -135,6 +141,8 @@ def test_credit_note_cannot_exceed_remaining(company, client_a):
     with pytest.raises(ValueError, match="больше остатка"):
         BillingService.create_credit_note(inv, amount=Decimal("100.01"), reason="Слишком много")
     assert Transaction.objects.filter(invoice=inv).count() == 0
+    client_a.refresh_from_db()
+    assert client_a.total_balance == Decimal("-100.00")
 
 
 def test_credit_note_items_must_match_amount(company, client_a):
@@ -147,3 +155,5 @@ def test_credit_note_items_must_match_amount(company, client_a):
     assert result["credit_note"].total == Decimal("30.00")
     inv.refresh_from_db()
     assert inv.remaining_amount == Decimal("70.00")
+    client_a.refresh_from_db()
+    assert client_a.total_balance == Decimal("-70.00")

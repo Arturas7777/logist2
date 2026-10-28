@@ -15,11 +15,13 @@ BillingService - централизованная точка входа для:
 """
 
 import logging
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 
 from django.db import models, transaction
 from django.db.models import Sum
 from django.utils import timezone
+
+from core.utils import quantize_money
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +45,7 @@ class BillingService:
     @staticmethod
     def quantize(amount: Decimal | int | float | str) -> Decimal:
         """Нормализовать сумму до 2 знаков после запятой"""
-        return Decimal(str(amount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return quantize_money(amount)
 
     @staticmethod
     def validate_entity(entity) -> bool:
@@ -104,10 +106,8 @@ class BillingService:
         recipient_type = recipient.__class__.__name__
         recipient_field = f"recipient_{recipient_type.lower()}"
 
-        # Создаем инвойс
-        due_date = timezone.localdate() + timezone.timedelta(days=due_days)
-
-        invoice = NewInvoice(due_date=due_date, notes=notes, created_by=created_by, status="DRAFT")
+        invoice = NewInvoice(notes=notes, created_by=created_by, status="DRAFT")
+        invoice.due_date = invoice.issue_date() + timezone.timedelta(days=due_days)
 
         # Устанавливаем выставителя
         setattr(invoice, issuer_field, issuer)
@@ -319,6 +319,7 @@ class BillingService:
         date=None,
         created_by=None,
         bank_transaction=None,
+        auto_cash=False,
     ):
         """Единый путь оплаты счёта: PAYMENT от ``payer`` к ``payee``.
 
@@ -359,6 +360,7 @@ class BillingService:
             currency=currency,
             invoice=invoice,
             paired_topup=topup,
+            auto_cash=auto_cash,
             description=description,
             date=tx_date,
             created_by=created_by,
@@ -398,6 +400,7 @@ class BillingService:
             description=f"Оплата наличными ({locked.number})",
             funded_by="CASH",
             created_by=created_by,
+            auto_cash=True,
         )
         invoice.refresh_from_db(fields=["paid_amount", "status", "updated_at"])
         logger.info("Auto cash payment %s: %s for invoice %s", trx.number, remaining, locked.number)
@@ -407,12 +410,9 @@ class BillingService:
     def reverse_cash_payments(cls, invoice):
         """Отменить авто-созданные CASH-платежи (вместе с парным TOPUP) при уходе с кассовой серии."""
         cash_payments = list(
-            invoice.transactions.filter(
-                type="PAYMENT",
-                method="CASH",
-                status="COMPLETED",
-                description__contains="Оплата наличными",
-            ).select_related("paired_topup")
+            invoice.transactions.filter(type="PAYMENT", status="COMPLETED", auto_cash=True).select_related(
+                "paired_topup"
+            )
         )
         for trx in cash_payments:
             cls.cancel_transaction(trx, reason="уход с кассовой серии")
@@ -907,11 +907,9 @@ class BillingService:
         if refund_amount <= 0 or refund_amount > locked_original.amount:
             raise ValueError("Некорректная сумма возврата")
 
-        already_refunded = Transaction.objects.filter(
-            type="REFUND",
-            status="COMPLETED",
-            description__contains=locked_original.number,
-        ).aggregate(total=models.Sum("amount"))["total"] or Decimal("0.00")
+        already_refunded = locked_original.refunds.filter(type="REFUND", status="COMPLETED").aggregate(
+            total=models.Sum("amount")
+        )["total"] or Decimal("0.00")
 
         max_refundable = locked_original.amount - already_refunded
         if refund_amount > max_refundable:
@@ -925,6 +923,7 @@ class BillingService:
             type="REFUND",
             method=locked_original.method,
             invoice=locked_original.invoice,
+            refund_of=locked_original,
             amount=refund_amount,
             description=f"Возврат по транзакции {locked_original.number}. {reason}",
             created_by=created_by,
@@ -952,6 +951,59 @@ class BillingService:
         # Балансы и paid_amount пересчитываются автоматически сигналом post_save Transaction
 
         return refund_trx
+
+    @classmethod
+    @transaction.atomic
+    def execute_personal_transfer(cls, transfer, company=None):
+        """Провести личный перевод: балансы карт + ADJUSTMENT в кассе компании.
+
+        Идемпотентно: проведённый перевод (``executed_at``) повторно не
+        двигает деньги. Карты блокируются в порядке pk.
+        """
+        from core.models_billing import PersonalCard, PersonalTransfer, Transaction
+
+        if not transfer.pk:
+            raise ValueError("Перевод нужно сохранить до проведения")
+        locked = PersonalTransfer.objects.select_for_update().get(pk=transfer.pk)
+        if locked.executed_at:
+            logger.warning("Personal transfer %s already executed at %s", locked.pk, locked.executed_at)
+            return locked
+
+        tt = locked.transfer_type
+        deltas = {}
+        if tt in ("CASH_TO_CARD", "CARD_INCOME", "CARD_TO_CARD"):
+            deltas[locked.to_card_id] = deltas.get(locked.to_card_id, Decimal("0")) + locked.amount
+        if tt in ("CARD_TO_CASH", "CARD_EXPENSE", "CARD_TO_CARD"):
+            deltas[locked.from_card_id] = deltas.get(locked.from_card_id, Decimal("0")) - locked.amount
+        for card in PersonalCard.objects.select_for_update().filter(pk__in=list(deltas)).order_by("pk"):
+            card.balance += deltas[card.pk]
+            card.save(update_fields=["balance"])
+
+        if company and tt in ("CASH_TO_CARD", "CARD_TO_CASH"):
+            outgoing = tt == "CASH_TO_CARD"
+            cash_trx = Transaction(
+                type="ADJUSTMENT",
+                method="CASH",
+                amount=locked.amount,
+                currency="EUR",
+                description=locked.description
+                or (f"Перевод на карту {locked.to_card}" if outgoing else f"Снятие с карты {locked.from_card}"),
+                status="COMPLETED",
+                date=locked.date,
+                created_by=locked.created_by,
+            )
+            if outgoing:
+                cash_trx.from_company = company
+            else:
+                cash_trx.to_company = company
+            cash_trx.save()
+            locked.linked_transaction = cash_trx
+
+        locked.executed_at = timezone.now()
+        locked.save(update_fields=["linked_transaction", "executed_at"])
+        transfer.linked_transaction = locked.linked_transaction
+        transfer.executed_at = locked.executed_at
+        return locked
 
     @classmethod
     @transaction.atomic

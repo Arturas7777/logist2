@@ -51,6 +51,9 @@ class TestFrozenFields:
         tx.amount = Decimal("999.00")
         with pytest.raises(ValidationError, match="заморожены"):
             tx.save()
+        client_entity.refresh_from_db()
+        assert client_entity.balance == Decimal("-100.00")
+        assert client_entity.total_balance == Decimal("-100.00")
 
     def test_party_change_forbidden_after_completion(self, client_entity, company):
         tx = _payment(client_entity, company)
@@ -82,8 +85,13 @@ class TestFrozenFields:
 class TestStatusFSM:
     def test_completed_to_cancelled_allowed(self, client_entity, company):
         tx = _payment(client_entity, company)
+        client_entity.refresh_from_db()
+        assert client_entity.total_balance == Decimal("-100.00")
         tx.status = "CANCELLED"
         tx.save(update_fields=["status"])
+        client_entity.refresh_from_db()
+        assert client_entity.balance == Decimal("0.00")
+        assert client_entity.total_balance == Decimal("0.00")
 
     def test_completed_to_pending_forbidden(self, client_entity, company):
         tx = _payment(client_entity, company)
@@ -113,6 +121,8 @@ class TestDeletion:
         tx.save(update_fields=["status"])
         with pytest.raises(ValidationError):
             tx.delete()
+        client_entity.refresh_from_db()
+        assert client_entity.total_balance == Decimal("0.00")
 
     def test_pending_delete_allowed(self, client_entity, company):
         tx = _payment(client_entity, company, status="PENDING")
