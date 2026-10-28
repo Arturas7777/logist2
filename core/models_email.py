@@ -8,6 +8,7 @@ from core.models.email import (  # noqa: F401
     EmailGroup,
     EmailGroupMember,
     EmailIngestFilter,
+    GmailIngestFailure,
     GmailSyncState,
     TransportRequestEmailLink,
 )

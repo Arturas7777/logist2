@@ -87,6 +87,7 @@ from .email import (  # noqa: E402, F401
     EmailGroup,
     EmailGroupMember,
     EmailIngestFilter,
+    GmailIngestFailure,
     GmailSyncState,
     TransportRequestEmailLink,
 )
@@ -131,7 +132,7 @@ __all__ = [
     'Contact', 'ContactEmail', 'ContactPhone',
     'ContainerEmail', 'ContainerEmailLink', 'CarEmailLink',
     'TransportRequestEmailLink',
-    'EmailGroup', 'EmailGroupMember', 'EmailIngestFilter', 'GmailSyncState',
+    'EmailGroup', 'EmailGroupMember', 'EmailIngestFilter', 'GmailSyncState', 'GmailIngestFailure',
     'InvoiceAudit', 'SupplierCost',
     'SystemMetric', 'UptimeCheck',
     'ScanProcessingJob',

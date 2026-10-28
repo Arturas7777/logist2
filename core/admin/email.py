@@ -21,6 +21,7 @@ from core.models_email import (
     EmailGroup,
     EmailGroupMember,
     EmailIngestFilter,
+    GmailIngestFailure,
     GmailSyncState,
 )
 
@@ -435,6 +436,19 @@ class GmailSyncStateAdmin(admin.ModelAdmin):
     list_display = ("user_email", "last_history_id", "last_sync_at", "updated_at")
     readonly_fields = ("created_at", "updated_at")
     search_fields = ("user_email",)
+
+
+@admin.register(GmailIngestFailure)
+class GmailIngestFailureAdmin(admin.ModelAdmin):
+    """Удаление записи снимает карантин — письмо будет скачано на следующем полном синке."""
+
+    list_display = ("gmail_id", "attempts", "quarantined_at", "updated_at")
+    list_filter = (("quarantined_at", admin.EmptyFieldListFilter),)
+    search_fields = ("gmail_id", "last_error")
+    readonly_fields = ("gmail_id", "attempts", "last_error", "quarantined_at", "first_failed_at", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
 
 
 # =====================================================================

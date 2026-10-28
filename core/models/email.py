@@ -677,3 +677,27 @@ class GmailSyncState(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user_email} (hid={self.last_history_id})"
+
+
+class GmailIngestFailure(models.Model):
+    """Письмо Gmail, которое не удаётся скачать или сохранить.
+
+    Пока письмо падает, курсор истории не двигается (retry на следующем
+    прогоне). После ``GMAIL_QUARANTINE_AFTER`` неудач письмо уходит в
+    карантин: ингест его пропускает, курсор снова двигается.
+    """
+
+    gmail_id = models.CharField(max_length=64, unique=True)
+    attempts = models.PositiveIntegerField(default=0)
+    last_error = models.TextField(blank=True, default="")
+    quarantined_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    first_failed_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Сбой Gmail-ингеста"
+        verbose_name_plural = "Сбои Gmail-ингеста"
+
+    def __str__(self) -> str:
+        state = "карантин" if self.quarantined_at else f"попыток {self.attempts}"
+        return f"{self.gmail_id} ({state})"

@@ -51,6 +51,7 @@ class SyncReport:
     attachments_saved: int = 0
     attachments_skipped: int = 0  # слишком большие
     ingest_errors: int = 0  # сбои get_message/save конкретных писем
+    quarantined: int = 0  # письма в карантине (пропущены после N неудач)
     errors: list[str] = field(default_factory=list)
     last_history_id: int | None = None
     started_at: str = ""
@@ -71,6 +72,7 @@ class SyncReport:
             "attachments_saved": self.attachments_saved,
             "attachments_skipped": self.attachments_skipped,
             "ingest_errors": self.ingest_errors,
+            "quarantined": self.quarantined,
             "errors_count": len(self.errors),
             "errors_preview": self.errors[:5],
             "last_history_id": self.last_history_id,
@@ -239,6 +241,31 @@ def _is_gmail_not_found(exc: Exception) -> bool:
         return False
 
 
+def _record_ingest_failure(gmail_id: str, stage: str, exc: Exception, report: SyncReport) -> None:
+    """Считает неудачу письма; после ``GMAIL_QUARANTINE_AFTER`` — карантин.
+
+    Неудача без карантина держит курсор истории (``ingest_errors``), письмо в
+    карантине — нет: иначе одно «ядовитое» письмо навсегда останавливает
+    инкрементальный синк.
+    """
+    from django.db.models import F
+
+    from core.models_email import GmailIngestFailure
+
+    error = f"{stage}({gmail_id}): {exc}"
+    failure, _ = GmailIngestFailure.objects.get_or_create(gmail_id=gmail_id)
+    GmailIngestFailure.objects.filter(pk=failure.pk).update(attempts=F("attempts") + 1, last_error=error[:2000])
+    failure.refresh_from_db()
+    if failure.attempts >= int(getattr(settings, "GMAIL_QUARANTINE_AFTER", 5)):
+        failure.quarantined_at = timezone.now()
+        failure.save(update_fields=["quarantined_at", "updated_at"])
+        logger.error("[gmail_sync] %s — %d неудач подряд, письмо в карантине", error, failure.attempts)
+        report.quarantined += 1
+        return
+    report.errors.append(error)
+    report.ingest_errors += 1
+
+
 def _ingest_one(
     client: GmailApiClient,
     gmail_id: str,
@@ -250,10 +277,14 @@ def _ingest_one(
         CarEmailLink,
         ContainerEmail,
         ContainerEmailLink,
+        GmailIngestFailure,
         TransportRequestEmailLink,
     )
 
     if ContainerEmail.objects.filter(gmail_id=gmail_id).exists():
+        return
+    if GmailIngestFailure.objects.filter(gmail_id=gmail_id, quarantined_at__isnull=False).exists():
+        report.quarantined += 1
         return
 
     try:
@@ -270,8 +301,7 @@ def _ingest_one(
             report.not_found_skipped += 1
             return
         logger.error("[gmail_sync] Failed to fetch %s: %s", gmail_id, exc, exc_info=True)
-        report.errors.append(f"get_message({gmail_id}): {exc}")
-        report.ingest_errors += 1
+        _record_ingest_failure(gmail_id, "get_message", exc, report)
         return
 
     # Черновики Gmail пропускаем: при наборе письма в web-интерфейсе Gmail
@@ -311,9 +341,14 @@ def _ingest_one(
 
     fallback_message_id = msg.message_id or f"gmail:{msg.gmail_id}"
 
-    attachments_meta, saved, skipped = _persist_attachments(client, msg)
-    report.attachments_saved += saved
-    report.attachments_skipped += skipped
+    # Письмо с этим Message-ID уже есть (например, отправлено из системы) —
+    # get_or_create вернёт существующую запись, вложения качать незачем.
+    if ContainerEmail.objects.filter(message_id=fallback_message_id).exists():
+        attachments_meta = []
+    else:
+        attachments_meta, saved, skipped = _persist_attachments(client, msg)
+        report.attachments_saved += saved
+        report.attachments_skipped += skipped
 
     defaults = {
         "thread_id": msg.thread_id,
@@ -338,7 +373,7 @@ def _ingest_one(
         ),
     }
 
-    # Для обратной синхронизации UNREAD (см. ниже).
+    # Начальный is_read линков: входящее без UNREAD уже прочитано в Gmail.
     is_incoming = not msg.is_outgoing
     gmail_is_unread = "UNREAD" in (msg.labels or [])
 
@@ -435,31 +470,12 @@ def _ingest_one(
                 if changed_fields:
                     obj.save(update_fields=changed_fields)
                     report.updated += 1
-
-                # Reverse-sync при обновлении: если в Gmail сняли UNREAD
-                # (пользователь прочитал письмо в почте) — протаскиваем
-                # is_read=True на все links. Только INCOMING, чтобы не
-                # ломать «unread»-бейджи для cross-linked OUTGOING-писем,
-                # у которых в Gmail всегда нет UNREAD (они в SENT).
-                if labels_changed and is_incoming and not gmail_is_unread:
-                    ContainerEmailLink.objects.filter(
-                        email_id=obj.pk,
-                        is_read=False,
-                    ).update(is_read=True)
-                    CarEmailLink.objects.filter(
-                        email_id=obj.pk,
-                        is_read=False,
-                    ).update(is_read=True)
-                    TransportRequestEmailLink.objects.filter(
-                        email_id=obj.pk,
-                        is_read=False,
-                    ).update(is_read=True)
     except Exception as exc:
         logger.error("[gmail_sync] Failed to save %s: %s", gmail_id, exc, exc_info=True)
-        report.errors.append(f"save({gmail_id}): {exc}")
-        report.ingest_errors += 1
+        _record_ingest_failure(gmail_id, "save", exc, report)
         return
 
+    GmailIngestFailure.objects.filter(gmail_id=gmail_id).delete()
     if match.is_matched:
         report.matched += 1
     else:

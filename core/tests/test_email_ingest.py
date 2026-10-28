@@ -57,3 +57,100 @@ class TestIngestOneNotFound:
         assert report.not_found_skipped == 0
         assert report.ingest_errors == 1
         assert len(report.errors) == 1
+
+
+class _BrokenClient:
+    def get_message(self, gmail_id):
+        raise _http_error(500)
+
+
+@pytest.mark.django_db
+class TestIngestQuarantine:
+    def test_poison_message_quarantined_after_n_failures(self, settings):
+        from core.models_email import GmailIngestFailure
+
+        settings.GMAIL_QUARANTINE_AFTER = 3
+        reports = [SyncReport() for _ in range(4)]
+        for report in reports:
+            _ingest_one(_BrokenClient(), "poison", {}, report)
+
+        assert [r.ingest_errors for r in reports] == [1, 1, 0, 0]
+        assert [r.quarantined for r in reports] == [0, 0, 1, 1]
+        failure = GmailIngestFailure.objects.get(gmail_id="poison")
+        assert failure.quarantined_at is not None
+        assert failure.attempts == 3
+
+    def test_success_clears_failure_counter(self, settings):
+        from core.models_email import GmailIngestFailure
+
+        _ingest_one(_BrokenClient(), "flaky", {}, SyncReport())
+        assert GmailIngestFailure.objects.filter(gmail_id="flaky").exists()
+
+        _ingest_one(_FakeMessageClient(_message("flaky")), "flaky", {}, SyncReport())
+
+        assert not GmailIngestFailure.objects.filter(gmail_id="flaky").exists()
+
+
+def _message(gmail_id, message_id=None, attachments=()):
+    from django.utils import timezone
+
+    from core.services.gmail_client import ParsedMessage
+
+    return ParsedMessage(
+        gmail_id=gmail_id,
+        thread_id=f"thread-{gmail_id}",
+        history_id=1,
+        message_id=message_id or f"<{gmail_id}@test>",
+        in_reply_to="",
+        references="",
+        from_addr="sender@example.com",
+        to_addrs="us@example.com",
+        cc_addrs="",
+        subject=f"Subject {gmail_id}",
+        body_text="Body",
+        body_html="",
+        snippet="Body",
+        received_at=timezone.now(),
+        labels=["INBOX"],
+        attachments=list(attachments),
+    )
+
+
+class _FakeMessageClient:
+    def __init__(self, msg):
+        self.msg = msg
+        self.attachment_calls = 0
+
+    def get_message(self, gmail_id):
+        return self.msg
+
+    def get_attachment(self, gmail_id, attachment_id):
+        self.attachment_calls += 1
+        return b"data"
+
+
+@pytest.mark.django_db
+def test_known_message_id_does_not_download_attachments():
+    from django.utils import timezone
+
+    from core.models_email import ContainerEmail
+    from core.services.gmail_client import ParsedAttachment
+
+    existing = ContainerEmail.objects.create(
+        message_id="<sent-from-system@test>",
+        thread_id="t",
+        direction=ContainerEmail.DIRECTION_OUTGOING,
+        from_addr="us@example.com",
+        subject="s",
+        received_at=timezone.now(),
+    )
+    attachment = ParsedAttachment(
+        filename="a.pdf", mime_type="application/pdf", size=10, attachment_id="att-1", is_inline=False, content_id=""
+    )
+    client = _FakeMessageClient(_message("gm-1", message_id=existing.message_id, attachments=[attachment]))
+
+    _ingest_one(client, "gm-1", {}, SyncReport())
+
+    assert client.attachment_calls == 0
+    existing.refresh_from_db()
+    assert existing.gmail_id == "gm-1"
