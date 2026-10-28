@@ -1616,7 +1616,9 @@ class BillingService:
 
             locked = {
                 inv.pk: inv
-                for inv in NewInvoice.objects.select_for_update()
+                # of=("self",): recipient_client nullable → LEFT JOIN, а FOR UPDATE
+                # на nullable-стороне внешнего соединения PostgreSQL запрещает.
+                for inv in NewInvoice.objects.select_for_update(of=("self",))
                 .filter(pk__in=invoice_ids)
                 .select_related("recipient_client")
             }

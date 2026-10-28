@@ -69,10 +69,10 @@ def _deactivate(service):
 
 
 def test_deactivation_keeps_transferred_and_issued_cars(warehouse, client_a, service):
-    free_car = _car("DEACTIVATE00000001", warehouse, client_a, service=service)
-    draft_car = _car("DEACTIVATE00000002", warehouse, client_a, service=service)
-    issued_car = _car("DEACTIVATE00000003", warehouse, client_a, service=service)
-    transferred_car = _car("DEACTIVATE00000004", warehouse, client_a, status="TRANSFERRED", service=service)
+    free_car = _car("DEACTIVAT00000001", warehouse, client_a, service=service)
+    draft_car = _car("DEACTIVAT00000002", warehouse, client_a, service=service)
+    issued_car = _car("DEACTIVAT00000003", warehouse, client_a, service=service)
+    transferred_car = _car("DEACTIVAT00000004", warehouse, client_a, status="TRANSFERRED", service=service)
     _invoice_with_car(draft_car, client_a, "DRAFT")
     _invoice_with_car(issued_car, client_a, "ISSUED")
 
@@ -85,7 +85,7 @@ def test_deactivation_keeps_transferred_and_issued_cars(warehouse, client_a, ser
 
 
 def test_deactivation_keeps_car_referenced_by_issued_invoice_item(warehouse, client_a, service):
-    car = _car("DEACTIVATE00000005", warehouse, client_a, service=service)
+    car = _car("DEACTIVAT00000005", warehouse, client_a, service=service)
     inv = _invoice_with_car(car, client_a, "DRAFT")
     inv.cars.clear()
     InvoiceItem.objects.create(invoice=inv, car=car, description="Разгрузка", quantity=1, unit_price=Decimal("160"))
@@ -97,7 +97,7 @@ def test_deactivation_keeps_car_referenced_by_issued_invoice_item(warehouse, cli
 
 
 def test_zero_price_does_not_remove_service(warehouse, client_a, service):
-    car = _car("DEACTIVATE00000006", warehouse, client_a, service=service)
+    car = _car("DEACTIVAT00000006", warehouse, client_a, service=service)
 
     service.default_price = Decimal("0")
     service.save()
@@ -108,7 +108,7 @@ def test_zero_price_does_not_remove_service(warehouse, client_a, service):
 
 def test_saving_already_inactive_service_removes_nothing(warehouse, client_a, service):
     _deactivate(service)
-    car = _car("DEACTIVATE00000007", warehouse, client_a)
+    car = _car("DEACTIVAT00000007", warehouse, client_a)
     CarService.objects.create(car=car, service_type="WAREHOUSE", service_id=service.id, custom_price=Decimal("160"))
 
     service.name = "Разгрузка (архив)"
@@ -120,8 +120,8 @@ def test_saving_already_inactive_service_removes_nothing(warehouse, client_a, se
 def test_company_service_deactivation_keeps_transferred(warehouse, client_a):
     company = Company.objects.create(name="Deactivate Main")
     svc = CompanyService.objects.create(company=company, name="Брокер", default_price=Decimal("50"), is_active=True)
-    active_car = _car("DEACTIVATE00000008", warehouse, client_a)
-    transferred_car = _car("DEACTIVATE00000009", warehouse, client_a, status="TRANSFERRED")
+    active_car = _car("DEACTIVAT00000008", warehouse, client_a)
+    transferred_car = _car("DEACTIVAT00000009", warehouse, client_a, status="TRANSFERRED")
     for car in (active_car, transferred_car):
         CarService.objects.create(car=car, service_type="COMPANY", service_id=svc.id, custom_price=Decimal("50"))
 

@@ -7,6 +7,16 @@
 
 ## [Unreleased]
 
+### Fixed — Разнесение платежа падало на PostgreSQL (2026-10-28)
+
+- `BillingService.allocate_bank_transaction` блокировал счета через
+  `select_for_update()` вместе с `select_related("recipient_client")`;
+  PostgreSQL запрещает FOR UPDATE на nullable-стороне LEFT JOIN. Теперь
+  блокируется только сам счёт (`of=("self",)`). После M4 этим путём идёт
+  автосверка банка, без фикса она падала бы на проде каждые 30 минут.
+- Тестовые VIN в `test_wave_money_catalog_deactivation.py` укорочены до
+  17 символов (на PostgreSQL ловили `varchar(17)`).
+
 ### Fixed — Мелкие исправления надёжности (2026-10-28, L6)
 
 - Скан-документы: задача AI-обработки захватывается условным `UPDATE`
