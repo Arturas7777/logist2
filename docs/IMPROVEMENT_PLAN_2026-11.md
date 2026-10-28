@@ -227,7 +227,7 @@
   (`tasks.py:1707-1728` сейчас берёт force-набор статусов).
 - DoD: тесты на откат TRANSFERRED → UNLOADED, повторный save автовоза, «Важное».
 
-### L3. Гонка `generate_invoices` автовоза (Medium, S)
+### [x] L3. Гонка `generate_invoices` автовоза (Medium, S)
 - FORMED, `m2m_changed` и finalize одновременно вызывают генерацию без
   блокировки (`models/auto_transport.py:244-274`) → два DRAFT одному клиенту;
   клиент, чьи машины убрали, остаётся с устаревшим счётом.

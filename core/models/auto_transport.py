@@ -1,10 +1,14 @@
 """Автовоз — формирование рейса (загрузка + клиенты)."""
 
+import logging
+
 from django.db import models
 from django.utils import timezone
 
 from .carriers import Carrier, CarrierDriver, CarrierTruck
 from .clients import Client
+
+logger = logging.getLogger(__name__)
 
 
 class AutoTransport(models.Model):
@@ -214,8 +218,20 @@ class AutoTransport(models.Model):
 
         Обновляет только черновики. Если у клиента по рейсу уже есть
         выставленный, оплаченный или отменённый счёт — новый не создаётся и
-        существующий не трогается.
+        существующий не трогается. Черновик клиента, чьи машины убрали из
+        рейса, очищается (без машин и позиций) и переиспользуется, если
+        машины вернутся.
+
+        Сериализуется блокировкой строки автовоза: FORMED, ``m2m_changed`` и
+        finalize передачи могут вызвать генерацию одновременно.
         """
+        from django.db import transaction
+
+        with transaction.atomic():
+            type(self).objects.select_for_update().filter(pk=self.pk).first()
+            return self._generate_invoices_locked()
+
+    def _generate_invoices_locked(self):
         from django.utils import timezone
 
         from core.models_billing import NewInvoice
@@ -270,4 +286,33 @@ class AutoTransport(models.Model):
                     invoice.regenerate_items_from_cars()
                     created_invoices.append(invoice)
 
+        self._clear_invoices_of_removed_clients(clients)
         return created_invoices
+
+    def _clear_invoices_of_removed_clients(self, clients):
+        from core.models_billing import NewInvoice
+
+        orphaned = (
+            NewInvoice.objects.filter(auto_transport=self, recipient_client__isnull=False)
+            .exclude(recipient_client__in=clients)
+            .exclude(status="CANCELLED")
+        )
+        for invoice in orphaned:
+            if invoice.status == "DRAFT" and not invoice.paid_amount:
+                if invoice.cars.exists() or invoice.items.exists():
+                    invoice.cars.clear()
+                    invoice.regenerate_items_from_cars()
+                    logger.info(
+                        "Автовоз %s: у клиента %s не осталось машин — черновик %s очищен",
+                        self.number,
+                        invoice.recipient_client_id,
+                        invoice.number,
+                    )
+            else:
+                logger.warning(
+                    "Автовоз %s: у клиента %s не осталось машин, но счёт %s (%s) уже выставлен — нужна кредит-нота",
+                    self.number,
+                    invoice.recipient_client_id,
+                    invoice.number,
+                    invoice.status,
+                )
