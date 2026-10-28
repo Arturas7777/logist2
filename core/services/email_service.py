@@ -13,6 +13,14 @@ from django.utils.html import strip_tags
 logger = logging.getLogger(__name__)
 
 
+def mask_email(address: str) -> str:
+    """``j***@domain.lt`` — адрес клиента для логов (полный — в NotificationLog)."""
+    local, sep, domain = (address or "").partition("@")
+    if not sep:
+        return "***"
+    return f"{local[:1]}***@{domain}"
+
+
 class ContainerNotificationService:
     """
     Сервис для отправки уведомлений клиентам о контейнерах.
@@ -204,11 +212,13 @@ class ContainerNotificationService:
             email.send(fail_silently=False)
 
             success = True
-            logger.info(f"✅ Email sent: {notification_type} for {container.number} to {email_to}")
+            logger.info(f"✅ Email sent: {notification_type} for {container.number} to {mask_email(email_to)}")
 
         except Exception as e:
             error_message = str(e)
-            logger.error(f"❌ Failed to send email: {notification_type} for {container.number} to {email_to}: {e}")
+            logger.error(
+                f"❌ Failed to send email: {notification_type} for {container.number} to {mask_email(email_to)}: {e}"
+            )
 
         # Логируем отправку
         try:
@@ -424,11 +434,11 @@ class CarNotificationService:
             email.send(fail_silently=False)
 
             success = True
-            logger.info(f"Email sent: CAR_UNLOADED for {car.vin} to {email_to}")
+            logger.info(f"Email sent: CAR_UNLOADED for {car.vin} to {mask_email(email_to)}")
 
         except Exception as e:
             error_message = str(e)
-            logger.error(f"Failed to send email: CAR_UNLOADED for {car.vin} to {email_to}: {e}")
+            logger.error(f"Failed to send email: CAR_UNLOADED for {car.vin} to {mask_email(email_to)}: {e}")
 
         try:
             NotificationLog.objects.create(

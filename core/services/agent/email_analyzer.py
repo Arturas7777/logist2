@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, time
 
+from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
@@ -162,6 +163,11 @@ def analyze_email(email) -> dict:
         run.finish_error(str(exc))
         outcome["error"] = str(exc)[:300]
         outcome["budget_exceeded"] = True
+    except SoftTimeLimitExceeded:
+        # Письмо не разобрано — не помечаем, партия прерывается целиком.
+        mark_analyzed = False
+        run.finish_error("Превышен лимит времени задачи")
+        raise
     except Exception as exc:
         logger.exception("Анализ письма #%s упал", email.pk)
         run.finish_error(str(exc))

@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 
 from celery import shared_task
+from celery.exceptions import SoftTimeLimitExceeded
 from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,9 @@ def analyze_new_emails_task(self) -> dict:
     except AgentBudgetExceeded as exc:
         logger.warning("[analyze_new_emails_task] %s", exc)
         return {"status": "budget_exceeded", "detail": str(exc)}
+    except SoftTimeLimitExceeded:
+        logger.warning("[analyze_new_emails_task] Лимит времени — остаток писем в следующий запуск")
+        return {"status": "time_limit"}
     except Exception as exc:
         logger.exception("[analyze_new_emails_task] Unhandled error")
         return {"status": "error", "error": str(exc)[:500]}

@@ -18,6 +18,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
@@ -289,7 +290,7 @@ def _ingest_one(
 
     try:
         msg = client.get_message(gmail_id)
-    except GmailRateLimited:
+    except (GmailRateLimited, SoftTimeLimitExceeded):
         raise
     except Exception as exc:
         # 404 — письмо удалено из ящика после попадания в history (или
@@ -470,6 +471,10 @@ def _ingest_one(
                 if changed_fields:
                     obj.save(update_fields=changed_fields)
                     report.updated += 1
+    except (GmailRateLimited, SoftTimeLimitExceeded):
+        # Не неудача письма: синк прерывается целиком, курсор не двигается,
+        # письмо не получает попытку в счёт карантина.
+        raise
     except Exception as exc:
         logger.error("[gmail_sync] Failed to save %s: %s", gmail_id, exc, exc_info=True)
         _record_ingest_failure(gmail_id, "save", exc, report)
@@ -764,7 +769,7 @@ def _persist_attachments(
             continue
         try:
             data = client.get_attachment(msg.gmail_id, att.attachment_id)
-        except GmailRateLimited:
+        except (GmailRateLimited, SoftTimeLimitExceeded):
             raise
         except Exception as exc:
             logger.warning("[gmail_sync] attachment fetch failed (%s): %s", att.filename, exc)
