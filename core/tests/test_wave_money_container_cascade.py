@@ -233,12 +233,7 @@ class TestTransferredFreeze:
         assert frozen.warehouse_id == other_wh.pk
 
     def test_unload_date_cascade_service_keeps_transferred_days(self, warehouse):
-        """Сервисный каскад даты разгрузки не трогает переданные авто.
-
-        Контейнер обновляем через ``.update()``, минуя post_save-сигнал
-        ``core.signals.container`` — он пока переписывает дату всем авто
-        (см. xfail-тест ниже).
-        """
+        """Сервисный каскад даты разгрузки не трогает переданные авто."""
         container, active, frozen = self._mixed_container(warehouse, "CSC-FRZ-UD")
         frozen_days_before = frozen.days
         frozen_unload_before = frozen.unload_date
@@ -254,20 +249,20 @@ class TestTransferredFreeze:
         assert frozen.unload_date == frozen_unload_before
         assert frozen.days == frozen_days_before
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="core/signals/container.py::update_related_on_container_save обновляет unload_date всем авто, "
-        "включая TRANSFERRED — нужен .exclude(status='TRANSFERRED') (вне зоны этого исполнителя)",
-    )
     def test_unload_date_change_via_save_keeps_transferred_days(self, warehouse):
         container, active, frozen = self._mixed_container(warehouse, "CSC-FRZ-UD2")
         frozen_unload_before = frozen.unload_date
+        frozen_days_before = frozen.days
 
         container.unload_date = container.unload_date - timezone.timedelta(days=10)
         container.save(update_fields=["unload_date"])
+        apply_post_save_cascades(container, changed_data=["unload_date"], is_change=True, status_auto_changed=False)
 
+        active.refresh_from_db()
         frozen.refresh_from_db()
+        assert active.unload_date == container.unload_date
         assert frozen.unload_date == frozen_unload_before
+        assert frozen.days == frozen_days_before
 
     def test_ths_change_skips_transferred_services(self, warehouse):
         from core.models import CarService, Line

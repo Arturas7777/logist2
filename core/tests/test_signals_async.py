@@ -1,7 +1,6 @@
 """
 Тесты async-разгрузки тяжёлых сигналов (Critical #2):
 
-- Container.post_save → bulk-recalc auto в Celery, не в HTTP-потоке.
 - NewInvoice.post_save (ISSUED, INVOICE) → push в site.pro через Celery,
   не блокирует save().
 - Transaction.post_save → синхронный пересчёт балансов и paid_amount
@@ -21,59 +20,8 @@ from unittest.mock import patch
 import pytest
 from django.utils import timezone
 
-from core.models import Car, Client, Company, Container, Warehouse
+from core.models import Client, Company
 from core.models_billing import InvoiceItem, NewInvoice, Transaction
-
-# ---------------------------------------------------------------------------
-# Container.post_save → recalculate_cars_total_price_task
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db(transaction=True)
-class TestContainerUnloadDateAsync:
-    """``transaction=True`` нужен, чтобы ``transaction.on_commit`` коллбэки
-    реально срабатывали (внутри обычного ``@django_db`` всё обёрнуто
-    в один long-running rollback, и on_commit никогда не запускается)."""
-
-    def test_change_unload_date_dispatches_celery_task(self):
-        """При изменении ``unload_date`` контейнера сигнал должен
-        вызвать ``recalculate_cars_total_price_task.delay`` для всех
-        авто этого контейнера — а не считать total_price синхронно
-        в save()."""
-        wh = Warehouse.objects.create(name="WH-Async")
-        container = Container.objects.create(
-            number="C-ASYNC-1",
-            status="FLOATING",
-            warehouse=wh,
-        )
-        car_ids = []
-        for i in range(3):
-            car = Car.objects.create(
-                year=2023,
-                brand="Toyota",
-                vin=f"ASYNCCAR{i:09d}",
-                status="FLOATING",
-                container=container,
-                warehouse=wh,
-            )
-            car_ids.append(car.pk)
-
-        with patch("core.tasks.recalculate_cars_total_price_task.delay") as mock_delay:
-            container.unload_date = timezone.localdate()
-            container.status = "UNLOADED"
-            container.save()
-
-        # delay должен быть вызван хотя бы раз с нашими car_ids.
-        assert mock_delay.called, "Celery-таска не была поставлена в очередь"
-        dispatched_ids: set[int] = set()
-        for call in mock_delay.call_args_list:
-            args, _ = call
-            if args and isinstance(args[0], list):
-                dispatched_ids.update(args[0])
-        assert set(car_ids).issubset(dispatched_ids), (
-            f"Не все car_id попали в Celery: ожидали {car_ids}, получили {dispatched_ids}"
-        )
-
 
 # ---------------------------------------------------------------------------
 # NewInvoice.post_save → push_invoice_to_sitepro_task

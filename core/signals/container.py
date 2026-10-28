@@ -38,7 +38,6 @@ def save_old_container_values(sender, instance, **kwargs):
                 # ещё раз. Сохранение container.save(update_fields=['status'])
                 # из _update_container_status_if_all_transferred — типичный
                 # путь, где это ломалось.
-                instance._pre_save_values = old
                 instance._pre_save_notification = {
                     "planned_unload_date": old.get("planned_unload_date"),
                     "unload_date": old.get("unload_date"),
@@ -52,75 +51,14 @@ def save_old_container_values(sender, instance, **kwargs):
                 ):
                     instance.unloaded_status_at = timezone.now()
             else:
-                instance._pre_save_values = None
                 instance._pre_save_notification = None
         except Exception as e:
             logger.error("[PRE_SAVE] Error: %s", e)
-            instance._pre_save_values = None
             instance._pre_save_notification = None
     else:
-        instance._pre_save_values = None
         instance._pre_save_notification = None
         if instance.status == "UNLOADED" and not instance.unloaded_status_at:
             instance.unloaded_status_at = timezone.now()
-
-
-@receiver(post_save, sender=Container)
-def update_related_on_container_save(sender, instance, created, **kwargs):
-    """При изменении ``unload_date`` контейнера — синхронно обновляет
-    ``Car.unload_date`` (быстрый bulk UPDATE одним SQL), а пересчёт
-    ``total_price`` / ``days`` / ``storage_cost`` каждой машины уносит
-    в Celery (``_enqueue_recalc_cars_total_price`` → on_commit + task).
-
-    Раньше пересчёт делался прямо в HTTP-потоке: для контейнера со
-    100 авто это блокировало запрос на N итераций ``calculate_total_price()``
-    плюс ``bulk_update``. Теперь HTTP отдаёт ответ сразу, тяжёлая работа
-    идёт в фоне с graceful inline-fallback при недоступности брокера.
-    """
-    from core.signals.service_catalog import _enqueue_recalc_cars_total_price
-
-    old_values = getattr(instance, "_pre_save_values", None)
-    instance._pre_save_values = None
-
-    if not instance.pk:
-        return
-
-    if old_values:
-        old_unload_date = old_values.get("unload_date")
-        new_unload_date = instance.unload_date
-
-        if old_unload_date != new_unload_date and new_unload_date is not None:
-            logger.info(
-                "[SIGNAL] unload_date changed for container %s: %s -> %s",
-                instance.number,
-                old_unload_date,
-                new_unload_date,
-            )
-            try:
-                out_of_sync = instance.container_cars.exclude(unload_date=new_unload_date).count()
-                if out_of_sync == 0:
-                    return
-
-                # 1) Быстрый bulk UPDATE даты — один SQL, без N+1.
-                updated_count = instance.container_cars.update(unload_date=new_unload_date)
-                logger.info(
-                    "[SIGNAL] Updated unload_date to %s for %d cars in container %s",
-                    new_unload_date,
-                    updated_count,
-                    instance.number,
-                )
-
-                if updated_count > 0:
-                    # 2) Пересчёт total_price/days/storage_cost — в Celery.
-                    car_ids = list(instance.container_cars.values_list("pk", flat=True))
-                    _enqueue_recalc_cars_total_price(car_ids)
-            except Exception as e:
-                logger.error(
-                    "[SIGNAL] Failed to update cars for container %s: %s",
-                    instance.number,
-                    e,
-                    exc_info=True,
-                )
 
 
 @receiver(post_save, sender=Container)

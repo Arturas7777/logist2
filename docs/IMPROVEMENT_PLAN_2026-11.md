@@ -206,7 +206,7 @@
 
 ## Волна 2. Логистика и безопасность AI-агента (разделы L, A)
 
-### L1. Каскад `unload_date` трогает переданные авто (High, S)
+### [x] L1. Каскад `unload_date` трогает переданные авто (High, S)
 - Где: `signals/container.py:105` — `container_cars.update(unload_date=...)`
   для всех машин; противоречит `container_lifecycle_service.py:143-144`.
   Признано strict-xfail тестом `test_wave_money_container_cascade.py:257-262`.

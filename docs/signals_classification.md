@@ -42,7 +42,7 @@
 | `service_catalog.update_cars_on_*_service_change` (×4) | post_save · *Service | COMMAND/denorm | Массовое обновление `CarService` + пересчёт цены | keep |
 | `service_catalog.delete_car_services_on_*_delete` (×4) | pre_delete · *Service | COMMAND/denorm | Каскадное удаление `CarService` (FK без PROTECT) | keep |
 | `container.save_old_container_values` | pre_save · Container | infra | Авто-статус UNLOADED + снимок старых полей | keep |
-| `container.update_related_on_container_save` | post_save · Container | COMMAND/denorm | Распространение `unload_date` на авто + пересчёт (Celery) | keep |
+| ~~`container.update_related_on_container_save`~~ | post_save · Container | COMMAND/denorm | Удалён (L1): каскад `unload_date` — `container_lifecycle_service.apply_unload_date_change` | removed |
 | `container.send_container_notifications_on_save` | post_save · Container | EVENT | E-mail/Telegram о plan/unload-датах (Celery) | keep |
 | `container.auto_sync_photos_on_container_change` | post_save · Container | EVENT | Лог-маркер для cron-синка фото | keep |
 | `transaction.recalculate_on_transaction_save/_delete` | post/delete · Transaction | COMMAND/denorm | Пересчёт балансов + `paid_amount` инвойса (синхронно) | keep |
