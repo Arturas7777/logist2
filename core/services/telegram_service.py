@@ -32,6 +32,29 @@ _TELEGRAM_START_LINK_RE = re.compile(r"[?&]start=([A-Za-z0-9_\-]+)")
 _TELEGRAM_TOKEN_RE = re.compile(r"^[A-Za-z0-9_\-]{10,64}$")
 # High-water mark обработанных апдейтов в кэше (анти-спам для авто-ответов).
 _TELEGRAM_LAST_REPLY_KEY = "telegram_starts_last_reply_update_id"
+# Подтверждённые через offset апдейты Telegram больше не отдаёт — чаты
+# запоминаем для ``manage.py telegram_updates``.
+TELEGRAM_RECENT_CHATS_KEY = "telegram_recent_chats"
+_TELEGRAM_RECENT_CHATS_LIMIT = 200
+_TELEGRAM_CACHE_TTL = 7 * 24 * 3600
+
+
+def describe_chat(chat: dict) -> tuple[str, str, str]:
+    """(имя, username, тип) чата из апдейта Telegram; пустое — «—»."""
+    title = chat.get("title") or " ".join(p for p in [chat.get("first_name"), chat.get("last_name")] if p)
+    return title or "—", chat.get("username") or "—", chat.get("type", "—")
+
+
+def _remember_chats(cache, chats: dict) -> None:
+    if not chats:
+        return
+    recent = cache.get(TELEGRAM_RECENT_CHATS_KEY) or {}
+    for chat_id, info in chats.items():
+        recent.pop(chat_id, None)
+        recent[chat_id] = info
+    while len(recent) > _TELEGRAM_RECENT_CHATS_LIMIT:
+        recent.pop(next(iter(recent)))
+    cache.set(TELEGRAM_RECENT_CHATS_KEY, recent, _TELEGRAM_CACHE_TTL)
 
 
 def mask_bot_token(text):
@@ -155,10 +178,12 @@ def process_telegram_starts():
         как подписаться (один раз на сообщение);
       * на явный ``/start`` от уже привязанного чата отвечает «вы уже подписаны».
 
-    Привязка идемпотентна (повторно не дублируется). getUpdates вызывается без
-    offset и возвращает одни и те же апдейты ~24ч, поэтому авто-ответы шлём
-    только для апдейтов новее сохранённого в кэше high-water mark update_id —
-    иначе подсказки спамились бы каждую минуту.
+    Привязка идемпотентна (повторно не дублируется). getUpdates вызывается с
+    ``offset`` = сохранённый в кэше update_id + 1: Telegram подтверждает и
+    больше не отдаёт обработанные апдейты, иначе после 100 непрочитанных
+    новые ``/start`` не доходили бы. Если кэш потерян, повторно придут только
+    неподтверждённые апдейты; авто-ответы на них не дублируются, т.к. шлются
+    лишь для update_id новее сохранённого.
 
     Возвращает количество новых привязок.
     """
@@ -173,8 +198,13 @@ def process_telegram_starts():
     url = TELEGRAM_GET_UPDATES_URL.format(token=token)
     timeout = int(getattr(settings, "TELEGRAM_API_TIMEOUT", 10))
 
+    last_replied = cache.get(_TELEGRAM_LAST_REPLY_KEY, 0) or 0
+    params = {"limit": 100}
+    if last_replied:
+        params["offset"] = last_replied + 1
+
     try:
-        resp = requests.get(url, params={"limit": 100}, timeout=timeout)
+        resp = requests.get(url, params=params, timeout=timeout)
         data = resp.json() if resp.content else {}
     except (requests.RequestException, ValueError) as e:
         logger.error("Telegram getUpdates failed: %s", describe_request_error(e))
@@ -184,20 +214,21 @@ def process_telegram_starts():
         logger.error("Telegram getUpdates not ok: %s", mask_bot_token(data.get("description")))
         return 0
 
-    last_replied = cache.get(_TELEGRAM_LAST_REPLY_KEY, 0) or 0
     max_update_id = last_replied
     linked = 0
+    seen_chats = {}
 
     for upd in data.get("result", []):
         update_id = upd.get("update_id", 0) or 0
         if update_id > max_update_id:
             max_update_id = update_id
 
-        msg = upd.get("message") or upd.get("edited_message") or {}
+        msg = upd.get("message") or upd.get("edited_message") or upd.get("channel_post") or {}
         chat = msg.get("chat") or {}
         chat_id = chat.get("id")
         if chat_id is None:
             continue
+        seen_chats[chat_id] = describe_chat(chat)
         # Привязываем только личные чаты (не группы/каналы).
         if chat.get("type") not in (None, "private"):
             continue
@@ -240,9 +271,9 @@ def process_telegram_starts():
                 "по ней и нажмите «Запустить». Если ссылки нет — напишите менеджеру.",
             )
 
+    _remember_chats(cache, seen_chats)
     if max_update_id and max_update_id != last_replied:
-        # Окно хранения апдейтов в Telegram ~24ч; ставим запас 7 дней.
-        cache.set(_TELEGRAM_LAST_REPLY_KEY, max_update_id, 7 * 24 * 3600)
+        cache.set(_TELEGRAM_LAST_REPLY_KEY, max_update_id, _TELEGRAM_CACHE_TTL)
 
     if linked:
         logger.info("Telegram process_telegram_starts: привязано %d новых чатов", linked)

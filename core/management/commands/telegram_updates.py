@@ -10,6 +10,10 @@
 Замечание: getUpdates не работает, если на бота установлен webhook. Для
 рассылки уведомлений webhook не нужен, поэтому в этом проекте используется
 обычный polling-доступ к getUpdates.
+
+Периодическая задача ``process_telegram_starts`` подтверждает апдейты
+(offset), и Telegram их больше не отдаёт — поэтому команда дополнительно
+показывает чаты, которые задача видела за последние 7 дней (кэш).
 """
 
 import requests
@@ -49,8 +53,19 @@ class Command(BaseCommand):
         if not data.get("ok"):
             raise CommandError(f"Telegram API вернул ошибку: {data.get('description', resp.status_code)}")
 
-        results = data.get("result", [])
-        if not results:
+        from django.core.cache import cache
+
+        from core.services.telegram_service import TELEGRAM_RECENT_CHATS_KEY, describe_chat
+
+        seen = dict(cache.get(TELEGRAM_RECENT_CHATS_KEY) or {})
+        for upd in data.get("result", []):
+            msg = upd.get("message") or upd.get("edited_message") or upd.get("channel_post") or {}
+            chat = msg.get("chat") or {}
+            chat_id = chat.get("id")
+            if chat_id is not None:
+                seen[chat_id] = describe_chat(chat)
+
+        if not seen:
             self.stdout.write(
                 self.style.WARNING(
                     "Нет новых сообщений. Попросите клиента написать боту /start и повторите команду.\n"
@@ -58,17 +73,6 @@ class Command(BaseCommand):
                 )
             )
             return
-
-        seen = {}
-        for upd in results:
-            msg = upd.get("message") or upd.get("edited_message") or upd.get("channel_post") or {}
-            chat = msg.get("chat") or {}
-            chat_id = chat.get("id")
-            if chat_id is None or chat_id in seen:
-                continue
-            title = chat.get("title") or " ".join(p for p in [chat.get("first_name"), chat.get("last_name")] if p)
-            username = chat.get("username")
-            seen[chat_id] = (title or "—", username or "—", chat.get("type", "—"))
 
         self.stdout.write(self.style.SUCCESS(f"Найдено уникальных чатов: {len(seen)}\n"))
         self.stdout.write(f"{'chat_id':<16}{'тип':<12}{'username':<22}имя")
