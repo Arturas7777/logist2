@@ -27,17 +27,20 @@ def _recalc_transaction_effects(instance):
     # ушла в Sentry, а не осталась «тихо неверным» балансом.
     if not _affects_balances(instance):
         return
-    for entity in (instance.sender, instance.recipient):
-        try:
-            Transaction.recalculate_entity_balance(entity)
-        except Exception:
-            logger.exception("Error recalculating balance for %s", entity)
-            raise
+    # Порядок блокировок везде один — счёт, затем стороны по (модель, pk),
+    # как в BillingService; иначе встречные операции дают deadlock.
     if instance.invoice_id:
         try:
             instance.invoice.recalculate_paid_amount()
         except Exception:
             logger.exception("Error recalculating paid_amount for invoice %s", instance.invoice_id)
+            raise
+    parties = [e for e in (instance.sender, instance.recipient) if e is not None]
+    for entity in sorted(parties, key=lambda e: (e._meta.label, e.pk)):
+        try:
+            Transaction.recalculate_entity_balance(entity)
+        except Exception:
+            logger.exception("Error recalculating balance for %s", entity)
             raise
 
 

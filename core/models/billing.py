@@ -1761,26 +1761,42 @@ class Transaction(models.Model):
             and self.status == "COMPLETED"
             and (self.amount or Decimal("0")) > 0
         ):
+            from django.db import connection
+
             inv = self.invoice
-            # Сумма всех уже существующих COMPLETED платежей/возвратов по инвойсу (без self)
+            inv_total = inv.total
+            # Без блокировки два параллельных платежа видят одинаковую сумму
+            # оплат и оба проходят проверку — переплата.
+            if connection.in_atomic_block and connection.features.has_select_for_update:
+                inv_total = (
+                    NewInvoice.objects.select_for_update().filter(pk=inv.pk).values_list("total", flat=True).first()
+                )
+                inv_total = inv.total if inv_total is None else inv_total
             qs = (
                 inv.transactions.filter(status="COMPLETED").exclude(pk=self.pk)
                 if self.pk
                 else inv.transactions.filter(status="COMPLETED")
             )
-            paid_now = qs.filter(type="PAYMENT").aggregate(s=models.Sum("amount"))["s"] or Decimal("0")
-            refunded_now = qs.filter(type="REFUND").aggregate(s=models.Sum("amount"))["s"] or Decimal("0")
+            sums = qs.aggregate(
+                paid=models.Sum("amount", filter=models.Q(type="PAYMENT")),
+                refunded=models.Sum("amount", filter=models.Q(type="REFUND")),
+                adjusted=models.Sum("amount", filter=models.Q(type="ADJUSTMENT")),
+            )
+            paid_now = sums["paid"] or Decimal("0")
+            refunded_now = sums["refunded"] or Decimal("0")
+            adjusted_now = sums["adjusted"] or Decimal("0")
             if self.type == "PAYMENT":
-                projected = paid_now + Decimal(self.amount) - refunded_now
+                # Та же формула, что paid_amount: кредит-нота (ADJUSTMENT) уже закрыла часть счёта.
+                projected = paid_now - refunded_now + adjusted_now + Decimal(self.amount)
             else:  # REFUND
                 projected = paid_now - (refunded_now + Decimal(self.amount))
             # Небольшой допуск на округление (1 цент)
             tolerance = Decimal("0.01")
-            if self.type == "PAYMENT" and projected > (inv.total + tolerance):
-                overpay = (projected - inv.total).quantize(Decimal("0.01"))
+            if self.type == "PAYMENT" and projected > (inv_total + tolerance):
+                overpay = (projected - inv_total).quantize(Decimal("0.01"))
                 errors["amount"] = (
                     f"Переплата по инвойсу {inv.number}: сумма платежей превысит total "
-                    f"({inv.total} {inv.currency}) на {overpay} {inv.currency}. "
+                    f"({inv_total} {inv.currency}) на {overpay} {inv.currency}. "
                     f"Разбейте платёж, уменьшите сумму или используйте BALANCE_TOPUP."
                 )
             if self.type == "REFUND" and projected < -tolerance:
@@ -1950,23 +1966,26 @@ class Transaction(models.Model):
         чтобы валидация (стороны транзакции, валюта, защита от переплаты)
         срабатывала и при создании из кода/shell/Celery, а не только из
         admin-форм. Точечные обновления служебных полей не валидируем.
+
+        Проверка переплаты, запись и пересчёт балансов (post_save) — одна
+        транзакция БД: блокировка счёта из ``clean()`` держится до конца.
         """
         from django.db import transaction as db_transaction
 
-        if not self.number:
-            with db_transaction.atomic():
+        with db_transaction.atomic():
+            if not self.number:
                 self.number = self.generate_number()
 
-        self._validate_ledger_rules()
+            self._validate_ledger_rules()
 
-        if kwargs.get("update_fields") is None:
-            # description/created_by — де-факто опциональные служебные поля
-            # (большинство Tx создаётся кодом без них), исключаем их из
-            # blank-валидации, чтобы не менять схему. Бизнес-валидация
-            # (clean(): стороны, валюта, переплата) выполняется всегда.
-            self.full_clean(exclude=["description", "created_by"])
+            if kwargs.get("update_fields") is None:
+                # description/created_by — де-факто опциональные служебные поля
+                # (большинство Tx создаётся кодом без них), исключаем их из
+                # blank-валидации, чтобы не менять схему. Бизнес-валидация
+                # (clean(): стороны, валюта, переплата) выполняется всегда.
+                self.full_clean(exclude=["description", "created_by"])
 
-        super().save(*args, **kwargs)
+            super().save(*args, **kwargs)
 
 
 # ============================================================================

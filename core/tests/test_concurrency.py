@@ -170,3 +170,109 @@ class TestConcurrentPayments:
         # Балансы тоже сходятся с суммой транзакций.
         client.refresh_from_db()
         assert Transaction.expected_entity_balance(client) == client.balance
+
+
+@pytest.mark.django_db(transaction=True)
+class TestDoubleClickMoneyOperations:
+    """M9: повторный клик и встречные операции не дают двойных платежей и deadlock."""
+
+    def _invoice(self, company, client, document_type="INVOICE", total="100.00"):
+        inv = NewInvoice.objects.create(
+            document_type=document_type,
+            issuer_company=company,
+            recipient_client=client,
+            date=timezone.now().date(),
+            status="ISSUED",
+        )
+        InvoiceItem.objects.create(invoice=inv, description="Услуги", quantity=Decimal("1"), unit_price=Decimal(total))
+        inv.calculate_totals()
+        inv.save(update_fields=["subtotal", "total"])
+        return inv
+
+    def _parties(self, suffix):
+        from django.conf import settings
+
+        company = Company.objects.get_or_create(name=settings.COMPANY_NAME)[0]
+        return company, Client.objects.create(name=f"DC-Client-{suffix}")
+
+    def test_double_cash_payment_creates_one_payment(self):
+        from core.services.billing_service import BillingService
+
+        company, client = self._parties("cash")
+        inv = self._invoice(company, client, document_type="INVOICE_BLC")
+
+        def worker(_idx):
+            BillingService.register_cash_payment(NewInvoice.objects.get(pk=inv.pk))
+
+        errors = _run_concurrently(worker, 3)
+
+        assert not errors, f"потоки упали: {errors}"
+        inv.refresh_from_db()
+        client.refresh_from_db()
+        assert inv.transactions.filter(type="PAYMENT", status="COMPLETED").count() == 1
+        assert inv.paid_amount == Decimal("100.00")
+        assert client.balance == Decimal("0.00")
+
+    def test_double_series_change_pays_once(self):
+        from core.services.billing_service import BillingService
+
+        company, client = self._parties("series")
+        inv = self._invoice(company, client, document_type="PROFORMA_BLC")
+
+        def worker(_idx):
+            BillingService.change_invoice_series(NewInvoice.objects.get(pk=inv.pk), "INVOICE_BLC")
+
+        errors = _run_concurrently(worker, 3)
+
+        assert not errors, f"потоки упали: {errors}"
+        inv.refresh_from_db()
+        assert inv.document_type == "INVOICE_BLC"
+        assert inv.transactions.filter(type="PAYMENT", status="COMPLETED").count() == 1
+        assert inv.paid_amount == Decimal("100.00")
+
+    def test_concurrent_overpayment_rejected(self):
+        from django.core.exceptions import ValidationError
+
+        company, client = self._parties("overpay")
+        inv = self._invoice(company, client)
+
+        def worker(_idx):
+            Transaction.objects.create(
+                type="PAYMENT",
+                method="BALANCE",
+                status="COMPLETED",
+                amount=Decimal("60"),
+                invoice=inv,
+                from_client=client,
+                to_company=company,
+            )
+
+        errors = _run_concurrently(worker, 2)
+
+        assert len(errors) == 1 and isinstance(errors[0], ValidationError), errors
+        inv.refresh_from_db()
+        assert inv.paid_amount == Decimal("60.00")
+
+    def test_pay_and_bank_payment_do_not_deadlock(self):
+        from core.services.billing_service import BillingService
+
+        company, client = self._parties("deadlock")
+        invoices = [self._invoice(company, client) for _ in range(3)]
+
+        def worker(idx):
+            for inv in invoices:
+                fresh = NewInvoice.objects.get(pk=inv.pk)
+                if idx % 2:
+                    BillingService.pay_invoice(fresh, Decimal("10"), "CASH", client)
+                else:
+                    BillingService.register_incoming_bank_payment(fresh, Decimal("10"))
+
+        errors = _run_concurrently(worker, 4)
+
+        assert not errors, f"потоки упали: {errors}"
+        client.refresh_from_db()
+        for inv in invoices:
+            inv.refresh_from_db()
+            assert inv.paid_amount == Decimal("40.00")
+        assert client.balance == Decimal("0.00")
+        assert client.total_balance == Decimal("-180.00")

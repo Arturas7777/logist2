@@ -57,6 +57,22 @@ def test_full_credit_note_closes_invoice_without_touching_balance(company, clien
     assert trx.from_client_id is None
 
 
+def test_overpayment_guard_counts_credit_note(company, client_a):
+    from django.core.exceptions import ValidationError
+
+    inv = _pardp(company, client_a, "100.00")
+    BillingService.create_credit_note(inv, amount=Decimal("30"), reason="Скидка")
+
+    with pytest.raises(ValidationError, match="Переплата"):
+        BillingService.register_incoming_bank_payment(inv, Decimal("80"))
+
+    BillingService.register_incoming_bank_payment(inv, Decimal("70"))
+    inv.refresh_from_db()
+    client_a.refresh_from_db()
+    assert inv.status == "PAID"
+    assert client_a.total_balance == Decimal("0.00")
+
+
 def test_full_credit_note_leaves_no_debt(company, client_a):
     inv = _pardp(company, client_a, "100.00")
     client_a.refresh_from_db()

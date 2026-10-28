@@ -276,13 +276,21 @@ class BillingService:
         Returns:
             str: старый номер инвойса (для логирования).
         """
+        from core.models_billing import NewInvoice
+
         if new_document_type == invoice.document_type:
             return invoice.number
 
-        old_number = invoice.number
-        old_type = invoice.document_type
-        invoice.document_type = new_document_type
         with transaction.atomic():
+            # Повторный клик ждёт здесь и видит уже сменённую серию.
+            NewInvoice.objects.select_for_update().filter(pk=invoice.pk).values_list("pk", flat=True).first()
+            invoice.refresh_from_db(fields=["document_type", "number", "paid_amount"])
+            if new_document_type == invoice.document_type:
+                return invoice.number
+
+            old_number = invoice.number
+            old_type = invoice.document_type
+            invoice.document_type = new_document_type
             invoice.number = invoice.generate_number()
             invoice.save(update_fields=["document_type", "number", "updated_at"])
 
@@ -317,9 +325,13 @@ class BillingService:
         платит парой BALANCE_TOPUP + PAYMENT, иначе ``Client.balance`` уходит
         в минус и ``total_balance`` показывает ложный долг. Оплата с уже
         имеющегося аванса и платежи не-клиентов — одиночный PAYMENT.
-        """
-        from core.models_billing import Transaction
 
+        Вызывать внутри ``transaction.atomic``: счёт блокируется до записи
+        пополнения, чтобы порядок блокировок был «счёт → стороны».
+        """
+        from core.models_billing import NewInvoice, Transaction
+
+        NewInvoice.objects.select_for_update().filter(pk=invoice.pk).values_list("pk", flat=True).first()
         currency = invoice.currency or "EUR"
         tx_date = date or timezone.now()
         topup = None
@@ -355,28 +367,37 @@ class BillingService:
         return payment
 
     @classmethod
+    @transaction.atomic
     def register_cash_payment(cls, invoice, created_by=None):
-        """Создать CASH-платёж на оставшуюся сумму инвойса (кассовые серии)."""
-        remaining = invoice.remaining_amount
+        """Создать CASH-платёж на оставшуюся сумму инвойса (кассовые серии).
+
+        Остаток читается под блокировкой счёта: повторный клик не создаёт
+        второй платёж.
+        """
+        from core.models_billing import NewInvoice
+
+        locked = NewInvoice.objects.select_for_update().get(pk=invoice.pk)
+        remaining = locked.remaining_amount
         if remaining <= 0:
             return None
 
-        payer = invoice.recipient
-        issuer = invoice.issuer
+        payer = locked.recipient
+        issuer = locked.issuer
         if not payer or not issuer:
             return None
 
         trx = cls._create_invoice_payment(
-            invoice,
+            locked,
             payer,
             issuer,
             remaining,
             "CASH",
-            description=f"Оплата наличными ({invoice.number})",
+            description=f"Оплата наличными ({locked.number})",
             funded_by="CASH",
             created_by=created_by,
         )
-        logger.info("Auto cash payment %s: %s for invoice %s", trx.number, remaining, invoice.number)
+        invoice.refresh_from_db(fields=["paid_amount", "status", "updated_at"])
+        logger.info("Auto cash payment %s: %s for invoice %s", trx.number, remaining, locked.number)
         return trx
 
     @classmethod

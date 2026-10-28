@@ -158,7 +158,7 @@
 - Решение: статус меняется только кнопками через `BillingService`; стороны и
   позиции у ISSUED+ — read-only (правка только через кредит-ноту/force с LogEntry).
 
-### M9. Гонки в денежных операциях (Medium, S)
+### [x] M9. Гонки в денежных операциях (Medium, S)
 - `register_cash_payment` и `change_invoice_series` без `select_for_update`
   (`billing_service.py:283-328`) — двойной клик = двойной платёж.
 - `Transaction.clean` проверяет переплату без блокировки и без ADJUSTMENT
