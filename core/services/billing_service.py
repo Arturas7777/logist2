@@ -295,10 +295,66 @@ class BillingService:
         return old_number
 
     @classmethod
-    def register_cash_payment(cls, invoice, created_by=None):
-        """Создать CASH-платёж на оставшуюся сумму инвойса (кассовые серии)."""
+    def _create_invoice_payment(
+        cls,
+        invoice,
+        payer,
+        payee,
+        amount,
+        method,
+        *,
+        description,
+        funded_by=None,
+        topup_description="",
+        date=None,
+        created_by=None,
+    ):
+        """Единый путь оплаты счёта: PAYMENT от ``payer`` к ``payee``.
+
+        Клиент, вносящий новые деньги (``funded_by`` — способ внесения),
+        платит парой BALANCE_TOPUP + PAYMENT, иначе ``Client.balance`` уходит
+        в минус и ``total_balance`` показывает ложный долг. Оплата с уже
+        имеющегося аванса и платежи не-клиентов — одиночный PAYMENT.
+        """
         from core.models_billing import Transaction
 
+        currency = invoice.currency or "EUR"
+        tx_date = date or timezone.now()
+        topup = None
+        if funded_by and payer.__class__.__name__ == "Client":
+            topup = Transaction(
+                type="BALANCE_TOPUP",
+                method=funded_by,
+                status="COMPLETED",
+                amount=amount,
+                currency=currency,
+                to_client=payer,
+                description=topup_description or f"Пополнение: {description}",
+                date=tx_date,
+                created_by=created_by,
+            )
+            topup.save()
+
+        payment = Transaction(
+            type="PAYMENT",
+            method=method,
+            status="COMPLETED",
+            amount=amount,
+            currency=currency,
+            invoice=invoice,
+            paired_topup=topup,
+            description=description,
+            date=tx_date,
+            created_by=created_by,
+        )
+        setattr(payment, f"from_{payer.__class__.__name__.lower()}", payer)
+        setattr(payment, f"to_{payee.__class__.__name__.lower()}", payee)
+        payment.save()
+        return payment
+
+    @classmethod
+    def register_cash_payment(cls, invoice, created_by=None):
+        """Создать CASH-платёж на оставшуюся сумму инвойса (кассовые серии)."""
         remaining = invoice.remaining_amount
         if remaining <= 0:
             return None
@@ -308,38 +364,34 @@ class BillingService:
         if not payer or not issuer:
             return None
 
-        payer_field = f"from_{payer.__class__.__name__.lower()}"
-        issuer_field = f"to_{issuer.__class__.__name__.lower()}"
-
-        trx = Transaction(
-            type="PAYMENT",
-            method="CASH",
-            invoice=invoice,
-            amount=remaining,
-            currency=invoice.currency or "EUR",
+        trx = cls._create_invoice_payment(
+            invoice,
+            payer,
+            issuer,
+            remaining,
+            "CASH",
             description=f"Оплата наличными ({invoice.number})",
+            funded_by="CASH",
             created_by=created_by,
-            status="COMPLETED",
         )
-        setattr(trx, payer_field, payer)
-        setattr(trx, issuer_field, issuer)
-        trx.save()
         logger.info("Auto cash payment %s: %s for invoice %s", trx.number, remaining, invoice.number)
         return trx
 
     @classmethod
     def reverse_cash_payments(cls, invoice):
-        """Отменить авто-созданные CASH-платежи при уходе с кассовой серии."""
+        """Отменить авто-созданные CASH-платежи (вместе с парным TOPUP) при уходе с кассовой серии."""
         cash_payments = list(
             invoice.transactions.filter(
                 type="PAYMENT",
                 method="CASH",
                 status="COMPLETED",
                 description__contains="Оплата наличными",
-            )
+            ).select_related("paired_topup")
         )
         for trx in cash_payments:
             cls.cancel_transaction(trx, reason="уход с кассовой серии")
+            if trx.paired_topup and trx.paired_topup.status == "COMPLETED":
+                cls.cancel_transaction(trx.paired_topup, reason="уход с кассовой серии")
         if cash_payments:
             invoice.refresh_from_db(fields=["paid_amount", "status", "updated_at"])
             logger.info("Reversed %d cash payments for invoice %s", len(cash_payments), invoice.number)
@@ -381,7 +433,7 @@ class BillingService:
                       'overpayment': Decimal
                   }
         """
-        from core.models_billing import NewInvoice, Transaction
+        from core.models_billing import NewInvoice
 
         amount = cls.quantize(amount)
 
@@ -400,30 +452,20 @@ class BillingService:
         if amount > remaining and remaining > 0:
             amount = remaining
 
-        payer_type = payer.__class__.__name__
-        from_field = f"from_{payer_type.lower()}"
-
         invoice_issuer = locked_invoice.issuer
         if not invoice_issuer:
             raise ValueError("У инвойса не указан выставитель")
-        issuer_type = invoice_issuer.__class__.__name__
-        to_field = f"to_{issuer_type.lower()}"
 
-        trx = Transaction(
-            type="PAYMENT",
-            method=method,
-            invoice=locked_invoice,
-            amount=amount,
-            currency=locked_invoice.currency or "EUR",
+        trx = cls._create_invoice_payment(
+            locked_invoice,
+            payer,
+            invoice_issuer,
+            amount,
+            method,
             description=description or f"Оплата инвойса {locked_invoice.number}",
+            funded_by=None if method == "BALANCE" else method,
             created_by=created_by,
-            status="COMPLETED",
         )
-
-        setattr(trx, from_field, payer)
-        setattr(trx, to_field, invoice_issuer)
-
-        trx.save()
 
         logger.info(f"Created payment transaction {trx.number}: {amount} for invoice {locked_invoice.number}")
 
@@ -494,7 +536,6 @@ class BillingService:
             Transaction | None: PAYMENT-транзакция (None, если сумма <= 0).
         """
         from core.models import Company
-        from core.models_billing import Transaction
 
         amount = cls.quantize(amount)
         if amount <= 0:
@@ -505,57 +546,30 @@ class BillingService:
             raise ValueError(f"У инвойса {invoice.number} не указан получатель (плательщик)")
 
         company = Company.get_default()
-        currency = invoice.currency or "EUR"
-        is_client = payer.__class__.__name__ == "Client"
-
-        tx_date = date or timezone.now()
-
-        if is_client:
-            topup = Transaction(
-                type="BALANCE_TOPUP",
-                method="TRANSFER",
-                status="COMPLETED",
-                amount=amount,
-                currency=currency,
-                to_client=payer,
-                description=(description and f"Пополнение: {description}")
-                or f"Пополнение с банковского платежа ({invoice.number})",
-                date=tx_date,
-                created_by=created_by,
-            )
-            topup.save()
-
-            payment = Transaction(
-                type="PAYMENT",
-                method="BALANCE",
-                status="COMPLETED",
-                amount=amount,
-                currency=currency,
-                invoice=invoice,
-                from_client=payer,
-                to_company=company,
+        if payer.__class__.__name__ == "Client":
+            return cls._create_invoice_payment(
+                invoice,
+                payer,
+                company,
+                amount,
+                "BALANCE",
                 description=description or f"Оплата инвойса {invoice.number} с баланса",
-                date=tx_date,
+                funded_by="TRANSFER",
+                topup_description=(description and f"Пополнение: {description}")
+                or f"Пополнение с банковского платежа ({invoice.number})",
+                date=date,
                 created_by=created_by,
             )
-            payment.save()
-            return payment
-
-        payment = Transaction(
-            type="PAYMENT",
-            method="TRANSFER",
-            status="COMPLETED",
-            amount=amount,
-            currency=currency,
-            invoice=invoice,
-            to_company=company,
+        return cls._create_invoice_payment(
+            invoice,
+            payer,
+            company,
+            amount,
+            "TRANSFER",
             description=description or f"Оплата инвойса {invoice.number}",
-            date=tx_date,
+            date=date,
             created_by=created_by,
         )
-        setattr(payment, f"from_{payer.__class__.__name__.lower()}", payer)
-        payment.save()
-        return payment
 
     @classmethod
     def create_payment_for_bank_match(cls, bank_transaction_id):

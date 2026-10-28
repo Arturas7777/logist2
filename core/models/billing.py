@@ -1288,6 +1288,7 @@ class Transaction(models.Model):
         "method",
         "date",
         "invoice_id",
+        "paired_topup_id",
         "from_client_id",
         "from_warehouse_id",
         "from_line_id",
@@ -1428,6 +1429,16 @@ class Transaction(models.Model):
         related_name="transactions",
         verbose_name="Инвойс",
         help_text="Если это оплата инвойса, указываем его здесь",
+    )
+
+    paired_topup = models.OneToOneField(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="paired_payment",
+        verbose_name="Парное пополнение",
+        help_text="BALANCE_TOPUP, которым клиент внёс деньги под эту оплату счёта",
     )
 
     # ========================================================================

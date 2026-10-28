@@ -128,7 +128,7 @@
 - Решение: одна функция/аннотация в модели, все проверки и «ремонт» через неё.
 - DoD: тест «счёт с кредит-нотой → `repair_balance_consistency` ничего не меняет».
 
-### M6. Оплата клиента — всегда пара TOPUP + PAYMENT (High, M)
+### [x] M6. Оплата клиента — всегда пара TOPUP + PAYMENT (High, M)
 - Где: `pay_invoice` и `register_cash_payment` создают одиночный PAYMENT
   от клиента (`billing_service.py:298-328, 416-430`); вызовы —
   `invoice_urls.py:223-245`, `invoice_actions.py:52-85`, `invoice_forms.py:410-413`.

@@ -76,6 +76,11 @@ def test_cancel_partial_payment_returns_invoice_to_issued(company, client_a):
     _refresh(inv, client_a)
     assert inv.paid_amount == Decimal("0.00")
     assert inv.status == "ISSUED"
+    assert client_a.balance == Decimal("40.00")
+    assert client_a.total_balance == Decimal("-60.00")
+
+    BillingService.cancel_transaction(result["transaction"].paired_topup)
+    _refresh(client_a)
     assert client_a.balance == Decimal("0.00")
     assert client_a.total_balance == Decimal("-100.00")
 
@@ -105,7 +110,8 @@ def test_reverse_cash_payments_restores_client_balance(company, client_a):
     BillingService.change_invoice_series(inv, "INVOICE_BLC")
     _refresh(inv, client_a)
     assert inv.status == "PAID"
-    assert client_a.balance == Decimal("-100.00")
+    assert client_a.balance == Decimal("0.00")
+    assert client_a.total_balance == Decimal("0.00")
 
     BillingService.change_invoice_series(inv, "PROFORMA_BLC")
     _refresh(inv, client_a)
@@ -113,6 +119,7 @@ def test_reverse_cash_payments_restores_client_balance(company, client_a):
     assert inv.status == "ISSUED"
     assert client_a.balance == Decimal("0.00")
     assert client_a.total_balance == Decimal("-100.00")
+    assert not Transaction.objects.filter(to_client=client_a, status="COMPLETED").exists()
 
 
 @pytest.fixture

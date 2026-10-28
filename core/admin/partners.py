@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 from django.contrib import admin, messages
 from django.contrib.contenttypes.admin import GenericTabularInline
 from django.db import models
-from django.http import HttpResponseRedirect, JsonResponse
+from django.http import JsonResponse
 from django.shortcuts import render
 from django.urls import path, reverse
 from django.utils import timezone
@@ -360,7 +360,7 @@ class ClientAdmin(admin.ModelAdmin):
         "imones_kodas",
         "vat_code",
     )
-    actions = ["reset_balances", "recalculate_balance", "reset_client_balance"]
+    actions = ["recalculate_balance", "reset_client_balance"]
     list_per_page = 50
     show_full_result_count = False
     readonly_fields = (
@@ -734,36 +734,6 @@ class ClientAdmin(admin.ModelAdmin):
 
     sync_all_balances.short_description = "Синхронизировать инвойс-балансы"
 
-    def reset_balances(self, request, queryset):
-        if "confirm" in request.POST:
-            client_ids = request.POST.getlist("_selected_action")
-            clients = Client.objects.filter(id__in=client_ids)
-            from django.core.management import call_command
-
-            failed_clients = []
-            for client in clients:
-                try:
-                    call_command("reset_client_balances", client_id=client.id)
-                except Exception as e:
-                    logger.error(f"Failed to reset balance for client {client.name}: {e}")
-                    failed_clients.append(f"{client.name}: {e!s}")
-            if failed_clients:
-                self.message_user(
-                    request,
-                    f"Не удалось сбросить балансы для некоторых клиентов: {'; '.join(failed_clients)}",
-                    level="error",
-                )
-            else:
-                self.message_user(request, f"Балансы для {len(clients)} клиентов успешно обнулены")
-            return HttpResponseRedirect(request.get_full_path())
-        return render(
-            request,
-            "admin/confirm_reset_balances.html",
-            {"clients": queryset, "action": "reset_balances", "action_name": "Обнулить балансы"},
-        )
-
-    reset_balances.short_description = "Обнулить балансы клиентов"
-
     def reset_client_balance(self, request, queryset):
         """Обнуляет балансы выбранных клиентов корректирующими транзакциями.
 
@@ -829,7 +799,7 @@ class ClientAdmin(admin.ModelAdmin):
     def topup_balance_view(self, request, client_id):
         """Balance top-up page for client"""
         from django.contrib import messages
-        from django.shortcuts import redirect, render
+        from django.shortcuts import redirect
 
         from core.services.billing_service import BillingService
 
@@ -919,7 +889,6 @@ class ClientAdmin(admin.ModelAdmin):
 
     def cars_in_warehouse_view(self, request, client_id):
         """Shows list of all client's unloaded cars in warehouse"""
-        from django.shortcuts import render
 
         client = Client.objects.get(pk=client_id)
 
