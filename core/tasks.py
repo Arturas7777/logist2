@@ -330,23 +330,30 @@ def send_planned_notifications_task(self, container_id):
         logger.warning("Container %s not found, skipping planned notifications", container_id)
         return
 
-    # Telegram-канал независим от email: ошибка одного не должна откатывать
-    # отправку/ретрай другого, поэтому каждый канал в своём try.
-    try:
-        if not TelegramNotificationService.was_planned_notification_sent(container):
-            tg_sent, tg_failed = TelegramNotificationService.send_planned_to_all_clients(container)
-            if tg_sent or tg_failed:
-                logger.info(f"Planned TG notifications for {container.number}: {tg_sent} sent, {tg_failed} failed")
-    except Exception as exc:
-        logger.error(f"Failed planned Telegram notifications for container {container_id}: {exc}")
+    _send_container_notifications_or_retry(
+        self,
+        container,
+        "planned",
+        TelegramNotificationService.send_planned_to_all_clients,
+        ContainerNotificationService.send_planned_to_all_clients,
+    )
 
-    try:
-        if not ContainerNotificationService.was_planned_notification_sent(container):
-            sent, failed = ContainerNotificationService.send_planned_to_all_clients(container)
-            logger.info(f"Planned notifications for {container.number}: {sent} sent, {failed} failed")
-    except Exception as exc:
-        logger.error(f"Failed planned notifications for container {container_id}: {exc}")
-        raise self.retry(exc=exc)
+
+def _send_container_notifications_or_retry(task, container, kind, send_telegram, send_email):
+    """Оба канала независимо; дедуп по клиенту — claim-записи. Неудачи → retry задачи."""
+    failures = 0
+    for channel, send in (("telegram", send_telegram), ("email", send_email)):
+        try:
+            sent, failed = send(container)
+        except Exception:
+            logger.exception("Failed %s %s notifications for container %s", kind, channel, container.pk)
+            failures += 1
+            continue
+        if sent or failed:
+            logger.info("%s %s notifications for %s: %d sent, %d failed", kind, channel, container.number, sent, failed)
+        failures += failed
+    if failures:
+        raise task.retry(exc=RuntimeError(f"{container.number}: {failures} {kind}-уведомлений не отправлено"))
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
@@ -361,21 +368,13 @@ def send_unload_notifications_task(self, container_id):
         logger.warning("Container %s not found, skipping unload notifications", container_id)
         return
 
-    try:
-        if not TelegramNotificationService.was_unload_notification_sent(container):
-            tg_sent, tg_failed = TelegramNotificationService.send_unload_to_all_clients(container)
-            if tg_sent or tg_failed:
-                logger.info(f"Unload TG notifications for {container.number}: {tg_sent} sent, {tg_failed} failed")
-    except Exception as exc:
-        logger.error(f"Failed unload Telegram notifications for container {container_id}: {exc}")
-
-    try:
-        if not ContainerNotificationService.was_unload_notification_sent(container):
-            sent, failed = ContainerNotificationService.send_unload_to_all_clients(container)
-            logger.info(f"Unload notifications for {container.number}: {sent} sent, {failed} failed")
-    except Exception as exc:
-        logger.error(f"Failed unload notifications for container {container_id}: {exc}")
-        raise self.retry(exc=exc)
+    _send_container_notifications_or_retry(
+        self,
+        container,
+        "unload",
+        TelegramNotificationService.send_unload_to_all_clients,
+        ContainerNotificationService.send_unload_to_all_clients,
+    )
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30, time_limit=60)
@@ -912,11 +911,45 @@ def process_telegram_starts_task(self):
         raise self.retry(exc=exc)
 
 
+def send_car_unload_notifications_once(car):
+    """Уведомления о разгрузке ТС по обоим каналам, каждое — не более одного раза.
+
+    Возвращает список каналов, где отправка не удалась (для retry задачи).
+    """
+    from core.services.email_service import CarNotificationService
+    from core.services.notification_claims import send_once
+    from core.services.telegram_service import TelegramNotificationService, _telegram_enabled
+
+    client = car.client
+    if not client or not car.unload_date:
+        return []
+    channels = [
+        ("TELEGRAM", TelegramNotificationService, _telegram_enabled() and client.has_telegram()),
+        ("EMAIL", CarNotificationService, client.has_notification_emails() and client.notification_enabled),
+    ]
+    failed = []
+    for channel, service, can_send in channels:
+        if not can_send or service.was_car_unload_notification_sent(car):
+            continue
+        try:
+            ok = send_once(
+                lambda service=service: service.send_car_unload_notification(car),
+                channel=channel,
+                notification_type="CAR_UNLOADED",
+                client=client,
+                car=car,
+            )
+        except Exception:
+            logger.exception("Car unload %s notification failed for car %s", channel, car.pk)
+            ok = False
+        if ok is False:
+            failed.append(channel)
+    return failed
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def send_car_unload_notification_task(self, car_id):
     from core.models import Car
-    from core.services.email_service import CarNotificationService
-    from core.services.telegram_service import TelegramNotificationService
 
     try:
         car = Car.objects.select_related("client", "warehouse").get(id=car_id)
@@ -924,20 +957,9 @@ def send_car_unload_notification_task(self, car_id):
         logger.warning("Car %s not found, skipping unload notification", car_id)
         return
 
-    try:
-        if not TelegramNotificationService.was_car_unload_notification_sent(car):
-            if TelegramNotificationService.send_car_unload_notification(car):
-                logger.info(f"Car unload Telegram notification sent for {car.vin}")
-    except Exception as exc:
-        logger.error(f"Failed car unload Telegram notification for car {car_id}: {exc}")
-
-    try:
-        if not CarNotificationService.was_car_unload_notification_sent(car):
-            CarNotificationService.send_car_unload_notification(car)
-            logger.info(f"Car unload notification sent for {car.vin}")
-    except Exception as exc:
-        logger.error(f"Failed car unload notification for car {car_id}: {exc}")
-        raise self.retry(exc=exc)
+    failed = send_car_unload_notifications_once(car)
+    if failed:
+        raise self.retry(exc=RuntimeError(f"Car {car.vin}: не отправлено по каналам {', '.join(failed)}"))
 
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=60, time_limit=300)

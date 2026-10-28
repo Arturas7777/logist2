@@ -396,38 +396,48 @@ class TelegramNotificationService:
         if not _telegram_enabled():
             return 0, 0
 
-        from django.db import transaction as db_transaction
-
         from core.models_website import NotificationLog
+        from core.services.notification_claims import send_once
 
-        with db_transaction.atomic():
-            already_notified = set(
-                NotificationLog.objects.select_for_update()
-                .filter(
-                    container=container,
-                    notification_type=notification_type,
-                    channel="TELEGRAM",
-                    success=True,
-                )
-                .values_list("client_id", flat=True)
+        date = container.planned_unload_date if notification_type == "PLANNED" else container.unload_date
+        if not date:
+            return 0, 0
+
+        already_notified = set(
+            NotificationLog.objects.filter(
+                container=container,
+                notification_type=notification_type,
+                channel="TELEGRAM",
+                success=True,
+            ).values_list("client_id", flat=True)
+        )
+
+        clients = {}
+        for car in container.container_cars.select_related("client").all():
+            if car.client and car.client.has_telegram() and car.client.id not in already_notified:
+                clients[car.client.id] = car.client
+
+        if notification_type == "PLANNED":
+            send_one = TelegramNotificationService.send_planned_notification
+        else:
+            send_one = TelegramNotificationService.send_unload_notification
+
+        sent = 0
+        failed = 0
+        for client in clients.values():
+            ok = send_once(
+                lambda client=client: send_one(container, client, user),
+                channel="TELEGRAM",
+                notification_type=notification_type,
+                client=client,
+                container=container,
             )
-
-            clients = set()
-            for car in container.container_cars.select_related("client").all():
-                if car.client and car.client.has_telegram() and car.client.id not in already_notified:
-                    clients.add(car.client)
-
-            sent = 0
-            failed = 0
-            for client in clients:
-                if notification_type == "PLANNED":
-                    ok = TelegramNotificationService.send_planned_notification(container, client, user)
-                else:
-                    ok = TelegramNotificationService.send_unload_notification(container, client, user)
-                if ok:
-                    sent += 1
-                else:
-                    failed += 1
+            if ok is None:
+                continue
+            if ok:
+                sent += 1
+            else:
+                failed += 1
 
         return sent, failed
 

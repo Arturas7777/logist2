@@ -581,6 +581,73 @@ class NotificationLog(models.Model):
         return f"{status} [{self.channel}] {self.get_notification_type_display()} → {self.email_to}"
 
 
+class NotificationClaim(models.Model):
+    """Право на отправку одного уведомления клиенту (идемпотентность рассылки).
+
+    Строка создаётся ДО отправки; ``UniqueConstraint`` не даёт двум воркерам
+    одновременно взять одно и то же уведомление. FAILED и зависший PENDING
+    можно взять повторно (retry), SENT — нет.
+    """
+
+    STATUS_PENDING = "PENDING"
+    STATUS_SENT = "SENT"
+    STATUS_FAILED = "FAILED"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Отправляется"),
+        (STATUS_SENT, "Отправлено"),
+        (STATUS_FAILED, "Ошибка"),
+    ]
+
+    channel = models.CharField(max_length=10, choices=NotificationLog.CHANNEL_CHOICES, verbose_name="Канал")
+    notification_type = models.CharField(
+        max_length=20, choices=NotificationLog.NOTIFICATION_TYPES, verbose_name="Тип уведомления"
+    )
+    container = models.ForeignKey(
+        Container,
+        on_delete=models.CASCADE,
+        related_name="notification_claims",
+        null=True,
+        blank=True,
+        verbose_name="Контейнер",
+    )
+    car = models.ForeignKey(
+        "Car",
+        on_delete=models.CASCADE,
+        related_name="notification_claims",
+        null=True,
+        blank=True,
+        verbose_name="ТС",
+    )
+    client = models.ForeignKey(
+        Client, on_delete=models.CASCADE, related_name="notification_claims", verbose_name="Клиент"
+    )
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING, verbose_name="Статус")
+    attempts = models.PositiveIntegerField(default=1, verbose_name="Попыток")
+    last_error = models.TextField(blank=True, default="", verbose_name="Последняя ошибка")
+    claimed_at = models.DateTimeField(default=timezone.now, verbose_name="Взято в работу")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
+
+    class Meta:
+        verbose_name = "Отправка уведомления"
+        verbose_name_plural = "Отправки уведомлений"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["channel", "notification_type", "container", "client"],
+                condition=models.Q(container__isnull=False),
+                name="uniq_notification_claim_container",
+            ),
+            models.UniqueConstraint(
+                fields=["channel", "notification_type", "car", "client"],
+                condition=models.Q(car__isnull=False),
+                name="uniq_notification_claim_car",
+            ),
+        ]
+
+    def __str__(self):
+        target = self.container or self.car
+        return f"[{self.channel}] {self.notification_type} {target} → {self.client_id}: {self.status}"
+
+
 # ---------------------------------------------------------------------------
 # Кабинет клиента: документы, декларации, заявки на автовоз
 # ---------------------------------------------------------------------------
