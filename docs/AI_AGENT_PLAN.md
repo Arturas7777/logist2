@@ -130,6 +130,11 @@ Cursor сначала читается этот файл (через прави�
 - Ответ на письмо (A2): `email_id` только письмо-источник из контекста
   или входящее из его треда; риск HIGH, всегда ASK; адресат фиксируется
   в `payload.to`, показывается в карточке и сверяется при исполнении.
+- Помощник админки (A4): `create_task` в `admin_ai_tools.py` не создаёт
+  `Task`, а предлагает `AgentAction` CREATE_TASK через `propose_action`
+  (по политике: ASK → ждёт на доске «Дела», AUTO → создаётся сразу).
+  Тест-инвариант `test_wave_agent_tools_no_direct_writes.py`: инструменты
+  помощника и агента пишут только в `AgentAction` / `AgentQuestion`.
 - Embedding памяти — через существующий OpenAI-эндпоинт (`ai_rag.py`);
   если `AI_API_KEY` пуст, работает keyword-fallback.
 - `AGENT_ANALYZE_SINCE` (на проде 2026-06-01) — жёсткая нижняя граница

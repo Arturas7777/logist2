@@ -75,13 +75,21 @@ def test_get_container(container_row, car_row):
     assert "/admin/core/container/" in detail["admin_url"]
 
 
-def test_create_task_from_admin_tool(car_row):
+def test_create_task_from_admin_tool_is_proposed(car_row):
     result = execute_admin_tool(
         "create_task",
         {"title": "Позвонить клиенту", "description": "Уточнить выдачу", "car_id": car_row.pk},
     )
-    assert result["status"] == "created"
-    task = Task.objects.get(pk=result["task_id"])
+    assert result["status"] == "proposed"
+    assert not Task.objects.exists()
+
+    from core.models import AgentAction
+    from core.services.agent.agent_executor import execute_action
+
+    action = AgentAction.objects.get(pk=result["action_id"])
+    assert action.approve(by="boss")
+    execute_action(action, by="boss")
+    task = Task.objects.get(pk=action.task_id)
     assert task.origin == Task.ORIGIN_AI
     assert task.car_id == car_row.pk
 

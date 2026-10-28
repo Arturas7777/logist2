@@ -1,7 +1,8 @@
-"""Инструменты помощника админки: чтение CRM + создание дела.
+"""Инструменты помощника админки: чтение CRM + предложение дела.
 
 Деньги и статусы бот не меняет — только читает и объясняет, куда нажать.
-Создание Task разрешено: сотрудник явно просит об этом в чате админки.
+Дело не создаётся напрямую: ``create_task`` предлагает ``AgentAction``
+(политика автономии решает — ждать подтверждения или выполнить сразу).
 """
 
 from __future__ import annotations
@@ -139,7 +140,8 @@ TOOL_SPECS: list[dict] = [
     {
         "name": "create_task",
         "description": (
-            "Создать дело в разделе «Дела». Вызывай только если сотрудник явно просит создать задачу/напоминание."
+            "Предложить дело в разделе «Дела» (обычно ждёт подтверждения на доске «Дела»). "
+            "Вызывай только если сотрудник явно просит создать задачу/напоминание."
         ),
         "input_schema": {
             "type": "object",
@@ -492,28 +494,51 @@ def _tool_search_how_to(args: dict, context: dict) -> dict:
     return {"ui_guidance": guidance, "docs": rag}
 
 
+def _existing_pk(model, value) -> int | None:
+    try:
+        pk = int(value)
+    except (TypeError, ValueError):
+        return None
+    return pk if model.objects.filter(pk=pk).exists() else None
+
+
 def _tool_create_task(args: dict) -> dict:
-    from core.models import Car, Container, Task
+    from core.models import AgentAction, Car, Container
+    from core.services.agent.agent_executor import propose_action
 
     title = (args.get("title") or "").strip()
     if not title:
         return {"error": "Нужен заголовок дела"}
-    task = Task(
-        title=title[:200],
-        description=(args.get("description") or "").strip(),
-        priority=args.get("priority") or "MEDIUM",
-        origin=Task.ORIGIN_AI,
+    action = propose_action(
+        action_type=AgentAction.TYPE_CREATE_TASK,
+        title=title,
+        payload={
+            "title": title[:200],
+            "description": (args.get("description") or "").strip(),
+            "priority": args.get("priority") or "MEDIUM",
+            "car_id": _existing_pk(Car, args.get("car_id")),
+            "container_id": _existing_pk(Container, args.get("container_id")),
+        },
+        risk_level=AgentAction.RISK_LOW,
+        reasoning="Сотрудник попросил создать дело в чате помощника админки.",
     )
-    if args.get("car_id"):
-        task.car = Car.objects.filter(pk=args["car_id"]).first()
-    if args.get("container_id"):
-        task.container = Container.objects.filter(pk=args["container_id"]).first()
-    task.save()
+    if action is None:
+        return {"error": "Создание дел ИИ запрещено политикой автономии"}
+    if action.task_id:
+        return {
+            "status": "created",
+            "task_id": action.task_id,
+            "title": title,
+            "admin_url": f"/admin/core/task/{action.task_id}/change/",
+        }
+    if action.status == AgentAction.STATUS_FAILED:
+        return {"error": f"Не удалось создать дело: {action.error}"}
     return {
-        "status": "created",
-        "task_id": task.pk,
-        "title": task.title,
-        "admin_url": f"/admin/core/task/{task.pk}/change/",
+        "status": "proposed",
+        "action_id": action.pk,
+        "title": title,
+        "tasks_board_url": "/admin/tasks-board/",
+        "note": "Предложение ждёт подтверждения на доске «Дела».",
     }
 
 
