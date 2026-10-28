@@ -89,7 +89,7 @@ def resolve_transfer_date(autotransport, override=None):
     """
     from django.utils import timezone as tz
 
-    today = tz.now().date()
+    today = tz.localdate()
     candidate = override or autotransport.loading_date or autotransport.departure_date
     if candidate is None or candidate > today:
         return today

@@ -40,7 +40,7 @@ def _car(warehouse, client, vin, days_on_storage=10):
         container=Container.objects.create(number=f"C-{vin[-6:]}", status="FLOATING"),
         warehouse=warehouse,
         client=client,
-        unload_date=timezone.now().date() - timedelta(days=days_on_storage - 1),
+        unload_date=timezone.localdate() - timedelta(days=days_on_storage - 1),
     )
 
 
@@ -97,7 +97,7 @@ class TestClientStorage:
         car = _car(warehouse, client, "STORAGETERMS00005", days_on_storage=6)
         company = Company.objects.create(name="Caromoto Lithuania, MB")
         inv = NewInvoice.objects.create(
-            issuer_company=company, recipient_client=client, date=timezone.now().date(), status="DRAFT"
+            issuer_company=company, recipient_client=client, date=timezone.localdate(), status="DRAFT"
         )
         inv.cars.add(car)
 
@@ -116,7 +116,7 @@ class TestTermsChangeReprices:
     def test_saving_terms_reprices_only_active_cars(self, warehouse, client):
         active = _car(warehouse, client, "STORAGETERMS00006")
         transferred = _car(warehouse, client, "STORAGETERMS00007")
-        Car.objects.filter(pk=transferred.pk).update(status="TRANSFERRED", transfer_date=timezone.now().date())
+        Car.objects.filter(pk=transferred.pk).update(status="TRANSFERRED", transfer_date=timezone.localdate())
         active.refresh_from_db()
         assert active.total_price == Decimal("15")
 

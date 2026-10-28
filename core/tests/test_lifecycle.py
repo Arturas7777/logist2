@@ -54,7 +54,7 @@ class CheckContainerStatusTest(TestCase):
             number="CONT-CS-001",
             status="UNLOADED",
             warehouse=self.warehouse,
-            unload_date=timezone.now().date(),
+            unload_date=timezone.localdate(),
         )
 
     def test_all_transferred_updates_container(self):
@@ -64,7 +64,7 @@ class CheckContainerStatusTest(TestCase):
             vin="CONTSTAT000000001",
             status="TRANSFERRED",
             container=self.container,
-            transfer_date=timezone.now().date(),
+            transfer_date=timezone.localdate(),
         )
         Car.objects.create(
             year=2023,
@@ -72,7 +72,7 @@ class CheckContainerStatusTest(TestCase):
             vin="CONTSTAT000000002",
             status="TRANSFERRED",
             container=self.container,
-            transfer_date=timezone.now().date(),
+            transfer_date=timezone.localdate(),
         )
         check_container_status(car1)
         self.container.refresh_from_db()
@@ -96,7 +96,7 @@ class CheckContainerStatusTest(TestCase):
             vin="CONTSTAT000000003",
             status="TRANSFERRED",
             container=self.container,
-            transfer_date=timezone.now().date(),
+            transfer_date=timezone.localdate(),
         )
         check_container_status(car_transferred)
         self.container.refresh_from_db()

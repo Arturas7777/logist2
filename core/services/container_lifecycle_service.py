@@ -89,7 +89,7 @@ def bulk_update_car_statuses(container) -> dict:
         if allowed_pks:
             qs = Car.objects.filter(pk__in=allowed_pks)
             if target == "TRANSFERRED":
-                today = timezone.now().date()
+                today = timezone.localdate()
                 qs.filter(transfer_date__isnull=True).update(status=target, transfer_date=today)
                 qs.filter(transfer_date__isnull=False).update(status=target)
                 result["updated"] = len(allowed_pks)

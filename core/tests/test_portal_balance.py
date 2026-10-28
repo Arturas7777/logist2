@@ -39,7 +39,7 @@ def _issue_invoice(company, owner, amount):
     invoice = NewInvoice.objects.create(
         issuer_company=company,
         recipient_client=owner,
-        date=timezone.now().date(),
+        date=timezone.localdate(),
     )
     InvoiceItem.objects.create(invoice=invoice, description="Услуги", quantity=1, unit_price=amount)
     invoice.refresh_from_db()

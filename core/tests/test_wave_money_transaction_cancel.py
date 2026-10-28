@@ -29,7 +29,7 @@ def _invoice(company, client, total="100.00", document_type="INVOICE"):
         document_type=document_type,
         issuer_company=company,
         recipient_client=client,
-        date=timezone.now().date(),
+        date=timezone.localdate(),
         status="ISSUED",
     )
     InvoiceItem.objects.create(invoice=inv, description="Услуги", quantity=1, unit_price=Decimal(total))

@@ -43,7 +43,7 @@ def cache_company_stats():
         total_cars = Car.objects.count()
         active_cars = Car.objects.exclude(status="TRANSFERRED").count()
 
-        month_ago = timezone.now().date() - timedelta(days=30)
+        month_ago = timezone.localdate() - timedelta(days=30)
 
         monthly_invoices = NewInvoice.objects.filter(date__gte=month_ago).aggregate(
             total_amount=Sum("total"), count=Count("id")

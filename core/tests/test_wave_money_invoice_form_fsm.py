@@ -42,7 +42,7 @@ def _invoice(company, client, status="ISSUED", total="100.00"):
         document_type="INVOICE",
         issuer_company=company,
         recipient_client=client,
-        date=timezone.now().date(),
+        date=timezone.localdate(),
         status=status,
     )
     InvoiceItem.objects.create(invoice=inv, description="Услуги", quantity=1, unit_price=Decimal(total))
@@ -141,7 +141,7 @@ def test_new_invoice_cannot_be_created_paid(admin_client, company, client_a):
     response = admin_client.post(
         reverse("admin:core_newinvoice_add"),
         {
-            "date": timezone.now().date().strftime("%Y-%m-%d"),
+            "date": timezone.localdate().strftime("%Y-%m-%d"),
             "document_type": "INVOICE",
             "status": "PAID",
             "recipient": f"client_{client_a.pk}",

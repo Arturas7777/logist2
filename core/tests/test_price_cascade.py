@@ -141,7 +141,7 @@ class TestCalculateTotalPrice:
 class TestStorageCascade:
     def test_storage_cost_from_warehouse_rate(self, car, warehouse):
         _wh_service(warehouse, "Хранение", 5, code="STORAGE")
-        car.unload_date = timezone.now().date() - timezone.timedelta(days=4)
+        car.unload_date = timezone.localdate() - timezone.timedelta(days=4)
         # free_days=0 → платных дней = (4 + 1) = 5; ставка 5 → 25
         car.update_days_and_storage()
         assert car.days == 5
@@ -158,7 +158,7 @@ class TestStorageCascade:
             container=container,
             warehouse=wh,
         )
-        car.unload_date = timezone.now().date() - timezone.timedelta(days=4)
+        car.unload_date = timezone.localdate() - timezone.timedelta(days=4)
         # (4 + 1) - 3 free = 2 платных дня; 2 * 10 = 20
         car.update_days_and_storage()
         assert car.days == 2

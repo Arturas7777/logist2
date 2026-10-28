@@ -114,7 +114,7 @@ def test_notification_settings_page_saves_prefs(client, owner, portal_user):
 def _invoice(owner, company, amount="150.00", **kwargs):
     kwargs.setdefault("document_type", "INVOICE")
     kwargs.setdefault("status", "DRAFT")
-    issue_date = timezone.now().date()
+    issue_date = timezone.localdate()
     due_date = kwargs.get("due_date")
     if due_date and due_date < issue_date:
         # Дата выставления не может быть позже срока оплаты.
@@ -225,7 +225,7 @@ def test_car_detail_timeline_uses_history_dates(client, owner, portal_user):
 
 def test_due_soon_reminder_sent_once(owner):
     company = Company.objects.create(name="Caromoto Lithuania")
-    today = timezone.now().date()
+    today = timezone.localdate()
     invoice = _invoice(owner, company, status="ISSUED", due_date=today + timedelta(days=3))
     # Не-PARDP и другие сроки не трогаем.
     _invoice(owner, company, status="ISSUED", due_date=today + timedelta(days=3), document_type="PROFORMA")
@@ -244,7 +244,7 @@ def test_due_soon_reminder_sent_once(owner):
 
 def test_overdue_notification_and_escalation(owner):
     company = Company.objects.create(name="Caromoto Lithuania")
-    today = timezone.now().date()
+    today = timezone.localdate()
     old = _invoice(owner, company, status="ISSUED", due_date=today - timedelta(days=20))
     fresh = _invoice(owner, company, status="ISSUED", due_date=today - timedelta(days=2))
     # Статусы проставляет штатная задача — так же, как на проде перед напоминаниями.
@@ -273,7 +273,7 @@ def test_reminders_respect_prefs(owner, portal_user):
     portal_user.notification_prefs = {"INVOICE_DUE_SOON": {"email": False, "telegram": False}}
     portal_user.save()
     company = Company.objects.create(name="Caromoto Lithuania")
-    _invoice(owner, company, status="ISSUED", due_date=timezone.now().date() - timedelta(days=1))
+    _invoice(owner, company, status="ISSUED", due_date=timezone.localdate() - timedelta(days=1))
     check_overdue_invoices.apply().get()
     send_invoice_due_reminders.apply().get()
     assert mail.outbox == []

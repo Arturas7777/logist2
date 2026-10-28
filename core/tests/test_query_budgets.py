@@ -48,7 +48,7 @@ _vin_counter = [0]
 
 
 def _seed_cars(n, *, warehouse, container):
-    unload = timezone.now().date() - timezone.timedelta(days=3)
+    unload = timezone.localdate() - timezone.timedelta(days=3)
     for _ in range(n):
         _vin_counter[0] += 1
         Car.objects.create(
@@ -301,7 +301,7 @@ class TestContainerChangelistBudget:
             container = Container.objects.create(
                 number=f"CL{n}{i:03d}",
                 status="IN_PORT",
-                eta=timezone.now().date() - timezone.timedelta(days=i),
+                eta=timezone.localdate() - timezone.timedelta(days=i),
             )
             _seed_cars(2, warehouse=wh, container=container)
             ContainerPhoto.objects.create(container=container, photo=f"photos/cl-{n}-{i}.jpg")
@@ -405,7 +405,7 @@ class TestInvoiceChangeFormBudget:
         return NewInvoice.objects.create(
             issuer_company=company,
             recipient_client=owner,
-            date=timezone.now().date(),
+            date=timezone.localdate(),
             status="DRAFT",
         )
 

@@ -90,7 +90,7 @@ def _company_draft_invoice(company, car):
         issuer_company=company,
         recipient_client=None,
         recipient_warehouse=car.warehouse,
-        date=timezone.now().date(),
+        date=timezone.localdate(),
         status="DRAFT",
     )
     inv.cars.add(car)
@@ -140,7 +140,7 @@ class TestRegenerateItemsFromCars:
             status="FLOATING",
             container=container,
             warehouse=warehouse,
-            unload_date=timezone.now().date() - timezone.timedelta(days=2),
+            unload_date=timezone.localdate() - timezone.timedelta(days=2),
         )
         _wh_service(warehouse, "Хранение", "Хран", 5)  # код по имени
         _add(car, _wh_service(warehouse, "Разгрузка", "Порт", 50), custom_price=50)
@@ -181,7 +181,7 @@ class TestStorageMarkupInInvoice:
             status="FLOATING",
             container=container,
             warehouse=warehouse,
-            unload_date=timezone.now().date() - timezone.timedelta(days=days_stored - 1),
+            unload_date=timezone.localdate() - timezone.timedelta(days=days_stored - 1),
         )
 
     def test_company_invoice_uses_client_storage_terms(self, company, warehouse):
@@ -226,7 +226,7 @@ class TestStorageMarkupInInvoice:
         inv = NewInvoice.objects.create(
             issuer_warehouse=warehouse,
             recipient_company=company,
-            date=timezone.now().date(),
+            date=timezone.localdate(),
             status="DRAFT",
         )
         inv.cars.add(car)

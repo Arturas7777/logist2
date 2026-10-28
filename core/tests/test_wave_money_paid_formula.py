@@ -29,7 +29,7 @@ def _pardp(company, client, total="100.00"):
         document_type="INVOICE",
         issuer_company=company,
         recipient_client=client,
-        date=timezone.now().date(),
+        date=timezone.localdate(),
         status="ISSUED",
     )
     InvoiceItem.objects.create(invoice=inv, description="Услуги", quantity=1, unit_price=Decimal(total))

@@ -16,6 +16,9 @@ app.autodiscover_tasks(related_name="tasks_email")
 app.autodiscover_tasks(related_name="tasks_monitoring")
 app.autodiscover_tasks(related_name="tasks_agent")
 
+# Время в crontab — UTC (CELERY_TIMEZONE, как cron сервера). По Вильнюсу это
+# +2 ч зимой и +3 ч летом; все ежедневные задачи идут уже после местной
+# полуночи, «сегодня» внутри задач — timezone.localdate().
 app.conf.beat_schedule = {
     "check-overdue-invoices-daily": {
         "task": "core.tasks.check_overdue_invoices",
@@ -37,6 +40,7 @@ app.conf.beat_schedule = {
         # Хранение растёт каждый день — освежаем денормализованные
         # days/storage_cost/total_price у машин на складе, чтобы дашборд
         # и сортировки в админке не отставали от реальности.
+        # 00:30 UTC = 02:30/03:30 по Вильнюсу — новый местный день уже наступил.
         "task": "core.tasks.refresh_unloaded_storage_daily",
         "schedule": crontab(hour=0, minute=30),
     },
@@ -119,7 +123,7 @@ app.conf.beat_schedule = {
         "task": "core.tasks_agent.analyze_new_emails_task",
         "schedule": crontab(minute="*/10"),
     },
-    # Утренний план дня (будни 07:00 по серверному времени).
+    # Утренний план дня (будни 07:00 UTC = 09:00/10:00 по Вильнюсу).
     "agent-morning-digest": {
         "task": "core.tasks_agent.morning_digest_task",
         "schedule": crontab(hour=7, minute=0, day_of_week="1-5"),

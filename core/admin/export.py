@@ -17,10 +17,10 @@
 from __future__ import annotations
 
 import csv
-from datetime import datetime
 from io import StringIO
 
 from django.http import HttpResponse
+from django.utils import timezone
 from django.utils.encoding import smart_str
 
 
@@ -83,7 +83,7 @@ class CSVExportMixin:
             ("\ufeff" + buf.getvalue()).encode("utf-8"),
             content_type="text/csv; charset=utf-8",
         )
-        filename = f"{self.csv_export_filename_prefix}_{datetime.now():%Y%m%d_%H%M%S}.csv"
+        filename = f"{self.csv_export_filename_prefix}_{timezone.localtime():%Y%m%d_%H%M%S}.csv"
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
 

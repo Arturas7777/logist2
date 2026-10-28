@@ -27,7 +27,7 @@ class NewInvoiceValidationTest(TestCase):
         invoice = NewInvoice(
             issuer_company=self.company,
             recipient_client=self.client,
-            date=timezone.now().date(),
+            date=timezone.localdate(),
         )
         # clean() не должен бросать исключение
         invoice.clean()
@@ -36,7 +36,7 @@ class NewInvoiceValidationTest(TestCase):
         """Инвойс без выставителя не проходит валидацию"""
         invoice = NewInvoice(
             recipient_client=self.client,
-            date=timezone.now().date(),
+            date=timezone.localdate(),
         )
         with self.assertRaises(ValidationError):
             invoice.clean()
@@ -45,7 +45,7 @@ class NewInvoiceValidationTest(TestCase):
         """Инвойс без получателя не проходит валидацию"""
         invoice = NewInvoice(
             issuer_company=self.company,
-            date=timezone.now().date(),
+            date=timezone.localdate(),
         )
         with self.assertRaises(ValidationError):
             invoice.clean()
@@ -55,7 +55,7 @@ class NewInvoiceValidationTest(TestCase):
         invoice = NewInvoice(
             issuer_company=self.company,
             recipient_company=self.company,
-            date=timezone.now().date(),
+            date=timezone.localdate(),
         )
         with self.assertRaises(ValidationError) as ctx:
             invoice.clean()
@@ -66,8 +66,8 @@ class NewInvoiceValidationTest(TestCase):
         invoice = NewInvoice(
             issuer_company=self.company,
             recipient_client=self.client,
-            date=timezone.now().date(),
-            due_date=timezone.now().date() - timezone.timedelta(days=5),
+            date=timezone.localdate(),
+            due_date=timezone.localdate() - timezone.timedelta(days=5),
         )
         with self.assertRaises(ValidationError) as ctx:
             invoice.clean()
@@ -86,7 +86,7 @@ class NewInvoiceSaveTest(TestCase):
         invoice = NewInvoice.objects.create(
             issuer_company=self.company,
             recipient_client=self.client,
-            date=timezone.now().date(),
+            date=timezone.localdate(),
         )
         self.assertTrue(invoice.number)
         self.assertTrue(len(invoice.number) > 0)
@@ -96,7 +96,7 @@ class NewInvoiceSaveTest(TestCase):
         invoice = NewInvoice.objects.create(
             issuer_company=self.company,
             recipient_client=self.client,
-            date=timezone.now().date(),
+            date=timezone.localdate(),
         )
         self.assertIsNotNone(invoice.due_date)
 
@@ -117,7 +117,7 @@ class RegenerateItemsGuardTest(TestCase):
         invoice = NewInvoice.objects.create(
             issuer_company=self.company,
             recipient_client=self.client,
-            date=timezone.now().date(),
+            date=timezone.localdate(),
         )
         InvoiceItem.objects.create(
             invoice=invoice,

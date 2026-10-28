@@ -148,7 +148,7 @@ class AutoTransport(models.Model):
         """Сгенерировать уникальный номер через атомарный счётчик серии."""
         from core.models.series import next_document_number
 
-        date_str = timezone.now().strftime("%Y%m%d")
+        date_str = timezone.localtime().strftime("%Y%m%d")
         prefix = f"AT-{date_str}"
         return next_document_number(AutoTransport, prefix, pad=3)
 
@@ -264,7 +264,7 @@ class AutoTransport(models.Model):
                         auto_transport=self,
                         document_type="PROFORMA_BLC",
                         status="DRAFT",
-                        date=timezone.now().date(),
+                        date=timezone.localdate(),
                     )
                     invoice.cars.set(client_cars)
                     invoice.regenerate_items_from_cars()

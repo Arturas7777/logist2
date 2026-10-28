@@ -37,7 +37,7 @@ def _car(*, vin, status, client, is_important=False):
         status=status,
         client=client,
         is_important=is_important,
-        transfer_date=timezone.now().date() if status == "TRANSFERRED" else None,
+        transfer_date=timezone.localdate() if status == "TRANSFERRED" else None,
     )
 
 

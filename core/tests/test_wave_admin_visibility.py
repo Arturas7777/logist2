@@ -47,7 +47,7 @@ def _car(warehouse, vin, *, days_ago, status="UNLOADED", **extra):
         status=status,
         container=container,
         warehouse=warehouse,
-        unload_date=timezone.now().date() - timezone.timedelta(days=days_ago),
+        unload_date=timezone.localdate() - timezone.timedelta(days=days_ago),
         **extra,
     )
     return car
@@ -154,14 +154,14 @@ def test_invoice_signals_column(staff_client):
     inv = NewInvoice.objects.create(
         issuer_company=company,
         recipient_client=owner,
-        date=timezone.now().date() - timezone.timedelta(days=40),
+        date=timezone.localdate() - timezone.timedelta(days=40),
         status="ISSUED",
     )
-    NewInvoice.objects.filter(pk=inv.pk).update(due_date=timezone.now().date() - timezone.timedelta(days=10))
+    NewInvoice.objects.filter(pk=inv.pk).update(due_date=timezone.localdate() - timezone.timedelta(days=10))
     pair = NewInvoice.objects.create(
         issuer_company=company,
         recipient_client=owner,
-        date=timezone.now().date(),
+        date=timezone.localdate(),
         status="DRAFT",
         linked_invoice=inv,
     )
@@ -243,7 +243,7 @@ def test_sidebar_counters_and_subgroups(staff_client):
     owner = ClientModel.objects.create(name="Sidebar owner")
     for _ in range(2):
         inv = NewInvoice.objects.create(
-            issuer_company=company, recipient_client=owner, date=timezone.now().date(), status="ISSUED"
+            issuer_company=company, recipient_client=owner, date=timezone.localdate(), status="ISSUED"
         )
         # save() может нормализовать статус — выставляем просрочку напрямую
         NewInvoice.objects.filter(pk=inv.pk).update(status="OVERDUE")

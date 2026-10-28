@@ -251,7 +251,7 @@ def get_invoice_cars_api(request):
         return JsonResponse({"error": "From entity parameters are required"}, status=400)
 
     try:
-        six_months_ago = timezone.now().date() - timedelta(days=180)
+        six_months_ago = timezone.localdate() - timedelta(days=180)
         cars = Car.objects.none()
 
         if from_entity_type == "CLIENT":
@@ -360,7 +360,7 @@ def get_warehouse_cars_api(request):
         return JsonResponse({"error": "Warehouse ID is required"}, status=400)
 
     try:
-        month_ago = timezone.now().date() - timedelta(days=30)
+        month_ago = timezone.localdate() - timedelta(days=30)
         cars = Car.objects.filter(
             Q(warehouse_id=warehouse_id) & Q(status__in=["UNLOADED", "TRANSFERRED"]) & Q(unload_date__gte=month_ago)
         ).select_related("client", "warehouse", "container", "line", "carrier")

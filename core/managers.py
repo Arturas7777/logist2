@@ -40,7 +40,7 @@ class OptimizedCarManager(models.Manager):
 
     def recent_cars(self, days=30):
         """Недавние автомобили"""
-        cutoff_date = timezone.now().date() - timedelta(days=days)
+        cutoff_date = timezone.localdate() - timedelta(days=days)
         return self.with_related().filter(unload_date__gte=cutoff_date)
 
     def search_cars(self, query):
@@ -130,7 +130,7 @@ class OptimizedClientManager(models.Manager):
         )
 
     def with_recent_activity(self, days=30):
-        cutoff_date = timezone.now().date() - timedelta(days=days)
+        cutoff_date = timezone.localdate() - timedelta(days=days)
         return (
             self.with_balance_info()
             .filter(

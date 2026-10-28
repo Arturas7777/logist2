@@ -34,7 +34,7 @@ def _invoice(company, recipient, amount, *, status="ISSUED", paid=Decimal("0.00"
     invoice = NewInvoice.objects.create(
         issuer_company=company,
         recipient_client=recipient,
-        date=timezone.now().date(),
+        date=timezone.localdate(),
     )
     InvoiceItem.objects.create(invoice=invoice, description="Услуги", quantity=1, unit_price=amount)
     invoice.refresh_from_db()

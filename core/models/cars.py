@@ -381,7 +381,7 @@ class Car(models.Model):
 
         from core.utils import count_storage_days
 
-        end_date = self.transfer_date if self.status == "TRANSFERRED" and self.transfer_date else timezone.now().date()
+        end_date = self.transfer_date if self.status == "TRANSFERRED" and self.transfer_date else timezone.localdate()
         policy = getattr(self.warehouse, "storage_day_policy", None) or "CALENDAR"
         return count_storage_days(self.unload_date, end_date, policy)
 
@@ -550,7 +550,7 @@ class Car(models.Model):
         self.status = container.status
         self.warehouse = container.warehouse
         self.unload_date = container.unload_date
-        self.transfer_date = timezone.now().date() if container.status == "TRANSFERRED" else None
+        self.transfer_date = timezone.localdate() if container.status == "TRANSFERRED" else None
         self.update_days_and_storage()
         self.calculate_total_price()
 
@@ -696,7 +696,7 @@ class Car(models.Model):
         if self.transfer_date and self.status != "TRANSFERRED":
             self.status = "TRANSFERRED"
         if self.status == "TRANSFERRED" and not self.transfer_date:
-            self.transfer_date = timezone.now().date()
+            self.transfer_date = timezone.localdate()
 
     def save(self, *args, **kwargs):
         # Блокируем смену статуса для авто с активной пометкой «важное».

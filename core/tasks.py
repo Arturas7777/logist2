@@ -37,7 +37,7 @@ def check_overdue_invoices(self):
     from core.mixins import OVERDUE_CANDIDATE_STATUSES
     from core.models_billing import NewInvoice
 
-    today = timezone.now().date()
+    today = timezone.localdate()
     overdue_qs = NewInvoice.objects.filter(
         status__in=OVERDUE_CANDIDATE_STATUSES,
         due_date__lt=today,
@@ -77,7 +77,7 @@ def send_invoice_due_reminders(self):
             logger.info("[send_invoice_due_reminders] another run in progress — skip")
             return {"status": "locked"}
 
-        today = timezone.now().date()
+        today = timezone.localdate()
         base_qs = NewInvoice.objects.filter(
             document_type="INVOICE",
             recipient_client__isnull=False,
@@ -113,7 +113,7 @@ def escalate_overdue_invoices(self):
     from core.models import Task
     from core.models_billing import NewInvoice
 
-    today = timezone.now().date()
+    today = timezone.localdate()
     threshold = today - timedelta(days=INVOICE_OVERDUE_ESCALATION_DAYS)
     invoices = (
         NewInvoice.objects.filter(status="OVERDUE", due_date__lt=threshold, recipient_client__isnull=False)
@@ -1303,7 +1303,7 @@ def audit_all_containers(days: int = 180, max_vin_checks: int = 300):
     from core.services.container_audit import build_audit_report, refresh_container_audit
     from core.services.vin_gate import refresh_vin_check
 
-    since = timezone.now().date() - timedelta(days=days)
+    since = timezone.localdate() - timedelta(days=days)
     containers = Container.objects.filter(
         Q(unload_date__isnull=True) | Q(unload_date__gte=since),
     ).order_by("-id")

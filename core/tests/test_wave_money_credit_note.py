@@ -28,7 +28,7 @@ def _pardp(company, client, total="100.00"):
         document_type="INVOICE",
         issuer_company=company,
         recipient_client=client,
-        date=timezone.now().date(),
+        date=timezone.localdate(),
         status="ISSUED",
     )
     InvoiceItem.objects.create(invoice=inv, description="Услуги", quantity=1, unit_price=Decimal(total))
@@ -93,7 +93,7 @@ def test_credit_note_never_becomes_overdue(company, client_a):
 
     inv = _pardp(company, client_a, "100.00")
     note = BillingService.create_credit_note(inv, amount=Decimal("40"), reason="Скидка")["credit_note"]
-    past = timezone.now().date() - timezone.timedelta(days=15)
+    past = timezone.localdate() - timezone.timedelta(days=15)
     NewInvoice.objects.filter(pk__in=[inv.pk, note.pk]).update(date=past, due_date=past + timezone.timedelta(days=1))
 
     check_overdue_invoices()

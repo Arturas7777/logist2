@@ -175,7 +175,7 @@
 - Решение: поля read-only, сервис `unlink_bank_transaction` (отмена платежа
   через M1); при изменении суммы/состояния привязанной BT — Task менеджеру.
 
-### M11. Часовой пояс (Medium, M)
+### [x] M11. Часовой пояс (Medium, M)
 - Где: `settings/base.py:284` `TIME_ZONE="UTC"`; ~40 мест
   `timezone.now().date()` (`models/cars.py:699`,
   `container_lifecycle_service.py:92`, `signals/autotransport.py:92`,

@@ -29,7 +29,7 @@ def _container(number, status, warehouse=None):
     # Container.clean() для UNLOADED/TRANSFERRED требует склад и дату разгрузки.
     extra = {}
     if status in ("UNLOADED", "TRANSFERRED"):
-        extra = {"warehouse": warehouse, "unload_date": timezone.now().date()}
+        extra = {"warehouse": warehouse, "unload_date": timezone.localdate()}
     return Container.objects.create(number=number, status=status, **extra)
 
 
@@ -48,7 +48,7 @@ class TestContainerStatusFSM:
     def test_forward_transitions_allowed(self, warehouse):
         c = _container("FSM-C-1", "FLOATING")
         c.warehouse = warehouse
-        c.unload_date = timezone.now().date()
+        c.unload_date = timezone.localdate()
         c.save(update_fields=["warehouse", "unload_date"])
         for status in ("IN_PORT", "UNLOADED", "TRANSFERRED"):
             c.status = status
@@ -97,14 +97,14 @@ class TestCarStatusFSM:
         car.save()
 
     def test_transferred_to_in_port_forbidden(self):
-        car = _car("TRANSFERRED", transfer_date=timezone.now().date())
+        car = _car("TRANSFERRED", transfer_date=timezone.localdate())
         car.status = "IN_PORT"
         car.transfer_date = None  # иначе _sync_status_and_dates вернёт TRANSFERRED
         with pytest.raises(ValidationError):
             car.save()
 
     def test_transfer_undo_via_unloaded_allowed(self):
-        car = _car("TRANSFERRED", transfer_date=timezone.now().date())
+        car = _car("TRANSFERRED", transfer_date=timezone.localdate())
         car.status = "UNLOADED"
         car.transfer_date = None
         car.save()
@@ -113,7 +113,7 @@ class TestCarStatusFSM:
     def test_sync_sets_transferred_by_transfer_date(self):
         # transfer_date → _sync_status_and_dates сам ставит TRANSFERRED;
         # это форвард-переход, FSM не мешает.
-        car = _car("UNLOADED", unload_date=timezone.now().date())
-        car.transfer_date = timezone.now().date()
+        car = _car("UNLOADED", unload_date=timezone.localdate())
+        car.transfer_date = timezone.localdate()
         car.save()
         assert Car.objects.get(pk=car.pk).status == "TRANSFERRED"

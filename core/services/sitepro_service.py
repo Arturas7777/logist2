@@ -537,7 +537,9 @@ class SiteProService:
             )
 
         sale_data = {
-            "saleDate": (invoice.date.strftime("%Y-%m-%d") if invoice.date else timezone.now().strftime("%Y-%m-%d")),
+            "saleDate": (
+                invoice.date.strftime("%Y-%m-%d") if invoice.date else timezone.localtime().strftime("%Y-%m-%d")
+            ),
             "currencyCode": self.connection.default_currency,
             "warehouseId": self.connection.default_warehouse_id,
             "operationTypeId": self.connection.default_operation_type_id,

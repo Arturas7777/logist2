@@ -911,7 +911,7 @@ class ClientAdmin(admin.ModelAdmin):
 
         # Form text for copying
         text_for_copy = f"Авто на складе - {client.name}\n"
-        text_for_copy += f"Дата: {timezone.now().strftime('%d.%m.%Y')}\n"
+        text_for_copy += f"Дата: {timezone.localtime().strftime('%d.%m.%Y')}\n"
         text_for_copy += "=" * 40 + "\n\n"
 
         for wh_name, wh_cars in warehouses_data.items():
@@ -1534,8 +1534,8 @@ class AutoTransportAdmin(admin.ModelAdmin):
             try:
                 at.status = "DELIVERED"
                 if not at.actual_delivery_date:
-                    at.actual_delivery_date = timezone.now().date()
-                at._transfer_date_override = at.actual_delivery_date or timezone.now().date()
+                    at.actual_delivery_date = timezone.localdate()
+                at._transfer_date_override = at.actual_delivery_date or timezone.localdate()
                 at.save()
                 updated += 1
             except ValidationError as exc:
@@ -1633,7 +1633,7 @@ class AutoTransportAdmin(admin.ModelAdmin):
             except ValueError:
                 return JsonResponse({"error": "Неверный формат даты"}, status=400)
         else:
-            transfer_date = timezone.now().date()
+            transfer_date = timezone.localdate()
 
         # Меняем статус автовоза
         obj.status = "LOADED"
@@ -1660,7 +1660,7 @@ class AutoTransportAdmin(admin.ModelAdmin):
         # Если статус меняется на LOADED/IN_TRANSIT/DELIVERED — передаём дату
         if change and obj.status in ("LOADED", "IN_TRANSIT", "DELIVERED"):
             if not hasattr(obj, "_transfer_date_override"):
-                obj._transfer_date_override = obj.loading_date or timezone.now().date()
+                obj._transfer_date_override = obj.loading_date or timezone.localdate()
 
         super().save_model(request, obj, form, change)
 

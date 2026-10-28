@@ -106,7 +106,7 @@ class TestWarehouseServicesTotal:
             code=ServiceCode.UNLOADING,
             default_price=Decimal("50.00"),
         )
-        car = _car("TRFTOTAL000000001", "UNLOADED", warehouse=warehouse, unload_date=timezone.now().date())
+        car = _car("TRFTOTAL000000001", "UNLOADED", warehouse=warehouse, unload_date=timezone.localdate())
         CarService.objects.create(
             car=car, service_type="WAREHOUSE", service_id=storage_service.pk, custom_price=Decimal("100.00")
         )
@@ -125,7 +125,7 @@ class TestWarehouseServicesTotal:
 
 class TestFinalizeCarsTransfer:
     def test_recalculates_days_and_storage_after_bulk_transfer(self, warehouse, storage_service):
-        today = timezone.now().date()
+        today = timezone.localdate()
         unload_date = today - datetime.timedelta(days=9)
         transfer_date = unload_date + datetime.timedelta(days=3)  # 4 «платных» дня
 
@@ -149,7 +149,7 @@ class TestFinalizeCarsTransfer:
         warehouse.free_days = 2
         warehouse.save(update_fields=["free_days"])
 
-        today = timezone.now().date()
+        today = timezone.localdate()
         unload_date = today - datetime.timedelta(days=9)
         transfer_date = unload_date + datetime.timedelta(days=4)  # 5 всего, 3 платных
 
@@ -170,7 +170,7 @@ class TestFinalizeCarsTransfer:
 
 class TestCarAdminBulkFSM:
     def test_forbidden_transition_skipped(self):
-        car = _car("TRFFSM00000000001", "TRANSFERRED", transfer_date=timezone.now().date())
+        car = _car("TRFFSM00000000001", "TRANSFERRED", transfer_date=timezone.localdate())
         ma, fake = _make_admin(CarAdmin, Car)
 
         allowed = ma._bulk_set_status(None, Car.objects.filter(pk=car.pk), "IN_PORT", "В порту")
@@ -180,7 +180,7 @@ class TestCarAdminBulkFSM:
         assert any("недопустимый переход" in msg for msg, _ in fake.messages)
 
     def test_important_car_skipped(self):
-        car = _car("TRFFSM00000000002", "UNLOADED", is_important=True, unload_date=timezone.now().date())
+        car = _car("TRFFSM00000000002", "UNLOADED", is_important=True, unload_date=timezone.localdate())
         ma, fake = _make_admin(CarAdmin, Car)
 
         allowed = ma._bulk_set_status(None, Car.objects.filter(pk=car.pk), "TRANSFERRED", "Передан")
@@ -200,7 +200,7 @@ class TestCarAdminBulkFSM:
 
     def test_mixed_queryset_partial_update(self):
         ok_car = _car("TRFFSM00000000004", "FLOATING")
-        frozen = _car("TRFFSM00000000005", "TRANSFERRED", transfer_date=timezone.now().date())
+        frozen = _car("TRFFSM00000000005", "TRANSFERRED", transfer_date=timezone.localdate())
         ma, _ = _make_admin(CarAdmin, Car)
 
         allowed = ma._bulk_set_status(None, Car.objects.filter(pk__in=[ok_car.pk, frozen.pk]), "IN_PORT", "В порту")
@@ -221,7 +221,7 @@ class TestContainerAdminBulkFSM:
             number="TRF-C-1",
             status="TRANSFERRED",
             warehouse=warehouse,
-            unload_date=timezone.now().date(),
+            unload_date=timezone.localdate(),
         )
         ma, fake = _make_admin(ContainerAdmin, Container)
 

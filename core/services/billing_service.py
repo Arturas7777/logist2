@@ -105,7 +105,7 @@ class BillingService:
         recipient_field = f"recipient_{recipient_type.lower()}"
 
         # Создаем инвойс
-        due_date = timezone.now().date() + timezone.timedelta(days=due_days)
+        due_date = timezone.localdate() + timezone.timedelta(days=due_days)
 
         invoice = NewInvoice(due_date=due_date, notes=notes, created_by=created_by, status="DRAFT")
 
@@ -1207,7 +1207,7 @@ class BillingService:
             recipient_carrier=locked.recipient_carrier,
             recipient_company=locked.recipient_company,
             currency=locked.currency or "EUR",
-            date=timezone.now().date(),
+            date=timezone.localdate(),
             notes=(reason or "")[:2000],
             created_by=created_by,
         )

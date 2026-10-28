@@ -38,7 +38,7 @@ def _car(vin, warehouse, client, status="UNLOADED", service=None):
         container=container,
         warehouse=warehouse,
         client=client,
-        transfer_date=timezone.now().date() if status == "TRANSFERRED" else None,
+        transfer_date=timezone.localdate() if status == "TRANSFERRED" else None,
     )
     if service is not None:
         CarService.objects.get_or_create(
@@ -53,7 +53,7 @@ def _car(vin, warehouse, client, status="UNLOADED", service=None):
 def _invoice_with_car(car, client, status):
     company = Company.objects.get_or_create(name="Deactivate Co")[0]
     inv = NewInvoice.objects.create(
-        issuer_company=company, recipient_client=client, date=timezone.now().date(), status=status
+        issuer_company=company, recipient_client=client, date=timezone.localdate(), status=status
     )
     inv.cars.add(car)
     return inv

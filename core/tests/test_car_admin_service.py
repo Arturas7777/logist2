@@ -259,7 +259,7 @@ class TestTransferredCarClientAssignCreatesThs:
             brand="BMW",
             vin="5UX43EX03S9Y59415",
             status="TRANSFERRED",
-            transfer_date=timezone.now().date(),
+            transfer_date=timezone.localdate(),
             container=container,
             warehouse=warehouse,
             vehicle_type="SEDAN",

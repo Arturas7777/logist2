@@ -58,7 +58,7 @@ def _car(container, warehouse, vin, status, **extra):
 @pytest.mark.django_db
 class TestMixedContainerStatusCascade:
     def test_rollback_to_in_port_keeps_transferred_cars(self, warehouse):
-        today = timezone.now().date()
+        today = timezone.localdate()
         container = Container.objects.create(
             number="CSC-MIX-1", status="UNLOADED", warehouse=warehouse, unload_date=today
         )
@@ -84,7 +84,7 @@ class TestMixedContainerStatusCascade:
         assert container._status_cascade_result is result
 
     def test_rollback_container_from_transferred_keeps_cars_transferred(self, warehouse):
-        today = timezone.now().date()
+        today = timezone.localdate()
         container = Container.objects.create(
             number="CSC-MIX-2", status="TRANSFERRED", warehouse=warehouse, unload_date=today
         )
@@ -100,7 +100,7 @@ class TestMixedContainerStatusCascade:
         assert result["skipped_transferred"] == [car.vin]
 
     def test_forward_to_transferred_sets_transfer_date(self, warehouse):
-        today = timezone.now().date()
+        today = timezone.localdate()
         container = Container.objects.create(
             number="CSC-MIX-3", status="UNLOADED", warehouse=warehouse, unload_date=today
         )
@@ -148,7 +148,7 @@ class TestMixedContainerStatusCascade:
 
     def test_sync_cars_action_path_respects_fsm(self, warehouse):
         """``Container.sync_cars`` (массовые admin-actions) идёт через тот же FSM-каскад."""
-        today = timezone.now().date()
+        today = timezone.localdate()
         container = Container.objects.create(
             number="CSC-SYNC-1", status="UNLOADED", warehouse=warehouse, unload_date=today
         )
@@ -170,7 +170,7 @@ class TestTransferredFreeze:
     """B11: изменения контейнера задним числом не трогают переданные авто."""
 
     def _mixed_container(self, warehouse, number):
-        today = timezone.now().date()
+        today = timezone.localdate()
         container = Container.objects.create(
             number=number,
             status="UNLOADED",

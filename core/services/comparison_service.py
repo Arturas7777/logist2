@@ -244,9 +244,9 @@ class ComparisonService:
             Словарь с общим отчетом
         """
         if not start_date:
-            start_date = timezone.now().date() - timedelta(days=30)
+            start_date = timezone.localdate() - timedelta(days=30)
         if not end_date:
-            end_date = timezone.now().date()
+            end_date = timezone.localdate()
 
         cars_agg = Car.objects.filter(unload_date__gte=start_date, unload_date__lte=end_date).aggregate(
             total=Sum("total_price"), cnt=Count("id")
@@ -419,9 +419,9 @@ class ComparisonService:
         discrepancies = []
 
         if not start_date:
-            start_date = timezone.now().date() - timedelta(days=30)
+            start_date = timezone.localdate() - timedelta(days=30)
         if not end_date:
-            end_date = timezone.now().date()
+            end_date = timezone.localdate()
 
         clients = Client.objects.filter(car__unload_date__gte=start_date, car__unload_date__lte=end_date).distinct()
 

@@ -59,7 +59,7 @@ class TestContainerUnloadDateAsync:
             car_ids.append(car.pk)
 
         with patch("core.tasks.recalculate_cars_total_price_task.delay") as mock_delay:
-            container.unload_date = timezone.now().date()
+            container.unload_date = timezone.localdate()
             container.status = "UNLOADED"
             container.save()
 
@@ -91,7 +91,7 @@ class TestSiteproPushAsync:
         inv = NewInvoice.objects.create(
             issuer_company=self.company,
             recipient_client=self.client,
-            date=timezone.now().date(),
+            date=timezone.localdate(),
             status="DRAFT",
             document_type="INVOICE",  # только серия PARDP идёт в site.pro
         )
@@ -122,7 +122,7 @@ class TestSiteproPushAsync:
         inv = NewInvoice.objects.create(
             issuer_company=self.company,
             recipient_client=self.client,
-            date=timezone.now().date(),
+            date=timezone.localdate(),
             status="DRAFT",
             document_type="PROFORMA",  # AV — не пушим
         )
@@ -189,7 +189,7 @@ class TestTransactionSyncRecalc:
         inv = NewInvoice.objects.create(
             issuer_company=company,
             recipient_client=client,
-            date=timezone.now().date(),
+            date=timezone.localdate(),
             status="ISSUED",
         )
         InvoiceItem.objects.create(

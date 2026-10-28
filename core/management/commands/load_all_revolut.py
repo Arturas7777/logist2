@@ -84,7 +84,7 @@ class Command(BaseCommand):
         total_updated = 0
         current = since
 
-        today = date.today()
+        today = timezone.localdate()
 
         while current <= today:
             month_end = date(

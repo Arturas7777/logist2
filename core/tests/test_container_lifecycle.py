@@ -88,7 +88,7 @@ class TestStatusCascade:
             number="CLC-ST-2",
             status="UNLOADED",
             warehouse=warehouse,
-            unload_date=timezone.now().date(),
+            unload_date=timezone.localdate(),
         )
         _make_cars(container, warehouse, 2)
         apply_post_save_cascades(
@@ -108,7 +108,7 @@ class TestUnloadDateCascade:
             number="CLC-UD-1",
             status="UNLOADED",
             warehouse=warehouse,
-            unload_date=timezone.now().date() - timezone.timedelta(days=4),
+            unload_date=timezone.localdate() - timezone.timedelta(days=4),
         )
         _make_cars(container, warehouse, 2)
 

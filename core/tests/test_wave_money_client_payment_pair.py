@@ -28,7 +28,7 @@ def _invoice(company, client, total="100.00", document_type="INVOICE"):
         document_type=document_type,
         issuer_company=company,
         recipient_client=client,
-        date=timezone.now().date(),
+        date=timezone.localdate(),
         status="ISSUED",
     )
     InvoiceItem.objects.create(invoice=inv, description="Услуги", quantity=1, unit_price=Decimal(total))
@@ -82,7 +82,7 @@ def test_pay_invoice_from_non_client_is_single_payment(company):
     inv = NewInvoice.objects.create(
         issuer_line=line,
         recipient_company=company,
-        date=timezone.now().date(),
+        date=timezone.localdate(),
         status="ISSUED",
     )
     InvoiceItem.objects.create(invoice=inv, description="Фрахт", quantity=1, unit_price=Decimal("80"))

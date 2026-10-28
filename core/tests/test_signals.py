@@ -41,7 +41,7 @@ class ContainerPreSaveSignalTest(TestCase):
         )
         container.status = "UNLOADED"
         container.warehouse = self.warehouse
-        container.unload_date = timezone.now().date()
+        container.unload_date = timezone.localdate()
         container.save()
 
         container.refresh_from_db()

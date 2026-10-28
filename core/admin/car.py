@@ -752,7 +752,7 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
         from django.core.exceptions import ValidationError
         from django.utils import timezone
 
-        today = timezone.now().date()
+        today = timezone.localdate()
         updated = 0
 
         for car in queryset:
@@ -1106,7 +1106,7 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
             return format_html('<span class="cm-days-badge cm-days-badge--none">—</span>')
 
         chargeable = int(obj.days or 0)
-        end_date = obj.transfer_date if obj.status == "TRANSFERRED" and obj.transfer_date else timezone.now().date()
+        end_date = obj.transfer_date if obj.status == "TRANSFERRED" and obj.transfer_date else timezone.localdate()
         total_days = max(0, (end_date - obj.unload_date).days + 1)
         free_days = int(obj.warehouse.free_days or 0)
 
@@ -1383,7 +1383,7 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
         if not allowed_pks:
             return
         # Дата передачи проставляется только там, где её ещё нет
-        Car.objects.filter(pk__in=allowed_pks, transfer_date__isnull=True).update(transfer_date=timezone.now().date())
+        Car.objects.filter(pk__in=allowed_pks, transfer_date__isnull=True).update(transfer_date=timezone.localdate())
         self._finalize_bulk_transfer(allowed_pks)
 
     set_status_transferred.short_description = "Изменить статус на Передан"

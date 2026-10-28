@@ -91,7 +91,7 @@ class TestSyncWithContainer:
             number="P2-SY-1",
             status="UNLOADED",
             warehouse=warehouse,
-            unload_date=timezone.now().date(),
+            unload_date=timezone.localdate(),
         )
         car = Car.objects.create(
             year=2022,
@@ -115,7 +115,7 @@ class TestSyncWithContainer:
             number="P2-SY-2",
             status="UNLOADED",
             warehouse=warehouse,
-            unload_date=timezone.now().date(),
+            unload_date=timezone.localdate(),
         )
         car = Car.objects.create(
             year=2022,
@@ -124,7 +124,7 @@ class TestSyncWithContainer:
             status="UNLOADED",
             container=container,
             warehouse=warehouse,
-            unload_date=timezone.now().date(),
+            unload_date=timezone.localdate(),
         )
         svc = WarehouseService.objects.create(
             warehouse=warehouse,

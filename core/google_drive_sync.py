@@ -897,7 +897,7 @@ class GoogleDriveSync:
 
         try:
             # Получаем контейнеры за последние N дней
-            start_date = timezone.now().date() - timedelta(days=days)
+            start_date = timezone.localdate() - timedelta(days=days)
 
             # Базовый queryset - разгруженные или в порту
             recent_containers = Container.objects.filter(
@@ -973,7 +973,7 @@ class GoogleDriveSync:
         stats = {"containers_checked": 0, "containers_with_new_photos": 0, "photos_added": 0, "errors": []}
 
         try:
-            start_date = timezone.now().date() - timedelta(days=days)
+            start_date = timezone.localdate() - timedelta(days=days)
 
             # Только контейнеры БЕЗ фото
             containers_no_photos = (

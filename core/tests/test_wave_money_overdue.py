@@ -24,7 +24,7 @@ def client_a():
 
 
 def _invoice(company, client, status, days_ago=30, total="100.00"):
-    past = timezone.now().date() - timezone.timedelta(days=days_ago)
+    past = timezone.localdate() - timezone.timedelta(days=days_ago)
     inv = NewInvoice.objects.create(
         document_type="INVOICE",
         issuer_company=company,

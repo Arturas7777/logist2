@@ -48,7 +48,7 @@ class TestResolveTransferDate:
         assert resolve_transfer_date(at, datetime.date(2026, 1, 5)) == datetime.date(2026, 1, 5)
 
     def test_loading_date_then_departure_then_today(self, carrier):
-        today = timezone.now().date()
+        today = timezone.localdate()
         at = AutoTransport.objects.create(
             carrier=carrier,
             loading_date=today - datetime.timedelta(days=3),
@@ -61,7 +61,7 @@ class TestResolveTransferDate:
         assert resolve_transfer_date(at) == today
 
     def test_future_date_falls_back_to_today(self, carrier):
-        today = timezone.now().date()
+        today = timezone.localdate()
         at = AutoTransport.objects.create(carrier=carrier, loading_date=today + datetime.timedelta(days=5))
         assert resolve_transfer_date(at) == today
 
@@ -69,7 +69,7 @@ class TestResolveTransferDate:
 @pytest.mark.django_db
 class TestLoadedSetsTransferDateFromLoadingDate:
     def test_cars_get_loading_date(self, carrier, warehouse):
-        today = timezone.now().date()
+        today = timezone.localdate()
         loading = today - datetime.timedelta(days=4)
         car = _car("B12LOADINGDATE001", warehouse, unload_date=today - datetime.timedelta(days=10))
         at = AutoTransport.objects.create(carrier=carrier, status="FORMED", loading_date=loading)
@@ -83,7 +83,7 @@ class TestLoadedSetsTransferDateFromLoadingDate:
         assert car.transfer_date == loading
 
     def test_without_dates_uses_today(self, carrier, warehouse):
-        today = timezone.now().date()
+        today = timezone.localdate()
         car = _car("B12NODATES0000001", warehouse, unload_date=today - datetime.timedelta(days=10))
         at = AutoTransport.objects.create(carrier=carrier, status="FORMED")
         at.cars.add(car)
@@ -96,7 +96,7 @@ class TestLoadedSetsTransferDateFromLoadingDate:
 
     def test_transfer_not_before_unload_date(self, carrier, warehouse):
         """Загрузка «задним числом» до разгрузки — передача фиксируется днём разгрузки."""
-        today = timezone.now().date()
+        today = timezone.localdate()
         early_car = _car("B12EARLYUNLOAD001", warehouse, unload_date=today - datetime.timedelta(days=10))
         late_car = _car("B12LATEUNLOAD0001", warehouse, unload_date=today - datetime.timedelta(days=1))
         at = AutoTransport.objects.create(
@@ -114,7 +114,7 @@ class TestLoadedSetsTransferDateFromLoadingDate:
         assert {early_car.status, late_car.status} == {"TRANSFERRED"}
 
     def test_already_transferred_cars_keep_their_date(self, carrier, warehouse):
-        today = timezone.now().date()
+        today = timezone.localdate()
         car = _car("B12ALREADYTRF0001", warehouse, unload_date=today - datetime.timedelta(days=10))
         Car.objects.filter(pk=car.pk).update(status="TRANSFERRED", transfer_date=today - datetime.timedelta(days=7))
         at = AutoTransport.objects.create(

@@ -254,6 +254,9 @@ CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
+# Расписание beat — в UTC, как cron сервера (бэкап 03:30 UTC): привязанные
+# к бэкапу задачи не съезжают при переходе на летнее время. Все ежедневные
+# задачи стоят после 00:00 по Вильнюсу, «сегодня» внутри — timezone.localdate().
 CELERY_TIMEZONE = "UTC"
 CELERY_TASK_TIME_LIMIT = 300
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
@@ -281,7 +284,9 @@ LOGOUT_REDIRECT_URL = "/"
 # ---------------------------------------------------------------------------
 
 LANGUAGE_CODE = "ru"
-TIME_ZONE = "UTC"
+# «Сегодня» для хранения, сроков оплаты и transfer_date — по Вильнюсу
+# (timezone.localdate()); в БД datetime по-прежнему хранятся в UTC.
+TIME_ZONE = "Europe/Vilnius"
 USE_I18N = True
 USE_L10N = True
 USE_TZ = True

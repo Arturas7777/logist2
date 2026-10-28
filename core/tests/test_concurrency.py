@@ -107,7 +107,7 @@ class TestConcurrentPayments:
         inv = NewInvoice.objects.create(
             issuer_company=company,
             recipient_client=client,
-            date=timezone.now().date(),
+            date=timezone.localdate(),
             status="ISSUED",
         )
         InvoiceItem.objects.create(
@@ -181,7 +181,7 @@ class TestDoubleClickMoneyOperations:
             document_type=document_type,
             issuer_company=company,
             recipient_client=client,
-            date=timezone.now().date(),
+            date=timezone.localdate(),
             status="ISSUED",
         )
         InvoiceItem.objects.create(invoice=inv, description="Услуги", quantity=Decimal("1"), unit_price=Decimal(total))

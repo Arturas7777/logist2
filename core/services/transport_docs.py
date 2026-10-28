@@ -29,6 +29,7 @@ import zipfile
 from decimal import Decimal, InvalidOperation
 
 import holidays as holidays_lib
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +176,7 @@ def resolve_document_date(
     рабочий день. Дата раньше инвойса недопустима.
     """
     countries = DOC_HOLIDAY_COUNTRIES[doc_type]
-    day = requested or datetime.date.today()
+    day = requested or timezone.localdate()
     if doc_type in DOCS_NOT_BEFORE_INVOICE and invoice_date:
         if requested and requested < invoice_date:
             raise PackageDataError(
@@ -241,7 +242,7 @@ def pick_letter_usa_date(
     Диапазон: не раньше чем через 3 недели после даты инвойса и не позже
     чем за неделю до даты генерации на сайте. Только будни без US-праздников.
     """
-    today = today or datetime.date.today()
+    today = today or timezone.localdate()
     countries = DOC_HOLIDAY_COUNTRIES["LETTER_USA"]
     start = invoice_date + datetime.timedelta(weeks=3)
     end = today - datetime.timedelta(weeks=1)
@@ -271,7 +272,7 @@ def pick_obligation_date(
     Диапазон: последние 3 недели до даты генерации (включительно),
     но не раньше даты инвойса.
     """
-    today = today or datetime.date.today()
+    today = today or timezone.localdate()
     countries = DOC_HOLIDAY_COUNTRIES["OBLIGATION"]
     start = today - datetime.timedelta(weeks=3)
     if invoice_date is not None:
@@ -465,7 +466,7 @@ def generate_document(
         if invoice_date is None:
             raise PackageDataError("Сначала укажите дату инвойса в окне «Инвойс».")
         date = parse_date(data.get("letter_date"))
-        latest = datetime.date.today() - datetime.timedelta(weeks=1)
+        latest = timezone.localdate() - datetime.timedelta(weeks=1)
         earliest = invoice_date + datetime.timedelta(weeks=3)
         if (
             date is None
@@ -488,7 +489,7 @@ def generate_document(
         if not (data.get("buyer_address_ru") or data.get("buyer_address")):
             raise PackageDataError("Сначала укажите адрес покупателя в окне «Паспорт».")
         invoice_date = get_invoice_date(data)
-        today = datetime.date.today()
+        today = timezone.localdate()
         earliest = today - datetime.timedelta(weeks=3)
         if invoice_date is not None:
             earliest = max(earliest, invoice_date)

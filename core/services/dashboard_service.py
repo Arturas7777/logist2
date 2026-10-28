@@ -170,7 +170,7 @@ class DashboardService:
         from ..mixins import OVERDUE_CANDIDATE_STATUSES
         from ..models_billing import NewInvoice
 
-        today = timezone.now().date()
+        today = timezone.localdate()
         count = (
             NewInvoice.objects.filter(
                 Q(status="OVERDUE") | Q(status__in=OVERDUE_CANDIDATE_STATUSES, due_date__lt=today)
@@ -517,7 +517,7 @@ class DashboardService:
 
         from ..models_billing import NewInvoice
 
-        today = timezone.now().date()
+        today = timezone.localdate()
 
         remaining_expr = ExpressionWrapper(
             F("total") - F("paid_amount"),
@@ -691,7 +691,7 @@ class DashboardService:
         from ..models_banking import BankTransaction
         from ..models_billing import NewInvoice, Transaction
 
-        today = timezone.now().date()
+        today = timezone.localdate()
 
         today_cars_unloaded = Car.objects.filter(unload_date=today).count()
         today_containers_unloaded = Container.objects.filter(unload_date=today).count()

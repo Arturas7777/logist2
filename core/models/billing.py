@@ -669,14 +669,14 @@ class NewInvoice(models.Model):
         return self._due_date_passed()
 
     def _due_date_passed(self):
-        return bool(self.due_date) and self.due_date < timezone.now().date()
+        return bool(self.due_date) and self.due_date < timezone.localdate()
 
     @property
     def days_until_due(self):
         """Количество дней до срока оплаты"""
         if not self.due_date:
             return 0
-        delta = self.due_date - timezone.now().date()
+        delta = self.due_date - timezone.localdate()
         return delta.days
 
     # ========================================================================
@@ -1108,7 +1108,7 @@ class NewInvoice(models.Model):
                 self.number = self.generate_number()
 
         if not self.due_date:
-            self.due_date = timezone.now().date() + timezone.timedelta(days=14)
+            self.due_date = timezone.localdate() + timezone.timedelta(days=14)
 
         self.update_status()
         self._validate_status_transition(kwargs.get("update_fields"))
@@ -1915,11 +1915,11 @@ class Transaction(models.Model):
 
         Номер выдаётся атомарным счётчиком серии (SeriesCounter) — без гонок.
         """
-        from django.utils.timezone import now
+        from django.utils.timezone import localtime
 
         from core.models.series import next_document_number
 
-        date = now()
+        date = localtime()
         prefix = f"TRX-{date.year}{date.month:02d}{date.day:02d}"
         return next_document_number(Transaction, prefix, pad=5)
 

@@ -735,7 +735,7 @@ class DeclarationRequest(models.Model):
 
             from .series import next_document_number
 
-            date_str = timezone.now().strftime("%Y%m%d")
+            date_str = timezone.localtime().strftime("%Y%m%d")
             with db_transaction.atomic():
                 self.number = next_document_number(DeclarationRequest, f"DECL-{date_str}", pad=3)
         super().save(*args, **kwargs)
@@ -1155,7 +1155,7 @@ class TransportRequest(models.Model):
 
             from .series import next_document_number
 
-            date_str = timezone.now().strftime("%Y%m%d")
+            date_str = timezone.localtime().strftime("%Y%m%d")
             with db_transaction.atomic():
                 self.number = next_document_number(TransportRequest, f"TR-{date_str}", pad=3)
 

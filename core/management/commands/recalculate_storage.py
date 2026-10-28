@@ -46,5 +46,5 @@ class Command(BaseCommand):
 
         self.stdout.write(f"Cars: {updated_cars} updated")
 
-        now = timezone.now().strftime("%Y-%m-%d %H:%M")
+        now = timezone.localtime().strftime("%Y-%m-%d %H:%M")
         self.stdout.write(self.style.SUCCESS(f"[{now}] Recalculation completed: {updated_cars} cars updated"))

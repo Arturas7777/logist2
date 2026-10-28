@@ -117,7 +117,7 @@ def _make_invoice(company, client, *, number=None, total="100.00", paid="0.00"):
     inv = NewInvoice.objects.create(
         issuer_company=company,
         recipient_client=client,
-        date=timezone.now().date(),
+        date=timezone.localdate(),
         status="ISSUED",
     )
     if number:

@@ -87,7 +87,7 @@ def _loose_car(warehouse, client, days_stored=5):
         warehouse=warehouse,
         client=client,
         vehicle_type="SEDAN",
-        unload_date=timezone.now().date() - timezone.timedelta(days=days_stored - 1),
+        unload_date=timezone.localdate() - timezone.timedelta(days=days_stored - 1),
     )
     # Как делает CarAdmin при создании: услуги по умолчанию + тариф клиента.
     car._bulk_updating = True

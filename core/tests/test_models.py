@@ -80,7 +80,7 @@ class ContainerModelTest(TestCase):
         container = Container(
             number="TEST-003",
             status="UNLOADED",
-            unload_date=timezone.now().date(),
+            unload_date=timezone.localdate(),
         )
         with self.assertRaises(ValidationError) as ctx:
             container.clean()
@@ -92,8 +92,8 @@ class ContainerModelTest(TestCase):
             number="TEST-004",
             status="UNLOADED",
             warehouse=self.warehouse,
-            eta=timezone.now().date() + timezone.timedelta(days=5),
-            unload_date=timezone.now().date(),
+            eta=timezone.localdate() + timezone.timedelta(days=5),
+            unload_date=timezone.localdate(),
         )
         with self.assertRaises(ValidationError) as ctx:
             container.clean()
@@ -153,7 +153,7 @@ class CarModelTest(TestCase):
             brand="BMW",
             vin="BMWVN12345678901A",
             status="UNLOADED",
-            transfer_date=timezone.now().date(),
+            transfer_date=timezone.localdate(),
         )
         car._sync_status_and_dates()
         self.assertEqual(car.status, "TRANSFERRED")

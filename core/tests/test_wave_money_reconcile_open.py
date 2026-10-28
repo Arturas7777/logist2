@@ -38,7 +38,7 @@ def _invoice(company, client, number, total="100.00", status="ISSUED"):
         document_type="INVOICE",
         issuer_company=company,
         recipient_client=client,
-        date=timezone.now().date(),
+        date=timezone.localdate(),
         status=status,
     )
     NewInvoice.objects.filter(pk=inv.pk).update(number=number)

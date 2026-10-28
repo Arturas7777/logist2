@@ -46,7 +46,7 @@ class TestImportantFlagBlocksStatusChange:
             brand="Toyota",
             vin="RULESIMPORTANT001",
             status="UNLOADED",
-            unload_date=timezone.now().date(),
+            unload_date=timezone.localdate(),
             container=container,
             warehouse=warehouse,
             is_important=True,
@@ -134,7 +134,7 @@ class TestClientChangeWithInvoices:
 
     def _invoice(self, company, client, cars, status):
         inv = NewInvoice.objects.create(
-            issuer_company=company, recipient_client=client, date=timezone.now().date(), status="DRAFT"
+            issuer_company=company, recipient_client=client, date=timezone.localdate(), status="DRAFT"
         )
         inv.cars.set(cars)
         inv.regenerate_items_from_cars()
@@ -204,7 +204,7 @@ class TestClientChangeWithInvoices:
             issuer_warehouse=warehouse,
             recipient_company=company,
             document_type="INVOICE_FACT",
-            date=timezone.now().date(),
+            date=timezone.localdate(),
             status="ISSUED",
         )
         fact.cars.add(car)

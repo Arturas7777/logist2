@@ -96,7 +96,7 @@ def _invoice(company, client_entity, car, status="DRAFT"):
     inv = NewInvoice.objects.create(
         issuer_company=company,
         recipient_client=client_entity,
-        date=timezone.now().date(),
+        date=timezone.localdate(),
         status="DRAFT",
     )
     inv.cars.add(car)
