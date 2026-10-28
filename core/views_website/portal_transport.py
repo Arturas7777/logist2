@@ -437,14 +437,15 @@ def _request_form_data(request):
 def _save_request(request, form, client, *, instance=None):
     """Сохранить заявку из формы и вернуть её. Логика статусов:
 
-    * кнопка «Сохранить черновик» → DRAFT;
+    * кнопка «Сохранить черновик» → DRAFT (только для нового черновика);
     * кнопка «Отправить» → SUBMITTED;
-    * правка поданной заявки — статус не меняется (SUBMITTED).
+    * правка поданной заявки — статус не меняется (в т.ч. «В процессе» /
+      «Оформлена», открытые для правки через ``awaiting_client_docs``).
     """
     transport_request = form.save(commit=False)
     old_status = instance.status if instance else None
 
-    if "save_draft" in request.POST:
+    if "save_draft" in request.POST and old_status in (None, "DRAFT"):
         transport_request.status = "DRAFT"
     elif old_status in (None, "DRAFT"):
         transport_request.status = "SUBMITTED"
@@ -568,7 +569,7 @@ def transport_request_delete(request, pk):
         return render(request, "website/not_authorized.html", status=403)
 
     transport_request = get_object_or_404(TransportRequest, pk=pk, client=client)
-    if not transport_request.is_client_editable:
+    if not transport_request.is_client_cancellable:
         messages.error(
             request,
             f"Заявка уже в работе (статус «{transport_request.get_status_display()}») и не может быть удалена.",

@@ -1090,6 +1090,15 @@ class TransportRequest(models.Model):
         return self.status in self.CLIENT_EDITABLE_STATUSES or self.awaiting_client_docs
 
     @property
+    def is_client_cancellable(self):
+        """Может ли клиент удалить (отменить) заявку — только до «В процессе».
+
+        ``awaiting_client_docs`` открывает правку и догрузку, но не отмену
+        заявки, которая уже в работе.
+        """
+        return self.status in self.CLIENT_EDITABLE_STATUSES
+
+    @property
     def destination_flag_static(self) -> str:
         """Путь к SVG-флагу страны назначения для карточек в админке."""
         return DESTINATION_FLAG_STATIC.get((self.destination_country or "").upper(), "")
