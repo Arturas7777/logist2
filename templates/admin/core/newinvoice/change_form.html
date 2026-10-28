@@ -461,13 +461,11 @@
                     <div class="form-group">
                         <label>Статус</label>
                         <select name="status">
-                            <option value="DRAFT" {% if original.status == 'DRAFT' %}selected{% endif %}>Черновик</option>
-                            <option value="ISSUED" {% if original.status == 'ISSUED' or not original %}selected{% endif %}>Выставлен</option>
-                            <option value="PARTIALLY_PAID" {% if original.status == 'PARTIALLY_PAID' %}selected{% endif %}>Частично оплачен</option>
-                            <option value="PAID" {% if original.status == 'PAID' %}selected{% endif %}>Оплачен</option>
-                            <option value="OVERDUE" {% if original.status == 'OVERDUE' %}selected{% endif %}>Просрочен</option>
-                            <option value="CANCELLED" {% if original.status == 'CANCELLED' %}selected{% endif %}>Отменён</option>
+                            {% for value, label in form_status_options %}
+                            <option value="{{ value }}" {% if value == form_status_current %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
                         </select>
+                        <div class="form-hint">Оплата и просрочка считаются автоматически</div>
                     </div>
                 </div>
                 
@@ -479,7 +477,7 @@
                     </div>
                     <div class="form-group">
                         <label>💰 Сумма к оплате (€)</label>
-                        <input type="number" name="manual_total" id="manual_total_input" step="0.01" min="0"
+                        <input type="number" name="manual_total" id="manual_total_input" step="0.01" min="0" {% if composition_locked %}readonly{% endif %}
                                value="{% if original %}{{ original.total|unlocalize }}{% else %}0.00{% endif %}"
                                style="font-size: 20px; font-weight: 700; color: var(--primary);">
                         <div class="form-hint" id="total_hint">Общая сумма. Пересчитывается из позиций автоматически.</div>
@@ -562,10 +560,17 @@
                 </div>
                 {% endif %}
 
+                {% if composition_locked %}
+                <div class="cars-hint" style="background:#fff3cd;color:#856404;margin-bottom:16px;">
+                    🔒 Счёт {{ original.get_status_display|lower }}: выставитель, получатель, автомобили и позиции
+                    не меняются. Исправление — кредит-нота, «Пересоздать позиции (принудительно)» или возврат
+                    в черновик (если оплат нет).
+                </div>
+                {% endif %}
                 <div class="form-row-2">
                     <div class="form-group">
                         <label>🏢 Выставитель</label>
-                        <select name="issuer" id="issuer_select">
+                        <select name="issuer" id="issuer_select" {% if composition_locked %}disabled{% endif %}>
                             {% if original.issuer_company %}
                             <option value="company_{{ original.issuer_company.pk }}" selected>🏢 {{ original.issuer_company.name }}</option>
                             {% elif original.issuer_warehouse %}
@@ -575,14 +580,14 @@
                             {% elif original.issuer_carrier %}
                             <option value="carrier_{{ original.issuer_carrier.pk }}" selected>🚚 {{ original.issuer_carrier.name }}</option>
                             {% elif default_company_id %}
-                            <option value="company_{{ default_company_id }}" selected>🏢 Caromoto Lithuania</option>
+                            <option value="company_{{ default_company_id }}" selected>🏢 {{ default_company_name }}</option>
                             {% endif %}
                         </select>
                         <div class="form-hint">Поиск по компаниям, складам, линиям, перевозчикам</div>
                     </div>
                     <div class="form-group">
                         <label>👤 Получатель</label>
-                        <select name="recipient" id="recipient_select">
+                        <select name="recipient" id="recipient_select" {% if composition_locked %}disabled{% endif %}>
                             {% if original.recipient_client %}
                             <option value="client_{{ original.recipient_client.pk }}" selected>👤 {{ original.recipient_client.name }}</option>
                             {% elif original.recipient_company %}
@@ -611,7 +616,7 @@
                 <div class="cars-hint">
                     💡 Введите VIN или марку — поиск включает и уже переданные авто. Позиции создадутся из их услуг.
                 </div>
-                <select name="cars" id="cars_select" multiple="multiple" style="width: 100%;">
+                <select name="cars" id="cars_select" multiple="multiple" style="width: 100%;" {% if composition_locked %}disabled{% endif %}>
                     {% for car in cars %}
                     <option value="{{ car.pk }}" data-status="{{ car.status }}" {% if original and car.pk in selected_car_ids %}selected{% endif %}>{{ car.brand }} {{ car.year }} ({{ car.vin }}) {% if car.client %}- {{ car.client.name }}{% endif %}</option>
                     {% endfor %}
@@ -668,7 +673,7 @@
                 </div>
                 
                 <!-- Скрытое поле JSON для передачи позиций -->
-                <input type="hidden" name="manual_items_json" id="manual_items_json" value="[]">
+                <input type="hidden" name="manual_items_json" id="manual_items_json" value="[]" {% if composition_locked %}disabled{% endif %}>
             </div>
         </div>
         

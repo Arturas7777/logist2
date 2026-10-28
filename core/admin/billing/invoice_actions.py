@@ -20,13 +20,12 @@ class NewInvoiceActionsMixin:
     """Admin actions для NewInvoiceAdmin."""
 
     def mark_as_issued(self, request, queryset):
-        """Пометить как выставленные."""
+        """Выставить черновики; остальные статусы считаются по оплатам и сроку."""
         updated = 0
-        for invoice in queryset:
-            if invoice.status not in ("ISSUED", "PAID", "CANCELLED"):
-                invoice.status = "ISSUED"
-                invoice.save(update_fields=["status", "updated_at"])
-                updated += 1
+        for invoice in queryset.filter(status="DRAFT"):
+            invoice.status = "ISSUED"
+            invoice.save(update_fields=["status", "updated_at"])
+            updated += 1
 
         self.message_user(request, f"Выставлено: {updated} инвойсов", messages.SUCCESS)
 

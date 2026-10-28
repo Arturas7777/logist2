@@ -126,10 +126,9 @@ class NewInvoiceUrlsMixin:
                 pass
 
         if not issuer:
-            try:
-                issuer = Company.objects.get(name="Caromoto Lithuania")
-                issuer_type = "Company"
-            except Company.DoesNotExist:
+            issuer = Company.get_default()
+            issuer_type = "Company"
+            if issuer is None:
                 return JsonResponse({"total": "0.00", "count": 0})
 
         is_company = issuer_type == "Company"

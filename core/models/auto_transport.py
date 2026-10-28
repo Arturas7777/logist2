@@ -212,8 +212,9 @@ class AutoTransport(models.Model):
     def generate_invoices(self):
         """Создать/обновить инвойсы для клиентов.
 
-        Skips invoices that are already PAID or CANCELLED to avoid corrupting
-        finalized financial records.
+        Обновляет только черновики. Если у клиента по рейсу уже есть
+        выставленный, оплаченный или отменённый счёт — новый не создаётся и
+        существующий не трогается.
         """
         from django.utils import timezone
 
@@ -241,21 +242,17 @@ class AutoTransport(models.Model):
             if not client_cars.exists():
                 continue
 
-            existing_invoice = (
-                NewInvoice.objects.filter(auto_transport=self, recipient_client=client)
-                .exclude(status__in=["PAID", "CANCELLED"])
-                .first()
-            )
+            client_invoices = NewInvoice.objects.filter(auto_transport=self, recipient_client=client)
+            existing_invoice = client_invoices.filter(status="DRAFT").first()
 
             if existing_invoice:
                 existing_invoice.cars.set(client_cars)
                 existing_invoice.regenerate_items_from_cars()
                 created_invoices.append(existing_invoice)
             else:
-                has_finalized = NewInvoice.objects.filter(
-                    auto_transport=self, recipient_client=client, status__in=["PAID", "CANCELLED"]
-                ).exists()
-                if has_finalized:
+                # Выставленный/оплаченный/отменённый счёт по рейсу уже есть —
+                # состав его машин не трогаем (правка — кредит-нота).
+                if client_invoices.exists():
                     continue
 
                 company = Company.get_default()

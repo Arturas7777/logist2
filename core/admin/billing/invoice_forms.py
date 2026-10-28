@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 class NewInvoiceFormHandlerMixin:
     """Lifecycle хендлеры (`add_view`, `change_view`, save_*) для NewInvoiceAdmin."""
 
+    # Остальные статусы — следствие оплат и срока (update_status), отмена —
+    # через BillingService.cancel_invoice.
+    _FORM_SETTABLE_STATUSES = ("DRAFT", "ISSUED")
+
     def get_queryset(self, request):
         """Оптимизация N+1 для списка инвойсов.
 
@@ -131,6 +135,15 @@ class NewInvoiceFormHandlerMixin:
 
         # Caromoto по умолчанию — кэшируется в Company.get_default_id.
         extra_context["default_company_id"] = Company.get_default_id()
+        extra_context["default_company_name"] = settings.COMPANY_NAME
+
+        current_status = invoice.status if invoice else "ISSUED"
+        settable = self._FORM_SETTABLE_STATUSES + (("CANCELLED",) if invoice else ())
+        extra_context["form_status_current"] = current_status
+        extra_context["form_status_options"] = [
+            (value, label) for value, label in NewInvoice.STATUS_CHOICES if value in settable or value == current_status
+        ]
+        extra_context["composition_locked"] = bool(invoice) and invoice.status != "DRAFT"
 
         if invoice:
             try:
@@ -268,7 +281,7 @@ class NewInvoiceFormHandlerMixin:
         else:
             invoice.due_date = None
 
-        invoice.status = request.POST.get("status", "ISSUED")
+        cancel_requested = self._apply_form_status(request, invoice, is_new=not object_id)
         invoice.notes = request.POST.get("notes", "")
         invoice.external_number = request.POST.get("external_number", "")
 
@@ -303,6 +316,100 @@ class NewInvoiceFormHandlerMixin:
 
         invoice.skip_ai_comparison = "skip_ai_comparison" in request.POST
 
+        if object_id and invoice.status != "DRAFT":
+            self._save_locked_invoice(request, invoice)
+        else:
+            self._save_invoice_composition(request, invoice, Car, Client, Company)
+
+        if not object_id and invoice.document_type in NewInvoice.CASH_DOCUMENT_TYPES and invoice.remaining_amount > 0:
+            cash_amount = invoice.remaining_amount
+            BillingService.register_cash_payment(invoice, created_by=request.user)
+            messages.info(request, f"💵 Оплата наличными зарегистрирована: {cash_amount:.2f} €")
+
+        if cancel_requested:
+            try:
+                invoice = BillingService.cancel_invoice(invoice, reason=f"через форму ({request.user})")
+                messages.success(request, f"Инвойс {invoice.number} отменён")
+            except ValueError as e:
+                messages.error(request, str(e))
+
+        has_audit = False
+        try:
+            has_audit = invoice.audit is not None
+        except Exception:
+            logger.debug("audit check failed for invoice %s", invoice.pk, exc_info=True)
+        if invoice.attachment and invoice.direction == "INCOMING" and not has_audit:
+            self._trigger_invoice_audit(request, invoice)
+
+        if "_save" in request.POST:
+            return redirect("admin:core_newinvoice_changelist")
+        elif "_continue" in request.POST:
+            return redirect("admin:core_newinvoice_change", invoice.pk)
+        elif "_addanother" in request.POST:
+            return redirect("admin:core_newinvoice_add")
+        else:
+            return redirect("admin:core_newinvoice_changelist")
+
+    def _apply_form_status(self, request, invoice, *, is_new) -> bool:
+        """Статус из формы. Возвращает True, если запрошена отмена (выполняется после сохранения)."""
+        requested = request.POST.get("status") or ("ISSUED" if is_new else invoice.status)
+        if is_new:
+            invoice.status = requested if requested in self._FORM_SETTABLE_STATUSES else "ISSUED"
+            return False
+        if requested == invoice.status:
+            return False
+        if requested == "CANCELLED":
+            return True
+        if requested in self._FORM_SETTABLE_STATUSES and invoice.status in self._FORM_SETTABLE_STATUSES:
+            invoice.status = requested
+            return False
+        label = dict(NewInvoice.STATUS_CHOICES).get(requested, requested)
+        messages.warning(
+            request,
+            f"Статус «{label}» вручную не ставится: оплата и просрочка считаются по платежам и сроку оплаты.",
+        )
+        return False
+
+    @staticmethod
+    def _party_value(entity):
+        return f"{entity.__class__.__name__.lower()}_{entity.pk}" if entity else ""
+
+    def _locked_changes_requested(self, request, invoice) -> bool:
+        post = request.POST
+        if post.get("issuer") and post["issuer"] != self._party_value(invoice.issuer):
+            return True
+        if "recipient" in post and post["recipient"] != self._party_value(invoice.recipient):
+            return True
+        if "cars" in post and {int(pk) for pk in post.getlist("cars") if pk.isdigit()} != set(
+            invoice.cars.values_list("pk", flat=True)
+        ):
+            return True
+        try:
+            if json.loads(post.get("manual_items_json") or "[]"):
+                return True
+        except (json.JSONDecodeError, TypeError):
+            pass
+        try:
+            if "manual_total" in post and Decimal(post["manual_total"]) != invoice.total:
+                return True
+        except (InvalidOperation, ValueError):
+            pass
+        return False
+
+    def _save_locked_invoice(self, request, invoice):
+        """Выставленный счёт: стороны, машины и позиции не меняются."""
+        if self._locked_changes_requested(request, invoice):
+            messages.warning(
+                request,
+                f"Инвойс {invoice.number} уже {invoice.get_status_display().lower()}: выставитель, получатель, "
+                "автомобили и позиции не изменены. Исправление — кредит-нота, «Пересоздать позиции "
+                "(принудительно)» или возврат в черновик (если оплат нет).",
+            )
+        invoice.save()
+        messages.success(request, f"✅ Инвойс {invoice.number} сохранен! Сумма: {invoice.total:.2f} €")
+
+    def _save_invoice_composition(self, request, invoice, Car, Client, Company):
+        """Новый счёт или черновик: стороны, машины и позиции из формы."""
         invoice.issuer_company = None
         invoice.issuer_warehouse = None
         invoice.issuer_line = None
@@ -331,10 +438,7 @@ class NewInvoiceFormHandlerMixin:
 
                 invoice.issuer_carrier = Carrier.objects.get(pk=issuer_id)
         else:
-            try:
-                invoice.issuer_company = Company.objects.get(name="Caromoto Lithuania")
-            except Company.DoesNotExist:
-                pass
+            invoice.issuer_company = Company.get_default()
 
         recipient_value = request.POST.get("recipient", "")
         if recipient_value and "_" in recipient_value:
@@ -406,28 +510,6 @@ class NewInvoiceFormHandlerMixin:
                 request,
                 f"✅ Инвойс {invoice.number} сохранен! Сумма: {invoice.total:.2f} €",
             )
-
-        if not object_id and invoice.document_type in NewInvoice.CASH_DOCUMENT_TYPES and invoice.remaining_amount > 0:
-            cash_amount = invoice.remaining_amount
-            BillingService.register_cash_payment(invoice, created_by=request.user)
-            messages.info(request, f"💵 Оплата наличными зарегистрирована: {cash_amount:.2f} €")
-
-        has_audit = False
-        try:
-            has_audit = invoice.audit is not None
-        except Exception:
-            logger.debug("audit check failed for invoice %s", invoice.pk, exc_info=True)
-        if invoice.attachment and invoice.direction == "INCOMING" and not has_audit:
-            self._trigger_invoice_audit(request, invoice)
-
-        if "_save" in request.POST:
-            return redirect("admin:core_newinvoice_changelist")
-        elif "_continue" in request.POST:
-            return redirect("admin:core_newinvoice_change", invoice.pk)
-        elif "_addanother" in request.POST:
-            return redirect("admin:core_newinvoice_add")
-        else:
-            return redirect("admin:core_newinvoice_changelist")
 
     def _handle_manual_items(self, request, invoice, wipe_all=False):
         """Обработка ручного ввода суммы и позиций (для инвойсов без автомобилей).
@@ -521,19 +603,13 @@ class NewInvoiceFormHandlerMixin:
             invoice.save(update_fields=["subtotal", "total"])
 
     def save_model(self, request, obj, form, change):
-        """Сохраняем инвойс и автоматически устанавливаем Caromoto как выставителя."""
+        """Сохраняем инвойс; без выставителя — компания по умолчанию (``COMPANY_NAME``)."""
         if not obj.issuer_company and not obj.issuer_warehouse and not obj.issuer_line and not obj.issuer_carrier:
-            try:
-                from core.models import Company
+            from core.models import Company
 
-                caromoto = Company.objects.get(name="Caromoto Lithuania")
-                obj.issuer_company = caromoto
-                logger.info(
-                    "Автоматически установлена компания Caromoto Lithuania как выставитель инвойса %s",
-                    obj.number,
-                )
-            except Company.DoesNotExist:
-                logger.warning("Компания Caromoto Lithuania не найдена в базе данных")
+            obj.issuer_company = Company.get_default()
+            if obj.issuer_company is None:
+                logger.warning("Компания по умолчанию (COMPANY_NAME) не найдена в базе данных")
 
         super().save_model(request, obj, form, change)
 

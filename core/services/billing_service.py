@@ -195,8 +195,10 @@ class BillingService:
         """
         from core.models_billing import InvoiceItem
 
-        if invoice.status not in ["DRAFT", "ISSUED"]:
-            raise ValueError(f"Нельзя добавлять позиции в инвойс со статусом {invoice.get_status_display()}")
+        if invoice.status != "DRAFT":
+            raise ValueError(
+                f"Нельзя добавлять позиции в инвойс со статусом {invoice.get_status_display()} — используйте кредит-ноту"
+            )
 
         # Находим максимальный порядок
         max_order = invoice.items.aggregate(max_order=models.Max("order"))["max_order"] or 0
