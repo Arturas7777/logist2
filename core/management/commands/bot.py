@@ -51,6 +51,9 @@ class Command(BaseCommand):
             "emails",
             "mark-email",
             "download-attachment",
+            "car",
+            "car-docs",
+            "download-car-doc",
             "tempdir",
             "lock",
             "unlock",
@@ -119,6 +122,10 @@ class Command(BaseCommand):
         parser.add_argument("--only-unprocessed", action="store_true")
         parser.add_argument("--limit", type=int, default=50)
         parser.add_argument("--force", action="store_true")
+        parser.add_argument("--vin", default="")
+        parser.add_argument("--doc-id", type=int, default=None)
+        parser.add_argument("--type", default="")
+        parser.add_argument("--out", default="")
 
     def handle(self, *args, **options):
         command = options.get("command")
@@ -229,6 +236,12 @@ class Command(BaseCommand):
             return _mark_email(principal, options["email_id"], apply)
         if command == "download-attachment":
             return _download(options["email_id"], options["attachment_index"])
+        if command == "car":
+            return _car(options["vin"], options["car_id"])
+        if command == "car-docs":
+            return _car_docs(options["vin"], options["car_id"])
+        if command == "download-car-doc":
+            return _download_car_doc(principal, options["doc_id"], options["vin"], options["type"], options["out"])
         if command == "lock":
             if not apply:
                 return {"before": {}, "after": {}, "result": {"outcome": "would_lock"}, "notifications": []}
@@ -524,3 +537,140 @@ def _fix_tariff(client_name: str, apply: bool, preview):
             apply_client_tariff_for_car(car)
             updated.append(car.vin)
     return {"before": report, "after": {"updated": updated}, "result": {"updated": updated}, "notifications": []}
+
+
+def _car(vin: str, car_id: int | None) -> dict:
+    from core.models import Car
+    from core.services.bot_runtime import BotError
+
+    car = None
+    if car_id:
+        car = Car.objects.filter(pk=car_id).first()
+    elif vin:
+        car = Car.objects.filter(vin__iexact=vin.strip()).first()
+    else:
+        raise BotError("Нужен --vin или --car-id.")
+    if car is None:
+        raise BotError(f"Машина не найдена (VIN={vin}, id={car_id}).")
+
+    return {
+        "vin": car.vin,
+        "id": car.pk,
+        "brand": car.brand,
+        "year": car.year,
+        "client": car.client.name if car.client_id else None,
+        "client_id": car.client_id,
+        "container": car.container.number if car.container_id else None,
+        "container_id": car.container_id,
+        "status": car.status,
+        "warehouse": car.warehouse.name if car.warehouse_id else None,
+        "warehouse_id": car.warehouse_id,
+        "weight_kg": str(car.weight_kg) if car.weight_kg else None,
+        "eta": car.container.eta.isoformat() if car.container_id and car.container.eta else None,
+        "unload_date": car.unload_date.isoformat() if car.unload_date else None,
+        "transfer_date": car.transfer_date.isoformat() if car.transfer_date else None,
+        "has_title": car.has_title,
+    }
+
+
+def _car_docs(vin: str, car_id: int | None) -> dict:
+    from core.models import Car
+    from core.services.bot_runtime import BotError
+
+    car = None
+    if car_id:
+        car = Car.objects.filter(pk=car_id).first()
+    elif vin:
+        car = Car.objects.filter(vin__iexact=vin.strip()).first()
+    else:
+        raise BotError("Нужен --vin или --car-id.")
+    if car is None:
+        raise BotError(f"Машина не найдена (VIN={vin}, id={car_id}).")
+
+    docs = []
+    if car.title_scan:
+        import os
+
+        from django.conf import settings
+
+        file_path = (
+            car.title_scan.path
+            if hasattr(car.title_scan, "path")
+            else os.path.join(settings.MEDIA_ROOT, car.title_scan.name)
+        )
+        file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+        docs.append(
+            {
+                "id": f"car_{car.pk}_title",
+                "type": "TITLE",
+                "filename": os.path.basename(car.title_scan.name),
+                "size": file_size,
+                "uploaded_date": None,
+            }
+        )
+
+    return {"vin": car.vin, "car_id": car.pk, "documents": docs}
+
+
+def _download_car_doc(principal, doc_id: int | None, vin: str, doc_type: str, out: str) -> dict:
+    import os
+    import shutil
+    from pathlib import Path
+
+    from django.conf import settings
+
+    from core.models import Car
+    from core.services.bot_runtime import BotError, bot_temp_dir
+
+    car = None
+    if doc_id:
+        if doc_id and not str(doc_id).startswith("car_"):
+            raise BotError("--doc-id должен быть в формате car_<id>_title или использовать --vin --type.")
+    elif vin and doc_type:
+        car = Car.objects.filter(vin__iexact=vin.strip()).first()
+        if car is None:
+            raise BotError(f"Машина VIN={vin} не найдена.")
+    else:
+        raise BotError("Нужен --doc-id или --vin --type TITLE.")
+
+    if doc_id:
+        parts = str(doc_id).split("_")
+        if len(parts) == 3 and parts[0] == "car" and parts[2] == "title":
+            car_id = int(parts[1])
+            car = Car.objects.filter(pk=car_id).first()
+            if car is None:
+                raise BotError(f"Машина id={car_id} не найдена.")
+            doc_type = "TITLE"
+
+    if not car:
+        raise BotError("Машина не найдена.")
+
+    if doc_type == "TITLE":
+        if not car.title_scan:
+            raise BotError(f"У машины {car.vin} нет TITLE.")
+        source_path = (
+            car.title_scan.path
+            if hasattr(car.title_scan, "path")
+            else os.path.join(settings.MEDIA_ROOT, car.title_scan.name)
+        )
+        if not os.path.exists(source_path):
+            raise BotError(f"Файл TITLE не найден на диске: {source_path}")
+        filename = os.path.basename(car.title_scan.name)
+    else:
+        raise BotError(f"Неизвестный тип документа: {doc_type}")
+
+    temp_dir = Path(bot_temp_dir(principal))
+    if out:
+        out_path = Path(out)
+        if not out_path.is_absolute():
+            out_path = temp_dir / out
+        if not str(out_path).startswith(str(temp_dir)):
+            raise BotError(f"--out должен быть внутри {temp_dir}")
+        target = out_path
+    else:
+        target = temp_dir / filename
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, target)
+
+    return {"filename": filename, "path": str(target), "size": os.path.getsize(target)}

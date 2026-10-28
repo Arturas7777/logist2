@@ -204,3 +204,203 @@ def test_dictionary_lists_notification_fields():
     fields = [row["field"] for row in payload["result"]["notifications"]]
     assert "Container.unload_date" in fields
     assert "Car.status=TRANSFERRED" in fields
+
+
+def test_car_command_returns_details():
+    _principal, token = issue_token("neto-car", "neto")
+    warehouse = Warehouse.objects.create(name="NETO Terminal")
+    container = Container.objects.create(
+        number="CARTEST0000001",
+        status="UNLOADED",
+        warehouse=warehouse,
+        unload_date=datetime.date(2026, 10, 15),
+        eta=datetime.date(2026, 10, 1),
+    )
+    client = Client.objects.create(name="Test Client")
+    car = Car.objects.create(
+        year=2018,
+        brand="Nissan Kicks",
+        vin="3N1CP5BVXRL481232",
+        status="UNLOADED",
+        container=container,
+        warehouse=warehouse,
+        client=client,
+        weight_kg=Decimal("1200.50"),
+        unload_date=datetime.date(2026, 10, 15),
+    )
+
+    out = StringIO()
+    call_command("bot", "car", "--token", token, "--vin", car.vin, stdout=out)
+    payload = json.loads(out.getvalue())
+    assert payload["ok"] is True
+    result = payload["result"]
+    assert result["vin"] == car.vin
+    assert result["brand"] == "Nissan Kicks"
+    assert result["year"] == 2018
+    assert result["client"] == "Test Client"
+    assert result["container"] == container.number
+    assert result["status"] == "UNLOADED"
+    assert result["warehouse"] == "NETO Terminal"
+    assert result["weight_kg"] == "1200.50"
+    assert result["unload_date"] == "2026-10-15"
+
+
+def test_car_command_by_id():
+    _principal, token = issue_token("chief-car", "chief")
+    car = Car.objects.create(
+        year=2020,
+        brand="Tesla",
+        vin="5YJ3E1EA1PF499330",
+        status="FLOATING",
+    )
+
+    out = StringIO()
+    call_command("bot", "car", "--token", token, "--car-id", str(car.pk), stdout=out)
+    payload = json.loads(out.getvalue())
+    assert payload["ok"] is True
+    assert payload["result"]["vin"] == car.vin
+
+
+def test_car_docs_lists_title():
+    from django.core.files.base import ContentFile
+
+    _principal, token = issue_token("neto-docs", "neto")
+    car = Car.objects.create(
+        year=2020,
+        brand="Honda",
+        vin="1HGCM82633A004352",
+        status="UNLOADED",
+    )
+    car.title_scan.save("test_title.pdf", ContentFile(b"fake pdf content"), save=True)
+
+    out = StringIO()
+    call_command("bot", "car-docs", "--token", token, "--vin", car.vin, stdout=out)
+    payload = json.loads(out.getvalue())
+    assert payload["ok"] is True
+    result = payload["result"]
+    assert result["vin"] == car.vin
+    assert len(result["documents"]) == 1
+    doc = result["documents"][0]
+    assert doc["type"] == "TITLE"
+    assert "test_title" in doc["filename"]
+    assert doc["filename"].endswith(".pdf")
+    assert doc["size"] > 0
+
+
+def test_car_docs_empty_when_no_title():
+    _principal, token = issue_token("neto-docs-empty", "neto")
+    car = Car.objects.create(
+        year=2020,
+        brand="Toyota",
+        vin="JTEBU5JR5L5200001",
+        status="FLOATING",
+    )
+
+    out = StringIO()
+    call_command("bot", "car-docs", "--token", token, "--vin", car.vin, stdout=out)
+    payload = json.loads(out.getvalue())
+    assert payload["ok"] is True
+    assert payload["result"]["documents"] == []
+
+
+def test_download_car_doc_copies_to_tempdir():
+    from pathlib import Path
+
+    from django.core.files.base import ContentFile
+
+    principal, token = issue_token("neto-download", "neto")
+    car = Car.objects.create(
+        year=2019,
+        brand="Ford",
+        vin="1FAHP3K28KL200001",
+        status="UNLOADED",
+    )
+    car.title_scan.save("ford_title.pdf", ContentFile(b"test title content"), save=True)
+
+    out = StringIO()
+    call_command("bot", "download-car-doc", "--token", token, "--vin", car.vin, "--type", "TITLE", stdout=out)
+    payload = json.loads(out.getvalue())
+    assert payload["ok"] is True
+    result = payload["result"]
+    assert "ford_title" in result["filename"]
+    assert result["filename"].endswith(".pdf")
+    assert Path(result["path"]).exists()
+    assert Path(result["path"]).read_bytes() == b"test title content"
+    assert result["size"] == len(b"test title content")
+
+    from core.services.bot_runtime import bot_temp_dir
+
+    temp_dir = bot_temp_dir(principal)
+    assert result["path"].startswith(temp_dir)
+
+
+def test_download_car_doc_with_out_option():
+    from pathlib import Path
+
+    from django.core.files.base import ContentFile
+
+    _principal, token = issue_token("neto-out", "neto")
+    car = Car.objects.create(
+        year=2021,
+        brand="Mazda",
+        vin="JM1BPACL5M1200001",
+        status="UNLOADED",
+    )
+    car.title_scan.save("mazda.pdf", ContentFile(b"mazda title"), save=True)
+
+    out = StringIO()
+    call_command(
+        "bot",
+        "download-car-doc",
+        "--token",
+        token,
+        "--vin",
+        car.vin,
+        "--type",
+        "TITLE",
+        "--out",
+        "custom.pdf",
+        stdout=out,
+    )
+    payload = json.loads(out.getvalue())
+    assert payload["ok"] is True
+    assert "mazda" in payload["result"]["filename"]
+    assert Path(payload["result"]["path"]).name == "custom.pdf"
+
+
+def test_download_car_doc_rejects_out_outside_tempdir():
+    from django.core.files.base import ContentFile
+
+    _principal, token = issue_token("neto-security", "neto")
+    car = Car.objects.create(
+        year=2022,
+        brand="BMW",
+        vin="WBA8E9C50JA200001",
+        status="UNLOADED",
+    )
+    car.title_scan.save("bmw.pdf", ContentFile(b"bmw"), save=True)
+
+    out = StringIO()
+    with pytest.raises(CommandError):
+        call_command(
+            "bot",
+            "download-car-doc",
+            "--token",
+            token,
+            "--vin",
+            car.vin,
+            "--type",
+            "TITLE",
+            "--out",
+            "/etc/passwd",
+            stdout=out,
+        )
+
+
+def test_parser_cannot_access_car_commands():
+    _principal, token = issue_token("parser-car", "parser")
+    out = StringIO()
+    with pytest.raises(CommandError):
+        call_command("bot", "car", "--token", token, "--vin", "TEST", stdout=out)
+    payload = json.loads(out.getvalue())
+    assert payload["ok"] is False

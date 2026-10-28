@@ -40,6 +40,9 @@ COMMANDS: dict[str, dict] = {
     "emails": {"roles": (ROLE_CHIEF, ROLE_NETO, ROLE_HANDOVER, ROLE_PARSER), "mutates": False},
     "mark-email": {"roles": (ROLE_NETO, ROLE_HANDOVER, ROLE_PARSER), "mutates": True},
     "download-attachment": {"roles": (ROLE_NETO, ROLE_HANDOVER), "mutates": False},
+    "car": {"roles": (ROLE_CHIEF, ROLE_NETO, ROLE_HANDOVER, ROLE_ACCOUNTANT), "mutates": False},
+    "car-docs": {"roles": (ROLE_CHIEF, ROLE_NETO, ROLE_HANDOVER, ROLE_ACCOUNTANT), "mutates": False},
+    "download-car-doc": {"roles": (ROLE_CHIEF, ROLE_NETO, ROLE_HANDOVER), "mutates": False},
     "tempdir": {"roles": READ_ROLES, "mutates": False},
     "lock": {"roles": (ROLE_NETO, ROLE_HANDOVER, ROLE_PARSER, ROLE_ACCOUNTANT), "mutates": True},
     "unlock": {"roles": (ROLE_NETO, ROLE_HANDOVER, ROLE_PARSER, ROLE_ACCOUNTANT), "mutates": True},
@@ -272,6 +275,10 @@ def dictionary() -> dict:
         "atlantic_unload": "тема содержит KROVA и SANDELIAI",
         "handover_mail": "исходящее содержит Perduodam konteineri",
         "money": "статус счёта бот не пишет. Оплата — propose-invoice-payment и подтверждение, дальше BillingService.",
+        "car_docs": {
+            "TITLE": "скан тайтла из Car.title_scan",
+            "note": "car-docs --vin <VIN> возвращает список документов машины. download-car-doc копирует файл в tempdir.",
+        },
     }
 
 
