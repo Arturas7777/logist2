@@ -1548,9 +1548,6 @@ def regenerate_invoices_for_car_task(self, car_id):
     Вынесено в Celery: HTTP отвечает быстрее, ретраи на ошибках,
     дедупликация на стороне сигнала.
     """
-    from django.db import transaction as db_transaction
-    from django.db.utils import OperationalError
-
     from core.mixins import AUTO_REGENERATABLE_INVOICE_STATUSES
     from core.models_billing import NewInvoice
 
@@ -1564,22 +1561,8 @@ def regenerate_invoices_for_car_task(self, car_id):
         .values_list("id", flat=True)
         .distinct()
     )
-    skipped = 0
-    regenerated = 0
-    for invoice_id in invoice_ids:
-        try:
-            with db_transaction.atomic():
-                invoice = NewInvoice.objects.select_for_update(nowait=True).get(id=invoice_id)
-                invoice.regenerate_items_from_cars()
-                regenerated += 1
-        except OperationalError:
-            logger.warning(
-                "[regenerate_invoices_for_car] invoice %s locked, skipping",
-                invoice_id,
-            )
-            skipped += 1
-        except NewInvoice.DoesNotExist:
-            pass
+    regenerated, locked = _regenerate_draft_invoices(invoice_ids, "regenerate_invoices_for_car")
+    skipped = len(locked)
     if regenerated or skipped:
         logger.info(
             "[regenerate_invoices_for_car] car=%s regenerated=%s skipped=%s",
@@ -1588,6 +1571,59 @@ def regenerate_invoices_for_car_task(self, car_id):
             skipped,
         )
     return {"car_id": car_id, "regenerated": regenerated, "skipped": skipped}
+
+
+INVOICE_REGEN_LOCK_RETRY_SEC = 30
+
+
+def _regenerate_invoices_now(invoice_ids) -> tuple[int, list[int]]:
+    """Пересобрать черновики; занятые (``nowait``) вернуть списком."""
+    from django.db import transaction as db_transaction
+    from django.db.utils import OperationalError
+
+    from core.mixins import AUTO_REGENERATABLE_INVOICE_STATUSES
+    from core.models_billing import NewInvoice
+
+    regenerated = 0
+    locked = []
+    for invoice_id in invoice_ids:
+        try:
+            with db_transaction.atomic():
+                invoice = NewInvoice.objects.select_for_update(nowait=True).get(
+                    id=invoice_id, status__in=AUTO_REGENERATABLE_INVOICE_STATUSES
+                )
+                invoice.regenerate_items_from_cars()
+                regenerated += 1
+        except OperationalError:
+            locked.append(invoice_id)
+        except NewInvoice.DoesNotExist:
+            pass
+    return regenerated, locked
+
+
+def _regenerate_draft_invoices(invoice_ids, log_prefix) -> tuple[int, list[int]]:
+    """Пересборка черновиков; занятые другим процессом — повтор позже.
+
+    Раньше заблокированный инвойс просто пропускался, и его позиции
+    оставались устаревшими до следующего изменения машины.
+    """
+    regenerated, locked = _regenerate_invoices_now(invoice_ids)
+    if locked:
+        logger.warning("[%s] invoices %s locked, retry in %ss", log_prefix, locked, INVOICE_REGEN_LOCK_RETRY_SEC)
+        regenerate_draft_invoices_task.apply_async(args=[locked], countdown=INVOICE_REGEN_LOCK_RETRY_SEC)
+    return regenerated, locked
+
+
+@shared_task(bind=True, max_retries=5, default_retry_delay=INVOICE_REGEN_LOCK_RETRY_SEC, time_limit=120)
+def regenerate_draft_invoices_task(self, invoice_ids):
+    """Повторная пересборка черновиков, которые были заняты другим процессом."""
+    regenerated, locked = _regenerate_invoices_now(invoice_ids)
+    if locked:
+        if self.request.retries >= self.max_retries:
+            logger.error("[regenerate_draft_invoices] invoices %s still locked, giving up", locked)
+        else:
+            raise self.retry(args=[locked])
+    return {"regenerated": regenerated, "locked": locked}
 
 
 @shared_task(
@@ -1715,9 +1751,6 @@ def finalize_cars_transfer_task(self, car_ids):
     затем пересобираем позиции открытых инвойсов этих машин — иначе
     regen прочитал бы устаревшие цены CarService.
     """
-    from django.db import transaction as db_transaction
-    from django.db.utils import OperationalError
-
     from core.mixins import AUTO_REGENERATABLE_INVOICE_STATUSES
     from core.models_billing import NewInvoice
 
@@ -1733,18 +1766,8 @@ def finalize_cars_transfer_task(self, car_ids):
         .values_list("id", flat=True)
         .distinct()
     )
-    regenerated = skipped = 0
-    for invoice_id in invoice_ids:
-        try:
-            with db_transaction.atomic():
-                invoice = NewInvoice.objects.select_for_update(nowait=True).get(id=invoice_id)
-                invoice.regenerate_items_from_cars()
-                regenerated += 1
-        except OperationalError:
-            logger.warning("[finalize_cars_transfer] invoice %s locked, skipping", invoice_id)
-            skipped += 1
-        except NewInvoice.DoesNotExist:
-            pass
+    regenerated, locked = _regenerate_draft_invoices(invoice_ids, "finalize_cars_transfer")
+    skipped = len(locked)
     logger.info(
         "[finalize_cars_transfer] cars=%s invoices=%s regenerated=%s skipped=%s",
         len(car_ids),

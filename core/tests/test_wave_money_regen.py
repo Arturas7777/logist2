@@ -130,6 +130,67 @@ class TestAutoRegenOnlyDraft:
         assert issued.total == Decimal("100.00")
         assert issued.items.get().unit_price == Decimal("100.00")
 
+    def test_locked_draft_is_regenerated_on_retry(self, company, client_entity, car, unloading):
+        """L6: занятый черновик не теряется — пересобирается отложенной задачей."""
+        from unittest import mock
+
+        from django.db.utils import OperationalError
+
+        from core import tasks
+
+        svc = _service(car, unloading, 100)
+        draft = _invoice(company, client_entity, car, status="DRAFT")
+        CarService.objects.filter(pk=svc.pk).update(custom_price=Decimal("170"))
+
+        real_regen = tasks._regenerate_invoices_now
+        calls = {"n": 0}
+
+        def locked_first(invoice_ids):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise_locked = mock.MagicMock(side_effect=OperationalError("could not obtain lock"))
+                with mock.patch.object(NewInvoice.objects, "select_for_update", raise_locked):
+                    return real_regen(invoice_ids)
+            return real_regen(invoice_ids)
+
+        with (
+            mock.patch.object(tasks, "_regenerate_invoices_now", side_effect=locked_first),
+            mock.patch.object(tasks.regenerate_draft_invoices_task, "apply_async") as later,
+        ):
+            result = tasks.regenerate_invoices_for_car_task(car.pk)
+            assert result["skipped"] == 1
+            later.assert_called_once()
+            assert later.call_args.kwargs["args"] == [[draft.pk]]
+            assert later.call_args.kwargs["countdown"] > 0
+
+            assert tasks.regenerate_draft_invoices_task(*later.call_args.kwargs["args"]) == {
+                "regenerated": 1,
+                "locked": [],
+            }
+
+        draft.refresh_from_db()
+        assert draft.total == Decimal("170.00")
+
+    def test_still_locked_after_retries_is_logged(self, company, client_entity, car, unloading):
+        from unittest import mock
+
+        from celery.exceptions import Retry
+
+        from core import tasks
+
+        draft = _invoice(company, client_entity, car, status="DRAFT")
+        task = tasks.regenerate_draft_invoices_task
+        with (
+            mock.patch.object(tasks, "_regenerate_invoices_now", return_value=(0, [draft.pk])),
+            mock.patch.object(tasks.logger, "error") as log_error,
+        ):
+            with pytest.raises(Retry):
+                task.apply(args=[[draft.pk]]).get()
+            result = task.apply(args=[[draft.pk]], retries=task.max_retries).get()
+
+        assert result == {"regenerated": 0, "locked": [draft.pk]}
+        log_error.assert_called_once()
+
     def test_inline_fallback_also_skips_issued(self, company, client_entity, car, unloading):
         from core.signals.car_service import _regenerate_invoices_for_car_inline
 
