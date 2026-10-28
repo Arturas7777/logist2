@@ -6,15 +6,15 @@
 Обе функции:
   1. Валидируют вход (адреса, размер вложений).
   2. Добавляют подпись из settings.
-  3. Собирают MIME, зовут Gmail API через ``gmail_sender.send_message``.
-  4. Сохраняют вложения в ``MEDIA_ROOT/container_emails/<yyyy>/<mm>/<gmail_id>/``.
-  5. Создают локальную запись ``ContainerEmail`` с ``direction=OUTGOING``,
-     ``send_status=SENT``, заполненным ``thread_id`` / ``in_reply_to`` /
-     ``references`` для последующего matching входящих ответов.
+  3. Собирают MIME и создают запись ``ContainerEmail`` (``direction=OUTGOING``,
+     ``send_status=PENDING``) со связями — ДО вызова Gmail API.
+  4. Зовут Gmail API через ``gmail_sender.send_message``.
+  5. Сохраняют вложения в ``MEDIA_ROOT/container_emails/<yyyy>/<mm>/<gmail_id>/``
+     и переводят запись в ``SENT`` с ``gmail_id`` / ``thread_id`` для
+     последующего matching входящих ответов.
 
-При ошибке API создаётся запись с ``send_status=FAILED`` и пустым ``gmail_id``
-(нужно для UI — показать кнопку «Повторить»). Чтобы избежать дубликатов
-message_id в этом кейсе, используется локально-сгенерированный Message-ID.
+При ошибке API запись переводится в ``send_status=FAILED`` с пустым
+``gmail_id`` (UI показывает ошибку).
 """
 
 from __future__ import annotations
@@ -44,7 +44,6 @@ from core.services.email_reply_parser import (
 )
 from core.services.gmail_client import GmailApiClient
 from core.services.gmail_sender import (
-    SendError,
     build_mime_message,
     get_from_address,
     send_message,
@@ -656,84 +655,15 @@ def _send_and_persist(
     now = timezone.now()
 
     client = GmailApiClient()
-    try:
-        response = send_message(
-            gmail_client=client,
-            mime_msg=mime,
-            thread_id=thread_id,
-        )
-    except SendError as exc:
-        # Сохраняем «неудачную» запись — чтобы показать в UI с кнопкой «Повторить».
-        failed_id = local_message_id or f"<failed-{uuid.uuid4().hex}@logist2.local>"
-        email = ContainerEmail.objects.create(
-            sent_from_container=container,
-            message_id=failed_id,
-            thread_id=getattr(parent_email, "thread_id", "") if parent_email else "",
-            in_reply_to=in_reply_to,
-            references=references,
-            direction=ContainerEmail.DIRECTION_OUTGOING,
-            from_addr=from_addr,
-            to_addrs=", ".join(to_list),
-            cc_addrs=", ".join(cc_list),
-            subject=subject_final,
-            body_text=body_text_final,
-            body_html=body_html_final,
-            snippet=(body_text_final or "")[:300],
-            received_at=now,
-            gmail_id="",
-            labels_json=[],
-            attachments_json=[
-                {
-                    "filename": f[0],
-                    "size": len(f[1]),
-                    "content_type": f[2],
-                    "storage_path": "",
-                    "attachment_id": "",
-                    "is_inline": False,
-                }
-                for f in attachments_payload
-            ],
-            matched_by=matched_by,
-            sent_by_user=user if (user and getattr(user, "is_authenticated", False)) else None,
-            send_status=ContainerEmail.SEND_STATUS_FAILED,
-            send_error=str(exc)[:2000],
-        )
-        _link_outgoing_to_containers(
-            email=email,
-            origin_container=container,
-            parent_email=parent_email,
-            source_text=source_text_for_matching,
-            origin_matched_by=matched_by,
-        )
-        _link_outgoing_to_cars(
-            email=email,
-            origin_car=origin_car,
-            origin_autotransport=origin_autotransport,
-            parent_email=parent_email,
-            source_text=source_text_for_matching,
-        )
-        _link_outgoing_to_transport_requests(
-            email=email,
-            origin_transport_request=origin_transport_request,
-            parent_email=parent_email,
-            source_text=source_text_for_matching,
-        )
-        raise
 
-    gmail_id = response.get("id", "") or ""
-    gmail_thread_id = response.get("threadId", "") or thread_id or ""
-    labels = list(response.get("labelIds") or [])
-
-    stored_attachments = _save_outgoing_attachments(
-        attachments_payload,
-        gmail_id,
-        now,
-    )
-
+    # Запись PENDING создаётся ДО отправки: Gmail-синк может подтянуть
+    # отправленное письмо раньше, чем мы вернёмся из API, — тогда он найдёт
+    # эту запись по Message-ID и дополнит её, а не создаст дубль
+    # (раньше create после отправки падал на unique message_id).
     email = ContainerEmail.objects.create(
         sent_from_container=container,
-        message_id=local_message_id,
-        thread_id=gmail_thread_id,
+        message_id=local_message_id or f"<pending-{uuid.uuid4().hex}@logist2.local>",
+        thread_id=getattr(parent_email, "thread_id", "") if parent_email else "",
         in_reply_to=in_reply_to,
         references=references,
         direction=ContainerEmail.DIRECTION_OUTGOING,
@@ -745,16 +675,24 @@ def _send_and_persist(
         body_html=body_html_final,
         snippet=(body_text_final or "")[:300],
         received_at=now,
-        gmail_id=gmail_id,
-        gmail_history_id=None,
-        labels_json=labels,
-        attachments_json=stored_attachments,
+        gmail_id="",
+        labels_json=[],
+        attachments_json=[
+            {
+                "filename": f[0],
+                "size": len(f[1]),
+                "content_type": f[2],
+                "storage_path": "",
+                "attachment_id": "",
+                "is_inline": False,
+            }
+            for f in attachments_payload
+        ],
         matched_by=matched_by,
         sent_by_user=user if (user and getattr(user, "is_authenticated", False)) else None,
-        send_status=ContainerEmail.SEND_STATUS_SENT,
+        send_status=ContainerEmail.SEND_STATUS_PENDING,
         send_error="",
     )
-
     _link_outgoing_to_containers(
         email=email,
         origin_container=container,
@@ -775,6 +713,29 @@ def _send_and_persist(
         parent_email=parent_email,
         source_text=source_text_for_matching,
     )
+
+    try:
+        response = send_message(
+            gmail_client=client,
+            mime_msg=mime,
+            thread_id=thread_id,
+        )
+    except Exception as exc:
+        email.send_status = ContainerEmail.SEND_STATUS_FAILED
+        email.send_error = str(exc)[:2000]
+        email.save(update_fields=["send_status", "send_error"])
+        raise
+
+    gmail_id = response.get("id", "") or ""
+    gmail_thread_id = response.get("threadId", "") or thread_id or ""
+    labels = list(response.get("labelIds") or [])
+
+    email.gmail_id = gmail_id
+    email.thread_id = gmail_thread_id
+    email.labels_json = labels
+    email.attachments_json = _save_outgoing_attachments(attachments_payload, gmail_id, now)
+    email.send_status = ContainerEmail.SEND_STATUS_SENT
+    email.save(update_fields=["gmail_id", "thread_id", "labels_json", "attachments_json", "send_status"])
 
     # Follow-up flag: если отвечаем на помеченное «ответить позже» письмо —
     # автоматически снимаем флаг, т.к. обязательство закрыто отправкой ответа.
