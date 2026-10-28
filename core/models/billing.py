@@ -85,6 +85,46 @@ class NewInvoiceQuerySet(models.QuerySet):
 
         return self.filter(receivable_invoice_q())
 
+    def with_expected_paid(self):
+        """Аннотация ``expected_paid`` — единственная формула ``paid_amount``.
+
+        PAYMENT − REFUND + ADJUSTMENT (кредит-нота на исходный счёт) по
+        COMPLETED-транзакциям, не меньше нуля. Её используют
+        ``recalculate_paid_amount`` и все проверки консистентности.
+        """
+        from django.db.models.functions import Coalesce, Greatest
+
+        money = models.DecimalField(max_digits=15, decimal_places=2)
+        zero = models.Value(Decimal("0.00"), output_field=money)
+
+        def part(tx_type):
+            return Coalesce(
+                models.Sum(
+                    "transactions__amount",
+                    filter=models.Q(transactions__status="COMPLETED", transactions__type=tx_type),
+                ),
+                zero,
+                output_field=money,
+            )
+
+        return self.annotate(
+            expected_paid=Greatest(part("PAYMENT") - part("REFUND") + part("ADJUSTMENT"), zero, output_field=money)
+        )
+
+    def paid_amount_mismatches(self):
+        """Счета, где сохранённый ``paid_amount`` расходится с ``with_expected_paid``.
+
+        LINKED_PAID (оплачен парным документом) и кредит-ноты
+        ``recalculate_paid_amount`` не ведёт, у отменённых оплат нет — их
+        не проверяем.
+        """
+        return (
+            self.exclude(status__in=("CANCELLED", "LINKED_PAID"))
+            .exclude(document_type="CREDIT_NOTE")
+            .with_expected_paid()
+            .exclude(paid_amount=models.F("expected_paid"))
+        )
+
 
 class NewInvoice(models.Model):
     """
@@ -671,7 +711,6 @@ class NewInvoice(models.Model):
             return
         from django.db import connection
         from django.db import transaction as db_transaction
-        from django.db.models import Sum
 
         with db_transaction.atomic():
             if connection.features.has_select_for_update:
@@ -682,27 +721,12 @@ class NewInvoice(models.Model):
                 return
             if locked.status == "LINKED_PAID" or locked.document_type == "CREDIT_NOTE":
                 return
-            payments = locked.transactions.filter(type="PAYMENT", status="COMPLETED").aggregate(total=Sum("amount"))[
-                "total"
-            ] or Decimal("0.00")
-            refunds = locked.transactions.filter(type="REFUND", status="COMPLETED").aggregate(total=Sum("amount"))[
-                "total"
-            ] or Decimal("0.00")
-            # Кредит-нота проводится как ADJUSTMENT на исходный счёт и
-            # уменьшает долг, не двигая авансовый баланс клиента.
-            credits = locked.transactions.filter(type="ADJUSTMENT", status="COMPLETED").aggregate(total=Sum("amount"))[
-                "total"
-            ] or Decimal("0.00")
-            calculated = payments - refunds + credits
-            if calculated < Decimal("0.00"):
-                logger.warning(
-                    "Invoice %s: paid_amount would be negative (%s). Payments=%s, Refunds=%s. Clamping to 0.",
-                    locked.number,
-                    calculated,
-                    payments,
-                    refunds,
-                )
-            locked.paid_amount = max(Decimal("0.00"), calculated)
+            locked.paid_amount = (
+                NewInvoice.objects.filter(pk=locked.pk)
+                .with_expected_paid()
+                .values_list("expected_paid", flat=True)
+                .get()
+            )
             locked.update_status()
             locked.save(update_fields=["paid_amount", "status", "updated_at"])
             self.paid_amount = locked.paid_amount

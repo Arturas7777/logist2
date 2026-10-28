@@ -404,8 +404,7 @@ def _collect_balance_mismatches():
     """
     from decimal import Decimal
 
-    from django.db.models import DecimalField, Q, Sum, Value
-    from django.db.models.functions import Coalesce
+    from django.db.models import Q, Sum
 
     from core.models import Carrier, Client, Company, Line, Warehouse
     from core.models_billing import NewInvoice, Transaction
@@ -459,47 +458,10 @@ def _collect_balance_mismatches():
                     }
                 )
 
-    invoice_mismatches = []
-    qs = (
-        NewInvoice.objects.exclude(status__in=["CANCELLED", "LINKED_PAID"])
-        .annotate(
-            _paid=Coalesce(
-                Sum(
-                    "transactions__amount",
-                    filter=Q(
-                        transactions__status="COMPLETED",
-                        transactions__type="PAYMENT",
-                    ),
-                ),
-                Value(ZERO),
-                output_field=DecimalField(max_digits=15, decimal_places=2),
-            ),
-            _refund=Coalesce(
-                Sum(
-                    "transactions__amount",
-                    filter=Q(
-                        transactions__status="COMPLETED",
-                        transactions__type="REFUND",
-                    ),
-                ),
-                Value(ZERO),
-                output_field=DecimalField(max_digits=15, decimal_places=2),
-            ),
-        )
-        .only("id", "number", "status", "paid_amount", "total", "updated_at", "due_date")
-    )
-
-    for inv in qs.iterator():
-        expected_paid = max(ZERO, (inv._paid or ZERO) - (inv._refund or ZERO))
-        if inv.paid_amount != expected_paid:
-            invoice_mismatches.append(
-                {
-                    "pk": inv.pk,
-                    "number": inv.number,
-                    "stored": inv.paid_amount,
-                    "expected": expected_paid,
-                }
-            )
+    invoice_mismatches = [
+        {"pk": inv.pk, "number": inv.number, "stored": inv.paid_amount, "expected": inv.expected_paid}
+        for inv in NewInvoice.objects.paid_amount_mismatches().only("id", "number", "paid_amount")
+    ]
 
     return balance_mismatches, invoice_mismatches
 
@@ -549,12 +511,8 @@ def repair_balance_consistency(self):
             balance_fixes += 1
 
     for m in invoice_mismatches:
-        with db_transaction.atomic():
-            inv = NewInvoice.objects.select_for_update().get(pk=m["pk"])
-            inv.paid_amount = m["expected"]
-            inv.update_status()
-            inv.save(update_fields=["paid_amount", "status", "updated_at"])
-            invoice_fixes += 1
+        NewInvoice.objects.get(pk=m["pk"]).recalculate_paid_amount()
+        invoice_fixes += 1
 
     if balance_fixes:
         logger.warning(

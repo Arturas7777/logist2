@@ -13,10 +13,8 @@ Usage:
 """
 
 import logging
-from decimal import Decimal
 
 from django.core.management.base import BaseCommand
-from django.db.models import Sum
 
 logger = logging.getLogger(__name__)
 
@@ -109,28 +107,18 @@ class Command(BaseCommand):
 
         self.stdout.write("\n--- Invoice paid_amount check ---")
         issues = 0
-        invoices = NewInvoice.objects.exclude(status="CANCELLED")
-        for inv in invoices.iterator():
-            payments = inv.transactions.filter(type="PAYMENT", status="COMPLETED").aggregate(total=Sum("amount"))[
-                "total"
-            ] or Decimal("0.00")
-            refunds = inv.transactions.filter(type="REFUND", status="COMPLETED").aggregate(total=Sum("amount"))[
-                "total"
-            ] or Decimal("0.00")
-            expected = max(Decimal("0.00"), payments - refunds)
-            if inv.paid_amount != expected:
-                issues += 1
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"  Invoice {inv.number}: stored paid_amount={inv.paid_amount}, "
-                        f"expected={expected} (diff={inv.paid_amount - expected})"
-                    )
+        for inv in NewInvoice.objects.paid_amount_mismatches():
+            issues += 1
+            expected = inv.expected_paid
+            self.stdout.write(
+                self.style.WARNING(
+                    f"  Invoice {inv.number}: stored paid_amount={inv.paid_amount}, "
+                    f"expected={expected} (diff={inv.paid_amount - expected})"
                 )
-                if fix:
-                    inv.paid_amount = expected
-                    inv.update_status()
-                    inv.save(update_fields=["paid_amount", "status", "updated_at"])
-                    self.stdout.write(f"    -> Fixed to {expected}, status={inv.status}")
+            )
+            if fix:
+                inv.recalculate_paid_amount()
+                self.stdout.write(f"    -> Fixed to {inv.paid_amount}, status={inv.status}")
 
         if issues == 0:
             self.stdout.write(self.style.SUCCESS("  All invoice paid_amounts are consistent."))

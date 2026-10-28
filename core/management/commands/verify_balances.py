@@ -111,12 +111,6 @@ class Command(BaseCommand):
         return fixed
 
     def _fix_invoices(self, mismatches, NewInvoice):
-        fixed = 0
         for m in mismatches:
-            with db_transaction.atomic():
-                inv = NewInvoice.objects.select_for_update().get(pk=m["pk"])
-                inv.paid_amount = m["expected"]
-                inv.update_status()
-                inv.save(update_fields=["paid_amount", "status", "updated_at"])
-                fixed += 1
-        return fixed
+            NewInvoice.objects.get(pk=m["pk"]).recalculate_paid_amount()
+        return len(mismatches)

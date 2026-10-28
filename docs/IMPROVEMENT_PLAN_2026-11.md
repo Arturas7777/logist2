@@ -119,7 +119,7 @@
 - DoD: тесты: BT на PAID-счёт; BT на 100.80 при счёте 100 → TOPUP 0.80;
   отчёт `--dry-run` по прошлым операциям, привязанным к PAID без транзакции.
 
-### M5. Одна формула `paid_amount` (High, S)
+### [x] M5. Одна формула `paid_amount` (High, S)
 - Где: модель — платежи − возвраты + ADJUSTMENT (`models/billing.py:668-679`);
   `_collect_balance_mismatches` (`tasks.py:463-493`) и `verify_balances --fix`
   (`verify_balances.py:113-121`) — без ADJUSTMENT, т. е. «чинят» счета с
