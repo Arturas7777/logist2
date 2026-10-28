@@ -1410,7 +1410,9 @@ class BillingService:
         return plan, left
 
     @classmethod
-    def allocate_bank_transaction(cls, bank_transaction, allocations, *, client=None, created_by=None) -> dict:
+    def allocate_bank_transaction(
+        cls, bank_transaction, allocations, *, client=None, created_by=None, note_prefix="Разнесено"
+    ) -> dict:
         """Разнести ОДИН входящий банковский платёж по нескольким инвойсам клиента.
 
         Атомарно, под ``select_for_update`` на BT и инвойсах:
@@ -1430,6 +1432,7 @@ class BillingService:
                 одного клиента-получателя, сумма ≤ |bt.amount|, каждая ≤ остатка.
             client: клиент для остатка, если ``allocations`` пуст (весь платёж на баланс).
             created_by: пользователь.
+            note_prefix: начало ``reconciliation_note`` перед перечнем разнесения.
 
         Returns:
             dict: ``{"payments": [Transaction], "remainder_topup": Transaction|None,
@@ -1527,7 +1530,7 @@ class BillingService:
 
             bt.matched_transaction = payments[0] if payments else remainder_topup
             bt.matched_invoice = locked[invoice_ids[0]] if invoice_ids else None
-            bt.reconciliation_note = ("Разнесено: " + "; ".join(note_parts))[:255]
+            bt.reconciliation_note = (f"{note_prefix}: " + "; ".join(note_parts))[:255]
             bt.save(update_fields=["matched_transaction", "matched_invoice", "reconciliation_note", "fetched_at"])
 
             logger.info(

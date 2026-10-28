@@ -9,6 +9,10 @@
    сумме НЕСКОЛЬКИХ открытых инвойсов клиента (жадно по дате, допуск 1 €) —
    платёж разносится по инвойсам через ``BillingService.allocate_bank_transaction``.
 
+Кандидаты — только открытые счета с остатком > 0. Переплата сверх остатка и
+платёж с номером уже оплаченного счёта зачисляются клиенту на аванс
+(BALANCE_TOPUP) с пометкой в ``reconciliation_note``.
+
 Для несопоставленных операций в ``reconciliation_note`` пишется причина
 («нет номера инвойса…», «сумма не совпала…», «контрагент не распознан»,
 «валюта не EUR») — это и есть колонка «почему не сматчилось» в админке.
@@ -26,6 +30,7 @@ from decimal import Decimal
 from django.core.management.base import BaseCommand
 from django.db import transaction as db_transaction
 
+from core.mixins import OPEN_INVOICE_STATUSES
 from core.models import Client
 from core.models_banking import BankTransaction
 from core.models_billing import NewInvoice
@@ -147,6 +152,11 @@ def unmatched_reason(bt, all_invoices, client) -> str:
         candidate = all_invoices.get(inv_num)
         if candidate is None:
             return f"Не сопоставлено: номер {inv_num} в назначении не найден в системе"
+        if candidate.status not in OPEN_INVOICE_STATUSES:
+            return (
+                f"Не сопоставлено: {inv_num} в статусе «{candidate.get_status_display()}», "
+                f"платёж {bt.amount} при сумме счёта {candidate.total}"
+            )
         remaining = candidate.total - candidate.paid_amount
         return f"Не сопоставлено: сумма не совпала — платёж {bt.amount}, {inv_num} остаток {remaining}"
     if client is None:
@@ -161,12 +171,56 @@ def _set_unmatched_note(bt, reason, dry_run):
     bt.save(update_fields=["reconciliation_note", "fetched_at"])
 
 
+AMOUNT_TOLERANCE = Decimal("1")
+
+
+def _amount_matches(amount, invoice) -> bool:
+    """Платёж равен сумме счёта или его остатку (допуск 1 €)."""
+    return abs(amount - invoice.total) <= AMOUNT_TOLERANCE or abs(amount - invoice.remaining_amount) <= AMOUNT_TOLERANCE
+
+
+def _apply_match(bt, invoice, rule):
+    """Оплатить счёт из BT; переплату сверх остатка — на аванс клиента."""
+    from core.services.billing_service import BillingService
+
+    note_prefix = f"Авто-сопоставление (правило {rule})"
+    amount = min(bt.amount, invoice.remaining_amount)
+    if invoice.recipient_client_id:
+        BillingService.allocate_bank_transaction(bt, [(invoice, amount)], note_prefix=note_prefix)
+        return
+
+    # Получатель не клиент: у партнёров нет авансового счёта для переплаты.
+    with db_transaction.atomic():
+        locked = NewInvoice.objects.select_for_update().get(pk=invoice.pk)
+        amount = min(bt.amount, locked.remaining_amount)
+        tx = BillingService.register_incoming_bank_payment(
+            locked,
+            amount,
+            date=bt.created_at,
+            description=f"Авто-сопоставление банковского платежа {bt.counterparty_name} -> {locked.number}",
+        )
+        note = note_prefix
+        if bt.amount > amount:
+            note += f"; переплата {bt.amount - amount} не зачислена — получатель не клиент"
+        bt.matched_invoice = locked
+        bt.matched_transaction = tx
+        bt.reconciliation_note = note[:255]
+        bt.save(update_fields=["matched_invoice", "matched_transaction", "reconciliation_note", "fetched_at"])
+
+
 def reconcile_incoming_payments(dry_run=False):
     """
     Match incoming bank transactions (amount > 0) to outgoing invoices (to clients).
+
+    Кандидаты правил 1–4 — только счета к оплате (``NewInvoice.objects.receivable()``)
+    с остатком > 0. Переплата сверх остатка и платёж с номером уже оплаченного
+    счёта (правило 1) зачисляются клиенту на аванс (BALANCE_TOPUP);
+    ``already_paid`` — число таких платежей по оплаченным счетам.
+
     Returns dict with counts: {rule1, rule2, rule3, rule4, already_paid, no_match, total}.
     """
-    from core.mixins import OPEN_INVOICE_STATUSES
+    from django.db.models import F
+
     from core.services.billing_service import BillingService
 
     unreconciled = BankTransaction.objects.filter(
@@ -182,21 +236,25 @@ def reconcile_incoming_payments(dry_run=False):
             "recipient_client",
         )
     }
+    payable = {
+        inv.pk: inv
+        for inv in NewInvoice.objects.receivable().filter(total__gt=F("paid_amount")).select_related("recipient_client")
+    }
 
     caromoto_bel = Client.objects.filter(name__icontains="Caromoto-Bel").first()
 
     client_invoice_map = {}
-    for inv in all_invoices.values():
+    for inv in payable.values():
         if inv.recipient_client_id:
             client_invoice_map.setdefault(inv.recipient_client_id, []).append(inv)
 
     stats = {"rule1": 0, "rule2": 0, "rule3": 0, "rule4": 0, "already_paid": 0, "no_match": 0}
     matched_invoice_ids = set()
-    matches = []
 
     for bt in unreconciled:
         invoice = None
         rule = None
+        paid_invoice = None
 
         if (bt.currency or "EUR").upper() != "EUR":
             stats["no_match"] += 1
@@ -204,15 +262,38 @@ def reconcile_incoming_payments(dry_run=False):
             continue
 
         inv_num = extract_invoice_number(bt.description)
-        if inv_num and inv_num in all_invoices:
-            candidate = all_invoices[inv_num]
-            if candidate.id not in matched_invoice_ids:
-                if abs(bt.amount - candidate.total) <= Decimal("1"):
-                    invoice = candidate
+        candidate = all_invoices.get(inv_num) if inv_num else None
+        if candidate is not None and candidate.id not in matched_invoice_ids:
+            open_candidate = payable.get(candidate.pk)
+            if open_candidate is not None:
+                if _amount_matches(bt.amount, open_candidate):
+                    invoice = open_candidate
                     rule = 1
-                elif abs(bt.amount - (candidate.total - candidate.paid_amount)) <= Decimal("1"):
-                    invoice = candidate
-                    rule = 1
+            elif (
+                candidate.status == "PAID"
+                and candidate.recipient_client_id
+                and abs(bt.amount - candidate.total) <= AMOUNT_TOLERANCE
+            ):
+                paid_invoice = candidate
+
+        if paid_invoice is not None:
+            stats["already_paid"] += 1
+            logger.info(
+                "[reconcile_incoming] R1: %s +%s EUR %s -> %s уже оплачен, на аванс %s",
+                bt.created_at.strftime("%Y-%m-%d"),
+                bt.amount,
+                (bt.counterparty_name or "")[:25],
+                paid_invoice.number,
+                paid_invoice.recipient_client,
+            )
+            if not dry_run:
+                BillingService.allocate_bank_transaction(
+                    bt,
+                    [],
+                    client=paid_invoice.recipient_client,
+                    note_prefix=f"Счёт {paid_invoice.number} уже оплачен — платёж на аванс клиента",
+                )
+            continue
 
         if not invoice and caromoto_bel:
             cp_lower = (bt.counterparty_name or "").lower().strip()
@@ -221,7 +302,7 @@ def reconcile_incoming_payments(dry_run=False):
                 for inv in bel_invoices:
                     if inv.id in matched_invoice_ids:
                         continue
-                    if abs(bt.amount - inv.total) <= Decimal("1"):
+                    if _amount_matches(bt.amount, inv):
                         invoice = inv
                         rule = 2
                         break
@@ -236,7 +317,7 @@ def reconcile_incoming_payments(dry_run=False):
                         client_name = inv.recipient_client.name if inv.recipient_client else ""
                         if not fuzzy_match_name(cp_name, client_name):
                             continue
-                        if abs(bt.amount - inv.total) <= Decimal("1"):
+                        if _amount_matches(bt.amount, inv):
                             invoice = inv
                             rule = 3
                             break
@@ -249,9 +330,7 @@ def reconcile_incoming_payments(dry_run=False):
             identified_client = _identify_client(bt, caromoto_bel, client_invoice_map)
             if identified_client is not None:
                 open_invoices = [
-                    inv
-                    for inv in client_invoice_map.get(identified_client.pk, [])
-                    if inv.status in OPEN_INVOICE_STATUSES and inv.id not in matched_invoice_ids
+                    inv for inv in client_invoice_map.get(identified_client.pk, []) if inv.id not in matched_invoice_ids
                 ]
                 plan = plan_multi_invoice_allocation(bt.amount, open_invoices)
                 if plan:
@@ -280,54 +359,29 @@ def reconcile_incoming_payments(dry_run=False):
             _set_unmatched_note(bt, unmatched_reason(bt, all_invoices, identified_client), dry_run)
             continue
 
-        is_already_paid = invoice.status == "PAID" and invoice.paid_amount >= invoice.total
-        if is_already_paid:
-            stats["already_paid"] += 1
-
         matched_invoice_ids.add(invoice.id)
         stats[f"rule{rule}"] += 1
-        matches.append((bt, invoice, rule))
 
-        recipient = invoice.recipient_client or invoice.recipient
         logger.info(
-            "[reconcile_incoming] R%d: %s +%s EUR %s -> %s (%s)%s",
+            "[reconcile_incoming] R%d: %s +%s EUR %s -> %s (%s)",
             rule,
             bt.created_at.strftime("%Y-%m-%d"),
             bt.amount,
             (bt.counterparty_name or "")[:25],
             invoice.number,
-            recipient,
-            " [already paid]" if is_already_paid else "",
+            invoice.recipient_client or invoice.recipient,
         )
 
         if dry_run:
             continue
 
-        with db_transaction.atomic():
-            invoice = NewInvoice.objects.select_for_update().get(pk=invoice.pk)
-
-            bt.matched_invoice = invoice
-            bt.reconciliation_note = f"Авто-сопоставление (правило {rule})"
-            bt.save(update_fields=["matched_invoice", "reconciliation_note", "fetched_at"])
-
-            payment_amount = min(bt.amount, invoice.total - invoice.paid_amount)
-            if payment_amount > 0:
-                # Единая точка регистрации входящего банковского платежа:
-                # для клиентов — пара BALANCE_TOPUP + PAYMENT(BALANCE), чтобы
-                # авансовый счёт клиента не уходил в минус; для остальных —
-                # одиночный PAYMENT(TRANSFER). См. BillingService.
-                from core.services.billing_service import BillingService
-
-                tx = BillingService.register_incoming_bank_payment(
-                    invoice,
-                    payment_amount,
-                    date=bt.created_at,
-                    description=(f"Авто-сопоставление банковского платежа {bt.counterparty_name} -> {invoice.number}"),
-                )
-
-                if tx is not None:
-                    bt.matched_transaction = tx
-                    bt.save(update_fields=["matched_transaction", "fetched_at"])
+        try:
+            _apply_match(bt, invoice, rule)
+        except ValueError as exc:
+            logger.warning("[reconcile_incoming] R%d BT %s не сопоставлен: %s", rule, bt.pk, exc)
+            stats[f"rule{rule}"] -= 1
+            stats["no_match"] += 1
+            _set_unmatched_note(bt, f"Не сопоставлено: правило {rule} — {exc}", dry_run)
 
     stats["total"] = stats["rule1"] + stats["rule2"] + stats["rule3"] + stats["rule4"]
     return stats
@@ -354,7 +408,7 @@ class Command(BaseCommand):
         self.stdout.write(f"  Правило 3 (имя + сумма): {stats['rule3']}")
         self.stdout.write(f"  Правило 4 (один платёж → несколько инвойсов): {stats['rule4']}")
         self.stdout.write(f"  Итого сопоставлено: {stats['total']}")
-        self.stdout.write(f"  Уже оплачены (пропущено): {stats['already_paid']}")
+        self.stdout.write(f"  Счёт уже оплачен → на аванс клиента: {stats['already_paid']}")
         self.stdout.write(f"  Без совпадения: {stats['no_match']}")
 
         if dry_run:

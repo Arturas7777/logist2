@@ -107,7 +107,7 @@
   сколько счетов сейчас OVERDUE, которые никогда не были ISSUED.
 - DoD: тест «DRAFT с прошедшим `due_date` после `recalculate_paid_amount` остаётся DRAFT».
 
-### M4. Автосверка привязывает поступления к оплаченным счетам (High, M) ✅
+### [x] M4. Автосверка привязывает поступления к оплаченным счетам (High, M) ✅
 - Где: `core/management/commands/auto_reconcile.py:181` — кандидаты
   `exclude(status="CANCELLED")`, т. е. включая PAID, DRAFT, AV; при
   нулевом остатке транзакция не создаётся (`:312-314`), но `matched_invoice`
