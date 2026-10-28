@@ -131,6 +131,9 @@ class ContainerPhoto(models.Model):
     )
     photo_type = models.CharField(max_length=20, choices=PHOTO_TYPES, default="GENERAL", verbose_name="Тип фото")
     description = models.TextField(blank=True, verbose_name="Описание")
+    drive_file_id = models.CharField(
+        max_length=128, blank=True, default="", verbose_name="ID файла Google Drive", editable=False
+    )
 
     uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Загрузил")
     uploaded_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата загрузки")
@@ -209,6 +212,13 @@ class ContainerPhoto(models.Model):
             # (галерея, tracking, портал). Раньше indexes не было вовсе —
             # только FK-индекс на container_id.
             models.Index(fields=["container", "is_public"], name="ctrphoto_container_public_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["container", "drive_file_id"],
+                condition=~models.Q(drive_file_id=""),
+                name="uniq_container_photo_drive_file",
+            ),
         ]
 
 

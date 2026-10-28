@@ -74,6 +74,10 @@ GOOGLE_DRIVE_FOLDERS = {
 }
 
 
+class GoogleDriveUnavailable(Exception):
+    """Временный сбой Drive (сеть, 5xx, 429): синхронизацию стоит повторить."""
+
+
 class GoogleDriveSync:
     """Класс для работы с Google Drive"""
 
@@ -243,6 +247,8 @@ class GoogleDriveSync:
             url = f"https://drive.google.com/embeddedfolderview?id={folder_id}#list"
             response = requests.get(url, headers=headers, timeout=30)
 
+            if response.status_code == 429 or response.status_code >= 500:
+                raise GoogleDriveUnavailable(f"папка {folder_id}: HTTP {response.status_code}")
             if response.status_code != 200:
                 logger.error(f"Не удалось получить доступ к папке {folder_id}: HTTP {response.status_code}")
                 return []
@@ -276,6 +282,10 @@ class GoogleDriveSync:
             logger.debug(f"Найдено 0 элементов в папке {folder_id}")
             return []
 
+        except GoogleDriveUnavailable:
+            raise
+        except requests.RequestException as e:
+            raise GoogleDriveUnavailable(f"папка {folder_id}: {e}") from e
         except Exception as e:
             logger.error(f"Ошибка веб-метода для папки {folder_id}: {e}", exc_info=True)
             return []
@@ -463,25 +473,28 @@ class GoogleDriveSync:
 
             logger.info(f"   Found {len(images)} images")
 
-            # Получаем список уже загруженных фото (по описанию)
-            existing_descriptions = set(
-                ContainerPhoto.objects.filter(container=container).values_list("description", flat=True)
-            )
+            # Уже загруженные: по ID файла Drive и (для фото до drive_file_id)
+            # по имени в пределах типа — одноимённые файлы из папок «В
+            # контейнере» и «Разгрузка» больше не глушат друг друга.
+            photos = ContainerPhoto.objects.filter(container=container)
+            known_ids = set(photos.exclude(drive_file_id="").values_list("drive_file_id", flat=True))
+            known_names = set(photos.filter(photo_type=photo_type).values_list("description", flat=True))
 
             # Кандидаты на загрузку: без уже имеющихся и без повторов в самом
             # листинге (Drive иногда отдаёт один файл дважды).
             candidates = []
             for file_info in images:
                 description = f"Google Drive: {file_info['name']}"
-                if description in existing_descriptions:
+                if file_info["id"] in known_ids or description in known_names:
                     continue
-                existing_descriptions.add(description)
+                known_ids.add(file_info["id"])
+                known_names.add(description)
                 candidates.append((file_info["id"], file_info["name"], description))
 
-            def _exists(description):
+            def _exists(candidate):
                 # Список выше снят в начале прохода: фото могло появиться за это
                 # время (архив, ручная загрузка, процесс без замка).
-                return ContainerPhoto.objects.filter(container=container, description=description).exists()
+                return GoogleDriveSync._photo_exists(container, photo_type, candidate[0], candidate[2])
 
             # P5: скачивание и пережатие — сеть + CPU без обращений к БД,
             # идут в пуле потоков (GDRIVE_DOWNLOAD_WORKERS, по умолчанию 4).
@@ -495,20 +508,21 @@ class GoogleDriveSync:
             if workers > 1:
                 chunk_size = workers * 2
                 for start in range(0, len(candidates), chunk_size):
-                    chunk = [c for c in candidates[start : start + chunk_size] if not _exists(c[2])]
+                    chunk = [c for c in candidates[start : start + chunk_size] if not _exists(c)]
                     if not chunk:
                         continue
                     with ThreadPoolExecutor(max_workers=min(workers, len(chunk))) as pool:
                         contents = list(pool.map(lambda c: GoogleDriveSync._fetch_photo_bytes(c[0], c[1]), chunk))
-                    for (_file_id, filename, description), content in zip(chunk, contents, strict=True):
-                        if GoogleDriveSync._store_photo(container, photo_type, description, filename, content):
+                    for (file_id, filename, description), content in zip(chunk, contents, strict=True):
+                        if GoogleDriveSync._store_photo(container, photo_type, description, filename, content, file_id):
                             photos_added += 1
             else:
-                for file_id, filename, description in candidates:
-                    if _exists(description):
+                for candidate in candidates:
+                    if _exists(candidate):
                         continue
+                    file_id, filename, description = candidate
                     content = GoogleDriveSync._fetch_photo_bytes(file_id, filename)
-                    if GoogleDriveSync._store_photo(container, photo_type, description, filename, content):
+                    if GoogleDriveSync._store_photo(container, photo_type, description, filename, content, file_id):
                         photos_added += 1
 
             if photos_added > 0:
@@ -517,7 +531,18 @@ class GoogleDriveSync:
 
         except Exception as e:
             logger.error(f"Error downloading folder: {e}", exc_info=True)
-            return 0
+            raise
+
+    @staticmethod
+    def _photo_exists(container, photo_type, file_id, description):
+        from django.db.models import Q
+
+        from .models_website import ContainerPhoto
+
+        match = Q(photo_type=photo_type, description=description)
+        if file_id:
+            match |= Q(drive_file_id=file_id)
+        return ContainerPhoto.objects.filter(container=container).filter(match).exists()
 
     @staticmethod
     def _fetch_photo_bytes(file_id, filename):
@@ -544,8 +569,10 @@ class GoogleDriveSync:
             return None
 
     @staticmethod
-    def _store_photo(container, photo_type, description, filename, content) -> bool:
+    def _store_photo(container, photo_type, description, filename, content, file_id="") -> bool:
         """Записать файл в storage и создать ContainerPhoto (основной поток)."""
+        from django.db import IntegrityError, transaction
+
         from .models_website import ContainerPhoto
 
         if not content:
@@ -553,16 +580,23 @@ class GoogleDriveSync:
         try:
             # Повторная проверка после скачивания: за время загрузки пачки
             # фото могло появиться другим путём.
-            if ContainerPhoto.objects.filter(container=container, description=description).exists():
+            if GoogleDriveSync._photo_exists(container, photo_type, file_id, description):
                 return False
             photo = ContainerPhoto(
                 container=container,
                 photo_type=photo_type,  # IN_CONTAINER или UNLOADING
                 description=description,
+                drive_file_id=file_id,
                 is_public=True,
             )
             photo.photo.save(filename, ContentFile(content), save=False)
-            photo.save()  # миниатюра — отдельной Celery-задачей из save()
+            try:
+                with transaction.atomic():
+                    photo.save()  # миниатюра — отдельной Celery-задачей из save()
+            except IntegrityError:
+                # Тот же файл Drive успел сохранить параллельный процесс.
+                photo.photo.delete(save=False)
+                return False
             return True
         except Exception as e:
             logger.error(f"   Error processing {filename}: {e}")
@@ -622,7 +656,7 @@ class GoogleDriveSync:
 
         except Exception as e:
             logger.error(f"Error searching folder for {container_number}: {e}")
-            return None
+            raise
 
     @staticmethod
     def sync_container_by_number(container_number, verbose=False):
@@ -701,7 +735,7 @@ class GoogleDriveSync:
 
         except Exception as e:
             logger.error(f"[{container_number}] Sync error: {e}", exc_info=True)
-            return 0
+            raise
 
     @staticmethod
     def sync_all_containers(limit=None):
