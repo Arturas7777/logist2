@@ -67,18 +67,21 @@ TOOL_SPECS: list[dict] = [
     {
         "name": "propose_email_reply",
         "description": (
-            "Предложить ответ на письмо. Создаёт действие DRAFT_EMAIL_REPLY: "
-            "письмо будет отправлено в тред после подтверждения владельцем "
-            "(или сразу, если тип действия переведён в авто-режим)."
+            "Предложить ответ на письмо-источник дела (или на входящее письмо из его треда). "
+            "Создаёт действие DRAFT_EMAIL_REPLY: письмо будет отправлено отправителю "
+            "только после подтверждения владельцем."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "email_id": {"type": "integer", "description": "ID письма, на которое отвечаем"},
+                "email_id": {
+                    "type": "integer",
+                    "description": "ID входящего письма из треда письма-источника; по умолчанию — само письмо-источник",
+                },
                 "reply_text": {"type": "string", "description": "Текст ответа (plain text, на языке письма)"},
                 "summary": {"type": "string", "description": "Краткое описание для владельца, по-русски"},
             },
-            "required": ["email_id", "reply_text", "summary"],
+            "required": ["reply_text", "summary"],
         },
     },
     {
@@ -249,18 +252,47 @@ def _tool_list_open_tasks(args: dict) -> list[dict]:
     ]
 
 
+def _reply_target(email_id, context: dict):
+    """Письмо, на которое агенту разрешено ответить: источник или входящее из его треда."""
+    from core.models import ContainerEmail
+
+    source = context.get("source_email")
+    if source is None:
+        return None, "Ответ возможен только в треде письма-источника дела"
+    if email_id in (None, "") or str(email_id) == str(source.pk):
+        email = source
+    else:
+        try:
+            email_id = int(email_id)
+        except (TypeError, ValueError):
+            return None, f"Некорректный ID письма: {email_id}"
+        allowed = ContainerEmail.objects.filter(pk=email_id)
+        allowed = allowed.filter(thread_id=source.thread_id) if source.thread_id else allowed.filter(pk=source.pk)
+        email = allowed.first()
+        if email is None:
+            return None, f"Письмо {email_id} не из треда письма-источника — отвечать на него нельзя"
+    if email.direction != ContainerEmail.DIRECTION_INCOMING:
+        return None, "Отвечать можно только на входящее письмо"
+    return email, None
+
+
 def _tool_propose_email_reply(args: dict, context: dict) -> dict:
-    from core.models import AgentAction, ContainerEmail
+    from email.utils import parseaddr
+
+    from core.models import AgentAction
     from core.services.agent.agent_executor import propose_action
 
-    email = ContainerEmail.objects.filter(pk=args.get("email_id")).first()
-    if not email:
-        return {"error": f"Письмо {args.get('email_id')} не найдено"}
+    email, error = _reply_target(args.get("email_id"), context)
+    if error:
+        return {"error": error}
+    _, to_addr = parseaddr(email.from_addr or "")
+    if not to_addr:
+        return {"error": f"Не удалось извлечь адрес отправителя из «{email.from_addr}»"}
     action = propose_action(
         action_type=AgentAction.TYPE_DRAFT_EMAIL_REPLY,
         title=(args.get("summary") or f"Ответ на «{email.subject[:80]}»")[:300],
-        payload={"email_id": email.pk, "reply_text": args.get("reply_text", "")},
-        risk_level=AgentAction.RISK_MEDIUM,
+        payload={"email_id": email.pk, "to": to_addr, "reply_text": args.get("reply_text", "")},
+        risk_level=AgentAction.RISK_HIGH,
         run=context.get("run"),
         source_email=email,
         task=context.get("task"),

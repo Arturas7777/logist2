@@ -201,6 +201,7 @@
             {% if p.action_type == "CREATE_TASK" and p.payload.description %}
                 <div class="tb-card-body">{{ p.payload.description }}</div>
             {% elif p.action_type == "DRAFT_EMAIL_REPLY" and p.payload.reply_text %}
+                {% if p.payload.to %}<div class="tb-card-meta"><i class="bi bi-envelope"></i> Кому: <strong>{{ p.payload.to }}</strong></div>{% endif %}
                 <div class="tb-card-body">{{ p.payload.reply_text }}</div>
             {% elif p.action_type == "SAVE_MEMORY" and p.payload.content %}
                 <div class="tb-card-body">{{ p.payload.content }}</div>

@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Типы, которые игнорируют AUTO-режим политики: их содержимое может прийти
 # из письма третьего лица и навсегда попасть в промпт агента.
-ALWAYS_ASK_ACTION_TYPES = frozenset({"SAVE_MEMORY"})
+ALWAYS_ASK_ACTION_TYPES = frozenset({"SAVE_MEMORY", "DRAFT_EMAIL_REPLY", "SEND_EMAIL"})
 
 
 # ── Создание действий с учётом политики ─────────────────────────────────────
@@ -156,6 +156,9 @@ def _execute_email_reply(action, by: str = "") -> dict:
     _, to_addr = parseaddr(parent.from_addr or "")
     if not to_addr:
         raise ValueError(f"Не удалось извлечь адрес получателя из «{parent.from_addr}»")
+    approved_to = (payload.get("to") or "").strip()
+    if approved_to and approved_to.lower() != to_addr.lower():
+        raise ValueError(f"Адресат {to_addr} не совпадает с одобренным {approved_to}")
 
     sent = reply_to_email(parent_email=parent, user=None, to=to_addr, body_text=reply_text)
     return {"sent_email_id": sent.pk, "to": to_addr}

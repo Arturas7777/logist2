@@ -151,3 +151,75 @@ def test_get_email_thread_tool_wraps_bodies():
 
 def test_system_context_contains_untrusted_notice():
     assert UNTRUSTED_OPEN in build_system_context()
+
+
+# --- A2: ответ только в тред письма-источника ---------------------------------
+
+
+def _reply(context, **args):
+    args.setdefault("reply_text", "Hello")
+    args.setdefault("summary", "Ответ")
+    return execute_tool("propose_email_reply", args, context=context)
+
+
+def test_reply_defaults_to_source_email_and_records_recipient():
+    source = _email(from_addr="Partner <partner@example.com>")
+
+    result = _reply({"source_email": source})
+
+    action = AgentAction.objects.get(pk=result["action_id"])
+    assert action.payload["email_id"] == source.pk
+    assert action.payload["to"] == "partner@example.com"
+    assert action.risk_level == AgentAction.RISK_HIGH
+
+
+def test_reply_to_email_from_other_thread_refused():
+    source = _email()
+    foreign = _email(thread_id="other-thread", from_addr="victim@example.com", subject="foreign")
+
+    result = _reply({"source_email": source}, email_id=foreign.pk)
+
+    assert "error" in result
+    assert AgentAction.objects.count() == 0
+
+
+def test_reply_to_incoming_email_in_same_thread_allowed():
+    source = _email(subject="first")
+    later = _email(subject="second", from_addr="colleague@example.com")
+
+    result = _reply({"source_email": source}, email_id=str(later.pk))
+
+    assert AgentAction.objects.get(pk=result["action_id"]).payload["to"] == "colleague@example.com"
+
+
+def test_reply_without_source_email_refused():
+    email = _email()
+
+    assert "error" in _reply({}, email_id=email.pk)
+
+
+def test_reply_to_outgoing_email_refused():
+    source = _email(direction=ContainerEmail.DIRECTION_OUTGOING, from_addr="us@caromoto.com")
+
+    assert "error" in _reply({"source_email": source})
+
+
+def test_reply_ignores_auto_policy():
+    AgentPolicy.objects.create(action_type=AgentAction.TYPE_DRAFT_EMAIL_REPLY, mode=AgentPolicy.MODE_AUTO)
+    source = _email()
+
+    result = _reply({"source_email": source})
+
+    assert result["status"] == AgentAction.STATUS_PROPOSED
+
+
+def test_execute_reply_refuses_changed_recipient():
+    source = _email(from_addr="partner@example.com")
+    action = AgentAction.objects.create(
+        action_type=AgentAction.TYPE_DRAFT_EMAIL_REPLY,
+        title="t",
+        payload={"email_id": source.pk, "to": "someone-else@example.com", "reply_text": "Hi"},
+    )
+
+    with pytest.raises(ValueError, match="не совпадает"):
+        execute_action(action)
