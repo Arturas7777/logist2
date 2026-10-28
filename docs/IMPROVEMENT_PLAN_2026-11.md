@@ -87,7 +87,7 @@
 - DoD: тест «COMPLETED-платёж отменён → `paid_amount`, статус счёта,
   `Client.balance` и `total_balance` вернулись»; `verify_balances` чист.
 
-### M2. Кредит-нота становится долгом клиента (High, S) ✅
+### [x] M2. Кредит-нота становится долгом клиента (High, S) ✅
 - Где: `billing_service.py:1074-1092` — KRE создаётся ISSUED с положительной
   суммой и `recipient_client`; `Client.open_invoices_debt` (`models/clients.py:215`)
   тип документа не фильтрует. Также `admin/partners.py:402-406`,

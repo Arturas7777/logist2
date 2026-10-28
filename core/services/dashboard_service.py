@@ -171,9 +171,13 @@ class DashboardService:
         from ..models_billing import NewInvoice
 
         today = timezone.now().date()
-        count = NewInvoice.objects.filter(
-            Q(status="OVERDUE") | Q(status__in=OVERDUE_CANDIDATE_STATUSES, due_date__lt=today)
-        ).count()
+        count = (
+            NewInvoice.objects.filter(
+                Q(status="OVERDUE") | Q(status__in=OVERDUE_CANDIDATE_STATUSES, due_date__lt=today)
+            )
+            .exclude(document_type="CREDIT_NOTE")
+            .count()
+        )
 
         cache.set(cache_key, count, CACHE_TIMEOUTS["short"])
         return count
@@ -511,7 +515,6 @@ class DashboardService:
             When,
         )
 
-        from ..mixins import OPEN_INVOICE_STATUSES
         from ..models_billing import NewInvoice
 
         today = timezone.now().date()
@@ -530,7 +533,8 @@ class DashboardService:
         )
 
         rows = (
-            NewInvoice.objects.filter(status__in=OPEN_INVOICE_STATUSES, **invoice_filter)
+            NewInvoice.objects.receivable()
+            .filter(**invoice_filter)
             .filter(total__gt=F("paid_amount"))
             .annotate(bucket=bucket_expr)
             .values("bucket")

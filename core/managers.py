@@ -8,7 +8,7 @@ from django.db import models
 from django.db.models import Avg, Count, Max, Q, Sum
 from django.utils import timezone
 
-from core.mixins import OPEN_INVOICE_STATUSES
+from core.mixins import receivable_invoice_q
 
 
 class OptimizedCarManager(models.Manager):
@@ -125,7 +125,7 @@ class OptimizedClientManager(models.Manager):
             cars_count=Count("car"),
             active_cars_count=Count("car", filter=Q(car__status__in=["FLOATING", "IN_PORT", "UNLOADED"])),
             unpaid_invoices_count=Count(
-                "received_invoices_new", filter=Q(received_invoices_new__status__in=OPEN_INVOICE_STATUSES)
+                "received_invoices_new", filter=receivable_invoice_q("received_invoices_new__")
             ),
         )
 

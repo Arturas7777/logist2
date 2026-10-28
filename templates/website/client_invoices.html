@@ -88,7 +88,7 @@
                         </td>
                         <td data-label="{% trans 'Сумма' %}" class="text-end">{{ invoice.total|floatformat:2 }} EUR</td>
                         <td data-label="{% trans 'К оплате' %}" class="text-end">
-                            {% if invoice.remaining_amount > 0 %}
+                            {% if invoice.remaining_amount > 0 and invoice.document_type != "CREDIT_NOTE" %}
                                 <span class="fw-semibold text-danger">{{ invoice.remaining_amount|floatformat:2 }} EUR</span>
                             {% else %}
                                 <span class="text-muted">—</span>

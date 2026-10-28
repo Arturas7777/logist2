@@ -291,7 +291,7 @@ Caromoto Lithuania MB — логистические и брокерские у�
 | Свойство | Что считает | Когда меняется |
 |---|---|---|
 | `balance` (поле БД) | Чистое сальдо COMPLETED-транзакций: `sum(to_client) − sum(from_client)`. Фактически = авансовый счёт клиента в системе. | Автоматически через сигнал `post_save` на `Transaction` (`recalculate_entity_balance`). |
-| `open_invoices_debt` (property) | Сумма `remaining_amount` по инвойсам в статусах `ISSUED`/`OVERDUE`/`PARTIALLY_PAID`. | Вычисляется на лету при обращении. |
+| `open_invoices_debt` (property) | Сумма `remaining_amount` по счетам к оплате — `NewInvoice.objects.receivable()`: статусы `ISSUED`/`OVERDUE`/`PARTIALLY_PAID`, **без кредит-нот (KRE)**. Для аннотаций по связи — `core.mixins.receivable_invoice_q(prefix)`. | Вычисляется на лету при обращении. |
 | `total_balance` (property) | `balance − open_invoices_debt`. **Именно это отображается в карточке и списке клиентов** и используется в фильтре «Состояние баланса». | Вычисляется на лету. |
 | `balance_status` / `balance_color` | «ПЕРЕПЛАТА / БАЛАНС / ДОЛГ» и цвет бейджа. Считаются по `total_balance`. | На лету. |
 

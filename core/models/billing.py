@@ -74,6 +74,18 @@ class ExpenseCategory(models.Model):
 # ============================================================================
 
 
+class NewInvoiceQuerySet(models.QuerySet):
+    def receivable(self):
+        """Счета к оплате — единственное определение долга по счетам.
+
+        Открытые статусы (ISSUED / OVERDUE / PARTIALLY_PAID) без кредит-нот:
+        KRE закрывает исходный счёт и сам долгом не является.
+        """
+        from core.mixins import receivable_invoice_q
+
+        return self.filter(receivable_invoice_q())
+
+
 class NewInvoice(models.Model):
     """
     Упрощенная модель инвойса с прямыми связями
@@ -393,6 +405,8 @@ class NewInvoice(models.Model):
     # Служебное поле для отслеживания обновления баланса
     _balance_updated = models.BooleanField(default=False, editable=False)
 
+    objects = NewInvoiceQuerySet.as_manager()
+
     class Meta:
         verbose_name = "Инвойс"
         verbose_name_plural = "Инвойсы"
@@ -609,6 +623,8 @@ class NewInvoice(models.Model):
     def is_overdue(self):
         """Просрочен ли инвойс"""
         if self.status in ["PAID", "CANCELLED"]:
+            return False
+        if self.document_type == "CREDIT_NOTE":
             return False
         if not self.due_date:
             return False

@@ -8,6 +8,8 @@ so they can be added to existing models without generating migrations.
 import logging
 from decimal import Decimal
 
+from django.db.models import Q
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,6 +27,17 @@ logger = logging.getLogger(__name__)
 # балансовых property `open_fact_debt` / `open_pardp_receivable`, в
 # dashboard'е, в auto-reconciliation.
 OPEN_INVOICE_STATUSES = ("ISSUED", "OVERDUE", "PARTIALLY_PAID")
+
+
+def receivable_invoice_q(prefix=""):
+    """Q «счёт к оплате»: открытый статус и не кредит-нота.
+
+    Кредит-нота (KRE) закрывает исходный счёт и долгом клиента не является,
+    даже в статусе ISSUED. ``prefix`` — путь до инвойса в связанных
+    фильтрах, например ``"received_invoices_new__"``.
+    """
+    return Q(**{f"{prefix}status__in": OPEN_INVOICE_STATUSES}) & ~Q(**{f"{prefix}document_type": "CREDIT_NOTE"})
+
 
 # Активные: открытые + PAID. Используется в SupplierCost-аналитике
 # (`core/models.py` ~1385) и в admin-фильтрах, где нужно отделить «реальные»

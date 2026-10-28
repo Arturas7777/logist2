@@ -168,9 +168,7 @@ class Command(BaseCommand):
         # ── 3. НЕОПЛАЧЕННЫЕ ИНВОЙСЫ ──
         self.stdout.write(self.style.MIGRATE_HEADING("\n  3. Неоплаченные инвойсы"))
 
-        from core.mixins import OPEN_INVOICE_STATUSES
-
-        unpaid = NewInvoice.objects.filter(status__in=OPEN_INVOICE_STATUSES).order_by("date")
+        unpaid = NewInvoice.objects.receivable().order_by("date")
 
         total_unpaid = Decimal("0")
         self.stdout.write(f"  Неоплаченных инвойсов: {unpaid.count()}")

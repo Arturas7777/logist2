@@ -3,6 +3,7 @@
 from decimal import Decimal
 
 import pytest
+from django.urls import reverse
 from django.utils import timezone
 
 from core.models import Client, Company
@@ -54,6 +55,50 @@ def test_full_credit_note_closes_invoice_without_touching_balance(company, clien
     assert trx.invoice_id == inv.pk
     assert trx.to_company_id == company.pk
     assert trx.from_client_id is None
+
+
+def test_full_credit_note_leaves_no_debt(company, client_a):
+    inv = _pardp(company, client_a, "100.00")
+    client_a.refresh_from_db()
+    assert client_a.total_balance == Decimal("-100.00")
+
+    note = BillingService.create_credit_note(inv, amount=Decimal("100"), reason="Ошибка")["credit_note"]
+    client_a.refresh_from_db()
+    assert note.status == "ISSUED"
+    assert client_a.open_invoices_debt == Decimal("0.00")
+    assert client_a.total_balance == Decimal("0.00")
+    assert not NewInvoice.objects.receivable().filter(pk=note.pk).exists()
+    assert Client.objects.with_balance_info().get(pk=client_a.pk).unpaid_invoices_count == 0
+
+
+def test_credit_note_never_becomes_overdue(company, client_a):
+    from core.services.dashboard_service import DashboardService
+    from core.tasks import check_overdue_invoices
+
+    inv = _pardp(company, client_a, "100.00")
+    note = BillingService.create_credit_note(inv, amount=Decimal("40"), reason="Скидка")["credit_note"]
+    past = timezone.now().date() - timezone.timedelta(days=15)
+    NewInvoice.objects.filter(pk__in=[inv.pk, note.pk]).update(date=past, due_date=past + timezone.timedelta(days=1))
+
+    check_overdue_invoices()
+    note.refresh_from_db()
+    inv.refresh_from_db()
+    assert note.status == "ISSUED"
+    assert not note.is_overdue
+    assert inv.status == "OVERDUE"
+    assert DashboardService().get_overdue_invoices_count() == 1
+    client_a.refresh_from_db()
+    assert client_a.total_balance == Decimal("-60.00")
+
+
+def test_client_changelist_balance_ignores_credit_note(company, client_a, admin_client):
+    inv = _pardp(company, client_a, "100.00")
+    BillingService.create_credit_note(inv, amount=Decimal("100"), reason="Ошибка")
+    response = admin_client.get(reverse("admin:core_client_changelist"))
+    assert response.status_code == 200
+    row = response.context_data["cl"].queryset.get(pk=client_a.pk)
+    assert row._open_debt == Decimal("0.00")
+    assert row._total_balance == Decimal("0.00")
 
 
 def test_partial_credit_note(company, client_a):

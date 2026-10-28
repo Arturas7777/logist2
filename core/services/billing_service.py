@@ -1206,13 +1206,10 @@ class BillingService:
             logger.debug("[AutoReconcile] Нет несопоставленных банковских транзакций")
             return result
 
-        from core.mixins import OPEN_INVOICE_STATUSES
-
         default_company_id = Company.get_default_id()
-        unpaid_invoices = NewInvoice.objects.filter(
-            status__in=OPEN_INVOICE_STATUSES,
-            recipient_company_id=default_company_id,
-        ).exclude(external_number="")
+        unpaid_invoices = (
+            NewInvoice.objects.receivable().filter(recipient_company_id=default_company_id).exclude(external_number="")
+        )
 
         if not unpaid_invoices.exists():
             logger.debug("[AutoReconcile] Нет неоплаченных входящих инвойсов с external_number")
@@ -1481,7 +1478,7 @@ class BillingService:
             target_client = client
             for pk, amount in normalized:
                 inv = locked[pk]
-                if inv.status not in OPEN_INVOICE_STATUSES:
+                if inv.status not in OPEN_INVOICE_STATUSES or inv.document_type == "CREDIT_NOTE":
                     raise ValueError(f"Инвойс {inv.number} не открыт ({inv.get_status_display()})")
                 if inv.direction != NewInvoice.DIRECTION_OUTGOING:
                     raise ValueError(f"Инвойс {inv.number} не исходящий — входящий платёж к нему не относится")

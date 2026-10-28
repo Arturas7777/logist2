@@ -41,7 +41,7 @@ def check_overdue_invoices(self):
     overdue_qs = NewInvoice.objects.filter(
         status__in=OVERDUE_CANDIDATE_STATUSES,
         due_date__lt=today,
-    )
+    ).exclude(document_type="CREDIT_NOTE")
     updated = overdue_qs.update(status="OVERDUE")
     if updated:
         logger.info(f"[check_overdue_invoices] Marked {updated} invoices as OVERDUE")

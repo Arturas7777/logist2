@@ -25,6 +25,7 @@ from core.admin.inlines import (
     WarehouseServiceInline,
 )
 from core.forms import CarrierForm, LineForm
+from core.mixins import receivable_invoice_q
 from core.models import (
     AutoTransport,
     Car,
@@ -397,13 +398,9 @@ class ClientAdmin(admin.ModelAdmin):
             from django.db.models import Count, DecimalField, F, OuterRef, Subquery, Sum, Value
             from django.db.models.functions import Coalesce
 
-            from core.mixins import OPEN_INVOICE_STATUSES
-
             open_debt_sq = (
-                NewInvoice.objects.filter(
-                    recipient_client=OuterRef("pk"),
-                    status__in=OPEN_INVOICE_STATUSES,
-                )
+                NewInvoice.objects.receivable()
+                .filter(recipient_client=OuterRef("pk"))
                 .values("recipient_client")
                 .annotate(s=Sum(F("total") - F("paid_amount")))
                 .values("s")[:1]
@@ -1149,7 +1146,7 @@ class LineAdmin(admin.ModelAdmin):
             _services_count=models.Count("services", distinct=True),
             _open_invoices=models.Count(
                 "received_invoices_new",
-                filter=models.Q(received_invoices_new__status__in=("ISSUED", "PARTIALLY_PAID", "OVERDUE")),
+                filter=receivable_invoice_q("received_invoices_new__"),
                 distinct=True,
             ),
         )

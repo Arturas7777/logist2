@@ -53,7 +53,7 @@ def client_invoices(request):
 
     only_unpaid = request.GET.get("filter") == "unpaid"
     if only_unpaid:
-        invoices = invoices.filter(status__in=OPEN_INVOICE_STATUSES)
+        invoices = invoices.receivable()
 
     paginator = Paginator(invoices, INVOICES_PER_PAGE)
     page = paginator.get_page(request.GET.get("page"))

@@ -199,23 +199,22 @@ class Client(BalanceMethodsMixin, CounterpartyRequisitesMixin, CounterpartyConta
 
     @property
     def open_invoices_debt(self):
-        """Сумма остатков по открытым (не оплаченным) инвойсам клиента.
+        """Сумма остатков по счетам клиента к оплате (``NewInvoice.objects.receivable()``).
 
-        Считаются статусы ISSUED / OVERDUE / PARTIALLY_PAID — то есть все
-        выставленные документы, по которым клиент ещё нам должен.
+        Статусы ISSUED / OVERDUE / PARTIALLY_PAID, без кредит-нот.
         Возвращает положительное число (или 0).
         """
         from decimal import Decimal
 
         from django.db.models import F, Sum
 
-        from core.mixins import OPEN_INVOICE_STATUSES
-        from core.models_billing import NewInvoice
+        from core.models.billing import NewInvoice
 
-        total = NewInvoice.objects.filter(
-            recipient_client=self,
-            status__in=OPEN_INVOICE_STATUSES,
-        ).aggregate(s=Sum(F("total") - F("paid_amount")))["s"] or Decimal("0.00")
+        total = (
+            NewInvoice.objects.receivable()
+            .filter(recipient_client=self)
+            .aggregate(s=Sum(F("total") - F("paid_amount")))["s"]
+        ) or Decimal("0.00")
         return total
 
     @property
