@@ -198,6 +198,7 @@ def _apply_match(bt, invoice, rule):
             amount,
             date=bt.created_at,
             description=f"Авто-сопоставление банковского платежа {bt.counterparty_name} -> {locked.number}",
+            bank_transaction=bt,
         )
         note = note_prefix
         if bt.amount > amount:

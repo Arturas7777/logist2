@@ -1,0 +1,16 @@
+{% extends "admin/change_form.html" %}
+
+{% block object-tools-items %}
+  {{ block.super }}
+  {% if original and original.matched_transaction_id or original and original.matched_invoice_id %}
+    <li>
+      <form method="post" action="{% url 'admin:core_banktransaction_unlink' original.pk %}"
+            style="display:inline"
+            onsubmit="var r = prompt('Отвязать банковскую операцию? Созданные по ней платежи и пополнения будут отменены.\n\nПричина:'); if (r === null) return false; this.reason.value = r; return true;">
+        {% csrf_token %}
+        <input type="hidden" name="reason" value="">
+        <a href="#" onclick="this.closest('form').requestSubmit(); return false;">Отвязать</a>
+      </form>
+    </li>
+  {% endif %}
+{% endblock %}

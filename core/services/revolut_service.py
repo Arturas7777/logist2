@@ -39,6 +39,29 @@ REVOLUT_TYPE_MAP = {
 }
 
 
+def notify_matched_bank_transaction_changed(bt, old_amount, old_state):
+    """Банк изменил сумму/статус уже сверенной операции — дело менеджеру.
+
+    Платёж по ней автоматически не трогаем: решение (отвязать, перепривязать,
+    оставить) принимает человек кнопкой «Отвязать» в карточке операции.
+    """
+    from django.urls import reverse
+
+    from core.models import Task
+
+    title = f"Банк изменил сверенную операцию {bt.external_id}"[:200]
+    if Task.objects.filter(title=title, is_completed=False).exists():
+        return None
+    invoice_number = bt.matched_invoice.number if bt.matched_invoice_id else "—"
+    description = (
+        f"Revolut: сумма {old_amount} → {bt.amount} {bt.currency}, статус {old_state} → {bt.state}.\n"
+        f"Привязка: счёт {invoice_number}. Проверьте платёж; если операция отменена банком — "
+        f"нажмите «Отвязать» в карточке: {reverse('admin:core_banktransaction_change', args=[bt.pk])}"
+    )
+    logger.warning("[Revolut] Изменилась сверенная операция %s: %s", bt.external_id, description)
+    return Task.objects.create(title=title, description=description, priority="HIGH", created_by="Синхронизация банка")
+
+
 class RevolutAPIError(Exception):
     """Ошибка при обращении к Revolut API."""
 
@@ -320,6 +343,12 @@ class RevolutService:
 
             state = item.get("state", "completed").lower()
 
+            before = (
+                BankTransaction.objects.filter(connection=self.connection, external_id=ext_id)
+                .values("amount", "state", "matched_transaction_id", "matched_invoice_id")
+                .first()
+            )
+
             tx, created = BankTransaction.objects.update_or_create(
                 connection=self.connection,
                 external_id=ext_id,
@@ -333,6 +362,13 @@ class RevolutService:
                     "created_at": created_at,
                 },
             )
+
+            if (
+                before
+                and (before["matched_transaction_id"] or before["matched_invoice_id"])
+                and (before["amount"] != tx.amount or before["state"] != tx.state)
+            ):
+                notify_matched_bank_transaction_changed(tx, before["amount"], before["state"])
 
             # Авто-пропуск служебных операций (комиссии, обмены, налоги)
             if created and tx_type in ("fee", "exchange", "tax"):

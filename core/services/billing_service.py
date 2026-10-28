@@ -318,6 +318,7 @@ class BillingService:
         topup_description="",
         date=None,
         created_by=None,
+        bank_transaction=None,
     ):
         """Единый путь оплаты счёта: PAYMENT от ``payer`` к ``payee``.
 
@@ -346,6 +347,7 @@ class BillingService:
                 description=topup_description or f"Пополнение: {description}",
                 date=tx_date,
                 created_by=created_by,
+                bank_transaction=bank_transaction,
             )
             topup.save()
 
@@ -360,6 +362,7 @@ class BillingService:
             description=description,
             date=tx_date,
             created_by=created_by,
+            bank_transaction=bank_transaction,
         )
         setattr(payment, f"from_{payer.__class__.__name__.lower()}", payer)
         setattr(payment, f"to_{payee.__class__.__name__.lower()}", payee)
@@ -456,12 +459,20 @@ class BillingService:
                       'overpayment': Decimal
                   }
         """
+        from core.models_banking import BankTransaction
         from core.models_billing import NewInvoice
 
         amount = cls.quantize(amount)
 
         if amount <= 0:
             raise ValueError("Сумма платежа должна быть положительной")
+
+        # Порядок блокировок как у привязки банка: операция → счёт → стороны.
+        bank_trx = None
+        if bank_transaction_id:
+            bank_trx = BankTransaction.objects.select_for_update().filter(pk=bank_transaction_id).first()
+            if bank_trx is None:
+                logger.warning(f"Bank transaction {bank_transaction_id} not found for linking")
 
         locked_invoice = NewInvoice.objects.select_for_update().get(pk=invoice.pk)
 
@@ -488,6 +499,7 @@ class BillingService:
             description=description or f"Оплата инвойса {locked_invoice.number}",
             funded_by=None if method == "BALANCE" else method,
             created_by=created_by,
+            bank_transaction=bank_trx,
         )
 
         logger.info(f"Created payment transaction {trx.number}: {amount} for invoice {locked_invoice.number}")
@@ -506,23 +518,13 @@ class BillingService:
             f"Invoice {locked_invoice.number} payment processed: paid={locked_invoice.paid_amount}, total={locked_invoice.total}, remaining={remaining}"
         )
 
-        if bank_transaction_id:
-            try:
-                from core.models_banking import BankTransaction as BankTrx
-
-                bank_trx = BankTrx.objects.get(pk=bank_transaction_id)
-                bank_trx.matched_transaction = trx
-                bank_trx.matched_invoice = locked_invoice
-                bank_trx.save(update_fields=["matched_transaction", "matched_invoice"])
-                logger.info(f"Linked bank transaction {bank_trx.external_id} to payment {trx.number}")
-            except BankTrx.DoesNotExist:
-                logger.warning(f"Bank transaction {bank_transaction_id} not found for linking")
-            except Exception:
-                # B4 (AUDIT_ROUND3): не глотаем — иначе платёж создан, а BT
-                # остаётся «несопоставленной» и может быть оплачена повторно
-                # (double payment). Reraise откатывает всю оплату.
-                logger.exception("Error linking bank transaction %s", bank_transaction_id)
-                raise
+        if bank_trx is not None:
+            # B4 (AUDIT_ROUND3): ошибку не глотаем — иначе платёж создан, а BT
+            # остаётся «несопоставленной» и может быть оплачена повторно.
+            bank_trx.matched_transaction = trx
+            bank_trx.matched_invoice = locked_invoice
+            bank_trx.save(update_fields=["matched_transaction", "matched_invoice"])
+            logger.info(f"Linked bank transaction {bank_trx.external_id} to payment {trx.number}")
 
         return {"transaction": trx, "invoice": locked_invoice, "remaining": remaining, "overpayment": overpayment}
 
@@ -536,6 +538,7 @@ class BillingService:
         date=None,
         description: str = "",
         created_by=None,
+        bank_transaction=None,
     ):
         """
         Единая регистрация входящего банковского платежа по исходящему инвойсу.
@@ -582,6 +585,7 @@ class BillingService:
                 or f"Пополнение с банковского платежа ({invoice.number})",
                 date=date,
                 created_by=created_by,
+                bank_transaction=bank_transaction,
             )
         return cls._create_invoice_payment(
             invoice,
@@ -592,6 +596,7 @@ class BillingService:
             description=description or f"Оплата инвойса {invoice.number}",
             date=date,
             created_by=created_by,
+            bank_transaction=bank_transaction,
         )
 
     @classmethod
@@ -672,6 +677,7 @@ class BillingService:
                     payment_amount,
                     date=bt.created_at,
                     description=f"Привязка банковского платежа {bt.counterparty_name} -> {invoice.number}",
+                    bank_transaction=bt,
                 )
                 if tx is None:
                     return None
@@ -694,6 +700,7 @@ class BillingService:
                     from_company=Company.get_default(),
                     description=f"Оплата входящего счёта {invoice.number} ({bt.counterparty_name})",
                     date=bt.created_at,
+                    bank_transaction=bt,
                 )
                 setattr(tx, f"to_{issuer.__class__.__name__.lower()}", issuer)
                 tx.save()
@@ -720,6 +727,55 @@ class BillingService:
                 bt.pk,
             )
             return tx
+
+    @classmethod
+    def unlink_bank_transaction(cls, bank_transaction, reason="", created_by=None) -> dict:
+        """Отвязать банковскую операцию: отменить всё, что создала привязка.
+
+        Отменяются транзакции с ``bank_transaction`` = эта операция, её
+        ``matched_transaction`` и их парные пополнения. Старые привязки
+        (до ``paired_topup``) могли оставить пополнение без связи — оно
+        остаётся на авансе клиента, вызывающий получает ``orphan_topup_suspected``.
+
+        Returns:
+            dict: ``{"cancelled": [Transaction], "orphan_topup_suspected": bool}``.
+        """
+        from core.models_banking import BankTransaction
+        from core.models_billing import Transaction
+
+        with transaction.atomic():
+            bt = BankTransaction.objects.select_for_update().get(pk=bank_transaction.pk)
+            if not (bt.matched_transaction_id or bt.matched_invoice_id):
+                raise ValueError("Банковская операция не привязана")
+
+            to_cancel = {t.pk: t for t in Transaction.objects.filter(bank_transaction=bt, status="COMPLETED")}
+            matched = bt.matched_transaction
+            if matched is not None and matched.status == "COMPLETED":
+                to_cancel.setdefault(matched.pk, matched)
+            for trx in list(to_cancel.values()):
+                topup = trx.paired_topup
+                if topup is not None and topup.status == "COMPLETED":
+                    to_cancel.setdefault(topup.pk, topup)
+
+            orphan_topup_suspected = any(
+                t.type == "PAYMENT" and t.method == "BALANCE" and t.from_client_id and not t.paired_topup_id
+                for t in to_cancel.values()
+            )
+
+            note = f"отвязка банковской операции {bt.external_id}" + (f": {reason}" if reason else "")
+            cancelled = []
+            for trx in sorted(to_cancel.values(), key=lambda t: (t.type == "BALANCE_TOPUP", t.pk)):
+                cancelled.append(cls.cancel_transaction(trx, reason=note, created_by=created_by))
+
+            who = getattr(created_by, "username", None) or "система"
+            stamp = f"Отвязано {timezone.localdate():%d.%m.%Y} ({who})" + (f": {reason}" if reason else "")
+            bt.matched_transaction = None
+            bt.matched_invoice = None
+            bt.reconciliation_note = stamp[:255]
+            bt.save(update_fields=["matched_transaction", "matched_invoice", "reconciliation_note", "fetched_at"])
+
+        logger.info("[BT unlink] BT %s: отменено %d транзакций", bt.pk, len(cancelled))
+        return {"cancelled": cancelled, "orphan_topup_suspected": orphan_topup_suspected}
 
     @classmethod
     @transaction.atomic
@@ -1544,6 +1600,7 @@ class BillingService:
                     date=bt.created_at,
                     description=f"Разнесение банковского платежа {bt.counterparty_name} -> {inv.number}",
                     created_by=created_by,
+                    bank_transaction=bt,
                 )
                 payments.append(payment)
                 note_parts.append(f"{inv.number} {amount}")
@@ -1561,6 +1618,7 @@ class BillingService:
                     description=f"Остаток банковского платежа {bt.counterparty_name} ({bt.external_id}) на баланс",
                     date=bt.created_at,
                     created_by=created_by,
+                    bank_transaction=bt,
                 )
                 remainder_topup.save()
                 note_parts.append(f"остаток {remainder} → баланс")

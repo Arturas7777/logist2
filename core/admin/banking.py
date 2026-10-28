@@ -480,6 +480,7 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
         "display_receipt_detail",
     )
     autocomplete_fields = ["matched_invoice", "matched_transaction"]
+    change_form_template = "admin/core/banktransaction/change_form.html"
     date_hierarchy = "created_at"
     list_per_page = 50
     # Отключаем второй COUNT(*) по всей таблице на каждом changelist
@@ -769,8 +770,45 @@ class BankTransactionAdmin(CSVExportMixin, admin.ModelAdmin):
                 self.admin_site.admin_view(self.create_expense_view),
                 name="banktransaction_create_expense",
             ),
+            path(
+                "<int:pk>/unlink/",
+                self.admin_site.admin_view(self.unlink_view),
+                name="core_banktransaction_unlink",
+            ),
         ]
         return custom_urls + urls
+
+    def unlink_view(self, request, pk):
+        from django.core.exceptions import PermissionDenied, ValidationError
+        from django.http import HttpResponseNotAllowed
+
+        if request.method != "POST":
+            return HttpResponseNotAllowed(["POST"])
+        bt = get_object_or_404(BankTransaction, pk=pk)
+        if not self.has_change_permission(request, bt):
+            raise PermissionDenied
+        reason = (request.POST.get("reason") or "").strip()
+        try:
+            result = BillingService.unlink_bank_transaction(bt, reason=reason, created_by=request.user)
+        except (ValueError, ValidationError) as exc:
+            self.message_user(request, f"Не удалось отвязать операцию: {exc}", level=messages.ERROR)
+            return redirect("admin:core_banktransaction_change", pk)
+        numbers = ", ".join(t.number for t in result["cancelled"]) or "нет"
+        self.log_change(request, bt, f"Отвязана; отменены транзакции: {numbers}" + (f" ({reason})" if reason else ""))
+        self.message_user(request, f"Операция отвязана, отменены транзакции: {numbers}.")
+        if result["orphan_topup_suspected"]:
+            self.message_user(
+                request,
+                "Привязка старая: парное пополнение клиента не найдено и осталось на авансе — проверьте баланс клиента.",
+                level=messages.WARNING,
+            )
+        return redirect("admin:core_banktransaction_change", pk)
+
+    def get_readonly_fields(self, request, obj=None):
+        ro = super().get_readonly_fields(request, obj)
+        if obj is not None and (obj.matched_transaction_id or obj.matched_invoice_id):
+            ro = (*ro, "matched_invoice", "matched_transaction")
+        return ro
 
     def create_expense_view(self, request, pk):
         """Создать расход из банковской транзакции.

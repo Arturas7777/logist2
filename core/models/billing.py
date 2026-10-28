@@ -1440,6 +1440,15 @@ class Transaction(models.Model):
         verbose_name="Парное пополнение",
         help_text="BALANCE_TOPUP, которым клиент внёс деньги под эту оплату счёта",
     )
+    bank_transaction = models.ForeignKey(
+        "core.BankTransaction",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ledger_transactions",
+        verbose_name="Банковская операция",
+        help_text="Банковская операция, из привязки которой создана транзакция",
+    )
 
     # ========================================================================
     # СВЯЗАННЫЙ КЛИЕНТ (оптовик/посредник)
