@@ -621,14 +621,15 @@ class NewInvoice(models.Model):
 
     @property
     def is_overdue(self):
-        """Просрочен ли инвойс"""
-        if self.status in ["PAID", "CANCELLED"]:
+        """Просрочен ли инвойс: выставлен, не закрыт и срок оплаты прошёл."""
+        if self.status in ("DRAFT", "PAID", "LINKED_PAID", "CANCELLED"):
             return False
         if self.document_type == "CREDIT_NOTE":
             return False
-        if not self.due_date:
-            return False
-        return self.due_date < timezone.now().date()
+        return self._due_date_passed()
+
+    def _due_date_passed(self):
+        return bool(self.due_date) and self.due_date < timezone.now().date()
 
     @property
     def days_until_due(self):
@@ -716,19 +717,20 @@ class NewInvoice(models.Model):
     # Конечный автомат статусов (по образцу AutoTransport.ALLOWED_TRANSITIONS).
     #
     # Разрешены только осмысленные переходы. Главное, что запрещается:
-    #   * PAID → DRAFT / CANCELLED / OVERDUE (оплаченный инвойс нельзя молча
-    #     «разоплатить» — только через REFUND, который ведёт в
-    #     PARTIALLY_PAID / ISSUED при пересчёте paid_amount);
+    #   * PAID → DRAFT / CANCELLED (оплаченный инвойс нельзя молча
+    #     «разоплатить» — только через REFUND или отмену платежа, которые
+    #     ведут в PARTIALLY_PAID / ISSUED / OVERDUE при пересчёте paid_amount);
+    #   * DRAFT → OVERDUE (черновик не выставлен — просрочить нечего);
     #   * CANCELLED → PAID / PARTIALLY_PAID (отменённый нельзя оплатить);
     #   * LINKED_PAID → OVERDUE / CANCELLED (закрыт парным документом).
     # ------------------------------------------------------------------
     ALLOWED_STATUS_TRANSITIONS = {
-        "DRAFT": {"ISSUED", "PARTIALLY_PAID", "PAID", "LINKED_PAID", "OVERDUE", "CANCELLED"},
+        "DRAFT": {"ISSUED", "PARTIALLY_PAID", "PAID", "LINKED_PAID", "CANCELLED"},
         "ISSUED": {"DRAFT", "PARTIALLY_PAID", "PAID", "LINKED_PAID", "OVERDUE", "CANCELLED"},
         "PARTIALLY_PAID": {"ISSUED", "PAID", "LINKED_PAID", "OVERDUE", "CANCELLED"},
-        # PAID → ISSUED / PARTIALLY_PAID — только следствие REFUND-пересчёта
-        # или отмены кассовых платежей при смене серии (см. _reverse_cash_payments).
-        "PAID": {"ISSUED", "PARTIALLY_PAID"},
+        # PAID → ISSUED / PARTIALLY_PAID / OVERDUE — только следствие пересчёта
+        # paid_amount после REFUND или отмены платежа (BillingService.cancel_transaction).
+        "PAID": {"ISSUED", "PARTIALLY_PAID", "OVERDUE"},
         "OVERDUE": {"ISSUED", "PARTIALLY_PAID", "PAID", "LINKED_PAID", "CANCELLED"},
         "LINKED_PAID": {"ISSUED", "PAID"},
         "CANCELLED": {"DRAFT", "ISSUED"},
@@ -756,7 +758,12 @@ class NewInvoice(models.Model):
             )
 
     def update_status(self):
-        """Обновить статус на основе оплаты"""
+        """Обновить статус на основе оплаты.
+
+        Результат не должен зависеть от числа вызовов подряд: ``save()``
+        вызывает метод ещё раз после ``recalculate_paid_amount``, и
+        промежуточный статус (PAID → ISSUED → OVERDUE) упёрся бы в FSM.
+        """
         if self.status in ("CANCELLED", "LINKED_PAID"):
             # LINKED_PAID — косвенная оплата через связанный документ,
             # своих COMPLETED-транзакций нет, не пересчитываем.
@@ -772,10 +779,9 @@ class NewInvoice(models.Model):
         elif self.paid_amount > 0 and self.total > 0:
             self.status = "PARTIALLY_PAID"
         elif self.total > 0 and self.paid_amount == 0:
-            if self.is_overdue:
-                self.status = "OVERDUE"
-            elif self.status not in ("DRAFT", "ISSUED"):
-                self.status = "ISSUED"
+            if self.status == "DRAFT":
+                return
+            self.status = "OVERDUE" if self._due_date_passed() else "ISSUED"
 
     def generate_number(self):
         """Сгенерировать уникальный номер документа.

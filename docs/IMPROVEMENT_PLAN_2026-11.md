@@ -100,7 +100,7 @@
 - DoD: тест «PARDP 100 € → KRE 100 € → `total_balance` клиента = 0, KRE не
   OVERDUE через 15 дней»; миграция данных не нужна (проверить 5 существующих KRE).
 
-### M3. Черновик становится просроченным (High, S) ✅
+### [x] M3. Черновик становится просроченным (High, S) ✅
 - Где: `models/billing.py:758-760` — `update_status` ставит OVERDUE при
   `is_overdue`, а `is_overdue` (`:609-615`) не исключает DRAFT.
 - Решение: OVERDUE только из ISSUED / PARTIALLY_PAID. Скрипт-отчёт по проду:
