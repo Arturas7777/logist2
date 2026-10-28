@@ -135,7 +135,10 @@ TOOL_SPECS: list[dict] = [
     },
     {
         "name": "save_memory",
-        "description": "Сохранить в постоянную память агента важный факт, выясненный в ходе работы.",
+        "description": (
+            "Предложить сохранить в постоянную память агента важный факт, выясненный в ходе работы. "
+            "Факт попадёт в память только после подтверждения владельцем."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -207,7 +210,7 @@ def _tool_search_clients(args: dict) -> list[dict]:
 
 def _tool_get_email_thread(args: dict) -> list[dict]:
     from core.models import ContainerEmail
-    from core.services.agent.context_builder import email_body_as_text
+    from core.services.agent.context_builder import email_body_as_text, wrap_untrusted
 
     email = ContainerEmail.objects.filter(pk=args.get("email_id")).first()
     if not email:
@@ -222,7 +225,7 @@ def _tool_get_email_thread(args: dict) -> list[dict]:
             "subject": e.subject[:200],
             # 4000, а не 2000: в нотисах о прибытии списки авто идут в конце
             # письма и при жёсткой обрезке агент их не видит.
-            "body": email_body_as_text(e, limit=4000),
+            "body": wrap_untrusted(email_body_as_text(e, limit=4000)),
         }
         for e in thread
     ]
@@ -346,15 +349,27 @@ def _tool_ask_owner(args: dict, context: dict) -> dict:
 
 
 def _tool_save_memory(args: dict, context: dict) -> dict:
-    from core.services.agent.memory import save_memory
+    from core.models import AgentAction, AgentMemory
+    from core.services.agent.agent_executor import propose_action
 
-    memory = save_memory(
-        content=(args.get("content") or "").strip(),
-        kind=args.get("kind", "FACT"),
-        source="MANUAL",
-        created_by="agent",
+    content = (args.get("content") or "").strip()
+    if not content:
+        return {"error": "Пустой текст для памяти"}
+    kind = args.get("kind") or AgentMemory.KIND_FACT
+    if kind not in {AgentMemory.KIND_RULE, AgentMemory.KIND_FACT, AgentMemory.KIND_CONTACT}:
+        kind = AgentMemory.KIND_FACT
+    action = propose_action(
+        action_type=AgentAction.TYPE_SAVE_MEMORY,
+        title=f"Запомнить: {content[:200]}",
+        payload={"content": content[:2000], "kind": kind},
+        risk_level=AgentAction.RISK_LOW,
+        run=context.get("run"),
+        source_email=context.get("source_email"),
+        task=context.get("task"),
     )
-    return {"status": "saved", "memory_id": memory.pk}
+    if action is None:
+        return {"status": "disabled", "detail": "Тип действия запрещён политикой"}
+    return {"status": action.status, "action_id": action.pk, "detail": "Сохранится после подтверждения владельцем"}
 
 
 _READ_TOOLS = {

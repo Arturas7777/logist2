@@ -202,13 +202,15 @@
                 <div class="tb-card-body">{{ p.payload.description }}</div>
             {% elif p.action_type == "DRAFT_EMAIL_REPLY" and p.payload.reply_text %}
                 <div class="tb-card-body">{{ p.payload.reply_text }}</div>
+            {% elif p.action_type == "SAVE_MEMORY" and p.payload.content %}
+                <div class="tb-card-body">{{ p.payload.content }}</div>
             {% endif %}
             {% if p.reasoning %}<div class="tb-reasoning"><i class="bi bi-lightbulb"></i> {{ p.reasoning }}</div>{% endif %}
             <div class="tb-actions">
                 <form method="post" action="{% url 'agent_action_approve' p.pk %}">
                     {% csrf_token %}
                     <button type="submit" class="tb-btn approve"><i class="bi bi-check-lg"></i>
-                        {% if p.action_type == "CREATE_TASK" %}Принять — создать дело{% elif p.action_type == "DRAFT_EMAIL_REPLY" %}Одобрить — отправить ответ{% else %}Одобрить{% endif %}
+                        {% if p.action_type == "CREATE_TASK" %}Принять — создать дело{% elif p.action_type == "DRAFT_EMAIL_REPLY" %}Одобрить — отправить ответ{% elif p.action_type == "SAVE_MEMORY" %}Одобрить — запомнить{% else %}Одобрить{% endif %}
                     </button>
                 </form>
                 <form method="post" action="{% url 'agent_action_reject' p.pk %}" class="tb-actions" style="flex:1; margin-top:0;">

@@ -125,6 +125,7 @@ class AgentAction(models.Model):
     TYPE_CREATE_CONTAINER = "CREATE_CONTAINER"
     TYPE_UPDATE_OBJECT = "UPDATE_OBJECT"
     TYPE_SEND_EMAIL = "SEND_EMAIL"
+    TYPE_SAVE_MEMORY = "SAVE_MEMORY"
     TYPE_OTHER = "OTHER"
     TYPE_CHOICES = [
         (TYPE_CREATE_TASK, "Создать дело"),
@@ -133,6 +134,7 @@ class AgentAction(models.Model):
         (TYPE_CREATE_CONTAINER, "Создать контейнер"),
         (TYPE_UPDATE_OBJECT, "Изменить объект"),
         (TYPE_SEND_EMAIL, "Отправить письмо"),
+        (TYPE_SAVE_MEMORY, "Запомнить факт"),
         (TYPE_OTHER, "Другое"),
     ]
 
@@ -340,10 +342,12 @@ class AgentMemory(models.Model):
     SOURCE_QUESTION = "QUESTION"
     SOURCE_MANUAL = "MANUAL"
     SOURCE_REJECTION = "REJECTION"
+    SOURCE_AGENT = "AGENT"
     SOURCE_CHOICES = [
         (SOURCE_QUESTION, "Из ответа на вопрос"),
         (SOURCE_MANUAL, "Добавлено вручную"),
         (SOURCE_REJECTION, "Из отклонения предложения"),
+        (SOURCE_AGENT, "Предложено агентом, одобрено владельцем"),
     ]
 
     kind = models.CharField(max_length=10, choices=KIND_CHOICES, default=KIND_RULE, verbose_name="Тип")

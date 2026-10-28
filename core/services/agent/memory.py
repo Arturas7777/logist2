@@ -1,10 +1,12 @@
 """Вечная память агента: дистилляция знаний и retrieval.
 
-Память — записи :class:`core.models.AgentMemory`. Два пути пополнения:
+Память — записи :class:`core.models.AgentMemory`. Пути пополнения:
 
 * ответ владельца на :class:`core.models.AgentQuestion` → LLM дистиллирует
   суть в 1-3 предложения (:func:`distill_answer_to_memory`);
-* причина отклонения предложения агента (:func:`add_rejection_memory`).
+* причина отклонения предложения агента (:func:`add_rejection_memory`);
+* инструмент агента ``save_memory`` — только через ``AgentAction``
+  SAVE_MEMORY, одобренный владельцем (всегда ASK).
 
 Retrieval (:func:`retrieve_memories`) — cosine-схожесть по embedding
 (через существующий OpenAI-эндпоинт из ``ai_rag``), с fallback на
@@ -124,7 +126,11 @@ def add_rejection_memory(action, reason: str, by: str = "") -> object | None:
     reason = (reason or "").strip()
     if not reason:
         return None
-    content = f"Владелец отклонил предложение агента «{action.title}» (тип {action.action_type}). Причина: {reason}"
+    if action.action_type == action.TYPE_SAVE_MEMORY:
+        # Отклонённый текст не должен попасть в промпт даже в цитате.
+        content = f"Владелец отклонил предложение агента что-то запомнить. Причина: {reason}"
+    else:
+        content = f"Владелец отклонил предложение агента «{action.title}» (тип {action.action_type}). Причина: {reason}"
     return save_memory(
         content=content,
         kind=AgentMemory.KIND_RULE,

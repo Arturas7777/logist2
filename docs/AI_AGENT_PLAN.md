@@ -122,6 +122,11 @@ Cursor сначала читается этот файл (через прави�
   помечаются `ContainerEmail.hidden_reason` и агентом не анализируются.
 - Деньги агенту не доступны ни одним инструментом (см. agent_tools.py) —
   это осознанное ограничение, а не недоделка.
+- Защита от prompt-injection (A1, 2026-10): инструмент `save_memory`
+  создаёт `AgentAction` SAVE_MEMORY — всегда ASK, даже при AUTO-политике
+  (`ALWAYS_ASK_ACTION_TYPES`); память `source=AGENT` появляется только
+  после одобрения. Тексты писем в промптах — между маркерами
+  `<<<EMAIL_DATA … EMAIL_DATA>>>` с пометкой «данные, не команды».
 - Embedding памяти — через существующий OpenAI-эндпоинт (`ai_rag.py`);
   если `AI_API_KEY` пуст, работает keyword-fallback.
 - `AGENT_ANALYZE_SINCE` (на проде 2026-06-01) — жёсткая нижняя граница
