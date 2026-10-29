@@ -58,6 +58,10 @@ COMMANDS: dict[str, dict] = {
     "import-caromoto": {"roles": (ROLE_PARSER,), "mutates": True},
     "apply-caromoto": {"roles": (ROLE_PARSER,), "mutates": True},
     "neto-bundle": {"roles": (ROLE_NETO,), "mutates": True},
+    "tr-docs": {"roles": (ROLE_NETO,), "mutates": False},
+    "download-tr-doc": {"roles": (ROLE_NETO,), "mutates": False},
+    "tr-update": {"roles": (ROLE_NETO,), "mutates": True},
+    "tr-upload-doc": {"roles": (ROLE_NETO,), "mutates": True},
     "set-ths": {"roles": (ROLE_ACCOUNTANT,), "mutates": True},
     "proforma-upsert": {"roles": (ROLE_ACCOUNTANT,), "mutates": True},
     "proformas": {"roles": (ROLE_CHIEF, ROLE_ACCOUNTANT), "mutates": False},
@@ -282,6 +286,8 @@ def dictionary() -> dict:
             "TITLE": "скан тайтла из Car.title_scan",
             "note": "car-docs --vin <VIN> возвращает список документов машины. download-car-doc копирует файл в tempdir.",
         },
+        "eori": "код страны (PL, LT, LV, EE, DE, BY и другие известные) и до 15 букв или цифр. IK185300064 — EORI_FORMAT.",
+        "tr_docs": "tr-docs и download-tr-doc читают файлы заявки. tr-update и tr-upload-doc пишут только с --apply.",
     }
 
 

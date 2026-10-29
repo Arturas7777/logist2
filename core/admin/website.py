@@ -326,6 +326,7 @@ class TransportRequestAdmin(admin.ModelAdmin):
                     "truck_number",
                     "trailer_number",
                     "driver_name",
+                    "driver_passport",
                     "driver_phone",
                     "border_crossing",
                     "planned_loading_date",
