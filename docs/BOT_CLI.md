@@ -157,6 +157,24 @@ scp /path/from/result bot-server:/destination/
 - `neto-bundle` — сформировать ZIP-пакет документов для Transit Request
 - ...и другие (см. `python manage.py bot capabilities --token %BOT_TOKEN%`)
 
+## Передача авто (`transfer-cars`) — уведомления выключены
+
+Смена статуса машины на `TRANSFERRED` никому ничего не отправляет: ни клиенту, ни на другие адреса, ни по email, ни в Telegram. Это одинаково для:
+
+- `python manage.py bot transfer-cars` — с `--no-notify` и без него;
+- сохранения статуса в админке;
+- `Car.save()` и массового `transition_cars` (автовоз, каскад контейнера).
+
+Флаг `--no-notify` по-прежнему принимается, чтобы старые команды ботов не ломались. Пока настройка `CAR_TRANSFERRED_NOTIFICATIONS` не равна `true` (по умолчанию `false`), флаг ничего не меняет: рассылки о передаче нет в любом случае.
+
+Уведомления о разгрузке и планируемой разгрузке этот запрет не затрагивает.
+
+```bash
+python manage.py bot transfer-cars --token %BOT_TOKEN% --vins 3N1CP5BVXRL481232 --transfer-date 2026-10-29 --apply --idempotency-key once-1
+```
+
+В ответе `notifications` для передачи пустой.
+
 ## Ошибки
 
 При ошибке команда возвращает `"ok": false` и поле `"error"`:

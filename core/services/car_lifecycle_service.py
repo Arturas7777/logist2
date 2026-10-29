@@ -126,7 +126,8 @@ def transition_cars(
       раньше разгрузки); откат из TRANSFERRED очищает ``transfer_date``;
     * запись в ``CarStatusHistory``, свёртка статуса контейнеров;
     * после commit: пересчёт цен (+ реген DRAFT-счетов при передаче/откате,
-      если ``finalize``) и уведомление клиенту «авто передано».
+      если ``finalize``). Уведомление клиенту «авто передано» — только при
+      ``CAR_TRANSFERRED_NOTIFICATIONS=True`` (по умолчанию выключено).
 
     ``skip_transferred`` — каскад контейнера: переданные авто не откатываются
     побочным эффектом статуса контейнера.
@@ -285,6 +286,10 @@ def _after_transition(car_ids, *, finalize: bool, recalc: bool) -> None:
 
 def _notify_transferred(car_ids) -> None:
     if not car_ids:
+        return
+    from core.services.client_notifications import car_transferred_notifications_enabled
+
+    if not car_transferred_notifications_enabled():
         return
     from core.services.bot_runtime import notifications_muted
 

@@ -537,6 +537,13 @@ EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", 20))
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "Caromoto Lithuania <noreply@caromoto-lt.com>")
 
+# Письма и Telegram «авто передано» (Car.status = TRANSFERRED) выключены.
+# Включить можно только явно: CAR_TRANSFERRED_NOTIFICATIONS=true.
+# Пока флаг выключен, смена статуса на TRANSFERRED никому ничего не шлёт
+# (бот, админка, save(), сигналы, Celery). --no-notify у бота при этом
+# по-прежнему принимается и ничего не меняет.
+CAR_TRANSFERRED_NOTIFICATIONS = str(os.getenv("CAR_TRANSFERRED_NOTIFICATIONS", "False")).lower() == "true"
+
 # ---------------------------------------------------------------------------
 # Telegram — уведомления клиентам о разгрузке (дублируют email-канал)
 # ---------------------------------------------------------------------------

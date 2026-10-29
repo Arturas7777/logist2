@@ -10,7 +10,8 @@
 * ``PHOTOS_READY``     — появились публичные фото контейнера / авто;
 * ``INVOICE_ISSUED``   — выставлен официальный счёт (PARDP) с PDF, если есть;
 * ``REQUEST_STATUS``   — заявка на автовоз сменила статус;
-* ``CAR_TRANSFERRED``  — авто передано клиенту;
+* ``CAR_TRANSFERRED``  — авто передано клиенту. Выключено, пока
+  ``settings.CAR_TRANSFERRED_NOTIFICATIONS`` не станет True (по умолчанию False).
 * ``INVOICE_DUE_SOON`` — срок оплаты через 3 дня;
 * ``INVOICE_OVERDUE``  — инвойс просрочен.
 
@@ -245,6 +246,11 @@ def _send_telegram(ev: ClientEvent) -> int:
     return sent
 
 
+def car_transferred_notifications_enabled() -> bool:
+    """Рассылка «авто передано» включена только явным флагом (по умолчанию нет)."""
+    return bool(getattr(settings, "CAR_TRANSFERRED_NOTIFICATIONS", False))
+
+
 def dispatch(ev: ClientEvent) -> dict:
     """Не отправляет событие клиенту.
 
@@ -257,6 +263,20 @@ def dispatch(ev: ClientEvent) -> dict:
         getattr(ev.client, "name", ""),
     )
     return {"email": 0, "telegram": 0}
+
+
+def _deliver(ev: ClientEvent) -> dict:
+    """Реальная отправка email + Telegram. Только для явно включённых событий."""
+    result = {"email": 0, "telegram": 0}
+    try:
+        result["email"] = _send_email(ev)
+    except Exception:
+        logger.exception("[client_notifications] email %s для %s упал", ev.event, ev.client.name)
+    try:
+        result["telegram"] = _send_telegram(ev)
+    except Exception:
+        logger.exception("[client_notifications] telegram %s для %s упал", ev.event, ev.client.name)
+    return result
 
 
 def _tg_footer():
@@ -538,7 +558,13 @@ def notify_request_status(transport_request, user=None) -> dict:
 
 
 def notify_car_transferred(car, user=None) -> dict:
-    """«Авто передано»: Car перешёл в TRANSFERRED."""
+    """«Авто передано»: Car перешёл в TRANSFERRED.
+
+    По умолчанию ничего не отправляет. Реальная рассылка — только при
+    ``CAR_TRANSFERRED_NOTIFICATIONS=True``.
+    """
+    if not car_transferred_notifications_enabled():
+        return {"email": 0, "telegram": 0}
     client = car.client
     if client is None:
         return {"email": 0, "telegram": 0}
@@ -565,7 +591,7 @@ def notify_car_transferred(car, user=None) -> dict:
         if link:
             tg += ["", f'<a href="{link}">{_("Открыть в кабинете")}</a>']
         tg.append(_tg_footer())
-        return dispatch(
+        return _deliver(
             ClientEvent(
                 event=EVENT_CAR_TRANSFERRED,
                 client=client,

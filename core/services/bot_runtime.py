@@ -255,9 +255,10 @@ def dictionary() -> dict:
             },
             {
                 "field": "Car.status=TRANSFERRED",
-                "when": "машина перешла в передана и у неё есть клиент",
-                "channels": ["email", "telegram"],
-                "mute": "notify=false",
+                "when": "рассылка выключена (CAR_TRANSFERRED_NOTIFICATIONS=false). "
+                "Ни бот, ни админка, ни save() письмо и Telegram не ставят",
+                "channels": [],
+                "mute": "--no-notify принимается и ничего не меняет, пока флаг выключен",
             },
             {
                 "field": "Container.status=IN_PORT",

@@ -123,6 +123,11 @@ def transfer_cars(*, vins: list[str], transfer_date, notify: bool = True, apply:
     from core.models import Car
     from core.services.bot_runtime import mute_client_notifications
     from core.services.car_lifecycle_service import transition_cars
+    from core.services.client_notifications import car_transferred_notifications_enabled
+
+    # ``notify`` / ``--no-notify`` оставлены для совместимости команд бота.
+    # Пока CAR_TRANSFERRED_NOTIFICATIONS выключен, флаг ничего не рассылает.
+    handover_mail = bool(notify) and car_transferred_notifications_enabled()
 
     if transfer_date is None:
         raise BotError("transfer_date обязательна.")
@@ -138,7 +143,7 @@ def transfer_cars(*, vins: list[str], transfer_date, notify: bool = True, apply:
     already = [vin for vin, car in found.items() if car.status == "TRANSFERRED"]
     todo = [car for car in found.values() if car.status != "TRANSFERRED"]
     notifications = []
-    if notify:
+    if handover_mail:
         for car in todo:
             if car.client_id:
                 emails = [mask_email(item.email) for item in car.client.notification_emails.all()]
@@ -155,7 +160,7 @@ def transfer_cars(*, vins: list[str], transfer_date, notify: bool = True, apply:
     if not apply:
         result["transferred"] = [car.vin for car in todo]
         return {"before": {}, "after": result, "result": result, "notifications": notifications}
-    ctx = mute_client_notifications() if not notify else _null_context()
+    ctx = mute_client_notifications() if not handover_mail else _null_context()
     with ctx:
         moved = transition_cars(
             [car.pk for car in todo],
@@ -170,7 +175,7 @@ def transfer_cars(*, vins: list[str], transfer_date, notify: bool = True, apply:
     result["skipped"] = {key: moved[key] for key in moved if key != "updated"}
     closed = complete_requests_for_vins(result["transferred"])
     result["requests_completed"] = closed
-    return {"before": {}, "after": result, "result": result, "notifications": notifications if notify else []}
+    return {"before": {}, "after": result, "result": result, "notifications": notifications if handover_mail else []}
 
 
 def advance_tr_to(request, target: str) -> list[str]:

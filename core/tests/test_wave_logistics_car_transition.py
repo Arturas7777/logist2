@@ -147,7 +147,7 @@ def test_require_unload_info(warehouse):
     assert car.status == "IN_PORT"
 
 
-def test_transfer_notifies_client_after_commit(warehouse, django_capture_on_commit_callbacks):
+def test_transfer_does_not_queue_client_notification(warehouse, django_capture_on_commit_callbacks):
     container = _container("L2-NOTIFY001", warehouse)
     car = _car("L2NOTIFY000000001", container)
     with (
@@ -156,7 +156,7 @@ def test_transfer_notifies_client_after_commit(warehouse, django_capture_on_comm
         django_capture_on_commit_callbacks(execute=True),
     ):
         transition_cars([car.pk], "TRANSFERRED")
-    notify.assert_called_once_with(car.pk)
+    notify.assert_not_called()
     finalize.assert_called_once_with([car.pk])
 
 

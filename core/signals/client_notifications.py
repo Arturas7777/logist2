@@ -4,8 +4,9 @@
 
 * ``pre_save`` — снимок старого статуса (один ``values_list`` запрос; при
   ``save(update_fields=...)`` без ``status`` запрос не делается);
-* ``post_save`` — если статус изменился: запись в ``CarStatusHistory`` и, при
-  переходе в TRANSFERRED, уведомление клиенту после commit.
+* ``post_save`` — если статус изменился: запись в ``CarStatusHistory``.
+  Уведомление «авто передано» ставится в очередь только при
+  ``CAR_TRANSFERRED_NOTIFICATIONS=True`` (по умолчанию выключено).
 """
 
 import logging
@@ -67,6 +68,11 @@ def on_car_status_changed(sender, instance, created, **kwargs):
             logger.warning("Не удалось закрыть заявку после передачи авто %s: %s", instance.pk, exc)
 
     if created or instance.status != "TRANSFERRED" or not instance.client_id:
+        return
+
+    from core.services.client_notifications import car_transferred_notifications_enabled
+
+    if not car_transferred_notifications_enabled():
         return
 
     car_id = instance.pk

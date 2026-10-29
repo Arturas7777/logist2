@@ -221,7 +221,16 @@ def send_request_status_notification_task(self, request_id, status):
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60, time_limit=300)
 def send_car_transferred_notification_task(self, car_id):
-    """«Авто передано»: Car перешёл в TRANSFERRED."""
+    """«Авто передано»: Car перешёл в TRANSFERRED.
+
+    По умолчанию выходит сразу: ``CAR_TRANSFERRED_NOTIFICATIONS`` выключен,
+    в том числе для задач, уже лежавших в очереди Celery.
+    """
+    from core.services.client_notifications import car_transferred_notifications_enabled
+
+    if not car_transferred_notifications_enabled():
+        logger.info("[send_car_transferred_notification_task] car %s: рассылка о передаче выключена", car_id)
+        return None
     from core.models import Car
     from core.services import client_notifications as cn
 
