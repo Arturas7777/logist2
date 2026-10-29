@@ -58,6 +58,8 @@ class Command(BaseCommand):
             "lock",
             "unlock",
             "set-container-status",
+            "caromoto-client-map",
+            "car-upsert",
             "transfer-cars",
             "complete-tr",
             "arrived-not-handed",
@@ -126,6 +128,19 @@ class Command(BaseCommand):
         parser.add_argument("--doc-id", type=int, default=None)
         parser.add_argument("--type", default="")
         parser.add_argument("--out", default="")
+        parser.add_argument("--map-action", default="list")
+        parser.add_argument("--office", default="")
+        parser.add_argument("--caromoto-client-id", default="")
+        parser.add_argument("--priority", type=int, default=0)
+        parser.add_argument("--brand", default="")
+        parser.add_argument("--model", default="")
+        parser.add_argument("--year", type=int, default=None)
+        parser.add_argument("--unload-site", type=int, default=None)
+        parser.add_argument("--foreign-container", default="")
+        parser.add_argument("--eta", default="")
+        parser.add_argument("--notify", action="store_true")
+        parser.add_argument("--client-docs", action="store_true")
+        parser.add_argument("--set-warehouse", action="store_true")
 
     def handle(self, *args, **options):
         command = options.get("command")
@@ -188,10 +203,17 @@ class Command(BaseCommand):
             reconcile_neto,
             upsert_proforma,
         )
-        from core.services.bot_import import apply_batch, flexible_tariff_preview, store_batch
+        from core.services.bot_import import (
+            apply_batch,
+            flexible_tariff_preview,
+            list_client_maps,
+            store_batch,
+            upsert_client_map,
+        )
         from core.services.bot_ops import (
             arrived_not_handed,
             backfill_transfer_dates,
+            car_upsert,
             complete_tr,
             discrepancies,
             mail_health,
@@ -271,6 +293,7 @@ class Command(BaseCommand):
                 status=options["status"],
                 unload_date=day,
                 warehouse_code=options["warehouse"] or None,
+                set_warehouse=options["set_warehouse"],
                 notify=not options["no_notify"],
                 apply=apply,
             )
@@ -312,10 +335,42 @@ class Command(BaseCommand):
                     "result": {"outcome": "would_apply", "batch": options["batch"]},
                     "notifications": [],
                 }
-            report = apply_batch(options["batch"])
+            report = apply_batch(options["batch"], overwrite_warehouse=options["set_warehouse"])
             return {"before": {}, "after": report, "result": report, "notifications": []}
         if command == "neto-bundle":
-            return neto_bundle(options["request"] or options["number"], apply=apply, force=options["force"])
+            return neto_bundle(
+                options["request"] or options["number"],
+                apply=apply,
+                force=options["force"],
+                client_docs=options["client_docs"],
+            )
+        if command == "caromoto-client-map":
+            if options["map_action"] == "list":
+                rows = list_client_maps()
+                return {"before": {}, "after": {}, "result": rows, "notifications": []}
+            return upsert_client_map(
+                office=options["office"],
+                caromoto_client_id=options["caromoto_client_id"],
+                client_id=options["client_id"],
+                priority=options["priority"],
+                apply=apply,
+            )
+        if command == "car-upsert":
+            return car_upsert(
+                vin=options["vin"],
+                brand=options["brand"],
+                model=options["model"],
+                year=options["year"],
+                client_id=options["client_id"],
+                warehouse_code=options["warehouse"] or None,
+                unload_site=options["unload_site"],
+                foreign_container_number=options["foreign_container"],
+                status=options["status"],
+                unload_date=parse_day(options["unload_date"]) if options["unload_date"] else None,
+                eta=parse_day(options["eta"]) if options["eta"] else None,
+                notify=options["notify"],
+                apply=apply,
+            )
         if command == "set-ths":
             return _set_ths(options["container"], options["amount"], options["payer"], apply)
         if command == "proforma-upsert":

@@ -56,18 +56,107 @@ def _warehouse(name: str | None):
 
 
 def _map_client(office: str, caromoto_client_id: str):
+    """Сначала точная пара офис+id, затем id клиента, затем офис целиком."""
     from core.models.bots import CaromotoClientMap
 
-    if not caromoto_client_id:
-        return None
-    row = (
-        CaromotoClientMap.objects.filter(caromoto_client_id=caromoto_client_id, office=office or "")
-        .order_by("-priority")
-        .first()
+    office = (office or "").strip()
+    client_key = str(caromoto_client_id or "").strip()
+    if client_key:
+        row = (
+            CaromotoClientMap.objects.filter(caromoto_client_id=client_key, office=office).order_by("-priority").first()
+        )
+        if row is None and office:
+            row = (
+                CaromotoClientMap.objects.filter(caromoto_client_id=client_key, office="").order_by("-priority").first()
+            )
+        if row is None:
+            row = CaromotoClientMap.objects.filter(caromoto_client_id=client_key).order_by("-priority").first()
+        if row is not None:
+            return row.client
+    if office:
+        row = CaromotoClientMap.objects.filter(office=office, caromoto_client_id="").order_by("-priority").first()
+        if row is not None:
+            return row.client
+    return None
+
+
+def list_client_maps() -> dict:
+    from core.models.bots import CaromotoClientMap
+
+    rows = []
+    for row in CaromotoClientMap.objects.select_related("client").order_by("-priority", "id"):
+        kind = "CLIENT" if row.caromoto_client_id else "OFFICE"
+        rows.append(
+            {
+                "id": row.pk,
+                "kind": kind,
+                "office": row.office,
+                "caromoto_client_id": row.caromoto_client_id,
+                "client_id": row.client_id,
+                "client": row.client.name,
+                "priority": row.priority,
+            }
+        )
+    return {"count": len(rows), "rows": rows}
+
+
+def upsert_client_map(
+    *,
+    office: str,
+    caromoto_client_id: str,
+    client_id: int | None,
+    priority: int = 0,
+    apply: bool = False,
+) -> dict:
+    from core.models import Client
+    from core.models.bots import CaromotoClientMap
+
+    office = (office or "").strip()
+    client_key = str(caromoto_client_id or "").strip()
+    if not office and not client_key:
+        raise BotError("Нужен --office и/или --caromoto-client-id.")
+    if not client_id:
+        raise BotError("Нужен --client-id клиента CRM.")
+    client = Client.objects.filter(pk=client_id).first()
+    if client is None:
+        raise BotError(f"Клиент CRM id={client_id} не найден.")
+    kind = "CLIENT" if client_key else "OFFICE"
+    after = {
+        "kind": kind,
+        "office": office,
+        "caromoto_client_id": client_key,
+        "client_id": client.pk,
+        "client": client.name,
+        "priority": priority,
+    }
+    existing = CaromotoClientMap.objects.filter(office=office, caromoto_client_id=client_key).first()
+    before = {}
+    if existing is not None:
+        before = {
+            "id": existing.pk,
+            "client_id": existing.client_id,
+            "priority": existing.priority,
+        }
+    if not apply:
+        return {
+            "before": before,
+            "after": after,
+            "result": {"outcome": "would_upsert", **after},
+            "notifications": [],
+        }
+    row, created = CaromotoClientMap.objects.update_or_create(
+        office=office,
+        caromoto_client_id=client_key,
+        defaults={"client": client, "priority": priority},
     )
-    if row is None:
-        row = CaromotoClientMap.objects.filter(caromoto_client_id=caromoto_client_id).order_by("-priority").first()
-    return row.client if row else None
+    after["id"] = row.pk
+    after["created"] = created
+    return {
+        "before": before,
+        "after": after,
+        "result": {"outcome": "created" if created else "updated", **after},
+        "notifications": [],
+    }
 
 
 def _hold_eta(container, new_eta, source: str) -> str:
@@ -145,7 +234,7 @@ def store_batch(principal_name: str, payload: dict):
     return batch, diff
 
 
-def apply_batch(batch_id: int) -> dict:
+def apply_batch(batch_id: int, *, overwrite_warehouse: bool = False) -> dict:
     from core.models import Car, Container
     from core.models.bots import CaromotoImportBatch, EtaHistory
 
@@ -190,7 +279,7 @@ def apply_batch(batch_id: int) -> dict:
         warehouse = _warehouse(raw.get("warehouse"))
         if line and container.line_id is None:
             container.line = line
-        if warehouse and container.warehouse_id is None:
+        if warehouse and (container.warehouse_id is None or overwrite_warehouse):
             container.warehouse = warehouse
         eta = parse_date(raw.get("eta") or "") if raw.get("eta") else None
         previous_eta = container.eta

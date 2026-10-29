@@ -147,6 +147,64 @@ python manage.py bot download-car-doc --token %NETO_TOKEN% --vin 3N1CP5BVXRL4812
 scp /path/from/result bot-server:/destination/
 ```
 
+## Сопоставление клиентов Caromoto
+
+### `caromoto-client-map` — список и запись соответствия
+
+Роль: `parser`. Без `--apply` ничего не пишет. Запись: `--apply --idempotency-key`.
+
+Офис целиком (id Caromoto пустой) или конкретный клиент Caromoto:
+
+```bash
+python manage.py bot caromoto-client-map --token %BOT_TOKEN%
+
+python manage.py bot caromoto-client-map --token %BOT_TOKEN% --map-action upsert --office "PLB Office" --client-id 4 --apply --idempotency-key map-plb
+
+python manage.py bot caromoto-client-map --token %BOT_TOKEN% --map-action upsert --caromoto-client-id 63570 --client-id 17 --apply --idempotency-key map-63570
+```
+
+Импорт `apply-caromoto` берёт клиента сначала по id Caromoto, если пары нет — по офису. Пока таблица пустая, машины без клиента пропускаются (`no-client`). Готовые строки сюда не заносятся: их пришлёт бот «Парсер».
+
+Склад уже существующего контейнера импорт не затирает. Чтобы заменить его:
+
+```bash
+python manage.py bot apply-caromoto --token %BOT_TOKEN% --batch 12 --set-warehouse --apply --idempotency-key apply-12
+```
+
+## Машина без своего контейнера
+
+### `car-upsert`
+
+Роль: `parser`. Чужой контейнер пишется в `foreign_container_number`, свой контейнер не создаётся. ETA такой машины — поле `foreign_eta`.
+
+Уведомление клиенту не уходит, пока нет `--notify`.
+
+```bash
+python manage.py bot car-upsert --token %BOT_TOKEN% --vin 3N1CP5BVXRL481232 --brand Nissan --model Kicks --year 2018 --client-id 17 --warehouse ATLANTIC --unload-site 1 --foreign-container TCLU8824843 --status UNLOADED --unload-date 2026-10-20 --eta 2026-10-18 --apply --idempotency-key car-1
+```
+
+Статусы: `FLOATING` или `UNLOADED`.
+
+### `set-container-status` для парсера
+
+Роль `parser` может двигать контейнер в `IN_PORT` / `UNLOADED`. Если у контейнера склад уже стоит, другой склад ставится только с `--set-warehouse`.
+
+## Пакет Neto
+
+`neto-bundle` для склада Neto предлагает получателей BLR:
+
+`dovile@`, `rita@`, `customs@`, `evaldas@`, `evaldas.k@`, `ramune@netoterminal.lt`.
+
+В ответе без `--apply` уже есть `subject` и `files`. Номер BLR при этом не тратится.
+
+`--client-docs` — клиент приносит документы сам. На машину нужны тайтл, PDF клиента (`OTHER`, не сгенерированный) и два ĮSIPAREIGOJIMAS (`OBLIGATION`).
+
+EORI в пакете должен начинаться с `LT`, `LV` или `BY`. Код компании вроде `IK185300064` даёт `EORI_FORMAT`.
+
+```bash
+python manage.py bot neto-bundle --token %BOT_TOKEN% --number TR-1 --client-docs
+```
+
 ## Другие команды
 
 - `capabilities` — список доступных команд для роли

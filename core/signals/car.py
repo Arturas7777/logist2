@@ -349,8 +349,13 @@ def _maybe_send_car_unload_notification(instance, *, created):
         return
     old_unload_date = old_values.get("unload_date")
     if instance.unload_date and (created or old_unload_date is None):
+        from core.services.bot_runtime import notifications_muted
+
+        muted = notifications_muted()
 
         def _enqueue():
+            if muted:
+                return
             try:
                 from core.tasks import send_car_unload_notification_task
 

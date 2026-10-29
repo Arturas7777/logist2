@@ -91,6 +91,12 @@ class Car(models.Model):
         help_text="Машина Atlantic в чужом контейнере. Раньше это писали в примечания.",
     )
     foreign_line = models.CharField(max_length=64, blank=True, default="", verbose_name="Чужая линия")
+    foreign_eta = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="ETA чужого контейнера",
+        help_text="Для машины без своего контейнера. ETA нашего контейнера живёт на Container.",
+    )
     source_email = models.ForeignKey(
         "ContainerEmail",
         on_delete=models.SET_NULL,

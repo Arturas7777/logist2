@@ -49,6 +49,7 @@ def set_container_status(
     status: str,
     unload_date=None,
     warehouse_code: str | None = None,
+    set_warehouse: bool = False,
     notify: bool = True,
     apply: bool = False,
 ) -> dict:
@@ -66,11 +67,24 @@ def set_container_status(
         "unload_date": container.unload_date.isoformat() if container.unload_date else None,
         "warehouse_id": container.warehouse_id,
     }
-    if container.status == status and (unload_date is None or container.unload_date == unload_date):
+    warehouse = _warehouse(warehouse_code)
+    if warehouse_code and warehouse is None:
+        raise BotError(f"Склад {warehouse_code} не найден.")
+    warehouse_changes = bool(
+        warehouse and (container.warehouse_id is None or (set_warehouse and container.warehouse_id != warehouse.pk))
+    )
+    if (
+        container.status == status
+        and (unload_date is None or container.unload_date == unload_date)
+        and not warehouse_changes
+    ):
+        kept = bool(
+            warehouse and container.warehouse_id and container.warehouse_id != warehouse.pk and not set_warehouse
+        )
         return {
             "before": before,
             "after": before,
-            "result": {"outcome": "already"},
+            "result": {"outcome": "already", "warehouse_kept": kept},
             "notifications": [],
         }
     if _rank(container.status) > _rank(status):
@@ -81,18 +95,17 @@ def set_container_status(
     after["status"] = status
     if unload_date:
         after["unload_date"] = unload_date.isoformat()
-    warehouse = _warehouse(warehouse_code)
-    if warehouse_code and warehouse is None:
-        raise BotError(f"Склад {warehouse_code} не найден.")
-    if warehouse:
+    if warehouse_changes and warehouse:
         after["warehouse_id"] = warehouse.pk
+    elif warehouse and container.warehouse_id and not set_warehouse:
+        after["warehouse_kept"] = True
     if not apply:
         return {"before": before, "after": after, "result": {"outcome": "would_update"}, "notifications": notifications}
 
     container.status = status
     if unload_date:
         container.unload_date = unload_date
-    if warehouse:
+    if warehouse_changes and warehouse:
         container.warehouse = warehouse
     validate_status_transition(container, before["status"])
     ctx = mute_client_notifications() if not notify else _null_context()
@@ -117,6 +130,128 @@ class _null_context:
 
     def __exit__(self, *args):
         return False
+
+
+def car_upsert(
+    *,
+    vin: str,
+    brand: str = "",
+    model: str = "",
+    year: int | None = None,
+    client_id: int | None = None,
+    warehouse_code: str | None = None,
+    unload_site: int | None = None,
+    foreign_container_number: str = "",
+    status: str = "",
+    unload_date=None,
+    eta=None,
+    notify: bool = False,
+    apply: bool = False,
+) -> dict:
+    """Машина без своего контейнера. Письма клиенту только при notify=True."""
+    from core.models import Car, Client
+    from core.services.bot_runtime import mute_client_notifications
+    from core.services.vin import normalize_vin
+
+    clean_vin = normalize_vin(vin or "")
+    if len(clean_vin) != 17:
+        raise BotError("VIN должен быть 17 символов.")
+    if status and status not in {"FLOATING", "UNLOADED"}:
+        raise BotError("Статус car-upsert: FLOATING или UNLOADED.")
+    if unload_site is not None and unload_site not in {1, 2, 3, 4, 5}:
+        raise BotError("Адрес разгрузки: --unload-site от 1 до 5.")
+    existing = Car.objects.filter(vin=clean_vin).first()
+    client = None
+    if client_id:
+        client = Client.objects.filter(pk=client_id).first()
+        if client is None:
+            raise BotError(f"Клиент CRM id={client_id} не найден.")
+    warehouse = _warehouse(warehouse_code) if warehouse_code else None
+    if warehouse_code and warehouse is None:
+        raise BotError(f"Склад {warehouse_code} не найден.")
+    if existing is None:
+        if not brand.strip():
+            raise BotError("Для новой машины нужен --brand.")
+        if not year:
+            raise BotError("Для новой машины нужен --year.")
+        if client is None:
+            raise BotError("Для новой машины нужен --client-id.")
+        if not status:
+            raise BotError("Для новой машины нужен --status FLOATING или UNLOADED.")
+    if status == "UNLOADED" and unload_date is None and (existing is None or existing.unload_date is None):
+        raise BotError("Для UNLOADED нужна --unload-date.")
+    title = " ".join(part for part in (brand.strip(), model.strip()) if part)
+    after = {
+        "vin": clean_vin,
+        "brand": (brand.strip() or (existing.brand if existing else ""))[:50],
+        "source_title": title[:255] if title else (existing.source_title if existing else ""),
+        "year": year or (existing.year if existing else None),
+        "client_id": client.pk if client else (existing.client_id if existing else None),
+        "warehouse_id": warehouse.pk if warehouse else (existing.warehouse_id if existing else None),
+        "unload_site": unload_site if unload_site is not None else (existing.unload_site if existing else 1),
+        "foreign_container_number": (
+            foreign_container_number or (existing.foreign_container_number if existing else "")
+        )[:20],
+        "status": status or (existing.status if existing else ""),
+        "unload_date": (
+            unload_date.isoformat()
+            if unload_date
+            else (existing.unload_date.isoformat() if existing and existing.unload_date else None)
+        ),
+        "foreign_eta": (
+            eta.isoformat()
+            if eta
+            else (existing.foreign_eta.isoformat() if existing and existing.foreign_eta else None)
+        ),
+        "container_id": existing.container_id if existing else None,
+    }
+    before = {}
+    if existing is not None:
+        before = {
+            "id": existing.pk,
+            "status": existing.status,
+            "client_id": existing.client_id,
+            "warehouse_id": existing.warehouse_id,
+            "foreign_container_number": existing.foreign_container_number,
+        }
+    if not apply:
+        return {
+            "before": before,
+            "after": after,
+            "result": {"outcome": "would_update" if existing else "would_create", **after},
+            "notifications": [],
+        }
+    car = existing or Car(vin=clean_vin, year=year, brand=after["brand"][:50], status=after["status"])
+    if brand.strip():
+        car.brand = brand.strip()[:50]
+    if title:
+        car.source_title = title[:255]
+    if year:
+        car.year = year
+    if client is not None:
+        car.client = client
+    if warehouse is not None:
+        car.warehouse = warehouse
+    if unload_site is not None:
+        car.unload_site = unload_site
+    if foreign_container_number:
+        car.foreign_container_number = foreign_container_number.strip()[:20]
+    if status:
+        car.status = status
+    if unload_date is not None:
+        car.unload_date = unload_date
+    if eta is not None:
+        car.foreign_eta = eta
+    ctx = _null_context() if notify else mute_client_notifications()
+    with ctx:
+        car.save()
+    after["id"] = car.pk
+    return {
+        "before": before,
+        "after": after,
+        "result": {"outcome": "updated" if existing else "created", "id": car.pk, **after},
+        "notifications": [],
+    }
 
 
 def transfer_cars(*, vins: list[str], transfer_date, notify: bool = True, apply: bool = False) -> dict:

@@ -625,7 +625,7 @@ def _append_file_bytes(out_doc, data: bytes, filename: str) -> None:
     raise PackageDataError(f"Неподдерживаемый формат файла: {filename or ext or '?'}")
 
 
-def build_car_package_pdf(transport_request, car) -> bytes | None:
+def build_car_package_pdf(transport_request, car, only_types=None) -> bytes | None:
     """Собрать единый PDF по авто: документы заявки + тайтл из админки.
 
     Порядок страниц — как в ``TRANSPORT_DOCUMENT_TYPES`` (без подписи).
@@ -640,6 +640,8 @@ def build_car_package_pdf(transport_request, car) -> bytes | None:
 
     type_order = {code: idx for idx, (code, _) in enumerate(TRANSPORT_DOCUMENT_TYPES)}
     docs = [d for d in transport_request.documents.filter(car=car) if d.doc_type not in _ARCHIVE_SKIP_DOC_TYPES]
+    if only_types is not None:
+        docs = [d for d in docs if d.doc_type in only_types]
     docs.sort(key=lambda d: (type_order.get(d.doc_type, 99), d.created_at, d.pk))
 
     out = fitz.open()
@@ -659,7 +661,10 @@ def build_car_package_pdf(transport_request, car) -> bytes | None:
                 )
 
         has_title_doc = any(doc.doc_type == "TITLE" for doc in docs)
-        title_data = None if has_title_doc else _read_storage_file(getattr(car, "title_scan", None))
+        include_title = only_types is None or "TITLE" in only_types
+        title_data = None
+        if include_title and not has_title_doc:
+            title_data = _read_storage_file(getattr(car, "title_scan", None))
         if title_data:
             title_name = os.path.basename(car.title_scan.name) if car.title_scan.name else "title.pdf"
             try:
@@ -674,7 +679,7 @@ def build_car_package_pdf(transport_request, car) -> bytes | None:
         out.close()
 
 
-def build_request_packages_zip(transport_request) -> tuple[str, bytes]:
+def build_request_packages_zip(transport_request, only_types=None) -> tuple[str, bytes]:
     """ZIP с PDF-пакетами по каждому VIN заявки.
 
     Возвращает ``(имя_архива, байты)``. Пустой архив → ``PackageDataError``.
@@ -683,7 +688,7 @@ def build_request_packages_zip(transport_request) -> tuple[str, bytes]:
     added = 0
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for car in transport_request.cars.all().order_by("id"):
-            pdf_bytes = build_car_package_pdf(transport_request, car)
+            pdf_bytes = build_car_package_pdf(transport_request, car, only_types=only_types)
             if not pdf_bytes:
                 continue
             zf.writestr(package_pdf_filename(car), pdf_bytes)

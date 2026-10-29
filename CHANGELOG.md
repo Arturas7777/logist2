@@ -7,6 +7,24 @@
 
 ## [Unreleased]
 
+### Added — Сопоставление Caromoto, машина без контейнера, пакет Neto (2026-10-29)
+
+- `bot caromoto-client-map` (роль parser): список и upsert пары
+  офис/id Caromoto → клиент CRM. Запись только с `--apply` и
+  `--idempotency-key`. Импорт ищет клиента сначала по id, затем по офису.
+  Таблицу заранее не заполняем.
+- `bot car-upsert` (роль parser): машина без своего контейнера
+  (VIN, марка/модель/год, клиент, склад, площадка, чужой контейнер,
+  FLOATING/UNLOADED, дата разгрузки, ETA). Письмо клиенту только с
+  `--notify`.
+- `bot set-container-status` доступен парсеру. Чужой склад у уже
+  заполненного контейнера меняется только с `--set-warehouse`
+  (`apply-caromoto` и `set-container-status`).
+- `bot neto-bundle`: получатели BLR — dovile, rita, customs, evaldas,
+  evaldas.k, ramune @netoterminal.lt. В preview есть тема и список
+  файлов. `--client-docs` требует тайтл, PDF клиента и два
+  ĮSIPAREIGOJIMAS. EORI должен начинаться с LT, LV или BY.
+
 ### Changed — Уведомления о передаче авто выключены (2026-10-29)
 
 - Статус `TRANSFERRED` больше никому ничего не шлёт: ни клиенту, ни на

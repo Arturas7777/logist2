@@ -2,12 +2,36 @@
 
 from __future__ import annotations
 
+import os
+import re
+
 from django.db import transaction
 from django.utils import timezone
 
 from core.services.bot_runtime import BotError
 
 _REQUIRED = ("TITLE", "PASSPORT", "INVOICE", "PAYMENT_ORDER", "LETTER_USA", "CONTRACT", "SIGNATURE")
+_CLIENT_DOC_TYPES = {"TITLE", "OTHER", "OBLIGATION"}
+_EORI_RE = re.compile(r"^(LT|LV|BY)[0-9A-Z]+$")
+# BLR — тема письма Neto. Домен общий, в задании он указан у последнего адреса.
+BLR_RECIPIENTS = [
+    "dovile@netoterminal.lt",
+    "rita@netoterminal.lt",
+    "customs@netoterminal.lt",
+    "evaldas@netoterminal.lt",
+    "evaldas.k@netoterminal.lt",
+    "ramune@netoterminal.lt",
+]
+
+
+def eori_problem(value: str) -> str | None:
+    """Пусто — нет кода. IK… и прочие коды компании — не EORI."""
+    raw = (value or "").strip().upper()
+    if not raw:
+        return "EORI"
+    if not _EORI_RE.match(raw):
+        return "EORI_FORMAT"
+    return None
 
 
 def _missing_for_car(request, car) -> list[str]:
@@ -28,14 +52,33 @@ def _missing_for_car(request, car) -> list[str]:
     return missing
 
 
-def completeness(request) -> dict:
+def _missing_client_brought(request, car) -> list[str]:
+    from core.models.website import TransportRequestDocument
+
+    docs = list(TransportRequestDocument.objects.filter(request=request, car=car))
+    present = {doc.doc_type for doc in docs}
+    if car.title_scan:
+        present.add("TITLE")
+    missing = []
+    if "TITLE" not in present:
+        missing.append("TITLE")
+    client_pdf = any(not doc.is_generated and doc.doc_type == "OTHER" for doc in docs)
+    if not client_pdf:
+        missing.append("CLIENT_PDF")
+    if sum(1 for doc in docs if doc.doc_type == "OBLIGATION") < 2:
+        missing.append("OBLIGATION")
+    return missing
+
+
+def completeness(request, *, client_docs: bool = False) -> dict:
     rows = []
     for car in request.cars.all().order_by("id"):
+        missing = _missing_client_brought(request, car) if client_docs else _missing_for_car(request, car)
         rows.append(
             {
                 "vin": car.vin,
                 "weight_kg": str(car.weight_kg) if car.weight_kg else None,
-                "missing": _missing_for_car(request, car),
+                "missing": missing,
             }
         )
     request_missing = []
@@ -44,9 +87,15 @@ def completeness(request) -> dict:
     eori = (request.carrier_eori or "").strip()
     if request.auto_transport_id and not eori:
         eori = request.auto_transport.eori_code or ""
-    if not eori:
-        request_missing.append("EORI")
-    return {"number": request.number, "request_missing": request_missing, "cars": rows}
+    problem = eori_problem(eori)
+    if problem:
+        request_missing.append(problem)
+    return {
+        "number": request.number,
+        "request_missing": request_missing,
+        "cars": rows,
+        "client_docs": client_docs,
+    }
 
 
 def _warehouse_code(request) -> str:
@@ -64,7 +113,39 @@ def recipients_for(code: str) -> list[str]:
 
     if code == "ATLANTIC":
         return list(getattr(settings, "ATLANTIC_MAIL_RECIPIENTS", ["info@atlanticexpress.lt"]))
-    return list(getattr(settings, "NETO_MAIL_RECIPIENTS", ["evaldas@netoterminal.lt"]))
+    return list(getattr(settings, "NETO_MAIL_RECIPIENTS", BLR_RECIPIENTS))
+
+
+def preview_subject(code: str) -> str:
+    """Следующий номер BLR без записи в счётчик."""
+    from core.models.bots import NetoDispatchCounter
+
+    today = timezone.localdate()
+    row = NetoDispatchCounter.objects.filter(day=today, warehouse_code=code).first()
+    seq = (row.seq if row else 0) + 1
+    return f"Konteinerio dokumentai {today:%d.%m.%Y} BLR {seq:02d}"
+
+
+def bundle_files(request, *, client_docs: bool = False) -> list[dict]:
+    from core.models.website import TransportRequestDocument
+
+    allowed = _CLIENT_DOC_TYPES if client_docs else None
+    rows = []
+    for car in request.cars.all().order_by("id"):
+        docs = list(TransportRequestDocument.objects.filter(request=request, car=car))
+        has_title = False
+        for doc in docs:
+            if doc.doc_type == "SIGNATURE":
+                continue
+            if allowed is not None and doc.doc_type not in allowed:
+                continue
+            if doc.doc_type == "TITLE":
+                has_title = True
+            rows.append({"vin": car.vin, "type": doc.doc_type, "filename": doc.filename})
+        if not has_title and getattr(car, "title_scan", None) and (allowed is None or "TITLE" in allowed):
+            name = os.path.basename(car.title_scan.name) if car.title_scan.name else "title.pdf"
+            rows.append({"vin": car.vin, "type": "TITLE", "filename": name})
+    return rows
 
 
 def next_blr_number(code: str) -> int:
@@ -79,7 +160,7 @@ def next_blr_number(code: str) -> int:
         return locked.seq
 
 
-def neto_bundle(number: str, *, apply: bool, force: bool = False) -> dict:
+def neto_bundle(number: str, *, apply: bool, force: bool = False, client_docs: bool = False) -> dict:
     from pathlib import Path
 
     from core.models.website import TransportRequest
@@ -88,18 +169,20 @@ def neto_bundle(number: str, *, apply: bool, force: bool = False) -> dict:
     request = TransportRequest.objects.filter(number__iexact=number.strip()).first()
     if request is None:
         raise BotError(f"Заявка {number} не найдена.")
-    report = completeness(request)
+    report = completeness(request, client_docs=client_docs)
     code = _warehouse_code(request)
+    files = bundle_files(request, client_docs=client_docs)
+    subject = preview_subject(code)
     blocked = report["request_missing"] or any(row["missing"] for row in report["cars"])
-    subject = None
     path = None
+    only_types = _CLIENT_DOC_TYPES if client_docs else None
     if apply:
         if blocked and not force:
             raise BotError("Пакет неполный. Сначала закройте missing или передайте --force.")
         seq = next_blr_number(code)
         subject = f"Konteinerio dokumentai {timezone.localdate():%d.%m.%Y} BLR {seq:02d}"
         try:
-            filename, payload = build_request_packages_zip(request)
+            filename, payload = build_request_packages_zip(request, only_types=only_types)
         except PackageDataError as exc:
             raise BotError(str(exc)) from exc
         folder = Path("media") / "bot_tmp" / "neto"
@@ -117,8 +200,12 @@ def neto_bundle(number: str, *, apply: bool, force: bool = False) -> dict:
             "completeness": report,
             "recipients": recipients_for(code),
             "subject": subject,
+            "files": files,
             "path": path,
-            "obligation": "только транзит и не мото",
+            "client_docs": client_docs,
+            "obligation": "клиент приносит тайтл, свой PDF и два ĮSIPAREIGOJIMAS"
+            if client_docs
+            else "только транзит и не мото",
         },
         "notifications": [],
     }
