@@ -997,6 +997,7 @@ class TransportRequest(models.Model):
     truck_number = models.CharField(max_length=20, verbose_name="Номер тягача")
     trailer_number = models.CharField(max_length=20, blank=True, verbose_name="Номер прицепа")
     driver_name = models.CharField(max_length=100, verbose_name="ФИО водителя")
+    driver_passport = models.CharField(max_length=50, blank=True, verbose_name="Паспорт водителя")
     driver_phone = models.CharField(max_length=20, blank=True, verbose_name="Телефон водителя")
     border_crossing = models.CharField(max_length=100, blank=True, verbose_name="Граница пересечения")
     planned_loading_date = models.DateField(null=True, blank=True, verbose_name="Планируемая дата загрузки")

@@ -23,7 +23,20 @@
 - `bot neto-bundle`: получатели BLR — dovile, rita, customs, evaldas,
   evaldas.k, ramune @netoterminal.lt. В preview есть тема и список
   файлов. `--client-docs` требует тайтл, PDF клиента и два
-  ĮSIPAREIGOJIMAS. EORI должен начинаться с LT, LV или BY.
+  ĮSIPAREIGOJIMAS. EORI — код страны и до 15 букв или цифр
+  (PL, LT, LV, EE, DE, BY и другие). Код компании IK… — это `EORI_FORMAT`.
+
+### Added — Документы и поля заявки для бота neto (2026-10-29)
+
+- `bot tr-docs` и `bot download-tr-doc` (роль neto): список и копия
+  файлов заявки в `media/bot_tmp/neto/`. В preview `neto-bundle` у
+  каждого файла есть `id`.
+- `bot tr-update` пишет водителя (ФИО, паспорт, телефон), перевозчика,
+  EORI, номера тягача и прицепа и границу. Паспорт водителя — поле
+  `driver_passport`. Запись только с `--apply` и `--idempotency-key`,
+  клиенту ничего не уходит.
+- `bot tr-upload-doc` кладёт в заявку `CONTRACT`, `SIGNATURE` или
+  `OTHER` из `media/bot_tmp/neto/`.
 
 ### Changed — Уведомления о передаче авто выключены (2026-10-29)
 

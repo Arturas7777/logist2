@@ -27,9 +27,14 @@ pytestmark = pytest.mark.django_db
 def test_eori_requires_country_prefix():
     assert eori_problem("") == "EORI"
     assert eori_problem("IK185300064") == "EORI_FORMAT"
-    assert eori_problem("PL123456789") == "EORI_FORMAT"
+    assert eori_problem("PL" + "1" * 16) == "EORI_FORMAT"
+    assert eori_problem("PL123456789") is None
+    assert eori_problem("PL525308706300000") is None
+    assert eori_problem("PL527318145700000") is None
     assert eori_problem("LT3066363532") is None
     assert eori_problem("lv123") is None
+    assert eori_problem("EE123456789") is None
+    assert eori_problem("DE123456789") is None
     assert eori_problem("BY9988") is None
 
 
@@ -247,3 +252,4 @@ def test_neto_preview_subject_files_and_client_docs():
     assert types.count("OBLIGATION") == 2
     assert "OTHER" in types
     assert "TITLE" in types
+    assert all(row["id"] for row in ready["result"]["files"])
