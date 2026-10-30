@@ -42,7 +42,7 @@ COMMANDS: dict[str, dict] = {
     "download-attachment": {"roles": (ROLE_NETO, ROLE_HANDOVER), "mutates": False},
     "car": {"roles": (ROLE_CHIEF, ROLE_NETO, ROLE_HANDOVER, ROLE_ACCOUNTANT), "mutates": False},
     "car-docs": {"roles": (ROLE_CHIEF, ROLE_NETO, ROLE_HANDOVER, ROLE_ACCOUNTANT), "mutates": False},
-    "download-car-doc": {"roles": (ROLE_CHIEF, ROLE_NETO, ROLE_HANDOVER), "mutates": False},
+    "download-car-doc": {"roles": (ROLE_CHIEF, ROLE_NETO, ROLE_HANDOVER, ROLE_ACCOUNTANT), "mutates": False},
     "tempdir": {"roles": READ_ROLES, "mutates": False},
     "lock": {"roles": (ROLE_NETO, ROLE_HANDOVER, ROLE_PARSER, ROLE_ACCOUNTANT), "mutates": True},
     "unlock": {"roles": (ROLE_NETO, ROLE_HANDOVER, ROLE_PARSER, ROLE_ACCOUNTANT), "mutates": True},
@@ -61,6 +61,7 @@ COMMANDS: dict[str, dict] = {
     "set-ths": {"roles": (ROLE_ACCOUNTANT,), "mutates": True},
     "proforma-upsert": {"roles": (ROLE_ACCOUNTANT,), "mutates": True},
     "proformas": {"roles": (ROLE_CHIEF, ROLE_ACCOUNTANT), "mutates": False},
+    "bank-transactions": {"roles": (ROLE_ACCOUNTANT,), "mutates": False},
     "match-proforma": {"roles": (ROLE_ACCOUNTANT,), "mutates": True},
     "propose-invoice-payment": {"roles": (ROLE_ACCOUNTANT,), "mutates": True},
     "profit": {"roles": (ROLE_CHIEF, ROLE_ACCOUNTANT), "mutates": False},
@@ -280,8 +281,10 @@ def dictionary() -> dict:
         "money": "статус счёта бот не пишет. Оплата — propose-invoice-payment и подтверждение, дальше BillingService.",
         "car_docs": {
             "TITLE": "скан тайтла из Car.title_scan",
-            "note": "car-docs --vin <VIN> возвращает список документов машины. download-car-doc копирует файл в tempdir.",
+            "note": "car-docs и download-car-doc доступны и бухгалтеру. Файл копируется в tempdir.",
         },
+        "bank_transactions": "только строки BankTransaction в CRM. Живой Revolut API команда не вызывает.",
+        "proformas": "список NewInvoice серий AV и AVBLC. Номер в CRM — AV-000013. Серия AV из site.pro в базу не пишется.",
     }
 
 

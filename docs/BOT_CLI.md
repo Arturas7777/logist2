@@ -96,7 +96,7 @@ python manage.py bot car-docs --token %BOT_TOKEN% --vin 3N1CP5BVXRL481232
 - **или** `--vin <VIN> --type TITLE` — поиск по VIN + тип документа
 - `--out <filename>` (опционально) — имя выходного файла (только внутри tempdir)
 
-**Роли:** `chief`, `neto`, `handover`
+**Роли:** `chief`, `neto`, `handover`, `accountant`
 
 **Примеры:**
 ```bash
@@ -204,6 +204,49 @@ EORI в пакете должен начинаться с `LT`, `LV` или `BY`
 ```bash
 python manage.py bot neto-bundle --token %BOT_TOKEN% --number TR-1 --client-docs
 ```
+
+## Бухгалтер
+
+Роль `accountant`. Команды ниже только читают базу CRM и не ходят в Revolut и site.pro.
+
+### `bank-transactions` — банковские операции
+
+Строки уже загруженной таблицы `BankTransaction` (синхронизация Revolut / импорт Paysera). Ключи Revolut в ответ не попадают.
+
+**Параметры:**
+
+- `--date-from YYYY-MM-DD` и `--date-to YYYY-MM-DD` — обязательны, даты включительно
+- `--direction in|out` — входящие (`amount > 0`) или исходящие
+- `--account <id, имя или external_id счёта, либо имя подключения>`
+- `--min-amount` / `--max-amount` — по знаковой сумме (плюс — вход, минус — выход)
+- `--search <текст>` — контрагент, назначение или номер связанного счёта
+- `--limit` — сколько строк вернуть (по умолчанию 200, не больше 1000)
+
+В строке: `id`, `date`, `amount`, `currency`, `direction`, `counterparty`, `description` (сюда при синхронизации попадает reference Revolut), `account`, и если есть связь: `matched_invoice_id`, `matched_proforma_id` (если связанный документ — серия AV/AVBLC), `matched_proforma_ids` (журнал `proforma-upsert`), `matched_payment_id`.
+
+Отдельного поля «счёт» у операции нет: команда подставляет `BankAccount` с тем же подключением и валютой. Если таких счетов несколько, `account.id` пустой.
+
+```bash
+python manage.py bot bank-transactions --token %BOT_TOKEN% --date-from 2026-10-01 --date-to 2026-10-31 --direction in --account "Revolut EUR" --min-amount 100 --search ANGER --limit 200
+```
+
+### `proformas` — проформы в CRM
+
+Раньше команда читала пустую таблицу `Proforma` (её заполняет только `proforma-upsert`) и черновики с номером на `AV`. Выставленные проформы CRM в список не попадали.
+
+Теперь `proformas` — это `NewInvoice` типов `PROFORMA` (серия AV) и `PROFORMA_BLC` (AVBLC), любой статус. Номер в CRM: `AV-000013`. Поле `number_compact` — тот же номер без дефиса (`AV000013`).
+
+Серия AV, выписанная в site.pro, в CRM не хранится. `import_sitepro_history` такие документы только печатает и не создаёт строки. Ежедневный sync тянет только PARDP. Чтобы `AV000013` из site.pro появился в этой команде, его нужно отдельно загрузить в `NewInvoice` — в этом изменении синхронизация site.pro не добавляется.
+
+Журнал бота остаётся в `bot_proformas`.
+
+```bash
+python manage.py bot proformas --token %BOT_TOKEN%
+```
+
+### Тайтл машины
+
+`car-docs` и `download-car-doc` доступны роли `accountant` наравне с `neto`: список и копия скана тайтла (`TITLE`).
 
 ## Другие команды
 
