@@ -59,24 +59,227 @@ def upsert_proforma(*, number: str, kind: str, amount, client_id=None, due_date=
 
 
 def list_proformas() -> dict:
+    """Проформы, которые уже лежат в CRM.
+
+    Основные строки — ``NewInvoice`` серий AV (``PROFORMA``) и AVBLC
+    (``PROFORMA_BLC``), любого статуса. Номер в CRM: ``AV-000013``.
+    Таблица ``Proforma`` — отдельный журнал бота (``proforma-upsert``),
+    она не связана с site.pro. Серия AV, выписанная в site.pro, в CRM
+    не импортируется: ``import_sitepro_history`` её только печатает,
+    ежедневный sync тянет PARDP.
+    """
     from core.models.billing import NewInvoice
     from core.models.bots import Proforma
 
-    rows = [
+    invoices = (
+        NewInvoice.objects.filter(document_type__in=["PROFORMA", "PROFORMA_BLC"])
+        .select_related("recipient_client")
+        .order_by("-date", "-id")[:300]
+    )
+    rows = []
+    for item in invoices:
+        number = item.number or ""
+        rows.append(
+            {
+                "id": item.pk,
+                "number": number,
+                "number_compact": number.replace("-", "").replace(" ", ""),
+                "source": "crm",
+                "document_type": item.document_type,
+                "status": item.status,
+                "amount": str(item.total),
+                "paid_amount": str(item.paid_amount),
+                "currency": item.currency,
+                "date": item.date.isoformat() if item.date else None,
+                "client_id": item.recipient_client_id,
+                "client": item.recipient_client.name if item.recipient_client_id else None,
+            }
+        )
+    recorded = [
         {
+            "id": item.pk,
             "number": item.number,
             "kind": item.kind,
             "status": item.status,
             "amount": str(item.amount),
             "paid_amount": str(item.paid_amount),
             "client_id": item.client_id,
+            "source": "bot",
         }
         for item in Proforma.objects.all().order_by("number")[:300]
     ]
-    drafts = list(NewInvoice.objects.filter(status="DRAFT", number__startswith="AV").values("number", "total")[:50])
-    for row in drafts:
-        row["total"] = str(row["total"])
-    return {"proformas": rows, "draft_av_invoices": drafts}
+    drafts = [row for row in rows if row["status"] == "DRAFT" and row["number"].startswith("AV")]
+    return {
+        "proformas": rows,
+        "bot_proformas": recorded,
+        "draft_av_invoices": [{"number": row["number"], "total": row["amount"]} for row in drafts[:50]],
+        "sitepro": (
+            "Серия AV в site.pro (номер вида AV000013) в CRM не хранится. "
+            "import_sitepro_history печатает такие предложения и не создаёт строки. "
+            "Ежедневная синхронизация тянет только PARDP. "
+            "Проформа, заведённая в CRM, имеет номер AV-000013."
+        ),
+    }
+
+
+_BANK_TX_DEFAULT_LIMIT = 200
+_BANK_TX_MAX_LIMIT = 1000
+
+
+def list_bank_transactions(
+    *,
+    date_from,
+    date_to,
+    direction: str = "",
+    account: str = "",
+    min_amount: str = "",
+    max_amount: str = "",
+    search: str = "",
+    limit: int | None = None,
+) -> dict:
+    """Банковские операции из таблицы CRM. Revolut API не вызывается."""
+    from django.db.models import Q
+
+    from core.models.banking import BankAccount, BankTransaction
+
+    if date_from is None or date_to is None:
+        raise BotError("Нужны --date-from и --date-to (ГГГГ-ММ-ДД).")
+    if date_from > date_to:
+        raise BotError("--date-from позже --date-to.")
+    if limit is None:
+        limit = _BANK_TX_DEFAULT_LIMIT
+    if limit < 1:
+        raise BotError("--limit должен быть больше 0.")
+    limit = min(limit, _BANK_TX_MAX_LIMIT)
+
+    kind = (direction or "").strip().lower()
+    if kind and kind not in {"in", "out"}:
+        raise BotError("--direction: in или out.")
+
+    qs = BankTransaction.objects.select_related(
+        "connection", "matched_invoice", "matched_transaction"
+    ).prefetch_related("proformas")
+    qs = qs.filter(created_at__date__gte=date_from, created_at__date__lte=date_to)
+    if kind == "in":
+        qs = qs.filter(amount__gt=0)
+    elif kind == "out":
+        qs = qs.filter(amount__lt=0)
+    low = _optional_decimal(min_amount, "--min-amount")
+    high = _optional_decimal(max_amount, "--max-amount")
+    if low is not None:
+        qs = qs.filter(amount__gte=low)
+    if high is not None:
+        qs = qs.filter(amount__lte=high)
+    needle = (search or "").strip()
+    if needle:
+        qs = qs.filter(
+            Q(description__icontains=needle)
+            | Q(counterparty_name__icontains=needle)
+            | Q(matched_invoice__number__icontains=needle)
+        )
+    account_note = ""
+    token = (account or "").strip()
+    if token:
+        qs = _filter_bank_account(qs, token)
+        account_note = token
+
+    total = qs.count()
+    rows = list(qs.order_by("-created_at", "-id")[:limit])
+    accounts = BankAccount.objects.filter(connection_id__in={row.connection_id for row in rows})
+    by_key: dict[tuple, list] = {}
+    for item in accounts:
+        by_key.setdefault((item.connection_id, item.currency), []).append(item)
+
+    payload = []
+    for row in rows:
+        amount = row.amount
+        if amount > 0:
+            way = "in"
+        elif amount < 0:
+            way = "out"
+        else:
+            way = "zero"
+        invoice = row.matched_invoice
+        proforma_ids = [item.pk for item in row.proformas.all()]
+        crm_proforma_id = (
+            invoice.pk if invoice is not None and invoice.document_type in {"PROFORMA", "PROFORMA_BLC"} else None
+        )
+        payload.append(
+            {
+                "id": row.pk,
+                "date": timezone.localtime(row.created_at).date().isoformat(),
+                "amount": str(amount),
+                "currency": row.currency,
+                "direction": way,
+                "counterparty": row.counterparty_name,
+                "description": row.description,
+                "account": _account_payload(row, by_key.get((row.connection_id, row.currency), [])),
+                "matched_invoice_id": invoice.pk if invoice is not None else None,
+                "matched_invoice_number": invoice.number if invoice is not None else None,
+                "matched_proforma_id": crm_proforma_id,
+                "matched_proforma_ids": proforma_ids,
+                "matched_payment_id": row.matched_transaction_id,
+            }
+        )
+    return {
+        "transactions": payload,
+        "count": len(payload),
+        "total": total,
+        "limit": limit,
+        "account": account_note,
+        "source": "crm",
+    }
+
+
+def _optional_decimal(value: str, flag: str):
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    try:
+        return Decimal(raw)
+    except Exception as exc:
+        raise BotError(f"{flag} не число: {value}") from exc
+
+
+def _filter_bank_account(qs, token: str):
+    from core.models.banking import BankAccount, BankConnection
+
+    accounts = BankAccount.objects.select_related("connection")
+    found = list(accounts.filter(pk=int(token))) if token.isdigit() else []
+    if not found:
+        found = list(accounts.filter(external_id__iexact=token))
+    if not found:
+        found = list(accounts.filter(name__iexact=token))
+    if not found:
+        found = list(accounts.filter(name__icontains=token))
+    if found:
+        query = None
+        from django.db.models import Q
+
+        for item in found:
+            piece = Q(connection_id=item.connection_id, currency=item.currency)
+            query = piece if query is None else query | piece
+        return qs.filter(query)
+    connections = BankConnection.objects.filter(name__icontains=token)
+    if connections.exists():
+        return qs.filter(connection__in=connections)
+    raise BotError(f"Счёт {token} не найден.")
+
+
+def _account_payload(row, accounts: list) -> dict:
+    connection_name = row.connection.name if row.connection_id else ""
+    if len(accounts) == 1:
+        account = accounts[0]
+        return {
+            "id": account.pk,
+            "name": account.name,
+            "currency": account.currency,
+            "connection": connection_name,
+        }
+    note = "счёт операции в CRM не сохранён"
+    if len(accounts) > 1:
+        note = "несколько счетов этой валюты на подключении, id счёта в операции не хранится"
+    return {"id": None, "name": connection_name, "currency": row.currency, "connection": connection_name, "note": note}
 
 
 def match_proforma(*, number: str, bank_transaction_id: int, confirm: bool) -> dict:
