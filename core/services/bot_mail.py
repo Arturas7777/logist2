@@ -22,7 +22,9 @@ _NETO_RULES = (
     ("LEIDIMAS UZSAKYTAS", "IN_PROGRESS"),
 )
 _DATE_D = re.compile(r"(\d{1,2})[./](\d{1,2})d\b", re.IGNORECASE)
-_ISO_DATE = re.compile(r"\b(20\d{2})-(\d{2})-(\d{2})\b")
+# «MSC - MSBU5269952 - ETA 2026-10-31» — строка копирования, не план разгрузки.
+_COPY_ETA = re.compile(r"(?i)\b([A-Z]{4}\d{7})\b\s*-\s*ETA\s+(20\d{2})-(\d{2})-(\d{2})\b")
+_UNLOAD_PHRASE = re.compile(r"krovos\s+datos|krausime", re.IGNORECASE)
 _HANDOVER = re.compile(r"perduodam", re.IGNORECASE)
 
 
@@ -45,26 +47,66 @@ def neto_status_from_text(text: str) -> str | None:
     return None
 
 
-def parse_evaldas_date(text: str, received) -> datetime.date | None:
-    raw = text or ""
-    iso = _ISO_DATE.search(raw)
-    if iso:
-        return datetime.date(int(iso.group(1)), int(iso.group(2)), int(iso.group(3)))
-    if not re.search(r"krovos\s+datos|krausime", raw, re.IGNORECASE) and not _DATE_D.search(raw):
-        return None
-    match = _DATE_D.search(raw)
-    if not match:
-        return None
-    month, day = int(match.group(1)), int(match.group(2))
-    if month > 12 and day <= 12:
-        month, day = day, month
-    if not (1 <= month <= 12 and 1 <= day <= 31):
-        return None
+def _copy_eta_dates(text: str) -> list[datetime.date]:
+    """Даты из «НОМЕР - ETA ГГГГ-ММ-ДД». Это ETA контейнера, не план разгрузки."""
+    found: list[datetime.date] = []
+    for match in _COPY_ETA.finditer(text or ""):
+        try:
+            day = datetime.date(int(match.group(2)), int(match.group(3)), int(match.group(4)))
+        except ValueError:
+            continue
+        if day not in found:
+            found.append(day)
+    return found
+
+
+def _d_dates(text: str, received) -> list[datetime.date]:
+    """Уникальные даты формата «10.22d», без строк копирования контейнеров."""
+    raw = _COPY_ETA.sub(" ", text or "")
+    found: list[datetime.date] = []
     year = received.year if received else timezone.localdate().year
-    try:
-        return datetime.date(year, month, day)
-    except ValueError:
+    for match in _DATE_D.finditer(raw):
+        month, day = int(match.group(1)), int(match.group(2))
+        if month > 12 and day <= 12:
+            month, day = day, month
+        if not (1 <= month <= 12 and 1 <= day <= 31):
+            continue
+        try:
+            parsed = datetime.date(year, month, day)
+        except ValueError:
+            continue
+        if parsed not in found:
+            found.append(parsed)
+    return found
+
+
+def _explicit_unload_date(text: str, received) -> datetime.date | None:
+    """Одна команда «krausime» / «krovos datos» и ровно одна дата «10.22d»."""
+    cleaned = _COPY_ETA.sub(" ", text or "")
+    if not _UNLOAD_PHRASE.search(cleaned):
         return None
+    dates = _d_dates(text, received)
+    if len(dates) == 1:
+        return dates[0]
+    return None
+
+
+def parse_evaldas_date(text: str, received) -> datetime.date | None:
+    """План разгрузки из письма Evaldas.
+
+    Строка копирования «MSC - НОМЕР - ETA ГГГГ-ММ-ДД» и первая попавшаяся
+    дата ГГГГ-ММ-ДД в цитате планом не являются. Несколько разных ETA без
+    одной команды «Krausime 10.22d» тоже не дают дату на все контейнеры.
+    """
+    explicit = _explicit_unload_date(text, received)
+    if explicit:
+        return explicit
+    if _copy_eta_dates(text or ""):
+        return None
+    dates = _d_dates(text or "", received)
+    if len(dates) == 1:
+        return dates[0]
+    return None
 
 
 def is_atlantic_unload(subject: str) -> bool:
@@ -170,7 +212,16 @@ def _apply_evaldas(email) -> dict | None:
     text = f"{email.subject or ''}\n{email.body_text or ''}"
     if "evaldas@" not in sender and "krovos" not in text.lower() and "krausime" not in text.lower():
         return None
-    planned = parse_evaldas_date(text, email.received_at)
+    received = email.received_at
+    explicit = _explicit_unload_date(text, received)
+    # Разные ETA в цитате списка не размазываем одной датой на все контейнеры.
+    # Явная команда «krausime / krovos datos» + одна «10.22d» — по-прежнему на всех.
+    if explicit:
+        planned = explicit
+    elif len(_copy_eta_dates(text)) > 1:
+        planned = None
+    else:
+        planned = parse_evaldas_date(text, received)
     confirmed = bool(re.search(r"iškraut|iskraut", text, re.IGNORECASE))
     container_ids = list(email.containers.values_list("id", flat=True))
     if planned:

@@ -53,6 +53,60 @@ def test_evaldas_date_and_neto_phrase():
     assert neto_status_from_text("Leidimas užsakytas") == "IN_PROGRESS"
 
 
+def test_evaldas_krausime_date_still_parses():
+    received = datetime.datetime(2026, 11, 1, tzinfo=datetime.timezone.utc)
+    assert parse_evaldas_date("Krausime 11.15d", received) == datetime.date(2026, 11, 15)
+    assert parse_evaldas_date("Krovos datos 11.15d", received) == datetime.date(2026, 11, 15)
+    quoted = "Krausime 11.15d\n> MSC - MSBU5269952 - ETA 2026-10-31\n> MSC - TCLU5609282 - ETA 2026-11-15\n"
+    assert parse_evaldas_date(quoted, received) == datetime.date(2026, 11, 15)
+
+
+def test_evaldas_thanks_with_quoted_eta_does_not_set_planned_date():
+    received = datetime.datetime(2026, 10, 30, tzinfo=datetime.timezone.utc)
+    body = "Ačiū\n\n> MSC - MSBU5269952 - ETA 2026-10-31\n> MSC - TCLU5609282 - ETA 2026-11-15\n"
+    assert parse_evaldas_date(body, received) is None
+    assert parse_evaldas_date("MSC - MSBU5269952 - ETA 2026-10-31", received) is None
+
+    first = Container.objects.create(number="MSBU5269952", status="FLOATING")
+    second = Container.objects.create(number="TCLU5609282", status="FLOATING")
+    email = ContainerEmail.objects.create(
+        message_id="<evaldas-aciu@example>",
+        thread_id="evaldas-aciu",
+        subject="Re: CAROMOTO KONTEINERIAI (Lapkritis)",
+        body_text=body,
+        from_addr="Evaldas <evaldas@netoterminal.lt>",
+        received_at=received,
+        direction="INCOMING",
+    )
+    result = enrich_email_for_bots(email)
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert result["evaldas"] is None
+    assert first.planned_unload_date is None
+    assert second.planned_unload_date is None
+
+
+def test_evaldas_krausime_still_applied_when_quote_has_different_etas():
+    received = datetime.datetime(2026, 10, 30, tzinfo=datetime.timezone.utc)
+    first = Container.objects.create(number="MSBU5342863", status="FLOATING")
+    second = Container.objects.create(number="MSDU8547843", status="FLOATING")
+    email = ContainerEmail.objects.create(
+        message_id="<evaldas-krausime@example>",
+        thread_id="evaldas-krausime",
+        subject="Re: CAROMOTO KONTEINERIAI (Lapkritis)",
+        body_text=("Krausime 11.15d\n> MSC - MSBU5342863 - ETA 2026-10-31\n> MSC - MSDU8547843 - ETA 2026-11-15\n"),
+        from_addr="evaldas@netoterminal.lt",
+        received_at=received,
+        direction="INCOMING",
+    )
+    result = enrich_email_for_bots(email)
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert first.planned_unload_date == datetime.date(2026, 11, 15)
+    assert second.planned_unload_date == datetime.date(2026, 11, 15)
+    assert result["evaldas"]["planned_unload_date"] == "2026-11-15"
+
+
 def test_unknown_vin_becomes_job():
     email = ContainerEmail.objects.create(
         message_id="<vin-test@example>",
