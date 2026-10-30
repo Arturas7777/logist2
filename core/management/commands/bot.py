@@ -76,6 +76,7 @@ class Command(BaseCommand):
             "set-ths",
             "proforma-upsert",
             "proformas",
+            "bank-transactions",
             "match-proforma",
             "propose-invoice-payment",
             "profit",
@@ -126,7 +127,12 @@ class Command(BaseCommand):
         parser.add_argument("--target-id", default="")
         parser.add_argument("--attachment-index", type=int, default=0)
         parser.add_argument("--only-unprocessed", action="store_true")
-        parser.add_argument("--limit", type=int, default=50)
+        parser.add_argument("--limit", type=int, default=None)
+        parser.add_argument("--direction", default="")
+        parser.add_argument("--account", default="")
+        parser.add_argument("--min-amount", default="")
+        parser.add_argument("--max-amount", default="")
+        parser.add_argument("--search", default="")
         parser.add_argument("--force", action="store_true")
         parser.add_argument("--vin", default="")
         parser.add_argument("--doc-id", type=int, default=None)
@@ -208,6 +214,7 @@ class Command(BaseCommand):
         from core.services.bot_docs import neto_bundle
         from core.services.bot_finance import (
             add_ledger_entry,
+            list_bank_transactions,
             list_proformas,
             match_proforma,
             parse_day,
@@ -260,7 +267,7 @@ class Command(BaseCommand):
         if command == "audit":
             return _audit(principal)
         if command == "jobs":
-            return _jobs(principal, options["limit"])
+            return _jobs(principal, options["limit"] if options["limit"] is not None else 50)
         if command == "claim-job":
             return _claim(principal, options["job_id"], apply)
         if command == "finish-job":
@@ -432,6 +439,17 @@ class Command(BaseCommand):
             )
         if command == "proformas":
             return list_proformas()
+        if command == "bank-transactions":
+            return list_bank_transactions(
+                date_from=parse_day(options["date_from"]) if options["date_from"] else None,
+                date_to=parse_day(options["date_to"]) if options["date_to"] else None,
+                direction=options["direction"],
+                account=options["account"],
+                min_amount=options["min_amount"],
+                max_amount=options["max_amount"],
+                search=options["search"],
+                limit=options["limit"],
+            )
         if command == "match-proforma":
             confirmed = apply and options["confirm"]
             if apply and not options["confirm"]:
@@ -560,7 +578,8 @@ def _emails(principal, options):
     if options["container"]:
         qs = qs.filter(containers__number__iexact=options["container"])
     rows = []
-    for email in qs.distinct()[: options["limit"]]:
+    email_limit = options["limit"] if options["limit"] is not None else 50
+    for email in qs.distinct()[:email_limit]:
         rows.append(
             {
                 "id": email.pk,
