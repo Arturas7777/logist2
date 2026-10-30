@@ -18,6 +18,28 @@ from core.models import (
 
 logger = logging.getLogger(__name__)
 
+
+def container_copy_line(line_name, number, eta):
+    """Строка «MSC - MSMU7700595 - ETA 2026-11-05» для массового копирования."""
+    line_name = (line_name or "").strip()
+    number = (number or "").strip()
+    date = eta.isoformat() if hasattr(eta, "isoformat") else (str(eta).strip() if eta else "")
+    head = " - ".join(part for part in (line_name, number) if part)
+    if date:
+        return f"{head} - ETA {date}" if head else f"ETA {date}"
+    return head
+
+
+def containers_copy_text(rows):
+    """Список контейнеров, по одному на строку. ``rows`` — (line_name, number, eta)."""
+    lines = []
+    for row in rows:
+        line = container_copy_line(*row)
+        if line:
+            lines.append(line)
+    return "\n".join(lines)
+
+
 CONTAINER_STATUS_COLORS = {
     "В пути": "#2772a8",  # Darker blue
     "В порту": "#8B0000",  # Dark red
@@ -175,6 +197,7 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
         ),
     )
     actions = [
+        "copy_selected_containers",
         "print_labels_action",
         "reset_labels_printed_action",
         "set_status_floating",
@@ -614,7 +637,9 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
             )
 
         return format_html(
-            '<span class="cm-container-no">{}{}<span class="cm-container-no-text">{}</span>{}{}</span>',
+            '<span class="cm-container-no" data-copy-line="{}">{}{}'
+            '<span class="cm-container-no-text">{}</span>{}{}</span>',
+            container_copy_line(obj.line.name if obj.line_id else "", obj.number, obj.eta),
             copy_button_html(obj.number, "Копировать номер"),
             line_mark_html(obj.line),
             obj.number or "—",
@@ -624,6 +649,26 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
 
     number_with_unread.short_description = "№"
     number_with_unread.admin_order_field = "number"
+
+    def copy_selected_containers(self, request, queryset):
+        """Список выбранных контейнеров для буфера обмена.
+
+        На странице списка действие перехватывает JS и копирует сразу, без
+        запроса. Сюда попадаем, когда выбраны «все N» (часть контейнеров не
+        на странице) или браузер не дал доступа к буферу.
+        """
+        text = containers_copy_text(queryset.values_list("line__name", "number", "eta"))
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Скопировать контейнеры",
+            "opts": self.model._meta,
+            "copy_text": text,
+            "count": text.count("\n") + 1 if text else 0,
+            "back_url": request.get_full_path(),
+        }
+        return render(request, "admin/core/container/copy_containers.html", context)
+
+    copy_selected_containers.short_description = "📋 Скопировать"
 
     def _bulk_set_status(self, request, queryset, status, status_label):
         """Массовая смена статуса контейнеров с проверкой FSM.
