@@ -528,6 +528,10 @@
   `EMAIL_RETENTION_DAYS` (90) очищается `body_html` и удаляются файлы
   вложений, к которым не обращались `EMAIL_ATTACHMENT_CACHE_TTL_DAYS` (7)
   дней. Опциональный лимит `EMAIL_ATTACHMENT_CACHE_MAX_MB`.
+- SSH-доступ ботов без root: `scripts/install_bot_mail_access.sh` создаёт
+  пользователя `logist2-mail` с ключом на принудительную команду
+  `scripts/bot_mail_gateway.py` — только команды почты и опции из белого
+  списка, запуск от `www-root`.
 
 ### Changed — Gmail-синк при отказе по квоте (2026-10-12)
 
