@@ -69,6 +69,10 @@ class Command(BaseCommand):
             "import-caromoto",
             "apply-caromoto",
             "neto-bundle",
+            "tr-docs",
+            "download-tr-doc",
+            "tr-update",
+            "tr-upload-doc",
             "set-ths",
             "proforma-upsert",
             "proformas",
@@ -141,6 +145,15 @@ class Command(BaseCommand):
         parser.add_argument("--notify", action="store_true")
         parser.add_argument("--client-docs", action="store_true")
         parser.add_argument("--set-warehouse", action="store_true")
+        parser.add_argument("--tr", default="")
+        parser.add_argument("--driver-name", default=None)
+        parser.add_argument("--driver-passport", default=None)
+        parser.add_argument("--driver-phone", default=None)
+        parser.add_argument("--carrier-name", default=None)
+        parser.add_argument("--carrier-eori", default=None)
+        parser.add_argument("--tractor-plate", default=None)
+        parser.add_argument("--trailer-plate", default=None)
+        parser.add_argument("--border-crossing", default=None)
 
     def handle(self, *args, **options):
         command = options.get("command")
@@ -343,6 +356,40 @@ class Command(BaseCommand):
                 apply=apply,
                 force=options["force"],
                 client_docs=options["client_docs"],
+            )
+        if command == "tr-docs":
+            from core.services.bot_tr import list_tr_docs
+
+            return list_tr_docs(options["tr"])
+        if command == "download-tr-doc":
+            from core.services.bot_tr import download_tr_doc
+
+            return download_tr_doc(options["tr"], options["type"], options["doc_id"])
+        if command == "tr-update":
+            from core.services.bot_tr import update_tr
+
+            return update_tr(
+                options["tr"],
+                driver_name=options["driver_name"],
+                driver_passport=options["driver_passport"],
+                driver_phone=options["driver_phone"],
+                carrier_name=options["carrier_name"],
+                carrier_eori=options["carrier_eori"],
+                tractor_plate=options["tractor_plate"],
+                trailer_plate=options["trailer_plate"],
+                border_crossing=options["border_crossing"],
+                apply=apply,
+            )
+        if command == "tr-upload-doc":
+            from core.services.bot_tr import upload_tr_doc
+
+            return upload_tr_doc(
+                options["tr"],
+                options["type"],
+                options["file"],
+                vin=options["vin"],
+                car_id=options["car_id"],
+                apply=apply,
             )
         if command == "caromoto-client-map":
             if options["map_action"] == "list":

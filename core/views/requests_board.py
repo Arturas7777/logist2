@@ -77,6 +77,7 @@ EDITABLE_FIELDS = {
     "truck_number": str,
     "trailer_number": str,
     "driver_name": str,
+    "driver_passport": str,
     "driver_phone": str,
     "border_crossing": str,
     "planned_loading_date": "date",

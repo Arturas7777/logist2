@@ -12,7 +12,51 @@ from core.services.bot_runtime import BotError
 
 _REQUIRED = ("TITLE", "PASSPORT", "INVOICE", "PAYMENT_ORDER", "LETTER_USA", "CONTRACT", "SIGNATURE")
 _CLIENT_DOC_TYPES = {"TITLE", "OTHER", "OBLIGATION"}
-_EORI_RE = re.compile(r"^(LT|LV|BY)[0-9A-Z]+$")
+# Код страны EORI (ЕС, Греция как EL, плюс знакомые префиксы логистики).
+# IK — код компании, не страна: Исландия это IS. XI — Северная Ирландия.
+_EORI_COUNTRIES = frozenset(
+    {
+        "AT",
+        "BE",
+        "BG",
+        "HR",
+        "CY",
+        "CZ",
+        "DK",
+        "EE",
+        "FI",
+        "FR",
+        "DE",
+        "GR",
+        "EL",
+        "HU",
+        "IE",
+        "IT",
+        "LV",
+        "LT",
+        "LU",
+        "MT",
+        "NL",
+        "PL",
+        "PT",
+        "RO",
+        "SK",
+        "SI",
+        "ES",
+        "SE",
+        "BY",
+        "NO",
+        "IS",
+        "LI",
+        "CH",
+        "GB",
+        "XI",
+        "UA",
+        "MD",
+        "RS",
+    }
+)
+_EORI_RE = re.compile(r"^[A-Z]{2}[0-9A-Z]{1,15}$")
 # BLR — тема письма Neto. Домен общий, в задании он указан у последнего адреса.
 BLR_RECIPIENTS = [
     "dovile@netoterminal.lt",
@@ -25,11 +69,15 @@ BLR_RECIPIENTS = [
 
 
 def eori_problem(value: str) -> str | None:
-    """Пусто — нет кода. IK… и прочие коды компании — не EORI."""
+    """Пусто — нет кода. Код компании вроде IK185300064 — не EORI.
+
+    Годный код: две буквы страны из известного списка и ещё до 15 букв
+    или цифр. Польские перевозчики (PL…) проходят, IK… — нет.
+    """
     raw = (value or "").strip().upper()
     if not raw:
         return "EORI"
-    if not _EORI_RE.match(raw):
+    if not _EORI_RE.match(raw) or raw[:2] not in _EORI_COUNTRIES:
         return "EORI_FORMAT"
     return None
 
@@ -141,10 +189,10 @@ def bundle_files(request, *, client_docs: bool = False) -> list[dict]:
                 continue
             if doc.doc_type == "TITLE":
                 has_title = True
-            rows.append({"vin": car.vin, "type": doc.doc_type, "filename": doc.filename})
+            rows.append({"id": doc.pk, "vin": car.vin, "type": doc.doc_type, "filename": doc.filename})
         if not has_title and getattr(car, "title_scan", None) and (allowed is None or "TITLE" in allowed):
             name = os.path.basename(car.title_scan.name) if car.title_scan.name else "title.pdf"
-            rows.append({"vin": car.vin, "type": "TITLE", "filename": name})
+            rows.append({"id": f"car_{car.pk}_title", "vin": car.vin, "type": "TITLE", "filename": name})
     return rows
 
 

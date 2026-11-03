@@ -199,10 +199,67 @@ python manage.py bot car-upsert --token %BOT_TOKEN% --vin 3N1CP5BVXRL481232 --br
 
 `--client-docs` — клиент приносит документы сам. На машину нужны тайтл, PDF клиента (`OTHER`, не сгенерированный) и два ĮSIPAREIGOJIMAS (`OBLIGATION`).
 
-EORI в пакете должен начинаться с `LT`, `LV` или `BY`. Код компании вроде `IK185300064` даёт `EORI_FORMAT`.
+EORI — код страны и до 15 букв или цифр: `PL`, `LT`, `LV`, `EE`, `DE`, `BY` и другие известные префиксы (ЕС, а также `GB`, `XI`, `UA`, `MD`, `NO`, `CH`). `PL525308706300000` проходит. Код компании вроде `IK185300064` даёт `EORI_FORMAT`. Пустой код — `EORI`.
+
+В `files` у каждого файла есть `id`: pk документа заявки или `car_<id>_title`, если тайтл взят из карточки машины.
 
 ```bash
 python manage.py bot neto-bundle --token %BOT_TOKEN% --number TR-1 --client-docs
+```
+
+## Заявка на автовоз (роль `neto`)
+
+Команды ниже доступны только роли `neto`. Запись в базу — только с `--apply --idempotency-key`. Без `--apply` команда показывает, что изменится, и ничего не сохраняет. Клиенту письма и Telegram не уходят.
+
+Файлы скачивания и загрузки лежат в `media/bot_tmp/neto/` — та же папка, куда `neto-bundle` кладёт ZIP.
+
+### `tr-docs` — список документов заявки
+
+`--tr` — номер заявки или её id.
+
+Типы: `OBLIGATION`, `INVOICE`, `PASSPORT`, `PAYMENT_ORDER`, `LETTER_USA`, `CONTRACT`, `SIGNATURE`, `OTHER`. Тайтл машины в этот список не входит.
+
+В каждой строке: `id`, `type`, `filename`, `size`, а также `vin` и `car_id` (файл привязан к авто заявки).
+
+```bash
+python manage.py bot tr-docs --token %BOT_TOKEN% --tr TR-20261029-001
+```
+
+### `download-tr-doc` — скопировать документ заявки
+
+`--tr` и `--type` обязательны. Если файлов этого типа несколько, нужен `--doc-id` из `tr-docs`. Чужой документ (другая заявка) не отдаётся.
+
+```bash
+python manage.py bot download-tr-doc --token %BOT_TOKEN% --tr TR-20261029-001 --type CONTRACT --doc-id 15
+```
+
+### `tr-update` — водитель, перевозчик, номера, граница
+
+Поля, которые можно передать (любое подмножество):
+
+- `--driver-name` — ФИО водителя
+- `--driver-passport` — паспорт водителя (отдельное поле заявки, не паспорт покупателя)
+- `--driver-phone`
+- `--carrier-name` — компания перевозчика
+- `--carrier-eori` — та же проверка, что в `neto-bundle`
+- `--tractor-plate` — номер тягача
+- `--trailer-plate` — номер прицепа
+- `--border-crossing` — граница
+
+Статус заявки команда не меняет.
+
+```bash
+python manage.py bot tr-update --token %BOT_TOKEN% --tr TR-20261029-001 --driver-name "Jonas Petraitis" --driver-passport MC3902087 --driver-phone +37060000000 --carrier-name "ANGER TRANSPORT" --carrier-eori PL525308706300000 --tractor-plate LTL123 --trailer-plate TR9 --border-crossing Medininkai --apply --idempotency-key tr-1
+```
+
+### `tr-upload-doc` — положить файл в заявку
+
+`--type` только `CONTRACT`, `SIGNATURE` или `OTHER`. `--file` — путь на сервере внутри `media/bot_tmp/neto/` (имя файла или полный путь). Выход за эту папку, в том числе через `..`, отклоняется. Допустимы PDF, JPG и PNG, до 20 МБ.
+
+Документ привязан к машине заявки. Если машина одна, `--vin` не нужен. Если несколько — укажите `--vin` или `--car-id`, и эта машина должна быть в заявке.
+
+```bash
+python manage.py bot tr-upload-doc --token %BOT_TOKEN% --tr TR-20261029-001 --type CONTRACT --file contract.pdf --apply --idempotency-key up-1
 ```
 
 ## Другие команды

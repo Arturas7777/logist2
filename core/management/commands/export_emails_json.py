@@ -136,9 +136,7 @@ class Command(BaseCommand):
             "count": len(rows),
             "has_more": has_more,
             "next_after_id": rows[-1].pk if rows else options["after_id"],
-            "emails": [
-                self._serialize(e, options["include_body"], options["include_attachment_text"]) for e in rows
-            ],
+            "emails": [self._serialize(e, options["include_body"], options["include_attachment_text"]) for e in rows],
         }
         if options["pretty"]:
             text = json.dumps(payload, ensure_ascii=False, indent=2)
