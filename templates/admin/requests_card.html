@@ -7,8 +7,8 @@
 Компоновка: слева рабочая область с табами (документы / переписка с клиентом /
 почта склада), справа закреплённая колонка со состоянием и данными автовоза.
 Пакет документов свёрнут в плитки по типам: клик по плитке с файлом открывает
-тот же оконный предпросмотр, что в кабинете клиента (PDF через blob —
-/media/ отдаётся с X-Frame-Options: DENY, в iframe напрямую не открывается).
+тот же оконный предпросмотр, что в кабинете клиента. PDF во фрейме — по
+прямому адресу файла, чтобы кнопка «Скачать» просмотрщика сохраняла его.
 
 Права сотрудника максимальные: правка данных автовоза, состав машин, пакет
 документов с генерацией PDF за клиента (та же логика, что в кабинете —
@@ -434,10 +434,12 @@ core.services.transport_package_actions), переписка с клиентом
     padding: .5rem;
     background: #f1f3f5;
     overflow: auto;
+    flex: 1 1 auto;
+    min-height: 0;
 }
 .rc-doc-preview-frame {
     width: 100%;
-    height: min(78vh, 820px);
+    height: min(68vh, 760px);
     border: 0;
     background: #fff;
     border-radius: 4px;
@@ -462,6 +464,9 @@ core.services.transport_package_actions), переписка с клиентом
     padding: 8px 16px;
     border-top: 1px solid #dee2e6;
     background: #fff;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 2;
 }
 </style>
 {% endblock %}
@@ -1021,6 +1026,7 @@ core.services.transport_package_actions), переписка с клиентом
     </div>
 </div>
 
+<script src="{% static 'js/doc_preview.js' %}"></script>
 <script>
 (function() {
     var csrf = (document.querySelector('[name=csrfmiddlewaretoken]') || {}).value || '';
@@ -1103,15 +1109,6 @@ core.services.transport_package_actions), переписка с клиентом
     var imgEl = document.getElementById('rc-doc-preview-img');
     var fallbackEl = document.getElementById('rc-doc-preview-fallback');
     var titleEl = document.getElementById('rc-doc-modal-title');
-    var previewObjectUrl = null;
-
-    function revokePreviewObjectUrl() {
-        if (previewObjectUrl) { URL.revokeObjectURL(previewObjectUrl); previewObjectUrl = null; }
-    }
-    function isImageName(name) {
-        var clean = (name || '').split('?')[0];
-        return /\.(jpe?g|png|gif|webp)$/i.test(clean);
-    }
     function showPreviewParts(mode) {
         frameEl.hidden = mode !== 'pdf';
         imgEl.hidden = mode !== 'image';
@@ -1120,18 +1117,15 @@ core.services.transport_package_actions), переписка с клиентом
         if (mode !== 'image') imgEl.removeAttribute('src');
     }
     function openDocPreview(url, title, filename) {
-        if (!url) return;
-        var name = filename || url.split('/').pop() || '';
+        if (!url || !window.DocPreview) return;
+        var name = DocPreview.basename(filename || url);
         titleEl.textContent = title || name || 'Документ';
-        modalEl.querySelectorAll('.rc-doc-preview-download').forEach(function(a) {
-            a.href = url;
-            a.setAttribute('download', name);
-        });
-        revokePreviewObjectUrl();
+        DocPreview.bindDownload(modalEl);
+        DocPreview.prepare(modalEl, url, name);
         modalEl.classList.add('open');
         document.body.style.overflow = 'hidden';
 
-        if (isImageName(name) || isImageName(url)) {
+        if (DocPreview.isImageName(name) || DocPreview.isImageName(url)) {
             showPreviewParts('image');
             imgEl.src = url;
             imgEl.alt = name;
@@ -1141,27 +1135,15 @@ core.services.transport_package_actions), переписка с клиентом
             showPreviewParts('fallback');
             return;
         }
-        // PDF через blob: иначе X-Frame-Options: DENY блокирует iframe /media/...
         showPreviewParts('pdf');
-        frameEl.removeAttribute('src');
-        fetch(url, {credentials: 'same-origin', cache: 'no-store'})
-            .then(function(resp) {
-                if (!resp.ok) throw new Error('HTTP ' + resp.status);
-                return resp.blob();
-            })
-            .then(function(blob) {
-                var pdfBlob = blob.type === 'application/pdf'
-                    ? blob
-                    : new Blob([blob], {type: 'application/pdf'});
-                previewObjectUrl = URL.createObjectURL(pdfBlob);
-                frameEl.src = previewObjectUrl;
-            })
-            .catch(function() { showPreviewParts('fallback'); });
+        DocPreview.showPdf(frameEl, modalEl, url, function () {
+            showPreviewParts('fallback');
+        });
     }
     function closeDocPreview() {
         modalEl.classList.remove('open');
         document.body.style.overflow = '';
-        revokePreviewObjectUrl();
+        if (window.DocPreview) DocPreview.revoke(modalEl);
         frameEl.removeAttribute('src');
         imgEl.removeAttribute('src');
         showPreviewParts('fallback');

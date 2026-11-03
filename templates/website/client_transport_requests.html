@@ -849,6 +849,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="{% static 'js/doc_preview.js' %}"></script>
 <script>
 (function () {
     var CURRENT = ["DRAFT", "SUBMITTED", "ACCEPTED", "IN_PROGRESS"];
@@ -989,20 +990,6 @@
     var BULK_URLS = {{ bulk_upload_urls_json|default:"{}"|safe }};
     var BULK_STATUS_URLS = {{ bulk_status_urls_json|default:"{}"|safe }};
 
-    function isImageName(name) {
-        var clean = (name || "").split("?")[0];
-        return /\.(jpe?g|png|gif|webp)$/i.test(clean);
-    }
-
-    var previewObjectUrl = null;
-
-    function revokePreviewObjectUrl() {
-        if (previewObjectUrl) {
-            URL.revokeObjectURL(previewObjectUrl);
-            previewObjectUrl = null;
-        }
-    }
-
     function showPreviewParts(modalEl, mode) {
         var frame = modalEl.querySelector(".doc-preview-frame");
         var img = modalEl.querySelector(".doc-preview-img");
@@ -1016,24 +1003,20 @@
 
     function openDocPreview(url, title, filename) {
         var modalEl = document.getElementById("docPreviewModal");
-        if (!modalEl || !url) return;
+        if (!modalEl || !url || !window.DocPreview) return;
         var frame = modalEl.querySelector(".doc-preview-frame");
         var img = modalEl.querySelector(".doc-preview-img");
         var titleEl = modalEl.querySelector("#docPreviewTitle");
-        var downloads = modalEl.querySelectorAll(".doc-preview-download");
-        var name = filename || url.split("/").pop() || "";
+        var name = DocPreview.basename(filename || url);
         if (titleEl) titleEl.textContent = title || name || "{% trans 'Документ' %}";
-        downloads.forEach(function (a) {
-            a.href = url;
-            a.setAttribute("download", name);
-        });
         document.querySelectorAll(".req-car-dd .dropdown-toggle.show").forEach(function (toggle) {
             bootstrap.Dropdown.getOrCreateInstance(toggle).hide();
         });
-        revokePreviewObjectUrl();
+        DocPreview.bindDownload(modalEl);
+        DocPreview.prepare(modalEl, url, name);
         bootstrap.Modal.getOrCreateInstance(modalEl).show();
 
-        if (isImageName(name) || isImageName(url)) {
+        if (DocPreview.isImageName(name) || DocPreview.isImageName(url)) {
             showPreviewParts(modalEl, "image");
             img.src = url;
             img.alt = name;
@@ -1045,24 +1028,10 @@
             return;
         }
 
-        // PDF через blob: иначе X-Frame-Options: DENY блокирует iframe /media/...
         showPreviewParts(modalEl, "pdf");
-        frame.removeAttribute("src");
-        fetch(url, { credentials: "same-origin", cache: "no-store" })
-            .then(function (resp) {
-                if (!resp.ok) throw new Error("HTTP " + resp.status);
-                return resp.blob();
-            })
-            .then(function (blob) {
-                var pdfBlob = blob.type === "application/pdf"
-                    ? blob
-                    : new Blob([blob], { type: "application/pdf" });
-                previewObjectUrl = URL.createObjectURL(pdfBlob);
-                frame.src = previewObjectUrl;
-            })
-            .catch(function () {
-                showPreviewParts(modalEl, "fallback");
-            });
+        DocPreview.showPdf(frame, modalEl, url, function () {
+            showPreviewParts(modalEl, "fallback");
+        });
     }
 
     var previewModal = document.getElementById("docPreviewModal");
@@ -1070,7 +1039,7 @@
         previewModal.addEventListener("hidden.bs.modal", function () {
             var frame = previewModal.querySelector(".doc-preview-frame");
             var img = previewModal.querySelector(".doc-preview-img");
-            revokePreviewObjectUrl();
+            if (window.DocPreview) DocPreview.revoke(previewModal);
             if (frame) frame.removeAttribute("src");
             if (img) img.removeAttribute("src");
         });
