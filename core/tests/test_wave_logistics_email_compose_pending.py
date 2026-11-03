@@ -20,6 +20,9 @@ def container():
 @pytest.fixture(autouse=True)
 def fake_gmail(monkeypatch, tmp_path, settings):
     settings.MEDIA_ROOT = str(tmp_path)
+    # From собирается до мока send_message; в CI адреса отправителя нет.
+    settings.GMAIL_FROM_EMAIL = "dispatch@example.com"
+    settings.GMAIL_USER_EMAIL = "dispatch@example.com"
     monkeypatch.setattr(email_compose, "GmailApiClient", lambda: object())
 
 
