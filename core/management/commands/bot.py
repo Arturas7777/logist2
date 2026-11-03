@@ -73,6 +73,7 @@ class Command(BaseCommand):
             "download-tr-doc",
             "tr-update",
             "tr-upload-doc",
+            "tr-delete-doc",
             "set-ths",
             "proforma-upsert",
             "proformas",
@@ -160,6 +161,8 @@ class Command(BaseCommand):
         parser.add_argument("--tractor-plate", default=None)
         parser.add_argument("--trailer-plate", default=None)
         parser.add_argument("--border-crossing", default=None)
+        parser.add_argument("--buyer-address", default=None)
+        parser.add_argument("--car-vin", default=None)
 
     def handle(self, *args, **options):
         command = options.get("command")
@@ -385,19 +388,27 @@ class Command(BaseCommand):
                 tractor_plate=options["tractor_plate"],
                 trailer_plate=options["trailer_plate"],
                 border_crossing=options["border_crossing"],
+                buyer_address=options["buyer_address"],
+                car_vin=options["car_vin"],
+                vin=options["vin"],
+                car_id=options["car_id"],
                 apply=apply,
             )
         if command == "tr-upload-doc":
-            from core.services.bot_tr import upload_tr_doc
+            from core.services.bot_tr import one_vin, upload_tr_doc
 
             return upload_tr_doc(
                 options["tr"],
                 options["type"],
                 options["file"],
-                vin=options["vin"],
+                vin=one_vin(options["car_vin"], options["vin"]),
                 car_id=options["car_id"],
                 apply=apply,
             )
+        if command == "tr-delete-doc":
+            from core.services.bot_tr import delete_tr_doc
+
+            return delete_tr_doc(options["tr"], options["doc_id"], apply=apply)
         if command == "caromoto-client-map":
             if options["map_action"] == "list":
                 rows = list_client_maps()

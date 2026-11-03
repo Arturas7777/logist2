@@ -118,14 +118,35 @@ def _missing_client_brought(request, car) -> list[str]:
     return missing
 
 
+def buyer_addresses(request) -> dict[int, str]:
+    """Адрес покупателя по машине: поле пакета, из которого собираются PDF для Neto."""
+    from core.models.website import TransportDocumentPackage
+
+    found: dict[int, str] = {}
+    for car_id, data in TransportDocumentPackage.objects.filter(request=request).values_list("car_id", "data"):
+        found[car_id] = str((data or {}).get("buyer_address") or "").strip()
+    return found
+
+
+def car_buyer_rows(request) -> list[dict]:
+    addresses = buyer_addresses(request)
+    return [
+        {"vin": car.vin, "car_id": car.pk, "buyer_address": addresses.get(car.pk, "")}
+        for car in request.cars.all().order_by("id")
+    ]
+
+
 def completeness(request, *, client_docs: bool = False) -> dict:
+    addresses = buyer_addresses(request)
     rows = []
     for car in request.cars.all().order_by("id"):
         missing = _missing_client_brought(request, car) if client_docs else _missing_for_car(request, car)
         rows.append(
             {
                 "vin": car.vin,
+                "car_id": car.pk,
                 "weight_kg": str(car.weight_kg) if car.weight_kg else None,
+                "buyer_address": addresses.get(car.pk, ""),
                 "missing": missing,
             }
         )

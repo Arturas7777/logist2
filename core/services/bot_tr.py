@@ -26,7 +26,7 @@ LIST_DOC_TYPES = (
     "SIGNATURE",
     "OTHER",
 )
-UPLOAD_DOC_TYPES = frozenset({"CONTRACT", "SIGNATURE", "OTHER"})
+UPLOAD_DOC_TYPES = frozenset({"CONTRACT", "SIGNATURE", "OTHER", "PASSPORT"})
 
 _LIMITS = {
     "driver_name": 100,
@@ -37,6 +37,7 @@ _LIMITS = {
     "truck_number": 20,
     "trailer_number": 20,
     "border_crossing": 100,
+    "buyer_address": 500,
 }
 
 
@@ -82,11 +83,14 @@ def _doc_row(doc) -> dict:
 
 
 def list_tr_docs(raw: str) -> dict:
+    from core.services.bot_docs import car_buyer_rows
+
     request = resolve_transport_request(raw)
     docs = request.documents.filter(doc_type__in=LIST_DOC_TYPES).select_related("car").order_by("id")
     return {
         "number": request.number,
         "id": request.pk,
+        "cars": car_buyer_rows(request),
         "documents": [_doc_row(doc) for doc in docs],
     }
 
@@ -187,7 +191,7 @@ def upload_tr_doc(raw: str, doc_type: str, file_path: str, *, vin: str, car_id: 
     request = resolve_transport_request(raw)
     kind = (doc_type or "").strip().upper()
     if kind not in UPLOAD_DOC_TYPES:
-        raise BotError("Загрузить можно только CONTRACT, SIGNATURE или OTHER.")
+        raise BotError("Загрузить можно только CONTRACT, SIGNATURE, PASSPORT или OTHER.")
     source = _resolve_upload_path(file_path)
     extension = source.suffix.lower().lstrip(".")
     if extension not in CLIENT_DOCUMENT_ALLOWED_EXTENSIONS:
@@ -225,6 +229,63 @@ def upload_tr_doc(raw: str, doc_type: str, file_path: str, *, vin: str, car_id: 
     }
 
 
+def delete_tr_doc(raw: str, doc_id: int | None, *, apply: bool) -> dict:
+    """Удалить документ этой заявки и его файл. Чужой документ не трогаем."""
+    from core.services.transport_package_actions import delete_doc
+
+    request = resolve_transport_request(raw)
+    if not doc_id:
+        raise BotError("Нужен --doc-id.")
+    doc = request.documents.filter(pk=doc_id).select_related("car").first()
+    if doc is None:
+        raise BotError("Документ не относится к этой заявке.")
+    before = _doc_row(doc)
+    if not apply:
+        return {
+            "before": before,
+            "after": {},
+            "result": {"outcome": "would_delete", **before},
+            "notifications": [],
+        }
+    delete_doc(request, doc)
+    return {
+        "before": before,
+        "after": {"deleted": True, "id": before["id"]},
+        "result": {"outcome": "deleted", **before},
+        "notifications": [],
+    }
+
+
+def one_vin(car_vin: str | None, vin: str | None) -> str:
+    left = (car_vin or "").strip()
+    right = (vin or "").strip()
+    if left and right and left.upper() != right.upper():
+        raise BotError("--car-vin и --vin указывают разные машины.")
+    return left or right
+
+
+def _buyer_address_of(request, car_id: int) -> str:
+    from core.models.website import TransportDocumentPackage
+
+    data = (
+        TransportDocumentPackage.objects.filter(request=request, car_id=car_id).values_list("data", flat=True).first()
+    )
+    if not data:
+        return ""
+    return str(data.get("buyer_address") or "").strip()
+
+
+def _save_buyer_address(request, car, text: str) -> None:
+    """Адрес живёт в пакете машины — оттуда его берёт карточка заявки и PDF для Neto."""
+    from core.models.website import TransportDocumentPackage
+
+    package, _created = TransportDocumentPackage.objects.get_or_create(request=request, car=car)
+    data = dict(package.data or {})
+    data["buyer_address"] = text
+    package.data = data
+    package.save(update_fields=["data", "updated_at"])
+
+
 def update_tr(
     raw: str,
     *,
@@ -236,6 +297,10 @@ def update_tr(
     tractor_plate: str | None = None,
     trailer_plate: str | None = None,
     border_crossing: str | None = None,
+    buyer_address: str | None = None,
+    car_vin: str | None = None,
+    vin: str = "",
+    car_id: int | None = None,
     apply: bool,
 ) -> dict:
     request = resolve_transport_request(raw)
@@ -265,21 +330,46 @@ def update_tr(
                 raise BotError("EORI_FORMAT: нужен код страны и до 15 букв или цифр.")
             text = text.upper()
         changes[field] = text
-    if not changes:
+    address_change = None
+    if buyer_address is not None:
+        text = str(buyer_address).strip()
+        limit = _LIMITS["buyer_address"]
+        if len(text) > limit:
+            raise BotError(f"buyer_address длиннее {limit} символов.")
+        car = _car_for_upload(request, vin=one_vin(car_vin, vin), car_id=car_id)
+        address_change = {
+            "vin": car.vin,
+            "car_id": car.pk,
+            "before": _buyer_address_of(request, car.pk),
+            "after": text,
+            "car": car,
+        }
+    if not changes and address_change is None:
         raise BotError("Нечего менять: укажите хотя бы одно поле.")
     before = {field: getattr(request, field) or "" for field in changes}
+    after = dict(changes)
+    if address_change is not None:
+        before["buyer_address"] = address_change["before"]
+        before["vin"] = address_change["vin"]
+        before["car_id"] = address_change["car_id"]
+        after["buyer_address"] = address_change["after"]
+        after["vin"] = address_change["vin"]
+        after["car_id"] = address_change["car_id"]
     if apply:
-        for field, value in changes.items():
-            setattr(request, field, value)
-        request.save(update_fields=[*changes.keys(), "updated_at"])
+        if changes:
+            for field, value in changes.items():
+                setattr(request, field, value)
+            request.save(update_fields=[*changes.keys(), "updated_at"])
+        if address_change is not None:
+            _save_buyer_address(request, address_change["car"], address_change["after"])
     return {
         "before": before,
-        "after": changes,
+        "after": after,
         "result": {
             "outcome": "updated" if apply else "would_update",
             "number": request.number,
             "id": request.pk,
-            "fields": changes,
+            "fields": after,
         },
         "notifications": [],
     }

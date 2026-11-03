@@ -62,6 +62,7 @@ COMMANDS: dict[str, dict] = {
     "download-tr-doc": {"roles": (ROLE_NETO,), "mutates": False},
     "tr-update": {"roles": (ROLE_NETO,), "mutates": True},
     "tr-upload-doc": {"roles": (ROLE_NETO,), "mutates": True},
+    "tr-delete-doc": {"roles": (ROLE_NETO,), "mutates": True},
     "set-ths": {"roles": (ROLE_ACCOUNTANT,), "mutates": True},
     "proforma-upsert": {"roles": (ROLE_ACCOUNTANT,), "mutates": True},
     "proformas": {"roles": (ROLE_CHIEF, ROLE_ACCOUNTANT), "mutates": False},
@@ -288,7 +289,11 @@ def dictionary() -> dict:
             "note": "car-docs и download-car-doc доступны и бухгалтеру. Файл копируется в tempdir.",
         },
         "eori": "код страны (PL, LT, LV, EE, DE, BY и другие известные) и до 15 букв или цифр. IK185300064 — EORI_FORMAT.",
-        "tr_docs": "tr-docs и download-tr-doc читают файлы заявки. tr-update и tr-upload-doc пишут только с --apply.",
+        "tr_docs": (
+            "tr-docs и download-tr-doc читают файлы заявки. "
+            "tr-update, tr-upload-doc и tr-delete-doc пишут только с --apply. "
+            "Адрес покупателя машины лежит в пакете документов (buyer_address) и виден в tr-docs и neto-bundle."
+        ),
         "bank_transactions": "только строки BankTransaction в CRM. Живой Revolut API команда не вызывает.",
         "proformas": "список NewInvoice серий AV и AVBLC. Номер в CRM — AV-000013. Серия AV из site.pro в базу не пишется.",
     }

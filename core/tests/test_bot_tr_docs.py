@@ -19,10 +19,11 @@ from django.urls import reverse
 
 from core.models import Car, Client
 from core.models.bots import BotAuditEntry
-from core.models.website import TransportRequest, TransportRequestDocument
+from core.models.website import TransportDocumentPackage, TransportRequest, TransportRequestDocument
 from core.services.bot_docs import bundle_files, completeness
 from core.services.bot_runtime import issue_token
 from core.services.bot_tr import neto_tmp_dir
+from core.services.transport_docs import _buyer_from
 
 pytestmark = pytest.mark.django_db
 
@@ -366,6 +367,294 @@ def test_bundle_files_include_title_scan_id():
     rows = bundle_files(request)
     assert rows[0]["id"] == f"car_{car.pk}_title"
     assert rows[0]["type"] == "TITLE"
+
+
+def test_tr_delete_doc_removes_only_this_request_file_and_audits():
+    _principal, token = issue_token("neto-tr-del", "neto")
+    request, car = _request_with_car()
+    doc = TransportRequestDocument.objects.create(request=request, car=car, doc_type="CONTRACT", file=_pdf("deal.pdf"))
+    kept = TransportRequestDocument.objects.create(request=request, car=car, doc_type="OTHER", file=_pdf("keep.pdf"))
+    stored = Path(doc.file.path)
+    kept_path = Path(kept.file.path)
+    assert stored.is_file()
+
+    preview = _call(token, "tr-delete-doc", "--tr", request.number, "--doc-id", str(doc.pk))
+    assert preview["dry_run"] is True
+    assert preview["result"]["outcome"] == "would_delete"
+    assert preview["notifications"] == []
+    assert stored.is_file()
+    assert TransportRequestDocument.objects.filter(pk=doc.pk).exists()
+
+    missing_key = StringIO()
+    with pytest.raises(CommandError):
+        call_command(
+            "bot",
+            "tr-delete-doc",
+            "--token",
+            token,
+            "--tr",
+            request.number,
+            "--doc-id",
+            str(doc.pk),
+            "--apply",
+            stdout=missing_key,
+        )
+    assert "idempotency-key" in json.loads(missing_key.getvalue())["error"]
+    assert stored.is_file()
+
+    other, _other_car = _request_with_car(vin="2HGCM82633A004353")
+    foreign = StringIO()
+    with pytest.raises(CommandError):
+        call_command(
+            "bot",
+            "tr-delete-doc",
+            "--token",
+            token,
+            "--tr",
+            other.number,
+            "--doc-id",
+            str(doc.pk),
+            "--apply",
+            "--idempotency-key",
+            "del-foreign",
+            stdout=foreign,
+        )
+    assert "не относится" in json.loads(foreign.getvalue())["error"]
+    assert stored.is_file()
+
+    unknown = StringIO()
+    with pytest.raises(CommandError):
+        call_command(
+            "bot",
+            "tr-delete-doc",
+            "--token",
+            token,
+            "--tr",
+            request.number,
+            "--doc-id",
+            "999999",
+            "--apply",
+            "--idempotency-key",
+            "del-missing",
+            stdout=unknown,
+        )
+    assert "не относится" in json.loads(unknown.getvalue())["error"]
+
+    _chief, chief = issue_token("chief-no-del", "chief")
+    denied = StringIO()
+    with pytest.raises(CommandError):
+        call_command(
+            "bot",
+            "tr-delete-doc",
+            "--token",
+            chief,
+            "--tr",
+            request.number,
+            "--doc-id",
+            str(doc.pk),
+            "--apply",
+            "--idempotency-key",
+            "del-chief",
+            stdout=denied,
+        )
+    assert json.loads(denied.getvalue())["ok"] is False
+
+    with patch("core.tasks.send_request_status_notification_task.delay") as delayed:
+        applied = _call(
+            token,
+            "tr-delete-doc",
+            "--tr",
+            request.number,
+            "--doc-id",
+            str(doc.pk),
+            "--apply",
+            "--idempotency-key",
+            "del-1",
+        )
+    delayed.assert_not_called()
+    assert mail.outbox == []
+    assert applied["result"]["outcome"] == "deleted"
+    assert applied["result"]["id"] == doc.pk
+    assert not stored.exists()
+    assert kept_path.is_file()
+    assert not TransportRequestDocument.objects.filter(pk=doc.pk).exists()
+    assert TransportRequestDocument.objects.filter(pk=kept.pk).exists()
+    audit = BotAuditEntry.objects.filter(command="tr-delete-doc", dry_run=False).get()
+    assert audit.before["id"] == doc.pk
+    assert audit.after["deleted"] is True
+
+    replay = _call(
+        token,
+        "tr-delete-doc",
+        "--tr",
+        request.number,
+        "--doc-id",
+        str(doc.pk),
+        "--apply",
+        "--idempotency-key",
+        "del-1",
+    )
+    assert replay["idempotent_replay"] is True
+    assert TransportRequestDocument.objects.filter(pk=kept.pk).exists()
+
+
+def test_buyer_address_is_per_car_and_visible_to_neto_docs():
+    _principal, token = issue_token("neto-tr-addr", "neto")
+    request, car = _request_with_car()
+    other = Car.objects.create(vin="JH4KA4650MC000002", brand="Acura", year=2019, status="UNLOADED", client=car.client)
+    request.cars.add(other)
+    address = "ul. Gaya 5, Minsk"
+
+    needs_vin = StringIO()
+    with pytest.raises(CommandError):
+        call_command(
+            "bot",
+            "tr-update",
+            "--token",
+            token,
+            "--tr",
+            request.number,
+            "--buyer-address",
+            address,
+            stdout=needs_vin,
+        )
+    assert "несколько" in json.loads(needs_vin.getvalue())["error"].lower()
+    assert not TransportDocumentPackage.objects.filter(request=request).exists()
+
+    stranger = StringIO()
+    with pytest.raises(CommandError):
+        call_command(
+            "bot",
+            "tr-update",
+            "--token",
+            token,
+            "--tr",
+            request.number,
+            "--car-vin",
+            "WBA00000000000001",
+            "--buyer-address",
+            address,
+            stdout=stranger,
+        )
+    assert "не в этой заявке" in json.loads(stranger.getvalue())["error"]
+
+    preview = _call(
+        token,
+        "tr-update",
+        "--tr",
+        request.number,
+        "--car-vin",
+        car.vin.lower(),
+        "--buyer-address",
+        address,
+    )
+    assert preview["dry_run"] is True
+    assert preview["result"]["fields"]["buyer_address"] == address
+    assert preview["notifications"] == []
+    assert not TransportDocumentPackage.objects.filter(request=request).exists()
+
+    with patch("core.tasks.send_request_status_notification_task.delay") as delayed:
+        applied = _call(
+            token,
+            "tr-update",
+            "--tr",
+            request.number,
+            "--car-vin",
+            car.vin,
+            "--buyer-address",
+            f"  {address}  ",
+            "--apply",
+            "--idempotency-key",
+            "addr-1",
+        )
+    delayed.assert_not_called()
+    assert mail.outbox == []
+    assert applied["dry_run"] is False
+    package = TransportDocumentPackage.objects.get(request=request, car=car)
+    assert package.data["buyer_address"] == address
+    assert _buyer_from(package.data)["address"] == address
+    assert not TransportDocumentPackage.objects.filter(request=request, car=other).exists()
+    audit = BotAuditEntry.objects.filter(command="tr-update", dry_run=False, idempotency_key="addr-1").get()
+    assert audit.after["buyer_address"] == address
+    assert audit.after["car_id"] == car.pk
+
+    listed = _call(token, "tr-docs", "--tr", request.number)
+    rows = {row["vin"]: row for row in listed["result"]["cars"]}
+    assert rows[car.vin]["buyer_address"] == address
+    assert rows[other.vin]["buyer_address"] == ""
+    bundle = _call(token, "neto-bundle", "--number", request.number)
+    bundle_rows = {row["vin"]: row for row in bundle["result"]["completeness"]["cars"]}
+    assert bundle_rows[car.vin]["buyer_address"] == address
+    assert bundle_rows[other.vin]["buyer_address"] == ""
+
+    user = get_user_model().objects.create_user(username="staff-addr", password="secret123", is_staff=True)
+    client = DjangoClient()
+    client.force_login(user)
+    page = client.get(reverse("admin_request_card", args=[request.pk]))
+    assert page.status_code == 200
+    assert f'name="buyer_address" value="{address}"'.encode() in page.content
+
+    cleared = _call(
+        token,
+        "tr-update",
+        "--tr",
+        request.number,
+        "--vin",
+        car.vin,
+        "--buyer-address",
+        "",
+        "--apply",
+        "--idempotency-key",
+        "addr-clear",
+    )
+    assert cleared["result"]["fields"]["buyer_address"] == ""
+    package.refresh_from_db()
+    assert package.data["buyer_address"] == ""
+
+
+def test_tr_upload_doc_accepts_passport():
+    _principal, token = issue_token("neto-tr-pass", "neto")
+    request, car = _request_with_car()
+    folder = neto_tmp_dir()
+    source = folder / "passport.pdf"
+    source.write_bytes(b"%PDF-1.4 passport")
+    rejected = StringIO()
+    with pytest.raises(CommandError):
+        call_command(
+            "bot",
+            "tr-upload-doc",
+            "--token",
+            token,
+            "--tr",
+            request.number,
+            "--type",
+            "INVOICE",
+            "--file",
+            source.name,
+            stdout=rejected,
+        )
+    assert "PASSPORT" in json.loads(rejected.getvalue())["error"]
+    applied = _call(
+        token,
+        "tr-upload-doc",
+        "--tr",
+        request.number,
+        "--type",
+        "passport",
+        "--file",
+        source.name,
+        "--car-vin",
+        car.vin,
+        "--apply",
+        "--idempotency-key",
+        "pass-1",
+    )
+    doc = TransportRequestDocument.objects.get(pk=applied["result"]["id"])
+    assert doc.doc_type == "PASSPORT"
+    assert doc.car_id == car.pk
+    assert doc.request_id == request.pk
+    listed = _call(token, "tr-docs", "--tr", request.number)
+    assert listed["result"]["documents"][0]["type"] == "PASSPORT"
 
 
 def test_staff_card_shows_and_saves_driver_passport():

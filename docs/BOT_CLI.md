@@ -203,6 +203,8 @@ EORI — код страны и до 15 букв или цифр: `PL`, `LT`, `L
 
 В `files` у каждого файла есть `id`: pk документа заявки или `car_<id>_title`, если тайтл взят из карточки машины.
 
+У каждой машины в `result.completeness.cars` есть `buyer_address` — адрес покупателя из пакета документов этой машины. Пустая строка, если адрес ещё не задавали.
+
 ```bash
 python manage.py bot neto-bundle --token %BOT_TOKEN% --number TR-1 --client-docs
 ```
@@ -220,6 +222,8 @@ python manage.py bot neto-bundle --token %BOT_TOKEN% --number TR-1 --client-docs
 Типы: `OBLIGATION`, `INVOICE`, `PASSPORT`, `PAYMENT_ORDER`, `LETTER_USA`, `CONTRACT`, `SIGNATURE`, `OTHER`. Тайтл машины в этот список не входит.
 
 В каждой строке: `id`, `type`, `filename`, `size`, а также `vin` и `car_id` (файл привязан к авто заявки).
+
+`cars` — машины заявки: `vin`, `car_id`, `buyer_address` (адрес покупателя из пакета документов, тот же, что в окне «Паспорт» и в PDF для Neto).
 
 ```bash
 python manage.py bot tr-docs --token %BOT_TOKEN% --tr TR-20261029-001
@@ -248,18 +252,37 @@ python manage.py bot download-tr-doc --token %BOT_TOKEN% --tr TR-20261029-001 --
 
 Статус заявки команда не меняет.
 
+Адрес покупателя — отдельно на каждую машину заявки:
+
+- `--buyer-address "..."` — до 500 символов. Пустая строка стирает адрес.
+- `--car-vin` (или `--vin` / `--car-id`) — какая машина. Если в заявке одна машина, VIN можно не указывать. Чужой VIN отклоняется.
+
+Адрес пишется в пакет документов машины (`buyer_address`). Оттуда его показывает карточка заявки в окне «Паспорт» и оттуда же его подставляют инвойс, платёжка и обязательство для Neto. Кириллический адрес (`buyer_address_ru`) эта команда не меняет.
+
 ```bash
 python manage.py bot tr-update --token %BOT_TOKEN% --tr TR-20261029-001 --driver-name "Jonas Petraitis" --driver-passport MC3902087 --driver-phone +37060000000 --carrier-name "ANGER TRANSPORT" --carrier-eori PL525308706300000 --tractor-plate LTL123 --trailer-plate TR9 --border-crossing Medininkai --apply --idempotency-key tr-1
+python manage.py bot tr-update --token %BOT_TOKEN% --tr TR-20261029-001 --car-vin 1HGCM82633A004352 --buyer-address "ul. Gaya 5, Minsk" --apply --idempotency-key addr-1
 ```
 
 ### `tr-upload-doc` — положить файл в заявку
 
-`--type` только `CONTRACT`, `SIGNATURE` или `OTHER`. `--file` — путь на сервере внутри `media/bot_tmp/neto/` (имя файла или полный путь). Выход за эту папку, в том числе через `..`, отклоняется. Допустимы PDF, JPG и PNG, до 20 МБ.
+`--type`: `CONTRACT`, `SIGNATURE`, `PASSPORT` или `OTHER`. `--file` — путь на сервере внутри `media/bot_tmp/neto/` (имя файла или полный путь). Выход за эту папку, в том числе через `..`, отклоняется. Допустимы PDF, JPG и PNG, до 20 МБ.
 
-Документ привязан к машине заявки. Если машина одна, `--vin` не нужен. Если несколько — укажите `--vin` или `--car-id`, и эта машина должна быть в заявке.
+Документ привязан к машине заявки. Если машина одна, VIN не нужен. Если несколько — укажите `--vin`, `--car-vin` или `--car-id`, и эта машина должна быть в заявке.
 
 ```bash
 python manage.py bot tr-upload-doc --token %BOT_TOKEN% --tr TR-20261029-001 --type CONTRACT --file contract.pdf --apply --idempotency-key up-1
+python manage.py bot tr-upload-doc --token %BOT_TOKEN% --tr TR-20261029-001 --type PASSPORT --file passport.pdf --car-vin 1HGCM82633A004352 --apply --idempotency-key pass-1
+```
+
+### `tr-delete-doc` — удалить документ заявки
+
+`--tr` и `--doc-id` обязательны. `--doc-id` — числовой `id` из `tr-docs`. Команда удаляет только документ этой заявки и его файл. Документ другой заявки, неизвестный id и тайтл карточки машины (`car_<id>_title`) не удаляются.
+
+Тайтл, скопированный в пакет из карточки машины, можно удалить по id документа. При следующем открытии карточки заявки копия тайтла создаётся снова. Паспорт, договор и прочие загруженные файлы обратно не появляются.
+
+```bash
+python manage.py bot tr-delete-doc --token %BOT_TOKEN% --tr TR-20261029-001 --doc-id 15 --apply --idempotency-key del-1
 ```
 
 ## Бухгалтер
