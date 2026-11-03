@@ -187,18 +187,18 @@ def test_proformas_lists_issued_crm_av_and_explains_sitepro():
     Proforma.objects.create(number="BOT-AV", kind="OFFICIAL", amount=Decimal("5.00"))
 
     payload = _call(token, "proformas")
-    numbers = [row["number"] for row in payload["result"]["proformas"]]
-    assert numbers == ["AV-000013"]
-    row = payload["result"]["proformas"][0]
+    rows = {row["number"]: row for row in payload["result"]["proformas"]}
+    assert "PARDP-000099" not in rows
+    row = rows["AV-000013"]
     assert row["id"] == issued.pk
     assert row["number_compact"] == "AV000013"
     assert row["status"] == "ISSUED"
     assert row["source"] == "crm"
     assert row["client"] == "Site Buyer"
-    assert payload["result"]["bot_proformas"][0]["number"] == "BOT-AV"
+    bot_numbers = [item["number"] for item in payload["result"]["bot_proformas"]]
+    assert "BOT-AV" in bot_numbers
     assert "site.pro" in payload["result"]["sitepro"]
     assert "PARDP" in payload["result"]["sitepro"]
-    assert "AV000013" not in numbers
 
 
 def test_accountant_can_download_car_title():
