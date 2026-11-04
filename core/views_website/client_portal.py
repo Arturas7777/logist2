@@ -135,8 +135,17 @@ def client_dashboard(request):
                 ),
                 # ETA только у «В пути». У остальных статусов ключ пустой,
                 # чтобы не сдвигать разгрузку, порт и передачи.
+                # Свой контейнер, иначе ETA чужого (консолидация без Container):
+                # иначе такая машина всегда внизу группы.
                 _floating_eta=Case(
-                    When(status="FLOATING", then=F("container__eta")),
+                    When(
+                        status="FLOATING",
+                        then=Coalesce(
+                            F("container__eta"),
+                            F("foreign_eta"),
+                            output_field=DateField(),
+                        ),
+                    ),
                     default=Value(None),
                     output_field=DateField(),
                 ),
@@ -165,8 +174,9 @@ def client_dashboard(request):
             cars_qs = cars_qs.filter(in_active_request=in_request)
 
         # UNLOADED — давние разгрузки сверху (рабочий список склада).
-        # IN_PORT — следом. FLOATING («В пути») — ближайший ETA контейнера
-        # выше, без даты внизу группы. TRANSFERRED — свежие передачи сверху:
+        # IN_PORT — следом. FLOATING («В пути») — ближайшее прибытие выше:
+        # ETA своего контейнера или foreign_eta, без даты внизу группы.
+        # TRANSFERRED — свежие передачи сверху:
         # у старых часто нет фото, иначе первая страница фильтра «Передан»
         # идёт без иконки галереи.
         cars_qs = cars_qs.order_by(

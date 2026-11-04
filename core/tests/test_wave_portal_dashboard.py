@@ -58,6 +58,21 @@ def test_dashboard_floating_sorted_by_eta_soonest_first(portal):
     assert html.index("ETALATEVIN0000001") < html.index("ETANONEVIN0000001")
 
 
+def test_dashboard_floating_foreign_eta_sorts_with_container_eta(portal):
+    """Машина без своего контейнера встаёт по foreign_eta, а не в самый низ."""
+    http, owner = portal
+    late = Container.objects.create(number="OWNLATE000001", status="FLOATING", eta=date(2026, 12, 20))
+    _car(owner, "OWNLATEVIN0000001", "FLOATING", container=late)
+    _car(owner, "FOREIGNSOON000001", "FLOATING", foreign_eta=date(2026, 10, 10))
+    _car(owner, "FOREIGNLATE000001", "FLOATING", foreign_eta=date(2026, 11, 1))
+    _car(owner, "FOREIGNNONE000001", "FLOATING")
+
+    html = http.get(reverse("website:dashboard")).content.decode()
+    assert html.index("FOREIGNSOON000001") < html.index("FOREIGNLATE000001")
+    assert html.index("FOREIGNLATE000001") < html.index("OWNLATEVIN0000001")
+    assert html.index("OWNLATEVIN0000001") < html.index("FOREIGNNONE000001")
+
+
 def test_dashboard_default_shows_floating_cars(portal):
     http, owner = portal
     _car(owner, "FLOATDEFAULT00001", "FLOATING")
