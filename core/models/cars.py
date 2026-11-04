@@ -68,7 +68,10 @@ class Car(models.Model):
     is_hazardous = models.BooleanField(
         default=False,
         verbose_name="Hazzard",
-        help_text="В названии на caromoto.com была пометка «(Hazzard)».",
+        help_text=(
+            "Пометка «(Hazzard)» на caromoto.com или электрификация NHTSA: "
+            "электромобиль, гибрид или подзаряжаемый гибрид."
+        ),
     )
     vehicle_type = models.CharField(max_length=20, choices=VEHICLE_TYPE_CHOICES, default="SEDAN", verbose_name="Тип ТС")
     vin = models.CharField(max_length=17, unique=True, verbose_name="VIN")

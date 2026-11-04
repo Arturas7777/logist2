@@ -338,7 +338,7 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
     # стоимость хранения, наценка) доступны в карточке авто.
     list_display = (
         "vin_display",
-        "brand",
+        "brand_display",
         "year_display",
         "client",
         "colored_status",
@@ -399,7 +399,7 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
         умножена на число писем. См. карточку авто (services_summary_display)
         — там расчёт через отдельный aggregate, всегда корректен.
         """
-        from django.db.models import Count, DecimalField, F, IntegerField, OuterRef, Subquery, Sum
+        from django.db.models import Count, DateField, DecimalField, F, IntegerField, OuterRef, Subquery, Sum
         from django.db.models.functions import Coalesce
 
         from core.models.email import CarEmailLink
@@ -448,7 +448,12 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
             .values("c")
         )
 
-        qs = super().get_queryset(request)
+        # На списке авто порядок задаёт ChangeList через get_ordering
+        # (_effective_eta). super() применил бы его до аннотации.
+        if self._is_car_changelist(request):
+            qs = self.model._default_manager.get_queryset()
+        else:
+            qs = super().get_queryset(request)
         qs = qs.select_related("client", "warehouse", "line", "carrier", "container", "container__line")
         qs = qs.prefetch_related("client__storage_terms")
         qs = qs.annotate(
@@ -472,8 +477,39 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
                 0,
                 output_field=IntegerField(),
             ),
+            # Та же ETA, что у Car.eta: явная, иначе контейнер, иначе чужой контейнер.
+            _effective_eta=Coalesce(
+                F("_eta_override"),
+                F("container__eta"),
+                F("foreign_eta"),
+                output_field=DateField(),
+            ),
         )
         return qs
+
+    def _is_car_changelist(self, request):
+        match = getattr(request, "resolver_match", None)
+        return bool(match and match.url_name == "core_car_changelist")
+
+    def get_ordering(self, request):
+        """Список всех авто: сначала разгруженные, внутри группы — более ранняя ETA выше.
+
+        Машины без ETA остаются внизу своей группы. Переданные с давней ETA
+        не поднимаются над теми, что ещё на складе. В автодополнении порядок
+        по марке не меняется.
+        """
+        if self._is_car_changelist(request):
+            from django.db.models import Case, F, IntegerField, Value, When
+
+            return [
+                Case(
+                    When(status="UNLOADED", then=Value(0)),
+                    default=Value(1),
+                    output_field=IntegerField(),
+                ),
+                F("_effective_eta").asc(nulls_last=True),
+            ]
+        return ("brand", "-year")
 
     readonly_fields = (
         "default_warehouse_prices_display",
@@ -1033,20 +1069,9 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
 
         from core.copy_button import copy_button_html
 
-        # Иконка молнии для электромобилей (is_hazardous)
-        hazard_html = ""
-        if obj.is_hazardous:
-            hazard_html = format_html(
-                '<span style="display:inline-flex;align-items:center;justify-content:center;'
-                'width:20px;height:20px;background:linear-gradient(135deg,#fbbf24,#f59e0b);'
-                'border-radius:4px;font-size:12px;cursor:help;" '
-                'title="Hazzard / электромобиль">⚡</span>'
-            )
-
         return format_html(
             '<span style="display:inline-flex;align-items:center;gap:6px;" data-copy-line="{copy_line}">'
             '<span class="vin-copy-wrap">{copy_btn} {vin}</span>'
-            "{hazard_html}"
             "{unread_html}"
             "{need_reply_html}"
             "{important_html}"
@@ -1054,7 +1079,6 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
             copy_line=car_copy_line(obj.year, obj.brand, obj.vin),
             copy_btn=copy_button_html(obj.vin, "Копировать VIN"),
             vin=obj.vin,
-            hazard_html=hazard_html,
             unread_html=unread_html,
             need_reply_html=need_reply_html,
             important_html=important_html,
@@ -1062,6 +1086,43 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
 
     vin_display.short_description = "VIN"
     vin_display.admin_order_field = "vin"
+
+    def brand_display(self, obj):
+        brand = obj.brand or ""
+        if not obj.is_hazardous:
+            return brand
+        marker = obj.pk or "x"
+        return format_html(
+            '<span class="cm-brand-cell" title="Hazzard">'
+            '<svg class="cm-hazard-bolt" viewBox="0 0 32 34" aria-hidden="true">'
+            "<defs>"
+            '<linearGradient id="cm-bolt-face-{marker}" x1="4" y1="1" x2="24" y2="32" gradientUnits="userSpaceOnUse">'
+            '<stop offset="0" stop-color="#fffef6"/>'
+            '<stop offset="0.18" stop-color="#fff3b0"/>'
+            '<stop offset="0.42" stop-color="#facc15"/>'
+            '<stop offset="0.7" stop-color="#f59e0b"/>'
+            '<stop offset="1" stop-color="#ea580c"/>'
+            "</linearGradient>"
+            '<linearGradient id="cm-bolt-side-{marker}" x1="0" y1="0" x2="1" y2="1">'
+            '<stop offset="0" stop-color="#d97706"/>'
+            '<stop offset="1" stop-color="#7c2d12"/>'
+            "</linearGradient>"
+            "</defs>"
+            '<path fill="url(#cm-bolt-side-{marker})" transform="translate(1.6 1.7)" '
+            'd="M17.2 1.1 4.4 17.2h7.3L8.4 30.4 27.4 12.8h-8.1z"/>'
+            '<path fill="url(#cm-bolt-face-{marker})" stroke="#9a3412" stroke-width="0.55" stroke-linejoin="round" '
+            'd="M17.2 1.1 4.4 17.2h7.3L8.4 30.4 27.4 12.8h-8.1z"/>'
+            '<path fill="#fff8d4" fill-opacity="0.9" d="M16.3 2.2 8.8 12.4h3.2L16.3 2.2z"/>'
+            '<path fill="#ffffff" fill-opacity="0.45" d="M15.2 4.2 11.2 10.2h1.7L15.2 4.2z"/>'
+            "</svg>"
+            "<span>{brand}</span>"
+            "</span>",
+            marker=marker,
+            brand=brand,
+        )
+
+    brand_display.short_description = "Марка"
+    brand_display.admin_order_field = "brand"
 
     def container_display(self, obj):
         """Displays container number with clickable link and status-based styling"""
@@ -1123,6 +1184,7 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
         )
     
     eta_list_display.short_description = "ETA"
+    eta_list_display.admin_order_field = "_effective_eta"
 
     def year_display(self, obj):
         return obj.year
@@ -1266,40 +1328,30 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
     title_link_display.short_description = ""
 
     def eta_display(self, obj):
-        """Отображает ETA машины с индикацией источника (контейнер / явно задана).
-        
-        Для машин в контейнере: показывает Container.eta с иконкой 🚢.
-        Для машин без контейнера с явной ETA: показывает _eta_override с иконкой ⚡.
-        Для совместимости показывает foreign_eta как fallback.
+        """ETA в том же виджете, что дата разгрузки и дата передачи.
+
+        Поле только для просмотра: значение — Car.eta (явное, контейнер
+        или чужой контейнер). Источник — в подсказке, без отдельной иконки.
         """
-        if not obj or not obj.pk:
-            return "—"
-        
-        eta_value = obj.eta
-        if not eta_value:
-            return "—"
-        
-        # Определяем источник ETA
-        if obj._eta_override is not None:
-            # Явно задана для машины (переопределяет контейнер)
-            icon = "⚡"
-            title = "ETA задана вручную для машины"
-        elif obj.container_id:
-            # Наследуется от контейнера
-            icon = "🚢"
-            title = f"ETA наследуется от контейнера {obj.container.number if obj.container else ''}"
-        else:
-            # Foreign container (fallback на foreign_eta)
-            icon = "📦"
-            title = f"ETA чужого контейнера {obj.foreign_container_number or ''}"
-        
-        return format_html(
-            '<span title="{}">{} {}</span>',
-            title,
-            icon,
-            eta_value.strftime("%Y-%m-%d") if eta_value else "—"
+        from django.contrib.admin.widgets import AdminDateWidget
+
+        value = None
+        title = "ETA"
+        if obj and getattr(obj, "pk", None):
+            value = obj.eta
+            if obj._eta_override is not None:
+                title = "ETA задана для этой машины"
+            elif obj.container_id:
+                number = obj.container.number if obj.container else ""
+                title = f"ETA контейнера {number}".strip()
+            elif obj.foreign_container_number:
+                title = f"ETA чужого контейнера {obj.foreign_container_number}"
+        return AdminDateWidget().render(
+            "eta_display",
+            value,
+            attrs={"id": "id_eta_display", "readonly": "readonly", "title": title},
         )
-    
+
     eta_display.short_description = "ETA"
 
     def changelist_view(self, request, extra_context=None):

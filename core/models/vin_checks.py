@@ -43,6 +43,22 @@ class VinCheck(models.Model):
         verbose_name="Тип ТС (NHTSA)",
         help_text="Сырое значение Vehicle Type из NHTSA, например MOTORCYCLE.",
     )
+    nhtsa_electrification = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        default=None,
+        verbose_name="Электрификация (NHTSA)",
+        help_text="Electrification Level. Пустая строка — обычный ДВС, NULL — ещё не запрашивали.",
+    )
+    nhtsa_fuel_primary = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        default=None,
+        verbose_name="Топливо (NHTSA)",
+        help_text="Fuel Type - Primary. Пустая строка — не указано, NULL — ещё не запрашивали.",
+    )
     error_text = models.CharField(max_length=255, blank=True, default="", verbose_name="Ответ NHTSA")
 
     checked_at = models.DateTimeField(default=timezone.now, verbose_name="Проверено")

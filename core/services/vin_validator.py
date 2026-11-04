@@ -110,6 +110,8 @@ def decode_vin_nhtsa(vin: str, *, timeout: int = _NHTSA_TIMEOUT) -> dict[str, An
         "model": None,
         "year": None,
         "vehicle_type": "",
+        "electrification": "",
+        "fuel_primary": "",
         "error_code": "",
         "error_text": "",
         "suggested_vin": "",
@@ -146,6 +148,8 @@ def decode_vin_nhtsa(vin: str, *, timeout: int = _NHTSA_TIMEOUT) -> dict[str, An
         result["year"] = None
     result["suggested_vin"] = fields.get("Suggested VIN") or ""
     result["vehicle_type"] = (fields.get("Vehicle Type") or fields.get("VehicleType") or "") or ""
+    result["electrification"] = (fields.get("Electrification Level") or "").strip()
+    result["fuel_primary"] = (fields.get("Fuel Type - Primary") or "").strip()
     # ErrorCode '0' = no error. '1','2','3'... = разные виды проблем.
     # Также приемлем '6' (incomplete) — частично декодировано но make/model есть.
     # Считаем VIN "ok" только если error_code == '0'.
@@ -240,6 +244,55 @@ def decode_vin_details(vin: str, *, timeout: int = _NHTSA_TIMEOUT, use_cache: bo
     if use_cache and result["ok"]:
         cache.set(cache_key, dict(result), _DETAILS_CACHE_TTL)
     return result
+
+
+_NHTSA_BATCH_URL = "https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValuesBatch/"
+_POWERTRAIN_BATCH_SIZE = 50
+
+
+def decode_powertrain_batch(vins: list[str], *, timeout: int = 30) -> dict[str, dict[str, str]]:
+    """Электрификация и основное топливо пачкой, до 50 VIN за запрос.
+
+    Ключ — VIN. Пустой словарь, если пачка не ответила. Пустые строки в
+    значениях значат «NHTSA ответил, силовой установки такого типа нет».
+    """
+    cleaned = []
+    for vin in vins:
+        text = (vin or "").strip().upper()
+        if len(text) == 17 and text not in cleaned:
+            cleaned.append(text)
+    if not cleaned:
+        return {}
+
+    try:
+        import requests
+    except ImportError:
+        logger.error("requests не установлен — NHTSA decode недоступен.")
+        return {}
+
+    found: dict[str, dict[str, str]] = {}
+    for offset in range(0, len(cleaned), _POWERTRAIN_BATCH_SIZE):
+        chunk = cleaned[offset : offset + _POWERTRAIN_BATCH_SIZE]
+        try:
+            resp = requests.post(
+                _NHTSA_BATCH_URL,
+                data={"DATA": ";".join(chunk), "format": "json"},
+                timeout=timeout,
+            )
+            resp.raise_for_status()
+            rows = (resp.json() or {}).get("Results") or []
+        except Exception as e:
+            logger.warning("NHTSA powertrain batch failed (%s VIN): %s", len(chunk), e)
+            continue
+        for row in rows:
+            vin = (row.get("VIN") or "").strip().upper()
+            if len(vin) != 17:
+                continue
+            found[vin] = {
+                "electrification": (row.get("ElectrificationLevel") or "").strip(),
+                "fuel_primary": (row.get("FuelTypePrimary") or "").strip(),
+            }
+    return found
 
 
 def _as_int(value: Any) -> int | None:

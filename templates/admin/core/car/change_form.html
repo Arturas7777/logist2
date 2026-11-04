@@ -225,6 +225,27 @@
       padding: 9px 12px !important;
     }
 
+    /* ETA — тот же виджет даты, что у разгрузки и передачи.
+       Обёртка .readonly не должна добавлять свою «плашку»,
+       календарь у поля только для чтения не показываем. */
+    body.model-car .cm-form-main .form-row.field-eta_display .field-eta_display .readonly {
+      padding: 0 !important;
+      margin: 0 !important;
+      background: transparent !important;
+      border: 0 !important;
+      min-height: 0 !important;
+      line-height: normal !important;
+    }
+    body.model-car .cm-form-main .form-row.field-eta_display .field-eta_display p.date {
+      margin: 0 !important;
+      width: 100% !important;
+    }
+    /* Календарь и «Сегодня» прячем только у ETA: строка общая с датой
+       разгрузки и датой передачи, и селектор по form-row гасил их тоже. */
+    body.model-car .cm-form-main .fieldBox.field-eta_display .datetimeshortcuts {
+      display: none !important;
+    }
+
     /* ===== Мобильная раскладка (≤1024px) =====
        dashboard_admin.css переводит form-multiline в колонку, но фиксированные
        flex-basis выше (110…320px — это ШИРИНЫ колонок) в вертикальной колонке
@@ -389,23 +410,24 @@
       transform: scale(1.1);
     }
 
-    /* Hazard badge (yellow lightning) */
+    /* Молния Hazzard — слева от фото, на уровне капота, без плашки. */
     .cm-hazard-badge {
       position: absolute;
-      top: 8px;
-      left: 8px;
-      background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
-      color: #78350f;
-      font-size: 20px;
+      top: 22%;
+      left: 2px;
       width: 36px;
-      height: 36px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 2px 8px rgba(251, 191, 36, 0.4);
-      z-index: 10;
+      height: 44px;
+      z-index: 30;
       cursor: help;
+      pointer-events: auto;
+      filter: drop-shadow(0 2px 2px rgba(120, 53, 15, 0.35));
+      background: none;
+    }
+    .cm-hazard-badge svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
     }
   </style>
 {% endblock %}
@@ -425,7 +447,27 @@
     <div id="cm-car-photo-frame" class="cm-car-photo-frame"
          data-upload-url="{% url 'admin:core_car_upload_model_image' original.pk %}">
       {% if original.is_hazardous %}
-      <div class="cm-hazard-badge" title="Hazzard / электромобиль">⚡</div>
+      <div class="cm-hazard-badge" title="Hazzard / электромобиль">
+        <svg viewBox="0 0 32 34" aria-hidden="true">
+          <defs>
+            <linearGradient id="cm-bolt-face-card" x1="4" y1="1" x2="24" y2="32" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#fffef6"/>
+              <stop offset="0.18" stop-color="#fff3b0"/>
+              <stop offset="0.42" stop-color="#facc15"/>
+              <stop offset="0.7" stop-color="#f59e0b"/>
+              <stop offset="1" stop-color="#ea580c"/>
+            </linearGradient>
+            <linearGradient id="cm-bolt-side-card" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#d97706"/>
+              <stop offset="1" stop-color="#7c2d12"/>
+            </linearGradient>
+          </defs>
+          <path fill="url(#cm-bolt-side-card)" transform="translate(1.6 1.7)" d="M17.2 1.1 4.4 17.2h7.3L8.4 30.4 27.4 12.8h-8.1z"/>
+          <path fill="url(#cm-bolt-face-card)" stroke="#9a3412" stroke-width="0.55" stroke-linejoin="round" d="M17.2 1.1 4.4 17.2h7.3L8.4 30.4 27.4 12.8h-8.1z"/>
+          <path fill="#fff8d4" fill-opacity="0.9" d="M16.3 2.2 8.8 12.4h3.2L16.3 2.2z"/>
+          <path fill="#ffffff" fill-opacity="0.45" d="M15.2 4.2 11.2 10.2h1.7L15.2 4.2z"/>
+        </svg>
+      </div>
       {% endif %}
       <img src="{% if car_header_image %}{{ car_header_image }}{% else %}{% static 'icons/car_unknown.png' %}{% endif %}"
            id="cm-car-photo-el" class="cm-car-photo" loading="lazy" alt="{{ original.brand }}">

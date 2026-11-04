@@ -35,6 +35,7 @@ from core.services.vin_gate import (
     identity_from_vin,
     normalize_car_identity,
     normalize_vin_input,
+    nhtsa_marks_hazard,
     refresh_vin_check,
     split_hazard_marker,
     vehicle_type_from_nhtsa,
@@ -62,7 +63,18 @@ def _make_car(vin, **kwargs):
     return Car.objects.create(vin=vin, **defaults)
 
 
-def _nhtsa(vin, *, make="TOYOTA", model="CAMRY", year=2012, ok=True, vehicle_type="PASSENGER CAR", checksum_ok=True):
+def _nhtsa(
+    vin,
+    *,
+    make="TOYOTA",
+    model="CAMRY",
+    year=2012,
+    ok=True,
+    vehicle_type="PASSENGER CAR",
+    checksum_ok=True,
+    electrification="",
+    fuel_primary="",
+):
     return VinCheck.objects.create(
         vin=vin,
         length_ok=True,
@@ -73,6 +85,8 @@ def _nhtsa(vin, *, make="TOYOTA", model="CAMRY", year=2012, ok=True, vehicle_typ
         nhtsa_model=model,
         nhtsa_year=year,
         nhtsa_vehicle_type=vehicle_type if ok else "",
+        nhtsa_electrification=electrification,
+        nhtsa_fuel_primary=fuel_primary,
     )
 
 
@@ -236,6 +250,8 @@ def test_refresh_vin_check_stores_snapshot(monkeypatch):
     assert check.nhtsa_summary == "TOYOTA CAMRY 2012"
     assert check.checksum_ok is True
     assert check.nhtsa_vehicle_type == ""
+    assert check.nhtsa_electrification == ""
+    assert check.nhtsa_fuel_primary == ""
 
 
 def test_successful_check_is_not_refetched(monkeypatch):
@@ -422,6 +438,46 @@ def test_split_hazard_marker():
     assert split_hazard_marker("TESLA MODEL Y (Hazzard)") == ("TESLA MODEL Y", True)
     assert split_hazard_marker("BMW I4 EDRIVE 40 ( hazard )") == ("BMW I4 EDRIVE 40", True)
     assert split_hazard_marker("HONDA CR-V EX-L") == ("HONDA CR-V EX-L", False)
+
+
+def test_nhtsa_marks_hazard_for_electric_and_hybrid_only():
+    assert nhtsa_marks_hazard("PHEV (Plug-in Hybrid Electric Vehicle)", "Electric") is True
+    assert nhtsa_marks_hazard("BEV (Battery Electric Vehicle)", "Electric") is True
+    assert nhtsa_marks_hazard("Strong HEV (Hybrid Electric Vehicle)", "Gasoline") is True
+    assert nhtsa_marks_hazard("HEV (Hybrid Electric Vehicle)", "Gasoline") is True
+    assert nhtsa_marks_hazard("FCEV (Fuel Cell Electric Vehicle)", "Electric") is True
+    assert nhtsa_marks_hazard("", "Electric") is True
+    assert nhtsa_marks_hazard("Mild HEV (Hybrid Electric Vehicle)", "Gasoline") is False
+    assert nhtsa_marks_hazard("", "Gasoline") is False
+    assert nhtsa_marks_hazard(None, None) is False
+
+
+def test_normalize_car_identity_sets_hazard_from_nhtsa():
+    _nhtsa(
+        VALID_NA_VIN,
+        make="CHEVROLET",
+        model="Volt",
+        year=2016,
+        electrification="PHEV (Plug-in Hybrid Electric Vehicle)",
+        fuel_primary="Electric",
+    )
+    car = _make_car(VALID_NA_VIN, brand="CHEVROLET Volt", year=2016)
+
+    fields = normalize_car_identity(car, allow_network=False)
+
+    assert "is_hazardous" in fields
+    assert car.is_hazardous is True
+    assert car.brand == "CHEVROLET Volt"
+
+
+def test_normalize_car_identity_does_not_clear_manual_hazard():
+    _nhtsa(VALID_NA_VIN, electrification="", fuel_primary="Gasoline")
+    car = _make_car(VALID_NA_VIN, brand="TOYOTA Camry", is_hazardous=True)
+
+    fields = normalize_car_identity(car, allow_network=False)
+
+    assert "is_hazardous" not in fields
+    assert car.is_hazardous is True
 
 
 def test_identity_from_vin_ignores_model_without_checksum():

@@ -48,6 +48,19 @@
     }
     .cm-important-flag:hover::after,
     .cm-important-flag:hover::before { display: block; }
+
+    .cm-brand-cell {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .cm-hazard-bolt {
+      width: 13px;
+      height: 16px;
+      flex: 0 0 13px;
+      overflow: visible;
+      filter: drop-shadow(0 1px 0.6px rgba(120, 53, 15, 0.4));
+    }
     /* На последних строках таблицы тултип может выходить за границу —
        подкручиваем при необходимости через position-adjusting JS, либо
        включаем смещение вниз через класс .below (опционально). */

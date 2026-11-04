@@ -187,6 +187,25 @@ def split_hazard_marker(text) -> tuple[str, bool]:
     return " ".join(cleaned.split()), bool(found)
 
 
+def nhtsa_marks_hazard(electrification, fuel_primary) -> bool:
+    """Электромобиль или гибрид по ответу NHTSA.
+
+    Считаем Hazzard: BEV, PHEV, FCEV, обычный и сильный HEV, а также
+    основное топливо Electric. Мягкий гибрид (Mild HEV, 48 В) — нет:
+    caromoto так обычные машины не помечает. NULL в обоих полях значит,
+    что силовую установку ещё не спрашивали.
+    """
+    if electrification is None and fuel_primary is None:
+        return False
+    elec = (electrification or "").lower()
+    fuel = (fuel_primary or "").lower()
+    if "mild" in elec and "phev" not in elec and "bev" not in elec and "plug" not in elec:
+        return fuel.startswith("electric")
+    if any(token in elec for token in ("bev", "phev", "hev", "fcev", "plug", "hybrid", "electric")):
+        return True
+    return fuel.startswith("electric")
+
+
 def identity_from_vin(vin: str, *, brand: str = "", year: int = 0) -> tuple[str, int]:
     """Марка с моделью и год по VIN. Один запрос NHTSA, дальше кэш. Без LLM.
 
@@ -229,9 +248,10 @@ def normalize_car_identity(car, *, allow_network: bool = True) -> list[str]:
 
     Текст, с которым машину прислали, уходит в ``source_title`` (только
     первый раз — ручную правку исходника не затираем), пометка «(Hazzard)»
-    — в ``is_hazardous``. Если расшифровке NHTSA верить нельзя, в марке
-    остаётся присланный текст без пометки. Возвращает список изменённых
-    полей; сохраняет вызывающий.
+    и электрификация NHTSA — в ``is_hazardous``. Уже стоящую галочку
+    не снимаем: её мог поставить оператор. Если расшифровке NHTSA верить
+    нельзя, в марке остаётся присланный текст без пометки. Возвращает
+    список изменённых полей; сохраняет вызывающий.
     """
     original = (car.brand or "").strip()
     cleaned, hazardous = split_hazard_marker(original)
@@ -241,6 +261,8 @@ def normalize_car_identity(car, *, allow_network: bool = True) -> list[str]:
         changed.append("is_hazardous")
 
     check = get_vin_check(car.vin, allow_network=allow_network)
+    if check is not None and apply_nhtsa_hazard(car, check.nhtsa_electrification, check.nhtsa_fuel_primary):
+        changed.append("is_hazardous")
     brand = (trusted_nhtsa_brand(check) or cleaned)[:50]
     if brand and brand != original:
         if not car.source_title:
@@ -297,6 +319,17 @@ def cached_vehicle_type(vin: str) -> str | None:
     if not vehicle_type:
         return None
     return vehicle_type_from_nhtsa(vehicle_type)
+
+
+def apply_nhtsa_hazard(car, electrification, fuel_primary) -> bool:
+    """Ставит галочку Hazzard по силовой установке NHTSA. Снять её нельзя.
+
+    Возвращает True, если поле изменилось.
+    """
+    if car.is_hazardous or not nhtsa_marks_hazard(electrification, fuel_primary):
+        return False
+    car.is_hazardous = True
+    return True
 
 
 def apply_nhtsa_vehicle_type(car, nhtsa_vehicle_type: str, *, body_class: str = "") -> bool:
@@ -356,6 +389,8 @@ def refresh_vin_check(vin: str, *, timeout: int = _NHTSA_TIMEOUT, use_nhtsa: boo
         "nhtsa_model": "",
         "nhtsa_year": None,
         "nhtsa_vehicle_type": "",
+        "nhtsa_electrification": None,
+        "nhtsa_fuel_primary": None,
         "error_text": "",
     }
 
@@ -363,11 +398,16 @@ def refresh_vin_check(vin: str, *, timeout: int = _NHTSA_TIMEOUT, use_nhtsa: boo
         decoded = decode_vin_nhtsa(vin_norm, timeout=timeout)
         if decoded.get("raw_failed"):
             defaults["error_text"] = NHTSA_UNAVAILABLE
+            # NULL — силовую установку не узнали, повторим вместе со снимком.
+            defaults["nhtsa_electrification"] = None
+            defaults["nhtsa_fuel_primary"] = None
         else:
             defaults["nhtsa_make"] = (decoded.get("make") or "")[:100]
             defaults["nhtsa_model"] = (decoded.get("model") or "")[:100]
             defaults["nhtsa_year"] = decoded.get("year")
             defaults["nhtsa_vehicle_type"] = (decoded.get("vehicle_type") or "")[:100]
+            defaults["nhtsa_electrification"] = (decoded.get("electrification") or "")[:100]
+            defaults["nhtsa_fuel_primary"] = (decoded.get("fuel_primary") or "")[:50]
             defaults["error_text"] = (decoded.get("error_text") or "")[:255]
             # Для европейских и азиатских VIN контрольная цифра по ISO не
             # обязана сходиться, и NHTSA честно возвращает ошибку. Если при
@@ -402,6 +442,26 @@ def _fill_nhtsa_vehicle_type(check: VinCheck, *, timeout: int = _NHTSA_TIMEOUT) 
     check.save(update_fields=["nhtsa_vehicle_type"])
 
 
+def _fill_nhtsa_powertrain(check: VinCheck, *, timeout: int = _NHTSA_TIMEOUT) -> None:
+    """Догоняет электрификацию у старых снимков, где поля ещё не было.
+
+    Пустая строка после успешного ответа — обычный ДВС, больше не спрашиваем.
+    Если NHTSA недоступен, NULL остаётся и запрос повторится в следующий раз.
+    """
+    if check.nhtsa_electrification is not None or check.nhtsa_fuel_primary is not None:
+        return
+    try:
+        decoded = decode_vin_nhtsa(check.vin, timeout=timeout)
+    except Exception:
+        logger.warning("Не удалось добрать электрификацию для %s", check.vin, exc_info=True)
+        return
+    if decoded.get("raw_failed"):
+        return
+    check.nhtsa_electrification = (decoded.get("electrification") or "")[:100]
+    check.nhtsa_fuel_primary = (decoded.get("fuel_primary") or "")[:50]
+    check.save(update_fields=["nhtsa_electrification", "nhtsa_fuel_primary"])
+
+
 def get_vin_check(vin: str, *, allow_network: bool = True, timeout: int = _NHTSA_TIMEOUT) -> VinCheck | None:
     """Отдаёт снимок проверки из кэша, при необходимости обновляя его.
 
@@ -413,8 +473,11 @@ def get_vin_check(vin: str, *, allow_network: bool = True, timeout: int = _NHTSA
         return None
     existing = VinCheck.objects.filter(vin=vin_norm).first()
     if existing is not None and not existing.is_stale:
-        if existing.nhtsa_ok and not existing.nhtsa_vehicle_type and allow_network:
-            _fill_nhtsa_vehicle_type(existing, timeout=timeout)
+        if existing.nhtsa_ok and allow_network:
+            if not existing.nhtsa_vehicle_type:
+                _fill_nhtsa_vehicle_type(existing, timeout=timeout)
+            if existing.nhtsa_electrification is None and existing.nhtsa_fuel_primary is None:
+                _fill_nhtsa_powertrain(existing, timeout=timeout)
         return existing
     if not allow_network:
         return existing
