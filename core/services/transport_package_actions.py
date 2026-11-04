@@ -523,13 +523,27 @@ def generate_all_for_car(*, transport_request, car, post, files, user) -> list[N
     if not (package.data.get("buyer_name_ru") or "").strip():
         package.save(update_fields=["data", "updated_at"])
         raise DocActionError(f"{prefix}: укажите ФИО по-русски — с фото не распозналось.")
-    # После AI адрес/ФИО латиницей могут появиться; без латиницы инвойс не соберётся.
-    if not (package.data.get("buyer_address") or "").strip() and (package.data.get("buyer_address_ru") or "").strip():
+    # В окне пакета нет поля латиницей: кириллица — единственный адрес.
+    # Старый buyer_address иначе остаётся в инвойсе после перегенерации.
+    # Явную латиницу из POST не затираем.
+    ru_address = (package.data.get("buyer_address_ru") or "").strip()
+    latin_posted = "buyer_address" in post and bool((post.get("buyer_address") or "").strip())
+    if ru_address and not latin_posted:
         from core.services import passport_extractor
 
-        latin = passport_extractor.transliterate_address(package.data["buyer_address_ru"])
+        latin = passport_extractor.transliterate_address(ru_address)
+        previous = (package.data.get("buyer_address") or "").strip()
         if latin:
             package.data["buyer_address"] = latin
+            if latin != previous and previous:
+                notices.append(("success", f"{prefix}: адрес для инвойса обновлён — {latin}"))
+        elif previous:
+            notices.append(
+                (
+                    "warning",
+                    f"{prefix}: не удалось обновить адрес латиницей, в инвойсе останется прежний.",
+                )
+            )
 
     sig = signature_bytes(transport_request, car)
     if sig is None:

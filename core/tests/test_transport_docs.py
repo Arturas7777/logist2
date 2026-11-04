@@ -26,7 +26,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
 from core.models import Car, Client
-from core.models.website import ClientUser, TransportRequest, TransportRequestDocument
+from core.models.website import ClientUser, TransportDocumentPackage, TransportRequest, TransportRequestDocument
 from core.services import transport_docs as docs
 from core.services.transport_docs import PackageDataError
 from core.services.transport_docs_pdf import amount_in_words_ru
@@ -1456,6 +1456,85 @@ def test_generate_all_package(logged_client, transport_request, car, settings, t
     assert transport_request.documents.filter(car=car, doc_type="SIGNATURE").exists()
     package = transport_request.doc_packages.get(car=car)
     assert package.data["invoice_extra_lines"] == [{"description": "Fee", "amount": "150"}]
+
+
+def test_generate_all_refreshes_invoice_address_from_cyrillic(
+    transport_request, car, settings, tmp_path, monkeypatch
+):
+    """Перегенерация пакета без поля латиницей обновляет адрес в инвойсе."""
+    from PIL import Image
+
+    from core.services import passport_extractor
+    from core.services import transport_docs_pdf as pdf
+    from core.services import transport_package_actions as actions
+
+    settings.MEDIA_ROOT = str(tmp_path)
+    new_latin = "ul. Novaya 9, Minsk, Belarus"
+    monkeypatch.setattr(passport_extractor, "transliterate_address", lambda ru: new_latin)
+    seen = {}
+    real_invoice = pdf.generate_invoice_pdf
+
+    def _spy_invoice(*args, **kwargs):
+        seen["buyer"] = kwargs.get("buyer")
+        return real_invoice(*args, **kwargs)
+
+    monkeypatch.setattr(pdf, "generate_invoice_pdf", _spy_invoice)
+
+    TransportDocumentPackage.objects.create(
+        request=transport_request,
+        car=car,
+        data={
+            "buyer_name": BUYER_DATA["buyer_name"],
+            "buyer_name_ru": BUYER_DATA["buyer_name_ru"],
+            "buyer_passport_number": BUYER_DATA["buyer_passport_number"],
+            "buyer_address": "ul. Staraya 1, Minsk, Belarus",
+            "buyer_address_ru": BUYER_DATA["buyer_address_ru"],
+            "buyer_birth_date": BUYER_DATA["buyer_birth_date"],
+            "buyer_passport_issue_date": BUYER_DATA["buyer_passport_issue_date"],
+        },
+    )
+    buf = io.BytesIO()
+    Image.new("RGB", (200, 120), (240, 240, 240)).save(buf, format="JPEG")
+    TransportRequestDocument.objects.create(
+        request=transport_request,
+        car=car,
+        doc_type="PASSPORT",
+        file=SimpleUploadedFile("passport.jpg", buf.getvalue(), content_type="image/jpeg"),
+    )
+    sign = Image.new("RGB", (300, 120), (255, 255, 255))
+    for x in range(30, 270):
+        for y in range(55, 75):
+            sign.putpixel((x, y), (10, 10, 10))
+    sign_buf = io.BytesIO()
+    sign.save(sign_buf, format="JPEG")
+
+    from django.http import QueryDict
+
+    post = QueryDict("", mutable=True)
+    post.update(
+        {
+            "buyer_name_ru": BUYER_DATA["buyer_name_ru"],
+            "buyer_address_ru": "ул. Новая 9, Минск",
+            "buyer_name": BUYER_DATA["buyer_name"],
+            "buyer_passport_number": BUYER_DATA["buyer_passport_number"],
+            "buyer_birth_date": BUYER_DATA["buyer_birth_date"],
+            "buyer_passport_issue_date": BUYER_DATA["buyer_passport_issue_date"],
+            "invoice_amount": "2850",
+            "invoice_date": "2026-06-10",
+        }
+    )
+    notices = actions.generate_all_for_car(
+        transport_request=transport_request,
+        car=car,
+        post=post,
+        files={"signature": SimpleUploadedFile("sign.jpg", sign_buf.getvalue(), content_type="image/jpeg")},
+        user=None,
+    )
+    package = transport_request.doc_packages.get(car=car)
+    assert package.data["buyer_address"] == new_latin
+    assert seen["buyer"]["address"] == new_latin
+    assert transport_request.documents.filter(car=car, doc_type="INVOICE", is_generated=True).exists()
+    assert any("адрес для инвойса обновлён" in text for _, text in notices)
 
 
 def test_generate_all_requires_uploaded_signature(transport_request, car, settings, tmp_path):
