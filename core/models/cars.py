@@ -97,6 +97,16 @@ class Car(models.Model):
         verbose_name="ETA чужого контейнера",
         help_text="Для машины без своего контейнера. ETA нашего контейнера живёт на Container.",
     )
+    # Поле для ETA машины: NULL означает наследуется от контейнера,
+    # если контейнер есть. Для машин без контейнера (foreign_container_number)
+    # можно задать явно через бот-команду car-set-eta.
+    _eta_override = models.DateField(
+        null=True,
+        blank=True,
+        db_column="eta",
+        verbose_name="ETA (переопределение)",
+        help_text="Явная ETA для машины (переопределяет ETA контейнера). NULL = наследуется от контейнера.",
+    )
     source_email = models.ForeignKey(
         "ContainerEmail",
         on_delete=models.SET_NULL,
@@ -321,6 +331,30 @@ class Car(models.Model):
     )
 
     objects = OptimizedCarManager()
+
+    @property
+    def eta(self):
+        """ETA машины: наследуется от контейнера, если не задана явно.
+        
+        Для машин в своём контейнере (container != None): берётся из Container.eta.
+        Для машин без контейнера (foreign_container_number): возвращается _eta_override
+        или foreign_eta как fallback (для совместимости).
+        
+        Возвращает date | None.
+        """
+        if self._eta_override is not None:
+            return self._eta_override
+        if self.container_id:
+            # Наследуем от контейнера. Если container загружен select_related,
+            # атрибут уже в кэше; иначе Django сделает JOIN.
+            return self.container.eta if self.container else None
+        # Машина без своего контейнера: возвращаем foreign_eta как fallback.
+        return self.foreign_eta
+
+    @eta.setter
+    def eta(self, value):
+        """Устанавливает явную ETA для машины (переопределяет контейнер)."""
+        self._eta_override = value
 
     def get_status_color(self):
         return STATUS_COLORS.get(self.status, "#3a8c3d")

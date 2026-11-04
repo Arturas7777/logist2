@@ -60,6 +60,7 @@ class Command(BaseCommand):
             "set-container-status",
             "caromoto-client-map",
             "car-upsert",
+            "car-set-eta",
             "transfer-cars",
             "complete-tr",
             "arrived-not-handed",
@@ -434,6 +435,15 @@ class Command(BaseCommand):
                 unload_date=parse_day(options["unload_date"]) if options["unload_date"] else None,
                 eta=parse_day(options["eta"]) if options["eta"] else None,
                 notify=options["notify"],
+                apply=apply,
+            )
+        if command == "car-set-eta":
+            from core.services.bot_ops import car_set_eta
+
+            return car_set_eta(
+                vin=options["vin"],
+                car_id=options["car_id"],
+                eta=parse_day(options["eta"]) if options["eta"] else None,
                 apply=apply,
             )
         if command == "set-ths":

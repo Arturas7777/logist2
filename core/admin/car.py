@@ -488,6 +488,7 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
         "carrier_services_display",
         "company_services_display",
         "title_link_display",
+        "eta_display",
         "source_title",
     )
     # inlines = []  # Services managed through sections below
@@ -497,12 +498,13 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
             {
                 "fields": (
                     ("year", "brand", "vin", "vehicle_type", "weight_kg", "status"),
-                    ("source_title", "is_hazardous"),
+                    # source_title убран из видимых полей, но остаётся в модели/БД
+                    # и в бот-командах (заполняется при создании через caromoto/бот).
                     # Скрытое поле: видимую галочку рисует vin_guard.js рядом
                     # с VIN, когда проверка нашла расхождение.
                     "vin_confirmed",
                     ("client", "warehouse", "unload_site"),
-                    ("unload_date", "transfer_date"),
+                    ("eta_display", "unload_date", "transfer_date"),
                     ("has_title", "title_link_display", "title_notes"),
                     ("is_important", "notes"),
                 )
@@ -531,6 +533,16 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
         ),
         ("Услуги компании", {"fields": ("company_services_display",)}),
         ("Финансы", {"fields": ("services_summary_display",)}),
+        (
+            "Служебные данные",
+            {
+                "classes": ("collapse",),
+                "fields": (
+                    "source_title",
+                    "is_hazardous",
+                ),
+            },
+        ),
     )
     actions = [
         "set_status_floating",
@@ -1020,9 +1032,20 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
 
         from core.copy_button import copy_button_html
 
+        # Иконка молнии для электромобилей (is_hazardous)
+        hazard_html = ""
+        if obj.is_hazardous:
+            hazard_html = format_html(
+                '<span style="display:inline-flex;align-items:center;justify-content:center;'
+                'width:20px;height:20px;background:linear-gradient(135deg,#fbbf24,#f59e0b);'
+                'border-radius:4px;font-size:12px;cursor:help;" '
+                'title="Hazzard / электромобиль">⚡</span>'
+            )
+
         return format_html(
             '<span style="display:inline-flex;align-items:center;gap:6px;" data-copy-line="{copy_line}">'
             '<span class="vin-copy-wrap">{copy_btn} {vin}</span>'
+            "{hazard_html}"
             "{unread_html}"
             "{need_reply_html}"
             "{important_html}"
@@ -1030,6 +1053,7 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
             copy_line=car_copy_line(obj.year, obj.brand, obj.vin),
             copy_btn=copy_button_html(obj.vin, "Копировать VIN"),
             vin=obj.vin,
+            hazard_html=hazard_html,
             unread_html=unread_html,
             need_reply_html=need_reply_html,
             important_html=important_html,
@@ -1201,6 +1225,43 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
         )
 
     title_link_display.short_description = ""
+
+    def eta_display(self, obj):
+        """Отображает ETA машины с индикацией источника (контейнер / явно задана).
+        
+        Для машин в контейнере: показывает Container.eta с иконкой 🚢.
+        Для машин без контейнера с явной ETA: показывает _eta_override с иконкой ⚡.
+        Для совместимости показывает foreign_eta как fallback.
+        """
+        if not obj or not obj.pk:
+            return "—"
+        
+        eta_value = obj.eta
+        if not eta_value:
+            return "—"
+        
+        # Определяем источник ETA
+        if obj._eta_override is not None:
+            # Явно задана для машины (переопределяет контейнер)
+            icon = "⚡"
+            title = "ETA задана вручную для машины"
+        elif obj.container_id:
+            # Наследуется от контейнера
+            icon = "🚢"
+            title = f"ETA наследуется от контейнера {obj.container.number if obj.container else ''}"
+        else:
+            # Foreign container (fallback на foreign_eta)
+            icon = "📦"
+            title = f"ETA чужого контейнера {obj.foreign_container_number or ''}"
+        
+        return format_html(
+            '<span title="{}">{} {}</span>',
+            title,
+            icon,
+            eta_value.strftime("%Y-%m-%d") if eta_value else "—"
+        )
+    
+    eta_display.short_description = "ETA"
 
     def changelist_view(self, request, extra_context=None):
         """Override changelist_view to add total markup sum.

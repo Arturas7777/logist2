@@ -388,6 +388,25 @@
       background: var(--cm-purple-dark, #5a4bd1);
       transform: scale(1.1);
     }
+
+    /* Hazard badge (yellow lightning) */
+    .cm-hazard-badge {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+      color: #78350f;
+      font-size: 20px;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(251, 191, 36, 0.4);
+      z-index: 10;
+      cursor: help;
+    }
   </style>
 {% endblock %}
 
@@ -405,6 +424,9 @@
     {% if original %}
     <div id="cm-car-photo-frame" class="cm-car-photo-frame"
          data-upload-url="{% url 'admin:core_car_upload_model_image' original.pk %}">
+      {% if original.is_hazardous %}
+      <div class="cm-hazard-badge" title="Hazzard / электромобиль">⚡</div>
+      {% endif %}
       <img src="{% if car_header_image %}{{ car_header_image }}{% else %}{% static 'icons/car_unknown.png' %}{% endif %}"
            id="cm-car-photo-el" class="cm-car-photo" loading="lazy" alt="{{ original.brand }}">
       <button type="button" id="cm-car-photo-upload" class="cm-car-photo-upload"

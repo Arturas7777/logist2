@@ -29,7 +29,9 @@ def save_old_container_values(sender, instance, **kwargs):
     if instance.pk:
         try:
             old = (
-                Container.objects.filter(pk=instance.pk).values("status", "unload_date", "planned_unload_date").first()
+                Container.objects.filter(pk=instance.pk)
+                .values("status", "unload_date", "planned_unload_date", "eta")
+                .first()
             )
             if old:
                 # При update_fields подгружаем старые значения тоже, иначе
@@ -42,6 +44,8 @@ def save_old_container_values(sender, instance, **kwargs):
                     "planned_unload_date": old.get("planned_unload_date"),
                     "unload_date": old.get("unload_date"),
                 }
+                # Сохраняем старую ETA для синхронизации машин в post_save
+                instance._pre_save_eta = old.get("eta")
                 old_status = old.get("status")
                 if (
                     update_fields is None
@@ -125,6 +129,44 @@ def send_container_notifications_on_save(sender, instance, created, **kwargs):
                     ContainerNotificationService.send_unload_to_all_clients(instance)
 
         transaction.on_commit(_enqueue_unload)
+
+
+@receiver(post_save, sender=Container)
+def sync_container_eta_to_cars(sender, instance, created, **kwargs):
+    """Синхронизирует ETA контейнера на все машины без явного переопределения.
+    
+    При изменении Container.eta обновляет foreign_eta у всех машин контейнера,
+    у которых _eta_override = NULL (т.е. они наследуют ETA от контейнера).
+    Это избыточная денормализация для ускорения выборки ETA в списках
+    и для совместимости с существующими местами, которые читают foreign_eta.
+    """
+    if not instance.pk:
+        return
+    
+    old_eta = getattr(instance, "_pre_save_eta", None)
+    new_eta = instance.eta
+    
+    # ETA не изменилась — ничего не делаем
+    if old_eta == new_eta and not created:
+        return
+    
+    # Обновляем foreign_eta у машин контейнера, у которых нет явного переопределения.
+    # Это денормализация для совместимости: car.eta (property) уже наследует
+    # от container.eta, но некоторые места могут читать foreign_eta напрямую.
+    from core.models import Car
+    
+    def _sync():
+        updated = Car.objects.filter(
+            container=instance,
+            _eta_override__isnull=True
+        ).update(foreign_eta=new_eta)
+        if updated:
+            logger.info(
+                "Container %s: ETA changed %s -> %s, synced to %d cars",
+                instance.number, old_eta, new_eta, updated
+            )
+    
+    transaction.on_commit(_sync)
 
 
 @receiver(post_save, sender=Container)

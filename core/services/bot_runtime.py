@@ -49,6 +49,7 @@ COMMANDS: dict[str, dict] = {
     "set-container-status": {"roles": (ROLE_HANDOVER, ROLE_NETO, ROLE_PARSER), "mutates": True},
     "caromoto-client-map": {"roles": (ROLE_PARSER,), "mutates": True},
     "car-upsert": {"roles": (ROLE_PARSER,), "mutates": True},
+    "car-set-eta": {"roles": (ROLE_PARSER,), "mutates": True},
     "transfer-cars": {"roles": (ROLE_NETO,), "mutates": True},
     "complete-tr": {"roles": (ROLE_NETO,), "mutates": True},
     "arrived-not-handed": {"roles": READ_ROLES, "mutates": False},
@@ -288,6 +289,15 @@ def dictionary() -> dict:
             "TITLE": "скан тайтла из Car.title_scan",
             "note": "car-docs и download-car-doc доступны и бухгалтеру. Файл копируется в tempdir.",
         },
+        "car_set_eta": (
+            "Устанавливает ETA для машины (--vin или --car-id, --eta YYYY-MM-DD, --apply). "
+            "Для машин в контейнере переопределяет Container.eta. "
+            "Для машин без контейнера (foreign_container_number) — единственный способ задать ETA. "
+            "--eta без значения или car-upsert --eta '' очищает переопределение (наследуется от контейнера). "
+            "Команда записывает _eta_override (db_column='eta') и foreign_eta для совместимости. "
+            "Car.eta (property) наследует от Container.eta если _eta_override = NULL. "
+            "Сигнал sync_container_eta_to_cars обновляет foreign_eta машин при изменении Container.eta."
+        ),
         "eori": "код страны (PL, LT, LV, EE, DE, BY и другие известные) и до 15 букв или цифр. IK185300064 — EORI_FORMAT.",
         "tr_docs": (
             "tr-docs и download-tr-doc читают файлы заявки. "

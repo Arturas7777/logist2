@@ -254,6 +254,79 @@ def car_upsert(
     }
 
 
+def car_set_eta(*, vin: str = "", car_id: int | None = None, eta=None, apply: bool = False) -> dict:
+    """Устанавливает ETA для машины (переопределяет ETA контейнера).
+    
+    Для машин без контейнера (foreign_container_number) это единственный способ
+    задать ETA через бот. Для машин в контейнере переопределяет Container.eta.
+    
+    --eta <date>: устанавливает _eta_override (и foreign_eta для совместимости).
+    --eta "" или без флага: очищает _eta_override (машина наследует от контейнера).
+    """
+    from core.models import Car
+    from core.services.vin import normalize_vin
+
+    car = None
+    if car_id:
+        car = Car.objects.filter(pk=car_id).first()
+    elif vin:
+        clean_vin = normalize_vin(vin or "")
+        if len(clean_vin) != 17:
+            raise BotError("VIN должен быть 17 символов.")
+        car = Car.objects.filter(vin=clean_vin).first()
+    else:
+        raise BotError("Нужен --vin или --car-id.")
+    
+    if car is None:
+        raise BotError(f"Машина не найдена (VIN={vin}, id={car_id}).")
+    
+    before = {
+        "vin": car.vin,
+        "id": car.pk,
+        "_eta_override": car._eta_override.isoformat() if car._eta_override else None,
+        "foreign_eta": car.foreign_eta.isoformat() if car.foreign_eta else None,
+        "effective_eta": car.eta.isoformat() if car.eta else None,
+        "container_id": car.container_id,
+    }
+    
+    after = dict(before)
+    if eta is not None:
+        after["_eta_override"] = eta.isoformat()
+        after["foreign_eta"] = eta.isoformat()
+        after["effective_eta"] = eta.isoformat()
+    else:
+        # Очищаем переопределение — машина будет наследовать от контейнера
+        after["_eta_override"] = None
+        # foreign_eta оставляем как есть (для совместимости с машинами без контейнера)
+        container_eta = car.container.eta if car.container else None
+        after["effective_eta"] = container_eta.isoformat() if container_eta else None
+    
+    if not apply:
+        return {
+            "before": before,
+            "after": after,
+            "result": {"outcome": "would_update", **after},
+            "notifications": [],
+        }
+    
+    car._eta_override = eta
+    if eta is not None:
+        # Также обновляем foreign_eta для совместимости
+        car.foreign_eta = eta
+    car.save(update_fields=["_eta_override", "foreign_eta"])
+    
+    after["_eta_override"] = car._eta_override.isoformat() if car._eta_override else None
+    after["foreign_eta"] = car.foreign_eta.isoformat() if car.foreign_eta else None
+    after["effective_eta"] = car.eta.isoformat() if car.eta else None
+    
+    return {
+        "before": before,
+        "after": after,
+        "result": {"outcome": "updated", **after},
+        "notifications": [],
+    }
+
+
 def transfer_cars(*, vins: list[str], transfer_date, notify: bool = True, apply: bool = False) -> dict:
     from core.models import Car
     from core.services.bot_runtime import mute_client_notifications
