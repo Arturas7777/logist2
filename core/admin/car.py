@@ -343,6 +343,7 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
         "client",
         "colored_status",
         "container_display",
+        "eta_list_display",
         "warehouse",
         "days_display",
         "total_price_display",
@@ -1084,6 +1085,44 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
 
     container_display.short_description = "Контейнер"
     container_display.admin_order_field = "container__number"
+
+    def eta_list_display(self, obj):
+        """Компактное отображение ETA в списке с иконкой источника.
+        
+        Для списка используем более компактный формат: только иконка + дата.
+        Container уже загружен через list_select_related, N+1 нет.
+        """
+        if not obj or not obj.pk:
+            return "—"
+        
+        eta_value = obj.eta
+        if not eta_value:
+            return "—"
+        
+        # Определяем источник ETA для иконки
+        if obj._eta_override is not None:
+            # Явно задана для машины
+            icon = "⚡"
+            title = "ETA задана вручную"
+        elif obj.container_id:
+            # Наследуется от контейнера
+            icon = "🚢"
+            # Container уже загружен через select_related в get_queryset
+            container_num = obj.container.number if obj.container else ""
+            title = f"ETA контейнера {container_num}"
+        else:
+            # Foreign container (fallback)
+            icon = "📦"
+            title = f"ETA чужого контейнера {obj.foreign_container_number or ''}"
+        
+        return format_html(
+            '<span style="white-space:nowrap;" title="{}">{} <span style="color:#64748b;">{}</span></span>',
+            title,
+            icon,
+            eta_value.strftime("%m/%d") if eta_value else "—"
+        )
+    
+    eta_list_display.short_description = "ETA"
 
     def year_display(self, obj):
         return obj.year
