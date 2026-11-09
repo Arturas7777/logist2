@@ -153,6 +153,49 @@ def test_status_dry_run_and_mute(warehouse=None):
     delayed.assert_not_called()
 
 
+def test_unload_cascades_status_and_date_like_manual_save(django_capture_on_commit_callbacks):
+    warehouse = Warehouse.objects.create(name="NETO Klaipeda")
+    container = Container.objects.create(number="BOTCASC0000001", status="IN_PORT", warehouse=warehouse)
+    client = Client.objects.create(name="Cascade Client")
+    staying = Car.objects.create(
+        year=2022,
+        brand="BMW",
+        vin="BOTCASCADE0000001",
+        status="IN_PORT",
+        container=container,
+        warehouse=warehouse,
+        client=client,
+    )
+    transferred = Car.objects.create(
+        year=2020,
+        brand="TESLA",
+        vin="BOTCASCADE0000002",
+        status="TRANSFERRED",
+        transfer_date=datetime.date(2026, 11, 9),
+        container=container,
+        warehouse=warehouse,
+        client=client,
+    )
+    day = datetime.date(2026, 11, 6)
+    with patch("core.tasks.send_unload_notifications_task.delay") as delayed:
+        with django_capture_on_commit_callbacks(execute=True):
+            applied = set_container_status(
+                number=container.number,
+                status="UNLOADED",
+                unload_date=day,
+                notify=True,
+                apply=True,
+            )
+    staying.refresh_from_db()
+    transferred.refresh_from_db()
+    assert applied["result"]["cars_updated"] == 1
+    assert staying.status == "UNLOADED"
+    assert staying.unload_date == day
+    assert transferred.status == "TRANSFERRED"
+    assert transferred.unload_date is None
+    delayed.assert_called_once_with(container.pk)
+
+
 def test_idempotent_apply_replays():
     _principal, token = issue_token("handover-test", "handover")
     Warehouse.objects.create(name="NETO")

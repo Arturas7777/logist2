@@ -108,10 +108,36 @@ def set_container_status(
     if warehouse_changes and warehouse:
         container.warehouse = warehouse
     validate_status_transition(container, before["status"])
+    # pre_save сам ставит UNLOADED, если пришла дата, а статус ещё IN_PORT.
+    # Каскад должен увидеть это так же, как админка (_status_auto_changed).
+    explicit_status_change = before["status"] != status
+    status_auto_changed = bool(unload_date) and status in {"IN_PORT", "FLOATING"} and before["status"] != "UNLOADED"
+    changed = []
+    if explicit_status_change:
+        changed.append("status")
+    if unload_date is not None and before["unload_date"] != unload_date.isoformat():
+        changed.append("unload_date")
+    if warehouse_changes:
+        changed.append("warehouse")
+    cars_updated = None
     ctx = mute_client_notifications() if not notify else _null_context()
-    with ctx:
+    with ctx, _atomic():
         container.save()
+        if changed or status_auto_changed:
+            from core.services.container_lifecycle_service import apply_post_save_cascades
+
+            cascade = apply_post_save_cascades(
+                container,
+                changed_data=changed,
+                is_change=True,
+                status_auto_changed=status_auto_changed,
+            )
+            if cascade:
+                cars_updated = cascade.get("updated")
     container.refresh_from_db()
+    result = {"outcome": "updated", "id": container.pk}
+    if cars_updated is not None:
+        result["cars_updated"] = cars_updated
     return {
         "before": before,
         "after": {
@@ -119,7 +145,7 @@ def set_container_status(
             "unload_date": container.unload_date.isoformat() if container.unload_date else None,
             "warehouse_id": container.warehouse_id,
         },
-        "result": {"outcome": "updated", "id": container.pk},
+        "result": result,
         "notifications": notifications if notify else [],
     }
 
@@ -130,6 +156,12 @@ class _null_context:
 
     def __exit__(self, *args):
         return False
+
+
+def _atomic():
+    from django.db import transaction
+
+    return transaction.atomic()
 
 
 def car_upsert(
