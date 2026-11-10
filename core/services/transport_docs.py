@@ -732,11 +732,126 @@ def _content_clip(page):
     return fitz.Rect(full.x0 + x0 * sx, full.y0 + y0 * sy, full.x0 + x1 * sx, full.y0 + y1 * sy)
 
 
+def _projection_energy(values: list[int]) -> int:
+    """Насколько проекция «полосатая»: у текста по строкам энергия высокая."""
+    energy = 0
+    previous = values[0] if values else 0
+    for value in values[1:]:
+        delta = value - previous
+        energy += delta * delta
+        previous = value
+    return energy
+
+
+def _ink_grid(samples: bytes, width: int, height: int, n: int) -> tuple[bytearray, int, int]:
+    """Грубая маска содержимого. Фон — цвет левого верхнего пикселя."""
+    bg = samples[:3]
+    pixels = width * height
+    if pixels > 1_500_000:
+        step = 4
+    elif pixels > 400_000:
+        step = 2
+    else:
+        step = 1
+    grid_w = (width + step - 1) // step
+    grid_h = (height + step - 1) // step
+    grid = bytearray(grid_w * grid_h)
+    for y in range(grid_h):
+        sample_y = min(height - 1, y * step)
+        row = sample_y * width * n
+        base = y * grid_w
+        for x in range(grid_w):
+            sample_x = min(width - 1, x * step)
+            i = row + sample_x * n
+            if sum(abs(samples[i + c] - bg[c]) for c in range(3)) > 48:
+                grid[base + x] = 1
+    return grid, grid_w, grid_h
+
+
+def _rotate_grid(grid: bytearray, grid_w: int, grid_h: int, turns: int) -> tuple[bytearray, int, int]:
+    """Повернуть маску по часовой на 0/90/180/270."""
+    turns %= 4
+    if turns == 0:
+        return grid, grid_w, grid_h
+    if turns == 2:
+        out = bytearray(grid_w * grid_h)
+        for y in range(grid_h):
+            for x in range(grid_w):
+                if grid[y * grid_w + x]:
+                    out[(grid_h - 1 - y) * grid_w + (grid_w - 1 - x)] = 1
+        return out, grid_w, grid_h
+    out = bytearray(grid_w * grid_h)
+    if turns == 1:
+        for y in range(grid_h):
+            for x in range(grid_w):
+                if grid[y * grid_w + x]:
+                    out[x * grid_h + (grid_h - 1 - y)] = 1
+        return out, grid_h, grid_w
+    for y in range(grid_h):
+        for x in range(grid_w):
+            if grid[y * grid_w + x]:
+                out[(grid_w - 1 - x) * grid_h + y] = 1
+    return out, grid_h, grid_w
+
+
+def _line_scores(grid: bytearray, grid_w: int, grid_h: int) -> tuple[int, float]:
+    """Энергия горизонтальных строк и доля чернил слева (текст обычно слева)."""
+    rows = [0] * grid_h
+    cols = [0] * grid_w
+    for y in range(grid_h):
+        base = y * grid_w
+        ink = 0
+        for x in range(grid_w):
+            if grid[base + x]:
+                ink += 1
+                cols[x] += 1
+        rows[y] = ink
+    total = sum(cols)
+    if total <= 0:
+        return 0, 0.5
+    weighted = sum(value * (grid_w - x) for x, value in enumerate(cols))
+    return _projection_energy(rows), weighted / (total * grid_w)
+
+
+def _clockwise_rotation(samples: bytes, width: int, height: int, n: int) -> int:
+    """На сколько градусов по часовой повернуть, чтобы текст лёг горизонтально.
+
+    Сравниваются четыре положения. Если ни одно не сильнее текущего
+    (сплошная плашка, пустой лист), горизонтальная страница ставится вертикально.
+    """
+    grid, grid_w, grid_h = _ink_grid(samples, width, height, n)
+    if sum(grid) < 8:
+        return 90 if width > height else 0
+    scored: list[tuple[int, float, int]] = []
+    for turns in range(4):
+        turned, turned_w, turned_h = _rotate_grid(grid, grid_w, grid_h, turns)
+        energy, left_ratio = _line_scores(turned, turned_w, turned_h)
+        scored.append((energy, left_ratio, turns))
+    baseline = scored[0][0]
+    best = max(item[0] for item in scored)
+    if best >= max(1, baseline) * 1.35:
+        contenders = [item for item in scored if item[0] >= best * 0.85]
+        contenders.sort(key=lambda item: (item[1], -item[2]))
+        return contenders[-1][2] * 90
+    return 90 if width > height else 0
+
+
+def _rotation_to_upright(page) -> int:
+    import fitz
+
+    pix = page.get_pixmap(alpha=False, colorspace=fitz.csRGB)
+    if pix.width < 8 or pix.height < 8:
+        return 90 if pix.width > pix.height else 0
+    return _clockwise_rotation(pix.samples, pix.width, pix.height, pix.n)
+
+
 def normalize_passport_to_pdf(data: bytes, filename: str = "") -> bytes:
     """Паспорт → PDF.
 
     Каждая страница обрезается по содержимому (белые поля и фон стола того же
-    цвета, что углы). Главная страница после обрезки ставится вертикально.
+    цвета, что углы). Главная страница доворачивается по направлению текста,
+    даже если лист уже вертикальный, а содержимое лежит боком. Если направления
+    не видно, горизонтальный лист ставится вертикально.
     Картинка сначала выравнивается по EXIF.
     """
     import fitz
@@ -757,8 +872,10 @@ def normalize_passport_to_pdf(data: bytes, filename: str = "") -> bytes:
                 clip = src[index].rect
             dest = out.new_page(width=clip.width, height=clip.height)
             dest.show_pdf_page(dest.rect, src, index, clip=clip)
-            if index == 0 and dest.rect.width > dest.rect.height:
-                dest.set_rotation(90)
+            if index == 0:
+                rotation = _rotation_to_upright(dest)
+                if rotation:
+                    dest.set_rotation(rotation)
         return out.tobytes()
     finally:
         src.close()

@@ -1292,6 +1292,81 @@ def test_normalize_passport_crops_margin_and_stands_upright():
         out.close()
 
 
+def _sideways_text_png() -> bytes:
+    """Вертикальный лист, на котором строки текста лежат боком."""
+    from PIL import Image
+
+    upright = Image.new("RGB", (400, 240), (255, 255, 255))
+    for x in range(10, 28):
+        for y in range(10, 28):
+            upright.putpixel((x, y), (0, 0, 0))
+    line_y = 48
+    for length in (180, 140, 200, 90, 160, 120, 190, 100, 170, 130):
+        for y in range(line_y, line_y + 5):
+            for x in range(36, 36 + length):
+                upright.putpixel((x, y), (10, 10, 10))
+        line_y += 16
+    # Против часовой: страница становится вертикальной, строки — вертикальными.
+    turned = upright.transpose(Image.Transpose.ROTATE_90)
+    buf = io.BytesIO()
+    turned.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _dark_fraction(pix, x0: int, y0: int, x1: int, y1: int) -> float:
+    dark = 0
+    total = 0
+    n = pix.n
+    for y in range(y0, y1):
+        row = y * pix.width * n
+        for x in range(x0, x1):
+            i = row + x * n
+            total += 1
+            if pix.samples[i] < 80:
+                dark += 1
+    return dark / total if total else 0.0
+
+
+def test_sideways_content_on_portrait_page_is_turned_upright():
+    """Текст боком на уже вертикальной странице доворачивается до читаемого вида."""
+    import fitz
+
+    pdf_bytes = docs.normalize_passport_to_pdf(_sideways_text_png(), "passport.png")
+    out = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        page = out[0]
+        assert page.rotation == 90
+        pix = page.get_pixmap(alpha=False, colorspace=fitz.csRGB)
+        w, h = pix.width, pix.height
+        # Метка была в левом верхнем углу исходника. Без доворота она оказалась бы снизу.
+        top_left = _dark_fraction(pix, 0, 0, max(1, w // 6), max(1, h // 6))
+        bottom_left = _dark_fraction(pix, 0, 5 * h // 6, max(1, w // 6), h)
+        assert top_left > 0.01
+        assert top_left > bottom_left
+        rows = [0] * h
+        cols = [0] * w
+        n = pix.n
+        for y in range(h):
+            row = y * w * n
+            for x in range(w):
+                if pix.samples[row + x * n] < 80:
+                    rows[y] += 1
+                    cols[x] += 1
+
+        def energy(values: list[int]) -> int:
+            total = 0
+            previous = values[0]
+            for value in values[1:]:
+                delta = value - previous
+                total += delta * delta
+                previous = value
+            return total
+
+        assert energy(rows) > energy(cols) * 1.5
+    finally:
+        out.close()
+
+
 def test_passport_main_page_becomes_portrait_in_package(transport_request, car, settings, tmp_path):
     """Горизонтальная главная страница паспорта в пакете становится вертикальной."""
     import fitz
