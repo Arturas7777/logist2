@@ -1250,6 +1250,99 @@ def _tiny_pdf(text: str = "doc") -> bytes:
     return data
 
 
+def _landscape_jpeg() -> bytes:
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (320, 180), (200, 200, 200)).save(buf, format="JPEG")
+    return buf.getvalue()
+
+
+def _two_page_landscape_pdf() -> bytes:
+    import fitz
+
+    doc = fitz.open()
+    doc.new_page(width=420, height=200)
+    doc.new_page(width=420, height=200)
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+def test_normalize_passport_crops_margin_and_stands_upright():
+    """Белые поля срезаются, горизонтальная главная страница становится вертикальной PDF."""
+    import fitz
+    from PIL import Image
+
+    img = Image.new("RGB", (400, 240), (255, 255, 255))
+    for x in range(80, 320):
+        for y in range(40, 200):
+            img.putpixel((x, y), (20, 20, 20))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+
+    pdf_bytes = docs.normalize_passport_to_pdf(buf.getvalue(), "passport.jpg")
+    out = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        page = out[0]
+        assert page.rect.height > page.rect.width
+        # Обрезка заметно меньше исходного листа 400×240.
+        assert page.rect.width * page.rect.height < 400 * 240 * 0.75
+    finally:
+        out.close()
+
+
+def test_passport_main_page_becomes_portrait_in_package(transport_request, car, settings, tmp_path):
+    """Горизонтальная главная страница паспорта в пакете становится вертикальной."""
+    import fitz
+
+    settings.MEDIA_ROOT = str(tmp_path)
+    TransportRequestDocument.objects.create(
+        request=transport_request,
+        car=car,
+        doc_type="PASSPORT",
+        file=SimpleUploadedFile("passport.jpg", _landscape_jpeg(), content_type="image/jpeg"),
+    )
+    TransportRequestDocument.objects.create(
+        request=transport_request,
+        car=car,
+        doc_type="INVOICE",
+        file=SimpleUploadedFile("invoice.pdf", _two_page_landscape_pdf(), content_type="application/pdf"),
+        is_generated=True,
+    )
+
+    pdf_bytes = docs.build_car_package_pdf(transport_request, car)
+    merged = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        passport = merged[0]
+        assert passport.rect.height > passport.rect.width
+        # Инвойс не паспорт: обе его страницы остаются горизонтальными.
+        assert merged[1].rect.width > merged[1].rect.height
+        assert merged[2].rect.width > merged[2].rect.height
+    finally:
+        merged.close()
+
+
+def test_passport_pdf_rotates_only_first_page(transport_request, car, settings, tmp_path):
+    import fitz
+
+    settings.MEDIA_ROOT = str(tmp_path)
+    TransportRequestDocument.objects.create(
+        request=transport_request,
+        car=car,
+        doc_type="PASSPORT",
+        file=SimpleUploadedFile("passport.pdf", _two_page_landscape_pdf(), content_type="application/pdf"),
+    )
+
+    pdf_bytes = docs.build_car_package_pdf(transport_request, car)
+    merged = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        assert merged[0].rect.height > merged[0].rect.width
+        assert merged[1].rect.width > merged[1].rect.height
+    finally:
+        merged.close()
+
+
 def test_build_car_package_includes_title_and_skips_signature(transport_request, car, settings, tmp_path):
     settings.MEDIA_ROOT = str(tmp_path)
     TransportRequestDocument.objects.create(

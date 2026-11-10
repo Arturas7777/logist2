@@ -572,6 +572,29 @@ _ARCHIVE_SKIP_DOC_TYPES = frozenset({"SIGNATURE"})
 _IMAGE_EXTS = frozenset({"jpg", "jpeg", "png", "gif", "webp"})
 
 
+def store_normalized_passport(doc) -> str:
+    """Перезаписать файл паспорта нормализованным PDF.
+
+    Возвращает ``updated``. Если файла нет или он не читается — бросает
+    ``PackageDataError``.
+    """
+    from django.core.files.base import ContentFile
+
+    data = _read_storage_file(doc.file)
+    if not data:
+        raise PackageDataError(f"Файл паспорта недоступен: {doc.filename or doc.pk}")
+    pdf = normalize_passport_to_pdf(data, doc.filename)
+    stem = os.path.splitext(doc.filename or "passport")[0] or "passport"
+    old_name = doc.file.name
+    doc.file.save(f"{stem}.pdf", ContentFile(pdf), save=True)
+    if old_name and old_name != doc.file.name:
+        try:
+            doc.file.storage.delete(old_name)
+        except Exception:
+            logger.warning("passport normalize: old file %s not deleted", old_name, exc_info=True)
+    return "updated"
+
+
 def package_pdf_filename(car) -> str:
     """Имя единого PDF-пакета на авто: ``PACKAGE MALIBU 1248.pdf``."""
     model_word = car.brand.split()[-1].upper() if car.brand else "CAR"
@@ -593,10 +616,166 @@ def _read_storage_file(field_file) -> bytes | None:
         field_file.close()
 
 
-def _append_file_bytes(out_doc, data: bytes, filename: str) -> None:
-    """Добавить PDF или изображение в объединённый документ (PyMuPDF)."""
+def _apply_exif_orientation(data: bytes) -> bytes:
+    """Повернуть изображение по EXIF, если телефон сохранил его боком."""
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        return data
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.load()
+    except Exception:
+        return data
+    upright = ImageOps.exif_transpose(img)
+    if upright is img:
+        return data
+    buf = io.BytesIO()
+    fmt = (img.format or "JPEG").upper()
+    if fmt == "JPG":
+        fmt = "JPEG"
+    if fmt == "JPEG" and upright.mode not in ("RGB", "L"):
+        upright = upright.convert("RGB")
+    if fmt == "JPEG":
+        upright.save(buf, format=fmt, quality=90)
+    else:
+        upright.save(buf, format=fmt)
+    return buf.getvalue()
+
+
+def _image_bytes_to_pdf(data: bytes, filename: str) -> bytes:
+    """Картинка → одностраничный PDF. EXIF уже учтён вызывающим кодом."""
     import fitz
 
+    ext = os.path.splitext(filename or "")[1].lstrip(".").lower()
+    filetype = "jpeg" if ext in {"jpg", "jpeg"} else ext
+    try:
+        img = fitz.open(stream=data, filetype=filetype or None)
+    except Exception:
+        img = fitz.open(stream=data)
+    try:
+        return img.convert_to_pdf()
+    finally:
+        img.close()
+
+
+def _corners_are_margin(samples: bytes, width: int, height: int, n: int) -> bool:
+    """Углы одного цвета — вокруг документа есть поле, его можно срезать."""
+    if width < 4 or height < 4 or n < 3:
+        return False
+
+    def px(x: int, y: int) -> bytes:
+        i = (y * width + x) * n
+        return samples[i : i + 3]
+
+    corners = (px(0, 0), px(width - 1, 0), px(0, height - 1), px(width - 1, height - 1))
+    base = corners[0]
+    for other in corners[1:]:
+        if sum(abs(base[i] - other[i]) for i in range(3)) > 36:
+            return False
+    return True
+
+
+def _ink_bbox(samples: bytes, width: int, height: int, n: int) -> tuple[int, int, int, int] | None:
+    """Рамка пикселей, которые не совпадают с цветом полей."""
+
+    def px(x: int, y: int) -> bytes:
+        i = (y * width + x) * n
+        return samples[i : i + 3]
+
+    bg = px(0, 0)
+    step = 2 if width * height > 1_500_000 else 1
+    minx, miny, maxx, maxy = width, height, 0, 0
+    found = False
+    for y in range(0, height, step):
+        row = y * width * n
+        for x in range(0, width, step):
+            i = row + x * n
+            if sum(abs(samples[i + c] - bg[c]) for c in range(3)) <= 48:
+                continue
+            found = True
+            if x < minx:
+                minx = x
+            if y < miny:
+                miny = y
+            if x > maxx:
+                maxx = x
+            if y > maxy:
+                maxy = y
+    if not found:
+        return None
+    return minx, miny, min(width, maxx + step), min(height, maxy + step)
+
+
+def _content_clip(page):
+    """Прямоугольник содержимого страницы. Поля того же цвета, что углы, срезаются."""
+    import fitz
+
+    full = page.rect
+    pix = page.get_pixmap(alpha=False, colorspace=fitz.csRGB)
+    if not _corners_are_margin(pix.samples, pix.width, pix.height, pix.n):
+        return full
+    bbox = _ink_bbox(pix.samples, pix.width, pix.height, pix.n)
+    if bbox is None:
+        return full
+    x0, y0, x1, y1 = bbox
+    pad = max(2, int(0.015 * max(pix.width, pix.height)))
+    x0 = max(0, x0 - pad)
+    y0 = max(0, y0 - pad)
+    x1 = min(pix.width, x1 + pad)
+    y1 = min(pix.height, y1 + pad)
+    area = (x1 - x0) * (y1 - y0)
+    if area < 0.05 * pix.width * pix.height or area > 0.97 * pix.width * pix.height:
+        return full
+    sx = full.width / pix.width
+    sy = full.height / pix.height
+    return fitz.Rect(full.x0 + x0 * sx, full.y0 + y0 * sy, full.x0 + x1 * sx, full.y0 + y1 * sy)
+
+
+def normalize_passport_to_pdf(data: bytes, filename: str = "") -> bytes:
+    """Паспорт → PDF.
+
+    Каждая страница обрезается по содержимому (белые поля и фон стола того же
+    цвета, что углы). Главная страница после обрезки ставится вертикально.
+    Картинка сначала выравнивается по EXIF.
+    """
+    import fitz
+
+    ext = os.path.splitext(filename or "")[1].lstrip(".").lower()
+    is_pdf = ext == "pdf" or data[:4] == b"%PDF"
+    if not is_pdf:
+        data = _apply_exif_orientation(data)
+        data = _image_bytes_to_pdf(data, filename or "passport.jpg")
+    src = fitz.open(stream=data, filetype="pdf")
+    out = fitz.open()
+    try:
+        if src.page_count < 1:
+            raise PackageDataError("В паспорте нет страниц.")
+        for index in range(src.page_count):
+            clip = _content_clip(src[index])
+            if clip.width < 1 or clip.height < 1:
+                clip = src[index].rect
+            dest = out.new_page(width=clip.width, height=clip.height)
+            dest.show_pdf_page(dest.rect, src, index, clip=clip)
+            if index == 0 and dest.rect.width > dest.rect.height:
+                dest.set_rotation(90)
+        return out.tobytes()
+    finally:
+        src.close()
+        out.close()
+
+
+def _append_file_bytes(out_doc, data: bytes, filename: str, *, portrait_first_page: bool = False) -> None:
+    """Добавить PDF или изображение в объединённый документ (PyMuPDF).
+
+    ``portrait_first_page`` — паспорт: обрезать поля и поставить главную
+    страницу вертикально, результат вставляется уже как PDF.
+    """
+    import fitz
+
+    if portrait_first_page:
+        data = normalize_passport_to_pdf(data, filename)
+        filename = "passport.pdf"
     ext = os.path.splitext(filename or "")[1].lstrip(".").lower()
     if ext == "pdf" or data[:4] == b"%PDF":
         src = fitz.open(stream=data, filetype="pdf")
@@ -606,16 +785,7 @@ def _append_file_bytes(out_doc, data: bytes, filename: str) -> None:
             src.close()
         return
     if ext in _IMAGE_EXTS or ext == "jpg":
-        filetype = "jpeg" if ext in {"jpg", "jpeg"} else ext
-        try:
-            img = fitz.open(stream=data, filetype=filetype)
-        except Exception:
-            # fallback: пусть PyMuPDF сам угадает формат
-            img = fitz.open(stream=data)
-        try:
-            pdf_bytes = img.convert_to_pdf()
-        finally:
-            img.close()
+        pdf_bytes = _image_bytes_to_pdf(data, filename)
         src = fitz.open(stream=pdf_bytes, filetype="pdf")
         try:
             out_doc.insert_pdf(src)
@@ -651,7 +821,12 @@ def build_car_package_pdf(transport_request, car, only_types=None) -> bytes | No
             if not data:
                 continue
             try:
-                _append_file_bytes(out, data, doc.filename)
+                _append_file_bytes(
+                    out,
+                    data,
+                    doc.filename,
+                    portrait_first_page=doc.doc_type == "PASSPORT",
+                )
             except Exception as exc:
                 logger.warning(
                     "archive: skip doc id=%s (%s): %s",

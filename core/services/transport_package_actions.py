@@ -294,7 +294,18 @@ def save_upload_doc(transport_request, car, doc_type, upload, user, *, replace_e
         _delete_docs_of_type(transport_request, car, doc_type)
 
     file_to_save = upload
-    if doc_type == "SIGNATURE" and extension in {"jpg", "jpeg", "png"}:
+    if doc_type == "PASSPORT":
+        raw = upload.read()
+        upload.seek(0)
+        try:
+            normalized = docs_service.normalize_passport_to_pdf(raw, upload.name)
+        except Exception:
+            logger.warning("passport normalize failed for %s", upload.name, exc_info=True)
+            normalized = None
+        if normalized:
+            stem = upload.name.rsplit(".", 1)[0] if "." in upload.name else "passport"
+            file_to_save = ContentFile(normalized, name=f"{stem}.pdf")
+    elif doc_type == "SIGNATURE" and extension in {"jpg", "jpeg", "png"}:
         from core.services.signature_normalizer import normalize_signature_image
 
         normalized = normalize_signature_image(upload.read())
