@@ -813,11 +813,32 @@ def _line_scores(grid: bytearray, grid_w: int, grid_h: int) -> tuple[int, float]
     return _projection_energy(rows), weighted / (total * grid_w)
 
 
+def _has_text_lines(samples: bytes, width: int, height: int) -> bool:
+    """Есть ли на странице строка текста, а не пустое поле или сплошная плашка."""
+    step = 2
+    limit = max(12, ((width + step - 1) // step) * 0.08)
+    best = 0
+    for y in range(0, height, step):
+        row = y * width * 3
+        previous = None
+        changes = 0
+        for x in range(0, width, step):
+            i = row + x * 3
+            is_dark = (samples[i] + samples[i + 1] + samples[i + 2]) < 420
+            if previous is not None and is_dark != previous:
+                changes += 1
+            previous = is_dark
+        if changes > best:
+            best = changes
+    return best >= limit
+
+
 def _clockwise_rotation(samples: bytes, width: int, height: int, n: int) -> int:
     """На сколько градусов по часовой повернуть, чтобы текст лёг горизонтально.
 
-    Сравниваются четыре положения. Если ни одно не сильнее текущего
-    (сплошная плашка, пустой лист), горизонтальная страница ставится вертикально.
+    Сравниваются четыре положения. Если ни одно не сильнее текущего,
+    страница с текстом остаётся как есть (открытый паспорт может быть
+    горизонтальным). Пустой горизонтальный лист ставится вертикально.
     """
     grid, grid_w, grid_h = _ink_grid(samples, width, height, n)
     if sum(grid) < 8:
@@ -829,11 +850,15 @@ def _clockwise_rotation(samples: bytes, width: int, height: int, n: int) -> int:
         scored.append((energy, left_ratio, turns))
     baseline = scored[0][0]
     best = max(item[0] for item in scored)
-    if best >= max(1, baseline) * 1.35:
+    # Порог высокий: орнамент паспорта даёт слабый перевес, его не крутим.
+    # Явный боковой текст (строки против полос) сильнее в десятки раз.
+    if best >= max(1, baseline) * 6:
         contenders = [item for item in scored if item[0] >= best * 0.85]
         contenders.sort(key=lambda item: (item[1], -item[2]))
         return contenders[-1][2] * 90
-    return 90 if width > height else 0
+    if width > height and not _has_text_lines(samples, width, height):
+        return 90
+    return 0
 
 
 def _rotation_to_upright(page) -> int:
@@ -870,12 +895,21 @@ def normalize_passport_to_pdf(data: bytes, filename: str = "") -> bytes:
             clip = _content_clip(src[index])
             if clip.width < 1 or clip.height < 1:
                 clip = src[index].rect
-            dest = out.new_page(width=clip.width, height=clip.height)
-            dest.show_pdf_page(dest.rect, src, index, clip=clip)
-            if index == 0:
-                rotation = _rotation_to_upright(dest)
-                if rotation:
-                    dest.set_rotation(rotation)
+            holder = fitz.open()
+            try:
+                placed = holder.new_page(width=clip.width, height=clip.height)
+                placed.show_pdf_page(placed.rect, src, index, clip=clip)
+                if index == 0:
+                    rotation = _rotation_to_upright(placed)
+                    if rotation:
+                        placed.set_rotation(rotation)
+                # get_pixmap учитывает /Rotate, show_pdf_page — нет.
+                # Картинку вшиваем как есть, чтобы предпросмотр не зависел от флага.
+                pix = placed.get_pixmap(alpha=False, colorspace=fitz.csRGB)
+                dest = out.new_page(width=pix.width, height=pix.height)
+                dest.insert_image(dest.rect, pixmap=pix)
+            finally:
+                holder.close()
         return out.tobytes()
     finally:
         src.close()

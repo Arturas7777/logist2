@@ -1313,20 +1313,6 @@ def _sideways_text_png() -> bytes:
     return buf.getvalue()
 
 
-def _dark_fraction(pix, x0: int, y0: int, x1: int, y1: int) -> float:
-    dark = 0
-    total = 0
-    n = pix.n
-    for y in range(y0, y1):
-        row = y * pix.width * n
-        for x in range(x0, x1):
-            i = row + x * n
-            total += 1
-            if pix.samples[i] < 80:
-                dark += 1
-    return dark / total if total else 0.0
-
-
 def test_sideways_content_on_portrait_page_is_turned_upright():
     """Текст боком на уже вертикальной странице доворачивается до читаемого вида."""
     import fitz
@@ -1335,14 +1321,10 @@ def test_sideways_content_on_portrait_page_is_turned_upright():
     out = fitz.open(stream=pdf_bytes, filetype="pdf")
     try:
         page = out[0]
-        assert page.rotation == 90
+        assert page.rotation == 0
+        assert page.rect.width > page.rect.height
         pix = page.get_pixmap(alpha=False, colorspace=fitz.csRGB)
         w, h = pix.width, pix.height
-        # Метка была в левом верхнем углу исходника. Без доворота она оказалась бы снизу.
-        top_left = _dark_fraction(pix, 0, 0, max(1, w // 6), max(1, h // 6))
-        bottom_left = _dark_fraction(pix, 0, 5 * h // 6, max(1, w // 6), h)
-        assert top_left > 0.01
-        assert top_left > bottom_left
         rows = [0] * h
         cols = [0] * w
         n = pix.n
@@ -1363,6 +1345,34 @@ def test_sideways_content_on_portrait_page_is_turned_upright():
             return total
 
         assert energy(rows) > energy(cols) * 1.5
+    finally:
+        out.close()
+
+
+def test_landscape_page_with_text_is_not_forced_upright():
+    """Открытый паспорт с горизонтальным текстом не ставят на бок только из-за ширины листа."""
+    import fitz
+    from PIL import Image
+
+    img = Image.new("RGB", (420, 240), (255, 255, 255))
+    y = 40
+    for length in (180, 140, 200, 120, 160, 100, 190, 130):
+        x = 30
+        while x < 30 + length:
+            for dx in range(6):
+                for dy in range(3):
+                    img.putpixel((min(x + dx, 410), y + dy), (10, 10, 10))
+            x += 10
+        y += 16
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+
+    pdf_bytes = docs.normalize_passport_to_pdf(buf.getvalue(), "passport.png")
+    out = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        page = out[0]
+        assert page.rotation == 0
+        assert page.rect.width > page.rect.height
     finally:
         out.close()
 
