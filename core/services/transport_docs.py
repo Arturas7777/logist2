@@ -677,7 +677,7 @@ def _corners_are_margin(samples: bytes, width: int, height: int, n: int) -> bool
 
 
 def _ink_bbox(samples: bytes, width: int, height: int, n: int) -> tuple[int, int, int, int] | None:
-    """Рамка пикселей, которые не совпадают с цветом полей."""
+    """Рамка содержимого. Редкая рябь по пустому полю рамку не растягивает."""
 
     def px(x: int, y: int) -> bytes:
         i = (y * width + x) * n
@@ -685,26 +685,32 @@ def _ink_bbox(samples: bytes, width: int, height: int, n: int) -> tuple[int, int
 
     bg = px(0, 0)
     step = 2 if width * height > 1_500_000 else 1
-    minx, miny, maxx, maxy = width, height, 0, 0
-    found = False
+    row_count = (height + step - 1) // step
+    col_count = (width + step - 1) // step
+    row_hits = [0] * row_count
+    col_hits = [0] * col_count
     for y in range(0, height, step):
         row = y * width * n
+        gy = y // step
         for x in range(0, width, step):
             i = row + x * n
             if sum(abs(samples[i + c] - bg[c]) for c in range(3)) <= 48:
                 continue
-            found = True
-            if x < minx:
-                minx = x
-            if y < miny:
-                miny = y
-            if x > maxx:
-                maxx = x
-            if y > maxy:
-                maxy = y
-    if not found:
+            row_hits[gy] += 1
+            col_hits[x // step] += 1
+    # Редкая рябь не считается документом, иначе белое поле остаётся в рамке.
+    # По вертикали порог выше: пустая полоса под сканом темнее угла, но почти пустая.
+    min_row = max(3, int(0.08 * col_count))
+    min_col = max(3, int(0.02 * row_count))
+    content_rows = [index for index, hits in enumerate(row_hits) if hits >= min_row]
+    content_cols = [index for index, hits in enumerate(col_hits) if hits >= min_col]
+    if not content_rows or not content_cols:
         return None
-    return minx, miny, min(width, maxx + step), min(height, maxy + step)
+    minx = content_cols[0] * step
+    miny = content_rows[0] * step
+    maxx = min(width, (content_cols[-1] + 1) * step)
+    maxy = min(height, (content_rows[-1] + 1) * step)
+    return minx, miny, maxx, maxy
 
 
 def _content_clip(page):
@@ -833,6 +839,63 @@ def _has_text_lines(samples: bytes, width: int, height: int) -> bool:
     return best >= limit
 
 
+def _text_band_rotation(samples: bytes, width: int, height: int, n: int) -> int:
+    """Поворот, если плотная строка текста лежит сбоку, а не внизу листа.
+
+    Орнамент паспорта даёт ложный перевес по массе чернил, поэтому сюда
+    попадаем только когда обычное сравнение строк ничего не решило.
+    Чужой поворот берём, лишь если его строка заметно плотнее и садится
+    в нижнюю часть листа. Уже прямые страницы из-за этого не крутятся.
+    """
+    step = max(1, max(width, height) // 180)
+    grid_w = (width + step - 1) // step
+    grid_h = (height + step - 1) // step
+    dark = bytearray(grid_w * grid_h)
+    for gy in range(grid_h):
+        sy = min(height - 1, gy * step)
+        row = sy * width * n
+        base = gy * grid_w
+        for gx in range(grid_w):
+            sx = min(width - 1, gx * step)
+            i = row + sx * n
+            if (samples[i] + samples[i + 1] + samples[i + 2]) < 420:
+                dark[base + gx] = 1
+
+    def measure(grid: bytearray, gw: int, gh: int) -> tuple[int, float]:
+        total = 0
+        best = 0
+        best_y = 0
+        for y in range(gh):
+            base = y * gw
+            previous = 0
+            changes = 0
+            for x in range(gw):
+                bit = grid[base + x]
+                if x and bit != previous:
+                    changes += 1
+                previous = bit
+            total += changes * changes
+            if changes > best:
+                best = changes
+                best_y = y
+        return total, (best_y / gh if gh else 0.0)
+
+    baseline, baseline_at = measure(dark, grid_w, grid_h)
+    if baseline_at >= 0.55:
+        return 0
+    chosen: tuple[float, int] | None = None
+    for turns in (1, 2, 3):
+        turned, turned_w, turned_h = _rotate_grid(dark, grid_w, grid_h, turns)
+        energy, at = measure(turned, turned_w, turned_h)
+        if energy < max(1, baseline) * 1.2 or at <= 0.7:
+            continue
+        if chosen is None or at > chosen[0]:
+            chosen = (at, turns)
+    if chosen is None:
+        return 0
+    return chosen[1] * 90
+
+
 def _clockwise_rotation(samples: bytes, width: int, height: int, n: int) -> int:
     """На сколько градусов по часовой повернуть, чтобы текст лёг горизонтально.
 
@@ -856,6 +919,9 @@ def _clockwise_rotation(samples: bytes, width: int, height: int, n: int) -> int:
         contenders = [item for item in scored if item[0] >= best * 0.85]
         contenders.sort(key=lambda item: (item[1], -item[2]))
         return contenders[-1][2] * 90
+    band = _text_band_rotation(samples, width, height, n)
+    if band:
+        return band
     if width > height and not _has_text_lines(samples, width, height):
         return 90
     return 0
@@ -874,9 +940,10 @@ def normalize_passport_to_pdf(data: bytes, filename: str = "") -> bytes:
     """Паспорт → PDF.
 
     Каждая страница обрезается по содержимому (белые поля и фон стола того же
-    цвета, что углы). Главная страница доворачивается по направлению текста,
-    даже если лист уже вертикальный, а содержимое лежит боком. Если направления
-    не видно, горизонтальный лист ставится вертикально.
+    цвета, что углы). Редкие точки на пустом поле рамку не растягивают, поэтому
+    большое белое поле под сканом срезается. Главная страница доворачивается по
+    направлению текста, даже если лист уже вертикальный, а содержимое лежит
+    боком. Если направления не видно, горизонтальный лист ставится вертикально.
     Картинка сначала выравнивается по EXIF.
     """
     import fitz

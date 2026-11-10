@@ -1349,6 +1349,30 @@ def test_sideways_content_on_portrait_page_is_turned_upright():
         out.close()
 
 
+def test_blank_band_under_scan_is_cropped():
+    """Большое пустое поле под сканом срезается, даже если редкий шум дотягивает рамку."""
+    import fitz
+    from PIL import Image
+
+    img = Image.new("RGB", (200, 400), (250, 250, 250))
+    for y in range(16, 150):
+        for x in range(20, 180):
+            img.putpixel((x, y), (20, 20, 20))
+    # Пара тёмных точек в пустом поле раньше растягивали рамку почти на весь лист.
+    img.putpixel((4, 360), (20, 20, 20))
+    img.putpixel((190, 380), (20, 20, 20))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+
+    pdf_bytes = docs.normalize_passport_to_pdf(buf.getvalue(), "passport.png")
+    out = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        page = out[0]
+        assert page.rect.width * page.rect.height < 200 * 400 * 0.55
+    finally:
+        out.close()
+
+
 def test_landscape_page_with_text_is_not_forced_upright():
     """Открытый паспорт с горизонтальным текстом не ставят на бок только из-за ширины листа."""
     import fitz
@@ -1461,8 +1485,9 @@ def test_build_car_package_includes_title_and_skips_signature(transport_request,
     merged = fitz.open(stream=pdf_bytes, filetype="pdf")
     try:
         assert merged.page_count == 3  # passport + invoice + title, без подписи
+        # Паспорт вшит картинкой: текстового слоя у него больше нет.
+        assert merged[0].get_text().strip() == ""
         texts = " ".join(page.get_text() for page in merged)
-        assert "passport" in texts
         assert "invoice" in texts
         assert "title" in texts
     finally:
