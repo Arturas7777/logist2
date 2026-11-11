@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from datetime import timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
+from django.contrib.auth import get_user_model
+from django.test import Client as DjangoClient
+from django.urls import reverse
 from django.utils import timezone
 
 from core.models import Car, CarService, Client, ClientStorageTerms, Company, Container, Warehouse, WarehouseService
@@ -139,3 +143,65 @@ class TestTermsChangeReprices:
         car.refresh_from_db()
         assert car.total_price == Decimal("15")
         assert _storage_service(car).markup_amount == Decimal("0")
+
+
+def _admin_post_data(response):
+    """Значения формы клиента и инлайнов так, как их отдала страница."""
+    data = {}
+    form = response.context["adminform"].form
+    for name in form.fields:
+        value = form[name].value()
+        data[name] = "" if value is None else value
+    for inline in response.context["inline_admin_formsets"]:
+        formset = inline.formset
+        for name in formset.management_form.fields:
+            value = formset.management_form[name].value()
+            data[formset.management_form.add_prefix(name)] = "" if value is None else value
+        for inline_form in formset.forms:
+            for name in inline_form.fields:
+                value = inline_form[name].value()
+                data[inline_form.add_prefix(name)] = "" if value is None else value
+    return data
+
+
+@pytest.mark.django_db
+def test_admin_saves_new_client_storage_terms(warehouse):
+    """Новая строка с индексом 0 сохраняется. Шаблон __prefix__ — нет."""
+    user = get_user_model().objects.create_user(
+        username="storage-terms-staff", password="secret123", is_staff=True, is_superuser=True
+    )
+    http = DjangoClient()
+    http.force_login(user)
+    customer = Client.objects.create(name="Terms Admin")
+    url = reverse("admin:core_client_change", args=[customer.pk])
+
+    page = http.get(url)
+    assert page.status_code == 200
+    html = page.content.decode()
+    assert 'id="storage_terms-empty"' in html
+    assert 'name="storage_terms-__prefix__-warehouse"' in html
+    css = Path("core/static/css/dashboard_admin.css").read_text(encoding="utf-8")
+    assert ".cm-card-inline.module tbody tr.form-row.empty-form" in css
+
+    ignored = _admin_post_data(page)
+    ignored["storage_terms-__prefix__-warehouse"] = str(warehouse.pk)
+    ignored["storage_terms-__prefix__-free_days"] = "5"
+    ignored["storage_terms-__prefix__-daily_rate"] = "8.50"
+    ignored["_save"] = "Save"
+    http.post(url, ignored)
+    assert not customer.storage_terms.exists()
+
+    saved = _admin_post_data(page)
+    saved["storage_terms-TOTAL_FORMS"] = "1"
+    saved["storage_terms-0-warehouse"] = str(warehouse.pk)
+    saved["storage_terms-0-free_days"] = "5"
+    saved["storage_terms-0-daily_rate"] = "8.50"
+    saved["storage_terms-0-id"] = ""
+    saved["storage_terms-0-client"] = str(customer.pk)
+    saved["_save"] = "Save"
+    response = http.post(url, saved)
+    assert response.status_code == 302, response.content.decode()[:2000]
+    terms = customer.storage_terms.get()
+    assert terms.warehouse_id == warehouse.pk
+    assert terms.free_days == 5
+    assert terms.daily_rate == Decimal("8.50")

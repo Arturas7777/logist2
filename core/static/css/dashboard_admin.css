@@ -4354,6 +4354,13 @@ body.popup .cm-form-grid .submit-row {
     width: 100% !important;
 }
 
+/* Шаблон Django (tr.empty-form, id «…-empty») нельзя показывать карточкой.
+   display:flex !important выше перебивает штатное .empty-form { display: none },
+   и пользователь заполняет поля с именем __prefix__. Форма их не сохраняет. */
+.cm-card-inline.module tbody tr.form-row.empty-form {
+    display: none !important;
+}
+
 /* Ячейка = колонка (лейбл сверху + поле снизу) */
 .cm-card-inline.module tbody tr td {
     display: flex !important;
