@@ -1142,6 +1142,14 @@ class TransportRequest(models.Model):
 
         return Warehouse.objects.filter(pk=ids.pop()).first()
 
+    def _prefetched(self, name):
+        """Связанные объекты из ``prefetch_related`` или ``None``, если связь не загружали.
+
+        Списки заявок (кабинет клиента, доска) грузят связи одним запросом на
+        всю страницу — тогда считаем по ним, а не ходим в БД на каждую заявку.
+        """
+        return getattr(self, "_prefetched_objects_cache", {}).get(name)
+
     def declaration_types_by_car(self):
         """``{car_id: declaration_type}`` — под какой тип собирается пакет.
 
@@ -1150,7 +1158,10 @@ class TransportRequest(models.Model):
         авто не даёт отправить, чтобы не просить декларацию наугад.
         """
         by_group = {}
-        for group in self.declaration_groups.prefetch_related("cars"):
+        groups = self._prefetched("declaration_groups")
+        if groups is None:
+            groups = self.declaration_groups.prefetch_related("cars")
+        for group in groups:
             for car in group.cars.all():
                 by_group.setdefault(car.pk, group.declaration_type)
         return {car.pk: by_group.get(car.pk) or self.declaration_type for car in self.cars.all()}
@@ -1170,12 +1181,21 @@ class TransportRequest(models.Model):
         типов минус типы, файлы которых уже загружены (по любому авто).
         Порядок — как в ``TRANSPORT_DOCUMENT_TYPES``.
         """
+        messages = self._prefetched("messages")
+        if messages is None:
+            staff_codes = self.messages.filter(author_kind="STAFF").values_list("requested_doc_types", flat=True)
+        else:
+            staff_codes = [message.requested_doc_types for message in messages if message.author_kind == "STAFF"]
         requested: set[str] = set()
-        for codes in self.messages.filter(author_kind="STAFF").values_list("requested_doc_types", flat=True):
+        for codes in staff_codes:
             requested.update(codes or [])
         if not requested:
             return []
-        present = set(self.documents.values_list("doc_type", flat=True))
+        documents = self._prefetched("documents")
+        if documents is None:
+            present = set(self.documents.values_list("doc_type", flat=True))
+        else:
+            present = {doc.doc_type for doc in documents}
         return [code for code, _label in TRANSPORT_DOCUMENT_TYPES if code in requested - present]
 
     # ------------------------------------------------------------------

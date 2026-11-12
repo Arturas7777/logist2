@@ -1699,6 +1699,85 @@ def test_request_cars_collapsed_with_per_car_download(logged_client, transport_r
     assert "open" in details.group(1)
 
 
+# Список заявок считает всё по предзагруженным данным (без запросов на каждую
+# заявку) — тесты ниже фиксируют, что результат при этом тот же.
+
+
+def test_requests_page_asks_for_requested_docs_until_uploaded(
+    logged_client, transport_request, car, settings, tmp_path
+):
+    from core.models.website import TransportRequestMessage
+
+    settings.MEDIA_ROOT = str(tmp_path)
+    TransportRequestMessage.objects.create(
+        request=transport_request,
+        author_kind=TransportRequestMessage.AUTHOR_STAFF,
+        body="Нужен паспорт",
+        requested_doc_types=["PASSPORT"],
+    )
+    banner = "Мы просим догрузить документы"
+    url = reverse("website:transport_requests")
+    assert banner in logged_client.get(url).content.decode()
+
+    TransportRequestDocument.objects.create(
+        request=transport_request,
+        car=car,
+        doc_type="PASSPORT",
+        file=SimpleUploadedFile("passport.pdf", _tiny_pdf("passport"), content_type="application/pdf"),
+    )
+    assert banner not in logged_client.get(url).content.decode()
+
+
+def test_requests_page_attaches_title_from_car_once(logged_client, transport_request, car, settings, tmp_path):
+    settings.MEDIA_ROOT = str(tmp_path)
+    car.title_scan.save(
+        "title.pdf", SimpleUploadedFile("title.pdf", _tiny_pdf("title"), content_type="application/pdf")
+    )
+    car.save(update_fields=["title_scan"])
+    url = reverse("website:transport_requests")
+    titles = transport_request.documents.filter(doc_type="TITLE")
+
+    # Тайтл прикрепляется при первом же открытии и сразу виден в строке авто.
+    html = logged_client.get(url).content.decode()
+    assert titles.count() == 1
+    assert titles.get().preview_url in html
+    logged_client.get(url)
+    assert titles.count() == 1
+
+    # Удалённый из пакета тайтл возвращается при следующем открытии.
+    titles.delete()
+    logged_client.get(url)
+    assert titles.count() == 1
+
+
+def test_requests_page_required_docs_follow_separate_declaration(logged_client, transport_request, car):
+    from core.models.website import TRANSPORT_DOCUMENT_TYPES
+    from core.services import transport_declarations
+
+    contract = dict(TRANSPORT_DOCUMENT_TYPES)["CONTRACT"]
+    transport_request.declaration_type = "TRANSIT"
+    transport_request.destination_country = "BY"
+    transport_request.save(update_fields=["declaration_type", "destination_country"])
+    other = _second_car(transport_request)
+    transport_declarations.create_group(transport_request, "EXPORT", [other.pk])
+
+    html = logged_client.get(reverse("website:transport_requests")).content.decode()
+
+    def missing_hint(for_car):
+        row = re.search(
+            rf'data-req-car="{transport_request.pk}" data-car-id="{for_car.pk}">(.*?)<span class="req-car-trailing">',
+            html,
+            re.S,
+        )
+        assert row, html
+        hint = re.search(r'<span class="dropdown-item-text small doc-missing-hint">(.*?)</span>', row.group(1), re.S)
+        return hint.group(1) if hint else ""
+
+    # Транзит требует договор на перевозку, отдельная декларация «экспорт» — нет.
+    assert contract in missing_hint(car)
+    assert contract not in missing_hint(other)
+
+
 def test_generate_all_package(logged_client, transport_request, car, settings, tmp_path):
     from PIL import Image
 

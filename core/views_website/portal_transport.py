@@ -96,7 +96,15 @@ def _client_requests(client, active_statuses=None):
     ordering = ["_status_rank", "-created_at"]
     qs = (
         _client_requests_base(client)
-        .prefetch_related("cars", "documents", "doc_packages", "messages__car", "bulk_uploads")
+        .prefetch_related(
+            "cars",
+            "documents",
+            "doc_packages",
+            "messages__car",
+            "bulk_uploads",
+            # Тип декларации по каждому авто — иначе запрос на каждую заявку.
+            "declaration_groups__cars",
+        )
         .annotate(
             _status_rank=status_rank,
             unread_for_client=Count(
@@ -277,20 +285,26 @@ def _open_doc_url(transport_request, doc_type, car_id=""):
     return _docs_return_url(transport_request, car, open_doc=doc_type)
 
 
-def _docs_context(transport_request):
-    """Секции документов одной заявки: слоты по каждому авто."""
-    added_titles = package_actions.sync_title_documents(transport_request)
+def _docs_context(transport_request, required_cache=None):
+    """Секции документов одной заявки: слоты по каждому авто.
+
+    ``required_cache`` — общий на страницу кэш обязательных документов по
+    паре «страна + процедура»: правило лежит в БД, а заявок в списке много.
+    """
     cars = list(transport_request.cars.all())
+    documents = list(transport_request.documents.all())
+    # Тайтлы из карточек авто прикрепляем, только когда какому-то авто его не
+    # хватает. Проверяем по уже загруженным документам: у большинства заявок
+    # всё на месте, и отдельный запрос на каждую из них не нужен.
+    have_title = {doc.car_id for doc in documents if doc.doc_type == "TITLE"}
+    if any(car.title_scan and car.pk not in have_title for car in cars):
+        if package_actions.sync_title_documents(transport_request):
+            # Прикреплённые только что тайтлы в prefetch не попали — перечитываем.
+            documents = list(TransportRequestDocument.objects.filter(request=transport_request))
     package_data = {p.car_id: p.data for p in transport_request.doc_packages.all()}
     bulk_by_car: dict[int, list] = {}
     for upload in transport_request.bulk_uploads.all():
         bulk_by_car.setdefault(upload.car_id, []).append(upload)
-    # Прикреплённые только что тайтлы в prefetch не попали — перечитываем.
-    documents = (
-        TransportRequestDocument.objects.filter(request=transport_request)
-        if added_titles
-        else transport_request.documents.all()
-    )
     docs_by_car = {car.pk: {doc_type: [] for doc_type, _ in TRANSPORT_DOCUMENT_TYPES} for car in cars}
     for doc in documents:
         if doc.car_id in docs_by_car:
@@ -300,14 +314,16 @@ def _docs_context(transport_request):
     # (требования таможни, ``TransportDocumentRule``). Клиенту показываем
     # это прямо в списке документов, чтобы он не гадал, что ещё нужно.
     types_by_car = transport_request.declaration_types_by_car()
-    required_cache: dict[str, tuple[str, ...]] = {}
+    if required_cache is None:
+        required_cache = {}
+    country = transport_request.destination_country or ""
 
     doc_sections = []
     for car in cars:
         procedure = types_by_car.get(car.pk) or ""
-        if procedure not in required_cache:
-            required_cache[procedure] = required_doc_types(procedure, transport_request.destination_country)
-        required_types = required_cache[procedure]
+        if (country, procedure) not in required_cache:
+            required_cache[(country, procedure)] = required_doc_types(procedure, country)
+        required_types = required_cache[(country, procedure)]
         slots = []
         present_icons = []
         missing_labels = []
@@ -405,8 +421,9 @@ def _docs_map_context(transport_requests):
     generate_all_urls = {}
     bulk_urls = {}
     bulk_status_urls = {}
+    required_cache: dict[tuple[str, str], tuple[str, ...]] = {}
     for tr in transport_requests:
-        ctx = _docs_context(tr)
+        ctx = _docs_context(tr, required_cache)
         tr.doc_sections = ctx["doc_sections"]
         package_by_request[str(tr.pk)] = ctx["package_data"]
         action_urls[str(tr.pk)] = reverse("website:transport_request_doc_action", args=[tr.pk])

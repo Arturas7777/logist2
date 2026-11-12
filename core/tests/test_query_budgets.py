@@ -352,6 +352,63 @@ class TestTransportRequestChangelistBudget:
 
 
 @pytest.mark.django_db
+class TestPortalRequestsPageBudget:
+    """Кабинет клиента, «Мои заявки»: документы, тип декларации, запрошенные
+    документы и правила таможни — по предзагруженным данным, а не запросами
+    на каждую заявку."""
+
+    def _seed(self, n, owner):
+        from django.core.files.base import ContentFile
+
+        from core.models.website import TransportRequest, TransportRequestDocument, TransportRequestMessage
+        from core.services import transport_declarations
+
+        wh = Warehouse.objects.create(name=f"WH-PR-{n}", free_days=0)
+        for i in range(n):
+            tr = TransportRequest.objects.create(
+                client=owner,
+                carrier_name="Carrier",
+                truck_number=f"PR{n}{i}",
+                driver_name="Driver",
+                status="SUBMITTED",
+                destination_country="BY",
+                declaration_type="TRANSIT",
+            )
+            container = Container.objects.create(number=f"PR{n}{i:03d}", status="FLOATING")
+            _seed_cars(2, warehouse=wh, container=container)
+            cars = list(Car.objects.filter(container=container))
+            tr.cars.set(cars)
+            # Все ветки, которые раньше ходили в БД на каждую заявку: документ,
+            # запрос документов от брокера, отдельная декларация.
+            TransportRequestDocument.objects.create(
+                request=tr, car=cars[0], doc_type="INVOICE", file=ContentFile(b"%PDF-1.4", name="invoice.pdf")
+            )
+            TransportRequestMessage.objects.create(
+                request=tr,
+                author_kind=TransportRequestMessage.AUTHOR_STAFF,
+                body="Нужен паспорт",
+                requested_doc_types=["PASSPORT"],
+            )
+            transport_declarations.create_group(tr, "EXPORT", [cars[1].pk])
+
+    def test_constant_budget(self, client, settings, tmp_path):
+        from core.models import Client as ClientModel
+        from core.models.website import ClientUser
+
+        settings.MEDIA_ROOT = str(tmp_path)
+        owner = ClientModel.objects.create(name="Portal budget client")
+        user = get_user_model().objects.create_user(username="qb-portal", password="secret123")
+        ClientUser.objects.create(user=user, client=owner, is_verified=True)
+        client.force_login(user)
+
+        self._seed(2, owner)
+        q2 = _page_queries(client, "/transport-requests/")
+        self._seed(5, owner)
+        q7 = _page_queries(client, "/transport-requests/")
+        assert q2 == q7, f"Запросы страницы «Мои заявки» растут с числом заявок: {q2} → {q7}"
+
+
+@pytest.mark.django_db
 class TestReconciliationDashboardBudget:
     """Q5: сверка — SupplierCost/CarService батчами, не по одному на услугу."""
 
