@@ -241,7 +241,7 @@ def test_generate_payment_order(transport_request, car):
     page = fitz.open(stream=pdf_bytes, filetype="pdf")[0]
     text = page.get_text()
     assert docs.DEFAULT_BELARUS_PAYER_IBAN in text.replace(" ", "")
-    assert "BTA Bank" in text
+    assert 'ЗАО "БТА Банк", Минск, РБ' in text
     assert docs.DEFAULT_BELARUS_PAYER_BANK_CODE in text
     assert re.fullmatch(r"\d{4}-\d{1,4}", data["payment_number"])
     payment_date = datetime.date.fromisoformat(data["payment_date"])

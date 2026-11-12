@@ -247,6 +247,17 @@ class ContainerAdmin(NormalizeSearchMixin, admin.ModelAdmin):
             initial.setdefault("warehouse", neto)
         return initial
 
+    def get_ordering(self, request):
+        """Фильтр «В пути»: ближайшая ETA сверху, без даты — внизу.
+
+        Остальные списки по-прежнему со свежей датой разгрузки наверху.
+        """
+        if set(request.GET.getlist("status_multi")) == {"FLOATING"}:
+            from django.db.models import F
+
+            return [F("eta").asc(nulls_last=True)]
+        return ["-unload_date", "-id"]
+
     def get_queryset(self, request):
         from django.db.models import Count, IntegerField, OuterRef, Subquery
         from django.db.models.functions import Coalesce

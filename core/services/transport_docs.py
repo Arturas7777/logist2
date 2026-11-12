@@ -50,7 +50,7 @@ PAYMENT_MAX_DAYS_AFTER_INVOICE = 30
 
 # Реквизиты плательщика для пакета на Беларусь — фиксированные, в UI не спрашиваем.
 DEFAULT_BELARUS_PAYER_IBAN = "BY04RSHN38455615894156834963"
-DEFAULT_BELARUS_PAYER_BANK = 'ZAO "BTA Bank", Minsk, RB'
+DEFAULT_BELARUS_PAYER_BANK = 'ЗАО "БТА Банк", Минск, РБ'
 DEFAULT_BELARUS_PAYER_BANK_CODE = "AEBKBY2X"
 
 

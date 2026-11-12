@@ -115,6 +115,38 @@ def test_car_changelist_summary_is_cached(warehouse):
 # ---------------------------------------------------------------------------
 
 
+def test_floating_containers_nearest_eta_first(staff_client, warehouse):
+    """Фильтр «В пути»: ближайшая ETA сверху, контейнер без ETA — внизу."""
+    today = timezone.localdate()
+    Container.objects.create(number="SORTLATE0001", status="FLOATING", eta=today + timezone.timedelta(days=40))
+    Container.objects.create(number="SORTEARLY001", status="FLOATING", eta=today + timezone.timedelta(days=3))
+    Container.objects.create(number="SORTMID00001", status="FLOATING", eta=today + timezone.timedelta(days=12))
+    Container.objects.create(number="SORTNONE0001", status="FLOATING")
+    Container.objects.create(number="SORTOVER0001", status="FLOATING", eta=today - timezone.timedelta(days=2))
+
+    html = staff_client.get("/admin/core/container/?status_multi=FLOATING").content.decode()
+    order = ["SORTOVER0001", "SORTEARLY001", "SORTMID00001", "SORTLATE0001", "SORTNONE0001"]
+    positions = [html.index(number) for number in order]
+    assert positions == sorted(positions)
+
+    Container.objects.create(
+        number="UNLDRECENT01",
+        status="UNLOADED",
+        warehouse=warehouse,
+        unload_date=today,
+        eta=today - timezone.timedelta(days=5),
+    )
+    Container.objects.create(
+        number="UNLDOLDER001",
+        status="UNLOADED",
+        warehouse=warehouse,
+        unload_date=today - timezone.timedelta(days=10),
+        eta=today - timezone.timedelta(days=20),
+    )
+    unloaded = staff_client.get("/admin/core/container/?status_multi=UNLOADED").content.decode()
+    assert unloaded.index("UNLDRECENT01") < unloaded.index("UNLDOLDER001")
+
+
 def test_container_eta_countdown_and_filter(staff_client):
     today = timezone.localdate()
     Container.objects.create(number="ETAOVER001", status="FLOATING", eta=today - timezone.timedelta(days=2))
