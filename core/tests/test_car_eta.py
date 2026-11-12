@@ -3,7 +3,6 @@
 import datetime
 
 import pytest
-from django.utils import timezone
 
 from core.models import Car, Client, Container, Warehouse
 
@@ -79,7 +78,7 @@ class TestCarETA:
         assert car._eta_override is None
         assert car.container_id is None
 
-    def test_container_eta_change_syncs_to_cars(self):
+    def test_container_eta_change_syncs_to_cars(self, django_capture_on_commit_callbacks):
         """Изменение ETA контейнера синхронизируется на машины без переопределения."""
         client = Client.objects.create(name="Test Client")
         warehouse = Warehouse.objects.create(name="Test Warehouse")
@@ -88,7 +87,7 @@ class TestCarETA:
             status="FLOATING",
             eta=datetime.date(2026, 12, 25),
         )
-        
+
         # Машина 1: без переопределения (должна синхронизироваться)
         car1 = Car.objects.create(
             vin="4HGBH41JXMN109189",
@@ -99,7 +98,7 @@ class TestCarETA:
             status="FLOATING",
             container=container,
         )
-        
+
         # Машина 2: с явным переопределением (НЕ должна синхронизироваться)
         car2 = Car.objects.create(
             vin="5HGBH41JXMN109190",
@@ -112,9 +111,11 @@ class TestCarETA:
             _eta_override=datetime.date(2027, 1, 1),
         )
 
-        # Меняем ETA контейнера
+        # Меняем ETA контейнера. Синхронизация идёт через on_commit, а тест
+        # работает внутри транзакции — колбэки выполняем явно.
         container.eta = datetime.date(2027, 1, 15)
-        container.save()
+        with django_capture_on_commit_callbacks(execute=True):
+            container.save()
 
         # Обновляем объекты из БД
         car1.refresh_from_db()
@@ -123,7 +124,7 @@ class TestCarETA:
         # car1: foreign_eta синхронизировалась, property eta возвращает новую дату
         assert car1.foreign_eta == datetime.date(2027, 1, 15)
         assert car1.eta == datetime.date(2027, 1, 15)
-        
+
         # car2: foreign_eta НЕ синхронизировалась (_eta_override != NULL),
         # property eta возвращает переопределённую дату
         assert car2._eta_override == datetime.date(2027, 1, 1)
@@ -266,7 +267,9 @@ def test_car_changelist_puts_earlier_eta_first():
     request = RequestFactory().get("/admin/core/car/")
     request.resolver_match = resolve("/admin/core/car/")
     car_admin = CarAdmin(Car, admin_site)
-    vins = list(car_admin.get_queryset(request).order_by(*car_admin.get_ordering(request)).values_list("vin", flat=True))
+    vins = list(
+        car_admin.get_queryset(request).order_by(*car_admin.get_ordering(request)).values_list("vin", flat=True)
+    )
     assert vins == [
         "ETAUNLDVIN0000001",
         "ETAUNLDVIN0000002",

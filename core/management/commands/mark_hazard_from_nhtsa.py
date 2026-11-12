@@ -8,7 +8,7 @@
 from django.core.management.base import BaseCommand
 
 from core.models import Car, VinCheck
-from core.services.vin_gate import normalize_vin_input, nhtsa_marks_hazard
+from core.services.vin_gate import nhtsa_marks_hazard, normalize_vin_input
 from core.services.vin_validator import decode_powertrain_batch
 
 

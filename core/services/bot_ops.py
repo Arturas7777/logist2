@@ -288,10 +288,10 @@ def car_upsert(
 
 def car_set_eta(*, vin: str = "", car_id: int | None = None, eta=None, apply: bool = False) -> dict:
     """Устанавливает ETA для машины (переопределяет ETA контейнера).
-    
+
     Для машин без контейнера (foreign_container_number) это единственный способ
     задать ETA через бот. Для машин в контейнере переопределяет Container.eta.
-    
+
     --eta <date>: устанавливает _eta_override (и foreign_eta для совместимости).
     --eta "" или без флага: очищает _eta_override (машина наследует от контейнера).
     """
@@ -308,10 +308,10 @@ def car_set_eta(*, vin: str = "", car_id: int | None = None, eta=None, apply: bo
         car = Car.objects.filter(vin=clean_vin).first()
     else:
         raise BotError("Нужен --vin или --car-id.")
-    
+
     if car is None:
         raise BotError(f"Машина не найдена (VIN={vin}, id={car_id}).")
-    
+
     before = {
         "vin": car.vin,
         "id": car.pk,
@@ -320,7 +320,7 @@ def car_set_eta(*, vin: str = "", car_id: int | None = None, eta=None, apply: bo
         "effective_eta": car.eta.isoformat() if car.eta else None,
         "container_id": car.container_id,
     }
-    
+
     after = dict(before)
     if eta is not None:
         after["_eta_override"] = eta.isoformat()
@@ -332,7 +332,7 @@ def car_set_eta(*, vin: str = "", car_id: int | None = None, eta=None, apply: bo
         # foreign_eta оставляем как есть (для совместимости с машинами без контейнера)
         container_eta = car.container.eta if car.container else None
         after["effective_eta"] = container_eta.isoformat() if container_eta else None
-    
+
     if not apply:
         return {
             "before": before,
@@ -340,17 +340,17 @@ def car_set_eta(*, vin: str = "", car_id: int | None = None, eta=None, apply: bo
             "result": {"outcome": "would_update", **after},
             "notifications": [],
         }
-    
+
     car._eta_override = eta
     if eta is not None:
         # Также обновляем foreign_eta для совместимости
         car.foreign_eta = eta
     car.save(update_fields=["_eta_override", "foreign_eta"])
-    
+
     after["_eta_override"] = car._eta_override.isoformat() if car._eta_override else None
     after["foreign_eta"] = car.foreign_eta.isoformat() if car.foreign_eta else None
     after["effective_eta"] = car.eta.isoformat() if car.eta else None
-    
+
     return {
         "before": before,
         "after": after,

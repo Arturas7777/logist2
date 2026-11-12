@@ -1149,17 +1149,17 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
 
     def eta_list_display(self, obj):
         """Компактное отображение ETA в списке с иконкой источника.
-        
+
         Для списка используем более компактный формат: только иконка + дата.
         Container уже загружен через list_select_related, N+1 нет.
         """
         if not obj or not obj.pk:
             return "—"
-        
+
         eta_value = obj.eta
         if not eta_value:
             return "—"
-        
+
         # Определяем источник ETA для иконки
         if obj._eta_override is not None:
             # Явно задана для машины
@@ -1175,14 +1175,14 @@ class CarAdmin(NormalizeSearchMixin, CSVExportMixin, admin.ModelAdmin):
             # Foreign container (fallback)
             icon = "📦"
             title = f"ETA чужого контейнера {obj.foreign_container_number or ''}"
-        
+
         return format_html(
             '<span style="white-space:nowrap;" title="{}">{} <span style="color:#64748b;">{}</span></span>',
             title,
             icon,
-            eta_value.strftime("%m/%d") if eta_value else "—"
+            eta_value.strftime("%m/%d") if eta_value else "—",
         )
-    
+
     eta_list_display.short_description = "ETA"
     eta_list_display.admin_order_field = "_effective_eta"
 

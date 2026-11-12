@@ -338,11 +338,11 @@ class Car(models.Model):
     @property
     def eta(self):
         """ETA машины: наследуется от контейнера, если не задана явно.
-        
+
         Для машин в своём контейнере (container != None): берётся из Container.eta.
         Для машин без контейнера (foreign_container_number): возвращается _eta_override
         или foreign_eta как fallback (для совместимости).
-        
+
         Возвращает date | None.
         """
         if self._eta_override is not None:

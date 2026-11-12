@@ -36,7 +36,7 @@ class TestCarSetETA:
 
         assert result["result"]["outcome"] == "updated"
         assert result["after"]["_eta_override"] == "2027-03-15"
-        
+
         car.refresh_from_db()
         assert car._eta_override == datetime.date(2027, 3, 15)
         assert car.foreign_eta == datetime.date(2027, 3, 15)
@@ -95,6 +95,7 @@ class TestCarSetETA:
             apply=True,
         )
 
+        assert result["result"]["outcome"] == "updated"
         car.refresh_from_db()
         assert car._eta_override == datetime.date(2027, 1, 10)
         assert car.eta == datetime.date(2027, 1, 10)
@@ -132,6 +133,7 @@ class TestCarSetETA:
             apply=True,
         )
 
+        assert result["result"]["outcome"] == "updated"
         car.refresh_from_db()
         assert car._eta_override is None
         # Теперь наследуется от контейнера
@@ -158,7 +160,7 @@ class TestCarSetETA:
 
         assert result["result"]["outcome"] == "would_update"
         assert result["after"]["_eta_override"] == "2027-05-01"
-        
+
         car.refresh_from_db()
         # Данные не изменились
         assert car._eta_override is None
@@ -166,9 +168,10 @@ class TestCarSetETA:
 
     def test_car_set_eta_not_found(self):
         """Ошибка если машина не найдена."""
+        # VIN ровно 17 символов: более короткий отсекается раньше, проверкой длины.
         with pytest.raises(BotError, match="Машина не найдена"):
             car_set_eta(
-                vin="NOTEXIST12345678",
+                vin="9HGBH41JXMN109199",
                 eta=datetime.date(2027, 6, 1),
                 apply=True,
             )
