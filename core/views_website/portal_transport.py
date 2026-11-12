@@ -13,6 +13,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import content_disposition_header
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_GET, require_POST
 
@@ -310,6 +311,9 @@ def _docs_context(transport_request):
         slots = []
         present_icons = []
         missing_labels = []
+        # Есть ли что скачать по этому авто: те же правила, что у сборки пакета
+        # (тайтл из карточки авто попадает в PDF и без документа в заявке).
+        has_package = bool(car.title_scan)
         for doc_type, label in TRANSPORT_DOCUMENT_TYPES:
             docs = docs_by_car[car.pk][doc_type]
             icon, color = _DOC_TYPE_ICONS.get(doc_type, ("bi-file-earmark", "#6c757d"))
@@ -353,6 +357,8 @@ def _docs_context(transport_request):
             if slot["is_missing"]:
                 missing_labels.append(label)
             if ordered:
+                if docs_service.is_packaged_doc_type(doc_type):
+                    has_package = True
                 latest = ordered[-1]
                 name = (latest.filename or "").lower()
                 present_icons.append(
@@ -375,6 +381,7 @@ def _docs_context(transport_request):
                 "car": car,
                 "slots": slots,
                 "present_icons": present_icons,
+                "has_package": has_package,
                 "bulk_uploads": uploads,
                 "bulk_running": any(u.is_running for u in uploads),
                 "missing_labels": missing_labels,
@@ -608,6 +615,31 @@ def transport_request_download_packages(request, pk):
     response = HttpResponse(zip_bytes, content_type="application/zip")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     response["Content-Length"] = str(len(zip_bytes))
+    return response
+
+
+@login_required
+@require_GET
+def transport_request_download_car_package(request, pk, car_id):
+    """Скачать PDF-пакет одного авто заявки — тот же файл, что лежит в общем ZIP."""
+    client = _get_client(request)
+    if client is None:
+        return render(request, "website/not_authorized.html", status=403)
+
+    transport_request = get_object_or_404(TransportRequest, pk=pk, client=client)
+    if transport_request.status == "CANCELLED":
+        messages.error(request, "Отменённую заявку скачать нельзя.")
+        return redirect("website:transport_requests")
+
+    car = get_object_or_404(transport_request.cars, pk=car_id)
+    pdf_bytes = docs_service.build_car_package_pdf(transport_request, car)
+    if not pdf_bytes:
+        messages.error(request, "По этому автомобилю пока нет документов для скачивания.")
+        return redirect(_docs_return_url(transport_request, car))
+
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = content_disposition_header(True, docs_service.package_pdf_filename(car))
+    response["Content-Length"] = str(len(pdf_bytes))
     return response
 
 

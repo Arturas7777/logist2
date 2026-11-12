@@ -111,6 +111,11 @@ urlpatterns = [
         name="transport_request_download_packages",
     ),
     path(
+        "transport-requests/<int:pk>/cars/<int:car_id>/download-package/",
+        views_website.transport_request_download_car_package,
+        name="transport_request_download_car_package",
+    ),
+    path(
         "transport-requests/<int:pk>/generate-all/",
         views_website.transport_request_generate_all,
         name="transport_request_generate_all",

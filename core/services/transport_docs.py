@@ -601,6 +601,11 @@ def package_pdf_filename(car) -> str:
     return f"PACKAGE {model_word} {car.vin[-4:]}.pdf"
 
 
+def is_packaged_doc_type(doc_type: str) -> bool:
+    """Попадает ли документ такого типа в PDF-пакет авто (подпись — нет)."""
+    return doc_type not in _ARCHIVE_SKIP_DOC_TYPES
+
+
 def _read_storage_file(field_file) -> bytes | None:
     """Прочитать FileField; ``None``, если файла нет или он недоступен."""
     if not field_file or not getattr(field_file, "name", None):

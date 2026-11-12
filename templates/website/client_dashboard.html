@@ -3,6 +3,8 @@
 
 {% block title %}{% trans "Личный кабинет" %} - {{ client.name }}{% endblock %}
 
+{% block body_class %}portal-wide{% endblock %}
+
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'website/css/portal.css' %}">
 <style>

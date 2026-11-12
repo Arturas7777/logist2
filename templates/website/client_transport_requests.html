@@ -3,6 +3,8 @@
 
 {% block title %}{% trans "Заявки на вывоз авто" %} - {{ client.name }}{% endblock %}
 
+{% block body_class %}portal-wide{% endblock %}
+
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'website/css/portal.css' %}">
 <link rel="stylesheet" href="{% static 'website/css/portal_requests.css' %}">
@@ -230,11 +232,22 @@
                         </div>
                         {% endif %}
 
-                        <div class="d-flex flex-column mt-2 req-cars-list" data-req-id="{{ req.pk }}">
-                            {% for section in req.doc_sections %}
-                            {% include "website/partials/transport_req_car_row.html" with req=req section=section %}
-                            {% endfor %}
-                        </div>
+                        {# Список авто свёрнут. Открыт у заявки, которую редактируют, #}
+                        {# и у той, к которой вернулись после работы с документами. #}
+                        <details class="req-cars mt-2" data-req-cars="{{ req.pk }}"
+                                 {% if docs_req == req.pk|stringformat:"s" %}data-keep-open="1" open{% elif editing and editing.pk == req.pk %}open{% endif %}>
+                            <summary class="small d-flex align-items-center gap-2">
+                                <i class="bi bi-car-front" aria-hidden="true"></i>
+                                <span>{% trans "Автомобили" %}</span>
+                                <span class="badge bg-secondary req-cars-count">{{ req.doc_sections|length }}</span>
+                                <i class="bi bi-chevron-down req-cars-chevron" aria-hidden="true"></i>
+                            </summary>
+                            <div class="d-flex flex-column req-cars-list" data-req-id="{{ req.pk }}">
+                                {% for section in req.doc_sections %}
+                                {% include "website/partials/transport_req_car_row.html" with req=req section=section %}
+                                {% endfor %}
+                            </div>
+                        </details>
 
                         {% include "website/partials/transport_req_messages.html" with req=req %}
                         <div class="req-card-actions mt-2">
@@ -852,6 +865,44 @@
 {% block extra_js %}
 <script src="{% static 'js/doc_preview.js' %}"></script>
 <script>
+// ── Список авто в заявке: свёрнут, пока клиент сам не развернёт ─────────
+// Развёрнутые заявки помним до закрытия вкладки: страница перезагружается
+// после каждого действия с документами, и список не должен схлопываться.
+// Блок стоит первым: списки раскрываются до прокрутки к карточке заявки.
+(function () {
+    var KEY = "portalReqCarsOpen";
+
+    function load() {
+        try {
+            var ids = JSON.parse(sessionStorage.getItem(KEY) || "[]");
+            return Array.isArray(ids) ? ids : [];
+        } catch (e) { return []; }
+    }
+    function save(ids) {
+        try { sessionStorage.setItem(KEY, JSON.stringify(ids)); } catch (e) { /* без памяти тоже работает */ }
+    }
+    function remember(id, isOpen) {
+        var ids = load().filter(function (x) { return x !== id; });
+        if (isOpen) ids.push(id);
+        save(ids);
+    }
+
+    var stored = load();
+    document.querySelectorAll("details.req-cars").forEach(function (block) {
+        var id = block.getAttribute("data-req-cars");
+        if (stored.indexOf(id) !== -1) block.open = true;
+        // Заявка, к которой вернулись после работы с документами, остаётся
+        // развёрнутой и после автообновления страницы.
+        if (block.hasAttribute("data-keep-open")) remember(id, true);
+        var known = block.open;
+        block.addEventListener("toggle", function () {
+            if (block.open === known) return;
+            known = block.open;
+            remember(id, known);
+        });
+    });
+})();
+
 (function () {
     var CURRENT = ["DRAFT", "SUBMITTED", "ACCEPTED", "IN_PROGRESS"];
     var tabs = document.querySelectorAll(".req-status-tab");
@@ -1283,6 +1334,13 @@
         syncCarsCheckRow(row);
     }
 
+    // Счётчик в заголовке свёрнутого списка: авто добавляют и убирают без перезагрузки.
+    function refreshCarsCount(list) {
+        var block = list && list.closest(".req-cars");
+        var badge = block && block.querySelector(".req-cars-count");
+        if (badge) badge.textContent = list.querySelectorAll(".req-car-row:not(.is-removing)").length;
+    }
+
     function addCarsToRequest(carIds) {
         var box = document.getElementById("carsCheckboxes");
         if (!box || !carIds.length) return Promise.resolve();
@@ -1328,6 +1386,11 @@
                     list.appendChild(row);
                     setTimeout(function () { row.classList.remove("is-adding"); }, 360);
                 });
+                if (list) {
+                    var block = list.closest(".req-cars");
+                    if (block) block.open = true;
+                    refreshCarsCount(list);
+                }
             })
             .catch(function () {
                 alert("{% trans 'Не удалось добавить автомобиль в заявку.' %}");
@@ -1408,6 +1471,7 @@
             .then(function (data) {
                 if (!data || !data.ok) throw new Error("remove failed");
                 row.classList.add("is-removing");
+                refreshCarsCount(row.closest(".req-cars-list"));
                 setTimeout(function () { row.remove(); }, 280);
                 if (carId) markCarInRequest(String(carId), false);
             })

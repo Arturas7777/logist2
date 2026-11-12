@@ -1612,6 +1612,93 @@ def test_download_packages_empty_redirects(logged_client, transport_request):
     assert response.url == reverse("website:transport_requests")
 
 
+def _second_car(transport_request):
+    other = Car.objects.create(year=2021, brand="Ford Focus", vin="1FADP3F20EL123456", status="UNLOADED")
+    transport_request.cars.add(other)
+    return other
+
+
+def _other_doc(transport_request, car, text):
+    return TransportRequestDocument.objects.create(
+        request=transport_request,
+        car=car,
+        doc_type="OTHER",
+        file=SimpleUploadedFile(f"{text}.pdf", _tiny_pdf(text), content_type="application/pdf"),
+    )
+
+
+def test_download_single_car_package(logged_client, transport_request, car, settings, tmp_path):
+    """Иконка у авто отдаёт PDF только этого авто, а не всей заявки."""
+    import fitz
+
+    settings.MEDIA_ROOT = str(tmp_path)
+    other = _second_car(transport_request)
+    _other_doc(transport_request, car, "firstcar")
+    _other_doc(transport_request, other, "secondcar")
+
+    url = reverse("website:transport_request_download_car_package", args=[transport_request.pk, other.pk])
+    response = logged_client.get(url)
+    assert response.status_code == 200
+    assert response["Content-Type"] == "application/pdf"
+    assert response["Content-Disposition"].startswith("attachment")
+    assert docs.package_pdf_filename(other) in response["Content-Disposition"]
+    with fitz.open(stream=response.content, filetype="pdf") as pdf:
+        text = "".join(page.get_text() for page in pdf)
+    assert "secondcar" in text
+    assert "firstcar" not in text
+
+
+def test_download_single_car_package_guards(logged_client, transport_request, car, portal_client, settings, tmp_path):
+    settings.MEDIA_ROOT = str(tmp_path)
+
+    # Документов по авто нет — возврат к карточке заявки с сообщением.
+    url = reverse("website:transport_request_download_car_package", args=[transport_request.pk, car.pk])
+    response = logged_client.get(url)
+    assert response.status_code == 302
+    assert f"docs_req={transport_request.pk}" in response.url
+
+    # Авто не из этой заявки.
+    stranger = Car.objects.create(year=2020, brand="Audi A4", vin="WAUZZZ8K9DA000001", status="UNLOADED")
+    url = reverse("website:transport_request_download_car_package", args=[transport_request.pk, stranger.pk])
+    assert logged_client.get(url).status_code == 404
+
+    # Чужая заявка.
+    foreign = TransportRequest.objects.create(
+        client=Client.objects.create(name="Other Portal Client"), truck_number="ZZZ999", status="DRAFT"
+    )
+    foreign.cars.add(stranger)
+    _other_doc(foreign, stranger, "foreign")
+    url = reverse("website:transport_request_download_car_package", args=[foreign.pk, stranger.pk])
+    assert logged_client.get(url).status_code == 404
+
+
+def test_request_cars_collapsed_with_per_car_download(logged_client, transport_request, car, settings, tmp_path):
+    """Список авто свёрнут; у авто с документами — ссылка, без документов — серая иконка."""
+    settings.MEDIA_ROOT = str(tmp_path)
+    other = _second_car(transport_request)
+    _other_doc(transport_request, car, "firstcar")
+    with_docs = reverse("website:transport_request_download_car_package", args=[transport_request.pk, car.pk])
+    without_docs = reverse("website:transport_request_download_car_package", args=[transport_request.pk, other.pk])
+
+    html = logged_client.get(reverse("website:transport_requests")).content.decode()
+    details = re.search(rf'<details class="req-cars mt-2" data-req-cars="{transport_request.pk}"([^>]*)>', html)
+    assert details, html
+    assert "open" not in details.group(1)
+    assert '<span class="badge bg-secondary req-cars-count">2</span>' in html
+    assert f'href="{with_docs}"' in html
+    assert f'href="{without_docs}"' not in html
+    assert html.count("req-car-download is-empty") == 1
+
+    # Возврат после работы с документами и редактирование — список раскрыт.
+    html = logged_client.get(reverse("website:transport_requests"), {"docs_req": transport_request.pk}).content.decode()
+    details = re.search(rf'<details class="req-cars mt-2" data-req-cars="{transport_request.pk}"([^>]*)>', html)
+    assert "open" in details.group(1)
+
+    html = logged_client.get(reverse("website:transport_request_edit", args=[transport_request.pk])).content.decode()
+    details = re.search(rf'<details class="req-cars mt-2" data-req-cars="{transport_request.pk}"([^>]*)>', html)
+    assert "open" in details.group(1)
+
+
 def test_generate_all_package(logged_client, transport_request, car, settings, tmp_path):
     from PIL import Image
 
@@ -1661,9 +1748,7 @@ def test_generate_all_package(logged_client, transport_request, car, settings, t
     assert package.data["invoice_extra_lines"] == [{"description": "Fee", "amount": "150"}]
 
 
-def test_generate_all_refreshes_invoice_address_from_cyrillic(
-    transport_request, car, settings, tmp_path, monkeypatch
-):
+def test_generate_all_refreshes_invoice_address_from_cyrillic(transport_request, car, settings, tmp_path, monkeypatch):
     """Перегенерация пакета без поля латиницей обновляет адрес в инвойсе."""
     from PIL import Image
 

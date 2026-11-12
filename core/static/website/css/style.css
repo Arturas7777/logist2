@@ -34,6 +34,32 @@
     }
 }
 
+/* Кабинет клиента шире публичных страниц. Из-за масштаба 0.8 стандартная
+   ширина Bootstrap занимала на экране чуть больше половины. Теперь это 90%
+   окна, но не шире 2400px (1920px на экране). Нижняя граница — ширина
+   Bootstrap: там, где zoom не работает, страница не станет уже прежней. */
+.portal-wide {
+    --portal-container-floor: 960px;
+}
+
+@media (min-width: 1200px) {
+    .portal-wide {
+        --portal-container-floor: 1140px;
+    }
+}
+
+@media (min-width: 1400px) {
+    .portal-wide {
+        --portal-container-floor: 1320px;
+    }
+}
+
+@media (min-width: 992px) {
+    .portal-wide .container {
+        max-width: max(var(--portal-container-floor), min(90%, 2400px));
+    }
+}
+
 body {
     font-family: 'Montserrat', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     line-height: 1.6;

@@ -42,7 +42,8 @@
     <link rel="stylesheet" href="{% static 'website/css/style.css' %}">
     {% block extra_css %}{% endblock %}
 </head>
-<body>
+{# Страницы кабинета ставят portal-wide: содержимое, шапка и подвал шире. #}
+<body class="{% block body_class %}{% endblock %}">
     <!-- Навигационное меню -->
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top" style="background: var(--primary-color) !important;">
         <div class="container">

@@ -229,7 +229,8 @@
     display: inline-flex; align-items: center; gap: .1rem; flex-shrink: 0;
 }
 .req-car-remove,
-.req-car-generate-all {
+.req-car-generate-all,
+.req-car-download {
     display: inline-flex; align-items: center; justify-content: center;
     width: 1.5rem; height: 1.5rem; padding: 0; border: 0;
     border-radius: .35rem; background: transparent;
@@ -239,7 +240,15 @@
 .req-car-generate-all { font-size: 1rem; color: #845ef7; }
 .req-car-generate-all:hover { color: #7048e8; background: rgba(132, 94, 247, .1); }
 .req-car-remove:hover { color: #dc3545; background: rgba(220, 53, 69, .08); }
+/* Пакет документов одного авто. Серая иконка — скачивать пока нечего. */
+.req-car-download { font-size: .95rem; color: #0d6efd; }
+.req-car-download:hover { color: #0a58ca; background: rgba(13, 110, 253, .1); }
+.req-car-download.is-empty,
+.req-car-download.is-empty:hover { color: #ced4da; background: transparent; cursor: default; }
 .req-cars-list { overflow: visible; }
+/* Список авто заявки свёрнут по умолчанию; заголовок — как у переписки. */
+.req-cars-chevron { font-size: .7rem; transition: transform .15s ease; }
+.req-cars[open] .req-cars-chevron { transform: rotate(180deg); }
 .portal-elevated-card.card,
 .portal-elevated-card .card-body { overflow: visible; }
 .req-car-dd .dropdown-menu { z-index: 1080; }
@@ -389,12 +398,15 @@
 #docPreviewModal .doc-preview-fallback { display: none; text-align: center; padding: 2rem 1rem; }
 
 /* ── Переписка с брокером по заявке ── */
-.req-messages > summary {
+.req-messages > summary,
+.req-cars > summary {
     cursor: pointer; list-style: none; color: #495057;
     padding: .3rem 0; user-select: none;
 }
-.req-messages > summary::-webkit-details-marker { display: none; }
-.req-messages > summary:hover { color: #0d6efd; }
+.req-messages > summary::-webkit-details-marker,
+.req-cars > summary::-webkit-details-marker { display: none; }
+.req-messages > summary:hover,
+.req-cars > summary:hover { color: #0d6efd; }
 .req-msg-thread {
     display: flex; flex-direction: column; gap: .4rem;
     max-height: 16rem; overflow-y: auto;

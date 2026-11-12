@@ -146,7 +146,6 @@
             {% endfor %}
         </ul>
     </div>
-    {% if section.present_icons or req.is_client_editable %}
     <span class="req-car-trailing">
         {% if section.present_icons %}
         <span class="req-car-doc-icons">
@@ -170,8 +169,23 @@
             {% endfor %}
         </span>
         {% endif %}
-        {% if req.is_client_editable %}
         <span class="req-car-end-btns">
+            {# Пакет одного авто — тот же PDF, что лежит в общем ZIP заявки. #}
+            {% if section.has_package %}
+            <a class="req-car-download"
+               href="{% url 'website:transport_request_download_car_package' req.pk section.car.pk %}"
+               title="{% trans 'Скачать пакет документов этого авто' %}"
+               aria-label="{% trans 'Скачать пакет документов этого авто' %}">
+                <i class="bi bi-download" aria-hidden="true"></i>
+            </a>
+            {% else %}
+            <span class="req-car-download is-empty"
+                  title="{% trans 'Документов для скачивания пока нет' %}"
+                  aria-label="{% trans 'Документов для скачивания пока нет' %}">
+                <i class="bi bi-download" aria-hidden="true"></i>
+            </span>
+            {% endif %}
+            {% if req.is_client_editable %}
             <button type="button"
                     class="req-car-generate-all"
                     title="{% trans 'Сгенерировать всё' %}"
@@ -184,8 +198,7 @@
                 {% csrf_token %}
                 <button type="submit" class="req-car-remove" title="{% trans 'Убрать из заявки' %}" aria-label="{% trans 'Убрать из заявки' %}">&times;</button>
             </form>
+            {% endif %}
         </span>
-        {% endif %}
     </span>
-    {% endif %}
 </div>

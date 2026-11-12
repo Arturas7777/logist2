@@ -234,3 +234,38 @@ def test_containers_page_lists_client_containers_without_n_plus_one(portal):
     assert reverse("website:container_detail", args=[done.id]) not in html
     assert "01.11.2026" in html
     assert len(ctx.captured_queries) <= 12, "\n".join(q["sql"] for q in ctx.captured_queries)
+
+
+# ── Ширина кабинета ─────────────────────────────────────────────────────────
+
+
+def test_portal_pages_are_wide_and_public_pages_are_not(portal):
+    """Страницы кабинета помечены portal-wide, публичные остаются прежней ширины."""
+    http, owner = portal
+    owner.country = "BY"
+    owner.save(update_fields=["country"])
+    warehouse = Warehouse.objects.create(name="Wide WH")
+    container = Container.objects.create(
+        number="WIDECONT0001", status="UNLOADED", client=owner, unload_date=date(2026, 9, 1), warehouse=warehouse
+    )
+    car = _car(owner, "WIDEPAGEVIN000001", "UNLOADED", container=container, warehouse=warehouse)
+
+    portal_urls = [
+        reverse("website:dashboard"),
+        reverse("website:containers"),
+        reverse("website:transport_requests"),
+        reverse("website:invoices"),
+        reverse("website:documents"),
+        reverse("website:sanctions_check"),
+        reverse("website:notification_settings"),
+        reverse("website:car_detail", args=[car.id]),
+        reverse("website:container_detail", args=[container.id]),
+    ]
+    for url in portal_urls:
+        response = http.get(url)
+        assert response.status_code == 200, url
+        assert '<body class="portal-wide">' in response.content.decode(), url
+
+    for name in ("home", "about", "services", "contact", "news_list"):
+        html = http.get(reverse(f"website:{name}")).content.decode()
+        assert "portal-wide" not in html, name
